@@ -1,151 +1,152 @@
-﻿import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { apiGet } from "../api/client.js";
+﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  buildUserFromEmail,
+  canUser,
+  canUserAction,
+  canUserFeature,
+  clearSessionUser,
+  getAccessConfig,
+  getSessionUser,
+  getUserModuleScope,
+  isUserSuperAdmin,
+  saveAccessConfig,
+  saveSessionUser,
+} from "./accessConfig.js";
 
 const AuthContext = createContext(null);
 
-const DEMO_ACCESS = {
-  "admin@yemeksepeti.com": {
-    name: "OPEX Admin",
-    roles: ["super_admin"],
-    modules: {
-      planogram: ["view", "admin"],
-      dockos: ["view", "admin"],
-      budget: ["view", "admin"],
-      academy: ["view", "admin"],
-      insight: ["view", "admin"],
-      cycle_count: ["view", "admin"],
-      admin_access: ["view", "manage"],
-    },
-  },
-  "erdi.aydin@yemeksepeti.com": {
-    name: "Erdi Aydın",
-    roles: ["super_admin"],
-    modules: {
-      planogram: ["view", "admin"],
-      dockos: ["view", "admin"],
-      budget: ["view", "admin"],
-      academy: ["view", "admin"],
-      insight: ["view", "admin"],
-      cycle_count: ["view", "admin"],
-      admin_access: ["view", "manage"],
-    },
-  },
-  "viewer@yemeksepeti.com": {
-    name: "Demo Viewer",
-    roles: ["viewer"],
-    modules: {
-      planogram: ["view"],
-      dockos: ["view"],
-    },
-  },
-  "noaccess@yemeksepeti.com": {
-    name: "No Access User",
-    roles: ["viewer"],
-    modules: {},
-  },
-};
-
-function buildDemoUser(email) {
-  const normalizedEmail = String(email || "").trim().toLowerCase();
-  const access = DEMO_ACCESS[normalizedEmail];
-
-  if (!access) {
-    return {
-      email: normalizedEmail,
-      name: normalizedEmail,
-      roles: ["viewer"],
-      modules: {},
-    };
-  }
-
-  return {
-    email: normalizedEmail,
-    ...access,
-  };
-}
-
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [booting, setBooting] = useState(true);
+  const [accessConfig, setAccessConfig] = useState(() => getAccessConfig());
+  const [user, setUser] = useState(() => getSessionUser());
 
-  async function loadMe() {
-    setBooting(true);
+  useEffect(() => {
+    function handleAccessUpdate() {
+      setAccessConfig(getAccessConfig());
+    }
 
-    try {
-      const me = await apiGet("/auth/me");
-      setUser(me);
-      return me;
-    } catch {
-      const savedEmail = localStorage.getItem("opex_demo_email");
+    window.addEventListener("opex-access-config-updated", handleAccessUpdate);
+    window.addEventListener("storage", handleAccessUpdate);
 
-      if (!savedEmail) {
-        setUser(null);
-        return null;
+    return () => {
+      window.removeEventListener("opex-access-config-updated", handleAccessUpdate);
+      window.removeEventListener("storage", handleAccessUpdate);
+    };
+  }, []);
+
+  const login = useCallback(async (email) => {
+    const sessionUser = buildUserFromEmail(email);
+
+    if (!sessionUser) {
+      throw new Error("Geçerli bir kullanıcı girin.");
+    }
+
+    if (sessionUser.status !== "active") {
+      throw new Error("Bu kullanıcı pasif durumda.");
+    }
+
+    saveSessionUser(sessionUser);
+    setUser(sessionUser);
+    return sessionUser;
+  }, []);
+
+  const logout = useCallback(() => {
+    clearSessionUser();
+    setUser(null);
+  }, []);
+
+  const can = useCallback(
+    (moduleKey, action = "view") => {
+      if (!user?.email) return false;
+      return canUser(user.email, moduleKey, action);
+    },
+    [user]
+  );
+
+  const canFeature = useCallback(
+    (moduleKey, featureKey) => {
+      if (!user?.email) return false;
+      return canUserFeature(user.email, moduleKey, featureKey);
+    },
+    [user]
+  );
+
+  const canAction = useCallback(
+    (moduleKey, actionKey) => {
+      if (!user?.email) return false;
+      return canUserAction(user.email, moduleKey, actionKey);
+    },
+    [user]
+  );
+
+  const getModuleScope = useCallback(
+    (moduleKey) => {
+      if (!user?.email) {
+        return {
+          type: "none",
+          regions: [],
+          warehouses: [],
+          suppliers: [],
+          costCenters: [],
+        };
       }
 
-      const fallbackUser = buildDemoUser(savedEmail);
-      setUser(fallbackUser);
-      return fallbackUser;
-    } finally {
-      setBooting(false);
-    }
-  }
+      return getUserModuleScope(user.email, moduleKey);
+    },
+    [user]
+  );
 
-  async function login(email) {
-    const normalizedEmail = String(email || "").trim().toLowerCase();
+  const isSuperAdmin = useCallback(() => {
+    if (!user?.email) return false;
+    return isUserSuperAdmin(user.email);
+  }, [user]);
 
-    if (!normalizedEmail || !normalizedEmail.includes("@")) {
-      throw new Error("Geçerli bir email girin.");
-    }
+  const refreshAccess = useCallback(() => {
+    setAccessConfig(getAccessConfig());
+  }, []);
 
-    localStorage.setItem("opex_demo_email", normalizedEmail);
-    const demoUser = buildDemoUser(normalizedEmail);
-    setUser(demoUser);
-    setBooting(false);
-
-    return demoUser;
-  }
-
-  function logout() {
-    localStorage.removeItem("opex_demo_email");
-    setUser(null);
-  }
-
-  function isSuperAdmin() {
-    return Array.isArray(user?.roles) && user.roles.includes("super_admin");
-  }
-
-  function hasPermission(moduleKey, action = "view") {
-    if (!user) return false;
-    if (isSuperAdmin()) return true;
-
-    const actions = user?.modules?.[moduleKey];
-    return Array.isArray(actions) && actions.includes(action);
-  }
+  const updateAccessConfig = useCallback((nextConfig) => {
+    saveAccessConfig(nextConfig);
+    setAccessConfig(getAccessConfig());
+  }, []);
 
   const value = useMemo(
     () => ({
       user,
-      booting,
+      accessConfig,
       login,
       logout,
-      hasPermission,
-      can: hasPermission,
+      can,
+      canFeature,
+      canAction,
+      getModuleScope,
       isSuperAdmin,
-      reload: loadMe,
+      refreshAccess,
+      updateAccessConfig,
     }),
-    [user, booting]
+    [
+      user,
+      accessConfig,
+      login,
+      logout,
+      can,
+      canFeature,
+      canAction,
+      getModuleScope,
+      isSuperAdmin,
+      refreshAccess,
+      updateAccessConfig,
+    ]
   );
-
-  useEffect(() => {
-    loadMe();
-  }, []);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
+  const value = useContext(AuthContext);
+
+  if (!value) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+
+  return value;
 }

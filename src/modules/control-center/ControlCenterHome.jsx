@@ -1,23 +1,20 @@
-﻿import React, { useMemo } from "react";
-import { Link } from "react-router-dom";
+﻿import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import {
-  Activity,
-  ArrowRight,
-  Gauge,
-  Radar,
-  ShieldCheck,
-  Sparkles,
-  TerminalSquare,
-  Zap,
-} from "lucide-react";
+import { LogOut, Moon, ShieldCheck, Sparkles, Sun } from "lucide-react";
 
-import CommandBackground from "./CommandBackground.jsx";
 import CommandModuleCard from "./CommandModuleCard.jsx";
-import { commandModules, commandStats, liveSignals } from "./commandCenterModules.js";
+import { commandModules, commandStats } from "./commandCenterModules.js";
+import { useAuth } from "../../auth/AuthContext.jsx";
 import "./control-center.css";
 
 export default function ControlCenterHome() {
+  const { user, logout, can, isSuperAdmin } = useAuth();
+
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("opex_theme") === "dark";
+  });
+
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
 
@@ -26,133 +23,111 @@ export default function ControlCenterHome() {
     return "İyi akşamlar";
   }, []);
 
-  return (
-    <main className="cc-page">
-      <CommandBackground />
+  const visibleModules = useMemo(() => {
+    return commandModules.filter((module) => can(module.moduleKey, "view"));
+  }, [can]);
 
-      <section className="cc-shell">
+  const visibleStats = useMemo(() => {
+    const activeCount = visibleModules.filter((module) => module.enabled).length;
+
+    return [
+      {
+        label: "Görünen modül",
+        value: String(visibleModules.length),
+        detail: isSuperAdmin() ? "Super admin görünümü" : "Yetkine göre filtrelendi",
+      },
+      {
+        label: "Aktif erişim",
+        value: String(activeCount),
+        detail: "Kullanıma açık modül",
+      },
+      {
+        label: "OPEX ruhu",
+        value: "Together",
+        detail: "Omuz omuza gelişim",
+      },
+    ];
+  }, [visibleModules, isSuperAdmin]);
+
+  const toggleTheme = () => {
+    setDarkMode((current) => {
+      const next = !current;
+      window.localStorage.setItem("opex_theme", next ? "dark" : "light");
+      return next;
+    });
+  };
+
+  const handleLogout = () => {
+    logout();
+  };
+
+  return (
+    <main className={`opgrid-page ${darkMode ? "is-dark" : ""}`}>
+      <div className="opgrid-bg-grid" />
+      <div className="opgrid-light opgrid-light-a" />
+      <div className="opgrid-light opgrid-light-b" />
+      <div className="opgrid-noise" />
+
+      <section className="opgrid-shell">
         <motion.header
-          className="cc-topbar"
+          className="opgrid-topbar"
           initial={{ opacity: 0, y: -18 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: "easeOut" }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
         >
-          <div className="cc-brand">
-            <div className="cc-brand-mark">
+          <div className="opgrid-brand">
+            <div className="opgrid-brand-mark">
               <Sparkles size={20} />
             </div>
+
             <div>
               <strong>OPEX</strong>
               <span>Control Center</span>
             </div>
           </div>
 
-          <div className="cc-live-pill">
-            <span className="cc-live-dot" />
-            Command Center V2
+          <div className="opgrid-user-actions">
+            <div className="opgrid-user-pill">
+              <strong>{user?.email}</strong>
+              <span>{isSuperAdmin() ? "Super Admin" : "User"}</span>
+            </div>
+
+            <button className="opgrid-theme-btn" onClick={toggleTheme} type="button">
+              {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+              {darkMode ? "Light Mode" : "Dark Mode"}
+            </button>
+
+            <button className="opgrid-theme-btn danger" onClick={handleLogout} type="button">
+              <LogOut size={17} />
+              Çıkış
+            </button>
           </div>
         </motion.header>
 
-        <section className="cc-hero">
-          <motion.div
-            className="cc-hero-copy"
-            initial={{ opacity: 0, y: 34, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.7, ease: "easeOut" }}
-          >
-            <div className="cc-eyebrow">
-              <ShieldCheck size={17} />
-              {greeting}, kontrol merkezi hazır.
-            </div>
-
-            <h1>
-              Tek ekran.
-              <span> Tam hakimiyet.</span>
-            </h1>
-
-            <p className="cc-lead">
-              Kritik operasyon modüllerini tek merkezden açın. Öncelikleri görün,
-              riskleri yakalayın, aksiyonu hızlandırın.
-            </p>
-
-            <div className="cc-hero-actions">
-              <Link to="/planogram" className="cc-primary-btn">
-                Planogram Studio
-                <ArrowRight size={18} />
-              </Link>
-
-              <Link to="/dockos" className="cc-secondary-btn">
-                DockOS
-                <TerminalSquare size={17} />
-              </Link>
-            </div>
-
-            <div className="cc-mini-strip">
-              <span>
-                <Gauge size={15} />
-                Live module deck
-              </span>
-              <span>
-                <Radar size={15} />
-                Risk visibility
-              </span>
-              <span>
-                <Zap size={15} />
-                Fast action
-              </span>
-            </div>
-          </motion.div>
-
-          <motion.aside
-            className="cc-command-panel"
-            initial={{ opacity: 0, x: 32, rotateY: -7 }}
-            animate={{ opacity: 1, x: 0, rotateY: 0 }}
-            transition={{ duration: 0.72, delay: 0.08, ease: "easeOut" }}
-          >
-            <div className="cc-panel-header">
-              <div>
-                <span>Live Operations</span>
-                <strong>Command Deck</strong>
-              </div>
-              <Activity size={22} />
-            </div>
-
-            <div className="cc-radar-core">
-              <div className="cc-radar-visual">
-                <span className="cc-radar-sweep" />
-                <i className="r1" />
-                <i className="r2" />
-                <i className="r3" />
-                <b className="dot d1" />
-                <b className="dot d2" />
-                <b className="dot d3" />
-              </div>
-
-              <div>
-                <strong>Operational Pulse</strong>
-                <span>Sistem açık. Modüller erişime hazır.</span>
-              </div>
-            </div>
-
-            <div className="cc-live-grid">
-              {liveSignals.map((item) => (
-                <div className={`cc-live-card tone-${item.tone}`} key={item.label}>
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-              ))}
-            </div>
-          </motion.aside>
-        </section>
-
         <motion.section
-          className="cc-stats-grid"
+          className="opgrid-hero"
           initial={{ opacity: 0, y: 26 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.58, delay: 0.16, ease: "easeOut" }}
+          transition={{ duration: 0.62, delay: 0.05, ease: "easeOut" }}
         >
-          {commandStats.map((stat) => (
-            <div className="cc-stat-card" key={stat.label}>
+          <div className="opgrid-eyebrow">
+            <ShieldCheck size={16} />
+            {greeting}, kontrol merkezi hazır.
+          </div>
+
+          <h1>OPEX</h1>
+
+          <p>Operasyonel mükemmellik için omuz omuza.</p>
+        </motion.section>
+
+        <motion.section
+          className="opgrid-stats"
+          initial={{ opacity: 0, y: 22 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.52, delay: 0.16, ease: "easeOut" }}
+        >
+          {visibleStats.map((stat) => (
+            <div className="opgrid-stat" key={stat.label}>
               <span>{stat.label}</span>
               <strong>{stat.value}</strong>
               <p>{stat.detail}</p>
@@ -160,22 +135,18 @@ export default function ControlCenterHome() {
           ))}
         </motion.section>
 
-        <section className="cc-section-head">
-          <div>
-            <span>Module Access</span>
-            <h2>Operasyon modülleri</h2>
-          </div>
-          <p>
-            Aktif modüller doğrudan açılır. Hazırlık aşamasındaki alanlar kilitli
-            kalır; ana akış sade ve kontrollü tutulur.
-          </p>
-        </section>
-
-        <section className="cc-module-grid">
-          {commandModules.map((module, index) => (
-            <CommandModuleCard key={module.id} module={module} index={index} />
-          ))}
-        </section>
+        {visibleModules.length ? (
+          <section className="opgrid-module-grid">
+            {visibleModules.map((module, index) => (
+              <CommandModuleCard key={module.id} module={module} index={index} />
+            ))}
+          </section>
+        ) : (
+          <section className="opgrid-empty-state">
+            <strong>Bu kullanıcı için atanmış modül yok.</strong>
+            <p>Ana admin tarafından modül erişimi verilmesi gerekiyor.</p>
+          </section>
+        )}
       </section>
     </main>
   );

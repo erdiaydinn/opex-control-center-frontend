@@ -1182,3 +1182,733 @@
 }
 
 /* === OPEX AUTH UI PATCH END === */
+
+
+/* === OPEX PREMIUM CONTROL CENTER V3 START === */
+
+:root {
+  --ocx-brand: #FA0050;
+  --ocx-purple: #7c3aed;
+  --ocx-ink: #101828;
+  --ocx-muted: #667085;
+  --ocx-soft: rgba(255, 255, 255, 0.78);
+  --ocx-surface: rgba(255, 255, 255, 0.86);
+  --ocx-border: rgba(15, 23, 42, 0.09);
+  --ocx-shadow: 0 28px 84px rgba(15, 23, 42, 0.12);
+}
+
+.ocx-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  color: var(--ocx-ink);
+  background:
+    radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.15), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.12), transparent 31%),
+    linear-gradient(135deg, #ffffff 0%, #f7f8fc 48%, #eef2ff 100%);
+}
+
+.ocx-page.is-dark {
+  --ocx-ink: #f8fafc;
+  --ocx-muted: #a8b2c6;
+  --ocx-soft: rgba(15, 23, 42, 0.72);
+  --ocx-surface: rgba(15, 23, 42, 0.82);
+  --ocx-border: rgba(255, 255, 255, 0.11);
+  --ocx-shadow: 0 28px 84px rgba(0, 0, 0, 0.34);
+  background:
+    radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.22), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.2), transparent 31%),
+    linear-gradient(135deg, #06101f 0%, #0b1120 55%, #131827 100%);
+}
+
+.ocx-bg-grid {
+  position: absolute;
+  inset: -16%;
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(900px) rotateX(62deg) translateY(-18%);
+  transform-origin: top;
+  opacity: 0.72;
+  animation: ocxGridDrift 16s linear infinite;
+  pointer-events: none;
+}
+
+.ocx-page.is-dark .ocx-bg-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  opacity: 0.38;
+}
+
+.ocx-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(34px);
+  pointer-events: none;
+  animation: ocxFloat 8s ease-in-out infinite;
+}
+
+.orb-a {
+  width: 430px;
+  height: 430px;
+  left: -110px;
+  top: -90px;
+  background: rgba(250, 0, 80, 0.2);
+}
+
+.orb-b {
+  width: 430px;
+  height: 430px;
+  right: -130px;
+  top: 12%;
+  background: rgba(124, 58, 237, 0.15);
+  animation-delay: -2.4s;
+}
+
+.orb-c {
+  width: 320px;
+  height: 320px;
+  left: 38%;
+  bottom: -180px;
+  background: rgba(16, 185, 129, 0.11);
+  animation-delay: -4.2s;
+}
+
+.ocx-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: radial-gradient(rgba(15,23,42,0.12) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
+  mix-blend-mode: soft-light;
+}
+
+.ocx-shell {
+  position: relative;
+  z-index: 5;
+  width: min(1400px, calc(100% - 72px));
+  margin: 0 auto;
+  padding: 30px 0 64px;
+}
+
+.ocx-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ocx-brand,
+.ocx-top-actions,
+.ocx-user-pill,
+.ocx-icon-btn {
+  display: flex;
+  align-items: center;
+}
+
+.ocx-brand {
+  gap: 13px;
+}
+
+.ocx-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 47px;
+  height: 47px;
+  border-radius: 18px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--ocx-brand), var(--ocx-purple));
+  box-shadow: 0 18px 38px rgba(250, 0, 80, 0.26);
+}
+
+.ocx-brand strong {
+  display: block;
+  color: var(--ocx-ink);
+  font-size: 18px;
+  letter-spacing: -0.04em;
+}
+
+.ocx-brand span {
+  display: block;
+  margin-top: 2px;
+  color: var(--ocx-muted);
+  font-size: 13px;
+}
+
+.ocx-top-actions {
+  gap: 10px;
+}
+
+.ocx-user-pill {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 999px;
+  background: var(--ocx-surface);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.07);
+}
+
+.ocx-user-pill strong {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--ocx-ink);
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ocx-user-pill span {
+  margin-top: 1px;
+  color: var(--ocx-muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.ocx-icon-btn {
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 999px;
+  color: var(--ocx-ink);
+  background: var(--ocx-surface);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.07);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.ocx-icon-btn.danger {
+  color: #b42318;
+}
+
+.ocx-page.is-dark .ocx-icon-btn.danger {
+  color: #ff9aa8;
+}
+
+.ocx-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(480px, 1fr) minmax(360px, 440px);
+  gap: 44px;
+  align-items: end;
+  padding: 72px 0 38px;
+}
+
+.ocx-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid rgba(250, 0, 80, 0.16);
+  border-radius: 999px;
+  color: #c90040;
+  background: rgba(250, 0, 80, 0.08);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.ocx-page.is-dark .ocx-eyebrow {
+  color: #ff8ab1;
+  background: rgba(250, 0, 80, 0.12);
+}
+
+.ocx-hero h1 {
+  margin: 22px 0 0;
+  color: var(--ocx-ink);
+  font-size: clamp(92px, 11vw, 168px);
+  line-height: 0.76;
+  letter-spacing: -0.12em;
+}
+
+.ocx-hero p {
+  max-width: 780px;
+  margin: 28px 0 0;
+  color: var(--ocx-brand);
+  font-size: clamp(30px, 4vw, 58px);
+  line-height: 1.02;
+  font-weight: 1000;
+  letter-spacing: -0.07em;
+}
+
+.ocx-search {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 10px;
+  width: min(620px, 100%);
+  min-height: 54px;
+  margin-top: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 20px;
+  background: var(--ocx-surface);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 18px 52px rgba(15, 23, 42, 0.08);
+}
+
+.ocx-search svg {
+  color: var(--ocx-muted);
+}
+
+.ocx-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--ocx-ink);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.ocx-search input::placeholder {
+  color: var(--ocx-muted);
+}
+
+.ocx-command-panel {
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 32px;
+  background: var(--ocx-surface);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--ocx-shadow);
+}
+
+.ocx-panel-glare,
+.ocx-card-glare,
+.ymx-card-glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      125deg,
+      transparent 0%,
+      transparent 44%,
+      rgba(255,255,255,0.42) 50%,
+      transparent 58%,
+      transparent 100%
+    );
+  background-size: 260% 260%;
+  background-position: -120% -120%;
+  transition: background-position 720ms ease;
+}
+
+.ocx-command-panel:hover .ocx-panel-glare,
+.ocx-module-card:hover .ocx-card-glare {
+  background-position: 130% 130%;
+}
+
+.ocx-panel-head,
+.ocx-metric-row,
+.ocx-live-strip,
+.ocx-mini-map {
+  position: relative;
+  z-index: 2;
+}
+
+.ocx-panel-head span {
+  display: block;
+  color: var(--ocx-brand);
+  font-size: 12px;
+  font-weight: 1000;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ocx-panel-head strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--ocx-ink);
+  font-size: 26px;
+  line-height: 1.05;
+  letter-spacing: -0.06em;
+  text-transform: capitalize;
+}
+
+.ocx-metric-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.ocx-metric-row div {
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 22px;
+  background: rgba(255,255,255,0.46);
+}
+
+.ocx-page.is-dark .ocx-metric-row div {
+  background: rgba(255,255,255,0.045);
+}
+
+.ocx-metric-row small {
+  display: block;
+  color: var(--ocx-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.ocx-metric-row strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--ocx-ink);
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.07em;
+}
+
+.ocx-live-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  margin-top: 14px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: var(--ocx-ink);
+  background: rgba(16, 185, 129, 0.1);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.ocx-live-strip svg {
+  color: #10b981;
+}
+
+.ocx-mini-map {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.ocx-mini-map span {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.12);
+}
+
+.ocx-mini-map span.active {
+  background: linear-gradient(90deg, var(--ocx-brand), var(--ocx-purple));
+}
+
+.ocx-mini-map span.soon {
+  background: rgba(148, 163, 184, 0.34);
+}
+
+.ocx-module-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin-top: 20px;
+}
+
+.ocx-module-card {
+  position: relative;
+  min-height: 370px;
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 32px;
+  background: var(--ocx-surface);
+  backdrop-filter: blur(24px);
+  box-shadow:
+    0 14px 0 rgba(148, 163, 184, 0.14),
+    0 28px 78px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255,255,255,0.82);
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.ocx-module-card.is-disabled {
+  cursor: default;
+  opacity: 0.76;
+}
+
+.ocx-module-card::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: linear-gradient(90deg, var(--tone-a), var(--tone-b));
+}
+
+.ocx-module-card.tone-primary { --tone-a: #FA0050; --tone-b: #7c3aed; }
+.ocx-module-card.tone-cyan { --tone-a: #0891b2; --tone-b: #22d3ee; }
+.ocx-module-card.tone-violet { --tone-a: #7c3aed; --tone-b: #a855f7; }
+.ocx-module-card.tone-amber { --tone-a: #f59e0b; --tone-b: #f97316; }
+.ocx-module-card.tone-emerald { --tone-a: #10b981; --tone-b: #14b8a6; }
+.ocx-module-card.tone-rose { --tone-a: #e11d48; --tone-b: #fb7185; }
+.ocx-module-card.tone-slate { --tone-a: #334155; --tone-b: #64748b; }
+
+.ocx-card-top,
+.ocx-card-body,
+.ocx-card-meta,
+.ocx-card-action {
+  position: relative;
+  z-index: 3;
+}
+
+.ocx-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ocx-module-icon {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 21px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--tone-a), var(--tone-b));
+  box-shadow: 0 18px 38px rgba(15,23,42,0.16);
+}
+
+.ocx-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.ocx-health.healthy {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.ocx-health.soon {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.ocx-card-body {
+  margin-top: 34px;
+}
+
+.ocx-card-body span {
+  color: var(--tone-a);
+  font-size: 11px;
+  font-weight: 1000;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.ocx-card-body h3 {
+  margin: 10px 0 0;
+  color: var(--ocx-ink);
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.07em;
+}
+
+.ocx-card-body p {
+  min-height: 76px;
+  margin: 16px 0 0;
+  color: var(--ocx-muted);
+  font-size: 14px;
+  line-height: 1.58;
+}
+
+.ocx-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.ocx-card-meta div {
+  padding: 13px;
+  border: 1px solid var(--ocx-border);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.46);
+}
+
+.ocx-page.is-dark .ocx-card-meta div {
+  background: rgba(255,255,255,0.045);
+}
+
+.ocx-card-meta small {
+  display: block;
+  color: var(--ocx-muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.ocx-card-meta strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--ocx-ink);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.ocx-shortcut strong {
+  font-size: 20px;
+  letter-spacing: -0.04em;
+}
+
+.ocx-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  margin-top: 18px;
+  padding: 0 14px;
+  border-radius: 16px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--tone-a), var(--tone-b));
+  box-shadow: 0 18px 40px rgba(15,23,42,0.13);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.ocx-module-card.is-disabled .ocx-card-action {
+  color: var(--ocx-muted);
+  background: rgba(148, 163, 184, 0.16);
+  box-shadow: none;
+}
+
+.ocx-card-watermark {
+  position: absolute;
+  right: -20px;
+  bottom: -26px;
+  z-index: 1;
+  color: var(--tone-a);
+  opacity: 0.075;
+  transform: rotate(-8deg);
+}
+
+.ocx-empty {
+  width: min(720px, 100%);
+  margin: 48px auto 0;
+  padding: 34px;
+  text-align: center;
+  border: 1px solid var(--ocx-border);
+  border-radius: 28px;
+  background: var(--ocx-surface);
+  backdrop-filter: blur(22px);
+  box-shadow: var(--ocx-shadow);
+}
+
+.ocx-empty strong {
+  color: var(--ocx-ink);
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.ocx-empty p {
+  margin: 10px 0 0;
+  color: var(--ocx-muted);
+}
+
+@keyframes ocxGridDrift {
+  from { background-position: 0 0; }
+  to { background-position: 48px 48px; }
+}
+
+@keyframes ocxFloat {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(16px, -18px, 0) scale(1.04); }
+}
+
+@media (max-width: 1180px) {
+  .ocx-hero-grid {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .ocx-command-panel {
+    max-width: 620px;
+  }
+
+  .ocx-module-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .ocx-shell {
+    width: min(100% - 28px, 1400px);
+    padding-top: 20px;
+  }
+
+  .ocx-topbar {
+    align-items: flex-start;
+  }
+
+  .ocx-top-actions {
+    gap: 8px;
+  }
+
+  .ocx-user-pill {
+    display: none;
+  }
+
+  .ocx-icon-btn {
+    width: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .ocx-hero-grid {
+    padding-top: 42px;
+  }
+
+  .ocx-hero h1 {
+    font-size: 82px;
+  }
+
+  .ocx-hero p {
+    font-size: 31px;
+  }
+
+  .ocx-metric-row,
+  .ocx-module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ocx-module-card {
+    min-height: auto;
+  }
+}
+
+/* Eski arka plan yazı denemelerini tamamen kapat */
+.opgrid-warehouse-cloud,
+.opgrid-ops-flow,
+.opgrid-ops-flow.visible,
+.opgrid-ops-flow.vertical,
+.opgrid-warehouse-flow,
+.opgrid-warehouse-flow.horizontal,
+.opgrid-warehouse-column,
+.opgrid-warehouse-track,
+.opex-ribbon-bg,
+.opex-ribbon-row,
+.opex-ribbon-track {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* === OPEX PREMIUM CONTROL CENTER V3 END === */

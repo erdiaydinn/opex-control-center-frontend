@@ -8,7 +8,7 @@ export async function getPurchaseOrders(supplierName = "", warehouseName = "") {
 
   try {
     const res = await fetch(
-      `${API_BASE}/river/live-purchase-orders?${params.toString()}`
+      `${API_BASE}/dockos/live-purchase-orders?${params.toString()}`
     );
 
     if (!res.ok) throw new Error("Canlı PO alınamadı");

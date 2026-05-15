@@ -34,6 +34,20 @@ function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+function normalizeGroupId(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ı/g, "i")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function createEmptyModuleDetails(moduleKey) {
   const detailConfig = MODULE_DETAIL_CONFIG[moduleKey];
 
@@ -41,13 +55,7 @@ function createEmptyModuleDetails(moduleKey) {
     return {
       features: {},
       actions: {},
-      scope: {
-        type: "all",
-        regions: [],
-        warehouses: [],
-        suppliers: [],
-        costCenters: [],
-      },
+      scope: { type: "all", regions: [], warehouses: [], suppliers: [], costCenters: [] },
     };
   }
 
@@ -60,18 +68,12 @@ function createEmptyModuleDetails(moduleKey) {
       acc[action.key] = false;
       return acc;
     }, {}),
-    scope: {
-      type: "all",
-      regions: [],
-      warehouses: [],
-      suppliers: [],
-      costCenters: [],
-    },
+    scope: { type: "all", regions: [], warehouses: [], suppliers: [], costCenters: [] },
   };
 }
 
-function createEmptyUser(email) {
-  const modules = ACCESS_MODULES.reduce((acc, module) => {
+function createEmptyModules() {
+  return ACCESS_MODULES.reduce((acc, module) => {
     acc[module.key] = {
       view: false,
       admin: false,
@@ -79,18 +81,31 @@ function createEmptyUser(email) {
     };
     return acc;
   }, {});
+}
 
+function createEmptyUser(email) {
   return {
     email,
     name: email,
     role: "viewer",
     status: "active",
-    modules,
+    groups: [],
+    modules: createEmptyModules(),
   };
 }
 
-function ensureModuleAccess(user, moduleKey) {
-  return user.modules?.[moduleKey] || {
+function createEmptyGroup(id, name) {
+  return {
+    id,
+    name,
+    description: "",
+    status: "active",
+    modules: createEmptyModules(),
+  };
+}
+
+function ensureModuleAccess(entity, moduleKey) {
+  return entity.modules?.[moduleKey] || {
     view: false,
     admin: false,
     details: createEmptyModuleDetails(moduleKey),
@@ -107,10 +122,13 @@ export default function AccessControl() {
   const { user, accessConfig, updateAccessConfig, isSuperAdmin } = useAuth();
 
   const [draft, setDraft] = useState(() => clone(accessConfig));
+  const [mode, setMode] = useState("users");
   const [selectedEmail, setSelectedEmail] = useState(() => user?.email || "erdi.aydin@yemeksepeti.com");
+  const [selectedGroupId, setSelectedGroupId] = useState("construction_team");
   const [selectedModuleKey, setSelectedModuleKey] = useState("dockos");
   const [query, setQuery] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
+  const [newGroupName, setNewGroupName] = useState("");
   const [saved, setSaved] = useState(false);
 
   const users = useMemo(() => {
@@ -118,30 +136,61 @@ export default function AccessControl() {
 
     return Object.values(draft.users || {})
       .filter((item) => {
-        if (!normalized) return true;
-        return [item.email, item.name, item.role, item.status]
+        if (!normalized || mode !== "users") return true;
+        return [item.email, item.name, item.role, item.status, ...(item.groups || [])]
           .join(" ")
           .toLowerCase()
           .includes(normalized);
       })
       .sort((a, b) => a.email.localeCompare(b.email));
-  }, [draft, query]);
+  }, [draft, query, mode]);
+
+  const groups = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+
+    return Object.values(draft.groups || {})
+      .filter((item) => {
+        if (!normalized || mode !== "groups") return true;
+        return [item.id, item.name, item.description, item.status]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [draft, query, mode]);
 
   const selectedUser = draft.users?.[selectedEmail] || users[0];
+  const selectedGroup = draft.groups?.[selectedGroupId] || groups[0];
+
+  const selectedEntity = mode === "users" ? selectedUser : selectedGroup;
   const selectedDetailConfig = MODULE_DETAIL_CONFIG[selectedModuleKey];
-  const selectedModuleAccess = selectedUser
-    ? ensureModuleAccess(selectedUser, selectedModuleKey)
+  const selectedModuleAccess = selectedEntity
+    ? ensureModuleAccess(selectedEntity, selectedModuleKey)
     : null;
 
-  function updateSelectedUser(patch) {
-    if (!selectedUser) return;
+  function updateSelectedEntity(patch) {
+    if (!selectedEntity) return;
+
+    if (mode === "users") {
+      setDraft((current) => ({
+        ...current,
+        users: {
+          ...current.users,
+          [selectedUser.email]: {
+            ...current.users[selectedUser.email],
+            ...patch,
+          },
+        },
+      }));
+      return;
+    }
 
     setDraft((current) => ({
       ...current,
-      users: {
-        ...current.users,
-        [selectedUser.email]: {
-          ...current.users[selectedUser.email],
+      groups: {
+        ...current.groups,
+        [selectedGroup.id]: {
+          ...current.groups[selectedGroup.id],
           ...patch,
         },
       },
@@ -149,12 +198,12 @@ export default function AccessControl() {
   }
 
   function updateModule(moduleKey, key, value) {
-    if (!selectedUser) return;
+    if (!selectedEntity) return;
 
-    const currentAccess = ensureModuleAccess(selectedUser, moduleKey);
+    const currentAccess = ensureModuleAccess(selectedEntity, moduleKey);
 
     const nextModules = {
-      ...(selectedUser.modules || {}),
+      ...(selectedEntity.modules || {}),
       [moduleKey]: {
         ...currentAccess,
         [key]: value,
@@ -188,17 +237,17 @@ export default function AccessControl() {
       nextModules[moduleKey].admin = false;
     }
 
-    updateSelectedUser({ modules: nextModules });
+    updateSelectedEntity({ modules: nextModules });
   }
 
   function updateDetail(moduleKey, section, key, value) {
-    if (!selectedUser) return;
+    if (!selectedEntity) return;
 
-    const currentAccess = ensureModuleAccess(selectedUser, moduleKey);
+    const currentAccess = ensureModuleAccess(selectedEntity, moduleKey);
     const currentDetails = currentAccess.details || createEmptyModuleDetails(moduleKey);
 
     const nextModules = {
-      ...(selectedUser.modules || {}),
+      ...(selectedEntity.modules || {}),
       [moduleKey]: {
         ...currentAccess,
         view: true,
@@ -212,17 +261,17 @@ export default function AccessControl() {
       },
     };
 
-    updateSelectedUser({ modules: nextModules });
+    updateSelectedEntity({ modules: nextModules });
   }
 
   function updateScopeType(moduleKey, type) {
-    if (!selectedUser) return;
+    if (!selectedEntity) return;
 
-    const currentAccess = ensureModuleAccess(selectedUser, moduleKey);
+    const currentAccess = ensureModuleAccess(selectedEntity, moduleKey);
     const currentDetails = currentAccess.details || createEmptyModuleDetails(moduleKey);
 
     const nextModules = {
-      ...(selectedUser.modules || {}),
+      ...(selectedEntity.modules || {}),
       [moduleKey]: {
         ...currentAccess,
         view: true,
@@ -236,18 +285,18 @@ export default function AccessControl() {
       },
     };
 
-    updateSelectedUser({ modules: nextModules });
+    updateSelectedEntity({ modules: nextModules });
   }
 
   function updateScopeList(moduleKey, listKey, value) {
-    if (!selectedUser) return;
+    if (!selectedEntity) return;
 
-    const currentAccess = ensureModuleAccess(selectedUser, moduleKey);
+    const currentAccess = ensureModuleAccess(selectedEntity, moduleKey);
     const currentDetails = currentAccess.details || createEmptyModuleDetails(moduleKey);
     const currentScope = currentDetails.scope || {};
 
     const nextModules = {
-      ...(selectedUser.modules || {}),
+      ...(selectedEntity.modules || {}),
       [moduleKey]: {
         ...currentAccess,
         view: true,
@@ -261,12 +310,11 @@ export default function AccessControl() {
       },
     };
 
-    updateSelectedUser({ modules: nextModules });
+    updateSelectedEntity({ modules: nextModules });
   }
 
   function addUser() {
     const email = normalizeEmail(newUserEmail);
-
     if (!email || !email.includes("@")) return;
 
     setDraft((current) => ({
@@ -277,51 +325,114 @@ export default function AccessControl() {
       },
     }));
 
+    setMode("users");
     setSelectedEmail(email);
     setNewUserEmail("");
   }
 
-  function duplicateUser() {
-    if (!selectedUser) return;
+  function addGroup() {
+    const name = String(newGroupName || "").trim();
+    const id = normalizeGroupId(name);
 
-    const email = normalizeEmail(window.prompt("Yeni kullanıcının e-posta adresi:"));
-
-    if (!email || !email.includes("@")) return;
+    if (!id || !name) return;
 
     setDraft((current) => ({
       ...current,
-      users: {
-        ...current.users,
-        [email]: {
-          ...clone(selectedUser),
-          email,
-          name: email,
-          role: "viewer",
-        },
+      groups: {
+        ...current.groups,
+        [id]: current.groups[id] || createEmptyGroup(id, name),
       },
     }));
 
-    setSelectedEmail(email);
+    setMode("groups");
+    setSelectedGroupId(id);
+    setNewGroupName("");
   }
 
-  function removeUser() {
-    if (!selectedUser) return;
+  function duplicateEntity() {
+    if (!selectedEntity) return;
 
-    if (selectedUser.role === "super_admin") {
-      window.alert("Super Admin kullanıcısı silinemez.");
+    if (mode === "users") {
+      const email = normalizeEmail(window.prompt("Yeni kullanıcının e-posta adresi:"));
+      if (!email || !email.includes("@")) return;
+
+      setDraft((current) => ({
+        ...current,
+        users: {
+          ...current.users,
+          [email]: { ...clone(selectedUser), email, name: email, role: "viewer" },
+        },
+      }));
+
+      setSelectedEmail(email);
       return;
     }
 
-    const ok = window.confirm(`${selectedUser.email} silinsin mi?`);
+    const name = String(window.prompt("Yeni grup adı:") || "").trim();
+    const id = normalizeGroupId(name);
+    if (!id || !name) return;
+
+    setDraft((current) => ({
+      ...current,
+      groups: {
+        ...current.groups,
+        [id]: { ...clone(selectedGroup), id, name },
+      },
+    }));
+
+    setSelectedGroupId(id);
+  }
+
+  function removeEntity() {
+    if (!selectedEntity) return;
+
+    if (mode === "users") {
+      if (selectedUser.role === "super_admin") {
+        window.alert("Super Admin kullanıcısı silinemez.");
+        return;
+      }
+
+      const ok = window.confirm(`${selectedUser.email} silinsin mi?`);
+      if (!ok) return;
+
+      setDraft((current) => {
+        const next = clone(current);
+        delete next.users[selectedUser.email];
+        return next;
+      });
+
+      setSelectedEmail("erdi.aydin@yemeksepeti.com");
+      return;
+    }
+
+    if (selectedGroup.id === "super_admins") {
+      window.alert("Super Admins grubu silinemez.");
+      return;
+    }
+
+    const ok = window.confirm(`${selectedGroup.name} grubu silinsin mi?`);
     if (!ok) return;
 
     setDraft((current) => {
       const next = clone(current);
-      delete next.users[selectedUser.email];
+      delete next.groups[selectedGroup.id];
+
+      Object.values(next.users || {}).forEach((item) => {
+        item.groups = (item.groups || []).filter((groupId) => groupId !== selectedGroup.id);
+      });
+
       return next;
     });
 
-    setSelectedEmail("erdi.aydin@yemeksepeti.com");
+    setSelectedGroupId("construction_team");
+  }
+
+  function toggleUserGroup(groupId) {
+    if (!selectedUser) return;
+
+    updateSelectedEntity({
+      groups: toggleInList(selectedUser.groups || [], groupId),
+    });
   }
 
   function saveChanges() {
@@ -331,12 +442,13 @@ export default function AccessControl() {
   }
 
   function resetToDefault() {
-    const ok = window.confirm("Tüm yetkiler varsayılan demo yapısına dönsün mü?");
+    const ok = window.confirm("Tüm kullanıcı ve grup yetkileri varsayılan yapıya dönsün mü?");
     if (!ok) return;
 
     const next = clone(DEFAULT_ACCESS_CONFIG);
     setDraft(next);
     setSelectedEmail("erdi.aydin@yemeksepeti.com");
+    setSelectedGroupId("construction_team");
     updateAccessConfig(next);
   }
 
@@ -378,9 +490,9 @@ export default function AccessControl() {
             transition={{ duration: 0.58, ease: [0.16, 0.86, 0.22, 1] }}
           >
             <span>Access Control</span>
-            <h1>Kim neyi, hangi kapsamda görecek?</h1>
+            <h1>Kullanıcı ve grup yetkilerini yönet.</h1>
             <p>
-              Modül kapısını, modül içi ekranları, aksiyonları ve veri kapsamını tek yerden yönet.
+              Kullanıcı bazlı istisnaları ve ekip/grup bazlı erişimleri tek merkezden kontrol et.
             </p>
           </motion.div>
 
@@ -396,18 +508,27 @@ export default function AccessControl() {
             </div>
 
             <div>
-              <small>Modül</small>
-              <strong>{ACCESS_MODULES.length}</strong>
+              <small>Grup</small>
+              <strong>{Object.keys(draft.groups || {}).length}</strong>
             </div>
 
             <div>
-              <small>Aktif</small>
-              <strong>
-                {Object.values(draft.users || {}).filter((item) => item.status === "active").length}
-              </strong>
+              <small>Modül</small>
+              <strong>{ACCESS_MODULES.length}</strong>
             </div>
           </motion.div>
         </section>
+
+        <div className="access-mode-tabs">
+          <button className={mode === "users" ? "active" : ""} onClick={() => setMode("users")}>
+            <UserRound size={17} />
+            Kullanıcılar
+          </button>
+          <button className={mode === "groups" ? "active" : ""} onClick={() => setMode("groups")}>
+            <UsersRound size={17} />
+            Gruplar
+          </button>
+        </div>
 
         <section className="access-grid access-grid-v2">
           <motion.aside
@@ -421,39 +542,70 @@ export default function AccessControl() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Kullanıcı ara..."
+                placeholder={mode === "users" ? "Kullanıcı ara..." : "Grup ara..."}
               />
             </div>
 
-            <div className="access-add-user">
-              <input
-                value={newUserEmail}
-                onChange={(e) => setNewUserEmail(e.target.value)}
-                placeholder="yeni.kullanici@yemeksepeti.com"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addUser();
-                }}
-              />
-              <button onClick={addUser}>
-                <Plus size={17} />
-              </button>
-            </div>
+            {mode === "users" ? (
+              <div className="access-add-user">
+                <input
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  placeholder="yeni.kullanici@yemeksepeti.com"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addUser();
+                  }}
+                />
+                <button onClick={addUser}>
+                  <Plus size={17} />
+                </button>
+              </div>
+            ) : (
+              <div className="access-add-user">
+                <input
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="Yeni grup adı"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addGroup();
+                  }}
+                />
+                <button onClick={addGroup}>
+                  <Plus size={17} />
+                </button>
+              </div>
+            )}
 
             <div className="access-user-list">
-              {users.map((item) => (
-                <button
-                  key={item.email}
-                  className={item.email === selectedUser?.email ? "active" : ""}
-                  onClick={() => setSelectedEmail(item.email)}
-                >
-                  <UserRound size={17} />
-                  <div>
-                    <strong>{item.name || item.email}</strong>
-                    <span>{item.email}</span>
-                  </div>
-                  <small>{item.role}</small>
-                </button>
-              ))}
+              {mode === "users"
+                ? users.map((item) => (
+                    <button
+                      key={item.email}
+                      className={item.email === selectedUser?.email ? "active" : ""}
+                      onClick={() => setSelectedEmail(item.email)}
+                    >
+                      <UserRound size={17} />
+                      <div>
+                        <strong>{item.name || item.email}</strong>
+                        <span>{item.email}</span>
+                      </div>
+                      <small>{item.role}</small>
+                    </button>
+                  ))
+                : groups.map((item) => (
+                    <button
+                      key={item.id}
+                      className={item.id === selectedGroup?.id ? "active" : ""}
+                      onClick={() => setSelectedGroupId(item.id)}
+                    >
+                      <UsersRound size={17} />
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span>{item.description || item.id}</span>
+                      </div>
+                      <small>{item.status}</small>
+                    </button>
+                  ))}
             </div>
           </motion.aside>
 
@@ -463,60 +615,110 @@ export default function AccessControl() {
             animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
             transition={{ duration: 0.58, delay: 0.22, ease: [0.16, 0.86, 0.22, 1] }}
           >
-            {selectedUser ? (
+            {selectedEntity ? (
               <>
                 <div className="access-editor-head">
                   <div>
-                    <span>Selected User</span>
-                    <h2>{selectedUser.email}</h2>
+                    <span>{mode === "users" ? "Selected User" : "Selected Group"}</span>
+                    <h2>{mode === "users" ? selectedUser.email : selectedGroup.name}</h2>
                   </div>
 
                   <div className="access-editor-actions">
-                    <button onClick={duplicateUser}>
+                    <button onClick={duplicateEntity}>
                       <Copy size={16} />
                       Kopyala
                     </button>
 
-                    <button className="danger" onClick={removeUser}>
+                    <button className="danger" onClick={removeEntity}>
                       <Trash2 size={16} />
                       Sil
                     </button>
                   </div>
                 </div>
 
-                <div className="access-profile">
-                  <label>
-                    Ad
-                    <input
-                      value={selectedUser.name || ""}
-                      onChange={(e) => updateSelectedUser({ name: e.target.value })}
-                    />
-                  </label>
+                {mode === "users" ? (
+                  <>
+                    <div className="access-profile">
+                      <label>
+                        Ad
+                        <input
+                          value={selectedUser.name || ""}
+                          onChange={(e) => updateSelectedEntity({ name: e.target.value })}
+                        />
+                      </label>
 
-                  <label>
-                    Rol
-                    <select
-                      value={selectedUser.role}
-                      onChange={(e) => updateSelectedUser({ role: e.target.value })}
-                    >
-                      <option value="super_admin">super_admin</option>
-                      <option value="admin">admin</option>
-                      <option value="module_admin">module_admin</option>
-                      <option value="viewer">viewer</option>
-                    </select>
-                  </label>
+                      <label>
+                        Rol
+                        <select
+                          value={selectedUser.role}
+                          onChange={(e) => updateSelectedEntity({ role: e.target.value })}
+                        >
+                          <option value="super_admin">super_admin</option>
+                          <option value="admin">admin</option>
+                          <option value="module_admin">module_admin</option>
+                          <option value="viewer">viewer</option>
+                        </select>
+                      </label>
 
-                  <label>
-                    Durum
-                    <select
-                      value={selectedUser.status}
-                      onChange={(e) => updateSelectedUser({ status: e.target.value })}
-                    >
-                      <option value="active">active</option>
-                      <option value="passive">passive</option>
-                    </select>
-                  </label>
-                </div>
+                      <label>
+                        Durum
+                        <select
+                          value={selectedUser.status}
+                          onChange={(e) => updateSelectedEntity({ status: e.target.value })}
+                        >
+                          <option value="active">active</option>
+                          <option value="passive">passive</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="access-group-box">
+                      <h4>Kullanıcı Grupları</h4>
+                      <div>
+                        {Object.values(draft.groups || {}).map((group) => (
+                          <label key={group.id}>
+                            <input
+                              type="checkbox"
+                              checked={(selectedUser.groups || []).includes(group.id)}
+                              disabled={selectedUser.role === "super_admin" && group.id === "super_admins"}
+                              onChange={() => toggleUserGroup(group.id)}
+                            />
+                            <span>{group.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="access-profile access-profile-group">
+                    <label>
+                      Grup Adı
+                      <input
+                        value={selectedGroup.name || ""}
+                        onChange={(e) => updateSelectedEntity({ name: e.target.value })}
+                      />
+                    </label>
+
+                    <label>
+                      Açıklama
+                      <input
+                        value={selectedGroup.description || ""}
+                        onChange={(e) => updateSelectedEntity({ description: e.target.value })}
+                      />
+                    </label>
+
+                    <label>
+                      Durum
+                      <select
+                        value={selectedGroup.status}
+                        onChange={(e) => updateSelectedEntity({ status: e.target.value })}
+                      >
+                        <option value="active">active</option>
+                        <option value="passive">passive</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
 
                 <div className="access-module-table">
                   <div className="access-table-head access-table-head-v2">
@@ -527,7 +729,7 @@ export default function AccessControl() {
                   </div>
 
                   {ACCESS_MODULES.map((module) => {
-                    const moduleAccess = ensureModuleAccess(selectedUser, module.key);
+                    const moduleAccess = ensureModuleAccess(selectedEntity, module.key);
                     const hasDetail = Boolean(MODULE_DETAIL_CONFIG[module.key]);
 
                     return (
@@ -541,7 +743,7 @@ export default function AccessControl() {
                           <input
                             type="checkbox"
                             checked={Boolean(moduleAccess.view)}
-                            disabled={selectedUser.role === "super_admin"}
+                            disabled={mode === "users" && selectedUser.role === "super_admin"}
                             onChange={(e) => updateModule(module.key, "view", e.target.checked)}
                           />
                           <span />
@@ -551,7 +753,7 @@ export default function AccessControl() {
                           <input
                             type="checkbox"
                             checked={Boolean(moduleAccess.admin)}
-                            disabled={selectedUser.role === "super_admin"}
+                            disabled={mode === "users" && selectedUser.role === "super_admin"}
                             onChange={(e) => updateModule(module.key, "admin", e.target.checked)}
                           />
                           <span />
@@ -589,7 +791,7 @@ export default function AccessControl() {
             ) : (
               <div className="access-empty">
                 <UsersRound size={30} />
-                <strong>Kullanıcı seçilmedi.</strong>
+                <strong>Seçim yapılmadı.</strong>
               </div>
             )}
           </motion.section>
@@ -603,10 +805,12 @@ export default function AccessControl() {
             {selectedDetailConfig && selectedModuleAccess ? (
               <>
                 <div className="access-detail-head">
-                  <span>Module Detail</span>
+                  <span>{mode === "users" ? "User Detail" : "Group Detail"}</span>
                   <h3>{selectedDetailConfig.title}</h3>
                   <p>
-                    Bu alan, modül içindeki ekranları, aksiyonları ve veri kapsamını belirler.
+                    {mode === "users"
+                      ? "Kullanıcıya özel istisna yetkileri. Grup yetkileriyle birleşerek çalışır."
+                      : "Bu gruba üye olan tüm kullanıcıların kazanacağı ortak yetkiler."}
                   </p>
                 </div>
 
@@ -618,7 +822,7 @@ export default function AccessControl() {
                       <input
                         type="checkbox"
                         checked={Boolean(selectedModuleAccess.details?.features?.[feature.key])}
-                        disabled={selectedUser?.role === "super_admin"}
+                        disabled={mode === "users" && selectedUser?.role === "super_admin"}
                         onChange={(e) =>
                           updateDetail(selectedModuleKey, "features", feature.key, e.target.checked)
                         }
@@ -640,7 +844,7 @@ export default function AccessControl() {
                         <input
                           type="checkbox"
                           checked={Boolean(selectedModuleAccess.details?.actions?.[action.key])}
-                          disabled={selectedUser?.role === "super_admin"}
+                          disabled={mode === "users" && selectedUser?.role === "super_admin"}
                           onChange={(e) =>
                             updateDetail(selectedModuleKey, "actions", action.key, e.target.checked)
                           }
@@ -657,7 +861,7 @@ export default function AccessControl() {
                   <select
                     className="access-scope-select"
                     value={selectedModuleAccess.details?.scope?.type || "all"}
-                    disabled={selectedUser?.role === "super_admin"}
+                    disabled={mode === "users" && selectedUser?.role === "super_admin"}
                     onChange={(e) => updateScopeType(selectedModuleKey, e.target.value)}
                   >
                     {selectedDetailConfig.scope.types.map((scopeType) => (
@@ -673,7 +877,7 @@ export default function AccessControl() {
                       options={SCOPE_OPTIONS.regions}
                       selected={selectedModuleAccess.details?.scope?.regions || []}
                       onToggle={(value) => updateScopeList(selectedModuleKey, "regions", value)}
-                      disabled={selectedUser?.role === "super_admin"}
+                      disabled={mode === "users" && selectedUser?.role === "super_admin"}
                     />
                   ) : null}
 
@@ -683,7 +887,7 @@ export default function AccessControl() {
                       options={SCOPE_OPTIONS.warehouses}
                       selected={selectedModuleAccess.details?.scope?.warehouses || []}
                       onToggle={(value) => updateScopeList(selectedModuleKey, "warehouses", value)}
-                      disabled={selectedUser?.role === "super_admin"}
+                      disabled={mode === "users" && selectedUser?.role === "super_admin"}
                     />
                   ) : null}
 
@@ -693,7 +897,7 @@ export default function AccessControl() {
                       options={SCOPE_OPTIONS.suppliers}
                       selected={selectedModuleAccess.details?.scope?.suppliers || []}
                       onToggle={(value) => updateScopeList(selectedModuleKey, "suppliers", value)}
-                      disabled={selectedUser?.role === "super_admin"}
+                      disabled={mode === "users" && selectedUser?.role === "super_admin"}
                     />
                   ) : null}
 
@@ -703,7 +907,7 @@ export default function AccessControl() {
                       options={SCOPE_OPTIONS.costCenters}
                       selected={selectedModuleAccess.details?.scope?.costCenters || []}
                       onToggle={(value) => updateScopeList(selectedModuleKey, "costCenters", value)}
-                      disabled={selectedUser?.role === "super_admin"}
+                      disabled={mode === "users" && selectedUser?.role === "super_admin"}
                     />
                   ) : null}
                 </div>

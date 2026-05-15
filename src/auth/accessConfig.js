@@ -1,43 +1,18 @@
-﻿const ACCESS_STORAGE_KEY = "opex_access_config_v2";
-const LEGACY_ACCESS_STORAGE_KEY = "opex_access_config_v1";
+﻿const ACCESS_STORAGE_KEY = "opex_access_config_v3";
+const LEGACY_ACCESS_STORAGE_KEYS = [
+  "opex_access_config_v2",
+  "opex_access_config_v1",
+];
 const SESSION_STORAGE_KEY = "opex_current_user";
 
 export const ACCESS_MODULES = [
-  {
-    key: "planogram",
-    title: "Planogram Studio",
-    description: "Raf, fixture, facing ve planogram operasyonu",
-  },
-  {
-    key: "dockos",
-    title: "DockOS",
-    description: "Sevkiyat, randevu, PO ve depo kabul kontrolü",
-  },
-  {
-    key: "budget",
-    title: "Budget Control",
-    description: "PR, PO, fatura ve bütçe görünürlüğü",
-  },
-  {
-    key: "academy",
-    title: "OPEX Academy",
-    description: "SOP, eğitim ve bilgi merkezi",
-  },
-  {
-    key: "insight",
-    title: "AI Insight Base",
-    description: "Operasyon içgörüsü ve aksiyon önerileri",
-  },
-  {
-    key: "cycle_count",
-    title: "Cycle Count Risk",
-    description: "Sayım riski, batch kontrolü ve stok doğruluğu",
-  },
-  {
-    key: "admin_access",
-    title: "Access Control",
-    description: "Kullanıcı, grup ve modül erişim yönetimi",
-  },
+  { key: "planogram", title: "Planogram Studio", description: "Raf, fixture, facing ve planogram operasyonu" },
+  { key: "dockos", title: "DockOS", description: "Sevkiyat, randevu, PO ve depo kabul kontrolü" },
+  { key: "budget", title: "Budget Control", description: "PR, PO, fatura ve bütçe görünürlüğü" },
+  { key: "academy", title: "OPEX Academy", description: "SOP, eğitim ve bilgi merkezi" },
+  { key: "insight", title: "AI Insight Base", description: "Operasyon içgörüsü ve aksiyon önerileri" },
+  { key: "cycle_count", title: "Cycle Count Risk", description: "Sayım riski, batch kontrolü ve stok doğruluğu" },
+  { key: "admin_access", title: "Access Control", description: "Kullanıcı, grup ve modül erişim yönetimi" },
 ];
 
 export const MODULE_DETAIL_CONFIG = {
@@ -124,15 +99,7 @@ export const MODULE_DETAIL_CONFIG = {
 };
 
 export const SCOPE_OPTIONS = {
-  regions: [
-    "Marmara",
-    "İç Anadolu",
-    "Ege",
-    "Akdeniz",
-    "Karadeniz",
-    "Doğu Anadolu",
-    "Güneydoğu Anadolu",
-  ],
+  regions: ["Marmara", "İç Anadolu", "Ege", "Akdeniz", "Karadeniz", "Doğu Anadolu", "Güneydoğu Anadolu"],
   warehouses: [
     "Fulya (İstanbul)",
     "Çeliktepe (İstanbul)",
@@ -147,20 +114,8 @@ export const SCOPE_OPTIONS = {
     "Kozyatağı (İstanbul)",
     "Göztepe (İstanbul)",
   ],
-  suppliers: [
-    "Tedarikçi A",
-    "Tedarikçi B",
-    "Tedarikçi C",
-    "Everyday Roastery",
-    "Yerel Üretici",
-  ],
-  costCenters: [
-    "OPEX",
-    "DMart Operations",
-    "Inbound",
-    "Finance Ops",
-    "Store Excellence",
-  ],
+  suppliers: ["Tedarikçi A", "Tedarikçi B", "Tedarikçi C", "Everyday Roastery", "Yerel Üretici"],
+  costCenters: ["OPEX", "DMart Operations", "Inbound", "Finance Ops", "Store Excellence"],
 };
 
 function safeJsonParse(value, fallback) {
@@ -179,6 +134,10 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function unique(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 function createDetailAccess(moduleKey, level = "none") {
   const detailConfig = MODULE_DETAIL_CONFIG[moduleKey];
 
@@ -186,46 +145,25 @@ function createDetailAccess(moduleKey, level = "none") {
     return {
       features: {},
       actions: {},
-      scope: {
-        type: "all",
-        regions: [],
-        warehouses: [],
-        suppliers: [],
-        costCenters: [],
-      },
+      scope: { type: "all", regions: [], warehouses: [], suppliers: [], costCenters: [] },
     };
   }
 
   const full = level === "admin" || level === "super";
   const viewOnly = level === "view";
 
-  const features = detailConfig.features.reduce((acc, feature) => {
-    acc[feature.key] = full || viewOnly;
-    return acc;
-  }, {});
-
-  const actions = detailConfig.actions.reduce((acc, action) => {
-    if (level === "super" || level === "admin") {
-      acc[action.key] = true;
-    } else if (level === "view") {
-      acc[action.key] = action.key === "view" || action.key === "export";
-    } else {
-      acc[action.key] = false;
-    }
-
-    return acc;
-  }, {});
-
   return {
-    features,
-    actions,
-    scope: {
-      type: "all",
-      regions: [],
-      warehouses: [],
-      suppliers: [],
-      costCenters: [],
-    },
+    features: detailConfig.features.reduce((acc, feature) => {
+      acc[feature.key] = full || viewOnly;
+      return acc;
+    }, {}),
+    actions: detailConfig.actions.reduce((acc, action) => {
+      if (full) acc[action.key] = true;
+      else if (viewOnly) acc[action.key] = action.key === "view" || action.key === "export";
+      else acc[action.key] = false;
+      return acc;
+    }, {}),
+    scope: { type: "all", regions: [], warehouses: [], suppliers: [], costCenters: [] },
   };
 }
 
@@ -248,11 +186,11 @@ function createModulesForLevel(levelByModule = {}) {
 }
 
 export const DEFAULT_ACCESS_CONFIG = {
-  users: {
-    "erdi.aydin@yemeksepeti.com": {
-      email: "erdi.aydin@yemeksepeti.com",
-      name: "Erdi Aydın",
-      role: "super_admin",
+  groups: {
+    super_admins: {
+      id: "super_admins",
+      name: "Super Admins",
+      description: "Tüm modüller ve tüm yönetim alanları",
       status: "active",
       modules: createModulesForLevel({
         planogram: "super",
@@ -264,19 +202,76 @@ export const DEFAULT_ACCESS_CONFIG = {
         admin_access: "super",
       }),
     },
+    dockos_admins: {
+      id: "dockos_admins",
+      name: "DockOS Admins",
+      description: "DockOS yönetimi, PO, sevkiyat ve randevu operasyonları",
+      status: "active",
+      modules: createModulesForLevel({
+        dockos: "admin",
+      }),
+    },
+    construction_team: {
+      id: "construction_team",
+      name: "İnşaat Ekibi",
+      description: "İnşaat, bakım, tadilat, saha geliştirme ve sevkiyat takip görünümü",
+      status: "active",
+      modules: createModulesForLevel({
+        dockos: "view",
+        budget: "view",
+      }),
+    },
+    finance_team: {
+      id: "finance_team",
+      name: "Finans Ekibi",
+      description: "Budget, PR, PO, fatura ve maliyet merkezi görünürlüğü",
+      status: "active",
+      modules: createModulesForLevel({
+        budget: "admin",
+        dockos: "view",
+      }),
+    },
+    operation_leaders: {
+      id: "operation_leaders",
+      name: "Operasyon Liderleri",
+      description: "Operasyon modüllerinde geniş görüntüleme ve export",
+      status: "active",
+      modules: createModulesForLevel({
+        planogram: "view",
+        dockos: "view",
+        budget: "view",
+        cycle_count: "view",
+      }),
+    },
+    viewers: {
+      id: "viewers",
+      name: "Viewer",
+      description: "Temel görüntüleme grubu",
+      status: "active",
+      modules: createModulesForLevel({
+        planogram: "view",
+        dockos: "view",
+      }),
+    },
+  },
+  users: {
+    "erdi.aydin@yemeksepeti.com": {
+      email: "erdi.aydin@yemeksepeti.com",
+      name: "Erdi Aydın",
+      role: "super_admin",
+      status: "active",
+      groups: ["super_admins"],
+      modules: createModulesForLevel({}),
+    },
     "admin@yemeksepeti.com": {
       email: "admin@yemeksepeti.com",
       name: "Admin User",
       role: "admin",
       status: "active",
+      groups: ["dockos_admins"],
       modules: createModulesForLevel({
         planogram: "admin",
-        dockos: "admin",
         budget: "admin",
-        academy: "none",
-        insight: "none",
-        cycle_count: "none",
-        admin_access: "none",
       }),
     },
     "viewer@yemeksepeti.com": {
@@ -284,21 +279,15 @@ export const DEFAULT_ACCESS_CONFIG = {
       name: "Viewer User",
       role: "viewer",
       status: "active",
-      modules: createModulesForLevel({
-        planogram: "view",
-        dockos: "view",
-        budget: "none",
-        academy: "none",
-        insight: "none",
-        cycle_count: "none",
-        admin_access: "none",
-      }),
+      groups: ["viewers"],
+      modules: createModulesForLevel({}),
     },
     "noaccess@yemeksepeti.com": {
       email: "noaccess@yemeksepeti.com",
       name: "No Access User",
       role: "viewer",
       status: "active",
+      groups: [],
       modules: createModulesForLevel({}),
     },
   },
@@ -331,40 +320,61 @@ function normalizeModuleAccess(moduleKey, access = {}) {
   };
 }
 
+function normalizeModules(modules = {}, role = "viewer") {
+  return ACCESS_MODULES.reduce((acc, module) => {
+    if (role === "super_admin") acc[module.key] = createModuleAccess(module.key, "super");
+    else acc[module.key] = normalizeModuleAccess(module.key, modules[module.key] || {});
+    return acc;
+  }, {});
+}
+
 function normalizeUser(email, user = {}) {
   const cleanEmail = normalizeEmail(email || user.email);
   const existingDefault = DEFAULT_ACCESS_CONFIG.users[cleanEmail];
 
-  const normalized = {
+  const role = user.role || existingDefault?.role || "viewer";
+
+  return {
     email: cleanEmail,
     name: user.name || existingDefault?.name || cleanEmail,
-    role: user.role || existingDefault?.role || "viewer",
+    role,
     status: user.status || existingDefault?.status || "active",
-    modules: {},
+    groups: unique([...(existingDefault?.groups || []), ...(user.groups || [])]),
+    modules: normalizeModules(user.modules || existingDefault?.modules || {}, role),
   };
+}
 
-  ACCESS_MODULES.forEach((module) => {
-    normalized.modules[module.key] = normalizeModuleAccess(
-      module.key,
-      user.modules?.[module.key] || existingDefault?.modules?.[module.key] || {}
-    );
+function normalizeGroup(id, group = {}) {
+  const groupId = String(id || group.id || "").trim();
+  const existingDefault = DEFAULT_ACCESS_CONFIG.groups[groupId];
 
-    if (normalized.role === "super_admin") {
-      normalized.modules[module.key] = createModuleAccess(module.key, "super");
-    }
-  });
+  return {
+    id: groupId,
+    name: group.name || existingDefault?.name || groupId,
+    description: group.description || existingDefault?.description || "",
+    status: group.status || existingDefault?.status || "active",
+    modules: normalizeModules(group.modules || existingDefault?.modules || {}, "group"),
+  };
+}
 
-  return normalized;
+function loadStoredConfig() {
+  if (typeof window === "undefined") return null;
+
+  const current = window.localStorage.getItem(ACCESS_STORAGE_KEY);
+  if (current) return safeJsonParse(current, null);
+
+  for (const key of LEGACY_ACCESS_STORAGE_KEYS) {
+    const value = window.localStorage.getItem(key);
+    if (value) return safeJsonParse(value, null);
+  }
+
+  return null;
 }
 
 export function getAccessConfig() {
   if (typeof window === "undefined") return clone(DEFAULT_ACCESS_CONFIG);
 
-  const storedV2 = window.localStorage.getItem(ACCESS_STORAGE_KEY);
-  const storedV1 = window.localStorage.getItem(LEGACY_ACCESS_STORAGE_KEY);
-  const stored = storedV2 || storedV1;
-
-  const parsed = stored ? safeJsonParse(stored, null) : null;
+  const parsed = loadStoredConfig();
 
   if (!parsed || !parsed.users) {
     window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(DEFAULT_ACCESS_CONFIG));
@@ -372,6 +382,11 @@ export function getAccessConfig() {
   }
 
   const merged = clone(DEFAULT_ACCESS_CONFIG);
+
+  Object.entries(parsed.groups || {}).forEach(([id, group]) => {
+    const groupId = String(id || group.id || "").trim();
+    if (groupId) merged.groups[groupId] = normalizeGroup(groupId, group);
+  });
 
   Object.entries(parsed.users || {}).forEach(([email, accessUser]) => {
     const cleanEmail = normalizeEmail(email);
@@ -386,6 +401,11 @@ export function saveAccessConfig(config) {
   if (typeof window === "undefined") return;
 
   const normalized = {
+    groups: Object.entries(config.groups || {}).reduce((acc, [id, group]) => {
+      const groupId = String(id || group.id || "").trim();
+      if (groupId) acc[groupId] = normalizeGroup(groupId, group);
+      return acc;
+    }, {}),
     users: Object.entries(config.users || {}).reduce((acc, [email, accessUser]) => {
       const cleanEmail = normalizeEmail(email);
       acc[cleanEmail] = normalizeUser(cleanEmail, accessUser);
@@ -437,12 +457,57 @@ export function buildUserFromEmail(email) {
   };
 }
 
-export function getUserPermissions(email) {
+function mergeScope(currentScope, incomingScope) {
+  const current = currentScope || { type: "none", regions: [], warehouses: [], suppliers: [], costCenters: [] };
+  const incoming = incomingScope || { type: "none", regions: [], warehouses: [], suppliers: [], costCenters: [] };
+
+  if (current.type === "all" || incoming.type === "all") {
+    return { type: "all", regions: [], warehouses: [], suppliers: [], costCenters: [] };
+  }
+
+  return {
+    type: incoming.type !== "none" ? incoming.type : current.type,
+    regions: unique([...(current.regions || []), ...(incoming.regions || [])]),
+    warehouses: unique([...(current.warehouses || []), ...(incoming.warehouses || [])]),
+    suppliers: unique([...(current.suppliers || []), ...(incoming.suppliers || [])]),
+    costCenters: unique([...(current.costCenters || []), ...(incoming.costCenters || [])]),
+  };
+}
+
+function mergeModuleAccess(moduleKey, list = []) {
+  const base = createModuleAccess(moduleKey, "none");
+
+  return list.reduce((acc, item) => {
+    if (!item) return acc;
+
+    const normalized = normalizeModuleAccess(moduleKey, item);
+
+    return {
+      view: acc.view || normalized.view,
+      admin: acc.admin || normalized.admin,
+      details: {
+        features: Object.keys(base.details.features || {}).reduce((obj, key) => {
+          obj[key] = Boolean(acc.details.features?.[key] || normalized.details.features?.[key]);
+          return obj;
+        }, {}),
+        actions: Object.keys(base.details.actions || {}).reduce((obj, key) => {
+          obj[key] = Boolean(acc.details.actions?.[key] || normalized.details.actions?.[key]);
+          return obj;
+        }, {}),
+        scope: mergeScope(acc.details.scope, normalized.details.scope),
+      },
+    };
+  }, base);
+}
+
+export function getEffectiveAccess(email) {
   const cleanEmail = normalizeEmail(email);
   const config = getAccessConfig();
   const accessUser = config.users[cleanEmail];
 
-  if (!accessUser || accessUser.status !== "active") return {};
+  if (!accessUser || accessUser.status !== "active") {
+    return createModulesForLevel({});
+  }
 
   if (accessUser.role === "super_admin") {
     return createModulesForLevel(
@@ -453,7 +518,23 @@ export function getUserPermissions(email) {
     );
   }
 
-  return accessUser.modules || {};
+  return ACCESS_MODULES.reduce((acc, module) => {
+    const groupAccessList = (accessUser.groups || [])
+      .map((groupId) => config.groups?.[groupId])
+      .filter((group) => group && group.status === "active")
+      .map((group) => group.modules?.[module.key]);
+
+    acc[module.key] = mergeModuleAccess(module.key, [
+      ...groupAccessList,
+      accessUser.modules?.[module.key],
+    ]);
+
+    return acc;
+  }, {});
+}
+
+export function getUserPermissions(email) {
+  return getEffectiveAccess(email);
 }
 
 export function canUser(email, moduleKey, action = "view") {
@@ -464,7 +545,7 @@ export function canUser(email, moduleKey, action = "view") {
   if (!accessUser || accessUser.status !== "active") return false;
   if (accessUser.role === "super_admin") return true;
 
-  const moduleAccess = accessUser.modules?.[moduleKey];
+  const moduleAccess = getEffectiveAccess(cleanEmail)?.[moduleKey];
 
   if (action === "admin") return Boolean(moduleAccess?.admin);
   return Boolean(moduleAccess?.view);
@@ -478,9 +559,9 @@ export function canUserFeature(email, moduleKey, featureKey) {
   if (!accessUser || accessUser.status !== "active") return false;
   if (accessUser.role === "super_admin") return true;
 
-  const moduleAccess = accessUser.modules?.[moduleKey];
-  if (!moduleAccess?.view) return false;
+  const moduleAccess = getEffectiveAccess(cleanEmail)?.[moduleKey];
 
+  if (!moduleAccess?.view) return false;
   return Boolean(moduleAccess?.details?.features?.[featureKey]);
 }
 
@@ -492,9 +573,9 @@ export function canUserAction(email, moduleKey, actionKey) {
   if (!accessUser || accessUser.status !== "active") return false;
   if (accessUser.role === "super_admin") return true;
 
-  const moduleAccess = accessUser.modules?.[moduleKey];
-  if (!moduleAccess?.view) return false;
+  const moduleAccess = getEffectiveAccess(cleanEmail)?.[moduleKey];
 
+  if (!moduleAccess?.view) return false;
   return Boolean(moduleAccess?.details?.actions?.[actionKey]);
 }
 
@@ -504,26 +585,14 @@ export function getUserModuleScope(email, moduleKey) {
   const accessUser = config.users[cleanEmail];
 
   if (!accessUser || accessUser.status !== "active") {
-    return {
-      type: "none",
-      regions: [],
-      warehouses: [],
-      suppliers: [],
-      costCenters: [],
-    };
+    return { type: "none", regions: [], warehouses: [], suppliers: [], costCenters: [] };
   }
 
   if (accessUser.role === "super_admin") {
-    return {
-      type: "all",
-      regions: [],
-      warehouses: [],
-      suppliers: [],
-      costCenters: [],
-    };
+    return { type: "all", regions: [], warehouses: [], suppliers: [], costCenters: [] };
   }
 
-  return accessUser.modules?.[moduleKey]?.details?.scope || {
+  return getEffectiveAccess(cleanEmail)?.[moduleKey]?.details?.scope || {
     type: "all",
     regions: [],
     warehouses: [],

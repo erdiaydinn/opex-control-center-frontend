@@ -805,3 +805,101 @@
 }
 
 /* === ACCESS CONTROL DETAIL PERMISSIONS V2 END === */
+
+
+/* === ACCESS CONTROL GROUP PERMISSIONS V3 START === */
+
+.access-mode-tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin: 0 0 22px;
+  padding: 6px;
+  border: 1px solid rgba(15,23,42,.09);
+  border-radius: 999px;
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 14px 38px rgba(15,23,42,.07);
+}
+
+.access-mode-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  color: #344054;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.access-mode-tabs button.active {
+  color: #fff;
+  background: linear-gradient(135deg, #FA0050, #7c3aed);
+  box-shadow: 0 12px 28px rgba(250,0,80,.18);
+}
+
+.access-group-box {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(15,23,42,.09);
+  border-radius: 22px;
+  background: rgba(248,250,252,.66);
+}
+
+.access-group-box h4 {
+  margin: 0 0 12px;
+  color: #101828;
+  font-size: 13px;
+  font-weight: 1000;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.access-group-box > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.access-group-box label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(15,23,42,.08);
+  border-radius: 999px;
+  color: #344054;
+  background: rgba(255,255,255,.78);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.access-group-box input {
+  accent-color: #FA0050;
+}
+
+.access-profile-group {
+  grid-template-columns: minmax(180px, 240px) 1fr 150px;
+}
+
+@media (max-width: 760px) {
+  .access-mode-tabs {
+    width: 100%;
+  }
+
+  .access-mode-tabs button {
+    width: 100%;
+  }
+
+  .access-profile-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* === ACCESS CONTROL GROUP PERMISSIONS V3 END === */

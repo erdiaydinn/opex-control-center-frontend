@@ -7,6 +7,7 @@ import ControlCenterHome from "./modules/control-center/ControlCenterHome.jsx";
 import PlanogramStudio from "./modules/planogram/PlanogramStudio.jsx";
 import BudgetIntelligence from "./modules/budget-intelligence/BudgetIntelligence.jsx";
 import DockOSDashboard from "./modules/DockOS/DockOSDashboard.jsx";
+import AccessControl from "./modules/access-control/AccessControl.jsx";
 
 export default function App() {
   return (
@@ -32,6 +33,15 @@ export default function App() {
       />
 
       <Route
+        path="/dockos"
+        element={
+          <ProtectedRoute moduleKey="dockos">
+            <DockOSDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/budget"
         element={
           <ProtectedRoute moduleKey="budget">
@@ -41,14 +51,15 @@ export default function App() {
       />
 
       <Route
-        path="/dockos"
+        path="/access-control"
         element={
-          <ProtectedRoute moduleKey="dockos">
-            <DockOSDashboard />
+          <ProtectedRoute moduleKey="admin_access" action="admin">
+            <AccessControl />
           </ProtectedRoute>
         }
       />
 
+      <Route path="/river" element={<Navigate to="/dockos" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

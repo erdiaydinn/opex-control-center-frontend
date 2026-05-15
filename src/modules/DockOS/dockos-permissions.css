@@ -1,0 +1,220 @@
+﻿.dockos-permission-shell {
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.08), transparent 26%),
+    radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.07), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f7f8fc 48%, #eef2ff 100%);
+}
+
+.dockos-permission-banner {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(440px, 1.2fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: min(1400px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 0 0 28px 28px;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(24px);
+  box-shadow:
+    0 18px 54px rgba(15,23,42,.12),
+    inset 0 1px 0 rgba(255,255,255,.88);
+}
+
+.dockos-permission-main {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.dockos-permission-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 18px;
+  color: #fff;
+  background: linear-gradient(135deg, #FA0050, #7c3aed);
+  box-shadow: 0 14px 32px rgba(250,0,80,.22);
+}
+
+.dockos-permission-main span {
+  display: block;
+  color: #FA0050;
+  font-size: 11px;
+  font-weight: 1000;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.dockos-permission-main strong {
+  display: block;
+  margin-top: 4px;
+  color: #101828;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.dockos-permission-main p {
+  margin: 3px 0 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.dockos-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+}
+
+.dockos-permission-grid div {
+  min-height: 70px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15,23,42,.075);
+  border-radius: 18px;
+  background: rgba(248,250,252,.72);
+}
+
+.dockos-permission-grid svg {
+  color: #FA0050;
+}
+
+.dockos-permission-grid small {
+  display: block;
+  margin-top: 5px;
+  color: #667085;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dockos-permission-grid strong {
+  display: block;
+  margin-top: 4px;
+  color: #101828;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.dockos-permission-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.dockos-permission-chips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.dockos-permission-chips span.on {
+  color: #047857;
+  background: rgba(16,185,129,.12);
+}
+
+.dockos-permission-chips span.off {
+  color: #92400e;
+  background: rgba(245,158,11,.13);
+}
+
+.dockos-locked-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.14), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.11), transparent 31%),
+    linear-gradient(135deg, #ffffff 0%, #f7f8fc 48%, #eef2ff 100%);
+}
+
+.dockos-locked-card {
+  width: min(520px, 100%);
+  padding: 34px;
+  text-align: center;
+  border: 1px solid rgba(15,23,42,.09);
+  border-radius: 32px;
+  background: rgba(255,255,255,.88);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 28px 84px rgba(15,23,42,.12);
+}
+
+.dockos-locked-card > div {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  border-radius: 22px;
+  color: #fff;
+  background: linear-gradient(135deg, #FA0050, #7c3aed);
+}
+
+.dockos-locked-card h1 {
+  margin: 18px 0 0;
+  color: #101828;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -.06em;
+}
+
+.dockos-locked-card p {
+  margin: 12px 0 0;
+  color: #667085;
+  line-height: 1.55;
+}
+
+.dockos-locked-card button {
+  min-height: 46px;
+  margin-top: 22px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(135deg, #FA0050, #7c3aed);
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+/* Permission hint classes for future DockOS UI bindings */
+.dockos-feature-excelUpload-off [data-dockos-feature="excelUpload"],
+.dockos-feature-duplicateResolution-off [data-dockos-feature="duplicateResolution"],
+.dockos-feature-vehicleTracking-off [data-dockos-feature="vehicleTracking"],
+.dockos-action-export-off [data-dockos-action="export"],
+.dockos-action-approve-off [data-dockos-action="approve"],
+.dockos-action-edit-off [data-dockos-action="edit"],
+.dockos-action-delete-off [data-dockos-action="delete"] {
+  display: none !important;
+}
+
+@media (max-width: 1180px) {
+  .dockos-permission-banner {
+    grid-template-columns: 1fr;
+    position: relative;
+    border-radius: 0 0 24px 24px;
+  }
+
+  .dockos-permission-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dockos-permission-chips {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

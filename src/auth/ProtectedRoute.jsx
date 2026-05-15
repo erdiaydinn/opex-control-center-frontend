@@ -1,9 +1,10 @@
 ﻿import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext.jsx";
 
-export default function ProtectedRoute({ moduleKey, action = "view", children }) {
-  const { user, booting, can } = useAuth();
+export default function ProtectedRoute({ children, moduleKey, action = "view" }) {
+  const { user, booting, can, isSuperAdmin } = useAuth();
+  const location = useLocation();
 
   if (booting) {
     return (
@@ -17,10 +18,18 @@ export default function ProtectedRoute({ moduleKey, action = "view", children })
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (moduleKey && !can(moduleKey, action)) {
+  const superAdmin =
+    typeof isSuperAdmin === "function" ? isSuperAdmin() : Boolean(isSuperAdmin);
+
+  const allowed =
+    !moduleKey ||
+    superAdmin ||
+    (typeof can === "function" && can(moduleKey, action));
+
+  if (!allowed) {
     return <Navigate to="/" replace />;
   }
 

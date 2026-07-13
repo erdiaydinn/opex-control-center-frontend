@@ -728,14 +728,16 @@ const screenTranslations = {
     scopeSupplier: "tedarikçi",
     customSlotTitle: "Parçalı slot oluştur",
     customSlotHelp:
-      "Başlangıç, süre ve adedi belirle; seçili tarihler için saatlik veya özel süreli slotlar aç.",
+      "Başlangıç, süre ve adedi belirle. Örneğin 260 dakika, saatlere bölünmeden tek rezervasyon bloğu olur.",
     slotStart: "Başlangıç Saati",
     slotDuration: "Blok Süresi (dk)",
     slotCount: "Blok Adedi",
-    addSlotBlocks: "Blokları Seçime Ekle",
+    addSlotBlocks: "Özel Blokları Oluştur",
     customSlotInvalid:
-      "Başlangıç, 15–240 dakika süre ve 1–24 blok girin; toplam süre 24 saati aşamaz.",
-    customSlotsAdded: "yeni saat bloğu seçime eklendi.",
+      "Başlangıç, 15–720 dakika süre ve 1–24 blok girin; toplam süre 24 saati aşamaz.",
+    customSlotsAdded: "özel blok oluşturuldu; önceki saatlik seçimin yerini aldı.",
+    customBlockPreview: "Oluşacak tek parça blok:",
+    minutesEachBlock: "dk / blok",
     managementChoiceTitle: "2. Tarihleri nasıl yönetmek istiyorsun?",
     managementChoiceHelp:
       "Önce seçili tarihleri tamamen blokla veya yalnızca ihtiyacın olan saatleri parçalı yönet.",
@@ -960,14 +962,16 @@ const screenTranslations = {
     scopeSupplier: "suppliers",
     customSlotTitle: "Create partial slots",
     customSlotHelp:
-      "Set the start, duration and count to open hourly or custom-length slots for the selected dates.",
+      "Set start, duration and count. For example, 260 minutes becomes one continuous reservation block.",
     slotStart: "Start Time",
     slotDuration: "Block Duration (min)",
     slotCount: "Block Count",
-    addSlotBlocks: "Add Blocks to Selection",
+    addSlotBlocks: "Create Custom Blocks",
     customSlotInvalid:
-      "Enter a start time, 15–240 minute duration and 1–24 blocks; total duration cannot exceed 24 hours.",
-    customSlotsAdded: "new time block(s) added to the selection.",
+      "Enter a start time, 15–720 minute duration and 1–24 blocks; total duration cannot exceed 24 hours.",
+    customSlotsAdded: "custom block(s) created and replaced the previous hourly selection.",
+    customBlockPreview: "Continuous block preview:",
+    minutesEachBlock: "min / block",
     managementChoiceTitle: "2. How should these dates be managed?",
     managementChoiceHelp:
       "Block all selected dates first or manage only the required hours as partial slots.",
@@ -1193,14 +1197,16 @@ const screenTranslations = {
     scopeSupplier: "Lieferanten",
     customSlotTitle: "Teilslots erstellen",
     customSlotHelp:
-      "Start, Dauer und Anzahl festlegen, um stündliche oder benutzerdefinierte Slots zu öffnen.",
+      "Start, Dauer und Anzahl festlegen. Zum Beispiel werden 260 Minuten als ein durchgehender Reservierungsblock erstellt.",
     slotStart: "Startzeit",
     slotDuration: "Blockdauer (Min.)",
     slotCount: "Blockanzahl",
-    addSlotBlocks: "Blöcke zur Auswahl hinzufügen",
+    addSlotBlocks: "Benutzerdefinierte Blöcke erstellen",
     customSlotInvalid:
-      "Startzeit, 15–240 Minuten Dauer und 1–24 Blöcke eingeben; die Gesamtdauer darf 24 Stunden nicht überschreiten.",
-    customSlotsAdded: "neue Zeitblöcke zur Auswahl hinzugefügt.",
+      "Startzeit, 15–720 Minuten Dauer und 1–24 Blöcke eingeben; die Gesamtdauer darf 24 Stunden nicht überschreiten.",
+    customSlotsAdded: "benutzerdefinierte Blöcke erstellt; die vorherige Stundenauswahl wurde ersetzt.",
+    customBlockPreview: "Vorschau des durchgehenden Blocks:",
+    minutesEachBlock: "Min. / Block",
     managementChoiceTitle: "2. Wie sollen diese Daten verwaltet werden?",
     managementChoiceHelp:
       "Ausgewählte Tage vollständig sperren oder nur benötigte Stunden als Teilslots verwalten.",
@@ -1427,14 +1433,16 @@ const screenTranslations = {
     scopeSupplier: "موردون",
     customSlotTitle: "إنشاء مواعيد جزئية",
     customSlotHelp:
-      "حدد البداية والمدة والعدد لفتح مواعيد بالساعة أو بمدة مخصصة.",
+      "حدد البداية والمدة والعدد. على سبيل المثال تُنشأ 260 دقيقة كفترة حجز واحدة متصلة.",
     slotStart: "وقت البدء",
     slotDuration: "مدة الفترة (دقيقة)",
     slotCount: "عدد الفترات",
-    addSlotBlocks: "إضافة الفترات إلى التحديد",
+    addSlotBlocks: "إنشاء فترات مخصصة",
     customSlotInvalid:
-      "أدخل وقت البدء ومدة من 15 إلى 240 دقيقة وعدداً من 1 إلى 24؛ ويجب ألا يتجاوز الإجمالي 24 ساعة.",
-    customSlotsAdded: "فترة زمنية جديدة أضيفت إلى التحديد.",
+      "أدخل وقت البدء ومدة من 15 إلى 720 دقيقة وعدداً من 1 إلى 24؛ ويجب ألا يتجاوز الإجمالي 24 ساعة.",
+    customSlotsAdded: "تم إنشاء الفترات المخصصة واستبدال تحديد الساعات السابق.",
+    customBlockPreview: "معاينة الفترة المتصلة:",
+    minutesEachBlock: "دقيقة / فترة",
     managementChoiceTitle: "2. كيف تريد إدارة التواريخ؟",
     managementChoiceHelp:
       "احظر الأيام المحددة بالكامل أو أدر الساعات المطلوبة فقط كمواعيد جزئية.",

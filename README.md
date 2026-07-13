@@ -1,8 +1,35 @@
-# OPEX Control Center Frontend
+# OPEX Control Center
 
-OPEX Control Center is a modular operations intelligence frontend workspace.
+OPEX Control Center is a modular operations intelligence workspace. The repository now contains the React frontend and the DockOS RC7.5 FastAPI backend required for internal testing.
 
-This repository contains the frontend layer for the OPEX Control Center initiative, including module routing, access control foundations, DockOS UI integration, Planogram Studio entry, Budget Intelligence entry, and AI working instructions for disciplined development.
+It includes module routing, access control foundations, DockOS UI and API integration, Planogram Studio entry, Budget Intelligence entry, and AI working instructions for disciplined development.
+
+## DockOS RC7.5 Full Stack
+
+- `src/modules/DockOS`: React user interface
+- `backend/app/modules/dockos`: FastAPI routes, access enforcement, slot/reservation logic, audit and notification outbox
+- `backend/app/main.py`: standalone API entry point
+- `ops/dockos`: readiness and notification operation scripts
+- `docker-compose.yml`: frontend + backend internal test stack
+
+Copy `.env.example` to `.env`, replace every placeholder secret/address, then start the internal test stack:
+
+```bash
+docker compose up --build
+```
+
+Open `http://localhost:8080`. The API health endpoint is `http://localhost:8000/api/dockos/health`.
+
+Windows internal test without Docker or administrator rights:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\INSTALL_DOCKOS_RC75_FULLSTACK.ps1
+.\START_DOCKOS_RC75_FULLSTACK.ps1
+.\TEST_DOCKOS_RC75_FULLSTACK.ps1
+```
+
+Do not use placeholder SMTP recipients or `CHANGE_ME` secrets outside local testing. The readiness endpoint must report `ready: true` before a live release.
 
 ## Branch Structure
 
@@ -54,6 +81,15 @@ Run production build with:
 npm run build
 
 A successful build should end with a "built in ..." message.
+
+Backend validation:
+
+```bash
+cd backend
+python -m venv .venv
+# Windows: .venv\Scripts\pip install -r requirements.txt
+# Windows: .venv\Scripts\python -m app.modules.dockos.test_rc2
+```
 
 React Router or Framer Motion "use client was ignored" warnings may appear. These are non-fatal unless the build exits with an error.
 

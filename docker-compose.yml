@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DOCKOS_STATE_FILE: /var/lib/dockos/dockos_state.json
+      DOCKOS_BACKUP_DIR: /var/backups/dockos
+      DOCKOS_SINGLE_WORKER: "true"
+    volumes:
+      - dockos-state:/var/lib/dockos
+      - dockos-backups:/var/backups/dockos
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/dockos/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_BASE: /api
+    environment:
+      DOCKOS_GATEWAY_SECRET: ${DOCKOS_GATEWAY_SECRET}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  dockos-state:
+  dockos-backups:

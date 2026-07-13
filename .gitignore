@@ -2,6 +2,7 @@
 dist/
 .env
 .env.*
+!.env.example
 *.local
 .vite/
 npm-debug.log*
@@ -9,3 +10,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+dockos_state.json
+dockos_state_*.json
+credentials*.json
+service-account*.json

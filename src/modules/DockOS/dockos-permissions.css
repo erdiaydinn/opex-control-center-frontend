@@ -1,134 +1,139 @@
-﻿.dockos-permission-shell {
-  position: relative;
+.dockos-permission-shell {
+  --dockos-bg: #f6f7fb;
+  --dockos-surface: #ffffff;
+  --dockos-surface-alt: #f9fafb;
+  --dockos-text: #101828;
+  --dockos-muted: #475467;
+  --dockos-border: #eaecf0;
+  --dockos-sidebar: #101828;
+  --dockos-success-bg: #ecfdf3;
+  --dockos-success-text: #027a48;
+  --dockos-danger-bg: #fff1f2;
+  --dockos-danger-text: #be123c;
+  --dockos-warning-bg: #fffaeb;
+  --dockos-warning-text: #b54708;
+  --dockos-info-bg: #eef4ff;
+  --dockos-info-text: #3538cd;
+  --dockos-accent-soft-bg: #fff1f6;
+  --dockos-accent-soft-text: #e5005a;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.08), transparent 26%),
-    radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.07), transparent 30%),
-    linear-gradient(135deg, #ffffff 0%, #f7f8fc 48%, #eef2ff 100%);
+  background: var(--dockos-bg);
+  color: var(--dockos-text);
+}
+
+.dockos-theme-dark {
+  --dockos-bg: #0b1220;
+  --dockos-surface: #182230;
+  --dockos-surface-alt: #101828;
+  --dockos-text: #f2f4f7;
+  --dockos-muted: #b3b8c2;
+  --dockos-border: #344054;
+  --dockos-sidebar: #060b14;
+  --dockos-success-bg: #073b2a;
+  --dockos-success-text: #a6f4c5;
+  --dockos-danger-bg: #4a1723;
+  --dockos-danger-text: #fda4af;
+  --dockos-warning-bg: #3b2a12;
+  --dockos-warning-text: #fedf89;
+  --dockos-info-bg: #172554;
+  --dockos-info-text: #b2ccff;
+  --dockos-accent-soft-bg: #3b1124;
+  --dockos-accent-soft-text: #fda4c0;
 }
 
 .dockos-permission-banner {
-  position: sticky;
-  top: 0;
-  z-index: 80;
-  display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(440px, 1.2fr) auto;
-  gap: 14px;
+  position: relative;
+  z-index: 20;
+  display: flex;
   align-items: center;
-  width: min(1400px, calc(100% - 48px));
-  margin: 0 auto;
-  padding: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 0 0 28px 28px;
-  background: rgba(255,255,255,0.88);
-  backdrop-filter: blur(24px);
-  box-shadow:
-    0 18px 54px rgba(15,23,42,.12),
-    inset 0 1px 0 rgba(255,255,255,.88);
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--dockos-border);
+  background: var(--dockos-surface);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.05);
 }
 
 .dockos-permission-main {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 12px;
+  min-width: 0;
 }
 
 .dockos-permission-icon {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 18px;
-  color: #fff;
-  background: linear-gradient(135deg, #FA0050, #7c3aed);
-  box-shadow: 0 14px 32px rgba(250,0,80,.22);
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 14px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #e5005a, #7c3aed);
 }
 
 .dockos-permission-main span {
   display: block;
-  color: #FA0050;
-  font-size: 11px;
-  font-weight: 1000;
-  letter-spacing: .12em;
+  color: #e5005a;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
 .dockos-permission-main strong {
   display: block;
-  margin-top: 4px;
-  color: #101828;
-  font-size: 15px;
-  font-weight: 950;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--dockos-text);
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dockos-permission-main p {
-  margin: 3px 0 0;
-  color: #667085;
-  font-size: 12px;
+  margin: 2px 0 0;
+  color: var(--dockos-muted);
+  font-size: 11px;
 }
 
-.dockos-permission-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.dockos-permission-summary {
+  display: flex;
+  align-items: stretch;
   gap: 9px;
 }
 
-.dockos-permission-grid div {
-  min-height: 70px;
-  padding: 10px 12px;
-  border: 1px solid rgba(15,23,42,.075);
-  border-radius: 18px;
-  background: rgba(248,250,252,.72);
+.dockos-permission-summary > div {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 7px;
+  min-width: 170px;
+  padding: 9px 12px;
+  border: 1px solid var(--dockos-border);
+  border-radius: 13px;
+  background: var(--dockos-surface-alt);
 }
 
-.dockos-permission-grid svg {
-  color: #FA0050;
+.dockos-permission-summary svg {
+  grid-row: 1 / span 2;
+  color: #e5005a;
 }
 
-.dockos-permission-grid small {
-  display: block;
-  margin-top: 5px;
+.dockos-permission-summary span {
   color: #667085;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.dockos-permission-grid strong {
-  display: block;
-  margin-top: 4px;
-  color: #101828;
+.dockos-permission-summary strong {
+  color: var(--dockos-text);
   font-size: 11px;
   font-weight: 900;
-  line-height: 1.35;
-}
-
-.dockos-permission-chips {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.dockos-permission-chips span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 950;
-  white-space: nowrap;
-}
-
-.dockos-permission-chips span.on {
-  color: #047857;
-  background: rgba(16,185,129,.12);
-}
-
-.dockos-permission-chips span.off {
-  color: #92400e;
-  background: rgba(245,158,11,.13);
 }
 
 .dockos-locked-page {
@@ -136,85 +141,282 @@
   place-items: center;
   min-height: 100vh;
   padding: 24px;
-  background:
-    radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.14), transparent 28%),
-    radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.11), transparent 31%),
-    linear-gradient(135deg, #ffffff 0%, #f7f8fc 48%, #eef2ff 100%);
+  background: #f6f7fb;
 }
 
 .dockos-locked-card {
   width: min(520px, 100%);
   padding: 34px;
   text-align: center;
-  border: 1px solid rgba(15,23,42,.09);
-  border-radius: 32px;
-  background: rgba(255,255,255,.88);
-  backdrop-filter: blur(24px);
-  box-shadow: 0 28px 84px rgba(15,23,42,.12);
+  border: 1px solid #eaecf0;
+  border-radius: 28px;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgba(16, 24, 40, 0.1);
 }
 
 .dockos-locked-card > div {
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   margin: 0 auto;
-  border-radius: 22px;
-  color: #fff;
-  background: linear-gradient(135deg, #FA0050, #7c3aed);
+  border-radius: 20px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #e5005a, #7c3aed);
 }
 
 .dockos-locked-card h1 {
   margin: 18px 0 0;
   color: #101828;
-  font-size: 32px;
-  line-height: 1;
-  letter-spacing: -.06em;
 }
 
 .dockos-locked-card p {
-  margin: 12px 0 0;
-  color: #667085;
-  line-height: 1.55;
+  margin: 10px 0 0;
+  color: #475467;
 }
 
 .dockos-locked-card button {
-  min-height: 46px;
-  margin-top: 22px;
+  min-height: 44px;
+  margin-top: 20px;
   padding: 0 16px;
   border: 0;
-  border-radius: 16px;
-  color: #fff;
-  background: linear-gradient(135deg, #FA0050, #7c3aed);
-  font-size: 13px;
-  font-weight: 950;
+  border-radius: 13px;
+  color: #ffffff;
+  background: #101828;
+  font-weight: 900;
   cursor: pointer;
 }
 
-/* Permission hint classes for future DockOS UI bindings */
-.dockos-feature-excelUpload-off [data-dockos-feature="excelUpload"],
-.dockos-feature-duplicateResolution-off [data-dockos-feature="duplicateResolution"],
-.dockos-feature-vehicleTracking-off [data-dockos-feature="vehicleTracking"],
-.dockos-action-export-off [data-dockos-action="export"],
-.dockos-action-approve-off [data-dockos-action="approve"],
-.dockos-action-edit-off [data-dockos-action="edit"],
-.dockos-action-delete-off [data-dockos-action="delete"] {
-  display: none !important;
+@media (max-width: 900px) {
+  .dockos-permission-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 12px 16px;
+  }
+
+  .dockos-permission-summary {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .dockos-permission-summary > div {
+    flex: 1 1 180px;
+  }
 }
 
-@media (max-width: 1180px) {
-  .dockos-permission-banner {
-    grid-template-columns: 1fr;
-    position: relative;
-    border-radius: 0 0 24px 24px;
+/* DockOS readable controls: text must be visible without hover. */
+.dockos-permission-shell button,
+.dockos-permission-shell select,
+.dockos-permission-shell input,
+.dockos-permission-shell textarea,
+.dockos-permission-shell option {
+  opacity: 1 !important;
+  visibility: visible !important;
+  text-shadow: none !important;
+}
+
+.dockos-permission-shell
+  button:not([style*="color: rgb(255"]):not([style*="color:#fff"]):not(
+    [style*="color: #fff"]
+  ) {
+  color: var(--dockos-text);
+}
+
+.dockos-permission-shell select,
+.dockos-permission-shell input,
+.dockos-permission-shell textarea {
+  color: var(--dockos-text) !important;
+  -webkit-text-fill-color: var(--dockos-text) !important;
+  background-color: var(--dockos-surface) !important;
+  border-color: var(--dockos-border) !important;
+}
+
+.dockos-permission-shell select:disabled,
+.dockos-permission-shell input:disabled {
+  color: var(--dockos-muted) !important;
+  -webkit-text-fill-color: var(--dockos-muted) !important;
+  opacity: 1 !important;
+}
+
+.dockos-permission-shell option {
+  color: var(--dockos-text) !important;
+  background: var(--dockos-surface) !important;
+}
+
+.dockos-theme-dark [style*="background: rgb(255, 255, 255)"],
+.dockos-theme-dark [style*="background: #fff;"],
+.dockos-theme-dark [style*="background: #ffffff;"] {
+  background: var(--dockos-surface) !important;
+  color: var(--dockos-text) !important;
+  border-color: var(--dockos-border) !important;
+}
+
+.dockos-theme-dark [style*="background: rgb(249, 250, 251)"],
+.dockos-theme-dark [style*="background: #f9fafb"],
+.dockos-theme-dark [style*="background: #f7f8fb"],
+.dockos-theme-dark [style*="background: #f6f7fb"] {
+  background: var(--dockos-surface-alt) !important;
+  color: var(--dockos-text) !important;
+}
+
+/* Legacy cards used light-only pink and gradient surfaces. In dark mode they
+   become dark accent surfaces so their headings, PO data and mode labels keep
+   WCAG-readable contrast. */
+.dockos-theme-dark [style*="background: #fff7fa"],
+.dockos-theme-dark [style*="background: #fff7fb"],
+.dockos-theme-dark [style*="background: #fff8fb"],
+.dockos-theme-dark [style*="background: #fff1f6"],
+.dockos-theme-dark [style*="background: #ffe6ef"],
+.dockos-theme-dark [style*="background: rgb(255, 247, 250)"],
+.dockos-theme-dark [style*="background: rgb(255, 247, 251)"],
+.dockos-theme-dark [style*="background: rgb(255, 248, 251)"],
+.dockos-theme-dark [style*="background: rgb(255, 241, 246)"],
+.dockos-theme-dark [style*="background: rgb(255, 230, 239)"],
+.dockos-theme-dark [style*="linear-gradient(135deg,#fff"],
+.dockos-theme-dark [style*="linear-gradient(135deg, #fff"],
+.dockos-theme-dark [style*="linear-gradient"][style*="rgb(255, 255, 255)"] {
+  background: #241827 !important;
+  color: var(--dockos-text) !important;
+  border-color: #7a294d !important;
+}
+
+.dockos-theme-dark [style*="color: #667085"],
+.dockos-theme-dark [style*="color: #475467"],
+.dockos-theme-dark [style*="color: #344054"],
+.dockos-theme-dark [style*="color: #98a2b3"],
+.dockos-theme-dark [style*="color: rgb(102, 112, 133)"],
+.dockos-theme-dark [style*="color: rgb(71, 84, 103)"],
+.dockos-theme-dark [style*="color: rgb(52, 64, 84)"],
+.dockos-theme-dark [style*="color: rgb(152, 162, 179)"] {
+  color: var(--dockos-muted) !important;
+  -webkit-text-fill-color: var(--dockos-muted) !important;
+}
+
+.dockos-theme-dark [style*="background: #eef2ff"],
+.dockos-theme-dark [style*="background: #eef4ff"] {
+  background: #172554 !important;
+  color: #bfdbfe !important;
+}
+
+.dockos-theme-dark [style*="background: #fff7ed"],
+.dockos-theme-dark [style*="background: #fffaeb"] {
+  background: #35200d !important;
+  color: #fedf89 !important;
+}
+
+.dockos-theme-dark [style*="background: #ecfdf3"] {
+  background: #083a2a !important;
+  color: #a6f4c5 !important;
+}
+
+.dockos-theme-dark [style*="background: #fef3f2"] {
+  background: #431313 !important;
+  color: #fecdca !important;
+}
+
+.dockos-theme-dark svg circle[stroke="#f2f4f7"] {
+  stroke: #344054 !important;
+}
+
+.dockos-theme-dark [style*="background: #f2f4f7"] {
+  background: #344054 !important;
+}
+
+.dockos-theme-dark h1,
+.dockos-theme-dark h2,
+.dockos-theme-dark h3,
+.dockos-theme-dark strong,
+.dockos-theme-dark td,
+.dockos-theme-dark th {
+  color: var(--dockos-text) !important;
+}
+
+.dockos-theme-dark p,
+.dockos-theme-dark small,
+.dockos-theme-dark label {
+  color: var(--dockos-muted);
+}
+
+.dockos-theme-dark
+  button:not([style*="color: rgb(255"]):not([style*="color:#fff"]):not(
+    [style*="color: #fff"]
+  ) {
+  color: var(--dockos-text) !important;
+}
+
+.dockos-theme-dark table th,
+.dockos-theme-dark table td {
+  border-color: var(--dockos-border) !important;
+}
+
+.dockos-theme-dark table thead,
+.dockos-theme-dark table thead tr,
+.dockos-theme-dark table thead th,
+.dockos-theme-dark table thead td {
+  background: #0f172a !important;
+  color: #e4e7ec !important;
+  -webkit-text-fill-color: #e4e7ec !important;
+}
+
+.dockos-theme-dark button:disabled {
+  opacity: 0.72 !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+.dockos-theme-dark code {
+  color: #d0d5dd !important;
+}
+
+.dockos-permission-shell,
+.dockos-permission-shell * {
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.dockos-permission-shell[dir="rtl"] {
+  direction: rtl;
+}
+
+.dockos-permission-shell[dir="rtl"] table th,
+.dockos-permission-shell[dir="rtl"] table td,
+.dockos-permission-shell[dir="rtl"] input,
+.dockos-permission-shell[dir="rtl"] textarea,
+.dockos-permission-shell[dir="rtl"] select {
+  text-align: right !important;
+}
+
+.dockos-permission-shell[dir="rtl"] [style*="text-align: left"] {
+  text-align: right !important;
+}
+
+@media (max-width: 1100px) {
+  .dockos-permission-shell aside {
+    width: 220px !important;
+    min-width: 220px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .dockos-access-identity-grid,
+  .dockos-access-actions,
+  .dockos-upload-action-bar {
+    grid-template-columns: 1fr !important;
   }
 
-  .dockos-permission-grid {
-    grid-template-columns: 1fr;
+  .dockos-upload-action-bar button {
+    width: 100%;
+    min-width: 0 !important;
   }
 
-  .dockos-permission-chips {
-    flex-direction: row;
-    flex-wrap: wrap;
+  .dockos-access-list-head {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .dockos-access-list-head input {
+    width: 100%;
+    min-width: 0 !important;
   }
 }

@@ -8,8 +8,8 @@ TEMP_DIR = tempfile.TemporaryDirectory()
 os.environ["DOCKOS_STATE_FILE"] = os.path.join(TEMP_DIR.name, "dockos_test_state.json")
 
 from .mock_data import DOCKOS_SETTINGS, MOCK_AUDIT_LOG, MOCK_NOTIFICATION_OUTBOX, MOCK_PURCHASE_ORDERS, MOCK_RESERVATIONS, MOCK_SUPPLIER_ACCESS, MOCK_SUPPLIER_CAPACITY, MOCK_SUPPLIER_DAILY_LIMITS, MOCK_USER_SUPPLIERS
-from .schemas import AdminReservationEditRequest, AnalyticsAskRequest, BlockSlotDatesRequest, BulkCapacityRequest, CreateReservationRequest, EditSlotCapacityRequest, SupplierAccessMappingRequest, SupplierAllocationItem, SupplierCapacityBulkRequest, SupplierCapacityMatrixRequest, SupplierDailyLimitRequest
-from .service import _ensure_slot_horizon, allowed_suppliers, allowed_warehouses, ask_analytics, block_slot_dates, bulk_update_capacity, bulk_update_supplier_capacity, bulk_update_supplier_capacity_matrix, cancel_reservation, create_reservation, delete_slot_capacity, delete_supplier_access_mapping, edit_reservation_admin, edit_slot_capacity, get_kpis, get_slot_capacity, process_notifications_system, update_supplier_daily_limit, upsert_supplier_access_mapping
+from .schemas import AdminReservationEditRequest, AnalyticsAskRequest, BlockSlotDatesRequest, BulkCapacityRequest, BulkSlotDeleteRequest, BulkSlotEditRequest, CreateReservationRequest, EditSlotCapacityRequest, SlotSelectionItem, SupplierAccessMappingRequest, SupplierAllocationItem, SupplierCapacityBulkRequest, SupplierCapacityMatrixRequest, SupplierDailyLimitRequest
+from .service import _ensure_slot_horizon, allowed_suppliers, allowed_warehouses, ask_analytics, block_slot_dates, bulk_delete_slot_capacities, bulk_edit_slot_capacities, bulk_update_capacity, bulk_update_supplier_capacity, bulk_update_supplier_capacity_matrix, cancel_reservation, create_reservation, delete_slot_capacity, delete_supplier_access_mapping, edit_reservation_admin, edit_slot_capacity, get_kpis, get_slot_capacity, process_notifications_system, update_supplier_daily_limit, upsert_supplier_access_mapping
 
 
 class DockOSRC2Tests(unittest.TestCase):
@@ -212,6 +212,30 @@ class DockOSRC2Tests(unittest.TestCase):
         self.assertEqual(deleted["status"], "DELETED")
         _ensure_slot_horizon()
         self.assertNotIn("19:45 - 20:45", {row["slot"] for row in get_slot_capacity("Ankara DC", slot_date)})
+
+    def test_selected_slots_can_be_bulk_edited_and_partially_deleted(self):
+        slot_date = str(date.today() + timedelta(days=30))
+        slots = ["01:00 - 02:00", "02:00 - 03:00"]
+        bulk_update_capacity(BulkCapacityRequest(
+            warehouse_name="Ankara DC", dates=[slot_date], slots=slots,
+            max_pallet=20, max_sku=200,
+        ), "erdi.aydin@yemeksepeti.com", "admin")
+
+        selected = [SlotSelectionItem(date=slot_date, slot=slot) for slot in slots]
+        edited = bulk_edit_slot_capacities(BulkSlotEditRequest(
+            warehouse_name="Ankara DC", items=selected, max_pallet=45, max_sku=450,
+        ), "erdi.aydin@yemeksepeti.com", "admin")
+        self.assertEqual(edited["count"], 2)
+        updated = {row["slot"]: row for row in get_slot_capacity("Ankara DC", slot_date)}
+        self.assertTrue(all(updated[slot]["max_pallet"] == 45 for slot in slots))
+
+        deleted = bulk_delete_slot_capacities(BulkSlotDeleteRequest(
+            warehouse_name="Ankara DC", items=[selected[0]],
+        ), "erdi.aydin@yemeksepeti.com", "admin")
+        self.assertEqual(deleted["count"], 1)
+        remaining = {row["slot"] for row in get_slot_capacity("Ankara DC", slot_date)}
+        self.assertNotIn(slots[0], remaining)
+        self.assertIn(slots[1], remaining)
 
     def test_long_block_replaces_overlapping_hourly_slots_for_supplier_booking(self):
         slot_date = str(date.today() + timedelta(days=25))

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   blockSlotDates,
+  bulkDeleteSlotCapacities,
+  bulkEditSlotCapacities,
   bulkUpdateCapacity,
   bulkUpdateSupplierCapacityMatrix,
   deleteSlotCapacity,
@@ -14,6 +16,10 @@ import {
 import { useDockOSUi } from "./DockOSUiContext";
 
 const today = () => new Date().toISOString().slice(0, 10);
+const DEFAULT_HOURLY_SLOTS = Array.from({ length: 18 }, (_, index) => {
+  const start = index + 6;
+  return `${String(start).padStart(2, "0")}:00 - ${String((start + 1) % 24).padStart(2, "0")}:00`;
+});
 
 function timeToMinutes(value) {
   const [hour, minute] = String(value || "").split(":").map(Number);
@@ -27,6 +33,26 @@ function minutesToTime(value) {
 
 function slotStartMinutes(slot) {
   return timeToMinutes(String(slot).split("-")[0].trim()) ?? 1440;
+}
+
+function slotBounds(slot) {
+  const [startText, endText] = String(slot || "").split("-").map((value) => value.trim());
+  const start = timeToMinutes(startText);
+  let end = timeToMinutes(endText);
+  if (start === null || end === null) return null;
+  if (end <= start) end += 1440;
+  return [start, end];
+}
+
+function slotsOverlap(first, second) {
+  const firstBounds = slotBounds(first);
+  const secondBounds = slotBounds(second);
+  if (!firstBounds || !secondBounds) return false;
+  return [-1440, 0, 1440].some((shift) => firstBounds[0] < secondBounds[1] + shift && secondBounds[0] + shift < firstBounds[1]);
+}
+
+function slotRowKey(row) {
+  return `${row.warehouse_name}|${row.date}|${row.slot}`;
 }
 
 function sortSlots(values) {
@@ -73,6 +99,9 @@ export default function CapacityManagement() {
   const [saving, setSaving] = useState(false);
   const [showClosedSlots, setShowClosedSlots] = useState(false);
   const [editingSlot, setEditingSlot] = useState(null);
+  const [selectedManagedKeys, setSelectedManagedKeys] = useState([]);
+  const [bulkPalletLimit, setBulkPalletLimit] = useState(40);
+  const [bulkSkuLimit, setBulkSkuLimit] = useState(500);
 
   const sortedDates = useMemo(() => [...new Set(selectedDates)].sort(), [selectedDates]);
   const dateSet = useMemo(() => new Set(sortedDates), [sortedDates]);
@@ -86,6 +115,7 @@ export default function CapacityManagement() {
     setRows(slotRows);
     setAllocations(allocationData);
     setDailyLimits(dailyLimitRows);
+    setSelectedManagedKeys([]);
   }
 
   useEffect(() => {
@@ -126,8 +156,26 @@ export default function CapacityManagement() {
       const blockStart = start + index * duration;
       return `${minutesToTime(blockStart)} - ${minutesToTime(blockStart + duration)}`;
     });
-    setSelectedHours((current) => sortSlots([...current, ...generated]));
+    setSelectedHours((current) => sortSlots([
+      ...current.filter((existing) => !generated.some((slot) => slotsOverlap(existing, slot))),
+      ...generated,
+    ]));
     setMessage(`${generated.length} ${t("customSlotsAdded")}`);
+  }
+
+  function toggleHourSelection(slot) {
+    setSelectedHours((current) => {
+      if (current.includes(slot)) return current.filter((item) => item !== slot);
+      return sortSlots([...current.filter((item) => !slotsOverlap(item, slot)), slot]);
+    });
+  }
+
+  function selectHourPreset(kind) {
+    if (kind === "ALL") return setSelectedHours(DEFAULT_HOURLY_SLOTS);
+    if (kind === "MORNING") return setSelectedHours(DEFAULT_HOURLY_SLOTS.slice(0, 6));
+    if (kind === "AFTERNOON") return setSelectedHours(DEFAULT_HOURLY_SLOTS.slice(6, 12));
+    if (kind === "EVENING") return setSelectedHours(DEFAULT_HOURLY_SLOTS.slice(12));
+    setSelectedHours([]);
   }
 
   async function applyLimits() {
@@ -205,6 +253,52 @@ export default function CapacityManagement() {
     }
   }
 
+  function toggleManagedRow(row) {
+    const key = slotRowKey(row);
+    setSelectedManagedKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  }
+
+  async function bulkEditManagedSlots() {
+    if (!selectedManagedRows.length) return setMessage(t("selectManagedSlotFirst"));
+    setSaving(true);
+    setMessage("");
+    try {
+      const result = await bulkEditSlotCapacities({
+        warehouse_name: warehouse,
+        items: selectedManagedRows.map((row) => ({ date: row.date, slot: row.slot })),
+        max_pallet: Number(bulkPalletLimit),
+        max_sku: Number(bulkSkuLimit),
+      });
+      setMessage(result.message);
+      setEditingSlot(null);
+      await loadRows(warehouse);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function bulkDeleteManagedSlots() {
+    if (!selectedManagedRows.length) return setMessage(t("selectManagedSlotFirst"));
+    if (!window.confirm(t("bulkDeleteSlotConfirm").replace("{count}", selectedManagedRows.length))) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const result = await bulkDeleteSlotCapacities({
+        warehouse_name: warehouse,
+        items: selectedManagedRows.map((row) => ({ date: row.date, slot: row.slot })),
+      });
+      setMessage(result.message);
+      setEditingSlot(null);
+      await loadRows(warehouse);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function updateAllocation(id, key, value) {
     setAllocationRows((current) => current.map((row) => row.id === id ? { ...row, [key]: value } : row));
   }
@@ -239,6 +333,9 @@ export default function CapacityManagement() {
 
   const filteredRows = useMemo(() => rows.filter((row) => dateSet.has(row.date)).sort((a, b) => `${a.date}-${a.slot}`.localeCompare(`${b.date}-${b.slot}`)), [rows, dateSet]);
   const managedRows = useMemo(() => showClosedSlots ? filteredRows : filteredRows.filter((row) => Number(row.max_pallet) > 0 || Number(row.max_sku) > 0), [filteredRows, showClosedSlots]);
+  const managedKeySet = useMemo(() => new Set(selectedManagedKeys), [selectedManagedKeys]);
+  const selectedManagedRows = useMemo(() => managedRows.filter((row) => managedKeySet.has(slotRowKey(row))), [managedRows, managedKeySet]);
+  const allManagedSelected = managedRows.length > 0 && selectedManagedRows.length === managedRows.length;
   const visibleAllocations = useMemo(() => allocations.filter((row) => dateSet.has(row.date)).sort((a, b) => `${a.date}-${a.slot}-${a.supplier_name}`.localeCompare(`${b.date}-${b.slot}-${b.supplier_name}`)), [allocations, dateSet]);
   const visibleDailyLimits = useMemo(() => dailyLimits.filter((row) => dateSet.has(row.date)).sort((a, b) => `${a.date}-${a.supplier_name}`.localeCompare(`${b.date}-${b.supplier_name}`)), [dailyLimits, dateSet]);
   const totals = useMemo(() => filteredRows.reduce((acc, row) => ({
@@ -295,6 +392,17 @@ export default function CapacityManagement() {
         {capacityMode && <div style={styles.slotBuilder}>
           <div style={styles.slotBuilderHead}><strong>{capacityMode === "BLOCK" ? t("reopenHoursTitle") : t("customSlotTitle")}</strong><span>{capacityMode === "BLOCK" ? t("reopenHoursHelp") : t("customSlotHelp")}</span></div>
           <div style={styles.ruleNote}>{t("singleAppointmentRule")}</div>
+          <div style={styles.hourPickerHead}>
+            <strong>{t("quickHourSelection")}</strong>
+            <div style={styles.quickWrap}>
+              <button type="button" style={styles.quickButton} onClick={() => selectHourPreset("ALL")}>{t("allHours")}</button>
+              <button type="button" style={styles.quickButton} onClick={() => selectHourPreset("MORNING")}>{t("morningHours")}</button>
+              <button type="button" style={styles.quickButton} onClick={() => selectHourPreset("AFTERNOON")}>{t("afternoonHours")}</button>
+              <button type="button" style={styles.quickButton} onClick={() => selectHourPreset("EVENING")}>{t("eveningHours")}</button>
+              <button type="button" style={styles.quickDanger} onClick={() => selectHourPreset("CLEAR")}>{t("clearHourSelection")}</button>
+            </div>
+          </div>
+          <div style={styles.hourGrid}>{DEFAULT_HOURLY_SLOTS.map((slot) => <button key={slot} type="button" onClick={() => toggleHourSelection(slot)} style={selectedHours.includes(slot) ? styles.hourButtonActive : styles.hourButton}>{slot}</button>)}</div>
           <div style={styles.customSlotGrid}>
             <FieldInput label={t("slotStart")} type="time" step="900" value={newSlotStart} onChange={(event) => setNewSlotStart(event.target.value)} />
             <FieldInput label={t("slotDuration")} type="number" min="15" max="240" step="15" value={newSlotDuration} onChange={(event) => setNewSlotDuration(event.target.value)} />
@@ -316,10 +424,24 @@ export default function CapacityManagement() {
           <div><h2 style={styles.sectionTitle}>{t("slotManagerTitle")}</h2><p style={styles.subtitle}>{t("slotManagerHelp")}</p></div>
           <label style={styles.switchLabel}><input type="checkbox" checked={showClosedSlots} onChange={(event) => setShowClosedSlots(event.target.checked)} /> {t("showClosedSlots")}</label>
         </div>
-        {!managedRows.length ? <Empty text={t("noManagedSlots")} /> : <div style={styles.tableWrap}><table style={styles.table}><thead><tr><th>{t("date")}</th><th>{t("time")}</th><th>{t("palletLimit")}</th><th>{t("skuLimit")}</th><th>{t("used")}</th><th>{t("status")}</th><th>{t("action")}</th></tr></thead><tbody>{managedRows.map((row) => {
-          const key = `${row.warehouse_name}|${row.date}|${row.slot}`;
+        {managedRows.length > 0 && <div style={styles.selectionBar}>
+          <label style={styles.selectAllLabel}><input type="checkbox" checked={allManagedSelected} onChange={(event) => setSelectedManagedKeys(event.target.checked ? managedRows.map(slotRowKey) : [])} /> {t("selectAllVisible")}</label>
+          <strong style={styles.selectionCount}>{selectedManagedRows.length} {t("slotSelected")}</strong>
+          <button type="button" style={styles.clearSelectionButton} disabled={!selectedManagedRows.length} onClick={() => setSelectedManagedKeys([])}>{t("clearSelection")}</button>
+        </div>}
+        {selectedManagedRows.length > 0 && <div style={styles.bulkActionPanel}>
+          <div style={styles.bulkActionCopy}><strong>{t("bulkSlotActions")}</strong><span>{t("bulkSlotActionsHelp")}</span></div>
+          <FieldInput label={t("palletLimit")} type="number" min="0" value={bulkPalletLimit} onChange={(event) => setBulkPalletLimit(event.target.value)} />
+          <FieldInput label={t("skuLimit")} type="number" min="0" value={bulkSkuLimit} onChange={(event) => setBulkSkuLimit(event.target.value)} />
+          <button type="button" disabled={saving} onClick={bulkEditManagedSlots} style={styles.bulkEditButton}>{saving ? t("saving") : t("applyToSelected")}</button>
+          <button type="button" disabled={saving} onClick={bulkDeleteManagedSlots} style={styles.bulkDeleteButton}>{t("deleteSelected")}</button>
+        </div>}
+        {!managedRows.length ? <Empty text={t("noManagedSlots")} /> : <div style={styles.tableWrap}><table style={styles.table}><thead><tr><th style={styles.checkboxCell}><input aria-label={t("selectAllVisible")} type="checkbox" checked={allManagedSelected} onChange={(event) => setSelectedManagedKeys(event.target.checked ? managedRows.map(slotRowKey) : [])} /></th><th>{t("date")}</th><th>{t("time")}</th><th>{t("palletLimit")}</th><th>{t("skuLimit")}</th><th>{t("used")}</th><th>{t("status")}</th><th>{t("action")}</th></tr></thead><tbody>{managedRows.map((row) => {
+          const key = slotRowKey(row);
           const editing = editingSlot?.key === key;
-          return <tr key={key}>
+          const selected = managedKeySet.has(key);
+          return <tr key={key} style={selected ? styles.selectedRow : undefined}>
+            <td style={styles.checkboxCell}><input aria-label={`${displayDate(row.date, localeCode)} ${row.slot}`} type="checkbox" checked={selected} onChange={() => toggleManagedRow(row)} /></td>
             <td>{displayDate(row.date, localeCode)}</td>
             <td>{editing ? <div style={styles.timeEdit}><input type="time" value={editingSlot.start} onChange={(event) => setEditingSlot({...editingSlot,start:event.target.value})} style={styles.compactInput} /><span>–</span><input type="time" value={editingSlot.end} onChange={(event) => setEditingSlot({...editingSlot,end:event.target.value})} style={styles.compactInput} /></div> : <strong>{row.slot}</strong>}</td>
             <td>{editing ? <input type="number" min="0" value={editingSlot.max_pallet} onChange={(event) => setEditingSlot({...editingSlot,max_pallet:event.target.value})} style={styles.compactInput} /> : row.max_pallet}</td>
@@ -378,7 +500,8 @@ const styles = {
   outlineButton: { minHeight: 42, padding: "9px 14px", border: "1px solid var(--dockos-border)", borderRadius: 11, color: "var(--dockos-text)", background: "var(--dockos-surface)", fontWeight: 900, cursor: "pointer" }, quickWrap: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }, quickButton: { padding: "8px 12px", border: "1px solid var(--dockos-border)", borderRadius: 999, color: "var(--dockos-text)", background: "var(--dockos-surface)", fontWeight: 800, cursor: "pointer" }, quickDanger: { padding: "8px 12px", border: "1px solid #fda29b", borderRadius: 999, color: "var(--dockos-danger-text)", background: "var(--dockos-danger-bg)", fontWeight: 800, cursor: "pointer" }, chipWrap: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }, dateChip: { padding: "9px 12px", border: "1px solid #84adff", borderRadius: 10, color: "var(--dockos-info-text)", background: "var(--dockos-info-bg)", fontWeight: 900, cursor: "pointer" },
   modeGrid: { display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12, marginTop: 16 }, modeCard: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", alignItems: "center", padding: 18, textAlign: "left", border: "1px solid var(--dockos-border)", borderRadius: 16, color: "var(--dockos-text)", background: "var(--dockos-surface-alt)", cursor: "pointer" }, modeCardActive: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", alignItems: "center", padding: 18, textAlign: "left", border: "2px solid #e5005a", borderRadius: 16, color: "var(--dockos-text)", background: "var(--dockos-accent-soft-bg)", cursor: "pointer" }, modeIcon: { gridRow: "1 / span 2", display: "grid", placeItems: "center", width: 42, height: 42, borderRadius: 12, color: "#fff", background: "#e5005a", fontSize: 24, fontWeight: 900 }, blockAction: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginTop: 14, padding: 14, border: "1px solid #fda29b", borderRadius: 14, background: "var(--dockos-danger-bg)" }, dangerButton: { minHeight: 42, padding: "9px 16px", border: 0, borderRadius: 11, color: "#fff", background: "#be123c", fontWeight: 900, cursor: "pointer" }, choiceEmpty: { marginTop: 14, padding: 18, textAlign: "center", borderRadius: 14, color: "var(--dockos-muted)", background: "var(--dockos-surface-alt)" },
   slotBuilder: { display: "grid", gap: 12, marginTop: 16, padding: 14, border: "1px dashed var(--dockos-border)", borderRadius: 14, background: "var(--dockos-surface-alt)" }, slotBuilderHead: { display: "grid", gap: 4, color: "var(--dockos-text)" }, ruleNote: { padding: 10, borderRadius: 10, color: "var(--dockos-info-text)", background: "var(--dockos-info-bg)", fontWeight: 800 }, customSlotGrid: { display: "grid", gridTemplateColumns: "repeat(3,minmax(150px,1fr)) auto", gap: 10, alignItems: "end" }, selectedSlotWrap: { display: "flex", flexWrap: "wrap", gap: 8 }, selectedSlotChip: { padding: "8px 11px", border: "1px solid #84adff", borderRadius: 10, color: "var(--dockos-info-text)", background: "var(--dockos-info-bg)", fontWeight: 900, cursor: "pointer" }, limitGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1.3fr", gap: 10, alignItems: "end" }, primaryButton: { minHeight: 42, border: 0, borderRadius: 11, color: "#fff", background: "#e5005a", fontWeight: 900, cursor: "pointer" },
+  hourPickerHead: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }, hourGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(118px,1fr))", gap: 8 }, hourButton: { minHeight: 38, padding: "8px 10px", border: "1px solid var(--dockos-border)", borderRadius: 10, color: "var(--dockos-text)", background: "var(--dockos-surface)", fontWeight: 800, cursor: "pointer" }, hourButtonActive: { minHeight: 38, padding: "8px 10px", border: "2px solid #e5005a", borderRadius: 10, color: "var(--dockos-info-text)", background: "var(--dockos-accent-soft-bg)", fontWeight: 900, cursor: "pointer" },
   addButton: { padding: "10px 14px", border: "1px solid #101828", borderRadius: 11, color: "#fff", background: "#101828", fontWeight: 900, cursor: "pointer" }, matrixHeader: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, marginTop: 16, padding: "0 6px", color: "#667085", fontSize: 12, fontWeight: 900 }, matrixRows: { display: "grid", gap: 9, marginTop: 8 }, matrixRow: { display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10 }, removeButton: { minWidth: 86, border: "1px solid #fda29b", borderRadius: 11, color: "#b42318", background: "var(--dockos-surface)", fontWeight: 900, cursor: "pointer" }, secondaryButton: { width: "100%", minHeight: 46, marginTop: 16, border: 0, borderRadius: 12, color: "#fff", background: "#101828", fontWeight: 900, cursor: "pointer" }, message: { marginTop: 12, padding: 12, borderRadius: 12, color: "#344054", background: "#eef2ff", fontWeight: 800 },
   statsGrid: { display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 10 }, statCard: { display: "grid", gap: 6, padding: 16, borderRadius: 16, background: "var(--dockos-surface)" }, statLabel: { color: "#667085", fontSize: 12, fontWeight: 800 }, statValue: { fontSize: 26 }, allocationGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 10 }, allocationCard: { display: "grid", gap: 5, padding: 14, border: "1px solid var(--dockos-border)", borderRadius: 14, background: "var(--dockos-surface-alt)" },
-  dailyLimitGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10, marginBottom: 12 }, dailyLimitCard: { display: "grid", gap: 4, padding: 14, border: "1px solid #fedf89", borderRadius: 14, color: "var(--dockos-text)", background: "var(--dockos-surface-alt)" }, tableWrap: { overflowX: "auto", marginTop: 14 }, table: { width: "100%", minWidth: 980, borderCollapse: "collapse" }, openBadge: { padding: "5px 9px", borderRadius: 999, color: "var(--dockos-success-text)", background: "var(--dockos-success-bg)", fontWeight: 900 }, fullBadge: { padding: "5px 9px", borderRadius: 999, color: "var(--dockos-danger-text)", background: "var(--dockos-danger-bg)", fontWeight: 900 }, switchLabel: { display: "flex", alignItems: "center", gap: 7, color: "var(--dockos-muted)", fontWeight: 800 }, timeEdit: { display: "flex", alignItems: "center", gap: 5 }, compactInput: { minWidth: 82, maxWidth: 125, padding: "7px 8px", border: "1px solid var(--dockos-border)", borderRadius: 8, color: "var(--dockos-text)", background: "var(--dockos-surface)" }, rowActions: { display: "flex", flexWrap: "wrap", gap: 6 }, editSmall: { padding: "7px 10px", border: "1px solid #84adff", borderRadius: 8, color: "var(--dockos-info-text)", background: "var(--dockos-info-bg)", fontWeight: 900 }, deleteSmall: { padding: "7px 10px", border: "1px solid #fda29b", borderRadius: 8, color: "var(--dockos-danger-text)", background: "var(--dockos-danger-bg)", fontWeight: 900 }, saveSmall: { padding: "7px 10px", border: 0, borderRadius: 8, color: "#fff", background: "#e5005a", fontWeight: 900 }, cancelSmall: { padding: "7px 10px", border: "1px solid var(--dockos-border)", borderRadius: 8, color: "var(--dockos-text)", background: "var(--dockos-surface)", fontWeight: 900 }, empty: { padding: 26, textAlign: "center", borderRadius: 14, color: "var(--dockos-muted)", background: "var(--dockos-surface-alt)" },
+  dailyLimitGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10, marginBottom: 12 }, dailyLimitCard: { display: "grid", gap: 4, padding: 14, border: "1px solid #fedf89", borderRadius: 14, color: "var(--dockos-text)", background: "var(--dockos-surface-alt)" }, selectionBar: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 14, padding: "11px 13px", border: "1px solid var(--dockos-border)", borderRadius: 12, background: "var(--dockos-surface-alt)" }, selectAllLabel: { display: "flex", alignItems: "center", gap: 8, color: "var(--dockos-text)", fontWeight: 900 }, selectionCount: { color: "var(--dockos-accent-text)" }, clearSelectionButton: { padding: "7px 10px", border: "1px solid var(--dockos-border)", borderRadius: 9, color: "var(--dockos-text)", background: "var(--dockos-surface)", fontWeight: 800 }, bulkActionPanel: { display: "grid", gridTemplateColumns: "minmax(220px,1.5fr) minmax(130px,.7fr) minmax(130px,.7fr) auto auto", gap: 10, alignItems: "end", marginTop: 10, padding: 14, border: "1px solid #84adff", borderRadius: 14, background: "var(--dockos-info-bg)" }, bulkActionCopy: { display: "grid", gap: 4, color: "var(--dockos-info-text)" }, bulkEditButton: { minHeight: 42, padding: "9px 14px", border: 0, borderRadius: 10, color: "#fff", background: "#e5005a", fontWeight: 900 }, bulkDeleteButton: { minHeight: 42, padding: "9px 14px", border: "1px solid #fda29b", borderRadius: 10, color: "var(--dockos-danger-text)", background: "var(--dockos-danger-bg)", fontWeight: 900 }, tableWrap: { overflowX: "auto", marginTop: 14 }, table: { width: "100%", minWidth: 1040, borderCollapse: "collapse" }, checkboxCell: { width: 42, textAlign: "center" }, selectedRow: { background: "var(--dockos-info-bg)" }, openBadge: { padding: "5px 9px", borderRadius: 999, color: "var(--dockos-success-text)", background: "var(--dockos-success-bg)", fontWeight: 900 }, fullBadge: { padding: "5px 9px", borderRadius: 999, color: "var(--dockos-danger-text)", background: "var(--dockos-danger-bg)", fontWeight: 900 }, switchLabel: { display: "flex", alignItems: "center", gap: 7, color: "var(--dockos-muted)", fontWeight: 800 }, timeEdit: { display: "flex", alignItems: "center", gap: 5 }, compactInput: { minWidth: 82, maxWidth: 125, padding: "7px 8px", border: "1px solid var(--dockos-border)", borderRadius: 8, color: "var(--dockos-text)", background: "var(--dockos-surface)" }, rowActions: { display: "flex", flexWrap: "wrap", gap: 6 }, editSmall: { padding: "7px 10px", border: "1px solid #84adff", borderRadius: 8, color: "var(--dockos-info-text)", background: "var(--dockos-info-bg)", fontWeight: 900 }, deleteSmall: { padding: "7px 10px", border: "1px solid #fda29b", borderRadius: 8, color: "var(--dockos-danger-text)", background: "var(--dockos-danger-bg)", fontWeight: 900 }, saveSmall: { padding: "7px 10px", border: 0, borderRadius: 8, color: "#fff", background: "#e5005a", fontWeight: 900 }, cancelSmall: { padding: "7px 10px", border: "1px solid var(--dockos-border)", borderRadius: 8, color: "var(--dockos-text)", background: "var(--dockos-surface)", fontWeight: 900 }, empty: { padding: 26, textAlign: "center", borderRadius: 14, color: "var(--dockos-muted)", background: "var(--dockos-surface-alt)" },
 };

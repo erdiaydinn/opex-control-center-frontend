@@ -131,6 +131,16 @@ def edit_slot(payload: EditSlotCapacityRequest, x_opex_user: str | None = Header
     return guard(lambda: edit_slot_capacity(payload, x_opex_user, x_opex_role))
 
 
+@router.put("/slots/capacity/bulk-selection")
+def edit_selected_slots(payload: BulkSlotEditRequest, x_opex_user: str | None = Header(None), x_opex_role: str | None = Header(None)):
+    return guard(lambda: bulk_edit_slot_capacities(payload, x_opex_user, x_opex_role))
+
+
+@router.post("/slots/capacity/bulk-delete")
+def delete_selected_slots(payload: BulkSlotDeleteRequest, x_opex_user: str | None = Header(None), x_opex_role: str | None = Header(None)):
+    return guard(lambda: bulk_delete_slot_capacities(payload, x_opex_user, x_opex_role))
+
+
 @router.delete("/slots/capacity")
 def delete_slot(warehouse_name: str, date: str, slot: str, x_opex_user: str | None = Header(None), x_opex_role: str | None = Header(None)):
     return guard(lambda: delete_slot_capacity(warehouse_name, date, slot, x_opex_user, x_opex_role))

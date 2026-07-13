@@ -115,6 +115,14 @@ export async function editSlotCapacity(payload) {
   return apiFetch("/dockos/slots/capacity/edit", { method: "PUT", body: JSON.stringify(payload) });
 }
 
+export async function bulkEditSlotCapacities(payload) {
+  return apiFetch("/dockos/slots/capacity/bulk-selection", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function bulkDeleteSlotCapacities(payload) {
+  return apiFetch("/dockos/slots/capacity/bulk-delete", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function deleteSlotCapacity({ warehouse_name, date, slot }) {
   const params = new URLSearchParams({ warehouse_name, date, slot });
   return apiFetch(`/dockos/slots/capacity?${params.toString()}`, { method: "DELETE" });

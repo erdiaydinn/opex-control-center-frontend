@@ -1015,6 +1015,69 @@ def delete_slot_capacity(warehouse_name, date_key, slot_name, user_email=None, u
     return {"status": "DELETED", "message": "Slot kalıcı olarak silindi."}
 
 
+def _selected_slot_rows(warehouse_name, items):
+    keys = sorted({(item.date, _validate_slot_name(item.slot)) for item in items})
+    rows = []
+    missing = []
+    for date_key, slot_name in keys:
+        row = next((item for item in MOCK_SLOT_CAPACITY if item.get("warehouse_name") == warehouse_name and item.get("date") == date_key and item.get("slot") == slot_name), None)
+        if row:
+            rows.append(row)
+        else:
+            missing.append(f"{date_key} {slot_name}")
+    if missing:
+        raise ValueError("Seçili slotlardan bazıları bulunamadı: " + ", ".join(missing[:5]))
+    return rows
+
+
+def bulk_edit_slot_capacities(payload, user_email=None, user_role=None):
+    if not is_admin(user_email, user_role):
+        raise PermissionError("Toplu slot düzenleme için admin yetkisi gereklidir.")
+    rows = _selected_slot_rows(payload.warehouse_name, payload.items)
+    prepared = []
+    for row in rows:
+        date_key = row.get("date")
+        slot_name = row.get("slot")
+        active = _active_reservations(payload.warehouse_name, date_key, slot_name)
+        allocations = [item for item in MOCK_SUPPLIER_CAPACITY if item.get("warehouse_name") == payload.warehouse_name and item.get("date") == date_key and item.get("slot") == slot_name]
+        used_pallet = sum(int(item.get("pallet_count") or 0) for item in active)
+        used_sku = sum(int(item.get("sku_count") or 0) for item in active)
+        minimum_pallet = max(sum(int(item.get("reserved_pallet") or 0) for item in allocations), used_pallet)
+        minimum_sku = max(sum(int(item.get("reserved_sku") or 0) for item in allocations), used_sku)
+        if payload.max_pallet < minimum_pallet or payload.max_sku < minimum_sku:
+            raise ValueError(f"{date_key} {slot_name} kapasitesi mevcut rezervasyon veya ayrımın altına indirilemez. Minimum: {minimum_pallet} palet / {minimum_sku} SKU")
+        prepared.append((row, used_pallet, used_sku))
+    for row, used_pallet, used_sku in prepared:
+        row.update({
+            "max_pallet": payload.max_pallet,
+            "max_sku": payload.max_sku,
+            "remaining_pallet": max(0, payload.max_pallet - used_pallet),
+            "remaining_sku": max(0, payload.max_sku - used_sku),
+        })
+    _audit("BULK_EDIT", "SLOT_CAPACITY", payload.warehouse_name, user_email, {"count": len(rows), "max_pallet": payload.max_pallet, "max_sku": payload.max_sku})
+    _persist()
+    return {"status": "UPDATED", "count": len(rows), "message": f"Seçilen {len(rows)} slotun kapasitesi güncellendi."}
+
+
+def bulk_delete_slot_capacities(payload, user_email=None, user_role=None):
+    if not is_admin(user_email, user_role):
+        raise PermissionError("Toplu slot silme için admin yetkisi gereklidir.")
+    rows = _selected_slot_rows(payload.warehouse_name, payload.items)
+    conflicts = []
+    for row in rows:
+        active = _active_reservations(payload.warehouse_name, row.get("date"), row.get("slot"))
+        if active:
+            conflicts.append(f"{row.get('date')} {row.get('slot')}")
+    if conflicts:
+        raise ValueError("Aktif rezervasyonu bulunan seçili slotlar silinemez: " + ", ".join(conflicts[:5]))
+    keys = [_slot_key(payload.warehouse_name, row.get("date"), row.get("slot")) for row in rows]
+    for row in rows:
+        _remove_slot_row(row)
+    _audit("BULK_DELETE", "SLOT_CAPACITY", payload.warehouse_name, user_email, {"count": len(rows), "slots": keys})
+    _persist()
+    return {"status": "DELETED", "count": len(rows), "message": f"Seçilen {len(rows)} slot kalıcı olarak silindi."}
+
+
 def bulk_update_capacity(payload, user_email=None, user_role=None):
     if not is_admin(user_email, user_role):
         raise PermissionError("Kapasite yönetimi için admin yetkisi gereklidir.")

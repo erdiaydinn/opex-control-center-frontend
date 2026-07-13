@@ -128,6 +128,23 @@ class EditSlotCapacityRequest(BaseModel):
     max_sku: int = Field(ge=0)
 
 
+class SlotSelectionItem(BaseModel):
+    date: str
+    slot: str
+
+
+class BulkSlotEditRequest(BaseModel):
+    warehouse_name: str = Field(min_length=2)
+    items: List[SlotSelectionItem] = Field(min_length=1)
+    max_pallet: int = Field(ge=0)
+    max_sku: int = Field(ge=0)
+
+
+class BulkSlotDeleteRequest(BaseModel):
+    warehouse_name: str = Field(min_length=2)
+    items: List[SlotSelectionItem] = Field(min_length=1)
+
+
 class SupplierCapacityBulkRequest(BaseModel):
     warehouse_name: str = Field(min_length=2)
     supplier_name: str = Field(min_length=2)

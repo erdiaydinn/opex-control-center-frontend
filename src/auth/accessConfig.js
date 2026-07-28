@@ -11,7 +11,7 @@ export const ACCESS_MODULES = [
   { key: "budget", title: "Budget Control", description: "PR, PO, fatura ve bütçe görünürlüğü" },
   { key: "academy", title: "OPEX Academy", description: "SOP, eğitim ve bilgi merkezi" },
   { key: "insight", title: "AI Insight Base", description: "Operasyon içgörüsü ve aksiyon önerileri" },
-  { key: "cycle_count", title: "Cycle Count Risk", description: "Sayım riski, batch kontrolü ve stok doğruluğu" },
+  { key: "inventory", title: "Inventory", description: "Kör sayım, fark mutabakatı ve tutanak yönetimi" },
   { key: "admin_access", title: "Access Control", description: "Kullanıcı, grup ve modül erişim yönetimi" },
 ];
 
@@ -198,7 +198,7 @@ export const DEFAULT_ACCESS_CONFIG = {
         budget: "super",
         academy: "super",
         insight: "super",
-        cycle_count: "super",
+        inventory: "super",
         admin_access: "super",
       }),
     },
@@ -240,7 +240,7 @@ export const DEFAULT_ACCESS_CONFIG = {
         planogram: "view",
         dockos: "view",
         budget: "view",
-        cycle_count: "view",
+        inventory: "view",
       }),
     },
     viewers: {

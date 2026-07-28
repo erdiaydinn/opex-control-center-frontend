@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OpexInventory" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F8FAFC</item>
+        <item name="android:navigationBarColor">#F8FAFC</item>
+        <item name="android:colorAccent">#DF1067</item>
+        <item name="colorPrimary">#DF1067</item>
+        <item name="colorPrimaryVariant">#B70D55</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+</resources>

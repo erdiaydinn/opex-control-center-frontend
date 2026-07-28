@@ -5,10 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
+import android.text.InputType
+import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -60,44 +64,124 @@ class MainActivity : AppCompatActivity() {
     private fun buildUi(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
+            setPadding(dp(20), dp(24), dp(20), dp(24))
             setBackgroundColor(Color.rgb(248, 250, 252))
         }
-        fun field(hint: String, saved: String = "") = EditText(this).apply {
-            this.hint = hint
-            setText(saved)
-            setPadding(20, 18, 20, 18)
+
+        fun label(textValue: String) = TextView(this).apply {
+            text = textValue
+            textSize = 13f
+            setTextColor(Color.rgb(71, 85, 105))
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(2), dp(14), 0, dp(6))
         }.also { root.addView(it, ViewGroup.LayoutParams(-1, -2)) }
+
+        fun field(
+            labelText: String,
+            hintText: String,
+            saved: String = "",
+            inputTypeValue: Int = InputType.TYPE_CLASS_TEXT
+        ) = EditText(this).apply {
+            label(labelText)
+            hint = hintText
+            setText(saved)
+            inputType = inputTypeValue
+            textSize = 16f
+            setTextColor(Color.rgb(15, 23, 42))
+            setHintTextColor(Color.rgb(148, 163, 184))
+            background = roundedBackground(Color.WHITE, Color.rgb(203, 213, 225), 12f)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            minHeight = dp(52)
+        }.also { root.addView(it, ViewGroup.LayoutParams(-1, -2)) }
+
         root.addView(TextView(this).apply {
             text = "OPEX Inventory V22"
-            textSize = 26f
+            textSize = 28f
             setTextColor(Color.rgb(223, 16, 103))
-            setPadding(0, 0, 0, 24)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(4))
         })
-        api = field("HTTPS API adresi", prefs.getString("api", "https://inventory.company.com").orEmpty())
-        token = field("SSO erişim anahtarı", prefs.getString("token", "").orEmpty())
-        document = field("Sayım belge ID", prefs.getString("document", "").orEmpty())
-        location = field("Lokasyon okut / gir")
-        quantity = field("Adet", "1")
+
+        root.addView(TextView(this).apply {
+            text = "Terminal bağlantısı ve sayım ayarları"
+            textSize = 14f
+            setTextColor(Color.rgb(100, 116, 139))
+            setPadding(0, 0, 0, dp(8))
+        })
+
+        api = field(
+            "API adresi",
+            "https://inventory.company.com",
+            prefs.getString("api", "https://inventory.company.com").orEmpty(),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        )
+        token = field(
+            "SSO erişim anahtarı",
+            "Erişim anahtarını girin",
+            prefs.getString("token", "").orEmpty(),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        document = field(
+            "Sayım belge ID",
+            "Örn. COUNT-2026-001",
+            prefs.getString("document", "").orEmpty()
+        )
+        location = field("Lokasyon", "Lokasyon barkodunu okutun veya girin")
+        quantity = field(
+            "Adet",
+            "1",
+            "1",
+            InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
         root.addView(Button(this).apply {
             text = "AYARLARI KAYDET VE SENKRONİZE ET"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            background = roundedBackground(Color.rgb(223, 16, 103), Color.rgb(223, 16, 103), 12f)
+            isAllCaps = false
+            minHeight = dp(54)
             setOnClickListener {
                 persist()
                 syncQueue()
             }
-        }, ViewGroup.LayoutParams(-1, -2))
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
+
         root.addView(Button(this).apply {
             text = "TEST BARKODU GÖNDER"
+            textSize = 15f
+            setTextColor(Color.rgb(15, 23, 42))
+            setTypeface(typeface, Typeface.BOLD)
+            background = roundedBackground(Color.WHITE, Color.rgb(148, 163, 184), 12f)
+            isAllCaps = false
+            minHeight = dp(54)
             setOnClickListener { submit("8690000000001", "EAN13") }
-        }, ViewGroup.LayoutParams(-1, -2))
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+
         status = TextView(this).apply {
             text = "DataWedge bekleniyor"
-            textSize = 18f
-            setPadding(0, 28, 0, 0)
+            textSize = 16f
+            setTextColor(Color.rgb(71, 85, 105))
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Color.rgb(241, 245, 249), Color.rgb(203, 213, 225), 12f)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
         }
-        root.addView(status)
+        root.addView(status, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(18) })
         return root
     }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    private fun roundedBackground(fillColor: Int, strokeColor: Int, radiusDp: Float) =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(fillColor)
+            setStroke(dp(1), strokeColor)
+            cornerRadius = radiusDp * resources.displayMetrics.density
+        }
 
     private fun persist() {
         prefs.edit()

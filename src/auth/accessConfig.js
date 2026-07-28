@@ -323,7 +323,7 @@ function normalizeModuleAccess(moduleKey, access = {}) {
 function normalizeModules(modules = {}, role = "viewer") {
   return ACCESS_MODULES.reduce((acc, module) => {
     if (role === "super_admin") acc[module.key] = createModuleAccess(module.key, "super");
-    else acc[module.key] = normalizeModuleAccess(module.key, modules[module.key] || {});
+    else acc[module.key] = normalizeModuleAccess(module.key, modules[module.key] || (module.key === "inventory" ? modules.cycle_count : {}) || {});
     return acc;
   }, {});
 }

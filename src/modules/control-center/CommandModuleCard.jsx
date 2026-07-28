@@ -25,6 +25,7 @@ const iconMap = {
   academy: BookOpen,
   ai: Brain,
   cycle: ClipboardCheck,
+  inventory: Boxes,
   access: UsersRound,
   default: Boxes,
 };

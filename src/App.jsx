@@ -8,6 +8,7 @@ import PlanogramStudio from "./modules/planogram/PlanogramStudio.jsx";
 import BudgetIntelligence from "./modules/budget-intelligence/BudgetIntelligence.jsx";
 import DockOSDashboard from "./modules/DockOS/DockOSDashboard.jsx";
 import AccessControl from "./modules/access-control/AccessControl.jsx";
+import InventoryDashboard from "./modules/inventory/InventoryDashboard.jsx";
 
 export default function App() {
   return (
@@ -46,6 +47,15 @@ export default function App() {
         element={
           <ProtectedRoute moduleKey="budget">
             <BudgetIntelligence />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/inventory"
+        element={
+          <ProtectedRoute moduleKey="inventory">
+            <InventoryDashboard />
           </ProtectedRoute>
         }
       />

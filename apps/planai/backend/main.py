@@ -110,7 +110,7 @@ app.add_middleware(
         origin.strip()
         for origin in os.getenv(
             "PLONAGRAM_ALLOWED_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173",
+            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
         ).split(",")
         if origin.strip()
     ],
@@ -381,9 +381,9 @@ def rules_validate(req: RuleValidationRequest):
 
 
 @app.post("/rules/normalize-scoring")
-def rules_normalize_scoring(req: ScoringConfigRequest):
+def rules_normalize_scoring(req: ScoringConfigRequest, current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER", "REGIONAL_MANAGER"))):
     normalized = scoring_config_with_defaults(req.scoring_config)
-    _audit("scoring_config_updated", entity_type="rule_config", after=normalized)
+    _audit("scoring_config_updated", actor=current_user, entity_type="rule_config", after=normalized)
     return {"status": "success", "scoring_config": normalized}
 
 
@@ -402,18 +402,18 @@ def equipment_library(query: str = "", storage_type: str = "", limit: int = Quer
 
 
 @app.post("/equipment-library/object")
-def equipment_object(req: EquipmentObjectRequest):
+def equipment_object(req: EquipmentObjectRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     item = get_equipment(req.equipment_id)
     if not item:
         raise HTTPException(status_code=404, detail="Ekipman bulunamadı.")
     object_id = req.object_id or f"{req.equipment_id}-object"
     result = equipment_to_layout_object(item, object_id=object_id, x=req.x or 0, y=req.y or 0)
-    _audit("equipment_object_created", entity_type="layout_object", entity_id=object_id, after=result, metadata={"equipment_id": req.equipment_id})
+    _audit("equipment_object_created", actor=current_user, entity_type="layout_object", entity_id=object_id, after=result, metadata={"equipment_id": req.equipment_id})
     return {"status": "success", "object": result}
 
 
 @app.get("/equipment-library/download")
-def equipment_download(format: str = Query("json", pattern="^(json|csv)$")):
+def equipment_download(format: str = Query("json", pattern="^(json|csv)$"), current_user: Dict[str, Any] = Depends(get_current_user)):
     rows = list_equipment()
     if format == "csv":
         buffer = io.StringIO()
@@ -432,7 +432,7 @@ def equipment_download(format: str = Query("json", pattern="^(json|csv)$")):
         body = json.dumps({"version": "1.0", "equipment": rows}, ensure_ascii=False, indent=2).encode("utf-8")
         media_type = "application/json"
         filename = "plonagram-equipment-library.json"
-    _audit("equipment_library_downloaded", entity_type="equipment_library", metadata={"format": format, "count": len(rows)})
+    _audit("equipment_library_downloaded", actor=current_user, entity_type="equipment_library", metadata={"format": format, "count": len(rows)})
     return Response(content=body, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
@@ -480,7 +480,7 @@ def audit_log_alias(
 
 
 @app.post("/reload-master")
-def reload_master():
+def reload_master(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
     master = load_master(force=True)
     result = {
         "status": "ok",
@@ -491,7 +491,7 @@ def reload_master():
         "by_pim": len(master["by_pim"]),
         "by_key": len(master["by_key"]),
     }
-    _audit("master_reloaded", entity_type="master_products", after=result)
+    _audit("master_reloaded", actor=current_user, entity_type="master_products", after=result)
     return result
 
 
@@ -540,7 +540,7 @@ async def upload_products_csv(
         "missing_dimensions": sum(1 for p in products if p.get("dimension_source") == "missing"),
         "with_image": sum(1 for p in products if p.get("image_url")),
     }
-    _audit("products_uploaded", entity_type="product_catalog", entity_id=file.filename, after={k: result[k] for k in ("row_count", "master_matches", "file_dimensions", "ai_estimated", "missing_dimensions", "with_image")})
+    _audit("products_uploaded", actor=current_user, entity_type="product_catalog", entity_id=file.filename, after={k: result[k] for k in ("row_count", "master_matches", "file_dimensions", "ai_estimated", "missing_dimensions", "with_image")})
     return result
 
 
@@ -670,28 +670,28 @@ def validate_strict_rules(req: PlanRequest):
 # =====================================================
 
 @app.post("/update-facing")
-def update_facing(req: FacingRequest):
+def update_facing(req: FacingRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     result = engine_update_facing(
         plan=req.planogram,
         target_sku=req.sku,
         delta=req.delta,
     )
-    _audit("facing_updated", entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"delta": req.delta})
+    _audit("facing_updated", actor=current_user, entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"delta": req.delta})
     return result
 
 
 @app.post("/rotate-product")
-def rotate_product(req: RotateRequest):
+def rotate_product(req: RotateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     result = engine_rotate_product(
         plan=req.planogram,
         target_sku=req.sku,
     )
-    _audit("product_rotated", entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")))
+    _audit("product_rotated", actor=current_user, entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")))
     return result
 
 
 @app.post("/move-product")
-def move_product(req: MoveRequest):
+def move_product(req: MoveRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     result = engine_move_product(
         plan=req.planogram,
         target_sku=req.sku,
@@ -700,12 +700,12 @@ def move_product(req: MoveRequest):
         shelf_no=req.target_shelf_no,
         force=req.force,
     )
-    _audit("product_moved", entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"target_aisle_id": req.target_aisle_id, "target_module_id": req.target_module_id, "target_shelf_no": req.target_shelf_no, "force": req.force})
+    _audit("product_moved", actor=current_user, entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"target_aisle_id": req.target_aisle_id, "target_module_id": req.target_module_id, "target_shelf_no": req.target_shelf_no, "force": req.force})
     return result
 
 
 @app.post("/remove-product")
-def remove_product(req: RemoveProductRequest):
+def remove_product(req: RemoveProductRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     plan = copy.deepcopy(req.planogram)
     removed = remove_product_from_plan(plan, req.sku)
 
@@ -724,12 +724,12 @@ def remove_product(req: RemoveProductRequest):
         "planogram": plan,
         "message": "Ürün raftan kaldırıldı.",
     }
-    _audit("product_removed", entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(plan))
+    _audit("product_removed", actor=current_user, entity_type="sku", entity_id=req.sku, before=_plan_snapshot(req.planogram), after=_plan_snapshot(plan))
     return result
 
 
 @app.post("/add-product-to-shelf")
-def add_product_to_shelf(req: AddProductToShelfRequest):
+def add_product_to_shelf(req: AddProductToShelfRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     result = engine_add_product_to_shelf(
         plan=req.planogram,
         product=req.product,
@@ -738,12 +738,12 @@ def add_product_to_shelf(req: AddProductToShelfRequest):
         shelf_no=req.target_shelf_no,
         force=req.force,
     )
-    _audit("product_added_to_shelf", entity_type="sku", entity_id=req.product.get("sku"), before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"target_aisle_id": req.target_aisle_id, "target_module_id": req.target_module_id, "target_shelf_no": req.target_shelf_no, "force": req.force})
+    _audit("product_added_to_shelf", actor=current_user, entity_type="sku", entity_id=req.product.get("sku"), before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"target_aisle_id": req.target_aisle_id, "target_module_id": req.target_module_id, "target_shelf_no": req.target_shelf_no, "force": req.force})
     return result
 
 
 @app.post("/reorder-shelf")
-def reorder_shelf(req: ReorderShelfRequest):
+def reorder_shelf(req: ReorderShelfRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     plan = copy.deepcopy(req.planogram)
     aisle, module, shelf = find_shelf(
         plan,
@@ -785,7 +785,7 @@ def reorder_shelf(req: ReorderShelfRequest):
         "planogram": plan,
         "shelf": shelf,
     }
-    _audit("shelf_reordered", entity_type="shelf", entity_id=f"{req.aisle_id}:{req.module_id}:{req.shelf_no}", after=_plan_snapshot(plan), metadata={"sku_order": req.sku_order})
+    _audit("shelf_reordered", actor=current_user, entity_type="shelf", entity_id=f"{req.aisle_id}:{req.module_id}:{req.shelf_no}", after=_plan_snapshot(plan), metadata={"sku_order": req.sku_order})
     return result
 
 # =====================================================
@@ -1025,7 +1025,7 @@ async def parse_layout_file(file: UploadFile = File(...), store_code: str = "AUT
 # =====================================================
 
 @app.post("/apply-module-rule")
-def apply_module_rule(req: RuleRequest):
+def apply_module_rule(req: RuleRequest, current_user: Dict[str, Any] = Depends(require_roles("STORE_MANAGER", "REGIONAL_MANAGER", "ADMIN", "SUPER_USER"))):
     if req.module_id is None:
         return {
             "status": "error",
@@ -1045,7 +1045,7 @@ def apply_module_rule(req: RuleRequest):
         rule=req.rule,
     )
 
-    _audit("module_rule_applied", entity_type="module", entity_id=f"{req.aisle_id}:{req.module_id}", before=_plan_snapshot(req.layout), after=_plan_snapshot(layout), metadata={"rule": req.rule})
+    _audit("module_rule_applied", actor=current_user, entity_type="module", entity_id=f"{req.aisle_id}:{req.module_id}", before=_plan_snapshot(req.layout), after=_plan_snapshot(layout), metadata={"rule": req.rule})
 
     return {
         "status": "success",
@@ -1054,7 +1054,7 @@ def apply_module_rule(req: RuleRequest):
 
 
 @app.post("/apply-shelf-rule")
-def apply_shelf_rule(req: RuleRequest):
+def apply_shelf_rule(req: RuleRequest, current_user: Dict[str, Any] = Depends(require_roles("STORE_MANAGER", "REGIONAL_MANAGER", "ADMIN", "SUPER_USER"))):
     if req.module_id is None or req.shelf_no is None:
         return {
             "status": "error",
@@ -1075,7 +1075,7 @@ def apply_shelf_rule(req: RuleRequest):
         rule=req.rule,
     )
 
-    _audit("shelf_rule_applied", entity_type="shelf", entity_id=f"{req.aisle_id}:{req.module_id}:{req.shelf_no}", before=_plan_snapshot(req.layout), after=_plan_snapshot(layout), metadata={"rule": req.rule})
+    _audit("shelf_rule_applied", actor=current_user, entity_type="shelf", entity_id=f"{req.aisle_id}:{req.module_id}:{req.shelf_no}", before=_plan_snapshot(req.layout), after=_plan_snapshot(layout), metadata={"rule": req.rule})
 
     return {
         "status": "success",
@@ -1096,14 +1096,16 @@ def suggest_empty_space(req: SuggestRequest):
 
 
 @app.post("/commit-block-studio")
-def commit_block_studio(req: BlockStudioCommitRequest):
-    return engine_commit_block_studio(
+def commit_block_studio(req: BlockStudioCommitRequest, current_user: Dict[str, Any] = Depends(require_roles("STORE_MANAGER", "REGIONAL_MANAGER", "ADMIN", "SUPER_USER"))):
+    result = engine_commit_block_studio(
         plan=req.planogram,
         aisle_id=req.aisle_id,
         module_id=req.module_id,
         shelf_no=req.shelf_no,
         blocks=req.blocks,
     )
+    _audit("block_studio_committed", actor=current_user, entity_type="shelf", entity_id=f"{req.aisle_id}:{req.module_id}:{req.shelf_no}", before=_plan_snapshot(req.planogram), after=_plan_snapshot(result.get("planogram")), metadata={"committed": result.get("committed", result.get("status") == "success"), "rejected_count": len(result.get("rejected", []))})
+    return result
 
 
 @app.post("/optimize-shelf")
@@ -1172,7 +1174,7 @@ def optimize_selected_modules(req: SelectedModulesRequest):
 # =====================================================
 
 @app.post("/add-module")
-def add_module(payload: Dict[str, Any] = Body(...)):
+def add_module(payload: Dict[str, Any] = Body(...), current_user: Dict[str, Any] = Depends(require_roles("STORE_MANAGER", "REGIONAL_MANAGER", "ADMIN", "SUPER_USER"))):
     layout = copy.deepcopy(payload.get("layout") or generate_default_layout())
 
     aisle_id = str(payload.get("aisle_id") or "")
@@ -1212,7 +1214,7 @@ def add_module(payload: Dict[str, Any] = Body(...)):
                 "status": "success",
                 "layout": layout,
             }
-            _audit("module_added", actor=payload.get("actor"), store_code=payload.get("store_code"), entity_type="module", entity_id=f"{aisle_id}:{module_id}", after=_plan_snapshot(layout), metadata={"module_type": module_type, "storage_type": storage})
+            _audit("module_added", actor=current_user, store_code=payload.get("store_code"), entity_type="module", entity_id=f"{aisle_id}:{module_id}", after=_plan_snapshot(layout), metadata={"module_type": module_type, "storage_type": storage})
             return result
 
     return {
@@ -1223,7 +1225,7 @@ def add_module(payload: Dict[str, Any] = Body(...)):
 
 
 @app.post("/add-shelf")
-def add_shelf(payload: Dict[str, Any] = Body(...)):
+def add_shelf(payload: Dict[str, Any] = Body(...), current_user: Dict[str, Any] = Depends(require_roles("STORE_MANAGER", "REGIONAL_MANAGER", "ADMIN", "SUPER_USER"))):
     layout = copy.deepcopy(payload.get("layout") or generate_default_layout())
 
     aisle_id = payload.get("aisle_id")
@@ -1259,12 +1261,12 @@ def add_shelf(payload: Dict[str, Any] = Body(...)):
         "status": "success",
         "layout": layout,
     }
-    _audit("shelf_added", actor=payload.get("actor"), store_code=payload.get("store_code"), entity_type="shelf", entity_id=f"{aisle_id}:{module_id}:{module['shelves'][-1]['shelf_no']}", after=_plan_snapshot(layout))
+    _audit("shelf_added", actor=current_user, store_code=payload.get("store_code"), entity_type="shelf", entity_id=f"{aisle_id}:{module_id}:{module['shelves'][-1]['shelf_no']}", after=_plan_snapshot(layout))
     return result
 
 
 @app.post("/update-shelf-size")
-def update_shelf_size(payload: Dict[str, Any] = Body(...)):
+def update_shelf_size(payload: Dict[str, Any] = Body(...), current_user: Dict[str, Any] = Depends(require_roles("STORE_MANAGER", "REGIONAL_MANAGER", "ADMIN", "SUPER_USER"))):
     layout = copy.deepcopy(payload.get("layout") or payload.get("planogram"))
     aisle_id = payload.get("aisle_id")
     module_id = int(payload.get("module_id"))
@@ -1296,7 +1298,7 @@ def update_shelf_size(payload: Dict[str, Any] = Body(...)):
         "status": "success",
         "layout": layout,
     }
-    _audit("shelf_size_updated", actor=payload.get("actor"), store_code=payload.get("store_code"), entity_type="shelf", entity_id=f"{aisle_id}:{module_id}:{shelf_no}", after=_plan_snapshot(layout), metadata={"width_cm": shelf.get("shelf_width_cm"), "height_cm": shelf.get("shelf_height_cm"), "depth_cm": shelf.get("shelf_depth_cm"), "max_weight_kg": shelf.get("max_weight_kg")})
+    _audit("shelf_size_updated", actor=current_user, store_code=payload.get("store_code"), entity_type="shelf", entity_id=f"{aisle_id}:{module_id}:{shelf_no}", after=_plan_snapshot(layout), metadata={"width_cm": shelf.get("shelf_width_cm"), "height_cm": shelf.get("shelf_height_cm"), "depth_cm": shelf.get("shelf_depth_cm"), "max_weight_kg": shelf.get("max_weight_kg")})
     return result
 
 
@@ -1413,7 +1415,7 @@ def picking_route(req: RouteRequest):
 
 
 @app.post("/generate-planogram-lite")
-def generate_planogram_lite(req: GenerateRequest):
+def generate_planogram_lite(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Compatibility endpoint backed by the same deterministic engine.
 
     There must not be a second allocator that silently ignores rules or caps
@@ -1435,7 +1437,7 @@ def generate_planogram_lite(req: GenerateRequest):
     result["unplaced_products"] = result.get("unplaced", [])
     _audit(
         "plan_generated_compat",
-        actor=req.actor,
+        actor=current_user,
         store_code=req.store_code,
         entity_type="planogram",
         entity_id=req.store_code or "current",

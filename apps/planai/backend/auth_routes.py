@@ -266,6 +266,15 @@ def login(req: LoginRequest):
     return {"success": True, **issue_token(user), "user": public_user(user), "message": "Giriş başarılı."}
 
 
+@router.get("/me")
+def current_session(current_user: Dict[str, Any] = Depends(get_current_user)):
+    username = str(current_user.get("username") or current_user.get("sub") or "").lower()
+    user = load_users().get(username)
+    if not user or user.get("status") != "ACTIVE":
+        raise HTTPException(status_code=401, detail="Kullanıcı oturumu artık aktif değil.")
+    return {"success": True, "user": public_user(user)}
+
+
 @router.get("/pending-users")
 def pending_users(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
     users = load_users()

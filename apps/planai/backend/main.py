@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Body, Query, HTTPException, Response
+from fastapi import FastAPI, UploadFile, File, Body, Query, HTTPException, Response, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
@@ -8,6 +8,8 @@ import copy
 import csv
 import json
 import time
+import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,6 +59,14 @@ from engine import (
 )
 
 from audit_store import init_audit_db, list_audit_logs, write_audit
+from change_request_store import (
+    create_change_request,
+    get_change_request,
+    init_change_db,
+    list_change_requests,
+    review_change_request,
+)
+from security import authenticate_authorization, ensure_store_access, get_current_user, require_roles
 from equipment_library import EQUIPMENT, equipment_to_layout_object, get_equipment, list_equipment
 from rule_catalog import RULE_CATALOG, scoring_config_with_defaults, validate_rule_payload
 
@@ -68,6 +78,7 @@ except Exception:
 app = FastAPI(title="Plonagram Premium Backend")
 
 init_audit_db()
+init_change_db()
 
 # =====================================================
 # ROUTERS / MODULAR CORE
@@ -95,13 +106,44 @@ except Exception:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv(
+            "PLONAGRAM_ALLOWED_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173",
+        ).split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
-CHANGE_REQUESTS = []
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    public_paths = {
+        "/",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/default-layout",
+        "/rules/catalog",
+    }
+    public_prefixes = (
+        "/auth/login",
+        "/auth/register",
+        "/auth/forgot-password",
+        "/auth/stores",
+    )
+    if request.method != "OPTIONS" and request.url.path not in public_paths and not request.url.path.startswith(public_prefixes):
+        request.state.user = authenticate_authorization(request.headers.get("Authorization"))
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+MAX_UPLOAD_BYTES = int(os.getenv("PLONAGRAM_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 
 def _actor(value: Any = None) -> str:
@@ -111,7 +153,7 @@ def _actor(value: Any = None) -> str:
 
 
 def _audit(action: str, *, actor: Any = None, store_code: Any = None, entity_type: str = "", entity_id: Any = None, request_id: Any = None, before: Any = None, after: Any = None, metadata: Any = None) -> None:
-    """Audit is best-effort and must never break a planogram operation."""
+    """Write a compact, queryable audit event for every state-changing action."""
     try:
         write_audit(
             action,
@@ -305,7 +347,7 @@ def health():
     return {
         "status": "ok",
         "service": "Plonagram Premium Backend",
-        "engine_version": "deterministic-best-fit-v3",
+        "engine_version": "deterministic-best-fit-v4.2",
         "single_source_of_truth": "/generate-planogram",
         "compat_fast_path": "/generate-planogram-fast",
         "master_loaded": master["loaded"],
@@ -413,6 +455,7 @@ def audit_logs(
     request_id: str = "",
     created_from: str = "",
     created_to: str = "",
+    current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER", "REGIONAL_MANAGER")),
 ):
     return {"status": "success", **list_audit_logs(
         limit=limit,
@@ -428,7 +471,11 @@ def audit_logs(
 
 
 @app.get("/audit-log")
-def audit_log_alias(limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
+def audit_log_alias(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER", "REGIONAL_MANAGER")),
+):
     return {"status": "success", **list_audit_logs(limit=limit, offset=offset)}
 
 
@@ -456,13 +503,22 @@ def reload_master():
 async def upload_products_csv(
     file: UploadFile = File(...),
     allow_ai_dimensions: bool = True,
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    content = await file.read()
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".csv", ".xlsx", ".xls")):
+        raise HTTPException(status_code=415, detail="Yalnızca CSV/XLSX ürün dosyası kabul edilir.")
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Ürün dosyası {MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşamaz.")
 
-    try:
-        df = pd.read_csv(io.BytesIO(content))
-    except UnicodeDecodeError:
-        df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
+    if filename.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(io.BytesIO(content))
+    else:
+        try:
+            df = pd.read_csv(io.BytesIO(content))
+        except UnicodeDecodeError:
+            df = pd.read_csv(io.BytesIO(content), encoding="utf-8-sig")
 
     df = df.where(pd.notnull(df), None)
     rows = df.to_dict(orient="records")
@@ -510,7 +566,8 @@ def enrich_products(payload: Dict[str, Any] = Body(...)):
 # =====================================================
 
 @app.post("/generate-planogram")
-def generate(req: GenerateRequest):
+def generate(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    ensure_store_access(current_user, req.store_code)
     started = time.perf_counter()
     result = generate_planogram(
         products=req.products,
@@ -523,7 +580,7 @@ def generate(req: GenerateRequest):
     result.setdefault("summary", {})["runtime_sec"] = round(time.perf_counter() - started, 3)
     _audit(
         "plan_generated",
-        actor=req.actor,
+        actor=current_user,
         store_code=req.store_code,
         entity_type="planogram",
         entity_id=req.store_code or "current",
@@ -535,7 +592,8 @@ def generate(req: GenerateRequest):
 
 
 @app.post("/generate-planogram-fast")
-def generate_fast(req: GenerateRequest):
+def generate_fast(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    ensure_store_access(current_user, req.store_code)
     started = time.perf_counter()
     result = run_engine(
         products=req.products,
@@ -549,7 +607,7 @@ def generate_fast(req: GenerateRequest):
     result.setdefault("summary", {})["execution_path"] = "deterministic_engine"
     _audit(
         "plan_generated_fast",
-        actor=req.actor,
+        actor=current_user,
         store_code=req.store_code,
         entity_type="planogram",
         entity_id=req.store_code or "current",
@@ -562,9 +620,9 @@ def generate_fast(req: GenerateRequest):
 
 @app.post("/generate-plan")
 @app.post("/generate-planogram-one-click")
-def generate_one_click(req: GenerateRequest):
+def generate_one_click(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Short aliases for the primary action in the command center."""
-    return generate(req)
+    return generate(req, current_user)
 
 
 @app.post("/score-planogram")
@@ -932,8 +990,12 @@ async def parse_layout_file(file: UploadFile = File(...), store_code: str = "AUT
 
     suffix = os.path.splitext(filename)[1]
 
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"Layout dosyası {MAX_UPLOAD_BYTES // (1024 * 1024)} MB sınırını aşamaz.")
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
+        tmp.write(content)
         tmp_path = tmp.name
 
     try:
@@ -1243,25 +1305,19 @@ def update_shelf_size(payload: Dict[str, Any] = Body(...)):
 # =====================================================
 
 @app.post("/request-dimension-change")
-def request_dimension_change(req: DimensionChangeRequest):
-    request_id = len(CHANGE_REQUESTS) + 1
-
-    item = {
-        "id": request_id,
-        "sku": req.sku,
-        "product_name": req.product_name,
-        "old": req.old,
-        "new": req.new,
-        "requested_by": req.requested_by,
-        "reason": req.reason,
-        "status": "PENDING",
-    }
-
-    CHANGE_REQUESTS.append(item)
+def request_dimension_change(req: DimensionChangeRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    item = create_change_request(
+        sku=req.sku,
+        product_name=req.product_name,
+        old=req.old,
+        new=req.new,
+        requested_by=str(current_user.get("username") or req.requested_by or "user"),
+        reason=req.reason or "",
+    )
 
     _audit(
         "dimension_change_requested",
-        actor=req.requested_by,
+        actor=current_user,
         entity_type="sku",
         entity_id=req.sku,
         after=item,
@@ -1275,20 +1331,18 @@ def request_dimension_change(req: DimensionChangeRequest):
 
 
 @app.get("/pending-dimension-changes")
-def pending_dimension_changes():
+def pending_dimension_changes(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER", "REGIONAL_MANAGER"))):
+    all_requests = list_change_requests()
     return {
         "status": "success",
-        "pending": [x for x in CHANGE_REQUESTS if x["status"] == "PENDING"],
-        "all": CHANGE_REQUESTS,
+        "pending": [x for x in all_requests if x["status"] == "PENDING"],
+        "all": all_requests,
     }
 
 
 @app.post("/approve-dimension-change")
-def approve_dimension_change(req: ApproveDimensionRequest):
-    target = next(
-        (x for x in CHANGE_REQUESTS if x["id"] == req.request_id),
-        None,
-    )
+def approve_dimension_change(req: ApproveDimensionRequest, current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
+    target = get_change_request(req.request_id)
 
     if not target:
         return {
@@ -1296,12 +1350,20 @@ def approve_dimension_change(req: ApproveDimensionRequest):
             "message": "Request bulunamadı.",
         }
 
-    target["status"] = "APPROVED" if req.approve else "REJECTED"
+    if target.get("status") != "PENDING":
+        return {"status": "error", "message": "Bu request daha önce sonuçlandırılmış."}
+
+    target = review_change_request(
+        req.request_id,
+        approve=req.approve,
+        reviewed_by=str(current_user.get("username") or "admin"),
+    )
 
     _audit(
         "dimension_change_reviewed",
         entity_type="sku",
         entity_id=target["sku"],
+        actor=current_user,
         after=target,
         metadata={"approve": req.approve, "request_id": req.request_id},
     )

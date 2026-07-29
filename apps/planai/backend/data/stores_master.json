@@ -1,0 +1,29 @@
+[
+  {
+    "store_code": "ANKA",
+    "vendor_id": "ANKA",
+    "store_name": "Anka",
+    "display_name": "Anka planogram",
+    "city": "Istanbul",
+    "region": "Istanbul",
+    "store_type": "depot"
+  },
+  {
+    "store_code": "ACIBADEM",
+    "vendor_id": "ACIBADEM",
+    "store_name": "Acibadem",
+    "display_name": "Acibadem planogram",
+    "city": "Istanbul",
+    "region": "Istanbul",
+    "store_type": "depot"
+  },
+  {
+    "store_code": "GUVEN_FR",
+    "vendor_id": "GUVEN_FR",
+    "store_name": "Guven FR",
+    "display_name": "Guven FR planogram",
+    "city": "Kocaeli",
+    "region": "Kocaeli",
+    "store_type": "depot"
+  }
+]

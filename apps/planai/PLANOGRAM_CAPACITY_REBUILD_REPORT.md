@@ -32,3 +32,9 @@ Bu yine ürünün gerçek master ölçüsünün yerini tutmaz. Üretim kataloğu
 - CHILLED fixture sayısı ve raf genişliği için Store DNA kapasite revizyonu yapmak.
 - İçecek, donuk, soğuk zincir, kasa-pack ve temizlik ayrımı için senaryo değerlendirme seti eklemek.
 - Plan versiyonu, yayın onayı ve geri alma akışını veritabanına taşımak.
+
+## Veri kalitesi uyarısı
+
+Bu exportta fiziksel genişlik, yükseklik ve derinlik alanları bulunmadığı için 1.030 satırın tamamı tahmini ölçü profiliyle işlendi. Engine bunu diagnostics/data_quality içinde görünür kılar; üretim yayını için tahmini ölçülü kayıtlar onay kapısından geçmelidir.
+
+Beypazarı kayıtlarında çoklu paket adı doğru okunuyor ve Coala örneğinin kaynak facing değeri 1 olarak korunuyor. Bazı diğer Beypazarı SKU'ları satış/kapasite politikasına göre 2 facing alabiliyor. “6 x 200 ml tek satılabilir paket olarak tek facing olmalı” kuralı isteniyorsa bunun ürün master'ında pack_type, pack_count ve onaylı fiziksel ölçü ile açıkça tanımlanması gerekir; motor bunu yalnızca ürün adından varsaymamalıdır.

@@ -1,0 +1,80 @@
+import { useEffect, useState } from 'react';
+import { api } from '../../services/api.js';
+
+export default function ABCCatalogUploadPanel({ storeCode = 'AUTO', onMergeComplete, notify }) {
+  const [abcStatus, setAbcStatus] = useState(null);
+  const [catalogStatus, setCatalogStatus] = useState(null);
+  const [mergeStatus, setMergeStatus] = useState(null);
+  const [busy, setBusy] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    api.catalogStatus(storeCode).then((res) => { if (active) setCatalogStatus(res); }).catch(() => {});
+    return () => { active = false; };
+  }, [storeCode]);
+
+  async function upload(type, file) {
+    if (!file) return;
+    setBusy(type);
+    try {
+      const res = type === 'abc' ? await api.uploadAbc(storeCode, file) : await api.uploadCatalog(storeCode, file);
+      if (res.status !== 'success') throw new Error(res.message || 'Yükleme başarısız.');
+      if (type === 'abc') setAbcStatus(res);
+      else setCatalogStatus(res);
+      notify?.(`${type === 'abc' ? 'ABC raporu' : 'Catalog'} yüklendi.`);
+    } catch (err) {
+      notify?.(err.message || 'Yükleme başarısız.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function merge() {
+    setBusy('merge');
+    try {
+      const res = await api.mergeProducts(storeCode);
+      if (res.status !== 'success') throw new Error(res.message || 'Merge başarısız.');
+      setMergeStatus(res);
+      onMergeComplete?.(res);
+      notify?.(`${res.summary?.total_merged || 0} ürün ABC + Catalog ile eşleşti.`);
+    } catch (err) {
+      notify?.(err.message || 'Merge başarısız.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <div className="abc-catalog-panel card pad">
+      <div className="section-eyebrow">ABC + GÖMÜLÜ CATALOG PIPELINE</div>
+      <h2>Satış raporunu sistem catalog’u ile birleştir</h2>
+      <p className="muted">Depo catalog yüklemez. Catalog sistemde gömülü master veridir; kullanıcı sadece ABC raporunu yükler. Sistem SKU, barkod ve product key ile eşleştirir.</p>
+      <div className="upload-grid">
+        <label className="upload-card">
+          <input type="file" accept=".csv,.xlsx" hidden onChange={(e) => upload('abc', e.target.files?.[0])} />
+          <b>1. ABC raporu yükle</b>
+          <span>% Orders, % Stops, Rank, ABC class</span>
+          {abcStatus && <em>{abcStatus.summary?.total_items || 0} ürün · A/B/C hazır</em>}
+        </label>
+        <div className="upload-card is-locked">
+          <b>2. Catalog master otomatik</b>
+          <span>SKU, barkod, ölçü, storage ve görsel sistemde gömülü tutulur.</span>
+          {catalogStatus ? <em>{catalogStatus.total || catalogStatus.summary?.successful || 0} ürün · {catalogStatus.with_image || 0} görselli · {catalogStatus.with_dimensions || 0} ölçülü</em> : <em>Catalog durumu okunuyor...</em>}
+        </div>
+      </div>
+      <div className="merge-box">
+        <button className="btn primary" disabled={busy || !abcStatus || !(catalogStatus?.total || catalogStatus?.summary?.successful)} onClick={merge}>{busy === 'merge' ? 'Birleştiriliyor...' : '3. ABC + gömülü catalog’u birleştir'}</button>
+        {busy && busy !== 'merge' && <span className="muted">Dosya yükleniyor...</span>}
+      </div>
+      {mergeStatus && (
+        <div className="merge-result-grid">
+          <div><b>{mergeStatus.summary?.total_merged || 0}</b><span>Eşleşen ürün</span></div>
+          <div><b>{mergeStatus.summary?.match_rate || 0}%</b><span>Eşleşme oranı</span></div>
+          <div><b>{mergeStatus.summary?.unmatched_abc_count || 0}</b><span>Catalog’da bulunamayan</span></div>
+          <div><b>{mergeStatus.match_stats?.fuzzy_match || 0}</b><span>Fuzzy match</span></div>
+        </div>
+      )}
+    </div>
+  );
+}
+

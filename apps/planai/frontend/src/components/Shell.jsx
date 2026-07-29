@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import BrandLogo from './BrandLogo.jsx';
+import { api } from '../services/api.js';
 import { languages, tt } from '../i18n/dictionary.js';
 import { stores } from '../data/mock.js';
 
@@ -9,6 +11,51 @@ const nav = [
 ];
 
 export default function Shell({ children, lang, setLang, active, setActive, store, setStore, onGenerate, onUploadSku, onUploadLayout }) {
+  const [session, setSession] = useState(() => {
+    try { return Boolean(localStorage.getItem('plonagram_access_token')); } catch { return false; }
+  });
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function signIn(event) {
+    event.preventDefault();
+    setBusy(true);
+    setAuthError('');
+    try {
+      const result = await api.login({ username, password });
+      if (!result?.access_token) throw new Error(result?.message || 'Token alınamadı.');
+      setSession(true);
+    } catch (error) {
+      setAuthError(error?.message || 'Giriş başarısız.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function signOut() {
+    api.logout();
+    setSession(false);
+  }
+
+  if (!session) {
+    return (
+      <main className="auth-gate">
+        <form className="auth-card" onSubmit={signIn}>
+          <div className="section-eyebrow">PLONAGRAM FOUNDATION</div>
+          <h1>Güvenli giriş</h1>
+          <p className="muted">Plan üretimi, layout değişiklikleri ve audit kayıtları için oturum açın.</p>
+          <label>Kullanıcı adı veya e-posta<input autoFocus value={username} onChange={(event) => setUsername(event.target.value)} /></label>
+          <label>Şifre<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          {authError && <div className="auth-error">{authError}</div>}
+          <button className="btn primary" disabled={busy || !username || !password}>{busy ? 'Giriş yapılıyor…' : 'Giriş yap'}</button>
+          <small className="muted">Bootstrap parolası backend ortam değişkeninden belirlenir.</small>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -20,10 +67,10 @@ export default function Shell({ children, lang, setLang, active, setActive, stor
             </button>
           ))}
         </nav>
-        <div className="user-card">
+        <button className="user-card" onClick={signOut} title="Oturumu kapat">
           <div className="avatar">EA</div>
-          <div className="hide-narrow"><b>Erdi A.</b><br/><span className="muted" style={{ fontSize: 12 }}>Enterprise Admin</span></div>
-        </div>
+          <div className="hide-narrow"><b>{username || 'Aktif kullanıcı'}</b><br/><span className="muted" style={{ fontSize: 12 }}>Oturumu kapat</span></div>
+        </button>
       </aside>
       <main className="main-area">
         <header className="topbar">

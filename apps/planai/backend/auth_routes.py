@@ -1,12 +1,17 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import hashlib
+import base64
+import hmac
 import json
+import os
 import re
 import secrets
+
+from security import issue_token, require_roles, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,18 +51,46 @@ def write_json(path: Path, data):
 
 
 def hash_password(password: str) -> str:
-    raw = str(password or "")
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    raw = str(password or "").encode("utf-8")
+    iterations = 310_000
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", raw, salt, iterations)
+    return "pbkdf2_sha256${}${}${}".format(
+        iterations,
+        base64.urlsafe_b64encode(salt).decode("ascii"),
+        base64.urlsafe_b64encode(digest).decode("ascii"),
+    )
+
+
+def verify_password(password: str, stored: str) -> bool:
+    value = str(stored or "")
+    if value.startswith("pbkdf2_sha256$"):
+        try:
+            _, iterations, salt_b64, digest_b64 = value.split("$", 3)
+            salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
+            expected = base64.urlsafe_b64decode(digest_b64.encode("ascii"))
+            actual = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, int(iterations))
+            return hmac.compare_digest(actual, expected)
+        except (ValueError, TypeError):
+            return False
+
+    # One-time compatibility for old local users.json files.  Successful
+    # login upgrades the record to PBKDF2 in the login handler.
+    legacy = hashlib.sha256(str(password or "").encode("utf-8")).hexdigest()
+    return hmac.compare_digest(legacy, value)
 
 
 def load_users() -> Dict[str, Any]:
     users = read_json(USERS_PATH, {})
-    # First-run admin bootstrap. Keeps old demo access working.
-    if "erdi" not in users:
+    # Bootstrap is explicit and never contains a source-controlled password.
+    # Existing legacy users are kept so an upgrade does not lock out a local
+    # installation; their hash is upgraded after the next successful login.
+    bootstrap_password = os.getenv("PLONAGRAM_BOOTSTRAP_PASSWORD", "")
+    if not users and bootstrap_password:
         users["erdi"] = {
             "username": "erdi",
             "email": "erdi@plonagram.local",
-            "password_hash": hash_password("1234"),
+            "password_hash": hash_password(bootstrap_password),
             "role": "ADMIN",
             "status": "ACTIVE",
             "assigned_stores": ["*"],
@@ -124,7 +157,7 @@ class ForgotPasswordRequest(BaseModel):
 class ApproveUserRequest(BaseModel):
     username: str
     approve: bool = True
-    approver_username: str = "erdi"
+    approver_username: Optional[str] = None
     role_override: Optional[str] = None
 
 
@@ -176,8 +209,8 @@ def register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="Kullanıcı adı 3-50 karakter olmalı; harf, rakam, nokta, tire veya alt tire içermeli.")
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Geçerli e-posta zorunlu.")
-    if len(password) < 4:
-        raise HTTPException(status_code=400, detail="Şifre en az 4 karakter olmalı.")
+    if len(password) < 12:
+        raise HTTPException(status_code=400, detail="Şifre en az 12 karakter olmalı.")
 
     store = find_store(store_code)
     if not store:
@@ -223,22 +256,25 @@ def login(req: LoginRequest):
     user = users.get(ident)
     if not user:
         user = next((u for u in users.values() if str(u.get("email", "")).lower() == ident), None)
-    if not user or user.get("password_hash") != hash_password(req.password):
+    if not user or not verify_password(req.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Kullanıcı adı/e-posta veya şifre hatalı.")
     if user.get("status") != "ACTIVE":
         return {"success": False, "status": user.get("status"), "message": "Hesabınız admin onayı bekliyor.", "user": public_user(user)}
-    return {"success": True, "user": public_user(user), "message": "Giriş başarılı."}
+    if not str(user.get("password_hash", "")).startswith("pbkdf2_sha256$"):
+        user["password_hash"] = hash_password(req.password)
+        save_users(users)
+    return {"success": True, **issue_token(user), "user": public_user(user), "message": "Giriş başarılı."}
 
 
 @router.get("/pending-users")
-def pending_users():
+def pending_users(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
     users = load_users()
     pending = [public_user(u) for u in users.values() if u.get("status") == "PENDING_APPROVAL"]
     return {"success": True, "pending": pending, "count": len(pending)}
 
 
 @router.post("/approve-user")
-def approve_user(req: ApproveUserRequest):
+def approve_user(req: ApproveUserRequest, current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
     users = load_users()
     target = str(req.username or "").strip().lower()
     user = users.get(target)
@@ -248,12 +284,12 @@ def approve_user(req: ApproveUserRequest):
         if req.role_override:
             user["role"] = normalize_role(req.role_override)
         user["status"] = "ACTIVE"
-        user["approved_by"] = req.approver_username
+        user["approved_by"] = current_user.get("username")
         user["approved_at"] = now_iso()
         message = "Kullanıcı onaylandı."
     else:
         user["status"] = "REJECTED"
-        user["approved_by"] = req.approver_username
+        user["approved_by"] = current_user.get("username")
         user["approved_at"] = now_iso()
         message = "Kullanıcı reddedildi."
     users[target] = user
@@ -266,9 +302,9 @@ def forgot_password(req: ForgotPasswordRequest):
     email = str(req.email or "").lower().strip()
     users = load_users()
     user = next((u for u in users.values() if str(u.get("email", "")).lower() == email), None)
-    if not user:
-        raise HTTPException(status_code=404, detail="Bu mail adresi kayıtlı değil.")
-    token = secrets.token_urlsafe(32)
-    RESET_TOKENS[token] = {"email": email, "expires_at": datetime.utcnow() + timedelta(minutes=30)}
-    print(f"[PASSWORD_RESET] email={email} token={token}")
-    return {"success": True, "message": "Şifre sıfırlama maili gönderildi."}
+    # Do not reveal whether an account exists and never print reset tokens to
+    # logs.  A mail provider can consume RESET_TOKENS in the deployment layer.
+    if user:
+        token = secrets.token_urlsafe(32)
+        RESET_TOKENS[token] = {"email": email, "expires_at": datetime.utcnow() + timedelta(minutes=30)}
+    return {"success": True, "message": "Varsa şifre sıfırlama bağlantısı gönderildi."}

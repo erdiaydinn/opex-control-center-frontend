@@ -1,0 +1,19 @@
+{
+  "cases": [
+    {
+      "id": "ambient_100cm_20cm_max_5",
+      "product": {"sku": "TEST-20CM", "product_name": "20cm Ambient Test", "storage_type": "AMBIENT", "width_cm": 20, "height_cm": 15, "depth_cm": 10, "weight_kg": 0.2, "sales_qty_7d": 200, "abc_class": "A"},
+      "expected": {"decision": "PLACED", "max_facing": 5}
+    },
+    {
+      "id": "too_wide_rejected",
+      "product": {"sku": "TEST-130CM", "product_name": "130cm Ambient Test", "storage_type": "AMBIENT", "width_cm": 130, "height_cm": 15, "depth_cm": 10, "weight_kg": 0.2},
+      "expected": {"decision": "UNPLACED", "reason_code": "PRODUCT_TOO_WIDE_FOR_SHELF"}
+    },
+    {
+      "id": "algida_requires_icecream_fixture",
+      "product": {"sku": "ALGIDA-001", "product_name": "Algida Magnum", "brand": "Algida", "storage_type": "FROZEN", "width_cm": 8, "height_cm": 10, "depth_cm": 5, "weight_kg": 0.1},
+      "expected": {"storage_class": "ICE_CREAM"}
+    }
+  ]
+}

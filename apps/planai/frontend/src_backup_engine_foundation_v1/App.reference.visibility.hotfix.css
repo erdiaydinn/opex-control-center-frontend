@@ -1,0 +1,171 @@
+
+/* PLONAGRAM Reference Visibility Hotfix v1
+   Purpose: fixes blank workspace after login by forcing the reference shell
+   content layer to render above legacy CSS. Does not touch logic/components.
+*/
+
+.plg-os-shell {
+  display: grid !important;
+  grid-template-columns: 236px minmax(0, 1fr) !important;
+  grid-template-rows: 92px minmax(0, auto) !important;
+  min-height: 100vh !important;
+  width: 100% !important;
+  overflow: visible !important;
+  position: relative !important;
+}
+
+.plg-side-rail {
+  grid-column: 1 !important;
+  grid-row: 1 / span 2 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 100 !important;
+}
+
+.plg-top-orbit {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 90 !important;
+}
+
+.plg-command-main {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 1 !important;
+  min-height: calc(100vh - 92px) !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  transform: none !important;
+  pointer-events: auto !important;
+  margin: 0 !important;
+  padding: 32px 36px 72px !important;
+}
+
+.plg-command-main > * {
+  display: revert !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.plg-hero-grid {
+  display: grid !important;
+  grid-template-columns: minmax(520px, .92fr) minmax(650px, 1.08fr) !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  min-height: 430px !important;
+}
+
+.plg-hero-copy,
+.plg-hero-twin,
+.plg-reference-hero-twin,
+.plg-kpi-strip,
+.plg-control-deck,
+.plg-engine-panel,
+.plg-studio-shell,
+.plg-studio-frame {
+  display: revert !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+  position: relative !important;
+}
+
+.plg-kpi-strip {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+}
+
+.plg-control-deck {
+  display: grid !important;
+  grid-template-columns: 1fr 1.25fr 1fr !important;
+}
+
+.plg-section-heading {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.plg-tabs,
+.plg-hero-actions,
+.plg-button-row,
+.plg-store-badges,
+.plg-metric-pills {
+  display: flex !important;
+}
+
+/* Some legacy styles may set section/card text to transparent or white */
+.plg-command-main,
+.plg-command-main h1,
+.plg-command-main h2,
+.plg-command-main h3,
+.plg-command-main p,
+.plg-command-main span,
+.plg-command-main small,
+.plg-command-main strong {
+  color: #151922 !important;
+}
+
+.plg-primary-cta,
+.plg-primary-cta *,
+.plg-avatar,
+.plg-avatar *,
+.plg-tabs button.active,
+.plg-tabs button.active * {
+  color: #fff !important;
+}
+
+/* Make sure the canvas panels are not collapsed */
+.plg-studio-frame > * {
+  min-height: 520px !important;
+}
+
+/* If an old overlay remains above the workspace, neutralize common blockers */
+.loading,
+.loader,
+.boot-loader,
+.architectural-loader:not(.plonagram-architectural-loading),
+.loading-overlay:not(.plonagram-architectural-loading) {
+  pointer-events: none !important;
+}
+
+/* Responsive safety */
+@media (max-width: 1400px) {
+  .plg-hero-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .plg-kpi-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .plg-control-deck {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .plg-os-shell {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto auto !important;
+  }
+  .plg-side-rail,
+  .plg-top-orbit,
+  .plg-command-main {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+  }
+  .plg-kpi-strip {
+    grid-template-columns: 1fr !important;
+  }
+}

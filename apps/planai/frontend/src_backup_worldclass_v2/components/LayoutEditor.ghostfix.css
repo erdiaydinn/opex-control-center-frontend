@@ -1,0 +1,48 @@
+/* 3D Studio label ghost fix while Layout Architect is open */
+body.layout-architect-open .d3-object-label,
+body.layout-architect-open .d3-aisle-badge,
+body.layout-architect-open .d3-module-panel,
+body.layout-architect-open .d3-help,
+body.layout-architect-open .d3-header,
+body.layout-architect-open .d3-toolbar,
+body.layout-architect-open .d3-stats {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Force architect modal above Three.js Html portals */
+.le-backdrop {
+  z-index: 2147483000 !important;
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(2, 6, 23, 0.92) !important;
+  backdrop-filter: blur(26px) saturate(120%) !important;
+  isolation: isolate !important;
+}
+
+.le-modal {
+  z-index: 2147483001 !important;
+  position: relative !important;
+  isolation: isolate !important;
+}
+
+.le-grid,
+.le-toolbox,
+.le-module-inspector {
+  position: relative !important;
+  z-index: 2147483002 !important;
+}
+
+/* Prevent any foreign Html overlay from visually bleeding into the modal */
+.le-backdrop::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,15,123,.10), transparent 30%),
+    radial-gradient(circle at 80% 80%, rgba(34,211,238,.08), transparent 28%),
+    rgba(2,6,23,.72);
+  z-index: -1;
+}

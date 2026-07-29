@@ -1,0 +1,97 @@
+{
+  "ui": {
+    "language": {
+      "title": "اللغة",
+      "select": "اختيار اللغة",
+      "note": "يتم حفظ تفضيل اللغة"
+    },
+    "common": {
+      "save": "حفظ",
+      "cancel": "إلغاء",
+      "close": "إغلاق",
+      "search": "بحث",
+      "edit": "تعديل",
+      "delete": "حذف",
+      "approve": "اعتماد",
+      "reject": "رفض",
+      "loading": "جارٍ التحميل",
+      "activeStore": "المتجر النشط"
+    }
+  },
+  "domain": {
+    "store": "المتجر",
+    "storeSelection": "اختيار المتجر",
+    "storeQuestion": "لأي متجر يتم إنشاء هذا الحساب؟",
+    "depotDNA": "إعداد ملف المتجر",
+    "depotDNAHelp": "أدخل التفاصيل التشغيلية والمادية الخاصة بالمتجر.",
+    "fixture": "نوع الرف / الثلاجة",
+    "layout": "تخطيط المتجر",
+    "planogram": "مخطط الرفوف",
+    "orderPicking": "تجهيز الطلبات",
+    "goodsReceiving": "استلام البضائع",
+    "shelfReplenishment": "تعبئة الرفوف",
+    "dispatchStaging": "منطقة انتظار الطلبات الجاهزة",
+    "aisleCongestion": "ازدحام الممر",
+    "walkingDistance": "مسافة المشي",
+    "spaceUtilization": "استغلال المساحة",
+    "deadSpace": "مساحة غير مستخدمة",
+    "highVelocitySku": "منتج سريع الحركة",
+    "highestRefundRiskSku": "منتج عالي مخاطر الاسترداد",
+    "itemReplacement": "استبدال المنتج",
+    "refundRisk": "مخاطر الاسترداد",
+    "pickingTime": "وقت تجهيز الطلب",
+    "shelfEfficiency": "كفاءة الرف",
+    "goldenZone": "منطقة سهلة الوصول",
+    "coldLoss": "فقدان البرودة",
+    "fefo": "الأقرب انتهاءً يخرج أولاً"
+  },
+  "storage": {
+    "AMBIENT": "منتجات جافة / عادية",
+    "CHILLED": "منتجات مبردة +4°C",
+    "FROZEN": "منتجات مجمدة",
+    "CHILLED_ROOM": "غرفة تبريد +4°C",
+    "FROZEN_ROOM": "غرفة تجميد -18°C"
+  },
+  "fixture": {
+    "steel_rack": "رف معدني",
+    "steel_rack_new_gen": "رف معدني جيل جديد",
+    "hdr_heavy_rack": "رف أحمال ثقيلة",
+    "martek_plus4": "ثلاجة Martek +4",
+    "martek_frozen_minus18": "فريزر Martek -18",
+    "ice_cream_chest_freezer_small": "فريزر آيس كريم Algida/Golf صغير",
+    "ice_cream_chest_freezer_medium": "فريزر آيس كريم Algida/Golf متوسط",
+    "ice_cream_chest_freezer_large": "فريزر آيس كريم Algida/Golf كبير",
+    "vertical_chiller": "ثلاجة عمودية +4°C",
+    "ugur_vertical_chiller": "ثلاجة Uğur عمودية +4°C",
+    "secure_value_unit": "وحدة منتجات عالية القيمة مقفلة",
+    "dispatch_heavy_rack": "رف ثقيل لمنطقة التجهيز",
+    "buffer_rack": "رف انتظار / تخزين مؤقت",
+    "chilled_room": "غرفة تبريد +4°C",
+    "frozen_room": "غرفة تجميد -18°C",
+    "wall": "جدار",
+    "column": "عمود",
+    "manager_desk": "مكتب المدير"
+  },
+  "onboarding": {
+    "basementQuestion": "هل يوجد طابق سفلي في المتجر؟",
+    "upperStorageQuestion": "هل توجد منطقة تخزين علوية يتم الوصول إليها بالسلالم؟",
+    "chilledRoomArea": "ما مساحة غرفة التبريد +4°C تقريباً بالمتر المربع؟",
+    "frozenRoomArea": "ما مساحة غرفة التجميد -18°C تقريباً بالمتر المربع؟",
+    "receivingHours": "متى يتم استلام البضائع عادةً؟",
+    "after16Receiving": "هل تفضلون تجنب الاستلام بعد الساعة 16:00؟",
+    "peakHours": "متى يكون المتجر في أعلى ازدحام؟",
+    "replenishmentFrequency": "كم مرة يتم عادةً تعبئة الرفوف؟",
+    "aisleWidth": "متوسط عرض الممر بالسنتيمتر؟",
+    "mainAisleWidth": "عرض الممر الرئيسي تقريباً بالسنتيمتر؟"
+  },
+  "loading": {
+    "boot": {
+      "title": "جارٍ تجهيز Plonagram",
+      "subtitle": "يتم تحميل DNA المستودع وفيزياء المنتجات وقواعد التشغيل من طبقة واحدة."
+    },
+    "optimize": {
+      "title": "جارٍ بناء البلانوغرام",
+      "subtitle": "يتم تحليل DNA المستودع وحجم المنتجات وسلسلة التبريد وقواعد المسار."
+    }
+  }
+}

@@ -1,0 +1,104 @@
+
+/* Layout Architect text overlap hotfix */
+.le-module-node,
+.le-object,
+.le-walkway {
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+.le-module-node b,
+.le-module-node span,
+.le-object,
+.le-walkway b,
+.le-walkway span {
+  pointer-events: none;
+  user-select: none;
+}
+
+.le-module-node b {
+  max-width: 100%;
+  display: block;
+  padding: 0 2px;
+  font-size: 8px !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: .9;
+}
+
+.le-module-node span {
+  display: none !important;
+}
+
+/* Small modules should not show dense labels */
+.le-module-node {
+  color: transparent !important;
+}
+
+.le-module-node::after {
+  content: attr(data-short-label);
+  color: #f8fafc;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+
+/* Fallback: when data attribute is absent, show only clean node dot */
+.le-module-node:not([data-short-label])::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.75);
+  box-shadow: 0 0 12px rgba(255,255,255,.2);
+}
+
+/* Hide source/type text leaking from old module labels */
+.le-module-node > * {
+  display: none !important;
+}
+
+.le-walkway {
+  z-index: 1;
+  opacity: .62;
+}
+
+.le-object {
+  z-index: 5;
+  font-size: 9px !important;
+  white-space: nowrap;
+}
+
+.le-module-node {
+  z-index: 8;
+}
+
+.le-module-node.selected {
+  z-index: 20;
+}
+
+/* Right inspector floating badges should stay readable but not huge */
+.le-module-inspector .le-object,
+.le-module-inspector .le-module-node {
+  position: static !important;
+}
+
+/* Premium compact object catalogue */
+.le-toolbox button {
+  font-size: 13px !important;
+  line-height: 1.15 !important;
+}
+
+/* Prevent ghost text from current app behind modal */
+.le-backdrop {
+  background: rgba(2,6,23,.84) !important;
+  backdrop-filter: blur(22px) saturate(120%) !important;
+}
+
+.le-modal {
+  position: relative;
+  z-index: 1001;
+}

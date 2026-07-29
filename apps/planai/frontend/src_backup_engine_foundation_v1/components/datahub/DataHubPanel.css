@@ -1,0 +1,4 @@
+.dh-card{background:#0f172a;color:#fff;border-radius:26px;padding:24px;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 80px rgba(15,23,42,.22)}
+.dh-head span{font-size:11px;color:#67e8f9;font-weight:950;letter-spacing:.14em}.dh-head h2{margin:8px 0 4px}.dh-head p{color:#cbd5e1}
+.dh-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.dh-tabs button{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;border-radius:999px;padding:10px 14px;font-weight:900;cursor:pointer}.dh-tabs button.active{background:#DF1067;border-color:#DF1067}
+.dh-body{margin-top:16px;background:rgba(255,255,255,.06);border-radius:18px;padding:18px;color:#e2e8f0}

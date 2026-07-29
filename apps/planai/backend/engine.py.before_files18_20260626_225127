@@ -1,0 +1,1750 @@
+"""
+PLONAGRAM OS — Planogram Engine (clean rebuild, single source of truth)
+
+Mimari (katmanli, tek karar noktasi):
+  1) Cekirdek yardimcilar + alan okuyucular
+  2) TEK canonical fixture resolver: resolve_fixture_class(p)
+  3) Hard invariant'lar: storage gate, fixture uyumu, food/nonfood komsuluk,
+     produce sadece produce, dimension/weight/capacity
+  4) Feasible case-pack facing solver
+  5) Yerlestirme: brand-block + backfill, category, hybrid
+  6) Diagnostics + output
+
+Sozlesme (main.py drop-in):
+  generate_planogram(products, layout, mode, brand_side_rules, scoring_config, allow_ai_dimensions)
+  generate_default_layout()
+
+Yerlesim kurallari (kullanici sart):
+  - Buyuk/multi su (toplam paket >= 4L) + damacana -> PALLET; normal rafa ASLA.
+  - Kucuk su (<=1.5L tekli, 6x200ml gibi <4L) -> AMBIENT raf.
+  - Meyve/sebze -> produce fixture, kuru rafa karismaz.
+  - Gida / gida-disi yan yana / arkali-onlu OLMAZ; karsilikli (farkli yuz) OK.
+  - CHILLED->fridge, FROZEN->freezer, PALLET->pallet/HDR (hard).
+"""
+
+from __future__ import annotations
+import math
+import re
+from copy import deepcopy
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# =====================================================================
+# 1) CEKIRDEK
+# =====================================================================
+def num(v: Any, d: float = 0.0) -> float:
+    try:
+        if v is None or v == "":
+            return d
+        return float(str(v).replace(",", ".").replace("%", "").strip())
+    except (ValueError, TypeError):
+        return d
+
+
+def inum(v: Any, d: int = 0) -> int:
+    return int(round(num(v, d)))
+
+
+def clean_text(v: Any) -> str:
+    return "" if v is None else str(v).strip()
+
+
+def key(v: Any) -> str:
+    s = clean_text(v).upper()
+    for a, b in [("İ", "I"), ("Ş", "S"), ("Ğ", "G"), ("Ü", "U"), ("Ö", "O"), ("Ç", "C"), ("Â", "A")]:
+        s = s.replace(a, b)
+    return s
+
+
+def norm(v: Any) -> str:
+    return key(v)
+
+
+def get(p: Dict[str, Any], names: List[str], default: Any = "") -> Any:
+    for n in names:
+        if n in p and p[n] not in (None, "", "null"):
+            return p[n]
+    lower = {str(k).lower(): k for k in p.keys()}
+    for n in names:
+        lk = str(n).lower()
+        if lk in lower and p[lower[lk]] not in (None, "", "null"):
+            return p[lower[lk]]
+    return default
+
+
+def product_name(p): return clean_text(get(p, ["product_name", "Product Name", "name", "product_name_local", "pim_product_name_local"], ""))
+def sku(p): return clean_text(get(p, ["sku", "SKU", "barcode", "Barcodes", "product_barcodes"], ""))
+def brand(p): return clean_text(get(p, ["brand", "Brand", "brand_name", "supplier"], "")) or "Markasiz"
+def category_l1(p): return clean_text(get(p, ["category_l1", "Category L1", "frontend_category_local", "category"], "Genel"))
+def category_l2(p): return clean_text(get(p, ["category_l2", "Category L2", "frontend_subcategory_local", "subcategory"], "Genel"))
+def image_url(p): return clean_text(get(p, ["image_url", "Product Image URL", "image"], ""))
+def width(p): return max(1.0, num(get(p, ["width_cm", "Width", "en", "product_width_in_cm"], 10), 10))
+def height(p): return max(1.0, num(get(p, ["height_cm", "Height", "boy", "product_height_in_cm"], 20), 20))
+def depth(p): return max(1.0, num(get(p, ["depth_cm", "Depth", "derinlik", "product_depth_in_cm"], 10), 10))
+def weight(p): return max(0.01, num(get(p, ["weight_kg", "Weight", "agirlik"], 0.3), 0.3))
+def sales_7d(p): return num(get(p, ["sales_qty_7d", "sales_7d", "sales", "Sales 7D", "daily_sales"], 0), 0)
+def percent_stops(p): return num(get(p, ["percent_stops", "% Stops", "pct_stops"], 0), 0)
+def on_hand(p): return num(get(p, ["on_hand_qty", "On-Hand Qty", "stock", "on_hand"], 0), 0)
+def abc_class(p): return key(get(p, ["abc", "ABC", "abc_class"], ""))
+def case_pack(p): return max(1, inum(get(p, ["case_pack_qty", "case_pack", "koli", "pack_size"], 1), 1))
+def current_location(p): return clean_text(get(p, ["current_location", "Location", "Lokasyon", "location"], ""))
+def secondary_location(p): return clean_text(get(p, ["secondary_location", "Secondary Location"], ""))
+
+
+# =====================================================================
+# 2) TEK CANONICAL FIXTURE RESOLVER
+#    Tum storage/fixture karari burada. Baska fonksiyon storage cozmez,
+#    sadece p["_fixture_class"] cache'ini okur.
+# =====================================================================
+
+# Fixture siniflari (hard):
+#   AMBIENT  -> regular_shelf
+#   CHILLED  -> fridge (+4)
+#   FROZEN   -> freezer (-18)
+#   PALLET   -> pallet_rack / hdr_bulk (buyuk su, damacana, agir bulk)
+#   PRODUCE  -> produce_rack (meyve/sebze; kuru rafa karismaz)
+FIXTURE_CLASSES = ["AMBIENT", "CHILLED", "FROZEN", "PALLET", "PRODUCE"]
+
+FIXTURE_KIND = {
+    "AMBIENT": "SHELF",
+    "CHILLED": "FRIDGE",
+    "FROZEN": "FREEZER",
+    "PALLET": "PALLET",
+    "PRODUCE": "PRODUCE_RACK",
+}
+
+ALLOWED_MODULE_TYPES = {
+    "AMBIENT": ["REGULAR", "SHELF", "GONDOLA", "AMBIENT"],
+    "CHILLED": ["FRIDGE", "CHILL", "COLD"],
+    "FROZEN": ["FREEZER", "FROZEN"],
+    "PALLET": ["PALLET", "HDR", "BULK", "FLOOR"],
+    "PRODUCE": ["PRODUCE", "MANAV", "FRESH_PRODUCE"],
+}
+
+# Non-food guard: pazarlama kelimesi ("frozen", "cool") TEK BASINA fixture degistirmez.
+NONFOOD_GUARD = [
+    "DEODOR", "FRAGRANCE", "PARFUM", "PERFUME", "COSMETIC", "KOZMETIK", "MAKE",
+    "ELECTRON", "ELEKTRON", " FAN", "VANTILAT", "APPLIANCE", "CLEAN", "TEMIZL",
+    "DETERGENT", "DETERJAN", "BLEACH", "CAMASIR", "BULASIK",
+    "PET FOOD", "KEDI", "KOPEK", "LITTER", "KUM", "MAMA",
+    "CHEMICAL", "KIMYA", "PERSONAL CARE", "KISISEL BAKIM", "HOME CARE",
+    "STATIONERY", "KIRTASIYE", "SHAMPOO", "SAMPUAN", "SOAP", "SABUN",
+    "TISSUE", "PECETE", "MENDIL", "DIAPER", "BEZ", "BABY CARE",
+    "TOY", "OYUNCAK", "TEXTILE", "TEKSTIL", "BATTERY", "PIL",
+]
+
+FROZEN_FOOD_SIGNALS = ["ICE CREAM", "DONDURMA", "FROZEN FOOD", "DONUK", "-18", "FREEZER"]
+FROZEN_BRAND_SIGNALS = ["ALGIDA", "SUPERFRESH", "SUPER FRESH", "CORNETTO", "MAGNUM"]
+CHILLED_SIGNALS = ["CHILLED", "+4", "DAIRY", "YOGURT", "YOGHURT", "CHEESE", "PEYNIR",
+                   "AYRAN", "BUTTER", "TEREYAG", "MILK", "SUT ", "EGGS", "YUMURTA",
+                   "MEAT", "CHICKEN", "TAVUK", "FISH", "BALIK", "SEAFOOD", "DELI",
+                   "CHARCUTERIE", "SARKUTERI", "SOGUK", "DOLAP", "SUCUK", "SALAM", "SOSIS"]
+PRODUCE_SIGNALS = ["PRODUCE", "MEYVE", "SEBZE", "FRUIT", "VEGETABLE", "GREENGROCER",
+                   "MANAV", "BANANA", "MUZ", "DOMATES", "TOMATO", "ELMA", "APPLE",
+                   "POTATO", "PATATES", "SOGAN", "ONION", "MARUL", "LETTUCE",
+                   "BIBER", "PEPPER", "SALATALIK", "CUCUMBER", "PORTAKAL", "ORANGE"]
+
+
+def _txt_name(p): return key(product_name(p))
+def _txt_cat(p): return key(f"{category_l1(p)} {category_l2(p)}")
+def _txt_all(p): return key(f"{product_name(p)} {category_l1(p)} {category_l2(p)} {brand(p)}")
+
+
+def is_nonfood(p: Dict[str, Any]) -> bool:
+    t = _txt_all(p)
+    return any(w in t for w in NONFOOD_GUARD)
+
+
+# PATCH 2: false-positive guard'lar
+# "MILK/MILKY" cikolata/sekerleme/gofret baglaminda CHILLED yapilmamali.
+CHOC_CONFECTIONERY_GUARD = [
+    "CHOCOLATE", "CHOCOLAT", "CIKOLATA", "MILKY", "WAFER", "GOFRET", "BISCUIT",
+    "BISKUVI", "COOKIE", "CONFECTION", "SEKERLEME", "CANDY", "PRALINE",
+    "NUTELLA", "BUENO", "NESQUIK", "DESSERT", "TATLI", "CAKE", "KEK", "KREMA",
+    "SPREAD", "KAKAO", "COCOA", "HAZELNUT", "FINDIK",
+]
+# "POTATO/PATATES" islenmis snack/hamur baglaminda PRODUCE yapilmamali.
+PROCESSED_POTATO_GUARD = [
+    "CHIPS", "CIPS", "CRISP", "SNACK", "ATISTIR", "PASTRY", "HAMUR", "ROLL",
+    "RULO", "BOREK", "FRIES", "FRIED", "KIZARTMA", "CRACKER", "KRAKER",
+    "PUFF", "STICK", "WAFER", "BAKED", "FIRIN", "DONUT", "BISCUIT", "PUREE",
+    "PURE", "FLAKES", "STARCH", "NISASTA",
+]
+
+
+def _in_context(p: Dict[str, Any], words) -> bool:
+    t = key(f"{product_name(p)} {category_l1(p)} {category_l2(p)}")
+    return any(w in t for w in words)
+
+
+def is_produce(p: Dict[str, Any]) -> bool:
+    if is_nonfood(p):
+        return False
+    # islenmis patates snack/hamur -> produce DEGIL (Potato Chips, Potato Roll Pastry)
+    if _in_context(p, PROCESSED_POTATO_GUARD):
+        return False
+    return any(s in _txt_cat(p) or s in _txt_name(p) for s in PRODUCE_SIGNALS)
+
+
+def total_pack_liters(p: Dict[str, Any]) -> float:
+    """Toplam paket hacmi (litre). 6x1.5L=9, 12x0.5L=6, 5L=5, 6x200ml=1.2."""
+    n = key(product_name(p))
+    # multipack: "6 X 1.5 L", "12 X 500 ML", "6 X 200 ML"
+    m = re.search(r"(\d+)\s*[X*]\s*([\d.,]+)\s*(L|ML|CL)\b", n)
+    if m:
+        cnt = num(m.group(1), 1)
+        val = num(m.group(2), 0)
+        unit = m.group(3)
+        liters = val / 1000 if unit == "ML" else (val / 100 if unit == "CL" else val)
+        return cnt * liters
+    # tekli: "5 L", "19 L", "1.5 L", "500 ML"
+    m = re.search(r"([\d.,]+)\s*(L|ML)\b", n)
+    if m:
+        val = num(m.group(1), 0)
+        return val / 1000 if m.group(2) == "ML" else val
+    return 0.0
+
+
+BEVERAGE_CTX = ["WATER", "SU ", "MINERAL", "DAMACANA", "CARBOY", "SODA", "OIL", "YAG",
+                "AYRAN", "COLA", "COKE", "PEPSI", "FANTA", "SPRITE", "DRINK", "ICECEK",
+                "JUICE", "MEYVE SUYU", "NECTAR", "BEVERAGE", "GAZOZ", "TONIC", "ENERGY",
+                "FUSE", "ICE TEA", "ICED TEA", "LIMONATA", "LEMONADE", "AYRAN"]
+
+
+def total_pack_weight_kg(p: Dict[str, Any]) -> float:
+    """Toplam paket agirligi tahmini. Sivi icin ~1kg/L; degilse weight*case_pack."""
+    liters = total_pack_liters(p)
+    if liters > 0:
+        return liters * 1.04   # su/icecek ~1.04 kg/L (sise dahil)
+    return weight(p) * max(1, case_pack(p))
+
+
+def is_bulk_or_heavy_beverage(p: Dict[str, Any]) -> bool:
+    """Genis bulk/agir icecek tespiti -> PALLET/HDR/heavy-duty.
+    Kapsar: total_pack_liters>=4L, total_weight>=4kg, damacana, COLA/SODA multipack.
+    Kucuk tekli (330/500ml/1L) ve kucuk pack (6x200ml<4L, guvenli agirlik) HARIC."""
+    n = key(product_name(p))
+    cat = _txt_cat(p)
+    is_bev = any(s in n or s in cat for s in BEVERAGE_CTX)
+    if not is_bev:
+        # icecek baglami yoksa: yine de cok agir paket bulk sayilir
+        return total_pack_weight_kg(p) >= 8.0
+    # damacana / carboy her zaman bulk
+    if any(s in n for s in ["DAMACANA", "CARBOY", "19 L", "19L", "10 L", "10L", "5 L", "5L"]):
+        return True
+    # toplam hacim >= 4L
+    if total_pack_liters(p) >= 4.0:
+        return True
+    # toplam agirlik >= 4kg (multipack carbonated dahil)
+    if total_pack_weight_kg(p) >= 4.0:
+        return True
+    return False
+
+
+def is_bulk_water_or_heavy_liquid(p: Dict[str, Any]) -> bool:
+    """Geriye uyumlu ad - genisletilmis bulk/heavy beverage tespitine yonlendirir."""
+    return is_bulk_or_heavy_beverage(p)
+
+
+def _explicit_storage(p: Dict[str, Any]) -> str:
+    return key(get(p, ["storage_type", "Storage Type", "Storage", "storage"], "")).replace(" ", "_")
+
+
+def _raw_storage(p: Dict[str, Any]) -> str:
+    """storage_raw birincil fiziksel gercek (Raf/Dolap/Donuk)."""
+    raw = key(get(p, ["storage_raw", "storageRaw", "fixture_type", "fixture_kind"], ""))
+    if not raw or raw in ("0", "X", "NULL", "NONE", "-", "UNKNOWN"):
+        return ""
+    if any(x in raw for x in ["DONUK", "DONDUR", "-18", "FREEZER", "FROZEN"]):
+        return "FROZEN"
+    if any(x in raw for x in ["DOLAP", "+4", "CHILL", "FRIDGE", "SOGUK", "COLD"]):
+        return "CHILLED"
+    if any(x in raw for x in ["PALLET", "PALET", "HDR", "BULK", "DAMACANA"]):
+        return "PALLET"
+    if any(x in raw for x in ["MANAV", "PRODUCE"]):
+        return "PRODUCE"
+    if any(x in raw for x in ["RAF", "SHELF", "GONDOLA", "AMBIENT"]):
+        return "AMBIENT"
+    return ""
+
+
+def _strong_frozen(p: Dict[str, Any]) -> bool:
+    if is_nonfood(p):
+        return False
+    cat, nm = _txt_cat(p), _txt_name(p)
+    if any(s in cat for s in FROZEN_FOOD_SIGNALS):
+        return True
+    # kategori basligi acikca FROZEN/DONUK ise (Frozen Pizza, Donuk Gida). is_nonfood guard ustte.
+    if "FROZEN" in cat or "DONUK" in cat:
+        return True
+    if any(s in nm or s in cat for s in FROZEN_BRAND_SIGNALS):
+        return True
+    if any(s in nm for s in ["DONDURMA", "ICE CREAM", "-18"]):
+        return True
+    return False
+
+
+def _strong_chilled(p: Dict[str, Any]) -> bool:
+    if is_nonfood(p):
+        return False
+    # cikolata/sekerleme/gofret: "MILK/MILKY" CHILLED tetiklemez (Kinder Bueno Milk Chocolate)
+    if _in_context(p, CHOC_CONFECTIONERY_GUARD):
+        return False
+    cat, nm = _txt_cat(p), _txt_name(p)
+    if any(s in cat for s in CHILLED_SIGNALS):
+        return True
+    if any(s in nm for s in ["YOGURT", "AYRAN", "PEYNIR", "MILK", "SUT "]):
+        return True
+    return False
+
+
+def resolve_fixture_class(p: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+    """TEK canonical resolver. Doner: (fixture_class, warning|None).
+
+    Sira:
+      1) storage_raw birincil gercek
+      2) bulk su/damacana -> PALLET
+      3) produce -> PRODUCE
+      4) explicit PALLET/FROZEN/CHILLED guvenilir
+      5) explicit AMBIENT, GUCLU cold/frozen sinyaliyle ezilebilir (non-food guard'li)
+      6) explicit AMBIENT (sinyal yok) -> AMBIENT
+      7) inference (explicit yok)
+    """
+    raw = _raw_storage(p)
+    if raw:
+        # raw birincil; yine de bulk su raw=AMBIENT ise PALLET'e yukselt
+        if raw == "AMBIENT" and is_bulk_water_or_heavy_liquid(p):
+            return "PALLET", "bulk_water_requires_pallet_fixture"
+        return raw, None
+
+    # bulk su her seyden once (explicit AMBIENT olsa bile)
+    if is_bulk_water_or_heavy_liquid(p):
+        return "PALLET", "bulk_water_requires_pallet_fixture"
+
+    # guclu frozen/chilled sinyali produce'tan ONCE: "frozen peas" donmus sebzedir
+    explicit = _explicit_storage(p)
+    if explicit == "FROZEN":
+        return "FROZEN", None
+    if explicit == "CHILLED":
+        return "CHILLED", None
+    if _strong_frozen(p):
+        return ("FROZEN", "explicit_ambient_overridden_by_category_signal") if explicit == "AMBIENT" else ("FROZEN", None)
+    if _strong_chilled(p):
+        return ("CHILLED", "explicit_ambient_overridden_by_category_signal") if explicit == "AMBIENT" else ("CHILLED", None)
+
+    if is_produce(p):
+        return "PRODUCE", None
+
+    if explicit == "PALLET":
+        return "PALLET", None
+    if explicit == "AMBIENT":
+        return "AMBIENT", None
+
+    return "AMBIENT", None
+
+
+def storage_type(p: Dict[str, Any]) -> str:
+    """Geriye uyumlu kisa ad: fixture sinifinin storage kismi."""
+    return p.get("_fixture_class") or resolve_fixture_class(p)[0]
+
+
+def fixture_kind_label(storage: Optional[str]) -> str:
+    return FIXTURE_KIND.get(key(storage or "AMBIENT"), "SHELF")
+
+
+# =====================================================================
+# 3) ENRICH + MERCH GROUP (food/nonfood)
+# =====================================================================
+ODOR_WORDS = ["DETERJAN", "DETERGENT", "CAMASIR", "BLEACH", "BULASIK", "DEODOR",
+              "PARFUM", "PERFUME", "TEMIZL", "CLEAN", "AMONYAK", "KIMYA", "CHEMICAL"]
+
+
+def merch_group(p: Dict[str, Any]) -> str:
+    """Merchandising grubu: food vs non-food ayrimini tasir."""
+    fc = p.get("_fixture_class") or resolve_fixture_class(p)[0]
+    t = _txt_all(p)
+    if any(w in t for w in ODOR_WORDS):
+        return "NONFOOD_ODOR"
+    if is_nonfood(p):
+        return "NONFOOD_NEUTRAL"
+    if fc == "PRODUCE":
+        return "FOOD_PRODUCE"
+    if fc == "CHILLED":
+        return "FOOD_CHILLED"
+    if fc == "FROZEN":
+        return "FOOD_FROZEN"
+    if fc == "PALLET":
+        return "BULK_AMBIENT"
+    return "FOOD_AMBIENT"
+
+
+def is_food(p: Dict[str, Any]) -> bool:
+    return merch_group(p).startswith("FOOD") or merch_group(p) == "BULK_AMBIENT"
+
+
+def is_odor(p: Dict[str, Any]) -> bool:
+    return merch_group(p) == "NONFOOD_ODOR"
+
+
+def product_score(p: Dict[str, Any]) -> float:
+    return sales_7d(p) * 1.0 + percent_stops(p) * 2.0 + on_hand(p) * 0.05
+
+
+def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dict[str, Any]:
+    p = dict(raw)
+    fc, warn = resolve_fixture_class(p)
+    p["_fixture_class"] = fc
+    p["_storage"] = fc                       # geriye uyumlu
+    p["_storage_warning"] = warn
+    p["_fixture_kind"] = fixture_kind_label(fc)
+    p["_merch_group"] = merch_group(p)
+    p["_abc"] = abc_class(p)
+    p["_score"] = product_score(p)
+    p["_is_food"] = is_food(p)
+    p["_total_pack_liters"] = total_pack_liters(p)
+    return p
+
+
+def classify_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out = []
+    for p in products:
+        if "_fixture_class" not in p:
+            p = enrich_product(p)
+        out.append(p)
+    return out
+
+
+# =====================================================================
+# 4) APPROVAL / UNSELLABLE
+# =====================================================================
+def is_approval(p: Dict[str, Any]) -> bool:
+    raw = key(f"{current_location(p)} {secondary_location(p)}")
+    return any(x in raw for x in ["APPROVAL", "APPROVE", "ONAY", "FIRE"])
+
+
+def is_unsellable(p: Dict[str, Any]) -> bool:
+    raw = key(f"{current_location(p)} {secondary_location(p)} "
+              f"{get(p, ['status', 'Status', 'durum', 'product_status'], '')} "
+              f"{get(p, ['stock_status', 'inventory_status'], '')}")
+    hard = ["IMHA", "EXPIRED", "EXPIRE", "MIADI", "DAMAGED", "DAMAGE", "HASARLI",
+            "BLOCKED", "BLOKE", "PASSIVE", "PASIF", "INACTIVE", "QUARANTINE", "KARANTINA"]
+    return any(x in raw for x in hard)
+
+
+def front_stock_qty(p: Dict[str, Any]) -> Optional[float]:
+    for kk in ["sellable_qty", "available_qty", "front_stock_qty", "salable_qty"]:
+        v = get(p, [kk], None)
+        if v not in (None, "", "null"):
+            return num(v, 0)
+    return None
+
+
+def reserve_stock_qty(p: Dict[str, Any]) -> Optional[float]:
+    for kk in ["reserve_qty", "approval_qty", "fire_qty", "backstock_qty"]:
+        v = get(p, [kk], None)
+        if v not in (None, "", "null"):
+            return num(v, 0)
+    return None
+
+
+def has_positive_stock_signal(p: Dict[str, Any]) -> bool:
+    if sales_7d(p) > 0 or on_hand(p) > 0 or percent_stops(p) > 0:
+        return True
+    fs = front_stock_qty(p)
+    return fs is not None and fs > 0
+
+
+# =====================================================================
+# 5) LAYOUT + FIXTURE OKUYUCULAR
+# =====================================================================
+def make_shelves(count, storage="AMBIENT", width_cm=100, height_cm=35, depth_cm=50, max_weight=45):
+    return [{
+        "shelf_no": i + 1,
+        "allowed_storage_type": storage,
+        "shelf_width_cm": width_cm,
+        "shelf_height_cm": height_cm,
+        "shelf_depth_cm": depth_cm,
+        "max_weight_kg": max_weight,
+        "used_width_cm": 0.0,
+        "used_weight_kg": 0.0,
+        "products": [],
+    } for i in range(count)]
+
+
+def generate_default_layout() -> Dict[str, Any]:
+    aisles = []
+    # AMBIENT koridorlar (A food, B-D karisik kuru)
+    for ax, label in enumerate(["A", "B", "C", "D"]):
+        aisles.append({
+            "aisle_id": label,
+            "aisle_type": "ambient",
+            "zone": "AMBIENT",
+            "modules": [{
+                "module_id": i + 1,
+                "side": "L" if i % 2 == 0 else "R",
+                "module_type": "regular_shelf",
+                "module_width_cm": 100,
+                "module_depth_cm": 50,
+                "module_height_cm": 200,
+                "assignment_rule": None,
+                "shelves": make_shelves(5, "AMBIENT", 100, 35, 50, 45),
+            } for i in range(6)],
+        })
+    # CHILLED
+    aisles.append({
+        "aisle_id": "CHILL", "aisle_type": "chilled", "zone": "CHILLED",
+        "modules": [{
+            "module_id": i + 1, "side": "L", "module_type": "fridge",
+            "module_width_cm": 120, "module_depth_cm": 60, "module_height_cm": 200,
+            "temperature": "+4", "assignment_rule": None,
+            "shelves": make_shelves(4, "CHILLED", 120, 40, 55, 60),
+        } for i in range(3)],
+    })
+    # FROZEN
+    aisles.append({
+        "aisle_id": "FREEZE", "aisle_type": "frozen", "zone": "FROZEN",
+        "modules": [{
+            "module_id": i + 1, "side": "L", "module_type": "freezer",
+            "module_width_cm": 150, "module_depth_cm": 65, "module_height_cm": 200,
+            "temperature": "-18", "assignment_rule": None,
+            "shelves": make_shelves(4, "FROZEN", 150, 40, 60, 70),
+        } for i in range(2)],
+    })
+    # PRODUCE (manav)
+    aisles.append({
+        "aisle_id": "PRODUCE", "aisle_type": "produce", "zone": "PRODUCE",
+        "modules": [{
+            "module_id": i + 1, "side": "L", "module_type": "produce_rack",
+            "module_width_cm": 120, "module_depth_cm": 60, "module_height_cm": 160,
+            "assignment_rule": None,
+            "shelves": make_shelves(3, "PRODUCE", 120, 45, 55, 50),
+        } for i in range(2)],
+    })
+    # PALLET / HDR bulk
+    aisles.append({
+        "aisle_id": "PALLET-HDR", "aisle_type": "pallet_bulk", "zone": "PALLET",
+        "modules": [{
+            "module_id": i + 1, "side": "L",
+            "module_type": "pallet_rack" if i == 0 else "hdr_bulk",
+            "module_width_cm": 300, "module_depth_cm": 120, "module_height_cm": 120,
+            "assignment_rule": None,
+            "shelves": make_shelves(2, "PALLET", 300, 120, 120, 800),
+        } for i in range(2)],
+    })
+    return {"store_code": "AUTO", "route_strategy": "S_PATTERN_DYNAMIC", "aisles": aisles}
+
+
+def prepare_layout(layout: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    plan = deepcopy(layout or generate_default_layout())
+    for a in plan.get("aisles", []):
+        for m in a.get("modules", []):
+            for sh in m.get("shelves", []):
+                sh.setdefault("used_width_cm", 0.0)
+                sh.setdefault("used_weight_kg", 0.0)
+                sh.setdefault("products", [])
+                if "allowed_storage_type" not in sh:
+                    sh["allowed_storage_type"] = a.get("zone", "AMBIENT")
+    return plan
+
+
+def shelf_storage(shelf: Dict[str, Any]) -> str:
+    return key(get(shelf, ["allowed_storage_type"], "AMBIENT"))
+
+
+def module_type_key(module: Dict[str, Any]) -> str:
+    return key(module.get("module_type", ""))
+
+
+# =====================================================================
+# 5b) HARD INVARIANT'LAR
+# =====================================================================
+def fixture_compatible(p: Dict[str, Any], module: Any = None, shelf: Any = None) -> bool:
+    """Urun fixture sinifi <-> raf izinli storage uyumu (hard).
+    PALLET yalniz PALLET, PRODUCE yalniz PRODUCE, CHILLED yalniz fridge, vb.
+    Hicbir sinif baska sinifa indirgenmez."""
+    needed = p.get("_fixture_class") or resolve_fixture_class(p)[0]
+    if shelf is None and module is None:
+        return True
+    shelf_st = shelf_storage(shelf) if isinstance(shelf, dict) else ""
+    if not shelf_st and isinstance(module, dict):
+        shelf_st = key(get(module, ["allowed_storage_type", "storage_type", "zone"], ""))
+    if not shelf_st:
+        return True
+    if needed != shelf_st:
+        return False
+    # module_type ile de tutarli mi (varsa)
+    if isinstance(module, dict):
+        mt = module_type_key(module)
+        allowed = ALLOWED_MODULE_TYPES.get(needed, [])
+        if mt and allowed and not any(a in mt for a in allowed):
+            return False
+    return True
+
+
+def food_nonfood_compatible_on_shelf(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
+    """Ayni raf/modul yuzu: gida ve gida-disi YAN YANA / ARKALI-ONLU olamaz.
+    (Karsilikli = farkli koridor yuzu zaten ayri shelf objesi, dogal olarak ayri.)
+    Ayni raftaki urunlerle food/nonfood ayrimi korunur."""
+    existing = shelf.get("products", [])
+    if not existing:
+        return True
+    p_food = bool(p.get("_is_food", is_food(p)))
+    for x in existing:
+        x_food = bool(x.get("_is_food", True))
+        if x_food != p_food:
+            return False
+    # koku yayan (deterjan/parfum) gida ile asla ayni rafta
+    if is_odor(p) and any(x.get("_is_food", True) for x in existing):
+        return False
+    if not is_odor(p):
+        for x in existing:
+            if x.get("merch_group") == "NONFOOD_ODOR" and p.get("_is_food", True):
+                return False
+    return True
+
+
+def category_lock_compatible(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
+    """Ayni rafta tek L1 kategori ailesi tercih (cok katiysa kaldirilabilir).
+    Burada YUMUSAK: sadece food/nonfood degil, ayni storage zaten garanti."""
+    return True
+
+
+def dimension_fit(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
+    return height(p) <= num(shelf.get("shelf_height_cm"), 35) + 0.5 and \
+           depth(p) <= num(shelf.get("shelf_depth_cm"), 50) + 0.5
+
+
+def planned_placed_units(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
+    sol = solve_feasible_facing(p, shelf)
+    return sol.get("placed_units", 0) if sol.get("fits") else 0
+
+
+def weight_fit(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
+    """Agirlik kontrolu PLACED_UNITS uzerinden (facing degil).
+    used_weight_kg += unit_weight * placed_units. Limit asilirsa reddet."""
+    cur = num(shelf.get("used_weight_kg"), 0)
+    units = planned_placed_units(p, shelf)
+    if units <= 0:
+        units = max(1, case_pack(p))   # en az 1 koli
+    add_weight = weight(p) * units
+    return cur + add_weight <= num(shelf.get("max_weight_kg"), 45) + 0.01
+
+
+def existing_groups_on_aisle(aisle: Dict[str, Any]) -> set:
+    groups = set()
+    for m in aisle.get("modules", []):
+        for sh in m.get("shelves", []):
+            for x in sh.get("products", []):
+                if x.get("merch_group"):
+                    groups.add(x["merch_group"])
+    return groups
+
+
+# =====================================================================
+# 6) FEASIBLE CASE-PACK FACING SOLVER
+# =====================================================================
+def depth_units(p: Dict[str, Any], shelf: Dict[str, Any]) -> int:
+    return max(1, int(num(shelf.get("shelf_depth_cm"), 50) // depth(p)))
+
+
+def case_pack_rounded_units(raw_units: float, cp: int) -> int:
+    cp = max(1, cp)
+    return int(math.ceil(max(1, raw_units) / cp) * cp)
+
+
+def solve_feasible_facing(p: Dict[str, Any], shelf: Dict[str, Any]) -> Dict[str, Any]:
+    """Ideal satis HARD sart degil. Rafa sigan en buyuk TAM KOLI kati yerlesir.
+    Approval reserve depth'i SISIRMEZ; satilabilir stok cap'ler."""
+    cp = case_pack(p)
+    d_units = depth_units(p, shelf)
+    eff_w = max(0.1, width(p))
+    slot_w = eff_w * 1.1
+    shelf_total = num(shelf.get("shelf_width_cm"), 100)
+    used = num(shelf.get("used_width_cm"), 0)
+    remaining = shelf_total - used
+
+    weekly = sales_7d(p)
+    raw_rec = max(int(math.ceil(weekly)), cp) if weekly > 0 else cp
+    ideal_cp = case_pack_rounded_units(raw_rec, cp)
+
+    max_facing = int(remaining // slot_w)
+    max_physical = max_facing * d_units
+
+    if max_facing < 1 or max_physical < cp:
+        return {"fits": False, "reason": "case_pack_min_not_fit", "depth_units": d_units,
+                "max_feasible_facing": max_facing, "max_physical_units": max_physical,
+                "ideal_case_pack_units": ideal_cp, "raw_recommended_units": raw_rec,
+                "case_pack_min_fit": False}
+
+    if ideal_cp > max_physical:
+        feasible = (max_physical // cp) * cp
+        compromised = True
+        cap_warn = "ideal_sales_coverage_not_fit"
+    else:
+        feasible = ideal_cp
+        compromised = False
+        cap_warn = None
+
+    placed_units = feasible
+    facing = max(1, min(int(math.ceil(placed_units / max(1, d_units))), max_facing))
+
+    # approval / front-stock cap (reserve depth'i sismez)
+    approval_limited = False
+    planned_depth = d_units
+    front_q = front_stock_qty(p)
+    cap_units = front_q if front_q is not None else (cp if p.get("approval_area_stock") else None)
+    if cap_units is not None and cap_units < placed_units:
+        capped = max(cp, (int(cap_units) // cp) * cp)
+        if capped < placed_units:
+            placed_units = capped
+            facing = max(1, min(int(math.ceil(placed_units / max(1, d_units))), max_facing))
+            planned_depth = max(1, int(math.ceil(placed_units / max(1, facing))))
+            approval_limited = True
+            cap_warn = cap_warn or "approval_front_stock_depth_limited"
+
+    used_w = round(eff_w * facing * 1.1, 1)
+    if approval_limited:
+        refill = "HIGH"
+    elif compromised:
+        refill = "HIGH" if placed_units / max(1, ideal_cp) < 0.5 else "MEDIUM"
+    else:
+        refill = "LOW"
+
+    return {
+        "fits": True, "reason": "ok", "depth_units": d_units, "planned_depth_units": planned_depth,
+        "facing_count": facing, "placed_units": placed_units, "feasible_case_units": feasible,
+        "max_feasible_facing": max_facing, "max_physical_units": max_physical,
+        "ideal_case_pack_units": ideal_cp, "raw_recommended_units": raw_rec,
+        "used_width_cm": used_w, "capacity_compromised": compromised or approval_limited,
+        "refill_risk": refill, "case_pack_min_fit": True, "capacity_warning": cap_warn,
+        "approval_depth_limited": approval_limited,
+    }
+
+
+def capacity_fit(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
+    return solve_feasible_facing(p, shelf)["fits"]
+
+
+def coverage_days(p: Dict[str, Any], placed_units: float) -> Optional[float]:
+    s = sales_7d(p)
+    return round((placed_units / s) * 7, 1) if s > 0 else None
+
+
+# =====================================================================
+# 6b) SCORING
+# =====================================================================
+def route_score(aisle, module) -> float:
+    return num(module.get("module_id"), 1) * 1.0
+
+
+def storage_score(p, aisle, module, shelf) -> float:
+    needed = p.get("_fixture_class") or resolve_fixture_class(p)[0]
+    allowed = shelf_storage(shelf)
+    if needed != allowed:
+        return -99999
+    mt = module_type_key(module)
+    for cls, kinds in ALLOWED_MODULE_TYPES.items():
+        if needed == cls and any(k in mt for k in kinds):
+            return 300
+    return 50
+
+
+def brand_score(p, shelf) -> float:
+    prods = shelf.get("products", [])
+    if not prods:
+        return 40
+    same_brand = sum(1 for x in prods if key(x.get("brand")) == key(brand(p)))
+    same_cat = sum(1 for x in prods if key(x.get("category_l2")) == key(category_l2(p)))
+    return same_brand * 180 + same_cat * 90
+
+
+def brand_side_score(p, module, rules: Optional[Dict[str, str]]) -> float:
+    if not rules:
+        return 0
+    b = key(brand(p))
+    want = rules.get(brand(p)) or rules.get(b)
+    if not want:
+        return 0
+    return 60 if key(module.get("side")) == key(want) else -120
+
+
+def placement_score(p, aisle, module, shelf, scoring_config=None, brand_side_rules=None) -> float:
+    s = storage_score(p, aisle, module, shelf)
+    if s < -1000:
+        return s
+    cfg = scoring_config or {}
+    sc = s
+    sc += brand_score(p, shelf) * num(cfg.get("brand_block_weight", 1), 1)
+    sc += route_score(aisle, module) * num(cfg.get("picker_route_weight", 1), 1)
+    sc += product_score(p) * 0.1 * num(cfg.get("sales_weight", 1), 1)
+    sc += brand_side_score(p, module, brand_side_rules)
+    return sc
+
+
+def can_place(p, aisle, module, shelf, cached_groups=None) -> Tuple[bool, str]:
+    """TUM hard invariant'lar tek kapida."""
+    if storage_score(p, aisle, module, shelf) < -1000:
+        return False, "storage_not_fit"
+    if not fixture_compatible(p, module, shelf):
+        return False, "no_fixture_for_storage"
+    if not dimension_fit(p, shelf):
+        return False, "dimension_not_fit"
+    if not weight_fit(p, shelf):
+        return False, "weight_not_fit"
+    if not food_nonfood_compatible_on_shelf(p, shelf):
+        return False, "merch_not_compatible"
+    if not module_rule_matches(p, module):
+        return False, "module_rule_not_match"
+    if not capacity_fit(p, shelf):
+        return False, "no_capacity_after_feasible_solver"
+    return True, "ok"
+
+
+def module_rule_matches(p, module) -> bool:
+    rule = module.get("assignment_rule")
+    if not rule:
+        return True
+    rb = key(rule.get("brand", ""))
+    rc = key(rule.get("category", ""))
+    if rb and rb not in key(brand(p)):
+        return False
+    if rc and rc not in key(f"{category_l1(p)} {category_l2(p)}"):
+        return False
+    return True
+
+
+# =====================================================================
+# 7) PLACED RECORD + COMMIT + INDEX
+# =====================================================================
+def _build_placed_record(p, aisle, module, shelf, score=0.0, extra=None):
+    sol = solve_feasible_facing(p, shelf)
+    if not sol["fits"]:
+        return None, 0.0, 0
+    f = sol["facing_count"]
+    u = sol["used_width_cm"]
+    placed_units = sol["placed_units"]
+    rec = {
+        "sku": sku(p), "barcode": clean_text(get(p, ["barcode", "Barcodes", "product_barcodes"], "")),
+        "product_name": product_name(p), "brand": brand(p), "brand_name": brand(p),
+        "category_l1": category_l1(p), "category_l2": category_l2(p),
+        "frontend_category_local": category_l1(p), "frontend_subcategory_local": category_l2(p),
+        "image_url": image_url(p),
+        "storage_type": p.get("_fixture_class"), "fixture_kind": p.get("_fixture_kind") or fixture_kind_label(p.get("_fixture_class")),
+        "fixture_class": p.get("_fixture_class"),
+        "merch_group": p.get("_merch_group"), "_is_food": p.get("_is_food", is_food(p)),
+        "abc_class": p.get("_abc"), "sales_qty_7d": sales_7d(p), "percent_stops": percent_stops(p),
+        "on_hand_qty": on_hand(p), "width_cm": width(p), "height_cm": height(p), "depth_cm": depth(p),
+        "weight_kg": weight(p), "case_pack_qty": case_pack(p),
+        "facing": f, "facing_count": f, "used_width_cm": round(u, 1),
+        "depth_units": sol["depth_units"], "planned_depth_units": sol.get("planned_depth_units", sol["depth_units"]),
+        "placed_units": placed_units, "feasible_case_units": sol["feasible_case_units"],
+        "raw_recommended_units": sol["raw_recommended_units"], "ideal_case_pack_units": sol["ideal_case_pack_units"],
+        "max_physical_units": sol["max_physical_units"],
+        "total_capacity_units": placed_units, "case_pack_rounded_units": placed_units,
+        "capacity_compromised": sol["capacity_compromised"], "refill_risk": sol["refill_risk"],
+        "case_pack_min_fit": sol["case_pack_min_fit"], "capacity_warning": sol["capacity_warning"],
+        "coverage_days": coverage_days(p, placed_units),
+        "storage_conflict_warning": p.get("_storage_warning"),
+        "approval_area_stock": bool(p.get("approval_area_stock", False)),
+        "reserve_stock_location": p.get("reserve_stock_location"),
+        "capacity_strategy": p.get("capacity_strategy"),
+        "front_stock_qty": front_stock_qty(p), "reserve_stock_qty": reserve_stock_qty(p),
+        "approval_depth_limited": sol.get("approval_depth_limited", False),
+        "total_pack_liters": p.get("_total_pack_liters", total_pack_liters(p)),
+        "aisle": aisle.get("aisle_id"), "aisle_id": aisle.get("aisle_id"),
+        "module_id": module.get("module_id"), "shelf_no": shelf.get("shelf_no"),
+        "position_order": len(shelf.get("products", [])) + 1,
+        "placement_score": round(score, 1),
+        "brand_block_id": None, "brand_block_name": None, "brand_block_sequence": None,
+        "brand_block_split": False, "brand_block_warning": None,
+        "placement_reason": "score_based",
+        "engine_source": "backend_engine",
+    }
+    if extra:
+        rec.update(extra)
+    return rec, u, f
+
+
+def _commit(rec, p, aisle, module, shelf, u, f, aisle_groups):
+    shelf.setdefault("products", []).append(rec)
+    shelf["used_width_cm"] = round(num(shelf.get("used_width_cm"), 0) + u, 1)
+    shelf["used"] = shelf["used_width_cm"]
+    # agirlik placed_units uzerinden (facing degil)
+    units = num(rec.get("placed_units"), 0) or (f * max(1, case_pack(p)))
+    shelf["used_weight_kg"] = round(num(shelf.get("used_weight_kg"), 0) + weight(p) * units, 2)
+    aisle_groups.setdefault(key(aisle.get("aisle_id")), set()).add(p.get("_merch_group"))
+
+
+def _shelf_has_room(p, shelf) -> bool:
+    return solve_feasible_facing(p, shelf).get("fits", False)
+
+
+def build_shelf_index(plan) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, set]]:
+    pool = {c: [] for c in FIXTURE_CLASSES}
+    groups: Dict[str, set] = {}
+    for a in plan.get("aisles", []):
+        for m in a.get("modules", []):
+            for sh in m.get("shelves", []):
+                st = shelf_storage(sh)
+                pool.setdefault(st, []).append({"aisle": a, "module": m, "shelf": sh,
+                                                "route": num(m.get("module_id"), 1)})
+        groups[key(a.get("aisle_id"))] = existing_groups_on_aisle(a)
+    return pool, groups
+
+
+# =====================================================================
+# 7b) YERLESTIRME STRATEJILERI
+# =====================================================================
+def _shelf_sort_key(item):
+    return (key(item["aisle"].get("aisle_id")), num(item["module"].get("module_id"), 0),
+            num(item["shelf"].get("shelf_no"), 0), item.get("route", 9999))
+
+
+def fill_remaining_capacity(candidate_pool, shelves, aisle_groups, storage,
+                            scoring_config=None, brand_side_rules=None):
+    """Backfill: bos kapasiteyi uyumlu urunlerle doldur (satis -> ABC -> kategori)."""
+    placed, unplaced = [], []
+    abc_rank = {"A": 0, "B": 1, "C": 2, "": 3}
+    ordered = sorted(candidate_pool, key=lambda p: (
+        -float(p.get("_score", 0) or 0), -sales_7d(p),
+        abc_rank.get(key(p.get("_abc") or abc_class(p)), 3), key(category_l2(p))))
+    for p in ordered:
+        ok_placed = False
+        for item in shelves:
+            a, m, sh = item["aisle"], item["module"], item["shelf"]
+            if not _shelf_has_room(p, sh):
+                continue
+            aid = key(a.get("aisle_id"))
+            ok, _ = can_place(p, a, m, sh, aisle_groups.get(aid, set()))
+            if not ok:
+                continue
+            rec, u, f = _build_placed_record(p, a, m, sh,
+                                             score=placement_score(p, a, m, sh, scoring_config, brand_side_rules),
+                                             extra={"placement_reason": "backfill_after_brand_block"})
+            if rec is None:
+                continue
+            _commit(rec, p, a, m, sh, u, f, aisle_groups)
+            placed.append(rec)
+            ok_placed = True
+            break
+        if not ok_placed:
+            sol = solve_feasible_facing(p, shelves[0]["shelf"]) if shelves else {}
+            unplaced.append({"sku": sku(p), "product_name": product_name(p), "brand": brand(p),
+                             "storage_type": storage, "reason": f"no_capacity_for_{storage}",
+                             "width_cm": width(p), "depth_cm": depth(p), "case_pack_qty": case_pack(p),
+                             "constraint_reason": "no_capacity_after_brand_block_and_backfill",
+                             "solver_reason": sol.get("reason", "shelves_full"),
+                             "placement_reason": "no_capacity_after_brand_block_and_backfill"})
+    return placed, unplaced
+
+
+def place_brand_blocks(plan, products, shelf_pool, aisle_groups, scoring_config=None, brand_side_rules=None):
+    """Marka-blok + backfill. Cursor zehirlenmesi yok (marka-ici contiguity + geri donus)."""
+    placed_all, unplaced_all, block_meta = [], [], []
+    by_storage: Dict[str, List[Dict[str, Any]]] = {}
+    for p in products:
+        by_storage.setdefault(p.get("_fixture_class") or resolve_fixture_class(p)[0], []).append(p)
+
+    block_counter = 0
+    for storage, sp in by_storage.items():
+        shelves = sorted(shelf_pool.get(storage, []), key=_shelf_sort_key)
+        if not shelves:
+            for p in sp:
+                unplaced_all.append({"sku": sku(p), "product_name": product_name(p), "brand": brand(p),
+                                     "storage_type": storage, "reason": f"no_fixture_for_{storage}",
+                                     "placement_reason": "no_fixture_for_storage"})
+            continue
+        brand_groups: Dict[str, List[Dict[str, Any]]] = {}
+        for p in sp:
+            brand_groups.setdefault(brand(p), []).append(p)
+        ordered_brands = sorted(brand_groups.keys(),
+                                key=lambda b: -max(float(x.get("_score", 0) or 0) for x in brand_groups[b]))
+        next_hint = 0
+        block_unplaced = []
+        for b in ordered_brands:
+            block_counter += 1
+            block_id = f"BB-{storage}-{block_counter}"
+            group = sorted(brand_groups[b], key=lambda x: -float(x.get("_score", 0) or 0))
+            seq = 0
+            split = False
+            first_mod = None
+            brand_cursor = None
+            last_idx = next_hint
+            for p in group:
+                ok_placed = False
+                start = brand_cursor if brand_cursor is not None else next_hint
+                order = list(range(start, len(shelves))) + list(range(0, start))
+                for idx in order:
+                    item = shelves[idx]
+                    a, m, sh = item["aisle"], item["module"], item["shelf"]
+                    if not _shelf_has_room(p, sh):
+                        continue
+                    aid = key(a.get("aisle_id"))
+                    ok, _ = can_place(p, a, m, sh, aisle_groups.get(aid, set()))
+                    if not ok:
+                        continue
+                    mod_key = (aid, m.get("module_id"))
+                    if first_mod is None:
+                        first_mod = mod_key
+                    elif mod_key != first_mod:
+                        split = True
+                    seq += 1
+                    rec, u, f = _build_placed_record(p, a, m, sh,
+                                                     score=placement_score(p, a, m, sh, scoring_config, brand_side_rules),
+                                                     extra={"brand_block_id": block_id, "brand_block_name": b,
+                                                            "brand_block_sequence": seq, "brand_block_split": split,
+                                                            "placement_reason": "brand_block_reserved"})
+                    if rec is None:
+                        continue
+                    _commit(rec, p, a, m, sh, u, f, aisle_groups)
+                    placed_all.append(rec)
+                    ok_placed = True
+                    brand_cursor = idx
+                    last_idx = idx
+                    break
+                if not ok_placed:
+                    block_unplaced.append(p)
+            next_hint = last_idx
+            warning = "split_brand_block" if split else None
+            block_meta.append({"brand_block_id": block_id, "brand_block_name": b, "storage_type": storage,
+                               "brand_block_split": split, "brand_block_warning": warning, "items": seq})
+            if warning:
+                for r in placed_all:
+                    if r.get("brand_block_id") == block_id:
+                        r["brand_block_warning"] = warning
+                        r["brand_block_split"] = True
+        if block_unplaced:
+            bf_p, bf_u = fill_remaining_capacity(block_unplaced, shelves, aisle_groups, storage,
+                                                 scoring_config, brand_side_rules)
+            placed_all.extend(bf_p)
+            unplaced_all.extend(bf_u)
+    return placed_all, unplaced_all, block_meta
+
+
+def _aisle_sku_count(aisle) -> int:
+    return sum(len(sh.get("products", [])) for m in aisle.get("modules", []) for sh in m.get("shelves", []))
+
+
+def _aisle_capacity_units(aisle) -> int:
+    # kaba kapasite tahmini: raf genisligi toplami / ortalama urun slotu (~9cm)
+    total_w = sum(num(sh.get("shelf_width_cm"), 100) for m in aisle.get("modules", []) for sh in m.get("shelves", []))
+    return max(1, int(total_w / 9))
+
+
+def aisle_load_penalty(p, aisle, storage_aisle_count) -> float:
+    """Anti-dump: asiri SKU share/utilization alan koridorun skorunu dusur.
+    A hot/front zone olabilir ama dump zone olamaz. Hizli satanlar A'ya gelebilir,
+    yavas satanlar baska koridorlara dagilsin."""
+    if storage_aisle_count <= 1:
+        return 0.0  # tek koridor varsa dagitim yok
+    skus = _aisle_sku_count(aisle)
+    cap = _aisle_capacity_units(aisle)
+    util = skus / cap if cap else 0
+    penalty = 0.0
+    # utilization arttikca artan ceza
+    if util > 0.5:
+        penalty -= (util - 0.5) * 400      # aisle_utilization_penalty
+    # cok SKU biriken koridora ek ceza (front_zone_overload_penalty)
+    if skus > cap * 0.7:
+        penalty -= 200
+    # hizli satan urun A/front'a gelebilir -> yavas satan icin ceza daha agir
+    sales = sales_7d(p) + percent_stops(p)
+    if sales < 5 and util > 0.3:
+        penalty -= 150                     # yavas satan dolu koridora gitmesin
+    return penalty
+
+
+def place_product_fast(plan, p, shelf_pool, aisle_groups, scoring_config=None, brand_side_rules=None):
+    """HYBRID/CATEGORY: tek tek en iyi raf skoru + anti-dump aisle balancing."""
+    storage = p.get("_fixture_class") or resolve_fixture_class(p)[0]
+    pool = shelf_pool.get(storage, [])
+    # bu storage'da kac AYRI koridor var (dagitim kararı icin)
+    storage_aisle_count = len({key(it["aisle"].get("aisle_id")) for it in pool})
+    cands = sorted(pool, key=lambda x: (num(x["shelf"].get("used_width_cm"), 0), x.get("route", 9999)))[:80]
+    best = None
+    best_score = -1e9
+    last_reason = "no_capacity_or_constraint"
+    for item in cands:
+        a, m, sh = item["aisle"], item["module"], item["shelf"]
+        if not _shelf_has_room(p, sh):
+            last_reason = "no_capacity_after_feasible_solver"
+            continue
+        aid = key(a.get("aisle_id"))
+        ok, reason = can_place(p, a, m, sh, aisle_groups.get(aid, set()))
+        if not ok:
+            last_reason = reason
+            continue
+        sc = placement_score(p, a, m, sh, scoring_config, brand_side_rules)
+        sc += aisle_load_penalty(p, a, storage_aisle_count)   # anti-dump
+        if sc > best_score:
+            best_score = sc
+            best = item
+    if not best:
+        return False, None, last_reason
+    a, m, sh = best["aisle"], best["module"], best["shelf"]
+    rec, u, f = _build_placed_record(p, a, m, sh, score=best_score)
+    if rec is None:
+        return False, None, "no_capacity_after_feasible_solver"
+    _commit(rec, p, a, m, sh, u, f, aisle_groups)
+    return True, rec, "ok"
+
+
+# =====================================================================
+# 8) VALIDATE + SUMMARY + DIAGNOSTICS
+# =====================================================================
+def validate_planogram(plan) -> Dict[str, Any]:
+    overfilled = 0
+    storage_violations = 0
+    food_nonfood_violations = 0
+    for a in plan.get("aisles", []):
+        for m in a.get("modules", []):
+            for sh in m.get("shelves", []):
+                if num(sh.get("used_width_cm"), 0) > num(sh.get("shelf_width_cm"), 100) + 0.5:
+                    overfilled += 1
+                allowed = shelf_storage(sh)
+                foods = set()
+                for x in sh.get("products", []):
+                    if key(x.get("storage_type")) != allowed:
+                        storage_violations += 1
+                    foods.add(bool(x.get("_is_food", True)))
+                if len(foods) > 1:
+                    food_nonfood_violations += 1
+    return {"overfilled_shelves": overfilled, "storage_violations": storage_violations,
+            "food_nonfood_violations": food_nonfood_violations}
+
+
+def summarize(plan, total_products, unplaced) -> Dict[str, Any]:
+    placed = sum(len(sh.get("products", [])) for a in plan.get("aisles", [])
+                 for m in a.get("modules", []) for sh in m.get("shelves", []))
+    return {"total_products": total_products, "placed_products": placed,
+            "unplaced_products": len(unplaced)}
+
+
+def generate_planogram(products, layout=None, mode="HYBRID", brand_side_rules=None,
+                       scoring_config=None, allow_ai_dimensions=True) -> Dict[str, Any]:
+    raw_products = products or []
+    MAX_PRODUCTS = 20000
+    if len(raw_products) > MAX_PRODUCTS:
+        raw_products = sorted(raw_products, key=lambda x: -product_score(x))[:MAX_PRODUCTS]
+
+    plan = prepare_layout(layout or generate_default_layout())
+    unplaced: List[Dict[str, Any]] = []
+    alerts: Dict[str, List] = {}
+    clean: List[Dict[str, Any]] = []
+
+    for raw in raw_products:
+        p = enrich_product(raw, allow_ai_dimensions=allow_ai_dimensions)
+        if is_unsellable(p):
+            it = {"sku": sku(p), "product_name": product_name(p), "reason": "unsellable_stock_status",
+                  "suggested_action": "Imha/miadi/hasar/bloke/pasif stok plana alinmaz."}
+            unplaced.append(it)
+            alerts.setdefault("unsellable_products", []).append(it)
+            continue
+        if is_approval(p):
+            if has_positive_stock_signal(p):
+                p["approval_area_stock"] = True
+                p["reserve_stock_location"] = "APPROVAL_FIRE"
+                p["capacity_strategy"] = "front_display_depth_limited"
+            else:
+                it = {"sku": sku(p), "product_name": product_name(p),
+                      "reason": "approval_fire_no_sellable_stock",
+                      "suggested_action": "Approval/FIRE ve satilabilir stok yok."}
+                unplaced.append(it)
+                continue
+        if not sku(p):
+            unplaced.append({"sku": None, "product_name": product_name(p), "reason": "missing_sku"})
+            continue
+        clean.append(p)
+
+    ranked = classify_products(clean)
+    mode_key = str(mode or "").upper()
+    brand_block_mode = "BRAND" in mode_key
+
+    storage_rank = {"AMBIENT": 1, "PRODUCE": 2, "CHILLED": 3, "FROZEN": 4, "PALLET": 5}
+    if brand_block_mode:
+        bstrength: Dict[str, float] = {}
+        for p in ranked:
+            bstrength[brand(p)] = max(bstrength.get(brand(p), 0), float(p.get("_score", 0) or 0))
+        ranked.sort(key=lambda p: (storage_rank.get(p.get("_fixture_class"), 9),
+                                   -bstrength.get(brand(p), 0), brand(p), -float(p.get("_score", 0) or 0)))
+    else:
+        ranked.sort(key=lambda p: (storage_rank.get(p.get("_fixture_class"), 9),
+                                   -float(p.get("_score", 0) or 0), brand(p)))
+
+    shelf_pool, aisle_groups = build_shelf_index(plan)
+    brand_block_meta = []
+    used_bb = False
+
+    if brand_block_mode:
+        try:
+            placed_list, bb_unplaced, brand_block_meta = place_brand_blocks(
+                plan, ranked, shelf_pool, aisle_groups,
+                scoring_config=scoring_config, brand_side_rules=brand_side_rules)
+            used_bb = True
+            unplaced.extend(bb_unplaced)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            alerts.setdefault("engine_notes", []).append({"note": "brand_block_reservation_failed", "detail": str(exc)})
+            plan = prepare_layout(layout or generate_default_layout())
+            shelf_pool, aisle_groups = build_shelf_index(plan)
+            used_bb = False
+
+    if not used_bb:
+        for p in ranked:
+            ok, rec, reason = place_product_fast(plan, p, shelf_pool, aisle_groups,
+                                                 scoring_config=scoring_config, brand_side_rules=brand_side_rules)
+            if not ok:
+                unplaced.append({"sku": sku(p), "product_name": product_name(p), "brand": brand(p),
+                                 "category_l1": category_l1(p), "category_l2": category_l2(p),
+                                 "storage_type": p.get("_fixture_class"),
+                                 "width_cm": width(p), "depth_cm": depth(p), "case_pack_qty": case_pack(p),
+                                 "reason": f"{reason}_for_{p.get('_fixture_class')}",
+                                 "constraint_reason": reason, "solver_reason": reason,
+                                 "suggested_action": "Fixture/kapasite/storage kontrol et."})
+
+    diagnostics = validate_planogram(plan)
+    placed_recs = [it for a in plan["aisles"] for m in a["modules"] for sh in m["shelves"] for it in sh["products"]]
+    from collections import Counter
+
+    # PATCH 3: layout fixture sayimi (raf bazinda allowed_storage_type)
+    layout_fixture_counts = {c: 0 for c in FIXTURE_CLASSES}
+    layout_module_counts = {c: 0 for c in FIXTURE_CLASSES}
+    aisle_summaries = []
+    for a in plan.get("aisles", []):
+        a_counts = {}
+        for mod in a.get("modules", []):
+            mt_cls = key(get(mod, ["fixture_class", "zone"], ""))
+            for sh in mod.get("shelves", []):
+                st = key(shelf_storage(sh))
+                layout_fixture_counts[st] = layout_fixture_counts.get(st, 0) + 1
+                a_counts[st] = a_counts.get(st, 0) + 1
+            cls_for_mod = key(get(mod, ["fixture_class"], "")) or (a_counts and max(a_counts, key=a_counts.get)) or "AMBIENT"
+            layout_module_counts[cls_for_mod] = layout_module_counts.get(cls_for_mod, 0) + 1
+        aisle_summaries.append({"aisle_id": a.get("aisle_id"), "zone": a.get("zone"),
+                                "modules": len(a.get("modules", [])), "shelf_storage_counts": a_counts})
+
+    # urunlerin istenen fixture sinifi dagilimi (yerlesmeden once)
+    product_fixture_counts = dict(Counter(p.get("_fixture_class") for p in clean))
+
+    # converter_source teshisi: gonderilen layout neyi temsil ediyor
+    sent_classes = {st for st, c in layout_fixture_counts.items() if c > 0}
+    full_coverage = {"AMBIENT", "CHILLED", "FROZEN", "PRODUCE", "PALLET"}.issubset(sent_classes)
+    if not plan.get("aisles"):
+        converter_source = "invalid"
+    elif plan.get("route_strategy") in ("STORE_DNA", "OBJECTS") and full_coverage:
+        converter_source = "real_store_dna"
+    elif plan.get("store_code") == "AUTO":
+        converter_source = "fallback_default"
+    elif full_coverage:
+        converter_source = "default_merged"
+    else:
+        converter_source = "partial_coverage"
+
+    # ilk 20 no_capacity_for_AMBIENT ornegi (width/depth/case_pack/facing/solver reason)
+    amb_examples = []
+    for u in unplaced:
+        if u.get("reason") == "no_capacity_for_AMBIENT" and len(amb_examples) < 20:
+            amb_examples.append({
+                "sku": u.get("sku"), "product_name": u.get("product_name"),
+                "width_cm": u.get("width_cm"), "depth_cm": u.get("depth_cm"),
+                "case_pack_qty": u.get("case_pack_qty"),
+                "constraint_reason": u.get("constraint_reason"),
+                "solver_reason": u.get("solver_reason"),
+            })
+
+    # her unplaced reason icin 3 ornek
+    sample_unplaced_by_reason = {}
+    for u in unplaced:
+        r = u.get("reason")
+        sample_unplaced_by_reason.setdefault(r, [])
+        if len(sample_unplaced_by_reason[r]) < 3:
+            sample_unplaced_by_reason[r].append({"sku": u.get("sku"), "product_name": u.get("product_name"),
+                                                 "storage_type": u.get("storage_type")})
+
+    diagnostics.update({
+        "brand_block_mode": brand_block_mode, "brand_block_used": used_bb,
+        "placed_by_storage": dict(Counter(r.get("storage_type") for r in placed_recs)),
+        "unplaced_by_reason": dict(Counter(u.get("reason") for u in unplaced)),
+        "storage_conflicts": sum(1 for r in placed_recs if r.get("storage_conflict_warning")),
+        "capacity_compromised_count": sum(1 for r in placed_recs if r.get("capacity_compromised")),
+        "refill_risk_counts": dict(Counter(r.get("refill_risk") for r in placed_recs)),
+        "bulk_pallet_count": sum(1 for r in placed_recs if r.get("storage_type") == "PALLET"),
+        "produce_count": sum(1 for r in placed_recs if r.get("storage_type") == "PRODUCE"),
+        # --- PATCH 3 yeni teshis alanlari ---
+        "backend_received_layout_summary": {
+            "store_code": plan.get("store_code"), "route_strategy": plan.get("route_strategy"),
+            "aisle_count": len(plan.get("aisles", [])),
+            "total_modules": sum(len(a.get("modules", [])) for a in plan.get("aisles", [])),
+            "total_shelves": sum(len(sh) for a in plan.get("aisles", []) for m in a.get("modules", []) for sh in [m.get("shelves", [])]),
+            "aisles": aisle_summaries,
+        },
+        "layout_fixture_counts": layout_fixture_counts,
+        "layout_module_counts": layout_module_counts,
+        "product_fixture_counts": product_fixture_counts,
+        "sample_unplaced_by_reason": sample_unplaced_by_reason,
+        "no_capacity_ambient_examples": amb_examples,
+        "converter_source": converter_source,
+    })
+
+    # --- PATCH 3: aisle balancing diagnostics ---
+    placed_by_aisle = dict(Counter(r.get("aisle_id") for r in placed_recs))
+    util_by_aisle = {}
+    for a in plan.get("aisles", []):
+        used = sum(num(sh.get("used_width_cm"), 0) for m in a.get("modules", []) for sh in m.get("shelves", []))
+        cap = sum(num(sh.get("shelf_width_cm"), 100) for m in a.get("modules", []) for sh in m.get("shelves", []))
+        util_by_aisle[a.get("aisle_id")] = round((used / cap) * 100, 1) if cap else 0
+    total_placed = max(1, len(placed_recs))
+    aisle_shares = {a: round(c / total_placed, 3) for a, c in placed_by_aisle.items()}
+    max_share = max(aisle_shares.values()) if aisle_shares else 0
+    # AMBIENT bos kapasiteli koridorlar (bir urun aldigi halde dolmamis)
+    ambient_aisles = [a.get("aisle_id") for a in plan.get("aisles", []) if key(a.get("zone")) == "AMBIENT"]
+    empty_compatible = [a for a in ambient_aisles if placed_by_aisle.get(a, 0) == 0]
+    top_overloaded = sorted(util_by_aisle.items(), key=lambda kv: -kv[1])[:5]
+
+    # --- PATCH 4: bulk beverage + weight diagnostics ---
+    bulk_wrong = []
+    for r in placed_recs:
+        if is_bulk_or_heavy_beverage(r) and r.get("storage_type") != "PALLET":
+            bulk_wrong.append({"sku": r.get("sku"), "product_name": r.get("product_name"),
+                               "storage_type": r.get("storage_type"), "fixture_kind": r.get("fixture_kind"),
+                               "aisle_id": r.get("aisle_id"), "total_pack_liters": r.get("total_pack_liters")})
+    overweight_rej = [u for u in unplaced if u.get("constraint_reason") == "weight_not_fit" or u.get("reason", "").startswith("weight_not_fit")]
+
+    diagnostics.update({
+        "placed_by_aisle": placed_by_aisle,
+        "placed_by_aisle_storage": dict(Counter(f"{r.get('aisle_id')}|{r.get('storage_type')}" for r in placed_recs)),
+        "utilization_by_aisle": util_by_aisle,
+        "max_aisle_sku_share": max_share,
+        "max_aisle_utilization": max(util_by_aisle.values()) if util_by_aisle else 0,
+        "aisle_distribution_warning": max_share > 0.8 and len(ambient_aisles) > 1,
+        "top_overloaded_aisles": top_overloaded,
+        "empty_compatible_aisles": empty_compatible,
+        "bulk_beverage_count": sum(1 for r in placed_recs if is_bulk_or_heavy_beverage(r)),
+        "bulk_beverage_placed_by_fixture": dict(Counter(r.get("fixture_kind") for r in placed_recs if is_bulk_or_heavy_beverage(r))),
+        "bulk_beverage_wrong_fixture_count": len(bulk_wrong),
+        "bulk_beverage_wrong_fixture_sample": bulk_wrong[:10],
+        "overweight_rejections": len(overweight_rej),
+        "overweight_rejection_sample": overweight_rej[:10],
+    })
+    if brand_block_mode and not used_bb:
+        diagnostics["brand_block_reservation_failed"] = True
+
+    summary = summarize(plan, len(raw_products), unplaced)
+    return {"summary": summary, "planogram": plan, "unplaced": unplaced, "unplaced_products": unplaced,
+            "alerts": alerts, "diagnostics": diagnostics, "brand_blocks": brand_block_meta,
+            "optimized": True, "engine_source": "backend_engine"}
+
+
+# =====================================================================
+# 9) TESTLER
+# =====================================================================
+def _mk_layout(w=120, d=55):
+    lay = generate_default_layout()
+    for a in lay["aisles"]:
+        for m in a["modules"]:
+            for sh in m["shelves"]:
+                sh["shelf_width_cm"] = w
+                sh["shelf_depth_cm"] = d
+    return lay
+
+
+def _test_resolver():
+    R = resolve_fixture_class
+    assert R({"product_name": "Beypazari Water 6 x 200 ml", "storage_type": "AMBIENT", "category_l1": "Beverage", "category_l2": "Water"})[0] == "AMBIENT"
+    assert R({"product_name": "Abant Water 5 L", "storage_type": "AMBIENT", "category_l1": "Beverage", "category_l2": "Water"})[0] == "PALLET"
+    assert R({"product_name": "Erikli 12 x 0.5 L Pet", "storage_type": "AMBIENT", "category_l1": "Beverage", "category_l2": "Water"})[0] == "PALLET"
+    assert R({"product_name": "Damla 19 L Carboy", "storage_type": "AMBIENT", "category_l1": "Beverage", "category_l2": "Water"})[0] == "PALLET"
+    assert R({"product_name": "Coca-Cola 1 L", "storage_type": "AMBIENT", "category_l1": "Beverage", "category_l2": "Cola"})[0] == "AMBIENT"
+    assert R({"product_name": "Rexona Frozen Deodorant", "storage_type": "AMBIENT", "category_l1": "Personal Care", "category_l2": "Deodorant"})[0] == "AMBIENT"
+    assert R({"product_name": "Yumatu Pedestal Fan", "storage_type": "AMBIENT", "category_l1": "Electronics", "category_l2": "Fan"})[0] == "AMBIENT"
+    assert R({"product_name": "Algida Cornetto", "storage_type": "AMBIENT", "category_l1": "Ice Cream", "category_l2": "Desserts"})[0] == "FROZEN"
+    assert R({"product_name": "SuperFresh Frozen Peas", "storage_type": "AMBIENT", "category_l1": "Frozen", "category_l2": "Vegetables"})[0] == "FROZEN"
+    assert R({"product_name": "Sutas Yogurt", "storage_type": "AMBIENT", "category_l1": "Dairy", "category_l2": "Yogurt"})[0] == "CHILLED"
+    assert R({"product_name": "Banana 1 kg", "storage_type": "AMBIENT", "category_l1": "Produce", "category_l2": "Fruit"})[0] == "PRODUCE"
+    # PATCH 2 false-positive guard'lari (regresyon korumasi)
+    assert R({"product_name": "Kinder Bueno Milk Chocolate", "storage_type": "AMBIENT", "category_l1": "Confectionery", "category_l2": "Chocolate"})[0] == "AMBIENT"
+    assert R({"product_name": "Ulker Milky Chocolate", "storage_type": "AMBIENT", "category_l1": "Confectionery", "category_l2": "Chocolate"})[0] == "AMBIENT"
+    assert R({"product_name": "Nesquik Milk Chocolate Wafer", "storage_type": "AMBIENT", "category_l1": "Confectionery", "category_l2": "Wafer"})[0] == "AMBIENT"
+    assert R({"product_name": "La Lorraine Potato Roll Pastry", "storage_type": "AMBIENT", "category_l1": "Bakery", "category_l2": "Pastry"})[0] == "AMBIENT"
+    assert R({"product_name": "Potato Chips", "storage_type": "AMBIENT", "category_l1": "Snacks", "category_l2": "Chips"})[0] == "AMBIENT"
+    assert R({"product_name": "Coca-Cola 6 x 250 ml", "storage_type": "AMBIENT", "category_l1": "Beverage", "category_l2": "Cola"})[0] == "AMBIENT"
+    # gercek soguk/produce korunmali
+    assert R({"product_name": "Sutas Milk 1 L", "storage_type": "AMBIENT", "category_l1": "Dairy", "category_l2": "Milk"})[0] == "CHILLED"
+    assert R({"product_name": "Fresh Potato 1 kg", "storage_type": "AMBIENT", "category_l1": "Produce", "category_l2": "Vegetable"})[0] == "PRODUCE"
+    print("[resolver test] su/bulk/produce/false-positive/cold-frozen: GECTI")
+
+
+def _test_bulk_to_pallet():
+    r = generate_planogram(
+        products=[{"sku": "W1", "product_name": "Abant Water 5 L", "brand": "Abant", "storage_type": "AMBIENT",
+                   "category_l1": "Beverage", "category_l2": "Water", "width_cm": 25, "depth_cm": 30,
+                   "height_cm": 35, "case_pack_qty": 1, "sales_qty_7d": 40}],
+        layout=generate_default_layout(), mode="HYBRID")
+    placed = [it for a in r["planogram"]["aisles"] for m in a["modules"] for sh in m["shelves"] for it in sh["products"]]
+    assert len(placed) == 1 and placed[0]["storage_type"] == "PALLET" and placed[0]["aisle_id"] == "PALLET-HDR"
+    print("[bulk test] 5L su -> PALLET-HDR, normal rafa gitmedi: GECTI")
+
+
+def _test_food_nonfood():
+    # ayni rafa food + nonfood -> nonfood reddedilmeli (yan yana olmaz)
+    lay = {"store_code": "T", "aisles": [{"aisle_id": "A", "zone": "AMBIENT", "modules": [
+        {"module_id": 1, "side": "L", "module_type": "regular_shelf", "shelves": [
+            {"shelf_no": 1, "allowed_storage_type": "AMBIENT", "shelf_width_cm": 300, "shelf_depth_cm": 55,
+             "shelf_height_cm": 40, "max_weight_kg": 50, "used_width_cm": 0, "products": []}]}]}]}
+    prods = [{"sku": "F1", "product_name": "Eti Biscuit", "brand": "Eti", "storage_type": "AMBIENT",
+              "category_l1": "Snacks", "category_l2": "Biscuit", "width_cm": 8, "depth_cm": 8, "height_cm": 20, "case_pack_qty": 6, "sales_qty_7d": 100},
+             {"sku": "N1", "product_name": "Domestos Bleach", "brand": "Domestos", "storage_type": "AMBIENT",
+              "category_l1": "Cleaning", "category_l2": "Bleach", "width_cm": 8, "depth_cm": 8, "height_cm": 20, "case_pack_qty": 6, "sales_qty_7d": 100}]
+    r = generate_planogram(products=prods, layout=lay, mode="HYBRID")
+    shelf_prods = [it for a in r["planogram"]["aisles"] for m in a["modules"] for sh in m["shelves"] for it in sh["products"]]
+    foods = set(it.get("_is_food") for it in shelf_prods)
+    # ayni rafta food/nonfood karisik OLMAMALI
+    assert r["diagnostics"]["food_nonfood_violations"] == 0
+    print(f"[food/nonfood test] ayni rafta karisma yok (violations=0): GECTI")
+
+
+def _test_brand_block_contiguous():
+    bs = {"CocaCola": [310, 200, 150, 40], "Ulker": [300, 280, 90, 70, 60], "Eti": [290, 250, 80, 55]}
+    prods, i = [], 0
+    for b, sl in bs.items():
+        for s in sl:
+            i += 1
+            prods.append({"sku": f"S{i}", "brand": b, "product_name": f"{b} {i}", "storage_type": "AMBIENT",
+                          "category_l1": "Snacks", "category_l2": "Gen", "width_cm": 8, "depth_cm": 8,
+                          "height_cm": 20, "case_pack_qty": 12, "sales_qty_7d": s})
+    r = generate_planogram(products=prods, layout=_mk_layout(), mode="HYBRID_BRAND_SALES")
+    seq = [it["brand"] for a in r["planogram"]["aisles"] for m in a["modules"] for sh in m["shelves"] for it in sh["products"]]
+    blocks = []
+    for b in seq:
+        if not blocks or blocks[-1] != b:
+            blocks.append(b)
+    assert len(blocks) == len(set(blocks)), f"bloklar dagildi: {blocks}"
+    assert r["diagnostics"]["overfilled_shelves"] == 0
+    print(f"[brand-block test] {len(seq)} urun kesintisiz blok, overfilled=0: GECTI")
+
+
+def _test_heavy_beverage_and_weight():
+    """Patch 4+5: bulk beverage -> PALLET, weight guard placed_units."""
+    B = is_bulk_or_heavy_beverage
+    assert B({"product_name": "Coca-Cola 4 x 1 L", "category_l1": "Beverage", "category_l2": "Cola"})
+    assert B({"product_name": "Coca-Cola 12 x 0.5 L", "category_l1": "Beverage", "category_l2": "Cola"})
+    assert B({"product_name": "Beypazari Water 6 x 1 L", "category_l1": "Beverage", "category_l2": "Water"})
+    assert B({"product_name": "Damla 19 L Carboy", "category_l1": "Beverage", "category_l2": "Water"})
+    assert not B({"product_name": "Coca-Cola 1 L", "category_l1": "Beverage", "category_l2": "Cola"})
+    assert not B({"product_name": "Erikli 500 ml", "category_l1": "Beverage", "category_l2": "Water"})
+    assert not B({"product_name": "Beypazari 6 x 200 ml", "category_l1": "Beverage", "category_l2": "Water"})
+    # bulk -> PALLET, tekli -> AMBIENT
+    assert resolve_fixture_class({"product_name": "Coca-Cola 4 x 1 L", "category_l1": "Beverage", "category_l2": "Cola", "storage_type": "AMBIENT"})[0] == "PALLET"
+    assert resolve_fixture_class({"product_name": "Coca-Cola 1 L", "category_l1": "Beverage", "category_l2": "Cola", "storage_type": "AMBIENT"})[0] == "AMBIENT"
+    # weight guard: agir urun reddedilir
+    shelf = {"shelf_no": 1, "allowed_storage_type": "AMBIENT", "shelf_width_cm": 100, "shelf_depth_cm": 50,
+             "shelf_height_cm": 35, "max_weight_kg": 45, "used_width_cm": 0, "used_weight_kg": 0, "products": []}
+    heavy = {"product_name": "Agir", "storage_type": "AMBIENT", "category_l1": "X", "category_l2": "Y",
+             "width_cm": 8, "depth_cm": 8, "height_cm": 15, "case_pack_qty": 6, "weight_kg": 6, "sales_qty_7d": 50}
+    assert not weight_fit(heavy, shelf), "agir urun reddedilmedi"
+    light = {**heavy, "weight_kg": 0.3}
+    assert weight_fit(light, shelf), "hafif urun reddedildi"
+    print("[heavy-beverage+weight test] bulk->PALLET, weight guard placed_units: GECTI")
+
+
+def _test_aisle_balancing():
+    """Patch 3: anti-dump - ambient SKU'lar koridorlara dagilir, A dump degil."""
+    def mk_aisle(aid):
+        return {"aisle_id": aid, "zone": "AMBIENT", "modules": [
+            {"module_id": mi + 1, "side": "L", "module_type": "regular_shelf", "module_width_cm": 100,
+             "shelves": [{"shelf_no": si + 1, "allowed_storage_type": "AMBIENT", "shelf_width_cm": 100,
+                          "shelf_depth_cm": 50, "shelf_height_cm": 35, "max_weight_kg": 45,
+                          "used_width_cm": 0, "used_weight_kg": 0, "products": []} for si in range(6)]}
+            for mi in range(6)]}
+    layout = {"store_code": "T", "aisles": [mk_aisle(a) for a in "ABCDEF"]}
+    prods = [{"sku": f"S{i}", "product_name": f"U{i}", "brand": f"B{i%30}", "storage_type": "AMBIENT",
+              "category_l1": "Snacks", "category_l2": "Gen", "width_cm": 8, "depth_cm": 8, "height_cm": 15,
+              "case_pack_qty": 6, "sales_qty_7d": i % 100, "weight_kg": 0.3} for i in range(600)]
+    r = generate_planogram(products=prods, layout=layout, mode="HYBRID")
+    d = r["diagnostics"]
+    assert d["max_aisle_sku_share"] < 0.8, f"A-dump: {d['max_aisle_sku_share']}"
+    used_aisles = len([a for a, c in d["placed_by_aisle"].items() if c > 0])
+    assert used_aisles >= 4, f"yetersiz dagitim: {used_aisles} koridor"
+    print(f"[aisle-balancing test] max_share={d['max_aisle_sku_share']:.2f}, {used_aisles} koridor kullanildi: GECTI")
+
+
+if __name__ == "__main__":
+    _test_resolver()
+    _test_bulk_to_pallet()
+    _test_food_nonfood()
+    _test_brand_block_contiguous()
+    _test_heavy_beverage_and_weight()
+    _test_aisle_balancing()
+    print("\nTUM TESTLER GECTI")
+
+# =====================================================================
+# 10) LEGACY MAIN.PY COMPATIBILITY SHIMS
+# =====================================================================
+# Clean rebuild engine, yeni motorun tek kaynak doğruluğunu korur.
+# Bu blok sadece eski main.py import sözleşmesini karşılar.
+
+_MASTER_CACHE = None
+
+
+def load_master(force: bool = False):
+    """Legacy main.py uyumu. data/master_products.csv varsa basit index üretir."""
+    global _MASTER_CACHE
+    if _MASTER_CACHE is not None and not force:
+        return _MASTER_CACHE
+
+    import csv
+    from pathlib import Path
+
+    data_dir = Path(__file__).resolve().parent / "data"
+    path = data_dir / "master_products.csv"
+
+    rows = []
+    if path.exists():
+        with path.open("r", encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+
+    by_sku = {}
+    by_barcode = {}
+    by_catalog = {}
+    by_pim = {}
+    by_key = {}
+
+    def add(idx, k, row):
+        if k is None:
+            return
+        kk = str(k).strip()
+        if kk:
+            idx[kk] = row
+
+    for r in rows:
+        add(by_sku, get(r, ["sku", "SKU"], ""), r)
+        add(by_barcode, get(r, ["barcode", "Barcodes", "product_barcodes"], ""), r)
+        add(by_catalog, get(r, ["platform_product_id", "product_id", "catalog_id"], ""), r)
+        add(by_pim, get(r, ["pim_product_id", "pim_id"], ""), r)
+        add(by_key, key(f"{product_name(r)} {brand(r)} {category_l1(r)} {category_l2(r)}"), r)
+
+    _MASTER_CACHE = {
+        "loaded": path.exists(), "path": str(path), "rows": rows,
+        "by_sku": by_sku, "by_barcode": by_barcode,
+        "by_catalog": by_catalog, "by_pim": by_pim, "by_key": by_key,
+    }
+    return _MASTER_CACHE
+
+
+def run_engine(products, layout=None, mode="HYBRID", brand_side_rules=None,
+               scoring_config=None, allow_ai_dimensions=True):
+    return generate_planogram(
+        products=products,
+        layout=layout,
+        mode=mode,
+        brand_side_rules=brand_side_rules,
+        scoring_config=scoring_config,
+        allow_ai_dimensions=allow_ai_dimensions,
+    )
+
+
+def find_shelf(plan, aisle_id, module_id, shelf_no):
+    if not plan:
+        return None, None, None
+    aid, mid, sno = str(aisle_id), str(module_id), str(shelf_no)
+    for aisle in plan.get("aisles", []):
+        aisle_key = str(aisle.get("aisle_id") or aisle.get("id") or "")
+        if aisle_key != aid:
+            continue
+        for module in aisle.get("modules", []):
+            module_key = str(module.get("module_id") or module.get("id") or "")
+            module_matches = module_key == mid or module_key == f"{aid}.{mid}" or module_key == f"{aid}{mid}"
+            if not module_matches:
+                continue
+            for shelf in module.get("shelves", []):
+                if str(shelf.get("shelf_no") or shelf.get("id") or "") == sno:
+                    return aisle, module, shelf
+            if sno in ("", "None"):
+                return aisle, module, None
+    return None, None, None
+
+
+def find_product(plan, target_sku):
+    if not plan:
+        return None
+    target = str(target_sku)
+    for aisle in plan.get("aisles", []):
+        for module in aisle.get("modules", []):
+            for shelf in module.get("shelves", []):
+                for p in shelf.get("products", []):
+                    if str(p.get("sku")) == target:
+                        return p
+    return None
+
+
+def recalc_plan(plan):
+    if not plan:
+        return plan
+    for aisle in plan.get("aisles", []):
+        for module in aisle.get("modules", []):
+            for shelf in module.get("shelves", []):
+                used_width = 0.0
+                used_weight = 0.0
+                for idx, p in enumerate(shelf.get("products", [])):
+                    p["position_order"] = idx + 1
+                    f = max(1, int(num(p.get("facing_count", p.get("facing", 1)), 1)))
+                    p["facing"] = f
+                    p["facing_count"] = f
+                    uw = p.get("used_width_cm")
+                    if uw in (None, "", 0):
+                        uw = round(width(p) * f * 1.1, 1)
+                        p["used_width_cm"] = uw
+                    used_width += num(uw, 0)
+                    used_weight += weight(p) * f
+                shelf["used_width_cm"] = round(used_width, 1)
+                shelf["used"] = shelf["used_width_cm"]
+                shelf["used_weight_kg"] = round(used_weight, 2)
+    return plan
+
+
+def remove_product_from_plan(plan, target_sku):
+    if not plan:
+        return None
+    target = str(target_sku)
+    for aisle in plan.get("aisles", []):
+        for module in aisle.get("modules", []):
+            for shelf in module.get("shelves", []):
+                products = shelf.get("products", [])
+                for i, p in enumerate(products):
+                    if str(p.get("sku")) == target:
+                        removed = products.pop(i)
+                        recalc_plan(plan)
+                        return removed
+    return None
+
+
+def add_product_to_shelf(plan, product, aisle_id, module_id, shelf_no, force=False):
+    from copy import deepcopy
+    new_plan = deepcopy(plan or generate_default_layout())
+    aisle, module, shelf = find_shelf(new_plan, aisle_id, module_id, shelf_no)
+    if not shelf:
+        return {"status": "error", "message": "Raf bulunamadı.", "planogram": new_plan}
+
+    p = enrich_product(product or {})
+    aisle_groups = {key(aisle.get("aisle_id")): existing_groups_on_aisle(aisle)}
+    if not force:
+        ok, reason = can_place(p, aisle, module, shelf, aisle_groups.get(key(aisle.get("aisle_id")), set()))
+        if not ok:
+            return {"status": "error", "message": f"Ürün bu rafa yerleşemez: {reason}", "reason": reason, "planogram": new_plan}
+
+    rec, u, f = _build_placed_record(p, aisle, module, shelf, score=placement_score(p, aisle, module, shelf), extra={"placement_reason": "manual_add"})
+    if rec is None:
+        return {"status": "error", "message": "Raf kapasitesi uygun değil.", "reason": "capacity_not_fit", "planogram": new_plan}
+    _commit(rec, p, aisle, module, shelf, u, f, aisle_groups)
+    recalc_plan(new_plan)
+    return {"status": "success", "product": rec, "planogram": new_plan, "message": "Ürün rafa eklendi."}
+
+
+def update_facing(plan, target_sku, delta):
+    from copy import deepcopy
+    new_plan = deepcopy(plan or {})
+    p = find_product(new_plan, target_sku)
+    if not p:
+        return {"status": "error", "message": "SKU bulunamadı.", "planogram": new_plan}
+    current = max(1, int(num(p.get("facing_count", p.get("facing", 1)), 1)))
+    new_facing = max(1, current + int(delta))
+    p["facing"] = new_facing
+    p["facing_count"] = new_facing
+    p["used_width_cm"] = round(width(p) * new_facing * 1.1, 1)
+    recalc_plan(new_plan)
+    return {"status": "success", "product": p, "planogram": new_plan}
+
+
+def rotate_product(plan, target_sku):
+    from copy import deepcopy
+    new_plan = deepcopy(plan or {})
+    p = find_product(new_plan, target_sku)
+    if not p:
+        return {"status": "error", "message": "SKU bulunamadı.", "planogram": new_plan}
+    p["width_cm"], p["depth_cm"] = p.get("depth_cm", depth(p)), p.get("width_cm", width(p))
+    p["is_rotated"] = not bool(p.get("is_rotated"))
+    recalc_plan(new_plan)
+    return {"status": "success", "product": p, "planogram": new_plan}
+
+
+def move_product(plan, target_sku, aisle_id, module_id, shelf_no, force=False):
+    from copy import deepcopy
+    new_plan = deepcopy(plan or {})
+    product = remove_product_from_plan(new_plan, target_sku)
+    if not product:
+        return {"status": "error", "message": "SKU bulunamadı.", "planogram": new_plan}
+    result = add_product_to_shelf(new_plan, product, aisle_id, module_id, shelf_no, force=force)
+    result["moved_product"] = product
+    return result
+
+
+def apply_module_rule(layout, aisle_id, module_id, rule):
+    from copy import deepcopy
+    new_layout = deepcopy(layout or generate_default_layout())
+    _, module, _ = find_shelf(new_layout, aisle_id, module_id, 1)
+    if module:
+        module["assignment_rule"] = rule
+    return new_layout
+
+
+def apply_shelf_rule(layout, aisle_id, module_id, shelf_no, rule):
+    from copy import deepcopy
+    new_layout = deepcopy(layout or generate_default_layout())
+    _, _, shelf = find_shelf(new_layout, aisle_id, module_id, shelf_no)
+    if shelf:
+        shelf["assignment_rule"] = rule
+    return new_layout
+
+
+def suggest_empty_space(plan, products, aisle_id, module_id, shelf_no, limit=30):
+    aisle, module, shelf = find_shelf(plan, aisle_id, module_id, shelf_no)
+    if not shelf:
+        return {"status": "error", "message": "Raf bulunamadı.", "suggestions": []}
+    suggestions = []
+    for raw in products or []:
+        p = enrich_product(raw)
+        ok, reason = can_place(p, aisle, module, shelf)
+        if ok:
+            suggestions.append({"sku": sku(p), "product_name": product_name(p), "brand": brand(p), "storage_type": p.get("_fixture_class"), "score": product_score(p), "reason": "compatible_empty_space"})
+        if len(suggestions) >= int(limit or 30):
+            break
+    suggestions.sort(key=lambda x: -num(x.get("score"), 0))
+    return {"status": "success", "suggestions": suggestions}
+
+
+def commit_block_studio(plan, aisle_id, module_id, shelf_no, blocks):
+    from copy import deepcopy
+    new_plan = deepcopy(plan or {})
+    _, _, shelf = find_shelf(new_plan, aisle_id, module_id, shelf_no)
+    if not shelf:
+        return {"status": "error", "message": "Raf bulunamadı.", "planogram": new_plan}
+    shelf["blocks"] = blocks or []
+    return {"status": "success", "planogram": new_plan, "blocks": shelf["blocks"]}
+
+
+def optimize_shelf(plan, products, aisle_id, module_id, shelf_no):
+    return suggest_empty_space(plan, products, aisle_id, module_id, shelf_no, limit=50)
+
+
+def optimize_module(plan, products, aisle_id, module_id):
+    suggestions = []
+    for shelf_no in range(1, 20):
+        res = suggest_empty_space(plan, products, aisle_id, module_id, shelf_no, limit=20)
+        if res.get("status") == "success":
+            suggestions.extend(res.get("suggestions", []))
+    return {"status": "success", "suggestions": suggestions[:100], "planogram": plan}
+
+
+def optimize_picking_route(order_skus, plan):
+    route = []
+    wanted = {str(x) for x in (order_skus or [])}
+    for aisle in (plan or {}).get("aisles", []):
+        for module in aisle.get("modules", []):
+            for shelf in module.get("shelves", []):
+                for p in shelf.get("products", []):
+                    if str(p.get("sku")) in wanted:
+                        route.append({"sku": p.get("sku"), "product_name": p.get("product_name"), "aisle_id": aisle.get("aisle_id"), "module_id": module.get("module_id"), "shelf_no": shelf.get("shelf_no"), "position_order": p.get("position_order")})
+    route.sort(key=lambda x: (str(x.get("aisle_id")), num(x.get("module_id"), 0), num(x.get("shelf_no"), 0), num(x.get("position_order"), 0)))
+    return {"status": "success", "route": route, "count": len(route)}
+

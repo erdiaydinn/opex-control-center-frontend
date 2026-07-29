@@ -1,0 +1,1611 @@
+from fastapi import FastAPI, UploadFile, File, Body
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
+import pandas as pd
+import io
+import copy
+from pathlib import Path
+
+# Core V1 router imports are optional-safe: backend can boot even if a module is missing during local setup.
+try:
+    from auth_routes import router as auth_router
+except Exception:
+    auth_router = None
+
+try:
+    from routers.store_master_routes import router as store_master_router
+    from routers.depot_dna_routes import router as depot_dna_router
+    from routers.layout_routes import router as layout_router
+    from routers.object_library_routes import router as object_library_router
+    from routers.intelligence_routes import router as intelligence_router
+except Exception:
+    store_master_router = None
+    depot_dna_router = None
+    layout_router = None
+    object_library_router = None
+    intelligence_router = None
+
+from engine import (
+    load_master,
+    generate_default_layout,
+    generate_planogram,
+    run_engine,
+    enrich_product,
+    validate_planogram,
+    optimize_picking_route,
+    add_product_to_shelf as engine_add_product_to_shelf,
+    update_facing as engine_update_facing,
+    rotate_product as engine_rotate_product,
+    move_product as engine_move_product,
+    remove_product_from_plan,
+    recalc_plan,
+    apply_module_rule as engine_apply_module_rule,
+    apply_shelf_rule as engine_apply_shelf_rule,
+    suggest_empty_space as engine_suggest_empty_space,
+    commit_block_studio as engine_commit_block_studio,
+    optimize_shelf as engine_optimize_shelf,
+    optimize_module as engine_optimize_module,
+    find_product,
+    find_shelf,
+    make_shelves,
+)
+
+app = FastAPI(title="Plonagram Premium Backend")
+
+# =====================================================
+# ROUTERS / MODULAR CORE
+# =====================================================
+# Auth
+if auth_router:
+    app.include_router(auth_router)
+
+# Core V1 platform routers
+for _router in [
+    store_master_router,
+    depot_dna_router,
+    layout_router,
+    object_library_router,
+    intelligence_router,
+]:
+    if _router:
+        app.include_router(_router)
+
+try:
+    from master_products_api import router as master_products_router
+    app.include_router(master_products_router)
+except Exception:
+    pass
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
+    # Yerel gelistirmede degisken portlari da kapsa (allow_credentials=True ile
+    # "*" gecersiz oldugundan regex ile localhost/127.0.0.1 tum portlari acariz).
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+CHANGE_REQUESTS = []
+
+
+DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR.mkdir(exist_ok=True)
+MASTER_PRODUCTS_PATH = DATA_DIR / "master_products.csv"
+
+
+def read_products_dataframe(content: bytes, filename: str = "") -> pd.DataFrame:
+    """Read CSV/XLSX SKU catalog robustly."""
+    lower_name = str(filename or "").lower()
+    if lower_name.endswith((".xlsx", ".xls")):
+        try:
+            df = pd.read_excel(io.BytesIO(content))
+            if len(df.columns) > 1 or len(df) > 0:
+                return df
+        except Exception as err:
+            raise ValueError(f"Excel okunamadı: {err}")
+
+    attempts = [
+        {"sep": None, "engine": "python"},
+        {"sep": ","},
+        {"sep": ";"},
+        {"sep": "\t"},
+    ]
+    last_err = None
+    for kwargs in attempts:
+        for encoding in [None, "utf-8-sig", "latin-1"]:
+            try:
+                read_kwargs = dict(kwargs)
+                if encoding:
+                    read_kwargs["encoding"] = encoding
+                df = pd.read_csv(io.BytesIO(content), **read_kwargs)
+                if len(df.columns) > 1:
+                    return df
+            except Exception as err:
+                last_err = err
+    raise ValueError(f"CSV okunamadı veya tek kolona düştü. Ayraç/encoding kontrol edilmeli. Son hata: {last_err}")
+
+
+def persist_master_products(df: pd.DataFrame) -> None:
+    DATA_DIR.mkdir(exist_ok=True)
+    df.to_csv(MASTER_PRODUCTS_PATH, index=False, encoding="utf-8-sig")
+
+
+
+# =====================================================
+# MODELS
+# =====================================================
+
+class GenerateRequest(BaseModel):
+    products: Optional[List[Dict[str, Any]]] = None
+    layout: Optional[Any] = None
+    mode: Optional[str] = "HYBRID"
+    brand_side_rules: Optional[Dict[str, str]] = None
+    scoring_config: Optional[Dict[str, float]] = None
+    allow_ai_dimensions: Optional[bool] = True
+
+
+class PlanRequest(BaseModel):
+    planogram: Dict[str, Any]
+
+
+class RouteRequest(BaseModel):
+    planogram: Dict[str, Any]
+    order_skus: List[str]
+
+
+class MoveRequest(BaseModel):
+    planogram: Dict[str, Any]
+    sku: str
+    target_aisle_id: str
+    target_module_id: int
+    target_shelf_no: int
+    force: Optional[bool] = False
+
+
+class FacingRequest(BaseModel):
+    planogram: Dict[str, Any]
+    sku: str
+    delta: int
+
+
+class RotateRequest(BaseModel):
+    planogram: Dict[str, Any]
+    sku: str
+
+
+class RemoveProductRequest(BaseModel):
+    planogram: Dict[str, Any]
+    sku: str
+
+
+class AddProductToShelfRequest(BaseModel):
+    planogram: Dict[str, Any]
+    product: Dict[str, Any]
+    target_aisle_id: str
+    target_module_id: int
+    target_shelf_no: int
+    force: Optional[bool] = False
+
+
+class RuleRequest(BaseModel):
+    layout: Dict[str, Any]
+    aisle_id: str
+    module_id: Optional[int] = None
+    shelf_no: Optional[int] = None
+    rule: Dict[str, Any]
+
+
+class SuggestRequest(BaseModel):
+    planogram: Dict[str, Any]
+    products: List[Dict[str, Any]]
+    aisle_id: str
+    module_id: int
+    shelf_no: int
+    limit: Optional[int] = 30
+
+
+class BlockStudioCommitRequest(BaseModel):
+    planogram: Dict[str, Any]
+    aisle_id: str
+    module_id: int
+    shelf_no: int
+    blocks: List[Dict[str, Any]]
+
+
+class ReorderShelfRequest(BaseModel):
+    planogram: Dict[str, Any]
+    aisle_id: str
+    module_id: int
+    shelf_no: int
+    sku_order: List[str]
+
+
+class SelectedModulesRequest(BaseModel):
+    products: List[Dict[str, Any]]
+    layout: Dict[str, Any]
+    selected_modules: List[Dict[str, Any]]
+    mode: Optional[str] = "HYBRID"
+    brand_side_rules: Optional[Dict[str, str]] = None
+    scoring_config: Optional[Dict[str, float]] = None
+    allow_ai_dimensions: Optional[bool] = True
+
+
+class DimensionChangeRequest(BaseModel):
+    sku: str
+    product_name: Optional[str] = None
+    old: Dict[str, Any]
+    new: Dict[str, Any]
+    requested_by: Optional[str] = "user"
+    reason: Optional[str] = ""
+
+
+class ApproveDimensionRequest(BaseModel):
+    request_id: int
+    approve: bool
+    planogram: Optional[Dict[str, Any]] = None
+
+
+# =====================================================
+# HEALTH / MASTER / LAYOUT
+# =====================================================
+
+@app.get("/")
+def health():
+    master = load_master()
+    return {
+        "status": "ok",
+        "service": "Plonagram Premium Backend",
+        "master_loaded": master["loaded"],
+        "master_rows": len(master["rows"]),
+    }
+
+
+@app.get("/default-layout")
+def default_layout():
+    return generate_default_layout()
+
+
+@app.post("/reload-master")
+def reload_master():
+    master = load_master(force=True)
+    return {
+        "status": "ok",
+        "rows": len(master["rows"]),
+        "by_sku": len(master["by_sku"]),
+        "by_barcode": len(master["by_barcode"]),
+        "by_catalog": len(master["by_catalog"]),
+        "by_pim": len(master["by_pim"]),
+        "by_key": len(master["by_key"]),
+    }
+
+
+# =====================================================
+# UPLOAD / PRODUCT ENRICHMENT
+# =====================================================
+
+
+@app.post("/upload-products-csv")
+async def upload_products_csv(
+    file: UploadFile = File(...),
+    allow_ai_dimensions: bool = True,
+    persist_to_master: bool = True,
+):
+    """Upload SKU catalog, persist it, reload master cache and return enriched rows.
+
+    Product Library reads data/master_products.csv through /master-products.
+    Therefore upload must persist by default; otherwise the UI looks like SKU did not load.
+    """
+    content = await file.read()
+
+    df = read_products_dataframe(content, file.filename)
+    df = df.where(pd.notnull(df), None)
+
+    if persist_to_master:
+        persist_master_products(df)
+        load_master(force=True)
+
+    rows = df.to_dict(orient="records")
+    products = [
+        enrich_product(r, allow_ai_dimensions=allow_ai_dimensions)
+        for r in rows
+    ]
+
+    return {
+        "status": "success",
+        "file_name": file.filename,
+        "persisted_to_master": bool(persist_to_master),
+        "master_path": str(MASTER_PRODUCTS_PATH) if persist_to_master else None,
+        "row_count": len(products),
+        "columns": list(df.columns),
+        "products": products,
+        "master_matches": sum(1 for p in products if p.get("dimension_source") == "master"),
+        "file_dimensions": sum(1 for p in products if p.get("dimension_source") == "file"),
+        "ai_estimated": sum(1 for p in products if p.get("dimension_source") == "ai_estimated"),
+        "missing_dimensions": sum(1 for p in products if p.get("dimension_source") == "missing"),
+        "with_image": sum(1 for p in products if p.get("image_url")),
+        "storage_summary": {
+            "AMBIENT": sum(1 for p in products if p.get("storage_type") == "AMBIENT"),
+            "CHILLED": sum(1 for p in products if p.get("storage_type") == "CHILLED"),
+            "FROZEN": sum(1 for p in products if p.get("storage_type") == "FROZEN"),
+        },
+        "fixture_summary": {
+            "SHELF": sum(1 for p in products if p.get("fixture_kind") == "SHELF"),
+            "FRIDGE": sum(1 for p in products if p.get("fixture_kind") == "FRIDGE"),
+            "FREEZER": sum(1 for p in products if p.get("fixture_kind") == "FREEZER"),
+        },
+    }
+
+
+@app.get("/sku-library")
+def sku_library(limit: int = 500, offset: int = 0):
+    master = load_master(force=False)
+    rows = master.get("rows", [])
+    products = [enrich_product(r, allow_ai_dimensions=False) for r in rows[offset:offset + limit]]
+    return {"status": "success", "total": len(rows), "limit": limit, "offset": offset, "products": products}
+
+
+@app.get("/product-library")
+def product_library(limit: int = 500, offset: int = 0):
+    return sku_library(limit=limit, offset=offset)
+
+
+@app.post("/enrich-products")
+
+def enrich_products(payload: Dict[str, Any] = Body(...)):
+    products = payload.get("products", [])
+    allow_ai_dimensions = payload.get("allow_ai_dimensions", True)
+
+    enriched = [
+        enrich_product(p, allow_ai_dimensions=allow_ai_dimensions)
+        for p in products
+    ]
+
+    return {
+        "status": "success",
+        "count": len(enriched),
+        "products": enriched,
+    }
+
+
+# =====================================================
+# PLANOGRAM GENERATION
+# =====================================================
+
+@app.post("/generate-planogram")
+def generate(req: GenerateRequest):
+    layout = req.layout or generate_default_layout()
+    products = req.products or []
+    try:
+        result = generate_planogram(
+            products=products,
+            layout=layout,
+            mode=req.mode or "HYBRID",
+            brand_side_rules=req.brand_side_rules,
+            scoring_config=req.scoring_config,
+            allow_ai_dimensions=req.allow_ai_dimensions,
+        )
+        # engine sonucu sozluk degilse yine de tutarli sekil ver
+        if not isinstance(result, dict):
+            raise ValueError("engine non-dict result")
+        result.setdefault("optimized", True)
+        return result
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        # Fail-safe: 500 yerine bos ama tutarli planogram iskeleti dondur.
+        return {
+            "summary": {
+                "total_products": len(products),
+                "placed_products": 0,
+                "unplaced_products": len(products),
+                "mode": req.mode or "HYBRID",
+                "status": "engine_error",
+            },
+            "planogram": layout,
+            "placements": [],
+            "unplaced_products": [
+                {"sku": p.get("sku"), "product_name": p.get("product_name"), "reason": "engine_error"}
+                for p in products
+            ],
+            "diagnostics": {"engine_error": str(exc)},
+            "optimized": False,
+            "error": "engine_error",
+            "message": f"Planogram engine basarisiz oldu, guvenli bos plan donduruldu: {exc}",
+        }
+
+
+@app.post("/generate-planogram-fast")
+def generate_fast(req: GenerateRequest):
+    return run_engine(
+        products=req.products,
+        layout=req.layout or generate_default_layout(),
+        mode=req.mode or "HYBRID",
+        brand_side_rules=req.brand_side_rules,
+        scoring_config=req.scoring_config,
+        allow_ai_dimensions=req.allow_ai_dimensions,
+    )
+
+
+@app.post("/score-planogram")
+def score_planogram(req: PlanRequest):
+    plan = copy.deepcopy(req.planogram)
+    recalc_plan(plan)
+    diagnostics = validate_planogram(plan)
+
+    return {
+        "status": "success",
+        "diagnostics": diagnostics,
+        "planogram": plan,
+    }
+
+
+@app.post("/planogram-diagnostics")
+def planogram_diagnostics(req: PlanRequest):
+    plan = copy.deepcopy(req.planogram)
+    recalc_plan(plan)
+    diagnostics = validate_planogram(plan)
+
+    return {
+        "status": "success",
+        **diagnostics,
+    }
+
+
+@app.post("/validate-strict-rules")
+def validate_strict_rules(req: PlanRequest):
+    diagnostics = validate_planogram(req.planogram)
+    violations = diagnostics.get("strict_rule_violations", [])
+
+    return {
+        "status": "success",
+        "violation_count": len(violations),
+        "violations": violations,
+    }
+
+
+# =====================================================
+# PRODUCT ACTIONS
+# =====================================================
+
+@app.post("/update-facing")
+def update_facing(req: FacingRequest):
+    return engine_update_facing(
+        plan=req.planogram,
+        target_sku=req.sku,
+        delta=req.delta,
+    )
+
+
+@app.post("/rotate-product")
+def rotate_product(req: RotateRequest):
+    return engine_rotate_product(
+        plan=req.planogram,
+        target_sku=req.sku,
+    )
+
+
+@app.post("/move-product")
+def move_product(req: MoveRequest):
+    return engine_move_product(
+        plan=req.planogram,
+        target_sku=req.sku,
+        aisle_id=req.target_aisle_id,
+        module_id=req.target_module_id,
+        shelf_no=req.target_shelf_no,
+        force=req.force,
+    )
+
+
+@app.post("/remove-product")
+def remove_product(req: RemoveProductRequest):
+    plan = copy.deepcopy(req.planogram)
+    removed = remove_product_from_plan(plan, req.sku)
+
+    if not removed:
+        return {
+            "status": "error",
+            "message": "SKU bulunamadı.",
+            "planogram": plan,
+        }
+
+    recalc_plan(plan)
+
+    return {
+        "status": "success",
+        "removed_product": removed,
+        "planogram": plan,
+        "message": "Ürün raftan kaldırıldı.",
+    }
+
+
+@app.post("/add-product-to-shelf")
+def add_product_to_shelf(req: AddProductToShelfRequest):
+    return engine_add_product_to_shelf(
+        plan=req.planogram,
+        product=req.product,
+        aisle_id=req.target_aisle_id,
+        module_id=req.target_module_id,
+        shelf_no=req.target_shelf_no,
+        force=req.force,
+    )
+
+
+@app.post("/reorder-shelf")
+def reorder_shelf(req: ReorderShelfRequest):
+    plan = copy.deepcopy(req.planogram)
+    aisle, module, shelf = find_shelf(
+        plan,
+        req.aisle_id,
+        req.module_id,
+        req.shelf_no,
+    )
+
+    if not shelf:
+        return {
+            "status": "error",
+            "message": "Raf bulunamadı.",
+            "planogram": plan,
+        }
+
+    products = shelf.get("products", [])
+    by_sku = {p.get("sku"): p for p in products}
+
+    ordered = []
+    used = set()
+
+    for s in req.sku_order:
+        if s in by_sku:
+            ordered.append(by_sku[s])
+            used.add(s)
+
+    for p in products:
+        if p.get("sku") not in used:
+            ordered.append(p)
+
+    for idx, p in enumerate(ordered):
+        p["position_order"] = idx + 1
+
+    shelf["products"] = ordered
+    recalc_plan(plan)
+
+    return {
+        "status": "success",
+        "planogram": plan,
+        "shelf": shelf,
+    }
+
+# =====================================================
+# DJX KURULUM
+# =====================================================
+from fastapi import UploadFile, File
+import tempfile
+import os
+import ezdxf
+import math
+
+
+def make_shelves(count, storage_type="AMBIENT", width=100, height=35, depth=50):
+    shelves = []
+    for i in range(1, count + 1):
+        shelves.append({
+            "shelf_no": i,
+            "shelf_width_cm": width,
+            "shelf_height_cm": height,
+            "shelf_depth_cm": depth,
+            "max_weight_kg": 45,
+            "zone_type": "bottom" if i == 1 else "top" if i == count else "eye",
+            "allowed_storage_type": storage_type,
+            "products": []
+        })
+    return shelves
+
+
+def parse_dxf_to_layout(file_path, store_code="AUTO"):
+    doc = ezdxf.readfile(file_path)
+    msp = doc.modelspace()
+
+    rectangles = []
+
+    for e in msp:
+        try:
+            dxftype = e.dxftype()
+
+            if dxftype == "LWPOLYLINE":
+                points = [(float(p[0]), float(p[1])) for p in e.get_points()]
+                if len(points) < 4:
+                    continue
+
+                xs = [p[0] for p in points]
+                ys = [p[1] for p in points]
+
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+
+                w = abs(max_x - min_x)
+                h = abs(max_y - min_y)
+
+                if w <= 0 or h <= 0:
+                    continue
+
+                # Çok küçük çizimleri ele
+                if w < 20 or h < 20:
+                    continue
+
+                rectangles.append({
+                    "x": min_x,
+                    "y": min_y,
+                    "w": w,
+                    "h": h,
+                    "cx": (min_x + max_x) / 2,
+                    "cy": (min_y + max_y) / 2,
+                    "layer": str(e.dxf.layer or "")
+                })
+
+            elif dxftype == "INSERT":
+                name = str(e.dxf.name or "").upper()
+                x = float(e.dxf.insert.x)
+                y = float(e.dxf.insert.y)
+
+                rectangles.append({
+                    "x": x,
+                    "y": y,
+                    "w": 100,
+                    "h": 50,
+                    "cx": x,
+                    "cy": y,
+                    "layer": name
+                })
+
+        except Exception:
+            continue
+
+    if not rectangles:
+        return {
+            "store_code": store_code,
+            "route_strategy": "DXF_EMPTY_FALLBACK",
+            "aisles": []
+        }
+
+    # Y koordinatına göre koridor gruplama
+    rectangles = sorted(rectangles, key=lambda r: (round(r["cy"] / 300), r["cx"]))
+
+    rows = []
+    row_tolerance = 250
+
+    for rect in rectangles:
+        placed = False
+        for row in rows:
+            avg_y = sum(r["cy"] for r in row) / len(row)
+            if abs(rect["cy"] - avg_y) <= row_tolerance:
+                row.append(rect)
+                placed = True
+                break
+        if not placed:
+            rows.append([rect])
+
+    rows = sorted(rows, key=lambda row: sum(r["cy"] for r in row) / len(row))
+
+    aisles = []
+    aisle_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    for row_idx, row in enumerate(rows):
+        row = sorted(row, key=lambda r: r["cx"])
+
+        # Aşırı fazla rectangle varsa 10'luk modül bloklarına böl
+        chunk_size = 10
+        chunks = [row[i:i + chunk_size] for i in range(0, len(row), chunk_size)]
+
+        for chunk_idx, chunk in enumerate(chunks):
+            aisle_index = len(aisles)
+            aisle_id = aisle_letters[aisle_index] if aisle_index < len(aisle_letters) else f"A{aisle_index + 1}"
+
+            modules = []
+            for i, rect in enumerate(chunk):
+                layer_upper = rect["layer"].upper()
+
+                if "COLD" in layer_upper or "+4" in layer_upper or "FRIDGE" in layer_upper or "CHILL" in layer_upper:
+                    storage = "CHILLED"
+                    module_type = "fridge"
+                    shelves = 5
+                    depth = 55
+                elif "FROZEN" in layer_upper or "-18" in layer_upper or "FREEZER" in layer_upper:
+                    storage = "FROZEN"
+                    module_type = "freezer"
+                    shelves = 4
+                    depth = 60
+                else:
+                    storage = "AMBIENT"
+                    module_type = "regular_shelf"
+                    shelves = 6
+                    depth = 50
+
+                module_width_cm = max(60, min(200, round(rect["w"] / 10)))
+
+                modules.append({
+                    "module_id": i + 1,
+                    "side": "L" if i % 2 == 0 else "R",
+                    "module_type": module_type,
+                    "module_width_cm": module_width_cm,
+                    "module_depth_cm": depth,
+                    "module_height_cm": 200,
+                    "source_layer": rect["layer"],
+                    "cad_x": rect["x"],
+                    "cad_y": rect["y"],
+                    "shelves": make_shelves(
+                        shelves,
+                        storage_type=storage,
+                        width=module_width_cm,
+                        height=35,
+                        depth=depth
+                    )
+                })
+
+            aisles.append({
+                "aisle_id": aisle_id,
+                "row": row_idx + 1,
+                "position": chunk_idx + 1,
+                "direction": "LTR" if row_idx % 2 == 0 else "RTL",
+                "aisle_type": "dxf_detected",
+                "modules": modules
+            })
+
+    return {
+        "store_code": store_code,
+        "route_strategy": "DXF_AUTO_PARSED",
+        "source": "DXF",
+        "detected_rectangles": len(rectangles),
+        "aisles": aisles
+    }
+
+
+@app.post("/parse-layout-file")
+async def parse_layout_file(file: UploadFile = File(...), store_code: str = "AUTO"):
+    filename = file.filename.lower()
+
+    if not filename.endswith(".dxf"):
+        return {
+            "success": False,
+            "message": "Şimdilik aktif parser sadece DXF destekliyor. DWG/PDF için önce DXF'e çevir.",
+            "layout": None
+        }
+
+    suffix = os.path.splitext(filename)[1]
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    try:
+        layout = parse_dxf_to_layout(tmp_path, store_code)
+        return {
+            "success": True,
+            "message": f"DXF okundu: {len(layout.get('aisles', []))} koridor üretildi.",
+            "layout": layout
+        }
+    except Exception as err:
+        return {
+            "success": False,
+            "message": f"DXF parse hatası: {str(err)}",
+            "layout": None
+        }
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+# =====================================================
+# RULES / BLOCK STUDIO / OPTIMIZATION
+# =====================================================
+
+@app.post("/apply-module-rule")
+def apply_module_rule(req: RuleRequest):
+    if req.module_id is None:
+        return {
+            "status": "error",
+            "message": "module_id gerekli.",
+        }
+
+    layout = engine_apply_module_rule(
+        layout=req.layout,
+        aisle_id=req.aisle_id,
+        module_id=req.module_id,
+        rule=req.rule,
+    )
+
+    return {
+        "status": "success",
+        "layout": layout,
+    }
+
+
+@app.post("/apply-shelf-rule")
+def apply_shelf_rule(req: RuleRequest):
+    if req.module_id is None or req.shelf_no is None:
+        return {
+            "status": "error",
+            "message": "module_id ve shelf_no gerekli.",
+        }
+
+    layout = engine_apply_shelf_rule(
+        layout=req.layout,
+        aisle_id=req.aisle_id,
+        module_id=req.module_id,
+        shelf_no=req.shelf_no,
+        rule=req.rule,
+    )
+
+    return {
+        "status": "success",
+        "layout": layout,
+    }
+
+
+@app.post("/suggest-empty-space")
+def suggest_empty_space(req: SuggestRequest):
+    return engine_suggest_empty_space(
+        plan=req.planogram,
+        products=req.products,
+        aisle_id=req.aisle_id,
+        module_id=req.module_id,
+        shelf_no=req.shelf_no,
+        limit=req.limit or 30,
+    )
+
+
+@app.post("/commit-block-studio")
+def commit_block_studio(req: BlockStudioCommitRequest):
+    return engine_commit_block_studio(
+        plan=req.planogram,
+        aisle_id=req.aisle_id,
+        module_id=req.module_id,
+        shelf_no=req.shelf_no,
+        blocks=req.blocks,
+    )
+
+
+@app.post("/optimize-shelf")
+def optimize_shelf(payload: Dict[str, Any] = Body(...)):
+    return engine_optimize_shelf(
+        plan=payload.get("planogram"),
+        products=payload.get("products", []),
+        aisle_id=payload.get("aisle_id"),
+        module_id=payload.get("module_id"),
+        shelf_no=payload.get("shelf_no"),
+    )
+
+
+@app.post("/optimize-module")
+def optimize_module(payload: Dict[str, Any] = Body(...)):
+    return engine_optimize_module(
+        plan=payload.get("planogram"),
+        products=payload.get("products", []),
+        aisle_id=payload.get("aisle_id"),
+        module_id=payload.get("module_id"),
+    )
+
+
+@app.post("/optimize-selected-modules")
+def optimize_selected_modules(req: SelectedModulesRequest):
+    layout = copy.deepcopy(req.layout)
+
+    selected = {
+        (
+            str(x.get("aisle_id") or x.get("aisleId")),
+            int(x.get("module_id") or x.get("moduleId")),
+        )
+        for x in req.selected_modules
+    }
+
+    selected_layout = copy.deepcopy(layout)
+
+    for aisle in selected_layout.get("aisles", []):
+        for module in aisle.get("modules", []):
+            key = (str(aisle.get("aisle_id")), int(module.get("module_id")))
+            if key in selected:
+                for shelf in module.get("shelves", []):
+                    shelf["products"] = []
+                    shelf["used_width_cm"] = 0
+                    shelf["used_weight_kg"] = 0
+                    shelf["used"] = 0
+
+    result = generate_planogram(
+        products=req.products,
+        layout=selected_layout,
+        mode=req.mode or "HYBRID",
+        brand_side_rules=req.brand_side_rules,
+        scoring_config=req.scoring_config,
+        allow_ai_dimensions=req.allow_ai_dimensions,
+    )
+
+    return {
+        "status": "success",
+        "selected_modules": list(selected),
+        **result,
+    }
+
+
+# =====================================================
+# LAYOUT EDITING
+# =====================================================
+
+@app.post("/add-module")
+def add_module(payload: Dict[str, Any] = Body(...)):
+    layout = copy.deepcopy(payload.get("layout") or generate_default_layout())
+
+    aisle_id = str(payload.get("aisle_id") or "")
+    module_type = payload.get("module_type") or "regular_shelf"
+    storage = payload.get("storage_type") or "AMBIENT"
+    shelf_count = int(payload.get("shelf_count") or 6)
+
+    width = float(payload.get("module_width_cm") or 100)
+    depth = float(payload.get("module_depth_cm") or 50)
+    height = float(payload.get("module_height_cm") or 200)
+    max_weight = float(payload.get("max_weight_kg") or 45)
+
+    for aisle in layout.get("aisles", []):
+        if str(aisle.get("aisle_id")) == aisle_id:
+            module_id = len(aisle.get("modules", [])) + 1
+
+            aisle.setdefault("modules", []).append({
+                "module_id": module_id,
+                "side": payload.get("side") or "L",
+                "module_type": module_type,
+                "module_width_cm": width,
+                "module_depth_cm": depth,
+                "module_height_cm": height,
+                "distance_to_dispatch": module_id,
+                "assignment_rule": None,
+                "shelves": make_shelves(
+                    shelf_count,
+                    storage,
+                    width,
+                    height / max(shelf_count, 1),
+                    depth,
+                    max_weight,
+                ),
+            })
+
+            return {
+                "status": "success",
+                "layout": layout,
+            }
+
+    return {
+        "status": "error",
+        "message": "Koridor bulunamadı.",
+        "layout": layout,
+    }
+
+
+@app.post("/add-shelf")
+def add_shelf(payload: Dict[str, Any] = Body(...)):
+    layout = copy.deepcopy(payload.get("layout") or generate_default_layout())
+
+    aisle_id = payload.get("aisle_id")
+    module_id = int(payload.get("module_id"))
+
+    aisle, module, _ = find_shelf(layout, aisle_id, module_id, 1)
+
+    if not module:
+        return {
+            "status": "error",
+            "message": "Modül bulunamadı.",
+            "layout": layout,
+        }
+
+    module.setdefault("shelves", []).append({
+        "shelf_no": len(module.get("shelves", [])) + 1,
+        "shelf_width_cm": float(payload.get("shelf_width_cm") or 100),
+        "shelf_height_cm": float(payload.get("shelf_height_cm") or 35),
+        "shelf_depth_cm": float(payload.get("shelf_depth_cm") or 50),
+        "max_weight_kg": float(payload.get("max_weight_kg") or 45),
+        "zone_type": payload.get("zone_type") or "mid",
+        "allowed_storage_type": payload.get("allowed_storage_type") or "AMBIENT",
+        "allowed_categories": [],
+        "blocked_categories": [],
+        "assignment_rule": None,
+        "products": [],
+        "used_width_cm": 0,
+        "used_weight_kg": 0,
+        "used": 0,
+    })
+
+    return {
+        "status": "success",
+        "layout": layout,
+    }
+
+
+@app.post("/update-shelf-size")
+def update_shelf_size(payload: Dict[str, Any] = Body(...)):
+    layout = copy.deepcopy(payload.get("layout") or payload.get("planogram"))
+    aisle_id = payload.get("aisle_id")
+    module_id = int(payload.get("module_id"))
+    shelf_no = int(payload.get("shelf_no"))
+
+    aisle, module, shelf = find_shelf(layout, aisle_id, module_id, shelf_no)
+
+    if not shelf:
+        return {
+            "status": "error",
+            "message": "Raf bulunamadı.",
+            "layout": layout,
+        }
+
+    if "shelf_width_cm" in payload:
+        shelf["shelf_width_cm"] = float(payload["shelf_width_cm"])
+    if "shelf_height_cm" in payload:
+        shelf["shelf_height_cm"] = float(payload["shelf_height_cm"])
+    if "shelf_depth_cm" in payload:
+        shelf["shelf_depth_cm"] = float(payload["shelf_depth_cm"])
+    if "max_weight_kg" in payload:
+        shelf["max_weight_kg"] = float(payload["max_weight_kg"])
+    if "allowed_storage_type" in payload:
+        shelf["allowed_storage_type"] = payload["allowed_storage_type"]
+
+    recalc_plan(layout)
+
+    return {
+        "status": "success",
+        "layout": layout,
+    }
+
+
+# =====================================================
+# DIMENSION APPROVAL FLOW
+# =====================================================
+
+@app.post("/request-dimension-change")
+def request_dimension_change(req: DimensionChangeRequest):
+    request_id = len(CHANGE_REQUESTS) + 1
+
+    item = {
+        "id": request_id,
+        "sku": req.sku,
+        "product_name": req.product_name,
+        "old": req.old,
+        "new": req.new,
+        "requested_by": req.requested_by,
+        "reason": req.reason,
+        "status": "PENDING",
+    }
+
+    CHANGE_REQUESTS.append(item)
+
+    return {
+        "status": "success",
+        "request": item,
+        "message": "Ölçü değişikliği onaya gönderildi.",
+    }
+
+
+@app.get("/pending-dimension-changes")
+def pending_dimension_changes():
+    return {
+        "status": "success",
+        "pending": [x for x in CHANGE_REQUESTS if x["status"] == "PENDING"],
+        "all": CHANGE_REQUESTS,
+    }
+
+
+@app.post("/approve-dimension-change")
+def approve_dimension_change(req: ApproveDimensionRequest):
+    target = next(
+        (x for x in CHANGE_REQUESTS if x["id"] == req.request_id),
+        None,
+    )
+
+    if not target:
+        return {
+            "status": "error",
+            "message": "Request bulunamadı.",
+        }
+
+    target["status"] = "APPROVED" if req.approve else "REJECTED"
+
+    if not req.approve or not req.planogram:
+        return {
+            "status": "success",
+            "request": target,
+            "planogram": req.planogram,
+        }
+
+    plan = copy.deepcopy(req.planogram)
+    product = find_product(plan, target["sku"])
+
+    if product:
+        if "width_cm" in target["new"]:
+            product["width_cm"] = float(target["new"]["width_cm"])
+        if "height_cm" in target["new"]:
+            product["height_cm"] = float(target["new"]["height_cm"])
+        if "depth_cm" in target["new"]:
+            product["depth_cm"] = float(target["new"]["depth_cm"])
+        if "is_rotated" in target["new"]:
+            product["is_rotated"] = bool(target["new"]["is_rotated"])
+
+        product["dimension_source"] = "approved_user_override"
+        product["dimension_confidence"] = 1
+
+    recalc_plan(plan)
+
+    return {
+        "status": "success",
+        "request": target,
+        "planogram": plan,
+    }
+
+
+# =====================================================
+# PICKING ROUTE
+# =====================================================
+
+@app.post("/picking-route")
+def picking_route(req: RouteRequest):
+    return optimize_picking_route(
+        order_skus=req.order_skus,
+        plan=req.planogram,
+    )
+
+
+@app.post("/generate-planogram-lite")
+def generate_planogram_lite(req: GenerateRequest):
+    import time
+    start = time.time()
+
+    layout = req.layout or generate_default_layout()
+    plan = copy.deepcopy(layout)
+
+    products = req.products or []
+
+    # İlk aşamada hızlı MVP modu: max 500 SKU
+    products = products[:500]
+
+    # Rafları düz listeye al
+    shelves = []
+    for aisle in plan.get("aisles", []):
+        for module in aisle.get("modules", []):
+            for shelf in module.get("shelves", []):
+                shelf["products"] = []
+                shelf["used_width_cm"] = 0
+                shelf["used_weight_kg"] = 0
+                shelves.append((aisle, module, shelf))
+
+    # Ürünleri hafif enrich et
+    enriched = []
+    for p in products:
+        ep = enrich_product(p, allow_ai_dimensions=req.allow_ai_dimensions)
+        ep["_sales"] = float(ep.get("sales_qty_7d") or ep.get("sales") or 0)
+        enriched.append(ep)
+
+    enriched.sort(key=lambda x: x["_sales"], reverse=True)
+
+    unplaced = []
+    placed_count = 0
+
+    for p in enriched:
+        storage = p.get("storage_type", "AMBIENT")
+        w = float(p.get("width_cm") or 10)
+        h = float(p.get("height_cm") or 20)
+        d = float(p.get("depth_cm") or 10)
+
+        facing = 1
+        if p["_sales"] >= 120:
+            facing = 3
+        elif p["_sales"] >= 60:
+            facing = 2
+
+        usage = w * facing * 1.1
+        placed = False
+
+        for aisle, module, shelf in shelves:
+            if shelf.get("allowed_storage_type", "AMBIENT") != storage:
+                continue
+
+            if h > float(shelf.get("shelf_height_cm") or 35):
+                continue
+
+            if d > float(shelf.get("shelf_depth_cm") or 50):
+                continue
+
+            remain = float(shelf.get("shelf_width_cm") or 100) - float(shelf.get("used_width_cm") or 0)
+
+            if usage > remain:
+                continue
+
+            item = {
+                "sku": p.get("sku"),
+                "product_name": p.get("product_name"),
+                "brand": p.get("brand") or p.get("brand_name"),
+                "category_l1": p.get("category_l1"),
+                "category_l2": p.get("category_l2"),
+                "storage_type": storage,
+                "image_url": p.get("image_url"),
+                "width_cm": w,
+                "height_cm": h,
+                "depth_cm": d,
+                "facing": facing,
+                "facing_count": facing,
+                "used_width_cm": round(usage, 1),
+                "aisle_id": aisle.get("aisle_id"),
+                "module_id": module.get("module_id"),
+                "shelf_no": shelf.get("shelf_no"),
+                "position_order": len(shelf["products"]) + 1,
+            }
+
+            shelf["products"].append(item)
+            shelf["used_width_cm"] = round(float(shelf.get("used_width_cm") or 0) + usage, 1)
+            placed_count += 1
+            placed = True
+            break
+
+        if not placed:
+            unplaced.append({
+                "sku": p.get("sku"),
+                "product_name": p.get("product_name"),
+                "reason": "capacity_or_storage_not_fit"
+            })
+
+    return {
+        "summary": {
+            "total_products": len(products),
+            "placed_products": placed_count,
+            "unplaced_products": len(unplaced),
+            "runtime_sec": round(time.time() - start, 2),
+            "mode": "LITE_MVP_FAST"
+        },
+        "planogram": plan,
+        "unplaced_products": unplaced,
+        "optimized": True
+    }
+
+# =====================================================================
+# STORE DNA + ABC/CATALOG PIPELINE (hafif, dosya-tabanli persistence)
+# ---------------------------------------------------------------------
+# Amac: frontend StoreDNASetupWizard / ABCCatalogUploadPanel / readiness
+# / bootstrap cagrilarinin 404 yerine tutarli yanit almasi.
+# Tam DB katmani (storage.py) varsa onu degil, burada izole basit bir
+# JSON store kullaniyoruz; boylece backend her ortamda boot eder.
+# =====================================================================
+import json as _json
+from fastapi import Query
+
+STORE_STATE_DIR = DATA_DIR / "store_state"
+STORE_STATE_DIR.mkdir(exist_ok=True)
+
+
+def _store_code(*candidates) -> str:
+    for c in candidates:
+        if c:
+            return str(c).strip().upper()
+    return "AUTO"
+
+
+def _dna_path(code: str) -> Path:
+    return STORE_STATE_DIR / f"{code}_dna.json"
+
+
+def _abc_path(code: str) -> Path:
+    return STORE_STATE_DIR / f"{code}_abc.json"
+
+
+def _read_json(path: Path):
+    try:
+        if path.exists():
+            return _json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
+def _write_json(path: Path, data) -> None:
+    path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _catalog_metrics() -> Dict[str, Any]:
+    """master_products.csv'den hafif catalog durumu."""
+    try:
+        if not MASTER_PRODUCTS_PATH.exists():
+            return {"total": 0, "with_image": 0, "with_dimensions": 0}
+        df = pd.read_csv(MASTER_PRODUCTS_PATH, dtype=str, keep_default_na=False)
+        total = int(len(df))
+        cols = set(df.columns)
+
+        def _col_any(names):
+            return next((n for n in names if n in cols), None)
+
+        img_col = _col_any(["image_url", "catalog_image_url", "pim_image_url"])
+        w_col = _col_any(["product_width_in_cm", "width_cm"])
+        with_image = int((df[img_col].astype(str).str.len() > 0).sum()) if img_col else 0
+        with_dim = int((df[w_col].astype(str).str.len() > 0).sum()) if w_col else 0
+        return {"total": total, "with_image": with_image, "with_dimensions": with_dim}
+    except Exception:
+        return {"total": 0, "with_image": 0, "with_dimensions": 0}
+
+
+def _build_readiness(code: str) -> Dict[str, Any]:
+    dna = _read_json(_dna_path(code))
+    abc = _read_json(_abc_path(code))
+    cat = _catalog_metrics()
+
+    store_dna_ready = bool(dna)
+    layout_ready = bool(dna and (dna.get("layout_objects") or dna.get("aisle_module_config") or dna.get("fixture_summary")))
+    catalog_ready = cat["total"] > 0
+    abc_ready = bool(abc and (abc.get("summary", {}).get("total_items") or abc.get("total_items")))
+
+    return {
+        "store_code": code,
+        "store_dna_ready": store_dna_ready,
+        "layout_ready": bool(layout_ready),
+        "catalog_ready": bool(catalog_ready),
+        "abc_ready": bool(abc_ready),
+        "catalog": cat,
+        "ready": store_dna_ready and catalog_ready,
+    }
+
+
+# ---- READINESS ----
+@app.get("/readiness")
+def readiness_query(store: str = Query(default="AUTO"), store_code: str = Query(default="")):
+    return _build_readiness(_store_code(store_code, store))
+
+
+@app.get("/stores/{store_code}/readiness")
+def readiness_path(store_code: str):
+    return _build_readiness(_store_code(store_code))
+
+
+# ---- BOOTSTRAP (yeni query + eski path imzasi) ----
+def _bootstrap_payload(code: str) -> Dict[str, Any]:
+    return {
+        "store_code": code,
+        "readiness": _build_readiness(code),
+        "store_dna": _read_json(_dna_path(code)),
+        "abc": _read_json(_abc_path(code)),
+    }
+
+
+@app.get("/bootstrap")
+def bootstrap_query(store: str = Query(default="AUTO"), store_code: str = Query(default="")):
+    return _bootstrap_payload(_store_code(store_code, store))
+
+
+@app.get("/bootstrap/{store_code}")
+def bootstrap_path(store_code: str):
+    return _bootstrap_payload(_store_code(store_code))
+
+
+# ---- CATALOG STATUS ----
+@app.get("/catalog/status")
+def catalog_status(store: str = Query(default="AUTO"), store_code: str = Query(default="")):
+    code = _store_code(store_code, store)
+    cat = _catalog_metrics()
+    return {
+        "status": "success",
+        "store_code": code,
+        "total": cat["total"],
+        "with_image": cat["with_image"],
+        "with_dimensions": cat["with_dimensions"],
+        "summary": {"successful": cat["total"]},
+    }
+
+
+# ---- STORE DNA SAVE (easy / template) ----
+def _persist_dna(code: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    dna = dict(payload or {})
+    dna.setdefault("store_code", code)
+    dna.setdefault("store_name", payload.get("store_name") if isinstance(payload, dict) else code)
+
+    # Hafif fixture ozeti (frontend dna-ready karti bunu okur).
+    aisles = dna.get("aisle_module_config") or []
+    total_modules = 0
+    total_shelves = 0
+    try:
+        for a in aisles:
+            mods = list(a.get("left_modules", [])) + list(a.get("right_modules", []))
+            total_modules += len(mods)
+            total_shelves += sum(int(m.get("shelf_count") or 0) for m in mods)
+    except Exception:
+        pass
+    dna["fixture_summary"] = {
+        "total_objects": total_modules,
+        "total_modules": total_modules,
+        "total_shelves": total_shelves,
+    }
+    _write_json(_dna_path(code), dna)
+    return dna
+
+
+@app.post("/stores/{store_code}/dna/generate-easy")
+def generate_dna_easy(store_code: str, payload: Dict[str, Any] = Body(default={})):
+    code = _store_code(store_code, payload.get("store_code"))
+    dna = _persist_dna(code, payload)
+    return {"status": "success", "store_code": code, "dna": dna, "readiness": _build_readiness(code)}
+
+
+@app.post("/stores/{store_code}/dna/generate-template")
+def generate_dna_template(store_code: str, payload: Dict[str, Any] = Body(default={})):
+    code = _store_code(store_code, payload.get("store_code"))
+    dna = _persist_dna(code, payload)
+    return {"status": "success", "store_code": code, "dna": dna, "readiness": _build_readiness(code)}
+
+
+@app.get("/stores/{store_code}/dna")
+def get_dna(store_code: str):
+    code = _store_code(store_code)
+    dna = _read_json(_dna_path(code))
+    if not dna:
+        return {"status": "empty", "store_code": code, "dna": None}
+    return {"status": "success", "store_code": code, "dna": dna}
+
+
+# ---- ABC UPLOAD / LATEST ----
+@app.post("/abc/upload")
+async def abc_upload(file: UploadFile = File(...), store: str = Query(default="AUTO"), store_code: str = Query(default="")):
+    code = _store_code(store_code, store)
+    raw = await file.read()
+    total_items = 0
+    try:
+        if file.filename and file.filename.lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(raw), dtype=str)
+        else:
+            df = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+        total_items = int(len(df))
+    except Exception:
+        total_items = 0
+    record = {"store_code": code, "filename": file.filename, "summary": {"total_items": total_items}}
+    _write_json(_abc_path(code), record)
+    return {"status": "success", **record}
+
+
+@app.get("/abc/{store_code}/latest")
+def abc_latest(store_code: str):
+    code = _store_code(store_code)
+    abc = _read_json(_abc_path(code))
+    if not abc:
+        return {"status": "empty", "store_code": code, "summary": {"total_items": 0}}
+    return {"status": "success", **abc}
+
+
+# ---- CATALOG UPLOAD (gomulu master -> mevcut /upload-products-csv'e koprü) ----
+@app.post("/catalog/upload")
+async def catalog_upload(file: UploadFile = File(...), store: str = Query(default="AUTO"), store_code: str = Query(default="")):
+    # Catalog sistemde gomulu master veridir; yine de dosya gelirse mevcut
+    # master persist akisini kullanir, sonra hafif durum doner.
+    code = _store_code(store_code, store)
+    try:
+        raw = await file.read()
+        if file.filename and file.filename.lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(raw), dtype=str)
+        else:
+            df = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+        persist_master_products(df)
+        try:
+            load_master(force=True)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    cat = _catalog_metrics()
+    return {"status": "success", "store_code": code, "total": cat["total"], "summary": {"successful": cat["total"]}}
+
+
+# ---- PRODUCTS MERGE (ABC + gomulu catalog) ----
+@app.post("/products/merge")
+def products_merge(payload: Dict[str, Any] = Body(default={})):
+    code = _store_code(payload.get("store_code"), payload.get("store"))
+    cat = _catalog_metrics()
+    abc = _read_json(_abc_path(code)) or {}
+    abc_total = int(abc.get("summary", {}).get("total_items") or abc.get("total_items") or 0)
+
+    merged_products: List[Dict[str, Any]] = []
+    try:
+        if MASTER_PRODUCTS_PATH.exists():
+            df = pd.read_csv(MASTER_PRODUCTS_PATH, dtype=str, keep_default_na=False)
+            merged_products = [enrich_product(r) for r in df.to_dict(orient="records")]
+    except Exception:
+        merged_products = []
+
+    total_merged = len(merged_products)
+    match_rate = round((total_merged / abc_total) * 100, 1) if abc_total else (100.0 if total_merged else 0.0)
+    return {
+        "status": "success",
+        "store_code": code,
+        "merged_products": merged_products,
+        "summary": {
+            "total_merged": total_merged,
+            "match_rate": match_rate,
+            "unmatched_abc_count": max(0, abc_total - total_merged),
+        },
+        "match_stats": {"fuzzy_match": 0},
+    }
+
+
+# =====================================================================
+# COMPATIBILITY ENDPOINTS (persistence kopruleri)
+# ---------------------------------------------------------------------
+# Frontend bu route'lari cagiriyor; tam DB katmani olmadan da 404 yerine
+# dosya-tabanli persistence ile 200 doner. Mevcut route'lara dokunulmaz.
+# =====================================================================
+import time as _time
+
+SAVED_PLANOGRAMS_DIR = DATA_DIR / "saved_planograms"
+SAVED_LAYOUTS_DIR = DATA_DIR / "saved_layouts"
+TASKS_DIR = DATA_DIR / "tasks"
+for _d in (SAVED_PLANOGRAMS_DIR, SAVED_LAYOUTS_DIR, TASKS_DIR):
+    _d.mkdir(exist_ok=True)
+
+
+def _timestamp() -> str:
+    return _time.strftime("%Y%m%d_%H%M%S") + f"_{int(_time.time() * 1000) % 1000:03d}"
+
+
+@app.post("/save-planogram")
+def save_planogram(payload: Dict[str, Any] = Body(default={})):
+    code = _store_code(payload.get("store_code"), payload.get("store"))
+    path = SAVED_PLANOGRAMS_DIR / f"{code}_{_timestamp()}.json"
+    try:
+        _write_json(path, payload)
+    except Exception as exc:
+        return {"status": "error", "saved": False, "store_code": code, "message": str(exc)}
+    return {"status": "success", "saved": True, "path": str(path), "store_code": code}
+
+
+@app.post("/save-layout")
+def save_layout(payload: Dict[str, Any] = Body(default={})):
+    code = _store_code(payload.get("store_code"), payload.get("store"))
+    path = SAVED_LAYOUTS_DIR / f"{code}_{_timestamp()}.json"
+    try:
+        _write_json(path, payload)
+    except Exception as exc:
+        return {"status": "error", "saved": False, "store_code": code, "message": str(exc)}
+    return {"status": "success", "saved": True, "path": str(path), "store_code": code}
+
+
+@app.post("/tasks")
+def create_task(payload: Dict[str, Any] = Body(default={})):
+    task_id = f"TASK-{_timestamp()}"
+    task = {"task_id": task_id, "created_at": _time.strftime("%Y-%m-%dT%H:%M:%S"), **(payload or {})}
+    try:
+        # Hem append-only log hem tekil dosya (frontend hangisini okursa).
+        with (TASKS_DIR / "tasks.jsonl").open("a", encoding="utf-8") as f:
+            f.write(_json.dumps(task, ensure_ascii=False) + "\n")
+        _write_json(TASKS_DIR / f"{task_id}.json", task)
+    except Exception as exc:
+        return {"status": "error", "saved": False, "message": str(exc)}
+    return {"status": "success", "saved": True, "task_id": task_id, "task": task}
+
+
+@app.post("/basket-affinity")
+def basket_affinity(payload: Dict[str, Any] = Body(default={})):
+    # Gercek affinity modeli yoksa guvenli, hafif yanit.
+    return {
+        "status": "success",
+        "available": False,
+        "pairs": [],
+        "affinity_map": {},
+        "message": "basket_affinity_not_configured",
+    }
+
+
+def safe_layout_for_engine(layout):
+    """
+    Frontend bazen layout yerine objects/list g?nderiyor.
+    Backend engine sadece {aisles:[...]} planogram dict'i kullan?r.
+    Di?er her ?eyi None kabul eder; engine default layout'a d??er.
+    """
+    if isinstance(layout, dict) and isinstance(layout.get("aisles"), list):
+        return layout
+    if isinstance(layout, dict) and isinstance(layout.get("planogram"), dict) and isinstance(layout["planogram"].get("aisles"), list):
+        return layout["planogram"]
+    return None

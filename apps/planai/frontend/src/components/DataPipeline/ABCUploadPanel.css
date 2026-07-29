@@ -1,0 +1,152 @@
+.abc-panel {
+  background: linear-gradient(135deg, rgba(255,255,255,.96), rgba(255,248,252,.94));
+  border: 1px solid rgba(16,19,26,.08);
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: 0 18px 45px rgba(16,19,26,.08);
+}
+
+.abc-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.abc-eyebrow {
+  color: #DF1067;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.abc-panel h2 {
+  margin: 8px 0;
+  font-size: 24px;
+  color: #10131A;
+}
+
+.abc-panel p {
+  margin: 0;
+  color: #657085;
+  max-width: 760px;
+  line-height: 1.5;
+}
+
+.abc-status-pill {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #10131A;
+  color: white;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.abc-upload-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.abc-file-drop {
+  flex: 1;
+  min-width: 280px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px dashed rgba(223,16,103,.38);
+  border-radius: 18px;
+  color: #10131A;
+  background: rgba(223,16,103,.04);
+  cursor: pointer;
+}
+
+.abc-file-drop input {
+  display: none;
+}
+
+.abc-primary-btn {
+  border: none;
+  background: #DF1067;
+  color: white;
+  padding: 15px 18px;
+  border-radius: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 14px 25px rgba(223,16,103,.24);
+}
+
+.abc-primary-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.abc-message {
+  margin-top: 14px;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(16,19,26,.04);
+  color: #10131A;
+}
+
+.abc-success {
+  background: rgba(23,166,106,.09);
+}
+
+.abc-error {
+  background: rgba(232,74,74,.10);
+}
+
+.abc-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.abc-metric {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: white;
+  border: 1px solid rgba(16,19,26,.07);
+  border-radius: 18px;
+  padding: 14px;
+}
+
+.abc-metric-icon {
+  color: #DF1067;
+}
+
+.abc-metric-label {
+  color: #657085;
+  font-size: 12px;
+}
+
+.abc-metric-value {
+  color: #10131A;
+  font-size: 22px;
+  font-weight: 850;
+}
+
+.abc-result-note {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: #FFF7FB;
+  color: #10131A;
+  border: 1px solid rgba(223,16,103,.12);
+}
+
+@media (max-width: 900px) {
+  .abc-metric-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}

@@ -1,0 +1,9 @@
+
+{
+  "dependencies_to_add_if_missing": {
+    "three": "^0.160.0",
+    "@react-three/fiber": "^8.15.0",
+    "@react-three/drei": "^9.92.0"
+  },
+  "install": "npm install three @react-three/fiber @react-three/drei"
+}

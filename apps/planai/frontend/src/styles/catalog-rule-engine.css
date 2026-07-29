@@ -1,0 +1,118 @@
+.sku-upload-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plona-primary-btn,
+.plona-secondary-btn,
+.rule-chip {
+  border: 0;
+  border-radius: 14px;
+  padding: 11px 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.plona-primary-btn {
+  color: #fff;
+  background: #df1067;
+  box-shadow: 0 10px 24px rgba(223, 16, 103, 0.22);
+}
+
+.plona-primary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.plona-secondary-btn {
+  color: #10131a;
+  background: #fff;
+  border: 1px solid rgba(16, 19, 26, 0.12);
+}
+
+.sku-upload-hint {
+  color: #657085;
+  font-size: 13px;
+}
+
+.rule-home-card {
+  background: linear-gradient(135deg, #fffdf8 0%, #f7f4ef 100%);
+  border: 1px solid rgba(16, 19, 26, 0.08);
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: 0 18px 48px rgba(16, 19, 26, 0.08);
+}
+
+.rule-home-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.rule-home-head h3 {
+  margin: 4px 0 6px;
+  color: #10131a;
+  font-size: 22px;
+}
+
+.rule-home-head p {
+  margin: 0;
+  color: #657085;
+}
+
+.eyebrow {
+  color: #df1067 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.rule-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.rule-chip {
+  background: #fff;
+  color: #10131a;
+  border: 1px solid rgba(16, 19, 26, 0.1);
+}
+
+.rule-chip.active {
+  color: #fff;
+  background: #10131a;
+}
+
+.rule-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.rule-toggle-grid label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(16, 19, 26, 0.07);
+  color: #10131a;
+  font-weight: 700;
+}
+
+.rule-mini-status {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  color: #657085;
+  font-size: 13px;
+}

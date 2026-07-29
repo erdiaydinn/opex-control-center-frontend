@@ -1,0 +1,40 @@
+App.jsx içinde bu fonksiyonu ekle:
+
+function handleLayoutChange(positions) {
+  const next = clone(planogram);
+
+  next.aisles = (next.aisles || []).map((aisle) => {
+    const pos = positions.find((p) => String(p.aisle_id) === String(aisle.aisle_id));
+    if (!pos) return aisle;
+
+    return {
+      ...aisle,
+      layout_position: {
+        island_key: pos.island_key,
+        grid_x: pos.grid_x,
+        grid_y: pos.grid_y,
+        x: pos.x,
+        y: pos.y,
+        rotation: pos.rotation,
+        face: pos.face,
+      },
+    };
+  });
+
+  commitPlan(next, "layout_positions_updated", { positions });
+}
+
+Sonra Depot3D çağrısına bu prop'u ekle:
+
+<Depot3D
+  plan={planogram}
+  onShelfOpen={setSelectedShelf}
+  onAddModule={addModule}
+  onAddShelf={addShelf}
+  onModuleSize={openModuleSize}
+  onShelfSize={openShelfSize}
+  onPrintModule={printModule}
+  onLayoutChange={handleLayoutChange}
+/>
+
+Bu bağlanmazsa Layout Editor çalışır ama değişiklikler App state'e kalıcı yazılmaz.

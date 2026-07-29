@@ -1,0 +1,290 @@
+﻿import { useMemo, useState } from 'react';
+import { fixtures, insights, storeMetrics, stores } from '../data/mock.js';
+import { tt } from '../i18n/dictionary.js';
+import { ProductThumb, storageTone } from './ProductVisuals.jsx';
+
+const trPriority = { High: 'YÃ¼ksek', Medium: 'Orta', Low: 'DÃ¼ÅŸÃ¼k' };
+const trStatus = { Open: 'AÃ§Ä±k', 'In Progress': 'BaÅŸladÄ±', Done: 'TamamlandÄ±', Blocked: 'Bloke', Approved: 'OnaylandÄ±', Pending: 'Onay Bekliyor', Rejected: 'Reddedildi' };
+
+function scoreImpact(weights) {
+  return {
+    score: Math.round((weights.sales * 0.32 + weights.category * 0.18 + weights.brand * 0.16 + weights.refill * 0.18 + weights.route * 0.1 + weights.cold * 0.06) * 10) / 10,
+    refill: Math.max(4, Math.round(22 - weights.refill * 1.6 - weights.route * 0.5)),
+    risk: Math.max(3, Math.round(18 - weights.cold * 1.1 - weights.category * 0.4)),
+    confidence: Math.min(96, Math.round(62 + weights.sales * 2 + weights.category * 1.3 + weights.refill * 1.6 + weights.cold * 1.1)),
+  };
+}
+
+function CouncilRepository({ weights, context = 'Planogram kararÄ±' }) {
+  const impact = scoreImpact(weights);
+  const dominant = Object.entries(weights).sort((a, b) => b[1] - a[1])[0];
+  const dictionary = {
+    sales: 'SatÄ±ÅŸ aÄŸÄ±rlÄ±ÄŸÄ±', category: 'Kategori bÃ¼tÃ¼nlÃ¼ÄŸÃ¼', brand: 'Marka bloklama', refill: 'Refill maliyeti', route: 'Picker rotasÄ±', cold: 'SoÄŸuk zincir'
+  };
+  return (
+    <div className="council-card">
+      <div className="section-eyebrow">COUNCIL HIGH INTELLIGENCE REPOSITORY</div>
+      <h2>Karar yorumu</h2>
+      <p className="muted"><b>{context}</b> iÃ§in en baskÄ±n sinyal <b>{dictionary[dominant[0]]}</b>. Sistem bu ayarÄ±; satÄ±ÅŸ hÄ±zÄ±, raf kapasitesi, kategori izolasyonu, picker rotasÄ± ve refill iÅŸÃ§iliÄŸini birlikte okuyarak yorumlar.</p>
+      <div className="grid cols-4">
+        <div className="mini-metric"><b>+{impact.score}%</b><span>Skor etkisi</span></div>
+        <div className="mini-metric"><b>-{impact.refill}%</b><span>Refill yÃ¼kÃ¼</span></div>
+        <div className="mini-metric"><b>-{impact.risk}%</b><span>Risk etkisi</span></div>
+        <div className="mini-metric"><b>{impact.confidence}%</b><span>GÃ¼ven</span></div>
+      </div>
+      <div className="repo-timeline">
+        <span>Store DNA</span><span>SKU Graph</span><span>Fixture Availability</span><span>Delta Actions</span><span>Field Feedback</span>
+      </div>
+    </div>
+  );
+}
+
+export function Rules({ lang, notify }) {
+  const [weights, setWeights] = useState({ sales: 8, category: 6, brand: 7, refill: 8, route: 6, cold: 7 });
+  const [rule, setRule] = useState({ type: 'Marka', value: 'Ãœlker / Eti / Algida', zone: 'Kuru zone', priority: 'Normal', behavior: 'Zone iÃ§ine yerleÅŸtir' });
+  const labels = { sales: 'SatÄ±ÅŸ aÄŸÄ±rlÄ±ÄŸÄ±', category: 'Kategori aÄŸÄ±rlÄ±ÄŸÄ±', brand: 'Marka blok aÄŸÄ±rlÄ±ÄŸÄ±', refill: 'Refill maliyeti aÄŸÄ±rlÄ±ÄŸÄ±', route: 'Picker rota aÄŸÄ±rlÄ±ÄŸÄ±', cold: 'SoÄŸuk zincir aÄŸÄ±rlÄ±ÄŸÄ±' };
+  function updateWeight(k, v) { setWeights((prev) => ({ ...prev, [k]: Number(v) })); }
+  return (
+    <div className="page">
+      <div className="section-eyebrow">AI OPTIMIZATION CENTER</div>
+      <h1 style={{ fontSize: 42, margin: '8px 0' }}>{tt(lang, 'rules')}</h1>
+      <p className="page-sub">Kural motoru artÄ±k sadece kural eklemez; aÄŸÄ±rlÄ±k motoru ile optimizasyon kararÄ±nÄ±n nedenini yorumlar.</p>
+      <div className="grid cols-2" style={{ alignItems: 'start' }}>
+        <div className="card pad">
+          <h2>Operasyonel Planogram Motoru</h2>
+          <div className="form-grid">
+            <div className="field"><label>Kural tipi</label><select value={rule.type} onChange={(e) => setRule({ ...rule, type: e.target.value })}><option>Marka</option><option>Kategori</option><option>Alt kategori</option><option>Storage type</option><option>AÄŸÄ±r Ã¼rÃ¼n</option><option>HÄ±zlÄ± SKU</option><option>SoÄŸuk zincir</option></select></div>
+            <div className="field"><label>DeÄŸer</label><input value={rule.value} onChange={(e) => setRule({ ...rule, value: e.target.value })} /></div>
+            <div className="field"><label>Hedef zone</label><select value={rule.zone} onChange={(e) => setRule({ ...rule, zone: e.target.value })}><option>Kuru zone</option><option>+4 SoÄŸuk</option><option>-18 Donuk</option><option>Dispatch yakÄ±nÄ±</option><option>Arka ambient</option></select></div>
+            <div className="field"><label>Ã–ncelik</label><select value={rule.priority} onChange={(e) => setRule({ ...rule, priority: e.target.value })}><option>Normal</option><option>YÃ¼ksek</option><option>Kritik</option></select></div>
+            <div className="field full"><label>DavranÄ±ÅŸ</label><select value={rule.behavior} onChange={(e) => setRule({ ...rule, behavior: e.target.value })}><option>Zone iÃ§ine yerleÅŸtir</option><option>Marka bloÄŸu oluÅŸtur</option><option>GÄ±da dÄ±ÅŸÄ±ndan izole et</option><option>En sona al</option><option>Ã–n hatta taÅŸÄ±</option><option>Facing artÄ±r</option></select></div>
+          </div>
+          <button className="btn primary" style={{ marginTop: 16 }} onClick={() => notify?.('Kural motoru aÄŸÄ±rlÄ±klarla birlikte simÃ¼lasyona uygulandÄ±.')}>Kural ekle ve uygula</button>
+        </div>
+        <div className="card pad">
+          <h2>AÄŸÄ±rlÄ±k Motoru</h2>
+          <p className="muted">KaydÄ±rdÄ±kÃ§a Council repo yorumu deÄŸiÅŸir. Bu yapÄ± daha sonra backend AI insight endpointine baÄŸlanÄ±r.</p>
+          <div className="weight-panel">
+            {Object.entries(labels).map(([k, label]) => <div className="weight-row" key={k}><label>{label}</label><input type="range" min="0" max="10" value={weights[k]} onChange={(e) => updateWeight(k, e.target.value)} /><b>{weights[k]}</b></div>)}
+          </div>
+        </div>
+      </div>
+      <div className="grid cols-2" style={{ marginTop: 20 }}>
+        <CouncilRepository weights={weights} context={`${rule.type}: ${rule.value}`} />
+        <div className="card pad">
+          <h2>HazÄ±r kural ÅŸablonlarÄ±</h2>
+          <div className="list">
+            {['Marka yan yana', 'SoÄŸuk zincir izolasyonu', 'AÄŸÄ±r Ã¼rÃ¼nÃ¼ sona al', 'HÄ±zlÄ± SKU facing artÄ±r', 'Non-food koku izolasyonu', 'Donuk Ã¼rÃ¼nleri -18 kapasiteye gÃ¶re daÄŸÄ±t'].map((x) => <div className="item" key={x}><b>{x}</b><button className="btn ghost" onClick={() => notify?.(`${x} kuralÄ± uygulandÄ±.`)}>Uygula</button></div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ProductLibrary({ lang, products = [], unplacedProducts = [] }) {
+  const source = [
+    ...(Array.isArray(products) ? products : []),
+    ...(Array.isArray(unplacedProducts) ? unplacedProducts : []),
+  ];
+
+  const seen = new Set();
+
+  const libraryProducts = source
+    .map((raw, idx) => {
+      const sku = String(
+        raw?.sku ||
+        raw?.SKU ||
+        raw?.platform_product_id ||
+        raw?.product_id ||
+        raw?.barcode ||
+        raw?.Barcodes ||
+        `ROW-${idx + 1}`
+      ).trim();
+
+      const storage = String(
+        raw?.storage ||
+        raw?.storage_type ||
+        raw?.storage_type_clean ||
+        raw?.storage_class ||
+        raw?.catalog_storage_type ||
+        "AMBIENT"
+      ).toUpperCase();
+
+      return {
+        ...raw,
+        sku,
+        name: raw?.name || raw?.product_name || raw?.product_name_local || raw?.title || sku,
+        brand: raw?.brand || raw?.supplier || raw?.manufacturer || "-",
+        category:
+          raw?.category ||
+          raw?.category_l1 ||
+          raw?.kategori_level_1 ||
+          raw?.category_level_1 ||
+          raw?.category_l2 ||
+          raw?.kategori_level_2 ||
+          raw?.merch_group ||
+          "-",
+        storage,
+        sales:
+          raw?.sales ??
+          raw?.sales_qty_30d ??
+          raw?.sales_qty_7d ??
+          raw?.daily_sales ??
+          raw?.order_frequency_30d ??
+          raw?.["% Orders"] ??
+          0,
+        facing: raw?.facing ?? raw?.fronts ?? raw?.recommended_facing ?? 1,
+        depth: raw?.depth ?? raw?.recommended_depth ?? raw?.depth_count ?? 1,
+      };
+    })
+    .filter((p) => {
+      const key = String(p.sku || "").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  return (
+    <div className="page">
+      <div className="section-eyebrow">DATA CENTER</div>
+      <h1 style={{ fontSize: 42, margin: "8px 0" }}>{tt(lang, "library")}</h1>
+      <p className="page-sub">
+        SKU, barkod, ?r?n ad?, marka, kategori, storage type, ?l??, sat?? ve ?r?n g?rseli.
+      </p>
+
+      <div className="grid cols-4" style={{ marginBottom: 18 }}>
+        <div className="card kpi">
+          <div className="kpi-label">?r?n havuzu</div>
+          <div className="kpi-value">{libraryProducts.length.toLocaleString("tr-TR")}</div>
+          <div className="kpi-trend">Y?klenen + yerle?en</div>
+        </div>
+        <div className="card kpi">
+          <div className="kpi-label">Yerle?en</div>
+          <div className="kpi-value">{(products || []).length.toLocaleString("tr-TR")}</div>
+          <div className="kpi-trend">Aktif plan</div>
+        </div>
+        <div className="card kpi">
+          <div className="kpi-label">Aday / Atanmayan</div>
+          <div className="kpi-value">{(unplacedProducts || []).length.toLocaleString("tr-TR")}</div>
+          <div className="kpi-trend">Plan bekleyen havuz</div>
+        </div>
+        <div className="card kpi">
+          <div className="kpi-label">K?t?phane kayna??</div>
+          <div className="kpi-value">{libraryProducts.length ? "Aktif" : "Bo?"}</div>
+          <div className="kpi-trend">State kontrol?</div>
+        </div>
+      </div>
+
+      <div className="card pad">
+        <input className="search" placeholder="SKU, barkod, ?r?n, marka ara..." />
+
+        <h3>{tt(lang, "productImages")}</h3>
+        <div className="product-card-grid">
+          {libraryProducts.slice(0, 80).map((p) => (
+            <div className="product-card" key={p.sku}>
+              <ProductThumb product={p} />
+              <div>
+                <b>{p.name}</b>
+                <br />
+                <span className="muted">{p.sku} ? {p.brand}</span>
+                <br />
+                <span className={`badge ${storageTone(p.storage)}`}>{p.storage}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <table className="table" style={{ marginTop: 18 }}>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>?r?n</th>
+              <th>Marka</th>
+              <th>Kategori</th>
+              <th>Storage</th>
+              <th>Sat??</th>
+              <th>Facing</th>
+              <th>Depth</th>
+            </tr>
+          </thead>
+          <tbody>
+            {libraryProducts.map((p) => (
+              <tr key={p.sku}>
+                <td>{p.sku}</td>
+                <td>{p.name}</td>
+                <td>{p.brand}</td>
+                <td>{p.category}</td>
+                <td><span className={`badge ${storageTone(p.storage)}`}>{p.storage}</span></td>
+                <td>{p.sales}</td>
+                <td>{p.facing}</td>
+                <td>{p.depth}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+export function FixtureLibrary({ lang }) {
+  return <div className="page"><div className="section-eyebrow">FIXTURE LIBRARY</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'fixture')}</h1><div className="grid cols-3">{fixtures.map(f=><div className="card pad" key={f.id}><div className="section-eyebrow">{f.id}</div><h2>{f.name}</h2><p className="muted">{f.type} â€¢ {f.width}Ã—{f.depth}Ã—{f.height} cm â€¢ {f.shelves} raf</p><span className={`badge ${f.frozen?'purple':f.cold?'cyan':'green'}`}>{f.frozen?'FROZEN':f.cold?'CHILLED':'AMBIENT'}</span><p className="muted">Depolar: {f.stores.join(', ')}</p></div>)}</div></div>;
+}
+
+export function Delta({ lang }) {
+  const rows = [['SKU-77881','A.1.2 â†’ A.1.1','Facing 5 â†’ 6','YÃ¼ksek','SatÄ±ÅŸ hÄ±zÄ± yÃ¼ksek, Ã¶n hatta alÄ±nmalÄ±.'],['SKU-98712','C.2.1 â†’ +4 Oda','Zone dÃ¼zeltmesi','YÃ¼ksek','ÃœrÃ¼n +4 zincir gerektiriyor.'],['SKU-55431','A koridoru â†’ arka ambient','GÄ±da izolasyonu','Orta','Kokulu non-food gÄ±da koridorundan ayrÄ±lmalÄ±.'],['SKU-77070','B.1.2 â†’ A.2.2','HÄ±zlÄ± SKU Ã¶n hat','YÃ¼ksek','Picker rotasÄ±nda ilk temas alanÄ±na taÅŸÄ±nmalÄ±.']];
+  return <div className="page"><div className="section-eyebrow">DELTA PLANOGRAM</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'delta')}</h1><div className="card pad"><p className="muted">Saha iÃ§in komple plan deÄŸil, yapÄ±lacak aksiyon listesi. Her aksiyon TÃ¼rkÃ§e neden ve Ã¶ncelik ile gelir.</p><table className="table"><thead><tr><th>SKU</th><th>TaÅŸÄ±ma</th><th>DeÄŸiÅŸiklik</th><th>Ã–ncelik</th><th>Neden</th></tr></thead><tbody>{rows.map(r=><tr key={r[0]}>{r.map((c,i)=><td key={i}>{i===3?<span className={`badge ${c==='YÃ¼ksek'?'red':'amber'}`}>{c}</span>:c}</td>)}</tr>)}</tbody></table></div></div>;
+}
+
+export function Publishing({ lang, notify }) {
+  const [flow, setFlow] = useState([
+    { store: 'Anka (Ä°stanbul)', owner: 'Store Manager', seen: 100, started: 100, applied: 100, photo: 88, status: 'UygulandÄ±', blocker: 'Yok' },
+    { store: 'Fulya (Ä°stanbul)', owner: 'BÃ¶lge YÃ¶neticisi', seen: 100, started: 72, applied: 41, photo: 0, status: 'FotoÄŸraf bekliyor', blocker: 'KanÄ±t fotoÄŸrafÄ± eksik' },
+    { store: 'GÃ¼ven (Kocaeli) FR', owner: 'FR Operasyon', seen: 76, started: 40, applied: 18, photo: 0, status: 'Bloke', blocker: 'Algida fixture eksik' },
+    { store: 'ÅÃ¼krÃ¼paÅŸa (Edirne)', owner: 'Store Manager', seen: 91, started: 67, applied: 52, photo: 22, status: 'Devam ediyor', blocker: 'SoÄŸuk oda mÂ² doÄŸrulanacak' },
+  ]);
+  function advance(i) { setFlow(prev => prev.map((r, idx) => idx === i ? { ...r, applied: Math.min(100, r.applied + 15), status: r.applied + 15 >= 100 ? 'UygulandÄ±' : 'Devam ediyor' } : r)); notify?.('YayÄ±nlama durumu gÃ¼ncellendi.'); }
+  const avg = (k) => Math.round(flow.reduce((s, r) => s + r[k], 0) / flow.length);
+  return <div className="page"><div className="section-eyebrow">PUBLISHING & IMPLEMENTATION TRACKING</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'publishing')}</h1><p className="page-sub">Merkez planÄ± yayÄ±nlar; depo gÃ¶rdÃ¼m, baÅŸladÄ±m, uyguladÄ±m, fotoÄŸraf yÃ¼kledim adÄ±mlarÄ±nÄ± kapatÄ±r.</p><div className="grid cols-4">{[['PlanogramÄ± gÃ¶rdÃ¼m',avg('seen')],['Uygulamaya baÅŸladÄ±',avg('started')],['UyguladÄ±',avg('applied')],['FotoÄŸraf kanÄ±tÄ±',avg('photo')]].map(([x,v])=><div className="card kpi" key={x}><div className="kpi-label">{x}</div><div className="kpi-value">{v}%</div><div className="kpi-trend">Depo uyumu</div></div>)}</div><div className="card pad" style={{marginTop:22}}><h2>Depo Uygulama Kontrol Kulesi</h2><table className="table"><thead><tr><th>Depo</th><th>Sorumlu</th><th>GÃ¶rdÃ¼</th><th>BaÅŸladÄ±</th><th>UyguladÄ±</th><th>FotoÄŸraf</th><th>Durum</th><th>Blokaj / Neden</th><th>Aksiyon</th></tr></thead><tbody>{flow.map((r,i)=><tr key={r.store}><td>{r.store}</td><td>{r.owner}</td><td>{r.seen}%</td><td>{r.started}%</td><td>{r.applied}%</td><td>{r.photo}%</td><td><span className={`badge ${r.status==='Bloke'?'red':r.status==='UygulandÄ±'?'green':'amber'}`}>{r.status}</span></td><td>{r.blocker}</td><td><button className="btn small ghost" onClick={()=>advance(i)}>GÃ¼ncelle</button></td></tr>)}</tbody></table></div></div>;
+}
+
+export function Tasks({ lang, tasks, setTasks, notify }) {
+  const blank = { store: 'Anka (Ä°stanbul)', title: '', owner: 'Store Manager', priority: 'Medium', deadline: 'YarÄ±n', status: 'Open', response: '' };
+  function addTask(e) { e.preventDefault(); const fd = new FormData(e.currentTarget); const t = { id: `T-${1000 + tasks.length + 1}`, store: fd.get('store'), title: fd.get('title'), owner: fd.get('owner'), priority: fd.get('priority'), deadline: fd.get('deadline'), status: 'Open', response: '' }; setTasks((prev) => [t, ...prev]); e.currentTarget.reset(); notify?.('GÃ¶rev atandÄ±.'); }
+  function update(id, patch) { setTasks((prev) => prev.map((t) => t.id === id ? { ...t, ...patch } : t)); }
+  return <div className="page"><div className="section-eyebrow">TASK MANAGEMENT</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'tasks')}</h1><div className="grid cols-2"><form className="card pad" onSubmit={addTask}><h2>{tt(lang,'assignTask')}</h2><div className="form-grid"><div className="field"><label>{tt(lang,'store')}</label><select name="store" defaultValue={blank.store}>{stores.filter(s=>s.code!=='ALL').map(s=><option key={s.code}>{s.name}</option>)}</select></div><div className="field"><label>{tt(lang,'assignee')}</label><input name="owner" defaultValue={blank.owner}/></div><div className="field"><label>{tt(lang,'priority')}</label><select name="priority" defaultValue={blank.priority}><option value="High">YÃ¼ksek</option><option value="Medium">Orta</option><option value="Low">DÃ¼ÅŸÃ¼k</option></select></div><div className="field"><label>{tt(lang,'deadline')}</label><input name="deadline" defaultValue={blank.deadline}/></div></div><div className="field" style={{marginTop:12}}><label>GÃ¶rev</label><textarea name="title" placeholder="Ã–rn: A koridoru raf gÃ¶rselini yÃ¼kle" required /></div><button className="btn primary" style={{marginTop:12}}>GÃ¶rev ata</button></form><div className="card pad"><h2>{tt(lang,'adminAnswer')}</h2><div className="list">{tasks.map(t=><div className="item" key={t.id} style={{alignItems:'stretch', display:'grid', gridTemplateColumns:'1fr 160px'}}><div><b>{t.title}</b><br/><span className="muted">{t.id} â€¢ {t.store} â€¢ {t.owner} â€¢ {t.deadline}</span><br/><span className={`badge ${t.priority==='High'?'red':t.priority==='Medium'?'amber':'green'}`}>{trPriority[t.priority] || t.priority}</span> <span className="badge">{trStatus[t.status] || t.status}</span><div className="field" style={{marginTop:8}}><input placeholder="Admin yanÄ±tÄ± yaz..." value={t.response} onChange={(e)=>update(t.id,{response:e.target.value})}/></div></div><div className="list"><button className="btn small ghost" onClick={()=>update(t.id,{status:'In Progress'})}>BaÅŸladÄ±</button><button className="btn small ghost" onClick={()=>update(t.id,{status:'Done'})}>TamamlandÄ±</button><button className="btn small ghost" onClick={()=>update(t.id,{status:'Blocked'})}>Bloke</button></div></div>)}</div></div></div></div>;
+}
+
+export function PhotoEvidence({ lang, tasks, setTasks, notify }) {
+  const [taskId, setTaskId] = useState(tasks[0]?.id || '');
+  function saveEvidence() { if (taskId) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'Done', response: `${t.response || ''} FotoÄŸraf kanÄ±tÄ± ile kapatÄ±ldÄ±.`.trim() } : t)); notify?.('FotoÄŸraf kanÄ±tÄ± gÃ¶reve baÄŸlandÄ± ve gÃ¶rev kapatÄ±ldÄ±.'); }
+  return <div className="page"><div className="section-eyebrow">PHOTO DOCUMENTATION</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'photos')}</h1><div className="card pad"><p className="muted">FotoÄŸraf kanÄ±tÄ± havada durmaz; seÃ§ili gÃ¶rev, depo, koridor, modÃ¼l, raf ve planogram versiyonu ile baÄŸlanÄ±r. KanÄ±t kaydedilince gÃ¶rev kapatÄ±labilir.</p><div className="form-grid"><div className="field"><label>BaÄŸlÄ± gÃ¶rev</label><select value={taskId} onChange={(e)=>setTaskId(e.target.value)}>{tasks.map(t=><option key={t.id} value={t.id}>{t.id} â€” {t.title}</option>)}</select></div><div className="field"><label>Depo</label><select>{stores.filter(s=>s.code!=='ALL').map(s=><option key={s.code}>{s.name}</option>)}</select></div><div className="field"><label>Raf</label><input placeholder="A-1-2" /></div><div className="field"><label>Planogram versiyonu</label><input defaultValue="PG-2026.05.11-v3" /></div><div className="field"><label>FotoÄŸraf</label><input type="file" /></div><div className="field"><label>AÃ§Ä±klama</label><input placeholder="UygulandÄ± / eksik fixture" /></div></div><button className="btn primary" style={{marginTop:14}} onClick={saveEvidence}>KanÄ±tÄ± kaydet ve gÃ¶revi kapat</button></div></div>;
+}
+
+export function Reports({ lang, unplacedProducts = [] }) {
+  const [scope, setScope] = useState('ALL');
+  const m = storeMetrics[scope] || storeMetrics.ALL;
+  const [weights] = useState({ sales: 8, category: 6, brand: 7, refill: 8, route: 7, cold: 7 });
+  return <div className="page"><div className="section-eyebrow">EXECUTIVE VIEW</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'reports')}</h1><div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap',marginBottom:16}}><select className="select" value={scope} onChange={(e)=>setScope(e.target.value)}>{stores.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select><div className="tabs"><button className="tab active">Executive Mode</button><button className="tab">Architect Mode</button></div></div><div className="grid cols-5">{[['Risk','Orta','amber'],['Kapasite',m.utilization+'%','green'],['Refill maliyeti','â‚º18.4K','pink'],['Uygulama',m.implementation+'%','blue'],['AÃ§Ä±k gÃ¶rev',m.tasks,'red']].map(([x,v,t])=><div className="card kpi" key={x}><div className="kpi-label">{x}</div><div className={`kpi-value ${t}`}>{v}</div><div className="kpi-trend">YÃ¶netici gÃ¶rÃ¼nÃ¼mÃ¼</div></div>)}</div><div className="grid cols-2" style={{marginTop:22}}><div className="card pad"><h2>YÃ¼ksek Riskli Depolar / Aksiyonlar</h2><div className="list">{insights.map(i=><div className="item" key={i.title}><div><b>{i.title}</b><br/><span className="muted">{i.text}</span></div><span className={`badge ${i.tone}`}>{i.impact}</span></div>)}</div></div><CouncilRepository weights={weights} context="Rapor ve yÃ¶netici kararÄ±" /></div><div className="card pad" style={{marginTop:22}}><h2>Operasyonel karar matrisi</h2><table className="table"><thead><tr><th>Alan</th><th>Problem</th><th>Finansal Etki</th><th>Saha Aksiyonu</th><th>Sahip</th></tr></thead><tbody>{[['C Koridoru','Doluluk dÃ¼ÅŸÃ¼k','â‚º4.2K fÄ±rsat','2 raf kaydÄ±r','Merkez'],['+4 Oda','YoÄŸurt refill sÄ±k','â‚º1.1K iÅŸÃ§ilik','Facing +2','Depo'],['GÃ¼ven FR','Fixture eksik','Plan uygulanamaz','Dolap talebi','Admin']].map(r=><tr key={r[0]}>{r.map(c=><td key={c}>{c}</td>)}</tr>)}</tbody></table></div>{unplacedProducts.length > 0 && <div className="card pad" style={{marginTop:22}}><h2>Atanamayan SKU Risk Raporu</h2><p className="muted">Bu liste planÄ±n uygulanmasÄ± iÃ§in kapasite/fixture aksiyonu gerektirir.</p><table className="table"><thead><tr><th>SKU</th><th>ÃœrÃ¼n</th><th>Storage</th><th>Neden</th><th>Aksiyon</th></tr></thead><tbody>{unplacedProducts.slice(0,80).map((p,i)=><tr key={`${p.sku}-${i}`}><td>{p.sku}</td><td>{p.name || p.product_name}</td><td>{p.storage}</td><td>{p.reason}</td><td>{p.suggested_action}</td></tr>)}</tbody></table></div>}</div>;
+}
+
+export function Admin({ lang, objects, notify }) {
+  const [selectedStore, setSelectedStore] = useState('ALL');
+  const [tab, setTab] = useState('overview');
+  const [users, setUsers] = useState([
+    { name: 'Erdi A.', email: 'erdi@plonagram.local', role: 'ADMIN', title: 'Enterprise Admin', store: 'TÃ¼m Depolar', status: 'Aktif' },
+    { name: 'Store Manager', email: 'store@plonagram.local', role: 'STORE_MANAGER', title: 'Depo MÃ¼dÃ¼rÃ¼', store: 'Anka (Ä°stanbul)', status: 'Aktif' },
+    { name: 'Regional User', email: 'region@plonagram.local', role: 'REGIONAL_MANAGER', title: 'BÃ¶lge YÃ¶neticisi', store: 'Ä°stanbul', status: 'Onay Bekliyor' },
+  ]);
+  const [approvals, setApprovals] = useState([
+    { id: 'APR-401', type: 'ÃœrÃ¼n Ã¶lÃ§Ã¼sÃ¼', requester: 'Fulya', decision: 'SKU-98712 depth 4 â†’ 5', status: 'Onay Bekliyor' },
+    { id: 'APR-402', type: 'Layout deÄŸiÅŸikliÄŸi', requester: 'GÃ¼ven FR', decision: 'Algida dolabÄ± ekleme', status: 'Onay Bekliyor' },
+    { id: 'APR-403', type: 'Rol talebi', requester: 'Regional User', decision: 'REGIONAL_MANAGER yetkisi', status: 'Onay Bekliyor' },
+  ]);
+  const m = storeMetrics[selectedStore] || storeMetrics.ALL;
+  const rows = objects.filter(o => ['corridor','chilled_room','frozen_room','algida_fridge','steel_rack'].includes(o.type));
+  function addUser() { setUsers(prev => [...prev, { name: 'Yeni KullanÄ±cÄ±', email: `user${prev.length+1}@plonagram.local`, role: 'USER', title: 'Saha KullanÄ±cÄ±sÄ±', store: 'Anka (Ä°stanbul)', status: 'Onay Bekliyor' }]); notify?.('KullanÄ±cÄ± eklendi.'); }
+  function updateUser(i, patch) { setUsers(prev => prev.map((u, idx) => idx === i ? { ...u, ...patch } : u)); }
+  function decide(id, status) { setApprovals(prev => prev.map(a => a.id === id ? { ...a, status } : a)); notify?.(`${id} ${status.toLowerCase()}.`); }
+  return <div className="page"><div className="section-eyebrow">ADMIN CONTROL TOWER</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'admin')}</h1><div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><select className="select" value={selectedStore} onChange={(e)=>setSelectedStore(e.target.value)}>{stores.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select><div className="tabs">{[['overview','Depo gÃ¶rÃ¼nÃ¼mÃ¼'],['users','KullanÄ±cÄ± yÃ¶netimi'],['approvals','Onay merkezi'],['broadcast','Duyuru yayÄ±nla']].map(([k,l])=><button key={k} className={`tab ${tab===k?'active':''}`} onClick={()=>setTab(k)}>{l}</button>)}</div></div>{tab==='overview'&&<><div className="grid cols-5" style={{marginTop:18}}>{[[tt(lang,'occupancy'),m.utilization+'%','green'],[tt(lang,'ambient'),m.ambient+'%','green'],[tt(lang,'coldCapacity'),m.chilled+'%','cyan'],[tt(lang,'frozenCapacity'),m.frozen+'%','purple'],[tt(lang,'changedProducts'),m.changedProducts,'pink']].map(([l,v,t])=><div className="card kpi" key={l}><div className="kpi-label">{l}</div><div className={`kpi-value ${t}`}>{v}</div><div className="kpi-trend">Admin gÃ¶rÃ¼nÃ¼mÃ¼</div></div>)}</div><div className="card pad" style={{marginTop:20}}><h2>ModÃ¼l / Raf Doluluk DetayÄ±</h2><table className="table"><thead><tr><th>Alan</th><th>Tip</th><th>Zone</th><th>ModÃ¼l</th><th>Raf</th><th>Doluluk</th><th>Yeri deÄŸiÅŸecek Ã¼rÃ¼n</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.label}</td><td>{r.type}</td><td><span className={`badge ${r.zone==='CHILLED'?'cyan':r.zone==='FROZEN'?'purple':r.zone==='AMBIENT'?'green':'pink'}`}>{r.zone}</span></td><td>{r.modules}</td><td>{r.shelves}</td><td>{r.utilization}%</td><td>{r.changed}</td></tr>)}</tbody></table></div></>}{tab==='users'&&<div className="card pad" style={{marginTop:20}}><div style={{display:'flex',justifyContent:'space-between'}}><h2>KullanÄ±cÄ± YÃ¶netimi</h2><button className="btn primary" onClick={addUser}>KullanÄ±cÄ± ekle</button></div><table className="table"><thead><tr><th>Ad</th><th>E-posta</th><th>Rol</th><th>Title</th><th>Depo/BÃ¶lge</th><th>Durum</th><th>Aksiyon</th></tr></thead><tbody>{users.map((u,i)=><tr key={u.email}><td><input value={u.name} onChange={(e)=>updateUser(i,{name:e.target.value})}/></td><td>{u.email}</td><td><select value={u.role} onChange={(e)=>updateUser(i,{role:e.target.value})}><option>USER</option><option>STORE_MANAGER</option><option>REGIONAL_MANAGER</option><option>ADMIN</option><option>SUPER_USER</option></select></td><td><input value={u.title} onChange={(e)=>updateUser(i,{title:e.target.value})}/></td><td>{u.store}</td><td><span className="badge amber">{u.status}</span></td><td><button className="btn small ghost" onClick={()=>updateUser(i,{status:'Aktif'})}>AktifleÅŸtir</button> <button className="btn small ghost danger" onClick={()=>setUsers(prev=>prev.filter((_,idx)=>idx!==i))}>Sil</button></td></tr>)}</tbody></table></div>}{tab==='approvals'&&<div className="card pad" style={{marginTop:20}}><h2>Karar / Onay Merkezi</h2><table className="table"><thead><tr><th>ID</th><th>Tip</th><th>Talep eden</th><th>Karar</th><th>Durum</th><th>Aksiyon</th></tr></thead><tbody>{approvals.map(a=><tr key={a.id}><td>{a.id}</td><td>{a.type}</td><td>{a.requester}</td><td>{a.decision}</td><td><span className={`badge ${a.status==='OnaylandÄ±'?'green':a.status==='Reddedildi'?'red':'amber'}`}>{a.status}</span></td><td><button className="btn small ghost" onClick={()=>decide(a.id,'OnaylandÄ±')}>Onayla</button> <button className="btn small ghost danger" onClick={()=>decide(a.id,'Reddedildi')}>Reddet</button></td></tr>)}</tbody></table></div>}{tab==='broadcast'&&<div className="card pad" style={{marginTop:20}}><h2>Duyuru YayÄ±nla</h2><div className="form-grid"><div className="field"><label>Hedef</label><select><option>TÃ¼m depolar</option><option>Sadece FR</option><option>Sadece Corporate</option><option>SeÃ§ili depo</option></select></div><div className="field"><label>Ã–ncelik</label><select><option>Bilgi</option><option>Aksiyon gerekli</option><option>Kritik</option></select></div><div className="field full"><label>Duyuru</label><textarea placeholder="Yeni planogram uygulanma notu..." /></div></div><button className="btn primary" onClick={()=>notify?.('Duyuru yayÄ±nlandÄ±.')}>YayÄ±nla</button></div>}</div>;
+}

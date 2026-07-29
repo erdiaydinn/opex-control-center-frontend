@@ -1,0 +1,38 @@
+{
+  "input_rows": 5881,
+  "changed_rows": 1350,
+  "crosstab": {
+    "AMBIENT": {
+      "AMBIENT": 3456,
+      "CHILLED": 1178,
+      "FROZEN": 0
+    },
+    "CHILLED": {
+      "AMBIENT": 161,
+      "CHILLED": 814,
+      "FROZEN": 0
+    },
+    "FROZEN": {
+      "AMBIENT": 7,
+      "CHILLED": 4,
+      "FROZEN": 261
+    }
+  },
+  "fix_reasons_changed": {
+    "ambient_nonfood_category": 947,
+    "chilled_ready_to_consume": 126,
+    "ambient_snacks_category": 69,
+    "ambient_beverage_category": 50,
+    "ambient_uht_milk_like": 32,
+    "ambient_beverage_keyword": 29,
+    "ambient_bread_bakery": 21,
+    "chilled_meat_seafood": 17,
+    "ambient_crate_produce": 16,
+    "chilled_leafy_herb_produce": 13,
+    "la_lorraine_frozen_rule": 11,
+    "ambient_snack_keyword": 6,
+    "ambient_produce_default": 5,
+    "chilled_fresh_beverage_keyword": 5,
+    "ambient_rtc_shelf_stable": 3
+  }
+}

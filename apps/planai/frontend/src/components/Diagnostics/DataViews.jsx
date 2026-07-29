@@ -1,0 +1,149 @@
+import { useMemo, useState } from 'react';
+import { fixtures, insights, storeMetrics, stores } from '../data/mock.js';
+import { tt } from '../i18n/dictionary.js';
+import { ProductThumb, storageTone } from './ProductVisuals.jsx';
+
+const trPriority = { High: 'Yüksek', Medium: 'Orta', Low: 'Düşük' };
+const trStatus = { Open: 'Açık', 'In Progress': 'Başladı', Done: 'Tamamlandı', Blocked: 'Bloke', Approved: 'Onaylandı', Pending: 'Onay Bekliyor', Rejected: 'Reddedildi' };
+
+function scoreImpact(weights) {
+  return {
+    score: Math.round((weights.sales * 0.32 + weights.category * 0.18 + weights.brand * 0.16 + weights.refill * 0.18 + weights.route * 0.1 + weights.cold * 0.06) * 10) / 10,
+    refill: Math.max(4, Math.round(22 - weights.refill * 1.6 - weights.route * 0.5)),
+    risk: Math.max(3, Math.round(18 - weights.cold * 1.1 - weights.category * 0.4)),
+    confidence: Math.min(96, Math.round(62 + weights.sales * 2 + weights.category * 1.3 + weights.refill * 1.6 + weights.cold * 1.1)),
+  };
+}
+
+function CouncilRepository({ weights, context = 'Planogram kararı' }) {
+  const impact = scoreImpact(weights);
+  const dominant = Object.entries(weights).sort((a, b) => b[1] - a[1])[0];
+  const dictionary = {
+    sales: 'Satış ağırlığı', category: 'Kategori bütünlüğü', brand: 'Marka bloklama', refill: 'Refill maliyeti', route: 'Picker rotası', cold: 'Soğuk zincir'
+  };
+  return (
+    <div className="council-card">
+      <div className="section-eyebrow">COUNCIL HIGH INTELLIGENCE REPOSITORY</div>
+      <h2>Karar yorumu</h2>
+      <p className="muted"><b>{context}</b> için en baskın sinyal <b>{dictionary[dominant[0]]}</b>. Sistem bu ayarı; satış hızı, raf kapasitesi, kategori izolasyonu, picker rotası ve refill işçiliğini birlikte okuyarak yorumlar.</p>
+      <div className="grid cols-4">
+        <div className="mini-metric"><b>+{impact.score}%</b><span>Skor etkisi</span></div>
+        <div className="mini-metric"><b>-{impact.refill}%</b><span>Refill yükü</span></div>
+        <div className="mini-metric"><b>-{impact.risk}%</b><span>Risk etkisi</span></div>
+        <div className="mini-metric"><b>{impact.confidence}%</b><span>Güven</span></div>
+      </div>
+      <div className="repo-timeline">
+        <span>Store DNA</span><span>SKU Graph</span><span>Fixture Availability</span><span>Delta Actions</span><span>Field Feedback</span>
+      </div>
+    </div>
+  );
+}
+
+export function Rules({ lang, notify }) {
+  const [weights, setWeights] = useState({ sales: 8, category: 6, brand: 7, refill: 8, route: 6, cold: 7 });
+  const [rule, setRule] = useState({ type: 'Marka', value: 'Ülker / Eti / Algida', zone: 'Kuru zone', priority: 'Normal', behavior: 'Zone içine yerleştir' });
+  const labels = { sales: 'Satış ağırlığı', category: 'Kategori ağırlığı', brand: 'Marka blok ağırlığı', refill: 'Refill maliyeti ağırlığı', route: 'Picker rota ağırlığı', cold: 'Soğuk zincir ağırlığı' };
+  function updateWeight(k, v) { setWeights((prev) => ({ ...prev, [k]: Number(v) })); }
+  return (
+    <div className="page">
+      <div className="section-eyebrow">AI OPTIMIZATION CENTER</div>
+      <h1 style={{ fontSize: 42, margin: '8px 0' }}>{tt(lang, 'rules')}</h1>
+      <p className="page-sub">Kural motoru artık sadece kural eklemez; ağırlık motoru ile optimizasyon kararının nedenini yorumlar.</p>
+      <div className="grid cols-2" style={{ alignItems: 'start' }}>
+        <div className="card pad">
+          <h2>Operasyonel Planogram Motoru</h2>
+          <div className="form-grid">
+            <div className="field"><label>Kural tipi</label><select value={rule.type} onChange={(e) => setRule({ ...rule, type: e.target.value })}><option>Marka</option><option>Kategori</option><option>Alt kategori</option><option>Storage type</option><option>Ağır ürün</option><option>Hızlı SKU</option><option>Soğuk zincir</option></select></div>
+            <div className="field"><label>Değer</label><input value={rule.value} onChange={(e) => setRule({ ...rule, value: e.target.value })} /></div>
+            <div className="field"><label>Hedef zone</label><select value={rule.zone} onChange={(e) => setRule({ ...rule, zone: e.target.value })}><option>Kuru zone</option><option>+4 Soğuk</option><option>-18 Donuk</option><option>Dispatch yakını</option><option>Arka ambient</option></select></div>
+            <div className="field"><label>Öncelik</label><select value={rule.priority} onChange={(e) => setRule({ ...rule, priority: e.target.value })}><option>Normal</option><option>Yüksek</option><option>Kritik</option></select></div>
+            <div className="field full"><label>Davranış</label><select value={rule.behavior} onChange={(e) => setRule({ ...rule, behavior: e.target.value })}><option>Zone içine yerleştir</option><option>Marka bloğu oluştur</option><option>Gıda dışından izole et</option><option>En sona al</option><option>Ön hatta taşı</option><option>Facing artır</option></select></div>
+          </div>
+          <button className="btn primary" style={{ marginTop: 16 }} onClick={() => notify?.('Kural motoru ağırlıklarla birlikte simülasyona uygulandı.')}>Kural ekle ve uygula</button>
+        </div>
+        <div className="card pad">
+          <h2>Ağırlık Motoru</h2>
+          <p className="muted">Kaydırdıkça Council repo yorumu değişir. Bu yapı daha sonra backend AI insight endpointine bağlanır.</p>
+          <div className="weight-panel">
+            {Object.entries(labels).map(([k, label]) => <div className="weight-row" key={k}><label>{label}</label><input type="range" min="0" max="10" value={weights[k]} onChange={(e) => updateWeight(k, e.target.value)} /><b>{weights[k]}</b></div>)}
+          </div>
+        </div>
+      </div>
+      <div className="grid cols-2" style={{ marginTop: 20 }}>
+        <CouncilRepository weights={weights} context={`${rule.type}: ${rule.value}`} />
+        <div className="card pad">
+          <h2>Hazır kural şablonları</h2>
+          <div className="list">
+            {['Marka yan yana', 'Soğuk zincir izolasyonu', 'Ağır ürünü sona al', 'Hızlı SKU facing artır', 'Non-food koku izolasyonu', 'Donuk ürünleri -18 kapasiteye göre dağıt'].map((x) => <div className="item" key={x}><b>{x}</b><button className="btn ghost" onClick={() => notify?.(`${x} kuralı uygulandı.`)}>Uygula</button></div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ProductLibrary({ lang, products }) {
+  return <div className="page"><div className="section-eyebrow">DATA CENTER</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'library')}</h1><p className="page-sub">SKU, barkod, ürün adı, marka, kategori, storage type, ölçü, satış ve ürün görseli.</p><div className="card pad"><input className="search" placeholder="SKU, barkod, ürün, marka ara..."/><h3>{tt(lang,'productImages')}</h3><div className="product-card-grid">{products.map(p=><div className="product-card" key={p.sku}><ProductThumb product={p}/><div><b>{p.name}</b><br/><span className="muted">{p.sku} • {p.brand}</span><br/><span className={`badge ${storageTone(p.storage)}`}>{p.storage}</span></div></div>)}</div><table className="table" style={{marginTop:18}}><thead><tr><th>SKU</th><th>Ürün</th><th>Marka</th><th>Kategori</th><th>Storage</th><th>Satış</th><th>Facing</th><th>Depth</th></tr></thead><tbody>{products.map(p=><tr key={p.sku}><td>{p.sku}</td><td>{p.name}</td><td>{p.brand}</td><td>{p.category}</td><td><span className={`badge ${storageTone(p.storage)}`}>{p.storage}</span></td><td>{p.sales}</td><td>{p.facing}</td><td>{p.depth}</td></tr>)}</tbody></table></div></div>;
+}
+
+export function FixtureLibrary({ lang }) {
+  return <div className="page"><div className="section-eyebrow">FIXTURE LIBRARY</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'fixture')}</h1><div className="grid cols-3">{fixtures.map(f=><div className="card pad" key={f.id}><div className="section-eyebrow">{f.id}</div><h2>{f.name}</h2><p className="muted">{f.type} • {f.width}×{f.depth}×{f.height} cm • {f.shelves} raf</p><span className={`badge ${f.frozen?'purple':f.cold?'cyan':'green'}`}>{f.frozen?'FROZEN':f.cold?'CHILLED':'AMBIENT'}</span><p className="muted">Depolar: {f.stores.join(', ')}</p></div>)}</div></div>;
+}
+
+export function Delta({ lang }) {
+  const rows = [['SKU-77881','A.1.2 → A.1.1','Facing 5 → 6','Yüksek','Satış hızı yüksek, ön hatta alınmalı.'],['SKU-98712','C.2.1 → +4 Oda','Zone düzeltmesi','Yüksek','Ürün +4 zincir gerektiriyor.'],['SKU-55431','A koridoru → arka ambient','Gıda izolasyonu','Orta','Kokulu non-food gıda koridorundan ayrılmalı.'],['SKU-77070','B.1.2 → A.2.2','Hızlı SKU ön hat','Yüksek','Picker rotasında ilk temas alanına taşınmalı.']];
+  return <div className="page"><div className="section-eyebrow">DELTA PLANOGRAM</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'delta')}</h1><div className="card pad"><p className="muted">Saha için komple plan değil, yapılacak aksiyon listesi. Her aksiyon Türkçe neden ve öncelik ile gelir.</p><table className="table"><thead><tr><th>SKU</th><th>Taşıma</th><th>Değişiklik</th><th>Öncelik</th><th>Neden</th></tr></thead><tbody>{rows.map(r=><tr key={r[0]}>{r.map((c,i)=><td key={i}>{i===3?<span className={`badge ${c==='Yüksek'?'red':'amber'}`}>{c}</span>:c}</td>)}</tr>)}</tbody></table></div></div>;
+}
+
+export function Publishing({ lang, notify }) {
+  const [flow, setFlow] = useState([
+    { store: 'Anka (İstanbul)', owner: 'Store Manager', seen: 100, started: 100, applied: 100, photo: 88, status: 'Uygulandı', blocker: 'Yok' },
+    { store: 'Fulya (İstanbul)', owner: 'Bölge Yöneticisi', seen: 100, started: 72, applied: 41, photo: 0, status: 'Fotoğraf bekliyor', blocker: 'Kanıt fotoğrafı eksik' },
+    { store: 'Güven (Kocaeli) FR', owner: 'FR Operasyon', seen: 76, started: 40, applied: 18, photo: 0, status: 'Bloke', blocker: 'Algida fixture eksik' },
+    { store: 'Şükrüpaşa (Edirne)', owner: 'Store Manager', seen: 91, started: 67, applied: 52, photo: 22, status: 'Devam ediyor', blocker: 'Soğuk oda m² doğrulanacak' },
+  ]);
+  function advance(i) { setFlow(prev => prev.map((r, idx) => idx === i ? { ...r, applied: Math.min(100, r.applied + 15), status: r.applied + 15 >= 100 ? 'Uygulandı' : 'Devam ediyor' } : r)); notify?.('Yayınlama durumu güncellendi.'); }
+  const avg = (k) => Math.round(flow.reduce((s, r) => s + r[k], 0) / flow.length);
+  return <div className="page"><div className="section-eyebrow">PUBLISHING & IMPLEMENTATION TRACKING</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'publishing')}</h1><p className="page-sub">Merkez planı yayınlar; depo gördüm, başladım, uyguladım, fotoğraf yükledim adımlarını kapatır.</p><div className="grid cols-4">{[['Planogramı gördüm',avg('seen')],['Uygulamaya başladı',avg('started')],['Uyguladı',avg('applied')],['Fotoğraf kanıtı',avg('photo')]].map(([x,v])=><div className="card kpi" key={x}><div className="kpi-label">{x}</div><div className="kpi-value">{v}%</div><div className="kpi-trend">Depo uyumu</div></div>)}</div><div className="card pad" style={{marginTop:22}}><h2>Depo Uygulama Kontrol Kulesi</h2><table className="table"><thead><tr><th>Depo</th><th>Sorumlu</th><th>Gördü</th><th>Başladı</th><th>Uyguladı</th><th>Fotoğraf</th><th>Durum</th><th>Blokaj / Neden</th><th>Aksiyon</th></tr></thead><tbody>{flow.map((r,i)=><tr key={r.store}><td>{r.store}</td><td>{r.owner}</td><td>{r.seen}%</td><td>{r.started}%</td><td>{r.applied}%</td><td>{r.photo}%</td><td><span className={`badge ${r.status==='Bloke'?'red':r.status==='Uygulandı'?'green':'amber'}`}>{r.status}</span></td><td>{r.blocker}</td><td><button className="btn small ghost" onClick={()=>advance(i)}>Güncelle</button></td></tr>)}</tbody></table></div></div>;
+}
+
+export function Tasks({ lang, tasks, setTasks, notify }) {
+  const blank = { store: 'Anka (İstanbul)', title: '', owner: 'Store Manager', priority: 'Medium', deadline: 'Yarın', status: 'Open', response: '' };
+  function addTask(e) { e.preventDefault(); const fd = new FormData(e.currentTarget); const t = { id: `T-${1000 + tasks.length + 1}`, store: fd.get('store'), title: fd.get('title'), owner: fd.get('owner'), priority: fd.get('priority'), deadline: fd.get('deadline'), status: 'Open', response: '' }; setTasks((prev) => [t, ...prev]); e.currentTarget.reset(); notify?.('Görev atandı.'); }
+  function update(id, patch) { setTasks((prev) => prev.map((t) => t.id === id ? { ...t, ...patch } : t)); }
+  return <div className="page"><div className="section-eyebrow">TASK MANAGEMENT</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'tasks')}</h1><div className="grid cols-2"><form className="card pad" onSubmit={addTask}><h2>{tt(lang,'assignTask')}</h2><div className="form-grid"><div className="field"><label>{tt(lang,'store')}</label><select name="store" defaultValue={blank.store}>{stores.filter(s=>s.code!=='ALL').map(s=><option key={s.code}>{s.name}</option>)}</select></div><div className="field"><label>{tt(lang,'assignee')}</label><input name="owner" defaultValue={blank.owner}/></div><div className="field"><label>{tt(lang,'priority')}</label><select name="priority" defaultValue={blank.priority}><option value="High">Yüksek</option><option value="Medium">Orta</option><option value="Low">Düşük</option></select></div><div className="field"><label>{tt(lang,'deadline')}</label><input name="deadline" defaultValue={blank.deadline}/></div></div><div className="field" style={{marginTop:12}}><label>Görev</label><textarea name="title" placeholder="Örn: A koridoru raf görselini yükle" required /></div><button className="btn primary" style={{marginTop:12}}>Görev ata</button></form><div className="card pad"><h2>{tt(lang,'adminAnswer')}</h2><div className="list">{tasks.map(t=><div className="item" key={t.id} style={{alignItems:'stretch', display:'grid', gridTemplateColumns:'1fr 160px'}}><div><b>{t.title}</b><br/><span className="muted">{t.id} • {t.store} • {t.owner} • {t.deadline}</span><br/><span className={`badge ${t.priority==='High'?'red':t.priority==='Medium'?'amber':'green'}`}>{trPriority[t.priority] || t.priority}</span> <span className="badge">{trStatus[t.status] || t.status}</span><div className="field" style={{marginTop:8}}><input placeholder="Admin yanıtı yaz..." value={t.response} onChange={(e)=>update(t.id,{response:e.target.value})}/></div></div><div className="list"><button className="btn small ghost" onClick={()=>update(t.id,{status:'In Progress'})}>Başladı</button><button className="btn small ghost" onClick={()=>update(t.id,{status:'Done'})}>Tamamlandı</button><button className="btn small ghost" onClick={()=>update(t.id,{status:'Blocked'})}>Bloke</button></div></div>)}</div></div></div></div>;
+}
+
+export function PhotoEvidence({ lang, tasks, setTasks, notify }) {
+  const [taskId, setTaskId] = useState(tasks[0]?.id || '');
+  function saveEvidence() { if (taskId) setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'Done', response: `${t.response || ''} Fotoğraf kanıtı ile kapatıldı.`.trim() } : t)); notify?.('Fotoğraf kanıtı göreve bağlandı ve görev kapatıldı.'); }
+  return <div className="page"><div className="section-eyebrow">PHOTO DOCUMENTATION</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'photos')}</h1><div className="card pad"><p className="muted">Fotoğraf kanıtı havada durmaz; seçili görev, depo, koridor, modül, raf ve planogram versiyonu ile bağlanır. Kanıt kaydedilince görev kapatılabilir.</p><div className="form-grid"><div className="field"><label>Bağlı görev</label><select value={taskId} onChange={(e)=>setTaskId(e.target.value)}>{tasks.map(t=><option key={t.id} value={t.id}>{t.id} — {t.title}</option>)}</select></div><div className="field"><label>Depo</label><select>{stores.filter(s=>s.code!=='ALL').map(s=><option key={s.code}>{s.name}</option>)}</select></div><div className="field"><label>Raf</label><input placeholder="A-1-2" /></div><div className="field"><label>Planogram versiyonu</label><input defaultValue="PG-2026.05.11-v3" /></div><div className="field"><label>Fotoğraf</label><input type="file" /></div><div className="field"><label>Açıklama</label><input placeholder="Uygulandı / eksik fixture" /></div></div><button className="btn primary" style={{marginTop:14}} onClick={saveEvidence}>Kanıtı kaydet ve görevi kapat</button></div></div>;
+}
+
+export function Reports({ lang }) {
+  const [scope, setScope] = useState('ALL');
+  const m = storeMetrics[scope] || storeMetrics.ALL;
+  const [weights] = useState({ sales: 8, category: 6, brand: 7, refill: 8, route: 7, cold: 7 });
+  return <div className="page"><div className="section-eyebrow">EXECUTIVE VIEW</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'reports')}</h1><div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap',marginBottom:16}}><select className="select" value={scope} onChange={(e)=>setScope(e.target.value)}>{stores.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select><div className="tabs"><button className="tab active">Executive Mode</button><button className="tab">Architect Mode</button></div></div><div className="grid cols-5">{[['Risk','Orta','amber'],['Kapasite',m.utilization+'%','green'],['Refill maliyeti','₺18.4K','pink'],['Uygulama',m.implementation+'%','blue'],['Açık görev',m.tasks,'red']].map(([x,v,t])=><div className="card kpi" key={x}><div className="kpi-label">{x}</div><div className={`kpi-value ${t}`}>{v}</div><div className="kpi-trend">Yönetici görünümü</div></div>)}</div><div className="grid cols-2" style={{marginTop:22}}><div className="card pad"><h2>Yüksek Riskli Depolar / Aksiyonlar</h2><div className="list">{insights.map(i=><div className="item" key={i.title}><div><b>{i.title}</b><br/><span className="muted">{i.text}</span></div><span className={`badge ${i.tone}`}>{i.impact}</span></div>)}</div></div><CouncilRepository weights={weights} context="Rapor ve yönetici kararı" /></div><div className="card pad" style={{marginTop:22}}><h2>Operasyonel karar matrisi</h2><table className="table"><thead><tr><th>Alan</th><th>Problem</th><th>Finansal Etki</th><th>Saha Aksiyonu</th><th>Sahip</th></tr></thead><tbody>{[['C Koridoru','Doluluk düşük','₺4.2K fırsat','2 raf kaydır','Merkez'],['+4 Oda','Yoğurt refill sık','₺1.1K işçilik','Facing +2','Depo'],['Güven FR','Fixture eksik','Plan uygulanamaz','Dolap talebi','Admin']].map(r=><tr key={r[0]}>{r.map(c=><td key={c}>{c}</td>)}</tr>)}</tbody></table></div></div>;
+}
+
+export function Admin({ lang, objects, notify }) {
+  const [selectedStore, setSelectedStore] = useState('ALL');
+  const [tab, setTab] = useState('overview');
+  const [users, setUsers] = useState([
+    { name: 'Erdi A.', email: 'erdi@plonagram.local', role: 'ADMIN', title: 'Enterprise Admin', store: 'Tüm Depolar', status: 'Aktif' },
+    { name: 'Store Manager', email: 'store@plonagram.local', role: 'STORE_MANAGER', title: 'Depo Müdürü', store: 'Anka (İstanbul)', status: 'Aktif' },
+    { name: 'Regional User', email: 'region@plonagram.local', role: 'REGIONAL_MANAGER', title: 'Bölge Yöneticisi', store: 'İstanbul', status: 'Onay Bekliyor' },
+  ]);
+  const [approvals, setApprovals] = useState([
+    { id: 'APR-401', type: 'Ürün ölçüsü', requester: 'Fulya', decision: 'SKU-98712 depth 4 → 5', status: 'Onay Bekliyor' },
+    { id: 'APR-402', type: 'Layout değişikliği', requester: 'Güven FR', decision: 'Algida dolabı ekleme', status: 'Onay Bekliyor' },
+    { id: 'APR-403', type: 'Rol talebi', requester: 'Regional User', decision: 'REGIONAL_MANAGER yetkisi', status: 'Onay Bekliyor' },
+  ]);
+  const m = storeMetrics[selectedStore] || storeMetrics.ALL;
+  const rows = objects.filter(o => ['corridor','chilled_room','frozen_room','algida_fridge','steel_rack'].includes(o.type));
+  function addUser() { setUsers(prev => [...prev, { name: 'Yeni Kullanıcı', email: `user${prev.length+1}@plonagram.local`, role: 'USER', title: 'Saha Kullanıcısı', store: 'Anka (İstanbul)', status: 'Onay Bekliyor' }]); notify?.('Kullanıcı eklendi.'); }
+  function updateUser(i, patch) { setUsers(prev => prev.map((u, idx) => idx === i ? { ...u, ...patch } : u)); }
+  function decide(id, status) { setApprovals(prev => prev.map(a => a.id === id ? { ...a, status } : a)); notify?.(`${id} ${status.toLowerCase()}.`); }
+  return <div className="page"><div className="section-eyebrow">ADMIN CONTROL TOWER</div><h1 style={{fontSize:42,margin:'8px 0'}}>{tt(lang,'admin')}</h1><div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><select className="select" value={selectedStore} onChange={(e)=>setSelectedStore(e.target.value)}>{stores.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select><div className="tabs">{[['overview','Depo görünümü'],['users','Kullanıcı yönetimi'],['approvals','Onay merkezi'],['broadcast','Duyuru yayınla']].map(([k,l])=><button key={k} className={`tab ${tab===k?'active':''}`} onClick={()=>setTab(k)}>{l}</button>)}</div></div>{tab==='overview'&&<><div className="grid cols-5" style={{marginTop:18}}>{[[tt(lang,'occupancy'),m.utilization+'%','green'],[tt(lang,'ambient'),m.ambient+'%','green'],[tt(lang,'coldCapacity'),m.chilled+'%','cyan'],[tt(lang,'frozenCapacity'),m.frozen+'%','purple'],[tt(lang,'changedProducts'),m.changedProducts,'pink']].map(([l,v,t])=><div className="card kpi" key={l}><div className="kpi-label">{l}</div><div className={`kpi-value ${t}`}>{v}</div><div className="kpi-trend">Admin görünümü</div></div>)}</div><div className="card pad" style={{marginTop:20}}><h2>Modül / Raf Doluluk Detayı</h2><table className="table"><thead><tr><th>Alan</th><th>Tip</th><th>Zone</th><th>Modül</th><th>Raf</th><th>Doluluk</th><th>Yeri değişecek ürün</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.label}</td><td>{r.type}</td><td><span className={`badge ${r.zone==='CHILLED'?'cyan':r.zone==='FROZEN'?'purple':r.zone==='AMBIENT'?'green':'pink'}`}>{r.zone}</span></td><td>{r.modules}</td><td>{r.shelves}</td><td>{r.utilization}%</td><td>{r.changed}</td></tr>)}</tbody></table></div></>}{tab==='users'&&<div className="card pad" style={{marginTop:20}}><div style={{display:'flex',justifyContent:'space-between'}}><h2>Kullanıcı Yönetimi</h2><button className="btn primary" onClick={addUser}>Kullanıcı ekle</button></div><table className="table"><thead><tr><th>Ad</th><th>E-posta</th><th>Rol</th><th>Title</th><th>Depo/Bölge</th><th>Durum</th><th>Aksiyon</th></tr></thead><tbody>{users.map((u,i)=><tr key={u.email}><td><input value={u.name} onChange={(e)=>updateUser(i,{name:e.target.value})}/></td><td>{u.email}</td><td><select value={u.role} onChange={(e)=>updateUser(i,{role:e.target.value})}><option>USER</option><option>STORE_MANAGER</option><option>REGIONAL_MANAGER</option><option>ADMIN</option><option>SUPER_USER</option></select></td><td><input value={u.title} onChange={(e)=>updateUser(i,{title:e.target.value})}/></td><td>{u.store}</td><td><span className="badge amber">{u.status}</span></td><td><button className="btn small ghost" onClick={()=>updateUser(i,{status:'Aktif'})}>Aktifleştir</button> <button className="btn small ghost danger" onClick={()=>setUsers(prev=>prev.filter((_,idx)=>idx!==i))}>Sil</button></td></tr>)}</tbody></table></div>}{tab==='approvals'&&<div className="card pad" style={{marginTop:20}}><h2>Karar / Onay Merkezi</h2><table className="table"><thead><tr><th>ID</th><th>Tip</th><th>Talep eden</th><th>Karar</th><th>Durum</th><th>Aksiyon</th></tr></thead><tbody>{approvals.map(a=><tr key={a.id}><td>{a.id}</td><td>{a.type}</td><td>{a.requester}</td><td>{a.decision}</td><td><span className={`badge ${a.status==='Onaylandı'?'green':a.status==='Reddedildi'?'red':'amber'}`}>{a.status}</span></td><td><button className="btn small ghost" onClick={()=>decide(a.id,'Onaylandı')}>Onayla</button> <button className="btn small ghost danger" onClick={()=>decide(a.id,'Reddedildi')}>Reddet</button></td></tr>)}</tbody></table></div>}{tab==='broadcast'&&<div className="card pad" style={{marginTop:20}}><h2>Duyuru Yayınla</h2><div className="form-grid"><div className="field"><label>Hedef</label><select><option>Tüm depolar</option><option>Sadece FR</option><option>Sadece Corporate</option><option>Seçili depo</option></select></div><div className="field"><label>Öncelik</label><select><option>Bilgi</option><option>Aksiyon gerekli</option><option>Kritik</option></select></div><div className="field full"><label>Duyuru</label><textarea placeholder="Yeni planogram uygulanma notu..." /></div></div><button className="btn primary" onClick={()=>notify?.('Duyuru yayınlandı.')}>Yayınla</button></div>}</div>;
+}

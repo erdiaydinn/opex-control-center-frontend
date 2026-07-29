@@ -1,0 +1,87 @@
+{
+  "ui": {
+    "language": {
+      "title": "Dil seçimi",
+      "select": "Dil seç",
+      "note": "Ekran dili değişir; sistem iç verileri evrensel kodlarla saklanır."
+    },
+    "common": {
+      "save": "Kaydet",
+      "cancel": "Vazgeç",
+      "close": "Kapat",
+      "search": "Ara",
+      "edit": "Düzenle",
+      "delete": "Sil",
+      "approve": "Onayla",
+      "reject": "Reddet",
+      "loading": "Yükleniyor",
+      "activeStore": "Aktif depo"
+    }
+  },
+  "domain": {
+    "store": "Depo",
+    "storeSelection": "Depo seçimi",
+    "storeQuestion": "Hangi depo için kayıt oluşturuyorsunuz?",
+    "depotDNA": "Depo Bilgi Formu",
+    "depotDNAHelp": "Depoya özel fiziksel ve operasyonel bilgileri girin.",
+    "fixture": "Raf / Dolap Tipi",
+    "layout": "Depo Yerleşimi",
+    "planogram": "Planogram",
+    "orderPicking": "Sipariş Toplama",
+    "goodsReceiving": "Mal Kabul",
+    "shelfReplenishment": "Raf Doldurma",
+    "dispatchStaging": "Hazırlanan Sipariş Bekleme Alanı",
+    "aisleCongestion": "Koridor Sıkışıklığı",
+    "walkingDistance": "Yürüme Mesafesi",
+    "spaceUtilization": "Alan Doluluk Oranı",
+    "deadSpace": "Kullanılmayan Alan",
+    "highVelocitySku": "Çok Satan Ürün",
+    "highestRefundRiskSku": "En Sorunlu Ürün",
+    "itemReplacement": "Ürün Güncelleme",
+    "refundRisk": "İade Riski",
+    "pickingTime": "Toplama Süresi",
+    "shelfEfficiency": "Raf Verimliliği",
+    "goldenZone": "En Kolay Erişilen Raf Bölgesi",
+    "coldLoss": "Soğuk Kaybı",
+    "fefo": "Son TETT Önce Çıksın"
+  },
+  "storage": {
+    "AMBIENT": "Normal Raf Ürünü",
+    "CHILLED": "+4 Soğuk Ürün",
+    "FROZEN": "Donuk Ürün",
+    "CHILLED_ROOM": "+4 Soğuk Oda",
+    "FROZEN_ROOM": "-18 Donuk Oda"
+  },
+  "fixture": {
+    "steel_rack": "Çelik Raf",
+    "steel_rack_new_gen": "Yeni Nesil Çelik Raf",
+    "hdr_heavy_rack": "HDR Ağır Yük Rafı",
+    "martek_plus4": "Martek +4 Dolap",
+    "martek_frozen_minus18": "Martek -18 Dolap",
+    "ice_cream_chest_freezer_small": "Algida/Golf Dondurma Dolabı Küçük",
+    "ice_cream_chest_freezer_medium": "Algida/Golf Dondurma Dolabı Orta",
+    "ice_cream_chest_freezer_large": "Algida/Golf Dondurma Dolabı Büyük",
+    "vertical_chiller": "+4 Dikey Dolap",
+    "ugur_vertical_chiller": "Uğur / Dikey +4 Dolap",
+    "secure_value_unit": "Kilitli Değerli Ürün Ünitesi",
+    "dispatch_heavy_rack": "Dispatch Ağır Yük Rafı",
+    "buffer_rack": "Buffer / Bekletme Rafı",
+    "chilled_room": "+4 Soğuk Oda",
+    "frozen_room": "-18 Donuk Oda",
+    "wall": "Duvar",
+    "column": "Kolon",
+    "manager_desk": "Müdür Masası"
+  },
+  "onboarding": {
+    "basementQuestion": "Depoda alt kat var mı?",
+    "upperStorageQuestion": "Depoda merdivenle çıkılan ek stok alanı var mı?",
+    "chilledRoomArea": "+4 soğuk oda yaklaşık kaç m²?",
+    "frozenRoomArea": "-18 donuk oda yaklaşık kaç m²?",
+    "receivingHours": "Mal kabul genelde hangi saatlerde yapılıyor?",
+    "after16Receiving": "16:00 sonrası mal kabul yapılmasını istemiyor musunuz?",
+    "peakHours": "Depo hangi saatlerde en yoğun oluyor?",
+    "replenishmentFrequency": "Raflar genelde ne sıklıkla dolduruluyor?",
+    "aisleWidth": "Koridorlar ortalama kaç cm genişliğinde?",
+    "mainAisleWidth": "Ana yürüyüş yolu yaklaşık kaç cm?"
+  }
+}

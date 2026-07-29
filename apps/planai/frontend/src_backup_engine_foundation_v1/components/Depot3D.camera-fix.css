@@ -1,0 +1,14 @@
+
+/* Camera button state + true command center polish */
+.ops-camera-panel button.active,
+.ops-floating-toolbar button.active{
+  background:rgba(255,15,123,.18)!important;
+  border-color:rgba(255,15,123,.32)!important;
+  color:#fff!important;
+}
+.ops-camera-panel button:hover,
+.ops-top-actions button:hover,
+.ops-floating-toolbar button:hover{
+  transform:translateY(-1px);
+  border-color:rgba(255,255,255,.16)!important;
+}

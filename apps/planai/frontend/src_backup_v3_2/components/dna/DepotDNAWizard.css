@@ -1,0 +1,9 @@
+.dna-card{background:#fff;border:1px solid #e2e8f0;border-radius:28px;padding:26px;box-shadow:0 24px 80px rgba(15,23,42,.12);color:#0f172a}
+.dna-head span{font-size:11px;font-weight:950;color:#DF1067;letter-spacing:.14em}
+.dna-head h2{margin:8px 0 4px;font-size:28px}.dna-head p{color:#64748b;line-height:1.5}
+.dna-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:14px;margin-top:18px}
+.dna-grid label{display:flex;flex-direction:column;gap:7px;font-size:12px;font-weight:900;color:#334155}
+.dna-grid input,.dna-grid select{border:1px solid #cbd5e1;border-radius:14px;padding:12px 13px;font-weight:800;outline:none}
+.dna-grid input:focus,.dna-grid select:focus{border-color:#DF1067;box-shadow:0 0 0 3px rgba(223,16,103,.12)}
+.dna-save{margin-top:20px;border:0;border-radius:16px;background:#DF1067;color:#fff;font-weight:950;padding:14px 20px;cursor:pointer}
+@media(max-width:1000px){.dna-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){.dna-grid{grid-template-columns:1fr}}

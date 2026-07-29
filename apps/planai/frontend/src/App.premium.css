@@ -1,0 +1,230 @@
+:root {
+  --plg-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --plg-bg-0: #050817;
+  --plg-bg-1: #090d1e;
+  --plg-card: rgba(13, 18, 38, .74);
+  --plg-card-soft: rgba(15, 23, 42, .54);
+  --plg-border: rgba(255,255,255,.075);
+  --plg-border-strong: rgba(255,255,255,.12);
+  --plg-text: #f5f7fb;
+  --plg-muted: #93a4bb;
+  --plg-dim: #64748b;
+  --plg-accent: #ff0f7b;
+  --plg-accent-2: #38bdf8;
+  --plg-radius-xl: 28px;
+  --plg-radius-lg: 20px;
+  --plg-shadow: 0 24px 90px rgba(0,0,0,.28);
+}
+
+html, body, #root {
+  font-family: var(--plg-font);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255,15,123,.10), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(56,189,248,.08), transparent 30%),
+    linear-gradient(180deg, #050817 0%, #070b1d 48%, #050817 100%);
+  color: var(--plg-text);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+* {
+  text-rendering: geometricPrecision;
+}
+
+.pe-app.pe-premium-shell {
+  background: transparent !important;
+  color: var(--plg-text);
+}
+
+.pe-app.pe-premium-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.024) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.024) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+}
+
+.pe-app.pe-premium-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.pe-global-language {
+  position: fixed;
+  right: 22px;
+  top: 112px;
+  z-index: 1200;
+}
+html[dir="rtl"] .pe-global-language {
+  right: auto;
+  left: 22px;
+}
+
+/* Premium typography: quieter, sharper, less heavy */
+.pe-app h1,
+.pe-app h2,
+.pe-app h3,
+.pe-app h4,
+.pe-app .title,
+.pe-app [class*="title"],
+.pe-app [class*="Title"] {
+  letter-spacing: -.035em !important;
+  font-weight: 600 !important;
+}
+
+.pe-app p,
+.pe-app span,
+.pe-app label,
+.pe-app input,
+.pe-app select,
+.pe-app button,
+.pe-app td,
+.pe-app th {
+  font-family: var(--plg-font) !important;
+}
+
+.pe-app label,
+.pe-app .label,
+.pe-app [class*="label"],
+.pe-app [class*="Label"] {
+  font-weight: 520 !important;
+}
+
+.pe-app button {
+  font-weight: 560 !important;
+  letter-spacing: -.012em !important;
+}
+
+.pe-app small,
+.pe-app .muted,
+.pe-app [class*="muted"],
+.pe-app [class*="subtitle"],
+.pe-app [class*="Subtitle"] {
+  color: var(--plg-muted) !important;
+  font-weight: 400 !important;
+}
+
+/* App shell polish */
+.pe-app header,
+.pe-app .topbar,
+.pe-app .pe-topbar,
+.pe-app [class*="TopBar"],
+.pe-app [class*="topbar"] {
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.pe-main {
+  padding-top: 22px !important;
+}
+
+/* Card system: glass, not gamer */
+.pe-app section,
+.pe-app aside,
+.pe-app .card,
+.pe-app .panel,
+.pe-app [class*="panel"],
+.pe-app [class*="Panel"],
+.pe-app [class*="card"],
+.pe-app [class*="Card"] {
+  border-color: var(--plg-border) !important;
+  box-shadow: 0 18px 70px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+.pe-app input,
+.pe-app select,
+.pe-app textarea {
+  border: 1px solid rgba(255,255,255,.10) !important;
+  border-radius: 14px !important;
+  background: rgba(5, 8, 23, .72) !important;
+  color: rgba(248,250,252,.92) !important;
+  font-weight: 450 !important;
+  outline: none !important;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.pe-app input:focus,
+.pe-app select:focus,
+.pe-app textarea:focus {
+  border-color: rgba(255,15,123,.46) !important;
+  box-shadow: 0 0 0 4px rgba(255,15,123,.10) !important;
+}
+
+.pe-app button,
+.pe-app .btn,
+.pe-app [class*="button"],
+.pe-app [class*="Button"] {
+  border-radius: 14px !important;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.pe-app button:hover,
+.pe-app .btn:hover {
+  transform: translateY(-1px);
+}
+
+/* CTA accent only where it matters */
+.pe-app .primary,
+.pe-app button.primary,
+.pe-app [class*="primary"],
+.pe-app [class*="Primary"] {
+  background: linear-gradient(135deg, #ff0f7b, #d60f68) !important;
+  border-color: rgba(255,255,255,.08) !important;
+  box-shadow: 0 16px 38px rgba(255,15,123,.22) !important;
+}
+
+/* Premium scrollbars */
+.pe-app *::-webkit-scrollbar { width: 10px; height: 10px; }
+.pe-app *::-webkit-scrollbar-track { background: rgba(255,255,255,.035); border-radius: 999px; }
+.pe-app *::-webkit-scrollbar-thumb { background: rgba(148,163,184,.34); border-radius: 999px; border: 2px solid rgba(5,8,23,.75); }
+.pe-app *::-webkit-scrollbar-thumb:hover { background: rgba(255,15,123,.48); }
+
+/* 3D studio deserves a hero feel */
+.pe-app canvas,
+.pe-app [class*="3d"],
+.pe-app [class*="3D"],
+.pe-app [class*="studio"],
+.pe-app [class*="Studio"] {
+  border-radius: 26px;
+}
+
+/* Status/KPI pills */
+.pe-app [class*="pill"],
+.pe-app [class*="badge"],
+.pe-app [class*="Badge"] {
+  font-weight: 560 !important;
+  border-color: rgba(255,255,255,.11) !important;
+}
+
+/* A subtle EA watermark for brand memory */
+.pe-app.pe-premium-shell::after {
+  content: "EA";
+  position: fixed;
+  right: 18px;
+  bottom: 16px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: rgba(255,255,255,.42);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.035);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+html[dir="rtl"] .pe-app.pe-premium-shell::after { right: auto; left: 18px; }
+
+@media (max-width: 1100px) {
+  .pe-global-language {
+    top: 82px;
+    right: 16px;
+  }
+}

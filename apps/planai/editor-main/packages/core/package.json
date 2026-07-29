@@ -1,0 +1,96 @@
+{
+  "name": "@pascal-app/core",
+  "version": "0.7.0",
+  "description": "Core library for Pascal 3D building editor",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./clone-scene-graph": {
+      "types": "./dist/utils/clone-scene-graph.d.ts",
+      "import": "./dist/utils/clone-scene-graph.js",
+      "default": "./dist/utils/clone-scene-graph.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "import": "./dist/schema/index.js",
+      "default": "./dist/schema/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/use-scene.d.ts",
+      "import": "./dist/store/use-scene.js",
+      "default": "./dist/store/use-scene.js"
+    },
+    "./material-library": {
+      "types": "./dist/material-library.d.ts",
+      "import": "./dist/material-library.js",
+      "default": "./dist/material-library.js"
+    },
+    "./spatial-grid": {
+      "types": "./dist/hooks/spatial-grid/spatial-grid-manager.d.ts",
+      "import": "./dist/hooks/spatial-grid/spatial-grid-manager.js",
+      "default": "./dist/hooks/spatial-grid/spatial-grid-manager.js"
+    },
+    "./wall": {
+      "types": "./dist/systems/wall/wall-footprint.d.ts",
+      "import": "./dist/systems/wall/wall-footprint.js",
+      "default": "./dist/systems/wall/wall-footprint.js"
+    },
+    "./stair-openings": {
+      "types": "./dist/systems/stair/stair-opening-sync.d.ts",
+      "import": "./dist/systems/stair/stair-opening-sync.js",
+      "default": "./dist/systems/stair/stair-opening-sync.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "tsc --build --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@react-three/drei": "^10",
+    "@react-three/fiber": "^9",
+    "react": "^18 || ^19",
+    "three": "^0.184"
+  },
+  "dependencies": {
+    "dedent": "^1.7.1",
+    "idb-keyval": "^6.2.2",
+    "mitt": "^3.0.1",
+    "nanoid": "^5.1.6",
+    "zod": "^4.3.5",
+    "zundo": "^2.3.0",
+    "zustand": "^5"
+  },
+  "devDependencies": {
+    "@pascal/typescript-config": "*",
+    "@types/react": "^19.2.2",
+    "typescript": "5.9.3",
+    "@types/three": "^0.184.0"
+  },
+  "keywords": [
+    "3d",
+    "building",
+    "editor",
+    "architecture",
+    "webgpu",
+    "three.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pascalorg/editor.git",
+    "directory": "packages/core"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/pascalorg/editor/tree/main/packages/core#readme",
+  "bugs": "https://github.com/pascalorg/editor/issues"
+}

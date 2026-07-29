@@ -1,0 +1,99 @@
+
+.shelf-ai-wrapper{
+  margin-top:8px;
+  padding:8px;
+  border-radius:10px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.04),
+      rgba(255,255,255,.02)
+    );
+
+  border:
+    1px solid rgba(255,255,255,.08);
+}
+
+.shelf-ai-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.shelf-fill{
+  font-size:11px;
+  font-weight:700;
+  color:#dce7ff;
+}
+
+.shelf-risk{
+  padding:3px 8px;
+  border-radius:999px;
+
+  font-size:10px;
+  font-weight:800;
+}
+
+.shelf-risk.high{
+  background:
+    rgba(255,77,109,.18);
+
+  color:#ff4d6d;
+
+  box-shadow:
+    0 0 12px rgba(255,77,109,.35);
+}
+
+.shelf-risk.medium{
+  background:
+    rgba(255,200,87,.15);
+
+  color:#ffc857;
+}
+
+.shelf-risk.low{
+  background:
+    rgba(0,209,178,.14);
+
+  color:#00d1b2;
+}
+
+.shelf-ai-bottom{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+
+  margin-top:8px;
+}
+
+.shelf-ai-bottom span{
+  padding:4px 7px;
+
+  border-radius:8px;
+
+  background:
+    rgba(255,255,255,.05);
+
+  font-size:10px;
+
+  color:#b7c4df;
+
+  border:
+    1px solid rgba(255,255,255,.06);
+}
+
+.shelf-card.risk-high{
+  box-shadow:
+    0 0 18px rgba(255,77,109,.25);
+}
+
+.shelf-card.risk-medium{
+  box-shadow:
+    0 0 14px rgba(255,200,87,.18);
+}
+
+.shelf-card.risk-low{
+  box-shadow:
+    0 0 14px rgba(0,209,178,.14);
+}

@@ -134,12 +134,87 @@ def normalize_storage(value: Any, default: str = "AMBIENT") -> str:
     return default
 
 
+def _column_key(value: Any) -> str:
+    """Turn localised CSV headers into a stable comparison key.
+
+    Product uploads arrive from both the API and Turkish Excel exports.  The
+    previous engine only compared English field names, so ``Urun``,
+    ``Kategori`` and ``Marka`` silently became empty values.  That made the
+    allocator treat every SKU as UNKNOWN/GENERAL and use generic dimensions.
+    """
+    return re.sub(r"[^a-z0-9]+", "_", norm(value)).strip("_")
+
+
+INPUT_COLUMN_ALIASES = {
+    "urun": "product_name",
+    "urun_adi": "product_name",
+    "urun_isim": "product_name",
+    "product": "product_name",
+    "product_name_tr": "product_name",
+    "marka": "brand",
+    "marka_adi": "brand",
+    "kategori": "category_l1",
+    "kategori_l1": "category_l1",
+    "alt_kategori": "category_l2",
+    "kategori_l2": "category_l2",
+    "subcategory": "category_l2",
+    "storage": "storage_type",
+    "depo": "storage_type",
+    "saklama": "storage_type",
+    "sicaklik": "storage_type",
+    "genislik": "width_cm",
+    "genislik_cm": "width_cm",
+    "yukseklik": "height_cm",
+    "yukseklik_cm": "height_cm",
+    "boy": "height_cm",
+    "derinlik": "depth_cm",
+    "derinlik_cm": "depth_cm",
+    "agirlik": "weight_kg",
+    "agirlik_kg": "weight_kg",
+    "onyuz": "source_facing",
+    "on_yuz": "source_facing",
+    "mevcut_facing": "source_facing",
+    "lokasyon": "current_location",
+    "yeni_lokasyon": "current_location",
+    "koridor": "aisle_id",
+    "modul": "module_id",
+    "raf": "shelf_no",
+    "son_7_gun_satis": "sales_qty_7d",
+    "son_7_gun_satis_adedi": "sales_qty_7d",
+    "sales_7d": "sales_qty_7d",
+    "haftalik_satis": "sales_qty_7d",
+    "satis_7d": "sales_qty_7d",
+    "stok": "on_hand_qty",
+    "mevcut_stok": "on_hand_qty",
+    "stok_adedi": "on_hand_qty",
+    "koli_ici": "case_pack_qty",
+    "koli_ici_adet": "case_pack_qty",
+    "koli_adedi": "case_pack_qty",
+    "urun_gorsel": "image_url",
+    "urun_gorsel_url": "image_url",
+}
+
+
+def normalize_product_row(product: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Add canonical fields while preserving the original upload columns."""
+    source = dict(product or {})
+    normalized = dict(source)
+    for raw_key, value in source.items():
+        canonical = INPUT_COLUMN_ALIASES.get(_column_key(raw_key))
+        if not canonical:
+            continue
+        existing = normalized.get(canonical)
+        if existing in (None, ""):
+            normalized[canonical] = value
+    return normalized
+
+
 def get(p: Dict[str, Any], names: List[str], default: Any = "") -> Any:
     for n in names:
         if n in p and p[n] not in [None, ""]:
             return p[n]
 
-    lower = {str(k).lower(): k for k in p.keys()}
+    lower = {str(k).lower().lstrip("\ufeff"): k for k in p.keys()}
     for n in names:
         real = lower.get(str(n).lower())
         if real is not None and p[real] not in [None, ""]:
@@ -341,15 +416,15 @@ def find_master_match(p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # =====================================================
 
 def product_name(p: Dict[str, Any]) -> str:
-    return clean_text(get(p, ["product_name", "Product Name", "name"], ""))
+    return clean_text(get(p, ["product_name", "Product Name", "name", "Urun", "Ürün"], ""))
 
 
 def sku(p: Dict[str, Any]) -> str:
-    return clean_text(get(p, ["sku", "SKU", "barcode"], ""))
+    return clean_text(get(p, ["sku", "SKU", "barcode", "Stok Kodu", "Urun Kodu"], ""))
 
 
 def brand(p: Dict[str, Any]) -> str:
-    b = get(p, ["brand", "Brand", "brand_name"], "")
+    b = get(p, ["brand", "Brand", "brand_name", "Marka"], "")
     if clean_text(b):
         return clean_text(b)
 
@@ -364,6 +439,7 @@ def category_l1(p: Dict[str, Any]) -> str:
         "category",
         "frontend_category_local",
         "pim_cat_l1",
+        "Kategori",
     ], "GENERAL"))
 
 
@@ -374,6 +450,7 @@ def category_l2(p: Dict[str, Any]) -> str:
         "subcategory",
         "frontend_subcategory_local",
         "pim_cat_l2",
+        "Alt Kategori",
     ], "GENERAL"))
 
 
@@ -461,12 +538,23 @@ def ai_estimate_dimensions(p: Dict[str, Any]) -> Dict[str, Any]:
     raw = norm(f"{product_name(p)} {category_l1(p)} {category_l2(p)} {brand(p)}")
     st = storage_type(p)
 
-    if any(x in raw for x in ["poset", "poşet", "shopping bag", "bag"]):
+    if re.search(r"\b(poset|shopping bag|carrier bag|bag)\b", raw):
         return {"width_cm": 18, "height_cm": 28, "depth_cm": 2, "weight_kg": 0.02, "confidence": 0.88, "reason": "shopping_bag"}
 
-    if "su" in raw or "water" in raw:
+    multipack = re.search(r"(?:^|\s)(\d+)\s*x\s*(\d+(?:[.,]\d+)?)\s*(ml|cl|l)\b", raw)
+
+    # Do not use ``"su" in raw`` here: it classifies SuperFresh and many
+    # unrelated Turkish words as water.  A token boundary is intentional.
+    water_like = bool(re.search(r"\bwater\b", raw) or re.search(r"\bsu\b", raw))
+    soda_like = any(x in raw for x in ["soda", "gazoz", "sparkling", "maden suyu", "mineral"])
+
+    if soda_like or water_like:
+        if multipack and inum(multipack.group(1), 1) >= 4:
+            return {"width_cm": 18, "height_cm": 18, "depth_cm": 12, "weight_kg": 1.3, "confidence": 0.78, "reason": "beverage_multipack"}
         if any(x in raw for x in ["5l", "5 l", "10l", "10 l"]):
             return {"width_cm": 24, "height_cm": 36, "depth_cm": 24, "weight_kg": 5, "confidence": 0.75, "reason": "large_water"}
+        if soda_like:
+            return {"width_cm": 9, "height_cm": 28, "depth_cm": 9, "weight_kg": 1, "confidence": 0.70, "reason": "carbonated_beverage"}
         return {"width_cm": 8, "height_cm": 28, "depth_cm": 8, "weight_kg": 1, "confidence": 0.70, "reason": "water_bottle"}
 
     if any(x in raw for x in ["cola", "kola", "fanta", "sprite", "icecek", "içecek", "beverage"]):
@@ -488,7 +576,7 @@ def ai_estimate_dimensions(p: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dict[str, Any]:
-    original = dict(raw or {})
+    original = normalize_product_row(raw)
     original = apply_overrides_to_product(original)
 
     master = find_master_match(original) or {}
@@ -496,12 +584,12 @@ def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dic
     merged = {**master, **original}
 
     p_name = first_non_empty(
-        get(original, ["product_name", "Product Name", "name"], ""),
+        get(original, ["product_name", "Product Name", "name", "Urun", "Ürün"], ""),
         get(master, ["product_name", "product_name_local", "pim_product_name_local"], ""),
     )
 
     b_name = first_non_empty(
-        get(original, ["brand", "Brand", "brand_name"], ""),
+        get(original, ["brand", "Brand", "brand_name", "Marka"], ""),
         get(master, ["brand_name"], ""),
         p_name.split(" ")[0] if p_name else "",
         "UNKNOWN",
@@ -593,6 +681,14 @@ def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dic
         "dimension_reason": dim_reason,
         "current_location": clean_text(get(original, ["current_location", "Location", "Lokasyon"], "")),
         "secondary_location": clean_text(get(original, ["secondary_location"], "")),
+        "source_facing": max(0, inum(get(original, ["source_facing", "Onyuz", "Önyüz"], 0), 0)),
+        "input_quality": {
+            "name_present": bool(p_name),
+            "brand_present": bool(b_name and b_name != "UNKNOWN"),
+            "category_present": bool(cat1 and cat1 != "GENERAL"),
+            "storage_present": bool(get(original, ["storage_type", "Storage Type", "Storage", "storage_raw"], "")),
+            "dimensions_present": bool(has_file_dim or has_master_dim),
+        },
     }
 
     result["_storage"] = storage_type(result)
@@ -731,7 +827,13 @@ def preferred_facing(p: Dict[str, Any], shelf: Dict[str, Any]) -> int:
         needed_facing = int((needed_units + depth_cap - 1) // depth_cap)
         base = max(base, needed_facing)
 
-    return max(1, min(8, base))
+    # A single SKU must not consume an entire 100 cm shelf just because a
+    # sales feed is missing or a weekly total is unusually high.  The old
+    # cap of 8 made the first beverage on a shelf take all usable width and
+    # pushed the next Beypazarı/Soda SKU down to one facing or out of the
+    # assortment.  Extra capacity can be allocated in a later optimisation
+    # pass; the generation pass protects assortment breadth first.
+    return max(1, min(5, base))
 
 
 def max_fit_facing(p: Dict[str, Any], shelf: Dict[str, Any], include_weight: bool = True) -> int:
@@ -1503,6 +1605,8 @@ def place_product_fast(
         "dimension_source": p.get("dimension_source"),
         "dimension_confidence": p.get("dimension_confidence"),
         "dimension_reason": p.get("dimension_reason"),
+        "source_facing": p.get("source_facing", 0),
+        "input_quality": p.get("input_quality", {}),
         "aisle": aisle.get("aisle_id"),
         "aisle_id": aisle.get("aisle_id"),
         "module_id": module.get("module_id"),
@@ -1536,6 +1640,8 @@ def summarize(plan: Dict[str, Any], total_products: int, unplaced: List[Dict[str
     total_width = 0
     used_width = 0
     capacity_warnings = []
+    capacity_by_storage: Dict[str, Dict[str, float]] = {}
+    placed_items = []
 
     for a in plan.get("aisles", []):
         for m in a.get("modules", []):
@@ -1544,6 +1650,13 @@ def summarize(plan: Dict[str, Any], total_products: int, unplaced: List[Dict[str
                 su = num(s.get("used_width_cm", s.get("used", 0)), 0)
                 total_width += sw
                 used_width += su
+
+                storage = shelf_storage(s)
+                bucket = capacity_by_storage.setdefault(storage, {"shelf_width_cm": 0.0, "used_width_cm": 0.0, "shelf_count": 0})
+                bucket["shelf_width_cm"] += sw
+                bucket["used_width_cm"] += su
+                bucket["shelf_count"] += 1
+                placed_items.extend(s.get("products", []) or [])
 
                 util = su / max(sw, 1)
                 if util >= 0.90:
@@ -1556,6 +1669,15 @@ def summarize(plan: Dict[str, Any], total_products: int, unplaced: List[Dict[str
 
     placed = total_products - len(unplaced)
 
+    for bucket in capacity_by_storage.values():
+        bucket["shelf_width_cm"] = round(bucket["shelf_width_cm"], 1)
+        bucket["used_width_cm"] = round(bucket["used_width_cm"], 1)
+        bucket["utilization_pct"] = round((bucket["used_width_cm"] / max(bucket["shelf_width_cm"], 1)) * 100, 2)
+        bucket["shelf_count"] = int(bucket["shelf_count"])
+
+    requested_facing_total = sum(inum(p.get("desired_facing"), 0) for p in placed_items)
+    placed_facing_total = sum(placed_facing(p) for p in placed_items)
+
     return {
         "total": total_products,
         "placed": placed,
@@ -1565,6 +1687,14 @@ def summarize(plan: Dict[str, Any], total_products: int, unplaced: List[Dict[str
         "unplaced_products": len(unplaced),
         "capacity_utilization_pct": round((used_width / max(total_width, 1)) * 100),
         "capacity_warnings": capacity_warnings,
+        "capacity_by_storage": capacity_by_storage,
+        "requested_facing_total": requested_facing_total,
+        "placed_facing_total": placed_facing_total,
+        "facing_reduced_count": sum(1 for p in placed_items if p.get("facing_reduced")),
+        "facing_reduction_pct": safe_pct(
+            requested_facing_total - placed_facing_total,
+            requested_facing_total,
+        ),
         "strategy": "sales + category + storage + brand cluster + depth coverage + picking route + ergonomics + master enrichment",
     }
 
@@ -1741,10 +1871,29 @@ def generate_planogram(
         "low_coverage": [],
         "ai_dimension_low_confidence": [],
     }
+    data_quality = {
+        "missing_name": 0,
+        "missing_brand": 0,
+        "missing_category": 0,
+        "missing_storage": 0,
+        "missing_dimensions": 0,
+        "ai_estimated_dimensions": 0,
+        "localized_rows_normalized": 0,
+    }
 
     seen_skus = set()
     for raw in raw_products:
         p = enrich_product(raw, allow_ai_dimensions=allow_ai_dimensions)
+
+        quality = p.get("input_quality") or {}
+        data_quality["missing_name"] += int(not quality.get("name_present"))
+        data_quality["missing_brand"] += int(not quality.get("brand_present"))
+        data_quality["missing_category"] += int(not quality.get("category_present"))
+        data_quality["missing_storage"] += int(not quality.get("storage_present"))
+        data_quality["missing_dimensions"] += int(not quality.get("dimensions_present"))
+        data_quality["ai_estimated_dimensions"] += int(p.get("dimension_source") == "ai_estimated")
+        if any(_column_key(column) in INPUT_COLUMN_ALIASES for column in (raw or {}).keys()):
+            data_quality["localized_rows_normalized"] += 1
 
         if is_approval(p):
             item = {
@@ -1863,9 +2012,10 @@ def generate_planogram(
         reason: sum(1 for item in unplaced if item.get("reason") == reason or item.get("constraint_reason") == reason)
         for reason in sorted({item.get("reason") or item.get("constraint_reason") or "unknown" for item in unplaced})
     }
+    summary["data_quality"] = data_quality
 
     return {
-        "engine_version": "deterministic-best-fit-v3",
+        "engine_version": "deterministic-best-fit-v4.2",
         "single_source_of_truth": True,
         "summary": summary,
         "planogram": plan,

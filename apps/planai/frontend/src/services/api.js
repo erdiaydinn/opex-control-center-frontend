@@ -3,6 +3,35 @@ const API_BASE =
   import.meta.env?.VITE_API_BASE ||
   "http://127.0.0.1:8001";
 
+const AUTH_STORAGE_KEY = "plonagram_access_token";
+const USER_STORAGE_KEY = "plonagram_user";
+
+function getAccessToken() {
+  try {
+    return localStorage.getItem(AUTH_STORAGE_KEY) || sessionStorage.getItem(AUTH_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberSession(data) {
+  if (!data?.access_token) return data;
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, data.access_token);
+    if (data.user) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+  } catch {}
+  return data;
+}
+
+function forgetSession() {
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(USER_STORAGE_KEY);
+  } catch {}
+}
+
 function buildUrl(path) {
   if (!path) return API_BASE;
   if (/^https?:\/\//i.test(path)) return path;
@@ -22,6 +51,8 @@ async function request(path, options = {}) {
     ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
     ...(options.headers || {}),
   };
+  const token = getAccessToken();
+  if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(buildUrl(path), {
     ...options,
@@ -339,7 +370,17 @@ export const api = {
   // ---------------------------------------------------------------
 
   async login(payload, signal) {
-    return apiPost("/auth/login", payload, signal);
+    const data = await apiPost("/auth/login", payload, signal);
+    return rememberSession(data);
+  },
+
+  async logout() {
+    forgetSession();
+    return { success: true };
+  },
+
+  async currentUser(signal) {
+    return apiGet("/auth/me", signal);
   },
 
   async register(payload, signal) {

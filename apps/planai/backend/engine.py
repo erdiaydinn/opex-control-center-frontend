@@ -547,8 +547,9 @@ def ai_estimate_dimensions(p: Dict[str, Any]) -> Dict[str, Any]:
     # unrelated Turkish words as water.  A token boundary is intentional.
     water_like = bool(re.search(r"\bwater\b", raw) or re.search(r"\bsu\b", raw))
     soda_like = any(x in raw for x in ["soda", "gazoz", "sparkling", "maden suyu", "mineral"])
+    multipack_beverage = bool(multipack and any(x in raw for x in ["beverage", "icecek", "içecek", "drink", "maden", "soda", "water", "su"]))
 
-    if soda_like or water_like:
+    if soda_like or water_like or multipack_beverage:
         if multipack and inum(multipack.group(1), 1) >= 4:
             return {"width_cm": 18, "height_cm": 18, "depth_cm": 12, "weight_kg": 1.3, "confidence": 0.78, "reason": "beverage_multipack"}
         if any(x in raw for x in ["5l", "5 l", "10l", "10 l"]):

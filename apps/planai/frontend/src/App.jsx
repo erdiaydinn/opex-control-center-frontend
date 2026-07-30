@@ -768,6 +768,7 @@ function mergeCandidateProducts(...lists) {
 export default function App() {
   window.__PLONAGRAM_ACTIVE_PIPELINE__ = 'V1.9.47_STRATEGY_FIRST_ACTIVE';
   const [loading, setLoading] = useState(true);
+  const [authRevision, setAuthRevision] = useState(0);
   const [active, setActive] = useState('command');
   const [lang, setLang] = useState(() => {
     try { return localStorage.getItem('plonagram_language') || 'tr'; } catch { return 'tr'; }
@@ -811,6 +812,12 @@ export default function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => setLoading(false), 1150);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setAuthRevision((value) => value + 1);
+    window.addEventListener('plonagram-session-ready', refresh);
+    return () => window.removeEventListener('plonagram-session-ready', refresh);
   }, []);
 
   useEffect(() => {
@@ -868,7 +875,7 @@ export default function App() {
     }
     loadPersistedState();
     return () => { mounted = false; };
-  }, [store]);
+  }, [store, authRevision]);
 
   useEffect(() => {
     try {

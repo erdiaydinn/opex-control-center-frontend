@@ -79,6 +79,9 @@ function _shelfText(shelf) {
     shelf?.storage_class,
     shelf?.allowed_storage_type,
     shelf?.allowed_storage_class,
+    shelf?.shelf?.fixture_type,
+    shelf?.shelf?.storage_type,
+    shelf?.shelf?.allowed_storage_type,
   ].filter(Boolean).join(' ').toUpperCase();
 }
 
@@ -385,21 +388,22 @@ function printDocument({ title, subtitle, groups }) {
 export default function ShelfModal({ lang, shelf, products, onClose, onUpdateProduct, onAddProduct, notify }) {
   if (!shelf) return null;
   // Backend nested raf objesi mi? (used_width_cm/allowed_storage_type backend'den gelir)
-  const isBackendShelf = shelf.used_width_cm != null || shelf.allowed_storage_type != null;
-  const rawShelfProducts = (shelf.products || []).slice().sort((a,b)=>Number(a.position_order||a.position||0)-Number(b.position_order||b.position||0));
+  const backendShelf = shelf.shelf && typeof shelf.shelf === 'object' ? shelf.shelf : shelf;
+  const isBackendShelf = backendShelf.used_width_cm != null || backendShelf.allowed_storage_type != null;
+  const rawShelfProducts = (shelf.products || backendShelf.products || []).slice().sort((a,b)=>Number(a.position_order||a.position||0)-Number(b.position_order||b.position||0));
   // Backend rafinda urunler zaten dogru yerlestirildi; modal YENIDEN filtrelemez.
   const shelfProducts = isBackendShelf ? rawShelfProducts : rawShelfProducts.filter((p) => canAssignProductToShelf(p, shelf));
   const blockedShelfProducts = isBackendShelf ? [] : rawShelfProducts.filter((p) => !canAssignProductToShelf(p, shelf));
   const aisle = shelf.aisle || shelf.aisle_id || shelf.areaId || String(shelf.moduleId || 'A').split('.')[0] || 'A';
   const moduleNo = Number(shelf.moduleNo || String(shelf.moduleId || '1').match(/\d+/)?.[0] || 1) || 1;
   const shelfNo = Number(String(shelf.shelfNo || shelf.shelf_no || '1').match(/\d+/)?.[0] || 1) || 1;
-  const shelfWidthCm = Math.max(40, Number(shelf.shelf_width_cm || shelf.width_cm || 100));
-  const shelfDepthCm = Math.max(20, Number(shelf.shelf_depth_cm || shelf.depth_cm || 50));
+  const shelfWidthCm = Math.max(40, Number(shelf.shelf_width_cm || backendShelf.shelf_width_cm || shelf.width_cm || 100));
+  const shelfDepthCm = Math.max(20, Number(shelf.shelf_depth_cm || backendShelf.shelf_depth_cm || shelf.depth_cm || 50));
   const productWidthCm = (p) => Math.max(4, Number(p.width_cm || p.width || p.product_width_in_cm || 8));
   const productDepthCm = (p) => Math.max(1, Number(p.product_depth_cm || p.depth_cm || p.product_length_in_cm || 10));
   const productUsedWidth = (p) => Number(p.used_width_cm) || (productWidthCm(p) * Math.max(1, Number(p.facing || p.facing_count || 1)));
   // Kapasite: backend used_width_cm varsa onu kullan; yoksa urunlerden topla.
-  const usedWidthCm = shelf.used_width_cm != null ? Number(shelf.used_width_cm) : shelfProducts.reduce((sum, p) => sum + productUsedWidth(p), 0);
+  const usedWidthCm = backendShelf.used_width_cm != null ? Number(backendShelf.used_width_cm) : shelfProducts.reduce((sum, p) => sum + productUsedWidth(p), 0);
   const overCapacity = usedWidthCm > shelfWidthCm + 0.001;
 
   function updateFacingSafe(product, nextFacing) {
@@ -476,8 +480,8 @@ export default function ShelfModal({ lang, shelf, products, onClose, onUpdatePro
               <h3>Ürün listesi</h3>
               <div className="list">
                 {shelfProducts.map((p) => <div className="item" key={p.sku}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><ProductThumb product={p} small /><div><b>{p.name}</b><br/><span className="muted">{p.sku} • {p.brand} • {p.aisle}.{p.module}.{p.shelf}</span></div></div>
-                  <span className={`badge ${storageTone(p.storage)}`}>{p.storage}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><ProductThumb product={p} small /><div><b>{p.name || p.product_name || p.sku}</b><br/><span className="muted">{p.sku} • {p.brand || p.brand_name || '-'} • {p.aisle || p.aisle_id}.{p.module || p.module_id}.{p.shelf || p.shelf_no}</span></div></div>
+                  <span className={`badge ${storageTone(p.storage || p.storage_type)}`}>{p.storage || p.storage_type}</span>
                   <div className="counter"><span>Facing</span><button onClick={() => updateFacingSafe(p, Math.max(1, Number(p.facing || 1) - 1))}>−</button><b>{p.facing}</b><button onClick={() => updateFacingSafe(p, Number(p.facing || 1) + 1)}>+</button></div>
                   <div className="counter"><span>Depth</span><button onClick={() => updateDepthSafe(p, Math.max(1, Number(p.depth || 1) - 1))}>−</button><b>{p.depth}</b><button onClick={() => updateDepthSafe(p, Number(p.depth || 1) + 1)}>+</button></div>
                 </div>)}

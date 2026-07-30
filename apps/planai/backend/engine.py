@@ -192,6 +192,15 @@ INPUT_COLUMN_ALIASES = {
     "koli_adedi": "case_pack_qty",
     "urun_gorsel": "image_url",
     "urun_gorsel_url": "image_url",
+    "akis_tipi": "flow_type",
+    "urun_akis_tipi": "flow_type",
+    "tedarik_tipi": "flow_type",
+    "tedarik_modeli": "flow_type",
+    "supply_model": "flow_type",
+    "fulfillment_model": "flow_type",
+    "replenishment_model": "flow_type",
+    "distribution_type": "flow_type",
+    "cdc_flag": "cdc_flag",
 }
 
 
@@ -475,6 +484,53 @@ def storage_type(p: Dict[str, Any]) -> str:
     return normalize_storage(raw)
 
 
+def is_cdc_product(p: Dict[str, Any]) -> bool:
+    """Return True only for explicit CDC/cross-dock operational markers.
+
+    CDC assortment does not occupy a selling shelf, so it must stay outside
+    the planogram instead of being silently classified as AMBIENT.
+    """
+    explicit_values = [
+        get(p, ["flow_type", "supply_model", "fulfillment_model"], ""),
+        get(p, ["replenishment_model", "distribution_type", "product_flow"], ""),
+        get(p, ["cdc_flag", "is_cdc", "cross_dock", "cross_dock_flag"], ""),
+        get(p, ["current_location", "secondary_location"], ""),
+    ]
+    for value in explicit_values:
+        raw = norm(value)
+        if raw in {"cdc", "true", "1", "yes", "evet", "cross dock", "cross-dock", "crossdock"}:
+            return True
+        if re.search(r"(?:^|[^a-z0-9])cdc(?:[^a-z0-9]|$)", raw):
+            return True
+        if "cross dock" in raw or "crossdock" in raw:
+            return True
+    return False
+
+
+def requires_pallet_storage(p: Dict[str, Any]) -> bool:
+    """Apply the operational 5 L rule without confusing 500 ml products."""
+    if normalize_storage(get(p, ["storage_type", "Storage Type", "Storage"], ""), default="") == "PALLET":
+        return True
+
+    raw = norm(
+        " ".join(
+            clean_text(get(p, [field], ""))
+            for field in (
+                "product_name",
+                "Product Name",
+                "name",
+                "product_contents_value",
+                "product_contents_unit",
+                "volume",
+                "volume_unit",
+            )
+        )
+    )
+    return bool(
+        re.search(r"(?:^|[^0-9])5\s*(?:l|lt|ltr|litre|liter)(?:[^a-z0-9]|$)", raw)
+    )
+
+
 def shelf_storage(shelf: Dict[str, Any]) -> str:
     return normalize_storage(get(shelf, [
         "allowed_storage_type",
@@ -660,7 +716,12 @@ def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dic
         "category_l2": cat2,
         "frontend_category_local": cat1,
         "frontend_subcategory_local": cat2,
-        "storage_type": storage_type(base),
+        "storage_type": "PALLET" if requires_pallet_storage(base) else storage_type(base),
+        "flow_type": first_non_empty(
+            get(original, ["flow_type", "supply_model", "fulfillment_model", "replenishment_model", "distribution_type"], ""),
+            get(master, ["flow_type", "supply_model", "fulfillment_model", "replenishment_model", "distribution_type"], ""),
+        ),
+        "is_cdc": is_cdc_product({**master, **original}),
         "image_url": first_non_empty(
             get(original, ["image_url", "Product Image URL", "catalog_image_url", "pim_image_url"], ""),
             get(master, ["image_url", "catalog_image_url", "pim_image_url"], ""),
@@ -900,106 +961,73 @@ def make_shelves(count: int, storage: str = "AMBIENT", width_cm: float = 100, he
     return shelves
 
 
-def generate_default_layout() -> Dict[str, Any]:
+def aisle_label(index: int) -> str:
+    """Return spreadsheet-style aisle IDs: A..Z, AA..AZ, BA..."""
+    value = max(0, int(index)) + 1
+    label = ""
+    while value:
+        value, remainder = divmod(value - 1, 26)
+        label = chr(65 + remainder) + label
+    return label
+
+
+def generate_default_layout(
+    aisle_count: int = 12,
+    modules_per_aisle: int = 10,
+    shelves_per_module: int = 6,
+) -> Dict[str, Any]:
+    """Generate the neutral store baseline.
+
+    The baseline is exactly 12 × 10 × 6 unless callers explicitly request a
+    different size. Cold/frozen fixtures are Store DNA equipment and are not
+    fabricated into every depot.
+    """
+    aisle_count = max(1, min(int(aisle_count or 12), 200))
+    modules_per_aisle = max(1, min(int(modules_per_aisle or 10), 40))
+    shelves_per_module = max(1, min(int(shelves_per_module or 6), 12))
     aisles = []
-    rows = [
-        {"ids": ["A", "B", "C", "D"], "dir": "LTR"},
-        {"ids": ["H", "G", "F", "E"], "dir": "RTL"},
-        {"ids": ["I", "J", "K", "L"], "dir": "LTR"},
-    ]
 
-    distance = 1
-
-    for row_index, row in enumerate(rows):
-        for pos_index, aid in enumerate(row["ids"]):
-            aisles.append({
-                "aisle_id": aid,
-                "row": row_index + 1,
-                "position": pos_index + 1,
-                "direction": row["dir"],
-                "distance_to_dispatch": distance,
-                "aisle_type": "double_sided",
-                "sides": ["L", "R"],
-                "zone_type": "AMBIENT_ZONE",
-                "modules": [
-                    {
-                        "module_id": i + 1,
-                        "side": "L" if i % 2 == 0 else "R",
-                        "module_type": "regular_shelf",
-                        "distance_to_dispatch": i + 1,
-                        "module_width_cm": 100,
-                        "module_depth_cm": 50,
-                        "module_height_cm": 200,
-                        "assignment_rule": None,
-                        "shelves": make_shelves(6, "AMBIENT", 100, 35, 50, 45),
-                    }
-                    for i in range(10)
-                ],
-            })
-            distance += 1
-
-    aisles.append({
-        "aisle_id": "MARTEK+4",
-        "row": 2,
-        "position": 5,
-        "direction": "COLD",
-        "distance_to_dispatch": distance,
-        "aisle_type": "single_sided",
-        "sides": ["L"],
-        "zone_type": "COLD_ZONE",
-        "fixture_type": "four_door_cooler",
-        "door_count": 4,
-        "modules": [
-            {
-                "module_id": i + 1,
-                "door_no": f"{i * 2 + 1}-{i * 2 + 2}",
-                "side": "L",
-                "module_type": "fridge",
-                "fixture_type": "cooler_module_2door",
-                "temperature": "+4",
-                "module_width_cm": 150,
-                "module_depth_cm": 60,
-                "module_height_cm": 200,
-                "assignment_rule": None,
-                "shelves": make_shelves(5, "CHILLED", 150, 35, 55, 60),
-            }
-            for i in range(2)
-        ],
-    })
-    distance += 1
-
-    aisles.append({
-        "aisle_id": "MARTEK-18",
-        "row": 1,
-        "position": 5,
-        "direction": "COLD",
-        "distance_to_dispatch": distance,
-        "aisle_type": "single_sided",
-        "sides": ["L"],
-        "zone_type": "FROZEN_ZONE",
-        "fixture_type": "four_door_freezer",
-        "door_count": 4,
-        "modules": [
-            {
-                "module_id": i + 1,
-                "door_no": f"{i * 2 + 1}-{i * 2 + 2}",
-                "side": "L",
-                "module_type": "freezer",
-                "fixture_type": "freezer_module_2door",
-                "temperature": "-18",
-                "module_width_cm": 150,
-                "module_depth_cm": 65,
-                "module_height_cm": 200,
-                "assignment_rule": None,
-                "shelves": make_shelves(4, "FROZEN", 150, 40, 60, 70),
-            }
-            for i in range(2)
-        ],
-    })
+    for index in range(aisle_count):
+        row_index = index // 4
+        position = index % 4
+        direction = "LTR" if row_index % 2 == 0 else "RTL"
+        visual_position = position + 1 if direction == "LTR" else 4 - position
+        aid = aisle_label(index)
+        aisles.append({
+            "aisle_id": aid,
+            "row": row_index + 1,
+            "position": visual_position,
+            "direction": direction,
+            "distance_to_dispatch": index + 1,
+            "aisle_type": "double_sided",
+            "sides": ["L", "R"],
+            "zone_type": "AMBIENT_ZONE",
+            "modules": [
+                {
+                    "module_id": module_index + 1,
+                    "side": "L" if module_index % 2 == 0 else "R",
+                    "module_type": "regular_shelf",
+                    "distance_to_dispatch": module_index + 1,
+                    "module_width_cm": 100,
+                    "module_depth_cm": 50,
+                    "module_height_cm": 200,
+                    "assignment_rule": None,
+                    "shelves": make_shelves(
+                        shelves_per_module, "AMBIENT", 100, 35, 50, 45
+                    ),
+                }
+                for module_index in range(modules_per_aisle)
+            ],
+        })
 
     return {
         "store_code": "AUTO",
         "route_strategy": "S_PATTERN_DYNAMIC",
+        "template": {
+            "aisle_count": aisle_count,
+            "modules_per_aisle": modules_per_aisle,
+            "shelves_per_module": shelves_per_module,
+        },
         "aisles": aisles,
     }
 
@@ -1448,8 +1476,26 @@ def build_shelf_index(plan: Dict[str, Any]) -> Tuple[Dict[str, List[Dict[str, An
                     "module": module,
                     "shelf": shelf,
                     "route": route_score(aisle, module),
+                    "pool_index": len(shelf_pool[storage]),
                 })
 
+    shelf_pool["_state"] = {
+        storage: {
+            "cursor": 0,
+            "recent": [],
+            "brand": {},
+            "category": {},
+            "remaining_width": sum(
+                max(
+                    0,
+                    num(item["shelf"].get("shelf_width_cm"), 100)
+                    - num(item["shelf"].get("used_width_cm"), 0),
+                )
+                for item in items
+            ),
+        }
+        for storage, items in shelf_pool.items()
+    }
     return shelf_pool, aisle_groups
 
 
@@ -1465,30 +1511,63 @@ def place_product_fast(
     storage = p.get("_storage") or storage_type(p)
 
     all_candidates = shelf_pool.get(storage, [])
-
-    # Do not truncate to the first N emptiest shelves. That old shortcut
-    # scattered SKUs across the layout and made compatible shelves invisible.
-    # Build a deterministic best-fit shortlist and retain a complete-pool
-    # fallback when custom hard rules reject the shortlist.
-    viable = []
+    state = shelf_pool.get("_state", {}).setdefault(storage, {
+        "cursor": 0, "recent": [], "brand": {}, "category": {},
+        "remaining_width": sum(num(x["shelf"].get("shelf_width_cm"), 100) for x in all_candidates),
+    })
     product_width_with_buffer = oriented_width(p) * 1.1
     product_depth = oriented_depth(p)
     product_height = height(p)
     product_weight = weight(p)
-    for item in all_candidates:
-        shelf = item["shelf"]
-        if product_height > num(shelf.get("shelf_height_cm"), 35):
-            continue
-        if product_depth > num(shelf.get("shelf_depth_cm"), 50):
-            continue
-        if num(shelf.get("shelf_width_cm"), 100) - num(shelf.get("used_width_cm"), 0) + 1e-9 < product_width_with_buffer:
-            continue
-        if num(shelf.get("max_weight_kg"), 45) - num(shelf.get("used_weight_kg"), 0) + 1e-9 < product_weight:
-            continue
-        viable.append(item)
+
+    if not all_candidates or state["remaining_width"] + 1e-9 < product_width_with_buffer:
+        return False, None, "capacity_not_fit"
 
     product_brand = norm(brand(p))
     product_category = norm(category_l2(p))
+    candidate_items = []
+    seen_candidates = set()
+
+    def add_candidate(item):
+        if not item:
+            return
+        marker = id(item["shelf"])
+        if marker in seen_candidates:
+            return
+        seen_candidates.add(marker)
+        candidate_items.append(item)
+
+    for item in state["brand"].get(product_brand, [])[-4:]:
+        add_candidate(item)
+    for item in state["category"].get(product_category, [])[-4:]:
+        add_candidate(item)
+    for item in state["recent"][-8:]:
+        add_candidate(item)
+
+    # Scan a bounded moving window instead of all shelves for every SKU.
+    # The cursor keeps the common path O(products), while brand/category
+    # indexes preserve clustering around shelves already in use.
+    pool_size = len(all_candidates)
+    start = int(state["cursor"]) % pool_size
+    scanned = 0
+    while scanned < min(pool_size, 48) and len(candidate_items) < 24:
+        idx = (start + scanned) % pool_size
+        add_candidate(all_candidates[idx])
+        scanned += 1
+
+    def physically_viable(item):
+        shelf = item["shelf"]
+        if product_height > num(shelf.get("shelf_height_cm"), 35):
+            return False
+        if product_depth > num(shelf.get("shelf_depth_cm"), 50):
+            return False
+        if num(shelf.get("shelf_width_cm"), 100) - num(shelf.get("used_width_cm"), 0) + 1e-9 < product_width_with_buffer:
+            return False
+        if num(shelf.get("max_weight_kg"), 45) - num(shelf.get("used_weight_kg"), 0) + 1e-9 < product_weight:
+            return False
+        return True
+
+    viable = [item for item in candidate_items if physically_viable(item)]
 
     def candidate_priority(item):
         shelf = item["shelf"]
@@ -1507,9 +1586,7 @@ def place_product_fast(
             inum(shelf.get("shelf_no")),
         )
 
-    # 6 is a bounded scoring window, not a correctness limit: every
-    # viable shelf remains in ``viable`` and is scanned on hard-rule fallback.
-    candidates = heapq.nsmallest(6, viable, key=candidate_priority)
+    candidates = heapq.nsmallest(8, viable, key=candidate_priority)
 
     best = None
     best_score = -10**18
@@ -1549,11 +1626,27 @@ def place_product_fast(
 
     evaluate(candidates)
 
-    # Custom rules may invalidate the heuristic shortlist. Scan the remaining
-    # viable shelves only when necessary; this preserves correctness without
-    # paying the full scan cost for every SKU.
     if best is None and len(evaluated) < len(viable):
         evaluate(viable)
+
+    # Rare dimension/rule combinations may miss the moving window. Fall back
+    # to a complete scan in small batches until one rule-compatible shelf is
+    # found; normal high-volume placement never sorts or scores the complete
+    # pool.
+    if best is None:
+        fallback = []
+        for offset in range(pool_size):
+            item = all_candidates[(start + offset) % pool_size]
+            if id(item["shelf"]) in evaluated or not physically_viable(item):
+                continue
+            fallback.append(item)
+            if len(fallback) >= 12:
+                evaluate(fallback)
+                fallback = []
+                if best is not None:
+                    break
+        if best is None and fallback:
+            evaluate(fallback)
 
     if not best:
         return False, None, last_reason
@@ -1630,6 +1723,17 @@ def place_product_fast(
     shelf["used_weight_kg"] = round(num(shelf.get("used_weight_kg"), 0) + weight(p) * f, 2)
 
     aisle_groups.setdefault(clean_text(aisle.get("aisle_id")), set()).add(p.get("_merch_group"))
+    state["remaining_width"] = max(0, state["remaining_width"] - u)
+    state["recent"].append(best)
+    if len(state["recent"]) > 32:
+        del state["recent"][:-32]
+    if product_brand:
+        state["brand"].setdefault(product_brand, []).append(best)
+    if product_category:
+        state["category"].setdefault(product_category, []).append(best)
+    best_index = int(best.get("pool_index", 0))
+    remaining = num(shelf.get("shelf_width_cm"), 100) - num(shelf.get("used_width_cm"), 0)
+    state["cursor"] = best_index if remaining + 1e-9 >= product_width_with_buffer else (best_index + 1) % pool_size
 
     return True, placed, "ok"
 
@@ -1845,6 +1949,7 @@ def generate_planogram(
     brand_side_rules: Optional[Dict[str, str]] = None,
     scoring_config: Optional[Dict[str, float]] = None,
     allow_ai_dimensions: bool = True,
+    progress_callback=None,
 ) -> Dict[str, Any]:
     raw_products = products or []
     plan = prepare_layout(layout or generate_default_layout())
@@ -1866,6 +1971,7 @@ def generate_planogram(
     unplaced = []
     alerts = {
         "approval_fire_products": [],
+        "cdc_products": [],
         "dimension_missing": [],
         "storage_violations": [],
         "capacity_warnings": [],
@@ -1883,7 +1989,10 @@ def generate_planogram(
     }
 
     seen_skus = set()
-    for raw in raw_products:
+    total_input = len(raw_products)
+    if progress_callback:
+        progress_callback(0, total_input, "normalizing")
+    for input_index, raw in enumerate(raw_products, start=1):
         p = enrich_product(raw, allow_ai_dimensions=allow_ai_dimensions)
 
         quality = p.get("input_quality") or {}
@@ -1905,6 +2014,18 @@ def generate_planogram(
             }
             unplaced.append(item)
             alerts["approval_fire_products"].append(item)
+            continue
+
+        if p.get("is_cdc") or is_cdc_product(p):
+            item = {
+                "sku": sku(p),
+                "product_name": product_name(p),
+                "reason": "cdc_cross_dock_not_shelf_stock",
+                "constraint_reason": "cdc_product_excluded",
+                "suggested_action": "CDC/cross-dock ürün satış rafına yerleştirilmez; akış alanında yönetilir.",
+            }
+            unplaced.append(item)
+            alerts["cdc_products"].append(item)
             continue
 
         if not sku(p):
@@ -1953,6 +2074,8 @@ def generate_planogram(
             })
 
         clean_products.append(p)
+        if progress_callback and (input_index == total_input or input_index % 250 == 0):
+            progress_callback(input_index, total_input, "normalizing")
 
     ranked = classify_products(clean_products)
     mode_key = key(mode or "HYBRID")
@@ -1972,7 +2095,8 @@ def generate_planogram(
 
     shelf_pool, aisle_groups = build_shelf_index(plan)
 
-    for p in ranked:
+    total_ranked = len(ranked)
+    for placement_index, p in enumerate(ranked, start=1):
         ok, placed, reason = place_product_fast(
             plan,
             p,
@@ -2002,11 +2126,15 @@ def generate_planogram(
                     "coverage_days": placed["coverage_days"],
                     "suggested_action": "Bu ürün için facing veya derinlik kapasitesi artırılmalı.",
                 })
+        if progress_callback and (placement_index == total_ranked or placement_index % 100 == 0):
+            progress_callback(placement_index, total_ranked, "placing")
 
     summary = summarize(plan, len(raw_products), unplaced)
     alerts["capacity_warnings"] = summary["capacity_warnings"]
 
     diagnostics = validate_planogram(plan)
+    if progress_callback:
+        progress_callback(total_ranked, total_ranked, "finalizing")
     summary["strict_rule_violation_count"] = diagnostics["summary"]["strict_rule_violation_count"]
     summary["empty_shelf_count"] = diagnostics["summary"]["empty_shelf_count"]
     summary["unplaced_reason_counts"] = {
@@ -2027,7 +2155,7 @@ def generate_planogram(
         "insights": {
             "sales_optimization": "Yüksek satış ve yüksek stop oranlı ürünler ön koridorlara ve ergonomik raflara taşındı.",
             "category_logic": "Kategori ve marka blokları aynı raf/modül çevresinde tutulmaya çalışıldı.",
-            "storage_logic": "CHILLED ve FROZEN ürünler yalnızca uygun dolap/freezer alanına yerleştirildi.",
+            "storage_logic": "CHILLED/FROZEN yalnızca uygun dolapta, 5 L ürünler yalnızca PALLET alanında tutuldu; CDC ürünler satış rafından çıkarıldı.",
             "depth_logic": "Raf derinliği, ürün derinliği ve koli içi adet bilgisiyle coverage hesaplandı.",
             "picking_efficiency": "A/B ön koridorlar hızlı ürünlere, arka koridorlar yavaş/non-food ürünlere ayrıldı.",
             "risk_notes": "Approval/FIRE ürünleri, storage dışı ürünler ve constraint dışı SKU'lar satış planogramına alınmadı.",

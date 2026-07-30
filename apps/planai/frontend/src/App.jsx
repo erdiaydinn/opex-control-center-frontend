@@ -12,7 +12,6 @@ import PlanogramExportPanel from './components/PlanogramExportPanel.jsx';
 import DeltaPlanogramReal from './components/DeltaPlanogramReal.jsx';
 import StoreDNAWorkspace from './components/StoreDNA/StoreDNAWorkspace.jsx';
 import { Admin, Delta, FixtureLibrary, PhotoEvidence, ProductLibrary, Publishing, Reports, Rules, Tasks } from './components/DataViews.jsx';
-import { initialObjects, initialTasks, productsSeed } from './data/mock.js';
 import { api } from './services/api.js';
 import { normalizeProductsForBackend, parseCsvProducts, parseJsonLayout } from './utils/fileParsers.js';
 import { buildStorePlan, normalizeProduct, updateObjectsFromPlan } from './utils/planogramAllocator.js';
@@ -284,7 +283,10 @@ function objectsFromLayout(layout, fallbackObjects) {
       h: 2.5,
       rotation: Number(a.layout_position?.rotation || 0),
       modules: Number(a.modules?.length || 6),
-      shelves: Number((a.modules || []).reduce((s, m) => s + (m.shelves?.length || 0), 0) || 24),
+      // `shelves` is a per-module value throughout Store DNA.  Using the
+      // aisle total here multiplied the count again during conversion and
+      // produced modules with 30–60 visual shelves.
+      shelves: Number(a.modules?.[0]?.shelves?.length || a.shelves_per_module || 6),
       utilization: 70,
       changed: 0,
     }));
@@ -293,7 +295,7 @@ function objectsFromLayout(layout, fallbackObjects) {
   return fallbackObjects;
 }
 
-function councilOptimizeProducts(list, currentObjects = initialObjects) {
+function councilOptimizeProducts(list, currentObjects = []) {
   const plan = buildStorePlan(list, currentObjects);
   return plan.placed;
 }
@@ -309,7 +311,7 @@ function productKey(p = {}, idx = 0) {
     p.SKU ||
     p.barcode ||
     p.Barcodes ||
-    p.product.sku ||
+    p.product?.sku ||
     p.SKU ||
     p.barcode ||
     p.Barcodes ||
@@ -400,8 +402,30 @@ function resolveFixtureSpec(obj = {}) {
   return { cls, fixture_type: ft || cls, ...base };
 }
 
+function shelfCountPerModule(obj = {}, fallback = 6) {
+  const explicit = Number(obj.shelf_count ?? obj.shelves_per_module);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return Math.max(1, Math.min(12, Math.round(explicit)));
+  }
+
+  const shelves = Number(obj.shelves);
+  const modules = Number(obj.modules ?? obj.module_count);
+  if (Number.isFinite(shelves) && shelves > 0) {
+    // V1.9.50 persisted some aisle totals (for example 33) in the
+    // per-module field. Recover those saved layouts by converting the total
+    // back to an average instead of displaying 30+ shelves per module.
+    const recovered = shelves > 12 && modules > 0 ? shelves / modules : shelves;
+    return Math.max(1, Math.min(12, Math.round(recovered)));
+  }
+
+  return Math.max(1, Math.min(12, Math.round(Number(fallback) || 6)));
+}
+
 function makeBackendShelves(spec, objOverrides = {}) {
-  const count = Math.max(1, Number(objOverrides.shelf_count || objOverrides.shelves || spec.shelves || 5));
+  const requestedCount = shelfCountPerModule(objOverrides, spec.shelves || 6);
+  // Six is only the initial default.  A user-approved 7 (or another value)
+  // remains authoritative; the guard only blocks corrupt aggregate counts.
+  const count = requestedCount;
   const w = Number(objOverrides.width_cm || objOverrides.w || spec.w);
   const d = Number(objOverrides.depth_cm || objOverrides.d || spec.d);
   const totalH = Number(objOverrides.height_cm || objOverrides.h || (spec.h * count));
@@ -706,7 +730,9 @@ function normalizeLayoutObjectsForAllocator(objects = []) {
     return {
       ...object,
       modules: Math.max(2, Number(object.modules || 0) || 2),
-      shelves: Math.max(10, Number(object.shelves || 0) || 10),
+      // Never inflate a user-entered shelf count.  Martek's fallback is five
+      // shelves per module, but 6/7/etc. entered by the user is preserved.
+      shelves: shelfCountPerModule(object, 5),
       storage: "CHILLED",
       storage_type: "CHILLED",
       storage_class: "CHILLED",
@@ -743,12 +769,14 @@ export default function App() {
   window.__PLONAGRAM_ACTIVE_PIPELINE__ = 'V1.9.47_STRATEGY_FIRST_ACTIVE';
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState('command');
-  const [lang, setLang] = useState('tr');
-  const [store, setStore] = useState('ANKA');
-  const [objects, setObjects] = useState(initialObjects);
-  const [products, setProducts] = useState(productsSeed);
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem('plonagram_language') || 'tr'; } catch { return 'tr'; }
+  });
+  const [store, setStore] = useState('AUTO');
+  const [objects, setObjects] = useState([]);
+  const [products, setProducts] = useState([]);
   const [unplacedProducts, setUnplacedProducts] = useState([]);
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState([]);
   const [storeDna, setStoreDna] = useState(null);
   const [readiness, setReadiness] = useState(null);
   const [backendPlan, setBackendPlan] = useState(null);
@@ -772,7 +800,10 @@ export default function App() {
   });
   const [strategyProfile, setStrategyProfile] = useState(() => loadStrategyProfile());
   const [toast, setToast] = useState('');
-  const [operation, setOperation] = useState({ open: false, mode: 'plan', progress: 0, title: '', subtitle: '' });
+  const [operation, setOperation] = useState({
+    open: false, mode: 'plan', progress: null, processed: 0, total: 0,
+    phase: '', title: '', subtitle: '', startedAt: null
+  });
   const skuInput = useRef(null);
   const layoutInput = useRef(null);
   const abortRef = useRef(null);
@@ -781,6 +812,12 @@ export default function App() {
     const timer = window.setTimeout(() => setLoading(false), 1150);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('plonagram_language', lang); } catch {}
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  }, [lang]);
 
   useEffect(() => {
     let mounted = true;
@@ -806,6 +843,12 @@ export default function App() {
         }
         if (!savedLayout?.objects?.length && savedPlan?.objects?.length) {
           setObjects(savedPlan.objects);
+        }
+        if (!savedLayout?.objects?.length && !savedPlan?.objects?.length) {
+          try {
+            const defaultLayout = await api.defaultLayout();
+            if (mounted) setObjects(objectsFromLayout(defaultLayout, []));
+          } catch {}
         }
         if (boot.tasks?.length) {
           setTasks(boot.tasks.map((t) => ({
@@ -847,16 +890,21 @@ export default function App() {
   async function runOperation(meta, work) {
     const controller = new AbortController();
     abortRef.current = controller;
-    let p = 8;
-    setOperation({ open: true, progress: p, ...meta });
-    const timer = window.setInterval(() => {
-      p = Math.min(88, p + Math.random() * 12 + 4);
-      setOperation((prev) => ({ ...prev, progress: p }));
-    }, 420);
+    setOperation({
+      open: true, progress: null, processed: 0, total: Number(meta.total || 0),
+      phase: 'starting', startedAt: Date.now(), ...meta
+    });
+    const report = (next = {}) => {
+      const total = Number(next.total || 0);
+      const processed = Number(next.processed || 0);
+      const progress = Number.isFinite(Number(next.progress_pct))
+        ? Number(next.progress_pct)
+        : total > 0 ? Math.round((processed / total) * 1000) / 10 : null;
+      setOperation((prev) => ({ ...prev, ...next, processed, total, progress }));
+    };
     try {
-      const result = await work(controller.signal);
-      window.clearInterval(timer);
-      setOperation((prev) => ({ ...prev, progress: 100 }));
+      const result = await work(controller.signal, report);
+      setOperation((prev) => ({ ...prev, progress: 100, processed: prev.total || prev.processed, phase: 'completed' }));
       await new Promise((resolve) => window.setTimeout(resolve, 380));
       return result;
     } catch (err) {
@@ -864,7 +912,6 @@ export default function App() {
       notify('İşlem iptal edildi. Mevcut plan korunuyor.');
       return null;
     } finally {
-      window.clearInterval(timer);
       abortRef.current = null;
       setOperation((prev) => ({ ...prev, open: false }));
       if (skuInput.current) skuInput.current.value = '';
@@ -879,7 +926,7 @@ export default function App() {
 
   async function handleSkuFile(file) {
     if (!file) return;
-    await runOperation({ mode: 'sku', title: 'SKU dosyası işleniyor', subtitle: `${file.name} okunuyor. İstersen işlemi iptal edebilirsin.` }, async (signal) => {
+    await runOperation({ mode: 'sku', title: 'SKU dosyası işleniyor', subtitle: `${file.name} okunuyor. İstersen işlemi iptal edebilirsin.` }, async (signal, report) => {
       let nextProducts = [];
       const ext = file.name.split('.').pop()?.toLowerCase();
       try {
@@ -891,6 +938,7 @@ export default function App() {
         else throw new Error('XLSX/Excel okuma için backend açık olmalı. CSV yükleme tarayıcı içinde çalışır.');
       }
       if (!nextProducts.length) throw new Error('Dosyada okunabilir SKU bulunamadı. Header alanlarını kontrol et: sku, product_name, brand, storage_type, sales_qty_7d veya % Orders.');
+      report({ processed: nextProducts.length, total: nextProducts.length, phase: 'catalog_ready', progress_pct: 100 });
 
       // Düzeltme #1: Yükleme ARTIK otomatik plan üretmez.
       // SKU'lar yalnızca aday havuzu olarak normalize edilip saklanır; yerleştirme,
@@ -900,7 +948,11 @@ export default function App() {
       setProducts([]);
       setUnplacedProducts(candidates);
       try {
-        localStorage.setItem(`plonagram_candidate_products_${store}`, JSON.stringify(candidates));
+        localStorage.setItem(`plonagram_candidate_products_${store}`, JSON.stringify({
+          count: candidates.length,
+          uploaded_at: new Date().toISOString(),
+          source_file: file.name
+        }));
       } catch (e) {}
       window.__PLONAGRAM_LAST_SKU_UPLOAD_COUNT__ = candidates.length;
       setActive('library');
@@ -962,7 +1014,7 @@ export default function App() {
         title: 'Backend Engine planogram üretiyor',
         subtitle: `Strateji: ${activeStrategy.label || activeStrategy.mode}. Backend engine storage, fixture, marka blok, kategori, case-pack ve kapasiteyi tek kaynak olarak hesaplıyor.`
       },
-      async (signal) => {
+      async (signal, report) => {
         const sourceProducts = normalizeCandidateProductsForAllocator(
           mergeCandidateProducts(products, unplacedProducts)
         );
@@ -1008,7 +1060,7 @@ export default function App() {
             layout: convertedLayout
           };
 
-          backendResult = await api.generatePlanogramCouncil(payload, signal);
+          backendResult = await api.generatePlanogramJob(payload, signal, report);
 
           if (!backendResult) {
             throw new Error('Backend engine boş cevap döndürdü.');
@@ -1173,7 +1225,7 @@ const common = { lang, objects, setObjects, products, setProducts, unplacedProdu
       >
         {pages[active] || pages.command}
       </Shell>
-      <OperationLoadingOverlay {...operation} onCancel={cancelOperation} />
+      <OperationLoadingOverlay {...operation} lang={lang} onCancel={cancelOperation} />
       {toast && <div className="toast">{toast}</div>}
     </>
   );

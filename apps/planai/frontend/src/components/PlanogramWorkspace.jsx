@@ -149,16 +149,17 @@ export default function PlanogramWorkspace({ lang, objects, products, setProduct
               <div className="muted">{a.modules.length} Modül • Doluluk {a.utilization}% • {a.sku_count} SKU</div>
             </button>
             {open === a.aisle_id && <div className="planogram-row" style={{ marginTop: 14 }}>
-              {a.modules.slice(0, 12).map((m) => <div className="card module-card" key={`${a.aisle_id}-${m.module_id}`}>
+              {a.modules.map((m) => <div className="card module-card" key={`${a.aisle_id}-${m.module_id}`}>
                 <b>Modül {a.aisle_id}.{m.module_id}</b>
                 <span className="badge pink" style={{ marginLeft: 8 }}>{Math.round(Number(m.module_width_cm) || 100)} cm</span>
                 <span className="muted" style={{ marginLeft: 8 }}>{m.sku_count} SKU</span>
                 {m.shelves.map((sh) => {
                   const ps = (sh.products || []).slice().sort((x, y) => Number(x.position_order || x.position || 0) - Number(y.position_order || y.position || 0));
                   return <button className="shelf" key={sh.shelf_no} onClick={() => setModalShelf({
+                    ...sh,
                     title: `${a.aisle_id} / Modül ${a.aisle_id}.${m.module_id} / Raf ${sh.shelf_no}`,
                     aisle: a.aisle_id, aisle_id: a.aisle_id, moduleId: `${a.aisle_id}.${m.module_id}`, moduleNo: m.module_id,
-                    module_id: m.module_id, shelfNo: sh.shelf_no, shelf_no: sh.shelf_no, shelf: sh,
+                    module_id: m.module_id, shelfNo: sh.shelf_no, shelf_no: sh.shelf_no,
                     shelf_width_cm: sh.shelf_width_cm ?? 100, shelf_depth_cm: sh.shelf_depth_cm ?? 50, products: ps
                   })} style={{ width: '100%' }}>
                     <small className="shelf-label">Raf {a.aisle_id}.{m.module_id}.{sh.shelf_no} · {Math.round(Number(sh.used_width_cm) || 0)}/{Math.round(Number(sh.shelf_width_cm) || 100)} cm</small>

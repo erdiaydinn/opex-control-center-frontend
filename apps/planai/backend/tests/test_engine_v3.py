@@ -9,6 +9,7 @@ from engine import (
     make_shelves,
     normalize_storage,
     validate_planogram,
+    aisle_label,
 )
 
 
@@ -47,6 +48,56 @@ def one_aisle_layout(shelves, aisle_id="A"):
 
 
 class EngineV3Tests(unittest.TestCase):
+    def test_default_layout_is_exact_120_modules_and_720_shelves(self):
+        layout = generate_default_layout()
+        modules = [m for aisle in layout["aisles"] for m in aisle["modules"]]
+        shelves = [s for module in modules for s in module["shelves"]]
+        self.assertEqual(len(layout["aisles"]), 12)
+        self.assertEqual(len(modules), 120)
+        self.assertEqual(len(shelves), 720)
+
+    def test_aisle_labels_continue_after_z(self):
+        self.assertEqual(aisle_label(0), "A")
+        self.assertEqual(aisle_label(25), "Z")
+        self.assertEqual(aisle_label(26), "AA")
+        self.assertEqual(aisle_label(31), "AF")
+
+    def test_user_defined_shelf_count_is_preserved(self):
+        layout = generate_default_layout(aisle_count=1, modules_per_aisle=2, shelves_per_module=7)
+        self.assertEqual([len(m["shelves"]) for m in layout["aisles"][0]["modules"]], [7, 7])
+        self.assertEqual([s["shelf_no"] for s in layout["aisles"][0]["modules"][0]["shelves"]], list(range(1, 8)))
+
+    def test_five_litre_product_uses_only_pallet_fixture(self):
+        ambient = one_aisle_layout(make_shelves(2, "AMBIENT"), aisle_id="B")
+        pallet_shelves = make_shelves(2, "PALLET", 120, 120, 80, 800)
+        ambient["aisles"].append(one_aisle_layout(pallet_shelves, aisle_id="PALLET")["aisles"][0])
+        result = generate_planogram([
+            product("SKU-5L", "Test Water 5 L", category="Water", storage="AMBIENT", width=24, height=36, depth=24),
+        ], ambient, allow_ai_dimensions=False)
+        placed = find_product(result["planogram"], "SKU-5L")
+        self.assertEqual(placed["storage_type"], "PALLET")
+        self.assertEqual(placed["aisle_id"], "PALLET")
+
+    def test_cdc_product_is_excluded_from_selling_shelves(self):
+        cdc = product("SKU-CDC", "Cross Dock Product")
+        cdc["flow_type"] = "CDC"
+        result = generate_planogram([cdc], generate_default_layout(), allow_ai_dimensions=False)
+        self.assertIsNone(find_product(result["planogram"], "SKU-CDC"))
+        self.assertEqual(result["unplaced"][0]["reason"], "cdc_cross_dock_not_shelf_stock")
+        self.assertEqual(len(result["alerts"]["cdc_products"]), 1)
+
+    def test_generation_reports_real_progress(self):
+        events = []
+        generate_planogram(
+            [product(f"SKU-P-{index}", f"Product {index}") for index in range(12)],
+            generate_default_layout(),
+            allow_ai_dimensions=False,
+            progress_callback=lambda processed, total, phase: events.append((processed, total, phase)),
+        )
+        self.assertTrue(any(phase == "normalizing" for _, _, phase in events))
+        self.assertTrue(any(phase == "placing" for _, _, phase in events))
+        self.assertEqual(events[-1], (12, 12, "finalizing"))
+
     def test_candidate_pool_is_not_truncated_to_first_40(self):
         shelves = make_shelves(45, "AMBIENT", 100, 35, 50, 45)
         for shelf in shelves:

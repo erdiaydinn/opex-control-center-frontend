@@ -19,8 +19,13 @@ function rememberSession(data) {
   try {
     localStorage.setItem(AUTH_STORAGE_KEY, data.access_token);
     if (data.user) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+    window.dispatchEvent(new CustomEvent("plonagram-session-ready", { detail: data.user || null }));
   } catch {}
   return data;
+}
+
+export function adoptOpexSession(data) {
+  return rememberSession(data);
 }
 
 function forgetSession() {
@@ -374,6 +379,13 @@ export const api = {
     return rememberSession(data);
   },
 
+  async exchangeOpexDevSession(payload, signal) {
+    const data = await apiPost("/auth/opex-dev-exchange", payload, signal);
+    return rememberSession(data);
+  },
+
+  adoptOpexSession,
+
   async logout() {
     forgetSession();
     return { success: true };
@@ -381,6 +393,18 @@ export const api = {
 
   async currentUser(signal) {
     return apiGet("/auth/me", signal);
+  },
+
+  async auditLogs(params = {}, signal) {
+    return apiGet(`/audit-logs${buildQuery(params)}`, signal);
+  },
+
+  async pendingDimensionChanges(signal) {
+    return apiGet("/pending-dimension-changes", signal);
+  },
+
+  async approveDimensionChange(payload, signal) {
+    return apiPost("/approve-dimension-change", payload, signal);
   },
 
   async register(payload, signal) {

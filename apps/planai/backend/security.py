@@ -34,6 +34,15 @@ VALID_ROLES = {
     "SUPER_USER",
 }
 
+ROLE_ACTIONS = {
+    "VIEWER": {"view", "export"},
+    "USER": {"view", "export"},
+    "STORE_MANAGER": {"view", "create", "edit", "export"},
+    "REGIONAL_MANAGER": {"view", "create", "edit", "approve", "export"},
+    "ADMIN": {"view", "create", "edit", "approve", "export", "delete"},
+    "SUPER_USER": {"view", "create", "edit", "approve", "export", "delete"},
+}
+
 
 def auth_required() -> bool:
     value = os.getenv("PLONAGRAM_AUTH_REQUIRED", "true").strip().lower()
@@ -81,6 +90,11 @@ def issue_token(user: Dict[str, Any]) -> Dict[str, Any]:
         "role": str(user.get("role") or "USER").upper(),
         "assigned_stores": user.get("assigned_stores") or [],
         "default_store": user.get("default_store"),
+        "email": user.get("email"),
+        "name": user.get("name") or user.get("full_name"),
+        "permissions": user.get("permissions") or {},
+        "scope": user.get("scope") or {},
+        "issuer": user.get("issuer") or "plonagram",
         "iat": now,
         "exp": now + TOKEN_TTL_SECONDS,
         "jti": secrets.token_urlsafe(12),
@@ -170,10 +184,36 @@ def require_roles(*roles: str) -> Callable:
     return dependency
 
 
+def can_action(user: Dict[str, Any], action: str) -> bool:
+    """Evaluate an OPEX action claim, falling back to the legacy role map.
+
+    OPEX-issued sessions carry the exact Planogram action matrix. Legacy local
+    tokens remain compatible during migration, but never gain more than their
+    role allows.
+    """
+    key = str(action or "").strip()
+    claimed = (user.get("permissions") or {}).get("actions") or {}
+    if key in claimed:
+        return bool(claimed.get(key))
+    return key in ROLE_ACTIONS.get(str(user.get("role") or "VIEWER").upper(), set())
+
+
+def require_action(action: str) -> Callable:
+    def dependency(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+        if not can_action(user, action):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Planogram '{action}' aksiyonu için yetkiniz yok.",
+            )
+        return user
+
+    return dependency
+
+
 def ensure_store_access(user: Dict[str, Any], store_code: Optional[str]) -> None:
     if not store_code:
         return
-    assigned = {str(x).lower() for x in (user.get("assigned_stores") or [])}
+    assigned = {str(x).strip().lower() for x in (user.get("assigned_stores") or [])}
     if "*" in assigned or str(store_code).lower() in assigned:
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu depo için erişim yetkiniz yok.")

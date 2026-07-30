@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -161,6 +161,47 @@ class ApproveUserRequest(BaseModel):
     role_override: Optional[str] = None
 
 
+class OpexBridgeRequest(BaseModel):
+    user: Dict[str, Any]
+    permissions: Dict[str, Any]
+    scope: Dict[str, Any] = {}
+
+
+def _opex_dev_bridge_enabled() -> bool:
+    if os.getenv("PLONAGRAM_ENV", "development").strip().lower() == "production":
+        return False
+    return os.getenv("PLONAGRAM_OPEX_DEV_BRIDGE", "true").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _local_auth_enabled() -> bool:
+    if os.getenv("PLONAGRAM_ENV", "development").strip().lower() == "production":
+        return False
+    return os.getenv("PLONAGRAM_LOCAL_AUTH", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
+def _require_local_auth() -> None:
+    if not _local_auth_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail="Planogram yerel kullanıcı sistemi kapalı; OPEX oturumu kullanılmalıdır.",
+        )
+
+
+def _allowed_opex_origins() -> set[str]:
+    return {
+        origin.strip()
+        for origin in os.getenv(
+            "PLONAGRAM_OPEX_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
+        ).split(",")
+        if origin.strip()
+    }
+
+
 @router.get("/stores")
 def list_stores(q: str = "", city: str = "", region: str = "", store_type: str = "", limit: int = 500):
     stores = load_stores()
@@ -199,6 +240,7 @@ def get_store(store_code: str):
 
 @router.post("/register")
 def register(req: RegisterRequest):
+    _require_local_auth()
     username = str(req.username or "").strip().lower()
     email = str(req.email or "").strip().lower()
     password = str(req.password or "")
@@ -251,6 +293,7 @@ def register(req: RegisterRequest):
 
 @router.post("/login")
 def login(req: LoginRequest):
+    _require_local_auth()
     ident = str(req.username or "").strip().lower()
     users = load_users()
     user = users.get(ident)
@@ -266,8 +309,93 @@ def login(req: LoginRequest):
     return {"success": True, **issue_token(user), "user": public_user(user), "message": "Giriş başarılı."}
 
 
+@router.post("/opex-dev-exchange")
+def opex_dev_exchange(req: OpexBridgeRequest, request: Request):
+    """Create a short-lived Planogram token for the local OPEX bridge.
+
+    This endpoint is deliberately unavailable in production. Production must
+    pass a centrally issued bearer token through the OPEX host; an unsigned
+    browser payload is never accepted there.
+    """
+    if not _opex_dev_bridge_enabled():
+        raise HTTPException(status_code=404, detail="OPEX geliştirme köprüsü kapalı.")
+
+    origin = str(request.headers.get("origin") or "").rstrip("/")
+    if origin not in _allowed_opex_origins():
+        raise HTTPException(status_code=403, detail="OPEX origin izinli değil.")
+
+    user = req.user or {}
+    permissions = req.permissions or {}
+    email = str(user.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Geçerli OPEX kullanıcı kimliği gerekli.")
+    if not bool(permissions.get("view")):
+        raise HTTPException(status_code=403, detail="Planogram görüntüleme yetkisi yok.")
+
+    actions = permissions.get("actions") or {}
+    opex_role = str(user.get("role") or "viewer").strip().lower()
+    if opex_role == "super_admin":
+        role = "SUPER_USER"
+    elif permissions.get("admin") or actions.get("approve") or actions.get("delete"):
+        role = "ADMIN"
+    elif actions.get("edit") or actions.get("create"):
+        role = "STORE_MANAGER"
+    else:
+        role = "VIEWER"
+
+    scope = req.scope or {}
+    scope_type = str(scope.get("type") or "none").lower()
+    assigned_stores = ["*"] if scope_type == "all" else [
+        str(value).strip()
+        for value in (scope.get("warehouses") or [])
+        if str(value).strip()
+    ]
+    if scope_type == "warehouse" and not assigned_stores:
+        raise HTTPException(status_code=403, detail="Planogram depo kapsamı boş.")
+
+    token_user = {
+        "username": email,
+        "email": email,
+        "name": user.get("name") or email,
+        "role": role,
+        "assigned_stores": assigned_stores,
+        "default_store": assigned_stores[0] if assigned_stores else None,
+        "permissions": permissions,
+        "scope": scope,
+        "issuer": "opex-dev-bridge",
+    }
+    return {
+        "success": True,
+        **issue_token(token_user),
+        "user": {
+            "username": email,
+            "email": email,
+            "name": token_user["name"],
+            "role": role,
+            "assigned_stores": assigned_stores,
+            "default_store": token_user["default_store"],
+            "permissions": permissions,
+            "scope": scope,
+        },
+    }
+
+
 @router.get("/me")
 def current_session(current_user: Dict[str, Any] = Depends(get_current_user)):
+    if str(current_user.get("issuer") or "").startswith("opex"):
+        return {
+            "success": True,
+            "user": {
+                "username": current_user.get("username") or current_user.get("sub"),
+                "email": current_user.get("email"),
+                "name": current_user.get("name"),
+                "role": current_user.get("role"),
+                "assigned_stores": current_user.get("assigned_stores") or [],
+                "default_store": current_user.get("default_store"),
+                "permissions": current_user.get("permissions") or {},
+                "scope": current_user.get("scope") or {},
+            },
+        }
     username = str(current_user.get("username") or current_user.get("sub") or "").lower()
     user = load_users().get(username)
     if not user or user.get("status") != "ACTIVE":
@@ -277,6 +405,7 @@ def current_session(current_user: Dict[str, Any] = Depends(get_current_user)):
 
 @router.get("/pending-users")
 def pending_users(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
+    _require_local_auth()
     users = load_users()
     pending = [public_user(u) for u in users.values() if u.get("status") == "PENDING_APPROVAL"]
     return {"success": True, "pending": pending, "count": len(pending)}
@@ -284,6 +413,7 @@ def pending_users(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", 
 
 @router.post("/approve-user")
 def approve_user(req: ApproveUserRequest, current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER"))):
+    _require_local_auth()
     users = load_users()
     target = str(req.username or "").strip().lower()
     user = users.get(target)
@@ -308,6 +438,7 @@ def approve_user(req: ApproveUserRequest, current_user: Dict[str, Any] = Depends
 
 @router.post("/forgot-password")
 def forgot_password(req: ForgotPasswordRequest):
+    _require_local_auth()
     email = str(req.email or "").lower().strip()
     users = load_users()
     user = next((u for u in users.values() if str(u.get("email", "")).lower() == email), None)

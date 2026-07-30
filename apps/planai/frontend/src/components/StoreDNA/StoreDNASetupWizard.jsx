@@ -1,7 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api.js';
 
-const aisleLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+function aisleLabel(index) {
+  let value = Number(index) + 1;
+  let label = '';
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return label;
+}
 
 const fixtureTypes = [
   { value: 'steel_rack', label: 'Regular Raf', zone: 'AMBIENT', width: 100, depth: 50, height: 210, shelves: 6 },
@@ -39,16 +48,61 @@ function makeModules(side, count, type) {
 
 function buildPreviewAisles(data) {
   return Array.from({ length: Number(data.aisle_count || 1) }, (_, idx) => ({
-    aisle_id: aisleLetters[idx] || `A${idx + 1}`,
+    aisle_id: aisleLabel(idx),
     left_modules: makeModules('L', data.left_modules, data.left_fixture_type),
     right_modules: makeModules('R', data.right_modules, data.right_fixture_type),
   }));
 }
 
-export default function StoreDNASetupWizard({ storeCode = 'AUTO', storeName = 'Seçili Depo', onComplete, onCancel, onOpenArchitect }) {
-  const [mode, setMode] = useState('easy');
-  const [saving, setSaving] = useState(false);
-  const [data, setData] = useState({
+const COPY = {
+  tr: {
+    setup: 'DEPO DNA KURULUMU', title: 'Depo yapısını kur', subtitle: 'Koridor, modül, raf ve soğuk/donuk ekipman gerçekliğini seçili depo master’ından yönet.',
+    easy: 'Kolay kurulum', template: 'Şablondan başla', free: 'Serbest düzenle', store: 'Depo', size: 'Depo tipi',
+    aisle: 'Koridor sayısı', leftModules: 'Sol modül', rightModules: 'Sağ modül', leftType: 'Sol ekipman', rightType: 'Sağ ekipman',
+    shelves: 'Modül başı raf', width: 'Raf genişliği', depth: 'Raf derinliği', height: 'Raf yüksekliği',
+    equipment: 'Onaylı ekipman envanteri', chilledRoom: '+4 soğuk oda m²', frozenRoom: '-18 donuk oda m²',
+    algida: 'Algida donuk dolabı', martek4: 'Martek +4', martek18: 'Martek -18', horizontal: 'Yatay -18',
+    produce: 'Meyve-sebze rafı', greens: 'Yeşillik +8 rafı', newSteel: 'Yeni nesil çelik raf',
+    preview: 'Canlı layout önizleme', save: 'Depo DNA’yı kaydet', saving: 'Kaydediliyor…', cancel: 'Vazgeç',
+    inventory: 'Dolap envanterinden otomatik eşleşti', freeTitle: 'Serbest düzenleme', openEditor: 'Mimari Düzenleyici’yi aç',
+  },
+  en: {
+    setup: 'STORE DNA SETUP', title: 'Configure depot structure', subtitle: 'Manage aisles, modules, shelves and cold/frozen fixtures from the selected depot master.',
+    easy: 'Quick setup', template: 'Start from template', free: 'Free edit', store: 'Depot', size: 'Depot size',
+    aisle: 'Aisle count', leftModules: 'Left modules', rightModules: 'Right modules', leftType: 'Left fixture', rightType: 'Right fixture',
+    shelves: 'Shelves per module', width: 'Shelf width', depth: 'Shelf depth', height: 'Shelf height',
+    equipment: 'Approved fixture inventory', chilledRoom: '+4 chilled room m²', frozenRoom: '-18 frozen room m²',
+    algida: 'Algida freezer', martek4: 'Martek +4', martek18: 'Martek -18', horizontal: 'Horizontal -18',
+    produce: 'Produce rack', greens: 'Greens +8 rack', newSteel: 'New generation steel rack',
+    preview: 'Live layout preview', save: 'Save Store DNA', saving: 'Saving…', cancel: 'Cancel',
+    inventory: 'Matched automatically from fixture inventory', freeTitle: 'Free editing', openEditor: 'Open Layout Architect',
+  },
+  de: {
+    setup: 'LAGER-DNA EINRICHTUNG', title: 'Lagerstruktur konfigurieren', subtitle: 'Gänge, Module, Regale sowie Kühl- und Tiefkühlausstattung aus dem Lagermaster verwalten.',
+    easy: 'Schnelleinrichtung', template: 'Mit Vorlage starten', free: 'Frei bearbeiten', store: 'Lager', size: 'Lagergröße',
+    aisle: 'Anzahl Gänge', leftModules: 'Linke Module', rightModules: 'Rechte Module', leftType: 'Linke Ausstattung', rightType: 'Rechte Ausstattung',
+    shelves: 'Regale je Modul', width: 'Regalbreite', depth: 'Regaltiefe', height: 'Regalhöhe',
+    equipment: 'Freigegebener Ausstattungsbestand', chilledRoom: '+4 Kühlraum m²', frozenRoom: '-18 Tiefkühlraum m²',
+    algida: 'Algida-Tiefkühler', martek4: 'Martek +4', martek18: 'Martek -18', horizontal: 'Horizontal -18',
+    produce: 'Obst-/Gemüseregal', greens: 'Grünwaren +8', newSteel: 'Stahlregal neue Generation',
+    preview: 'Live-Layoutvorschau', save: 'Lager-DNA speichern', saving: 'Speichern…', cancel: 'Abbrechen',
+    inventory: 'Automatisch mit dem Ausstattungsbestand abgeglichen', freeTitle: 'Freie Bearbeitung', openEditor: 'Layout-Architekt öffnen',
+  },
+  ar: {
+    setup: 'إعداد بيانات المستودع', title: 'إعداد بنية المستودع', subtitle: 'إدارة الممرات والوحدات والرفوف ومعدات التبريد والتجميد من سجل المستودع المحدد.',
+    easy: 'إعداد سريع', template: 'البدء من قالب', free: 'تحرير حر', store: 'المستودع', size: 'حجم المستودع',
+    aisle: 'عدد الممرات', leftModules: 'الوحدات اليسرى', rightModules: 'الوحدات اليمنى', leftType: 'المعدات اليسرى', rightType: 'المعدات اليمنى',
+    shelves: 'الرفوف لكل وحدة', width: 'عرض الرف', depth: 'عمق الرف', height: 'ارتفاع الرف',
+    equipment: 'سجل المعدات المعتمد', chilledRoom: 'مساحة غرفة +4', frozenRoom: 'مساحة غرفة -18',
+    algida: 'مجمد Algida', martek4: 'Martek +4', martek18: 'Martek -18', horizontal: 'مجمد أفقي -18',
+    produce: 'رف الخضار والفواكه', greens: 'رف الخضار +8', newSteel: 'رف فولاذي جديد',
+    preview: 'معاينة مباشرة', save: 'حفظ بيانات المستودع', saving: 'جارٍ الحفظ…', cancel: 'إلغاء',
+    inventory: 'تمت المطابقة تلقائيًا مع سجل المعدات', freeTitle: 'تحرير حر', openEditor: 'فتح مصمم التخطيط',
+  },
+};
+
+function formDefaults(storeCode, storeName) {
+  return {
     store_code: storeCode,
     store_name: storeName,
     warehouse_size: 'medium',
@@ -57,25 +111,52 @@ export default function StoreDNASetupWizard({ storeCode = 'AUTO', storeName = 'S
     right_modules: 6,
     left_fixture_type: 'steel_rack',
     right_fixture_type: 'steel_rack',
-    has_chilled_room: true,
-    chilled_area_m2: 12,
-    has_frozen_room: true,
-    frozen_area_m2: 8,
-    has_algida_fridge: true,
-    algida_count: 5,
-    has_horizontal_fridge: true,
-    horizontal_fridge_count: 1,
-    martek_plus4_count: 4,
-    martek_frozen_count: 2,
-    has_produce_shelf: true,
-    produce_module_count: 4,
-    produce_chilled_count: 1,
+    has_chilled_room: false,
+    chilled_area_m2: 0,
+    has_frozen_room: false,
+    frozen_area_m2: 0,
+    has_algida_fridge: false,
+    algida_count: 0,
+    has_horizontal_fridge: false,
+    horizontal_fridge_count: 0,
+    martek_plus4_count: 0,
+    martek_frozen_count: 0,
+    has_produce_shelf: false,
+    produce_module_count: 0,
+    produce_chilled_count: 0,
     new_gen_steel_rack_count: 0,
     has_receiving: true,
     has_dispatch: true,
     standard_rack_dimensions: { width: 100, depth: 50, height: 210 },
     shelves_per_rack: 6,
-  });
+  };
+}
+
+export default function StoreDNASetupWizard({ lang = 'tr', storeCode = 'AUTO', storeName = 'Seçili Depo', storeProfile, initialDna, onComplete, onCancel, onOpenArchitect }) {
+  const c = COPY[lang] || COPY.en;
+  const [mode, setMode] = useState('easy');
+  const [saving, setSaving] = useState(false);
+  const [data, setData] = useState(() => formDefaults(storeCode, storeName));
+
+  useEffect(() => {
+    const master = initialDna || storeProfile?.default_dna || {};
+    const next = {
+      ...formDefaults(storeCode, storeName),
+      ...master,
+      store_code: storeCode,
+      store_name: storeName,
+      standard_rack_dimensions: {
+        ...formDefaults(storeCode, storeName).standard_rack_dimensions,
+        ...(master.standard_rack_dimensions || {}),
+      },
+    };
+    next.has_chilled_room = Number(next.chilled_area_m2 || 0) > 0;
+    next.has_frozen_room = Number(next.frozen_area_m2 || 0) > 0;
+    next.has_algida_fridge = Number(next.algida_count || 0) > 0;
+    next.has_horizontal_fridge = Number(next.horizontal_fridge_count || 0) > 0;
+    next.has_produce_shelf = Number(next.produce_module_count || 0) > 0;
+    setData(next);
+  }, [storeCode, storeName, storeProfile, initialDna]);
 
   const preview = useMemo(() => buildPreviewAisles(data), [data]);
 
@@ -138,14 +219,14 @@ export default function StoreDNASetupWizard({ storeCode = 'AUTO', storeName = 'S
     <div className="store-dna-wizard card pad">
       <div className="wizard-head">
         <div>
-          <div className="section-eyebrow">STORE DNA SETUP</div>
-          <h2>Depo yapısını kur</h2>
-          <p className="muted">Planogram üretmeden önce koridor, modül, raf ve soğuk/donuk alan gerçekliğini kaydedelim.</p>
+          <div className="section-eyebrow">{c.setup}</div>
+          <h2>{c.title}</h2>
+          <p className="muted">{c.subtitle}</p>
         </div>
         <div className="wizard-mode-tabs">
-          <button className={mode === 'easy' ? 'active' : ''} onClick={() => setMode('easy')}>Kolay Kurulum</button>
-          <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}>Şablondan Başla</button>
-          <button className={mode === 'free' ? 'active' : ''} onClick={() => setMode('free')}>Serbest Düzenle</button>
+          <button className={mode === 'easy' ? 'active' : ''} onClick={() => setMode('easy')}>{c.easy}</button>
+          <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}>{c.template}</button>
+          <button className={mode === 'free' ? 'active' : ''} onClick={() => setMode('free')}>{c.free}</button>
         </div>
       </div>
 
@@ -162,9 +243,9 @@ export default function StoreDNASetupWizard({ storeCode = 'AUTO', storeName = 'S
 
       {mode === 'free' && (
         <div className="wizard-free-box">
-          <h3>Serbest düzenleme</h3>
+          <h3>{c.freeTitle}</h3>
           <p className="muted">3D / Layout Architect ekranında kolon, duvar, oda, raf ve dispatch alanlarını sürükleyerek düzenleyebilirsin. Kaydettiğinde Store DNA’ya yazılır.</p>
-          <button className="btn primary" onClick={() => onOpenArchitect?.()}>Layout Architect’e git</button>
+          <button className="btn primary" onClick={() => onOpenArchitect?.()}>{c.openEditor}</button>
         </div>
       )}
 
@@ -172,48 +253,48 @@ export default function StoreDNASetupWizard({ storeCode = 'AUTO', storeName = 'S
         <div className="wizard-layout">
           <div className="wizard-form">
             <div className="field-grid two">
-              <label>Depo adı<input value={data.store_name} onChange={(e) => setField('store_name', e.target.value)} /></label>
-              <label>Depo tipi<select value={data.warehouse_size} onChange={(e) => setField('warehouse_size', e.target.value)}><option value="small">Küçük</option><option value="medium">Orta</option><option value="large">Büyük</option></select></label>
-              <label>Koridor sayısı<input type="number" min="1" max="24" value={data.aisle_count} onChange={(e) => setField('aisle_count', Number(e.target.value))} /></label>
-              <label>Sol modül sayısı<input type="number" min="0" max="12" value={data.left_modules} onChange={(e) => setField('left_modules', Number(e.target.value))} /></label>
-              <label>Sağ modül sayısı<input type="number" min="0" max="12" value={data.right_modules} onChange={(e) => setField('right_modules', Number(e.target.value))} /></label>
-              <label>Sol modül tipi<select value={data.left_fixture_type} onChange={(e) => setField('left_fixture_type', e.target.value)}>{fixtureTypes.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select></label>
-              <label>Sağ modül tipi<select value={data.right_fixture_type} onChange={(e) => setField('right_fixture_type', e.target.value)}>{fixtureTypes.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select></label>
-              <label>Modül başı raf<input type="number" min="3" max="8" value={data.shelves_per_rack} onChange={(e) => setField('shelves_per_rack', Number(e.target.value))} /></label>
+              <label>{c.store}<input value={data.store_name} readOnly /></label>
+              <label>{c.size}<select value={data.warehouse_size} onChange={(e) => setField('warehouse_size', e.target.value)}><option value="small">S</option><option value="medium">M</option><option value="large">L</option></select></label>
+              <label>{c.aisle}<input type="number" min="1" max="100" value={data.aisle_count} onChange={(e) => setField('aisle_count', Number(e.target.value))} /></label>
+              <label>{c.leftModules}<input type="number" min="0" max="30" value={data.left_modules} onChange={(e) => setField('left_modules', Number(e.target.value))} /></label>
+              <label>{c.rightModules}<input type="number" min="0" max="30" value={data.right_modules} onChange={(e) => setField('right_modules', Number(e.target.value))} /></label>
+              <label>{c.leftType}<select value={data.left_fixture_type} onChange={(e) => setField('left_fixture_type', e.target.value)}>{fixtureTypes.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select></label>
+              <label>{c.rightType}<select value={data.right_fixture_type} onChange={(e) => setField('right_fixture_type', e.target.value)}>{fixtureTypes.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select></label>
+              <label>{c.shelves}<input type="number" min="1" max="12" value={data.shelves_per_rack} onChange={(e) => setField('shelves_per_rack', Number(e.target.value))} /></label>
             </div>
 
             <div className="field-grid three compact">
-              <label>Raf genişliği<input type="number" value={data.standard_rack_dimensions.width} onChange={(e) => setData((p) => ({ ...p, standard_rack_dimensions: { ...p.standard_rack_dimensions, width: Number(e.target.value) }}))} /></label>
-              <label>Raf derinliği<input type="number" value={data.standard_rack_dimensions.depth} onChange={(e) => setData((p) => ({ ...p, standard_rack_dimensions: { ...p.standard_rack_dimensions, depth: Number(e.target.value) }}))} /></label>
-              <label>Raf yüksekliği<input type="number" value={data.standard_rack_dimensions.height} onChange={(e) => setData((p) => ({ ...p, standard_rack_dimensions: { ...p.standard_rack_dimensions, height: Number(e.target.value) }}))} /></label>
+              <label>{c.width}<input type="number" value={data.standard_rack_dimensions.width} onChange={(e) => setData((p) => ({ ...p, standard_rack_dimensions: { ...p.standard_rack_dimensions, width: Number(e.target.value) }}))} /></label>
+              <label>{c.depth}<input type="number" value={data.standard_rack_dimensions.depth} onChange={(e) => setData((p) => ({ ...p, standard_rack_dimensions: { ...p.standard_rack_dimensions, depth: Number(e.target.value) }}))} /></label>
+              <label>{c.height}<input type="number" value={data.standard_rack_dimensions.height} onChange={(e) => setData((p) => ({ ...p, standard_rack_dimensions: { ...p.standard_rack_dimensions, height: Number(e.target.value) }}))} /></label>
             </div>
 
             <div className="fixture-count-panel">
-              <div className="mini-section-title">Özel ekipman adetleri</div>
+              <div className="mini-section-title">{c.equipment}</div>
               <div className="field-grid three compact">
-                <label>+4 Soğuk oda m²<input type="number" min="0" value={data.has_chilled_room ? data.chilled_area_m2 : 0} onChange={(e) => { setField('has_chilled_room', Number(e.target.value) > 0); setField('chilled_area_m2', Number(e.target.value)); }} /></label>
-                <label>-18 Donuk oda m²<input type="number" min="0" value={data.has_frozen_room ? data.frozen_area_m2 : 0} onChange={(e) => { setField('has_frozen_room', Number(e.target.value) > 0); setField('frozen_area_m2', Number(e.target.value)); }} /></label>
-                <label>Algida dolabı<input type="number" min="0" value={data.has_algida_fridge ? data.algida_count : 0} onChange={(e) => { setField('has_algida_fridge', Number(e.target.value) > 0); setField('algida_count', Number(e.target.value)); }} /></label>
-                <label>Martek +4 dolap<input type="number" min="0" value={data.martek_plus4_count} onChange={(e) => setField('martek_plus4_count', Number(e.target.value))} /></label>
-                <label>Martek -18 dolap<input type="number" min="0" value={data.martek_frozen_count} onChange={(e) => setField('martek_frozen_count', Number(e.target.value))} /></label>
-                <label>Yatay donuk dolap<input type="number" min="0" value={data.has_horizontal_fridge ? data.horizontal_fridge_count : 0} onChange={(e) => { setField('has_horizontal_fridge', Number(e.target.value) > 0); setField('horizontal_fridge_count', Number(e.target.value)); }} /></label>
-                <label>Meyve-sebze kasa rafı<input type="number" min="0" value={data.has_produce_shelf ? data.produce_module_count : 0} onChange={(e) => { setField('has_produce_shelf', Number(e.target.value) > 0); setField('produce_module_count', Number(e.target.value)); }} /></label>
-                <label>Yeşillik +8 rafı<input type="number" min="0" value={data.produce_chilled_count} onChange={(e) => setField('produce_chilled_count', Number(e.target.value))} /></label>
-                <label>Yeni nesil çelik raf<input type="number" min="0" value={data.new_gen_steel_rack_count} onChange={(e) => setField('new_gen_steel_rack_count', Number(e.target.value))} /></label>
+                <label>{c.chilledRoom}<input type="number" min="0" value={data.has_chilled_room ? data.chilled_area_m2 : 0} onChange={(e) => { setField('has_chilled_room', Number(e.target.value) > 0); setField('chilled_area_m2', Number(e.target.value)); }} /></label>
+                <label>{c.frozenRoom}<input type="number" min="0" value={data.has_frozen_room ? data.frozen_area_m2 : 0} onChange={(e) => { setField('has_frozen_room', Number(e.target.value) > 0); setField('frozen_area_m2', Number(e.target.value)); }} /></label>
+                <label>{c.algida}<input type="number" min="0" value={data.has_algida_fridge ? data.algida_count : 0} onChange={(e) => { setField('has_algida_fridge', Number(e.target.value) > 0); setField('algida_count', Number(e.target.value)); }} /></label>
+                <label>{c.martek4}<input type="number" min="0" value={data.martek_plus4_count} onChange={(e) => setField('martek_plus4_count', Number(e.target.value))} /></label>
+                <label>{c.martek18}<input type="number" min="0" value={data.martek_frozen_count} onChange={(e) => setField('martek_frozen_count', Number(e.target.value))} /></label>
+                <label>{c.horizontal}<input type="number" min="0" value={data.has_horizontal_fridge ? data.horizontal_fridge_count : 0} onChange={(e) => { setField('has_horizontal_fridge', Number(e.target.value) > 0); setField('horizontal_fridge_count', Number(e.target.value)); }} /></label>
+                <label>{c.produce}<input type="number" min="0" value={data.has_produce_shelf ? data.produce_module_count : 0} onChange={(e) => { setField('has_produce_shelf', Number(e.target.value) > 0); setField('produce_module_count', Number(e.target.value)); }} /></label>
+                <label>{c.greens}<input type="number" min="0" value={data.produce_chilled_count} onChange={(e) => setField('produce_chilled_count', Number(e.target.value))} /></label>
+                <label>{c.newSteel}<input type="number" min="0" value={data.new_gen_steel_rack_count} onChange={(e) => setField('new_gen_steel_rack_count', Number(e.target.value))} /></label>
               </div>
-              <p className="muted small">Checkbox yok: engine kapasiteyi adet ve ölçüyle hesaplar. 9 Algida varsa Store DNA içinde 9 ayrı fixture instance oluşur.</p>
+              <p className="inventory-source">✓ {c.inventory}: {storeProfile?.inventory_source || initialDna?.inventory_source || '—'}</p>
             </div>
 
             <div className="wizard-actions">
-              {onCancel && <button className="btn ghost" onClick={onCancel}>Vazgeç</button>}
-              <button className="btn primary" disabled={saving} onClick={saveEasy}>{saving ? 'Kaydediliyor...' : 'Store DNA’yı kaydet'}</button>
+              {onCancel && <button className="btn ghost" onClick={onCancel}>{c.cancel}</button>}
+              <button className="btn primary" disabled={saving || storeCode === 'AUTO'} onClick={saveEasy}>{saving ? c.saving : c.save}</button>
             </div>
           </div>
 
           <div className="wizard-preview">
-            <div className="preview-title">Canlı layout önizleme</div>
+            <div className="preview-title">{c.preview}</div>
             <div className="aisle-preview-list">
-              {preview.slice(0, 12).map((a) => (
+              {preview.map((a) => (
                 <div key={a.aisle_id} className="aisle-preview-row">
                   <b>{a.aisle_id}</b>
                   <span className="module-line">Sol {a.left_modules.length}</span>

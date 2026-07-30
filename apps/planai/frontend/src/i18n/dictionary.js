@@ -10,6 +10,7 @@ const base = {
   shelfEditor: 'Shelf Interior Editor', printShelf: 'Print Shelf', printModule: 'Print Module', addProduct: 'Assign Product', sortSales: 'Sort by Sales', sortBrand: 'Sort by Brand', aiFacing: 'AI Facing Suggestion',
   assignTask: 'Assign Task', adminAnswer: 'Admin Response', store: 'Store', assignee: 'Owner', priority: 'Priority', status: 'Status', deadline: 'Deadline', response: 'Response', totalView: 'Total View', storeView: 'Store View',
   ambient: 'Ambient', coldCapacity: 'Cold Capacity', frozenCapacity: 'Frozen Capacity', changedProducts: 'Products to Move', occupancy: 'Occupancy', productImages: 'Product Images'
+  , loadingStores: 'Loading depots…', noAuthorizedStores: 'No authorized depot'
 };
 
 const dict = {
@@ -26,7 +27,7 @@ const dict = {
     properties: 'Özellikler', objectType: 'Nesne tipi', zone: 'Zone', width: 'Genişlik', depth: 'Derinlik', height: 'Yükseklik', rotation: 'Yön', modules: 'Modül', shelves: 'Raf', fill: 'Doluluk',
     shelfEditor: 'Raf İç Düzenleyici', printShelf: 'Rafı yazdır', printModule: 'Modülü yazdır', addProduct: 'Ürün ata', sortSales: 'Satışa göre diz', sortBrand: 'Markaya göre diz', aiFacing: 'AI facing öner',
     assignTask: 'Görev ata', adminAnswer: 'Admin yanıtı', store: 'Depo', assignee: 'Sorumlu', priority: 'Öncelik', status: 'Durum', deadline: 'Termin', response: 'Yanıt', totalView: 'Toplam görünüm', storeView: 'Depo görünümü',
-    ambient: 'Kuru', coldCapacity: 'Soğuk Kapasite', frozenCapacity: 'Donuk Kapasite', changedProducts: 'Yeri değişecek ürün', occupancy: 'Doluluk', productImages: 'Ürün görselleri'
+    ambient: 'Kuru', coldCapacity: 'Soğuk Kapasite', frozenCapacity: 'Donuk Kapasite', changedProducts: 'Yeri değişecek ürün', occupancy: 'Doluluk', productImages: 'Ürün görselleri', loadingStores: 'Depolar yükleniyor…', noAuthorizedStores: 'Yetkili depo yok'
   },
   de: {
     ...base,
@@ -34,7 +35,7 @@ const dict = {
     online: 'Online', system: 'Systemstatus', uploadSku: 'SKUs hochladen', uploadLayout: 'Layout hochladen', generate: 'Optimalen Plan erzeugen', open3d: '3D Studio öffnen',
     title: 'Lagerintelligenz, sauber orchestriert.', subtitle: 'Planogramme optimieren. Digitalen Zwilling steuern. Refill- und Flächenentscheidungen smarter treffen.',
     liveTitle: 'Live Digitaler Zwilling', overview: 'Übersicht', topView: 'Draufsicht', chilled: '+4 Gekühlt', frozen: '-18 Tiefkühl', dispatch: 'Dispatch', camera: 'Kamera', skuSearch: 'SKU / Produkt suchen', selected: 'Ausgewähltes Objekt',
-    addCorridor: 'Korridor hinzufügen', addColumn: 'Säule hinzufügen', addChilled: 'Kühlraum hinzufügen', addFrozen: 'Tiefkühlraum hinzufügen', suggestLayout: 'Bestes Layout vorschlagen', save: 'Speichern', duplicate: 'Duplizieren', delete: 'Löschen', properties: 'Eigenschaften'
+    addCorridor: 'Korridor hinzufügen', addColumn: 'Säule hinzufügen', addChilled: 'Kühlraum hinzufügen', addFrozen: 'Tiefkühlraum hinzufügen', suggestLayout: 'Bestes Layout vorschlagen', save: 'Speichern', duplicate: 'Duplizieren', delete: 'Löschen', properties: 'Eigenschaften', loadingStores: 'Lager werden geladen…', noAuthorizedStores: 'Kein berechtigtes Lager'
   },
   ar: {
     ...base,
@@ -48,7 +49,7 @@ const dict = {
     properties: 'الخصائص', objectType: 'نوع العنصر', zone: 'المنطقة', width: 'العرض', depth: 'العمق', height: 'الارتفاع', rotation: 'الاتجاه', modules: 'الوحدات', shelves: 'الرفوف', fill: 'نسبة الامتلاء',
     shelfEditor: 'محرر داخل الرف', printShelf: 'طباعة الرف', printModule: 'طباعة الوحدة', addProduct: 'إضافة منتج', sortSales: 'ترتيب حسب المبيعات', sortBrand: 'ترتيب حسب العلامة', aiFacing: 'اقتراح Facing بالذكاء',
     assignTask: 'إسناد مهمة', adminAnswer: 'رد الإدارة', store: 'المستودع', assignee: 'المسؤول', priority: 'الأولوية', status: 'الحالة', deadline: 'الموعد', response: 'الرد', totalView: 'العرض الكلي', storeView: 'عرض المستودع',
-    ambient: 'جاف', coldCapacity: 'سعة التبريد', frozenCapacity: 'سعة التجميد', changedProducts: 'منتجات سيتم نقلها', occupancy: 'الامتلاء', productImages: 'صور المنتجات'
+    ambient: 'جاف', coldCapacity: 'سعة التبريد', frozenCapacity: 'سعة التجميد', changedProducts: 'منتجات سيتم نقلها', occupancy: 'الامتلاء', productImages: 'صور المنتجات', loadingStores: 'جارٍ تحميل المستودعات…', noAuthorizedStores: 'لا يوجد مستودع مصرح'
   }
 };
 

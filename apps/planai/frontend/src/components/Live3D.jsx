@@ -36,6 +36,12 @@ function shelfFromSelection(area, products, module = 1, shelf = 1) {
 }
 
 export default function Live3D({ lang, objects, setObjects, products, setProducts, setActive, notify }) {
+  const copy = ({
+    tr: { eyebrow: 'TWIN STUDIO', sub: 'Seçili deponun gerçek Store DNA verisi, ekipmanları, rafları ve ürün yerleşimi aynı sahnede.', cameraHelp: 'Kamera sağ panelden yönetilir', area: 'ALAN KONTROLÜ', selectedArea: 'Seçili alan', metric: 'Metrik', decrease: 'Azalt', increase: 'Artır', openShelf: 'Seçili rafı aç', empty: 'Bu depo için dijital ikiz verisi bulunamadı.', setup: 'Depo DNA’yı aç', selected: 'Seçili nesne' },
+    en: { eyebrow: 'TWIN STUDIO', sub: 'The selected depot’s real Store DNA, fixtures, shelves and product placements in one scene.', cameraHelp: 'Camera is controlled from the right panel', area: 'AREA CONTROL', selectedArea: 'Selected area', metric: 'Metric', decrease: 'Decrease', increase: 'Increase', openShelf: 'Open selected shelf', empty: 'No digital twin data exists for this depot.', setup: 'Open Store DNA', selected: 'Selected object' },
+    de: { eyebrow: 'TWIN STUDIO', sub: 'Echte Lager-DNA, Ausstattung, Regale und Produktplatzierungen in einer Szene.', cameraHelp: 'Kamera über das rechte Panel steuern', area: 'BEREICHSSTEUERUNG', selectedArea: 'Ausgewählter Bereich', metric: 'Metrik', decrease: 'Verringern', increase: 'Erhöhen', openShelf: 'Ausgewähltes Regal öffnen', empty: 'Für dieses Lager sind keine Digital-Twin-Daten vorhanden.', setup: 'Lager-DNA öffnen', selected: 'Ausgewähltes Objekt' },
+    ar: { eyebrow: 'الاستوديو الرقمي', sub: 'بيانات المستودع الحقيقية والمعدات والرفوف وتوزيع المنتجات في مشهد واحد.', cameraHelp: 'تتم إدارة الكاميرا من اللوحة اليمنى', area: 'التحكم في المنطقة', selectedArea: 'المنطقة المحددة', metric: 'المقياس', decrease: 'تقليل', increase: 'زيادة', openShelf: 'فتح الرف المحدد', empty: 'لا توجد بيانات توأم رقمي لهذا المستودع.', setup: 'فتح بيانات المستودع', selected: 'العنصر المحدد' },
+  })[lang] || {};
   const [camera, setCamera] = useState('overview');
   const [heatmap, setHeatmap] = useState('sales');
   const [selected, setSelected] = useState(products[2]);
@@ -112,15 +118,16 @@ export default function Live3D({ lang, objects, setObjects, products, setProduct
 
   return (
     <div className="page">
-      <div className="section-eyebrow">TWIN STUDIO ENGINE v1</div>
-      <h1 style={{ fontSize: 44, margin: '8px 0 4px' }}>{tt(lang, 'liveTitle')}</h1>
-      <p className="page-sub">Gerçek WebGL dijital ikiz: raf, oda, rota, ürün, uyarı ve kamera kontrolleri tek sahnede.</p>
+      <div className="section-eyebrow">{copy.eyebrow}</div>
+      <h1 className="page-title">{tt(lang, 'liveTitle')}</h1>
+      <p className="page-sub">{copy.sub}</p>
+      {!objects.length ? <div className="twin-empty card pad"><div><strong>{copy.empty}</strong><p className="muted">{copy.sub}</p></div><button className="btn primary" onClick={() => setActive('storeDna')}>{copy.setup}</button></div> : null}
       <div className="live-layout" style={{ marginTop: 20 }}>
         <div ref={stageRef} className={`live-stage-wrap ${isFull ? 'is-fullscreen' : ''}`}>
           <div className="stage three-stage">
             <div className="stage-toolbar stage-toolbar-clean">
               <div className="pill"><b>Doluluk</b> <span style={{ fontSize: 28 }}>87%</span></div>
-              <div className="pill subtle">Kamera sağ panelden yönetilir</div>
+              <div className="pill subtle">{copy.cameraHelp}</div>
               <button className="btn ghost" onClick={toggleFullscreen}>{isFull ? tt(lang,'exitFullscreen') : tt(lang,'fullscreen')}</button>
             </div>
             <TwinStudio3D
@@ -149,14 +156,14 @@ export default function Live3D({ lang, objects, setObjects, products, setProduct
             <p className="muted small-note">Dropdown seçimi kamerayı doğrudan ilgili zone'a uçurur; SKU aramada ürün ayrıca highlight edilir.</p>
           </div>
           <div className="card pad">
-            <div className="section-eyebrow">ALAN KONTROLÜ</div>
-            <div className="field"><label>Seçili alan</label><select value={selectedAreaId} onChange={(e)=>{ const area = objects.find(o => o.id === e.target.value); if (area) selectArea(area); }}>{selectableObjects.map(o=><option key={o.id} value={o.id}>{o.label} · {o.zone}</option>)}</select></div>
-            <div className="field"><label>Değiştirilecek metrik</label><select value={metric} onChange={(e)=>setMetric(e.target.value)}><option value="utilization">Doluluk</option><option value="modules">Modül sayısı</option><option value="shelves">Raf sayısı</option><option value="changed">Yeri değişecek ürün</option></select></div>
-            <div className="adjust-box"><button className="btn ghost" onClick={()=>updateArea(-1)}>− Azalt</button><b>{currentMetricValue}</b><button className="btn ghost" onClick={()=>updateArea(1)}>＋ Artır</button></div>
-            <button className="btn primary" style={{ width: '100%', marginTop: 12 }} onClick={() => setShelfModal(shelfFromSelection(selectedArea, products, 1, 1))}>Seçili rafı aç</button>
+            <div className="section-eyebrow">{copy.area}</div>
+            <div className="field"><label>{copy.selectedArea}</label><select value={selectedAreaId} onChange={(e)=>{ const area = objects.find(o => o.id === e.target.value); if (area) selectArea(area); }}>{selectableObjects.map(o=><option key={o.id} value={o.id}>{o.label} · {o.zone}</option>)}</select></div>
+            <div className="field"><label>{copy.metric}</label><select value={metric} onChange={(e)=>setMetric(e.target.value)}><option value="utilization">{tt(lang,'occupancy')}</option><option value="modules">{tt(lang,'modules')}</option><option value="shelves">{tt(lang,'shelves')}</option><option value="changed">{tt(lang,'changedProducts')}</option></select></div>
+            <div className="adjust-box"><button className="btn ghost" onClick={()=>updateArea(-1)}>− {copy.decrease}</button><b>{currentMetricValue}</b><button className="btn ghost" onClick={()=>updateArea(1)}>＋ {copy.increase}</button></div>
+            <button className="btn primary" style={{ width: '100%', marginTop: 12 }} onClick={() => setShelfModal(shelfFromSelection(selectedArea, products, 1, 1))}>{copy.openShelf}</button>
           </div>
           <div className="card pad"><div className="section-eyebrow">{tt(lang,'skuSearch')}</div><input className="search" placeholder="Eti Burçak, Algida, SKU..." onChange={(e) => { const q = e.target.value.toLowerCase(); const p = products.find(x => `${x.name} ${x.sku} ${x.brand}`.toLowerCase().includes(q)); if (q && p) focusProduct(p); }} /><div className="list" style={{ marginTop: 12 }}>{products.slice(0,5).map((p) => <button className="product-hit" key={p.sku} onClick={() => focusProduct(p)}><ProductThumb product={p} small /><div><b>{p.sku}</b><br/><span className="muted">{p.name}</span></div><span className={`badge ${storageTone(p.storage)}`}>{p.storage}</span></button>)}</div></div>
-          <div className="card pad"><div className="section-eyebrow">{tt(lang,'selected')}</div><h3>{selected?.name || selectedArea?.label || '—'}</h3><p className="muted">{selected?.brand} • {selected?.storage} • Facing {selected?.facing}</p><span className="badge pink">WebGL kamera odak aktif</span></div>
+          <div className="card pad"><div className="section-eyebrow">{copy.selected}</div><h3>{selected?.name || selectedArea?.label || '—'}</h3><p className="muted">{selected?.brand} • {selected?.storage} • Facing {selected?.facing}</p><span className="badge pink">WebGL</span></div>
           <div className="card pad"><div className="section-eyebrow">{tt(lang,'insights')}</div><div className="list">{insights.slice(0,3).map((i)=><div className="item" key={i.title}><b>{i.title}</b><span className={`badge ${i.tone}`}>{i.impact}</span></div>)}</div><button className="btn ghost" style={{ marginTop: 12 }} onClick={() => setActive('reports')}>Tümünü gör</button></div>
         </aside>
       </div>

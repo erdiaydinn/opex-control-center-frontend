@@ -64,6 +64,12 @@ function firstFreePosition(objects, width, depth) {
 }
 
 export default function LayoutArchitect({ lang = 'tr', objects = [], setObjects, notify, store = 'AUTO' }) {
+  const copy = ({
+    tr: { eyebrow: 'MİMARİ DÜZENLEYİCİ', title: 'Depo yerleşimi', sub: 'Ölçekli çalışma alanı; taşıma, ölçü, sınır ve çakışma kontrolü tek ekranda.', undo: 'Geri al', redo: 'İleri al', save: 'Doğrula ve kaydet', equipment: 'Ekipman', object: 'nesne', warning: 'uyarı', valid: 'Çakışma yok', grid: 'Izgara: depo ölçeği', selected: 'Seçili nesne', remove: 'Seçili nesneyi kaldır', choose: 'Bir nesne seçin.', empty: 'Soldan ekipman ekleyin veya seçili deponun DNA verisini yükleyin.' },
+    en: { eyebrow: 'LAYOUT ARCHITECT', title: 'Depot layout', sub: 'Scaled workspace with movement, dimensions, boundary and collision checks in one screen.', undo: 'Undo', redo: 'Redo', save: 'Validate and save', equipment: 'Equipment', object: 'objects', warning: 'warnings', valid: 'No collisions', grid: 'Grid: depot scale', selected: 'Selected object', remove: 'Remove selected object', choose: 'Select an object.', empty: 'Add equipment from the left or load Store DNA for the selected depot.' },
+    de: { eyebrow: 'LAYOUT-ARCHITEKT', title: 'Lagerlayout', sub: 'Skalierter Arbeitsbereich mit Bewegung, Maßen, Grenzen und Kollisionsprüfung.', undo: 'Rückgängig', redo: 'Wiederholen', save: 'Prüfen und speichern', equipment: 'Ausstattung', object: 'Objekte', warning: 'Warnungen', valid: 'Keine Kollisionen', grid: 'Raster: Lagermaßstab', selected: 'Ausgewähltes Objekt', remove: 'Ausgewähltes Objekt entfernen', choose: 'Objekt auswählen.', empty: 'Links Ausstattung hinzufügen oder Lager-DNA laden.' },
+    ar: { eyebrow: 'مصمم التخطيط', title: 'تخطيط المستودع', sub: 'مساحة عمل بمقياس حقيقي مع فحص الحركة والأبعاد والحدود والتداخل.', undo: 'تراجع', redo: 'إعادة', save: 'تحقق واحفظ', equipment: 'المعدات', object: 'عنصر', warning: 'تحذير', valid: 'لا يوجد تداخل', grid: 'الشبكة: مقياس المستودع', selected: 'العنصر المحدد', remove: 'إزالة العنصر المحدد', choose: 'اختر عنصرًا.', empty: 'أضف معدات من اليسار أو حمّل بيانات المستودع المحدد.' },
+  })[lang] || {};
   const [selectedId, setSelectedId] = useState(objects[0]?.id || '');
   const [drag, setDrag] = useState(null);
   const [history, setHistory] = useState([]);
@@ -163,25 +169,24 @@ export default function LayoutArchitect({ lang = 'tr', objects = [], setObjects,
   return (
     <div className="page layout-architect-page">
       <header className="layout-architect-header">
-        <div><div className="section-eyebrow">LAYOUT ARCHITECT · FOUNDATION</div><h1>Depo mimarisi</h1><p className="page-sub">Ölçekli 2D düzenleyici. Her taşıma ölçü, sınır ve çakışma doğrulamasından geçer.</p></div>
-        <div className="layout-architect-actions"><button className="btn ghost" onClick={undo} disabled={!history.length}>Geri al</button><button className="btn ghost" onClick={redo} disabled={!future.length}>İleri al</button><button className="btn primary" onClick={save}>Doğrula ve kaydet</button></div>
+        <div><div className="section-eyebrow">{copy.eyebrow}</div><h1>{copy.title}</h1><p className="page-sub">{copy.sub}</p></div>
+        <div className="layout-architect-actions"><button className="btn ghost" onClick={undo} disabled={!history.length}>{copy.undo}</button><button className="btn ghost" onClick={redo} disabled={!future.length}>{copy.redo}</button><button className="btn primary" onClick={save}>{copy.save}</button></div>
       </header>
       <div className="layout-architect-grid">
-        <aside className="card pad layout-catalog"><div className="section-eyebrow">EKİPMAN</div><div className="layout-catalog-list">{objectCatalog.map((item) => <button className="layout-catalog-item" key={item.type} onClick={() => addObject(item)}><strong>＋ {item.label}</strong><span>{item.zone || item.type}</span></button>)}</div></aside>
+        <aside className="card pad layout-catalog"><div className="section-eyebrow">{copy.equipment}</div><div className="layout-catalog-list">{objectCatalog.map((item) => <button className="layout-catalog-item" key={item.type} onClick={() => addObject(item)}><strong>＋ {item.label}</strong><span>{item.zone || item.type}</span></button>)}</div></aside>
         <section className="card pad layout-canvas-card">
-          <div className="layout-canvas-toolbar"><span><b>{normalized.length}</b> nesne</span><span className={warnings.length ? 'layout-warning-count' : 'layout-valid-count'}>{warnings.length ? `${warnings.length} uyarı` : 'Çakışma yok'}</span><span className="muted">Izgara 1 kare = 1% depo genişliği</span></div>
+          <div className="layout-canvas-toolbar"><span><b>{normalized.length}</b> {copy.object}</span><span className={warnings.length ? 'layout-warning-count' : 'layout-valid-count'}>{warnings.length ? `${warnings.length} ${copy.warning}` : copy.valid}</span><span className="muted">{copy.grid}</span></div>
           <div ref={canvasRef} className="layout-canvas" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
             <div className="layout-axis axis-x">0% ───────── 50% ───────── 100%</div><div className="layout-axis axis-y">0%<br/><br/>50%<br/><br/>100%</div>
             {normalized.map((item) => {
               const itemWarnings = warnings.filter((warning) => warning.id === item.id || warning.otherId === item.id);
               return <button type="button" key={item.id} data-layout-id={item.id} className={`layout-canvas-object ${itemWarnings.length ? 'has-warning' : ''} ${selected?.id === item.id ? 'is-selected' : ''}`} style={{ left: `${item.x}%`, top: `${item.y}%`, width: `${item.w}%`, height: `${item.d}%`, transform: `rotate(${item.rotation || 0}deg)` }} onPointerDown={(event) => onPointerDown(event, item)}><strong>{item.label}</strong><small>{item.w} × {item.d} · {item.zone}</small></button>;
             })}
-            {!normalized.length && <div className="layout-empty">Soldan bir fixture ekleyin veya Store DNA yükleyin.</div>}
+            {!normalized.length && <div className="layout-empty">{copy.empty}</div>}
           </div>
         </section>
-        <aside className="card pad layout-properties"><div className="section-eyebrow">SEÇİLİ NESNE</div>{selected ? <><h2>{selected.label}</h2><p className="muted">{selected.id} · {selected.zone}</p><div className="layout-property-grid">{[['x','X %'],['y','Y %'],['w','Genişlik %'],['d','Derinlik %'],['h','Yükseklik m'],['rotation','Dönüş °'],['modules','Modül'],['shelves','Raf']].map(([field, label]) => <label key={field}>{label}<input type="number" step="0.1" value={selected[field] ?? 0} onChange={(event) => updateSelected(field, event.target.value)} /></label>)}</div><label className="layout-property-wide">Etiket<input value={selected.label} onChange={(event) => updateSelected('label', event.target.value)} /></label><button className="btn danger layout-delete" onClick={removeSelected}>Seçili nesneyi kaldır</button><div className="layout-validation-list">{warnings.filter((warning) => warning.id === selected.id || warning.otherId === selected.id).map((warning) => <div key={`${warning.type}-${warning.id}-${warning.otherId}`}>{warning.message}</div>)}</div></> : <div className="layout-empty">Bir nesne seçin.</div>}</aside>
+        <aside className="card pad layout-properties"><div className="section-eyebrow">{copy.selected}</div>{selected ? <><h2>{selected.label}</h2><p className="muted">{selected.id} · {selected.zone}</p><div className="layout-property-grid">{[['x','X %'],['y','Y %'],['w','W %'],['d','D %'],['h','H m'],['rotation','°'],['modules','M'],['shelves','R']].map(([field, label]) => <label key={field}>{label}<input type="number" step="0.1" value={selected[field] ?? 0} onChange={(event) => updateSelected(field, event.target.value)} /></label>)}</div><label className="layout-property-wide">ID / Label<input value={selected.label} onChange={(event) => updateSelected('label', event.target.value)} /></label><button className="btn danger layout-delete" onClick={removeSelected}>{copy.remove}</button><div className="layout-validation-list">{warnings.filter((warning) => warning.id === selected.id || warning.otherId === selected.id).map((warning) => <div key={`${warning.type}-${warning.id}-${warning.otherId}`}>{warning.message}</div>)}</div></> : <div className="layout-empty">{copy.choose}</div>}</aside>
       </div>
     </div>
   );
 }
-

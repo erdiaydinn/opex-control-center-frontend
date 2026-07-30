@@ -4,6 +4,22 @@ import unittest
 
 
 class BackendContractTests(unittest.TestCase):
+    def test_store_master_contains_full_depot_inventory_and_fulya_dna(self):
+        from store_dna_store import default_dna, list_stores
+
+        stores = list_stores()
+        self.assertGreaterEqual(len(stores), 110)
+        self.assertEqual(len(stores), len({item["store_code"] for item in stores}))
+
+        fulya = default_dna("FULYA")
+        self.assertIsNotNone(fulya)
+        self.assertEqual(fulya["store_name"], "Fulya (İstanbul)")
+        self.assertEqual(fulya["martek_plus4_count"], 9)
+        self.assertEqual(fulya["martek_frozen_count"], 1)
+        self.assertEqual(fulya["algida_count"], 7)
+        self.assertEqual(fulya["aisle_count"], 10)
+        self.assertTrue(fulya["layout_objects"])
+
     def test_opex_action_claims_override_legacy_role_without_escalation(self):
         from security import can_action
 
@@ -140,6 +156,9 @@ class BackendContractTests(unittest.TestCase):
             )
             self.assertEqual(result["total"], 1)
             self.assertEqual(result["logs"][0]["action"], "plan_generated")
+            search_result = audit_store.list_audit_logs(q="FUL", created_from="2000-01-01")
+            self.assertEqual(search_result["total"], 1)
+            self.assertEqual(search_result["logs"][0]["store_code"], "FULYA")
 
             os.environ.pop("PLONAGRAM_AUDIT_DB", None)
 

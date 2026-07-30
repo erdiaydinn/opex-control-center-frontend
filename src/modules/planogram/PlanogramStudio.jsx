@@ -90,6 +90,17 @@ export default function PlanogramStudio() {
   }, [payload, targetOrigin]);
 
   useEffect(() => {
+    if (bridgeState === "ready") return undefined;
+    sendSession();
+    const retry = window.setInterval(sendSession, 700);
+    const deadline = window.setTimeout(() => setBridgeState("error"), 8000);
+    return () => {
+      window.clearInterval(retry);
+      window.clearTimeout(deadline);
+    };
+  }, [bridgeState, sendSession]);
+
+  useEffect(() => {
     function handleMessage(event) {
       if (event.origin !== targetOrigin || event.source !== frameRef.current?.contentWindow) {
         return;
@@ -107,22 +118,38 @@ export default function PlanogramStudio() {
   }, [sendSession, targetOrigin]);
 
   return (
-    <main style={{ width: "100vw", height: "100vh", background: "#050814", position: "relative" }}>
+    <main style={{ width: "100vw", height: "100vh", background: "#f6f7fa", position: "relative" }}>
       {bridgeState !== "ready" ? (
         <div
           role="status"
           style={{
             position: "absolute",
-            inset: 0,
+            top: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
             zIndex: 2,
-            display: "grid",
-            placeItems: "center",
-            color: "#fff",
-            background: "#050814",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            color: bridgeState === "error" ? "#9f1239" : "#111827",
+            background: "#fff",
+            border: `1px solid ${bridgeState === "error" ? "#fecdd3" : "#e5e7eb"}`,
+            borderRadius: 12,
+            padding: "10px 14px",
+            boxShadow: "0 12px 32px rgba(15,23,42,.12)",
             fontFamily: "Inter, system-ui, sans-serif",
           }}
         >
-          OPEX oturumu ve Planogram yetkileri doğrulanıyor…
+          <span>{bridgeState === "error" ? "Planogram oturumu 8 saniyede doğrulanamadı." : "Planogram oturumu doğrulanıyor…"}</span>
+          {bridgeState === "error" ? (
+            <button
+              type="button"
+              onClick={() => { setBridgeState("connecting"); sendSession(); }}
+              style={{ border: 0, borderRadius: 8, background: "#df1067", color: "#fff", padding: "7px 10px", fontWeight: 800 }}
+            >
+              Yeniden dene
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -137,7 +164,7 @@ export default function PlanogramStudio() {
           height: "100%",
           border: "0",
           display: "block",
-          background: "#050814",
+          background: "#f6f7fa",
         }}
       />
     </main>

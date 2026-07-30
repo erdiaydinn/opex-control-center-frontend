@@ -2,11 +2,10 @@
 html, body, #root { width: 100%; min-height: 100%; margin: 0; }
 body {
   color: var(--ink);
-  background:
-    radial-gradient(circle at 76% -2%, rgba(223, 16, 103, 0.09), transparent 28%),
-    radial-gradient(circle at 6% 92%, rgba(24, 199, 223, 0.08), transparent 28%),
-    linear-gradient(135deg, #fff 0%, var(--cream) 44%, #f7f8fb 100%);
+  background: #f5f7fa;
   overflow-x: hidden;
+  font-size: 14px;
+  line-height: 1.45;
 }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -14,7 +13,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 ::selection { background: rgba(223,16,103,.16); }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--sidebar) 1fr; }
 .main-area { min-width: 0; }
-.page { padding: 28px 34px 38px; }
+.page { padding: 22px 26px 32px; }
 .muted { color: var(--muted); }
 .pink { color: var(--brand); } .green { color: var(--green); } .cyan { color: var(--cyan); } .purple { color: var(--purple); } .amber { color: var(--amber); } .red { color: var(--red); } .blue { color: var(--blue); }
 .no-scroll { overflow: hidden; }

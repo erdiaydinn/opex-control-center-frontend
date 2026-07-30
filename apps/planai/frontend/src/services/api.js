@@ -286,6 +286,39 @@ export const api = {
     return apiPost("/generate-planogram-fast", payload, signal);
   },
 
+  async generatePlanogramJob(payload, signal, onProgress) {
+    const created = await apiPost("/planogram-jobs", payload, signal);
+    const jobId = created?.job_id;
+    if (!jobId) throw new Error("Planogram işi başlatılamadı: job_id alınamadı.");
+    onProgress?.(created);
+
+    while (true) {
+      if (signal?.aborted) {
+        throw new DOMException("Planogram üretimi iptal edildi.", "AbortError");
+      }
+      await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          window.clearTimeout(timer);
+          reject(new DOMException("Planogram üretimi iptal edildi.", "AbortError"));
+        };
+        const timer = window.setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, 350);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      const state = await apiGet(`/planogram-jobs/${encodeURIComponent(jobId)}`, signal);
+      onProgress?.(state);
+      if (state?.status === "failed") {
+        throw new Error(state.error || "Backend planogram işi başarısız oldu.");
+      }
+      if (state?.status === "completed") {
+        if (!state.result) throw new Error("Planogram işi tamamlandı fakat sonuç dönmedi.");
+        return state.result;
+      }
+    }
+  },
+
   async scorePlanogram(planogram, signal) {
     return apiPost("/score-planogram", { planogram }, signal);
   },
@@ -412,17 +445,11 @@ export const api = {
   },
 
   async getStores() {
-    try {
-      return await apiGet("/auth/stores");
-    } catch (error) {
-      console.warn("getStores fallback:", error?.message || error);
-      return {
-        stores: [
-          { store_code: "ACIBADEM", code: "ACIBADEM", name: "Anka (İstanbul)", dmart: "Anka (İstanbul)", city: "İstanbul", region: "İstanbul-Avrupa" },
-          { store_code: "GUVEN_FR", code: "GUVEN_FR", name: "Güven (Kocaeli) FR", dmart: "Güven (Kocaeli) FR", city: "Kocaeli", region: "Körfez" },
-        ],
-      };
-    }
+    return apiGet("/auth/stores");
+  },
+
+  async getStoreProfile(storeCode, signal) {
+    return apiGet(`/stores/${encodeURIComponent(storeCode)}/profile`, signal);
   },
 
   async getObjectLibrary() {
@@ -567,16 +594,15 @@ api.searchProductLibrary = api.searchProductLibrary || function searchProductLib
 // ---- /Plonagram compatibility API methods ----
 
 // ---- Plonagram Store DNA compatibility overrides ----
-api.generateStoreDnaEasy = async function generateStoreDnaEasy(payload = {}, signal) {
-  const body = payload || {};
-  const storeCode =
-    body.store_code ||
-    body.storeCode ||
-    body.depot_code ||
-    body.depotCode ||
-    body.depot_name ||
-    body.depotName ||
-    "AUTO";
+api.generateStoreDnaEasy = async function generateStoreDnaEasy(storeCode, payload = {}, signal) {
+  const resolvedStoreCode =
+    storeCode ||
+    payload?.store_code ||
+    payload?.storeCode ||
+    payload?.depot_code ||
+    payload?.depotCode ||
+    "";
+  const body = { ...(payload || {}), store_code: resolvedStoreCode };
 
   try {
     return await request("/store-dna/generate-easy", {
@@ -585,33 +611,8 @@ api.generateStoreDnaEasy = async function generateStoreDnaEasy(payload = {}, sig
       body: JSON.stringify(body),
       signal
     });
-  } catch (err1) {
-    try {
-      const layout = await request("/default-layout", { signal });
-      return {
-        status: "success",
-        source: "frontend_default_layout_fallback",
-        store_code: storeCode,
-        store_dna: body,
-        layout,
-        planogram: layout
-      };
-    } catch (err2) {
-      const fallbackLayout = {
-        store_code: storeCode,
-        route_strategy: "LOCAL_STORE_DNA_FALLBACK",
-        aisles: []
-      };
-
-      return {
-        status: "success",
-        source: "frontend_local_fallback",
-        store_code: storeCode,
-        store_dna: body,
-        layout: fallbackLayout,
-        planogram: fallbackLayout
-      };
-    }
+  } catch (error) {
+    throw new Error(error?.message || "Store DNA backend tarafından kaydedilemedi.");
   }
 };
 

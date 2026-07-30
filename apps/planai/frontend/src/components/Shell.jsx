@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import BrandLogo from './BrandLogo.jsx';
 import { api } from '../services/api.js';
 import { languages, tt } from '../i18n/dictionary.js';
-import { stores } from '../data/mock.js';
 
 const nav = [
   ['command', '⌂', 'command'], ['storeDna', '◈', 'storeDna'], ['live3d', '▣', 'live3d'], ['architect', '╬', 'architect'], ['placement', '▤', 'placement'],
@@ -13,6 +12,8 @@ const nav = [
 export default function Shell({ children, lang, setLang, active, setActive, store, setStore, onGenerate, onUploadSku, onUploadLayout }) {
   const [session, setSession] = useState(null);
   const [authError, setAuthError] = useState('');
+  const [availableStores, setAvailableStores] = useState([]);
+  const [storesLoading, setStoresLoading] = useState(false);
   const embedded = typeof window !== 'undefined' && window.parent !== window;
   const allowedParentOrigins = useMemo(() => {
     const configured = String(import.meta.env?.VITE_OPEX_PARENT_ORIGINS || '')
@@ -45,11 +46,18 @@ export default function Shell({ children, lang, setLang, active, setActive, stor
       try {
         setAuthError('');
         let result;
+        const scopedStores = payload.scope?.warehouses || payload.scope?.stores || [];
+        const opexUser = {
+          ...(payload.user || {}),
+          permissions: payload.permissions || {},
+          assigned_stores: payload.scope?.type === 'all' ? ['*'] : scopedStores,
+          default_store: scopedStores[0] || '*',
+        };
         if (payload.accessToken) {
           result = api.adoptOpexSession({
             access_token: payload.accessToken,
             token_type: 'bearer',
-            user: payload.user,
+            user: opexUser,
           });
         } else {
           result = await api.exchangeOpexDevSession({
@@ -58,8 +66,13 @@ export default function Shell({ children, lang, setLang, active, setActive, stor
             scope: payload.scope,
           });
         }
+        if (result?.user && !result.user.permissions) {
+          result = { ...result, user: { ...result.user, permissions: payload.permissions || {} } };
+        }
         if (mounted) {
           setSession(result);
+          if (languages.includes(payload.locale)) setLang(payload.locale);
+          if (payload.theme) document.documentElement.dataset.theme = payload.theme;
           window.parent.postMessage({ type: 'PLANOGRAM_SESSION_ACCEPTED', version: 1 }, event.origin);
         }
       } catch (error) {
@@ -74,6 +87,41 @@ export default function Shell({ children, lang, setLang, active, setActive, stor
       window.removeEventListener('message', acceptOpexSession);
     };
   }, [allowedParentOrigins, embedded]);
+
+  useEffect(() => {
+    if (!session) return;
+    let mounted = true;
+    setStoresLoading(true);
+    api.getStores()
+      .then((result) => {
+        if (!mounted) return;
+        const assigned = new Set(
+          (session?.user?.assigned_stores || []).map((value) => String(value).toUpperCase())
+        );
+        const rows = (result?.stores || [])
+          .filter((item) => (
+            !assigned.size ||
+            assigned.has('*') ||
+            assigned.has(String(item.store_code || item.vendor_id).toUpperCase())
+          ))
+          .map((item) => ({
+            ...item,
+            code: item.store_code || item.vendor_id,
+            name: item.display_name || item.store_name || item.store_code,
+          }))
+          .filter((item) => item.code);
+        setAvailableStores(rows);
+        const selectedExists = rows.some((item) => item.code === store);
+        if ((!store || store === 'AUTO' || !selectedExists) && rows[0]) {
+          const preferred = session?.user?.default_store;
+          const preferredRow = rows.find((item) => item.code === preferred);
+          setStore(preferredRow?.code || rows[0].code);
+        }
+      })
+      .catch((error) => setAuthError(error?.message || 'Depo master verisi alınamadı.'))
+      .finally(() => mounted && setStoresLoading(false));
+    return () => { mounted = false; };
+  }, [session]);
 
   const permissions = session?.user?.permissions || {};
   const features = permissions.features || {};
@@ -140,8 +188,10 @@ export default function Shell({ children, lang, setLang, active, setActive, stor
         <header className="topbar">
           <div className="top-left">
             <div className="pill"><span className="icon-dot" /> {tt(lang, 'system')} <b>{tt(lang, 'online')}</b></div>
-            <select className="select" value={store} onChange={(e) => setStore(e.target.value)}>
-              {stores.filter(s => s.code !== 'ALL').map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+            <select className="select store-select" value={store} onChange={(e) => setStore(e.target.value)} disabled={storesLoading || !availableStores.length}>
+              {storesLoading ? <option>{tt(lang, 'loadingStores')}</option> : null}
+              {!storesLoading && !availableStores.length ? <option>{tt(lang, 'noAuthorizedStores')}</option> : null}
+              {availableStores.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
             </select>
             <select className="select" value={lang} onChange={(e) => setLang(e.target.value)}>
               {languages.map((l) => <option key={l} value={l}>{l.toUpperCase()}</option>)}

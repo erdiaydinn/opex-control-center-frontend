@@ -640,21 +640,33 @@ export function Admin({
   readiness,
   notify,
 }) {
+  const copy = ({
+    tr: { title: 'Planogram yönetimi', sub: 'Kullanıcı ve rol yönetimi OPEX Access Control’dadır. Burada veri kalitesi, onaylar ve işlem geçmişi yönetilir.', history: 'İşlem geçmişi', records: 'kayıt', hint: 'tarih, kullanıcı, işlem ve depo bazında aranabilir', search: 'Genel arama', action: 'İşlem', user: 'Kullanıcı', store: 'Depo', entity: 'Varlık tipi', from: 'Başlangıç', to: 'Bitiş', filter: 'Filtrele', clear: 'Temizle', time: 'Zaman' },
+    en: { title: 'Planogram administration', sub: 'Users and roles are managed in OPEX Access Control. Data quality, approvals and audit history are managed here.', history: 'Audit history', records: 'records', hint: 'searchable by date, user, action and depot', search: 'Search', action: 'Action', user: 'User', store: 'Depot', entity: 'Entity type', from: 'From', to: 'To', filter: 'Filter', clear: 'Clear', time: 'Time' },
+    de: { title: 'Planogramm-Verwaltung', sub: 'Benutzer und Rollen werden in OPEX Access Control verwaltet. Datenqualität, Freigaben und Verlauf werden hier verwaltet.', history: 'Änderungsverlauf', records: 'Einträge', hint: 'nach Datum, Benutzer, Aktion und Lager durchsuchbar', search: 'Suche', action: 'Aktion', user: 'Benutzer', store: 'Lager', entity: 'Entitätstyp', from: 'Von', to: 'Bis', filter: 'Filtern', clear: 'Leeren', time: 'Zeit' },
+    ar: { title: 'إدارة مخطط الرفوف', sub: 'تتم إدارة المستخدمين والأدوار في OPEX Access Control. تتم هنا إدارة جودة البيانات والموافقات وسجل العمليات.', history: 'سجل العمليات', records: 'سجل', hint: 'يمكن البحث حسب التاريخ والمستخدم والإجراء والمستودع', search: 'بحث', action: 'الإجراء', user: 'المستخدم', store: 'المستودع', entity: 'نوع العنصر', from: 'من', to: 'إلى', filter: 'تصفية', clear: 'مسح', time: 'الوقت' },
+  })[lang] || {};
   const [audit, setAudit] = useState([]);
   const [pending, setPending] = useState([]);
   const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [adminError, setAdminError] = useState('');
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [filters, setFilters] = useState({
+    q: '', action: '', actor: '', store_code: '',
+    entity_type: '', created_from: '', created_to: '',
+  });
 
-  async function loadAdmin() {
+  async function loadAdmin(nextFilters = filters) {
     setLoadingAdmin(true);
     setAdminError('');
     const results = await Promise.allSettled([
-      api.auditLogs({ limit: 50 }),
+      api.auditLogs({ limit: 250, ...nextFilters }),
       api.pendingDimensionChanges(),
     ]);
     const auditResult = results[0].status === 'fulfilled' ? results[0].value : null;
     const pendingResult = results[1].status === 'fulfilled' ? results[1].value : null;
     setAudit(auditResult?.logs || []);
+    setAuditTotal(Number(auditResult?.total || 0));
     setPending(pendingResult?.requests || pendingResult?.pending || []);
     const failures = results.filter((result) => result.status === 'rejected');
     if (failures.length === results.length) {
@@ -666,6 +678,21 @@ export function Admin({
   useEffect(() => {
     loadAdmin();
   }, []);
+
+  function updateFilter(key, value) {
+    setFilters((previous) => ({ ...previous, [key]: value }));
+  }
+
+  function submitFilters(event) {
+    event.preventDefault();
+    loadAdmin(filters);
+  }
+
+  function clearFilters() {
+    const empty = { q: '', action: '', actor: '', store_code: '', entity_type: '', created_from: '', created_to: '' };
+    setFilters(empty);
+    loadAdmin(empty);
+  }
 
   async function review(requestId, approve) {
     try {
@@ -695,11 +722,8 @@ export function Admin({
   return (
     <div className="page">
       <div className="section-eyebrow">PLANOGRAM OPERATIONS</div>
-      <h1 style={{ fontSize: 42, margin: '8px 0' }}>{L(lang, 'admin')}</h1>
-      <p className="muted">
-        Kullanıcı ve rol yönetimi OPEX Access Control’dadır. Bu ekran yalnızca planogram
-        onayları, veri kalitesi ve audit kayıtlarını yönetir.
-      </p>
+      <h1 className="page-title">{copy.title}</h1>
+      <p className="muted">{copy.sub}</p>
 
       <div className="grid cols-4">
         <div className="card kpi"><div className="kpi-label">Veri Kalitesi</div><div className="kpi-value">%{dataQualityScore}</div><div className="kpi-trend">{missingDimensions} eksik ölçü</div></div>
@@ -732,17 +756,30 @@ export function Admin({
 
         <section className="card pad">
           <div className="section-eyebrow">AUDIT LOG</div>
-          <h3>Son 50 işlem</h3>
+          <div className="audit-heading">
+            <div><h3>{copy.history}</h3><p className="muted">{auditTotal} {copy.records} · {copy.hint}</p></div>
+          </div>
+          <form className="audit-filters" onSubmit={submitFilters}>
+            <label className="audit-search">{copy.search}<input value={filters.q} onChange={(event) => updateFilter('q', event.target.value)} placeholder="Action, user, depot, SKU, request ID" /></label>
+            <label>{copy.action}<input value={filters.action} onChange={(event) => updateFilter('action', event.target.value)} placeholder="plan_generated" /></label>
+            <label>{copy.user}<input value={filters.actor} onChange={(event) => updateFilter('actor', event.target.value)} placeholder="erdi" /></label>
+            <label>{copy.store}<input value={filters.store_code} onChange={(event) => updateFilter('store_code', event.target.value.toUpperCase())} placeholder="FULYA" /></label>
+            <label>{copy.entity}<input value={filters.entity_type} onChange={(event) => updateFilter('entity_type', event.target.value)} placeholder="planogram" /></label>
+            <label>{copy.from}<input type="date" value={filters.created_from} onChange={(event) => updateFilter('created_from', event.target.value)} /></label>
+            <label>{copy.to}<input type="date" value={filters.created_to} onChange={(event) => updateFilter('created_to', event.target.value)} /></label>
+            <div className="audit-filter-actions"><button className="btn primary" type="submit">{copy.filter}</button><button className="btn ghost" type="button" onClick={clearFilters}>{copy.clear}</button></div>
+          </form>
           <div style={{ overflow: 'auto', maxHeight: 420 }}>
             <table className="table">
-              <thead><tr><th>Zaman</th><th>İşlem</th><th>Kullanıcı</th><th>Depo</th></tr></thead>
+              <thead><tr><th>{copy.time}</th><th>{copy.action}</th><th>{copy.user}</th><th>{copy.store}</th><th>{copy.entity}</th></tr></thead>
               <tbody>
                 {audit.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.created_at || '-'}</td>
+                    <td>{row.created_at ? new Date(row.created_at).toLocaleString(lang === 'tr' ? 'tr-TR' : lang) : '-'}</td>
                     <td>{row.action || '-'}</td>
                     <td>{row.actor || '-'}</td>
                     <td>{row.store_code || '-'}</td>
+                    <td>{row.entity_type || '-'}{row.entity_id ? ` · ${row.entity_id}` : ''}</td>
                   </tr>
                 ))}
               </tbody>

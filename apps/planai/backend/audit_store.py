@@ -150,6 +150,7 @@ def list_audit_logs(
     request_id: str = "",
     created_from: str = "",
     created_to: str = "",
+    q: str = "",
 ) -> Dict[str, Any]:
     init_audit_db()
     limit = max(1, min(int(limit or 100), 1000))
@@ -164,8 +165,25 @@ def list_audit_logs(
         ("request_id", request_id),
     )):
         if str(value or "").strip():
-            clauses.append(f"{field} = ?")
-            params.append(str(value).strip())
+            if field in {"store_code", "entity_type"}:
+                clauses.append(f"{field} = ?")
+                params.append(str(value).strip())
+            else:
+                clauses.append(f"LOWER({field}) LIKE ?")
+                params.append(f"%{str(value).strip().lower()}%")
+
+    if str(q or "").strip():
+        term = f"%{str(q).strip().lower()}%"
+        clauses.append(
+            "("
+            "LOWER(action) LIKE ? OR LOWER(actor) LIKE ? OR "
+            "LOWER(COALESCE(store_code, '')) LIKE ? OR "
+            "LOWER(COALESCE(entity_type, '')) LIKE ? OR "
+            "LOWER(COALESCE(entity_id, '')) LIKE ? OR "
+            "LOWER(COALESCE(request_id, '')) LIKE ?"
+            ")"
+        )
+        params.extend([term] * 6)
 
     if str(created_from or "").strip():
         value = str(created_from).strip()

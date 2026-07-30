@@ -767,7 +767,7 @@ function mergeCandidateProducts(...lists) {
 
 export default function App() {
   window.__PLONAGRAM_ACTIVE_PIPELINE__ = 'V1.9.47_STRATEGY_FIRST_ACTIVE';
-  const [loading, setLoading] = useState(true);
+  const [loading] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
   const [active, setActive] = useState('command');
   const [lang, setLang] = useState(() => {
@@ -779,6 +779,7 @@ export default function App() {
   const [unplacedProducts, setUnplacedProducts] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [storeDna, setStoreDna] = useState(null);
+  const [storeProfile, setStoreProfile] = useState(null);
   const [readiness, setReadiness] = useState(null);
   const [backendPlan, setBackendPlan] = useState(null);
   const [optimizationWeights, setOptimizationWeights] = useState(() => {
@@ -810,11 +811,6 @@ export default function App() {
   const abortRef = useRef(null);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setLoading(false), 1150);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const refresh = () => setAuthRevision((value) => value + 1);
     window.addEventListener('plonagram-session-ready', refresh);
     return () => window.removeEventListener('plonagram-session-ready', refresh);
@@ -830,16 +826,32 @@ export default function App() {
     let mounted = true;
     async function loadPersistedState() {
       try {
-        const boot = await api.bootstrap(store);
-        if (!mounted || !boot || boot.status !== 'success') return;
+        if (!store || store === 'AUTO') return;
+        setStoreDna(null);
+        setStoreProfile(null);
+        setObjects([]);
+        setProducts([]);
+        setUnplacedProducts([]);
+        setBackendPlan(null);
+        const [boot, dnaResult, profileResult, ready] = await Promise.all([
+          api.bootstrap(store),
+          api.getStoreDna(store),
+          api.getStoreProfile(store),
+          api.readiness(store),
+        ]);
+        if (!mounted) return;
 
-        const savedLayout = boot.layout?.payload;
-        const savedPlan = boot.planogram?.payload;
-        if (boot.dna) setStoreDna(boot.dna);
-        try { const ready = await api.readiness(store); if (mounted) setReadiness(ready); } catch (e) {}
+        const savedLayout = boot?.status === 'success' ? boot.layout?.payload : null;
+        const savedPlan = boot?.status === 'success' ? boot.planogram?.payload : null;
+        const resolvedDna = boot?.dna || dnaResult?.dna || dnaResult?.store_dna || null;
+        setStoreDna(resolvedDna);
+        setStoreProfile(profileResult?.store || null);
+        setReadiness(ready);
 
         if (savedLayout?.objects?.length) {
           setObjects(savedLayout.objects);
+        } else if (resolvedDna?.layout_objects?.length) {
+          setObjects(resolvedDna.layout_objects);
         }
 
         if (savedPlan?.products?.length) {
@@ -857,7 +869,7 @@ export default function App() {
             if (mounted) setObjects(objectsFromLayout(defaultLayout, []));
           } catch {}
         }
-        if (boot.tasks?.length) {
+        if (boot?.tasks?.length) {
           setTasks(boot.tasks.map((t) => ({
             id: t.external_id || t.id,
             store: t.store_code || store,
@@ -870,7 +882,9 @@ export default function App() {
           })));
         }
       } catch (err) {
-        // DB kapalıysa ürün deneyimini düşürme; local state ile devam et.
+        setStoreDna(null);
+        setStoreProfile(null);
+        notify(`Depo verisi yüklenemedi: ${readableError(err)}`);
       }
     }
     loadPersistedState();
@@ -1010,10 +1024,12 @@ export default function App() {
 
     setStrategyProfile(activeStrategy);
 
-    const effectiveStoreDna = storeDna || { source: 'backend_default_layout_fallback', objects };
-    if (!storeDna) {
-      notify('Store DNA bulunamadı; geçici olarak backend default layout ile plan üretilecek.');
+    if (!storeDna || !store || store === 'AUTO') {
+      notify('Seçili depo için Store DNA yüklenmeden plan üretilemez. Depo Kurulumu ekranına yönlendiriliyorsun.');
+      setActive('storeDna');
+      return;
     }
+    const effectiveStoreDna = storeDna;
 
     await runOperation(
       {
@@ -1194,7 +1210,7 @@ export default function App() {
 const common = { lang, objects, setObjects, products, setProducts, unplacedProducts, setUnplacedProducts, tasks, setTasks, store, notify, setActive, onGenerate: generateOptimalPlan, storeDna, setStoreDna, readiness, setReadiness, backendPlan, setBackendPlan, placementRules, setPlacementRules, optimizationWeights, setOptimizationWeights, strategyProfile, setStrategyProfile };
   const pages = {
     command: <CommandCenter {...common} />,
-    storeDna: <StoreDNAWorkspace {...common} storeName={store} />,
+    storeDna: <StoreDNAWorkspace {...common} storeName={storeProfile?.display_name || storeProfile?.store_name || store} storeProfile={storeProfile} />,
     live3d: <Live3D {...common} />,
     architect: <LayoutArchitect {...common} />,
     placement: <ProductPlacementStudio {...common} />,

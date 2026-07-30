@@ -10,6 +10,7 @@ import json
 import time
 import os
 import uuid
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,6 +70,7 @@ from change_request_store import (
 from security import authenticate_authorization, ensure_store_access, get_current_user, require_action, require_roles
 from equipment_library import EQUIPMENT, equipment_to_layout_object, get_equipment, list_equipment
 from rule_catalog import RULE_CATALOG, scoring_config_with_defaults, validate_rule_payload
+from store_dna_store import get_store, get_store_dna, save_store_dna
 
 try:
     from dxf_parser_smart import parse_dxf_to_layout_smart
@@ -202,6 +204,20 @@ class GenerateRequest(BaseModel):
     actor: Optional[str] = "system"
     store_code: Optional[str] = None
     request_id: Optional[str] = None
+
+
+PLANOGRAM_JOBS: Dict[str, Dict[str, Any]] = {}
+PLANOGRAM_JOBS_LOCK = threading.Lock()
+
+
+def _job_snapshot(job: Dict[str, Any], include_result: bool = False) -> Dict[str, Any]:
+    snapshot = {
+        key: value for key, value in job.items()
+        if key != "result" and not key.startswith("_")
+    }
+    if include_result and job.get("status") == "completed":
+        snapshot["result"] = job.get("result")
+    return snapshot
 
 
 class PlanRequest(BaseModel):
@@ -363,6 +379,79 @@ def default_layout():
     return generate_default_layout()
 
 
+@app.get("/stores/{store_code}/dna")
+def read_store_dna(
+    store_code: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    ensure_store_access(current_user, store_code)
+    dna = get_store_dna(store_code)
+    if not dna:
+        raise HTTPException(status_code=404, detail="Depo master kaydında bulunamadı.")
+    return {"status": "success", "dna": dna, "store_dna": dna}
+
+
+@app.get("/stores/{store_code}/profile")
+def read_store_profile(
+    store_code: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    ensure_store_access(current_user, store_code)
+    store = get_store(store_code)
+    if not store:
+        raise HTTPException(status_code=404, detail="Depo master kaydında bulunamadı.")
+    return {"status": "success", "store": store}
+
+
+@app.post("/store-dna/generate-easy")
+def create_store_dna(
+    payload: Dict[str, Any] = Body(...),
+    current_user: Dict[str, Any] = Depends(require_action("edit")),
+):
+    store_code = str(
+        payload.get("store_code")
+        or payload.get("storeCode")
+        or payload.get("depot_code")
+        or ""
+    ).strip()
+    if not store_code or store_code.upper() == "AUTO":
+        raise HTTPException(status_code=400, detail="Gerçek bir depo seçilmelidir.")
+    ensure_store_access(current_user, store_code)
+    try:
+        dna = save_store_dna(store_code, payload)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Depo master kaydında bulunamadı.")
+    _audit(
+        "store_dna_updated",
+        actor=current_user,
+        store_code=store_code,
+        entity_type="store_dna",
+        entity_id=store_code,
+        after={
+            "aisle_count": dna.get("aisle_count"),
+            "left_modules": dna.get("left_modules"),
+            "right_modules": dna.get("right_modules"),
+            "shelves_per_rack": dna.get("shelves_per_rack"),
+            "algida_count": dna.get("algida_count"),
+            "martek_plus4_count": dna.get("martek_plus4_count"),
+            "martek_frozen_count": dna.get("martek_frozen_count"),
+        },
+    )
+    return {"status": "success", "dna": dna, "store_dna": dna}
+
+
+@app.post("/stores/{store_code}/dna/generate-easy")
+def create_store_dna_alias(
+    store_code: str,
+    payload: Dict[str, Any] = Body(...),
+    current_user: Dict[str, Any] = Depends(require_action("edit")),
+):
+    return create_store_dna(
+        {**payload, "store_code": store_code},
+        current_user,
+    )
+
+
 # =====================================================
 # RULE CATALOG / EQUIPMENT / AUDIT CONTRACTS
 # =====================================================
@@ -456,6 +545,7 @@ def audit_logs(
     request_id: str = "",
     created_from: str = "",
     created_to: str = "",
+    q: str = "",
     current_user: Dict[str, Any] = Depends(require_roles("ADMIN", "SUPER_USER", "REGIONAL_MANAGER")),
 ):
     return {"status": "success", **list_audit_logs(
@@ -468,6 +558,7 @@ def audit_logs(
         request_id=request_id,
         created_from=created_from,
         created_to=created_to,
+        q=q,
     )}
 
 
@@ -590,6 +681,124 @@ def generate(req: GenerateRequest, current_user: Dict[str, Any] = Depends(requir
         metadata={"mode": req.mode or "HYBRID", "product_count": len(req.products or []), "request_id": req.request_id},
     )
     return result
+
+
+@app.post("/planogram-jobs")
+def create_planogram_job(
+    req: GenerateRequest,
+    current_user: Dict[str, Any] = Depends(require_action("create")),
+):
+    """Run generation in a bounded background job and report real progress."""
+    ensure_store_access(current_user, req.store_code)
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    job = {
+        "job_id": job_id,
+        "status": "queued",
+        "phase": "queued",
+        "processed": 0,
+        "total": len(req.products or []),
+        "progress_pct": 0,
+        "created_at": now,
+        "updated_at": now,
+        "store_code": req.store_code,
+        "error": None,
+        "_owner": current_user.get("username") or current_user.get("email"),
+    }
+    with PLANOGRAM_JOBS_LOCK:
+        completed = [
+            key for key, value in PLANOGRAM_JOBS.items()
+            if value.get("status") in {"completed", "failed"}
+        ]
+        for old_id in completed[:-19]:
+            PLANOGRAM_JOBS.pop(old_id, None)
+        PLANOGRAM_JOBS[job_id] = job
+
+    def update_progress(processed: int, total: int, phase: str) -> None:
+        with PLANOGRAM_JOBS_LOCK:
+            target = PLANOGRAM_JOBS.get(job_id)
+            if not target:
+                return
+            target.update({
+                "status": "running",
+                "phase": phase,
+                "processed": int(processed),
+                "total": int(total),
+                "progress_pct": round((processed / max(total, 1)) * 100, 1),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+    def worker() -> None:
+        started = time.perf_counter()
+        try:
+            update_progress(0, len(req.products or []), "normalizing")
+            result = generate_planogram(
+                products=req.products,
+                layout=req.layout or generate_default_layout(),
+                mode=req.mode or "HYBRID",
+                brand_side_rules=req.brand_side_rules,
+                scoring_config=scoring_config_with_defaults(req.scoring_config),
+                allow_ai_dimensions=bool(req.allow_ai_dimensions),
+                progress_callback=update_progress,
+            )
+            result.setdefault("summary", {})["runtime_sec"] = round(
+                time.perf_counter() - started, 3
+            )
+            with PLANOGRAM_JOBS_LOCK:
+                target = PLANOGRAM_JOBS[job_id]
+                target.update({
+                    "status": "completed",
+                    "phase": "completed",
+                    "processed": target.get("total", len(req.products or [])),
+                    "progress_pct": 100,
+                    "result": result,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+            _audit(
+                "plan_generated_job",
+                actor=current_user,
+                store_code=req.store_code,
+                entity_type="planogram",
+                entity_id=job_id,
+                request_id=req.request_id,
+                after=result.get("summary"),
+                metadata={"product_count": len(req.products or [])},
+            )
+        except Exception as exc:
+            with PLANOGRAM_JOBS_LOCK:
+                target = PLANOGRAM_JOBS.get(job_id)
+                if target:
+                    target.update({
+                        "status": "failed",
+                        "phase": "failed",
+                        "error": str(exc),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    })
+
+    threading.Thread(
+        target=worker,
+        name=f"planogram-{job_id[:8]}",
+        daemon=True,
+    ).start()
+    return {"status": "accepted", **_job_snapshot(job)}
+
+
+@app.get("/planogram-jobs/{job_id}")
+def get_planogram_job(
+    job_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    with PLANOGRAM_JOBS_LOCK:
+        job = PLANOGRAM_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Planogram işi bulunamadı.")
+        owner = current_user.get("username") or current_user.get("email")
+        if (
+            current_user.get("role") not in {"ADMIN", "SUPER_USER"}
+            and job.get("_owner") != owner
+        ):
+            raise HTTPException(status_code=403, detail="Bu işe erişim yetkiniz yok.")
+        return {"status": "success", **_job_snapshot(job, include_result=True)}
 
 
 @app.post("/generate-planogram-fast")

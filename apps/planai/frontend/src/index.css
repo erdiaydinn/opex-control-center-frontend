@@ -1,0 +1,55 @@
+/* PLONAGRAM_RECOVERY_TAILWIND_IMPORT_FIX_V1
+   This project is plain CSS/Vite in this recovery branch.
+   Do not import "tailwindcss" here; Vite/PostCSS was trying to open a local file named tailwindcss.
+*/
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #10131a;
+  background: #f7f4ef;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --plona-pink: #df1067;
+  --plona-black: #10131a;
+  --plona-bg: #f7f4ef;
+  --plona-card: #ffffff;
+  --plona-muted: #657085;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    linear-gradient(90deg, rgba(223,16,103,.035), rgba(24,199,223,.04)),
+    linear-gradient(rgba(16,19,26,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16,19,26,.035) 1px, transparent 1px),
+    var(--plona-bg);
+  background-size: auto, 22px 22px, 22px 22px, auto;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}

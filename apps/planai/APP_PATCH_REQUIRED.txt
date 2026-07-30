@@ -1,0 +1,47 @@
+APP.jsx içinde aşağıdaki callbackleri ekli olduğundan emin ol:
+
+1) onLayoutChange artık 2 parametre almalı:
+function handleLayoutChange(nextPositions = [], nextObjects = null) {
+  const next = clone(planogram);
+  next.aisles = (next.aisles || []).map((aisle) => {
+    const pos = nextPositions.find((p) => String(p.aisle_id) === String(aisle.aisle_id));
+    if (!pos) return aisle;
+    return {
+      ...aisle,
+      layout_position: {
+        grid_x: n(pos.grid_x ?? pos.x, 0),
+        grid_y: n(pos.grid_y ?? pos.y, 0),
+        rotation: n(pos.rotation, 0),
+      },
+    };
+  });
+  if (nextObjects) next.layout_objects = nextObjects;
+  commitPlan(next, "layout_positions_updated", { positions: nextPositions, objects: nextObjects });
+}
+
+2) Ürün yön değiştirme callbacklerini App.jsx içine ekle:
+function setProductOrientation(target, sku, orientation) {
+  const next = clone(planogram);
+  const found = findShelf(next, target.aisle_id, target.module_id, target.shelf.shelf_no);
+  const p = found?.shelf?.products?.find((x) => String(x.sku) === String(sku));
+  if (!p) return;
+  p.orientation = orientation;
+  recalcShelf(found.shelf);
+  commitPlan(next, "product_orientation_changed", { sku, orientation });
+  refreshSelectedShelf(next, target);
+}
+
+function rotateProduct(target, sku) {
+  const next = clone(planogram);
+  const found = findShelf(next, target.aisle_id, target.module_id, target.shelf.shelf_no);
+  const p = found?.shelf?.products?.find((x) => String(x.sku) === String(sku));
+  if (!p) return;
+  p.orientation = p.orientation === "vertical" ? "horizontal" : "vertical";
+  recalcShelf(found.shelf);
+  commitPlan(next, "product_rotated", { sku, orientation: p.orientation });
+  refreshSelectedShelf(next, target);
+}
+
+3) ShelfEditor çağrısına ekle:
+onRotateProduct={rotateProduct}
+onSetProductOrientation={setProductOrientation}

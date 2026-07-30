@@ -1,0 +1,81 @@
+import dedent from 'dedent'
+import { z } from 'zod'
+import { BaseNode, nodeType, objectId } from '../base'
+import { MaterialSchema } from '../material'
+
+export const WindowType = z.enum([
+  'fixed',
+  'sliding',
+  'casement',
+  'awning',
+  'hopper',
+  'single-hung',
+  'double-hung',
+  'bay',
+  'bow',
+  'louvered',
+])
+export type WindowType = z.infer<typeof WindowType>
+
+export const WindowNode = BaseNode.extend({
+  id: objectId('window'),
+  type: nodeType('window'),
+  material: MaterialSchema.optional(),
+
+  position: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  rotation: z.tuple([z.number(), z.number(), z.number()]).default([0, 0, 0]),
+  side: z.enum(['front', 'back']).optional(),
+
+  // Wall reference
+  wallId: z.string().optional(),
+
+  // Overall dimensions
+  width: z.number().default(1.5),
+  height: z.number().default(1.5),
+
+  // Opening mode - when set to "opening", the window is only a shaped cutout
+  openingKind: z.enum(['window', 'opening']).default('window'),
+
+  // Window family
+  windowType: WindowType.default('fixed'),
+  operationState: z.number().min(0).max(1).default(0),
+  awningDirection: z.enum(['up', 'down']).default('up'),
+  casementStyle: z.enum(['single', 'french']).default('single'),
+  hingesSide: z.enum(['left', 'right']).default('left'),
+  openingShape: z.enum(['rectangle', 'rounded', 'arch']).default('rectangle'),
+  openingRadiusMode: z.enum(['all', 'individual']).default('all'),
+  openingCornerRadii: z
+    .tuple([z.number(), z.number(), z.number(), z.number()])
+    .default([0.15, 0.15, 0.15, 0.15]),
+  cornerRadius: z.number().default(0.15),
+  archHeight: z.number().default(0.35),
+  openingRevealRadius: z.number().default(0.025),
+
+  // Frame
+  frameThickness: z.number().default(0.05),
+  frameDepth: z.number().default(0.07),
+
+  // Divisions — ratios allow non-uniform panes
+  // [0.5, 0.5] = two equal panes
+  // [0.6, 0.4] = one larger, one smaller
+  // [1] = single pane (no division)
+  columnRatios: z.array(z.number()).default([1]),
+  rowRatios: z.array(z.number()).default([1]),
+  columnDividerThickness: z.number().default(0.03),
+  rowDividerThickness: z.number().default(0.03),
+
+  // Sill
+  sill: z.boolean().default(true),
+  sillDepth: z.number().default(0.08),
+  sillThickness: z.number().default(0.03),
+}).describe(dedent`Window node - a parametric window placed on a wall
+  - position: center of the window in wall-local coordinate system
+  - width/height: overall outer dimensions
+  - windowType: explicit window family, defaulting old windows to fixed
+  - frameThickness: width of the frame members
+  - frameDepth: how deep the frame sits within the wall
+  - columnRatios/rowRatios: pane division ratios
+  - sill: whether to show a window sill
+`)
+
+export type WindowNode = z.infer<typeof WindowNode>

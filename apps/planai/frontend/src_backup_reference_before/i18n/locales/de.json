@@ -1,0 +1,97 @@
+{
+  "ui": {
+    "language": {
+      "title": "Sprache",
+      "select": "Sprache wählen",
+      "note": "Spracheinstellung wird gespeichert"
+    },
+    "common": {
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "close": "Schließen",
+      "search": "Suchen",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "approve": "Genehmigen",
+      "reject": "Ablehnen",
+      "loading": "Lädt",
+      "activeStore": "Aktiver Store"
+    }
+  },
+  "domain": {
+    "store": "Store",
+    "storeSelection": "Store-Auswahl",
+    "storeQuestion": "Für welchen Store wird dieses Konto erstellt?",
+    "depotDNA": "Store-Profil",
+    "depotDNAHelp": "Physische und operative Details des Stores eingeben.",
+    "fixture": "Regal-/Kühlmöbeltyp",
+    "layout": "Store-Layout",
+    "planogram": "Planogramm",
+    "orderPicking": "Kommissionierung",
+    "goodsReceiving": "Wareneingang",
+    "shelfReplenishment": "Regalauffüllung",
+    "dispatchStaging": "Bereich für vorbereitete Bestellungen",
+    "aisleCongestion": "Gangüberlastung",
+    "walkingDistance": "Laufweg",
+    "spaceUtilization": "Flächenauslastung",
+    "deadSpace": "Ungenutzte Fläche",
+    "highVelocitySku": "Schnelldreher-SKU",
+    "highestRefundRiskSku": "SKU mit höchstem Erstattungsrisiko",
+    "itemReplacement": "Artikelersatz",
+    "refundRisk": "Erstattungsrisiko",
+    "pickingTime": "Kommissionierzeit",
+    "shelfEfficiency": "Regaleffizienz",
+    "goldenZone": "Leicht erreichbare Zone",
+    "coldLoss": "Kälteverlust",
+    "fefo": "First Expired, First Out"
+  },
+  "storage": {
+    "AMBIENT": "Trockenware / Umgebung",
+    "CHILLED": "Gekühlte Ware +4°C",
+    "FROZEN": "Tiefkühlware",
+    "CHILLED_ROOM": "Kühlraum +4°C",
+    "FROZEN_ROOM": "Tiefkühlraum -18°C"
+  },
+  "fixture": {
+    "steel_rack": "Stahlregal",
+    "steel_rack_new_gen": "Stahlregal neue Generation",
+    "hdr_heavy_rack": "Schwerlastregal",
+    "martek_plus4": "Martek +4 Kühlschrank",
+    "martek_frozen_minus18": "Martek -18 Tiefkühlschrank",
+    "ice_cream_chest_freezer_small": "Algida/Golf Eiscreme-Truhe klein",
+    "ice_cream_chest_freezer_medium": "Algida/Golf Eiscreme-Truhe mittel",
+    "ice_cream_chest_freezer_large": "Algida/Golf Eiscreme-Truhe groß",
+    "vertical_chiller": "Vertikaler Kühlschrank +4°C",
+    "ugur_vertical_chiller": "Uğur vertikaler Kühlschrank +4°C",
+    "secure_value_unit": "Abschließbare Wertwareneinheit",
+    "dispatch_heavy_rack": "Dispatch-Schwerlastregal",
+    "buffer_rack": "Puffer-/Bereitstellungsregal",
+    "chilled_room": "Kühlraum +4°C",
+    "frozen_room": "Tiefkühlraum -18°C",
+    "wall": "Wand",
+    "column": "Säule",
+    "manager_desk": "Manager-Schreibtisch"
+  },
+  "onboarding": {
+    "basementQuestion": "Hat der Store ein Untergeschoss?",
+    "upperStorageQuestion": "Gibt es einen über Treppen erreichbaren zusätzlichen Lagerbereich?",
+    "chilledRoomArea": "Ungefähre Größe des +4°C Kühlraums in m²?",
+    "frozenRoomArea": "Ungefähre Größe des -18°C Tiefkühlraums in m²?",
+    "receivingHours": "Wann findet der Wareneingang normalerweise statt?",
+    "after16Receiving": "Soll Wareneingang nach 16:00 vermieden werden?",
+    "peakHours": "Wann ist der Store am stärksten ausgelastet?",
+    "replenishmentFrequency": "Wie oft werden Regale üblicherweise aufgefüllt?",
+    "aisleWidth": "Durchschnittliche Gangbreite in cm?",
+    "mainAisleWidth": "Ungefähre Breite des Hauptgangs in cm?"
+  },
+  "loading": {
+    "boot": {
+      "title": "Plonagram wird vorbereitet",
+      "subtitle": "Depot-DNA, SKU-Physik und operative Regeln werden zentral geladen."
+    },
+    "optimize": {
+      "title": "Planogramm wird erstellt",
+      "subtitle": "Depot-DNA, Produktvolumen, Kühlkette und Routenregeln werden analysiert."
+    }
+  }
+}

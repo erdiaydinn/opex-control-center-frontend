@@ -1,0 +1,87 @@
+{
+  "ui": {
+    "language": {
+      "title": "Language",
+      "select": "Select language",
+      "note": "Only the interface language changes; system data is stored with universal codes."
+    },
+    "common": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "close": "Close",
+      "search": "Search",
+      "edit": "Edit",
+      "delete": "Delete",
+      "approve": "Approve",
+      "reject": "Reject",
+      "loading": "Loading",
+      "activeStore": "Active store"
+    }
+  },
+  "domain": {
+    "store": "Store",
+    "storeSelection": "Store selection",
+    "storeQuestion": "Which store are you creating this account for?",
+    "depotDNA": "Store Profile Setup",
+    "depotDNAHelp": "Enter store-specific physical and operational details.",
+    "fixture": "Fixture / Rack Type",
+    "layout": "Store Layout",
+    "planogram": "Planogram",
+    "orderPicking": "Order Picking",
+    "goodsReceiving": "Goods Receiving",
+    "shelfReplenishment": "Shelf Replenishment",
+    "dispatchStaging": "Dispatch Staging Area",
+    "aisleCongestion": "Aisle Congestion",
+    "walkingDistance": "Walking Distance",
+    "spaceUtilization": "Space Utilization",
+    "deadSpace": "Unused Space",
+    "highVelocitySku": "High Velocity SKU",
+    "highestRefundRiskSku": "Highest Refund Risk SKU",
+    "itemReplacement": "Item Replacement",
+    "refundRisk": "Refund Risk",
+    "pickingTime": "Picking Time",
+    "shelfEfficiency": "Shelf Efficiency",
+    "goldenZone": "Easy Reach Zone",
+    "coldLoss": "Cold Loss",
+    "fefo": "First Expired, First Out"
+  },
+  "storage": {
+    "AMBIENT": "Ambient / Dry Goods",
+    "CHILLED": "Chilled Goods +4°C",
+    "FROZEN": "Frozen Goods",
+    "CHILLED_ROOM": "Chilled Room +4°C",
+    "FROZEN_ROOM": "Frozen Room -18°C"
+  },
+  "fixture": {
+    "steel_rack": "Steel Rack",
+    "steel_rack_new_gen": "New Generation Steel Rack",
+    "hdr_heavy_rack": "Heavy Duty Rack",
+    "martek_plus4": "Martek +4 Chiller",
+    "martek_frozen_minus18": "Martek -18 Freezer",
+    "ice_cream_chest_freezer_small": "Algida/Golf Ice Cream Chest Freezer Small",
+    "ice_cream_chest_freezer_medium": "Algida/Golf Ice Cream Chest Freezer Medium",
+    "ice_cream_chest_freezer_large": "Algida/Golf Ice Cream Chest Freezer Large",
+    "vertical_chiller": "Vertical Chiller +4°C",
+    "ugur_vertical_chiller": "Uğur Vertical Chiller +4°C",
+    "secure_value_unit": "Locked High-Value Unit",
+    "dispatch_heavy_rack": "Dispatch Heavy Rack",
+    "buffer_rack": "Buffer / Holding Rack",
+    "chilled_room": "Chilled Room +4°C",
+    "frozen_room": "Frozen Room -18°C",
+    "wall": "Wall",
+    "column": "Column",
+    "manager_desk": "Manager Desk"
+  },
+  "onboarding": {
+    "basementQuestion": "Does the store have a basement level?",
+    "upperStorageQuestion": "Is there an upper stock area accessed by stairs?",
+    "chilledRoomArea": "Approximate size of the +4°C chilled room in m²?",
+    "frozenRoomArea": "Approximate size of the -18°C frozen room in m²?",
+    "receivingHours": "When does goods receiving usually happen?",
+    "after16Receiving": "Do you avoid goods receiving after 16:00?",
+    "peakHours": "When is the store most crowded?",
+    "replenishmentFrequency": "How often are shelves usually replenished?",
+    "aisleWidth": "Average aisle width in cm?",
+    "mainAisleWidth": "Approximate main walkway width in cm?"
+  }
+}

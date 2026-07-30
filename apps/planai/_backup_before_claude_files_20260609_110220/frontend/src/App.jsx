@@ -1,0 +1,909 @@
+import { useEffect, useRef, useState } from 'react';
+import Shell from './components/Shell.jsx';
+import LoadingScreen from './components/LoadingScreen.jsx';
+import OperationLoadingOverlay from './components/OperationLoadingOverlay.jsx';
+import CommandCenter from './components/CommandCenterOps.jsx';
+import Live3D from './components/Live3D.jsx';
+import LayoutArchitect from './components/LayoutArchitect.jsx';
+import ProductPlacementStudio from './components/ProductPlacementStudio.jsx';
+import PlanogramWorkspace from './components/PlanogramWorkspace.jsx';
+import RuleEngineReal from './components/RuleEngineReal.jsx';
+import PlanogramExportPanel from './components/PlanogramExportPanel.jsx';
+import DeltaPlanogramReal from './components/DeltaPlanogramReal.jsx';
+import StoreDNAWorkspace from './components/StoreDNA/StoreDNAWorkspace.jsx';
+import { Admin, Delta, FixtureLibrary, PhotoEvidence, ProductLibrary, Publishing, Reports, Rules, Tasks } from './components/DataViews.jsx';
+import { initialObjects, initialTasks, productsSeed } from './data/mock.js';
+import { api } from './services/api.js';
+import { normalizeProductsForBackend, parseCsvProducts, parseJsonLayout } from './utils/fileParsers.js';
+import { buildStorePlan, normalizeProduct, updateObjectsFromPlan } from './utils/planogramAllocator.js';
+import { applyPlacementRulesBeforePlan, DEFAULT_OPTIMIZATION_WEIGHTS, DEFAULT_STRATEGY_PROFILE, loadStrategyProfile } from './utils/placementRuleAdapter.js';
+
+function isAbort(err) {
+  return err?.name === 'AbortError' || String(err?.message || '').toLowerCase().includes('abort');
+}
+
+function normalizeBackendProduct(p, idx = 0) {
+  return normalizeProduct(p, idx);
+}
+
+function productsFromPlanogram(result, fallbackProducts) {
+  const plan = result?.planogram || result?.layout || null;
+  const out = [];
+  if (plan?.aisles) {
+    plan.aisles.forEach((aisle) => {
+      (aisle.modules || []).forEach((module) => {
+        (module.shelves || []).forEach((shelf) => {
+          (shelf.products || []).forEach((p, idx) => out.push(normalizeBackendProduct({ ...p, aisle_id: aisle.aisle_id, module_id: module.module_id, shelf_no: shelf.shelf_no }, idx)));
+        });
+      });
+    });
+  }
+  return out.length ? out : fallbackProducts;
+}
+
+function objectsFromLayout(layout, fallbackObjects) {
+  if (!layout) return fallbackObjects;
+  if (Array.isArray(layout.objects)) return layout.objects;
+  if (Array.isArray(layout.layout_objects) && layout.layout_objects.length) {
+    return [
+      ...fallbackObjects.filter((o) => ['corridor', 'chilled_room', 'frozen_room', 'dispatch', 'receiving', 'algida_fridge', 'horizontal_fridge', 'steel_rack'].includes(o.type)),
+      ...layout.layout_objects.map((o, idx) => ({
+        id: o.id || `${o.type || 'OBJ'}_${idx + 1}`,
+        label: o.label || String(o.type || 'Nesne').toUpperCase(),
+        type: o.type || 'structure',
+        zone: o.zone || (String(o.type || '').includes('column') ? 'STRUCTURE' : 'AMBIENT'),
+        x: Number(o.x || o.grid_x || 8),
+        y: Number(o.y || o.grid_y || 8),
+        w: Number(o.w || o.width || 2),
+        d: Number(o.d || o.depth || 2),
+        h: Number(o.h || o.height || 3),
+        rotation: Number(o.rotation || 0),
+        modules: Number(o.modules || 0),
+        shelves: Number(o.shelves || 0),
+        utilization: Number(o.utilization || 0),
+        changed: Number(o.changed || 0),
+      }))
+    ];
+  }
+  if (Array.isArray(layout.aisles)) {
+    const aisles = layout.aisles.map((a, idx) => ({
+      id: String(a.aisle_id || `A${idx + 1}`),
+      label: String(a.aisle_id || `A${idx + 1}`),
+      type: 'corridor',
+      zone: a.zone_type?.includes('FROZEN') ? 'FROZEN' : a.zone_type?.includes('COLD') ? 'CHILLED' : 'AMBIENT',
+      x: Math.min(112, 12 + (idx % 3) * 38),
+      y: Math.min(86, 24 + Math.floor(idx / 3) * 22),
+      w: 30,
+      d: 8,
+      h: 2.5,
+      rotation: Number(a.layout_position?.rotation || 0),
+      modules: Number(a.modules?.length || 6),
+      shelves: Number((a.modules || []).reduce((s, m) => s + (m.shelves?.length || 0), 0) || 24),
+      utilization: 70,
+      changed: 0,
+    }));
+    return [...fallbackObjects.filter((o) => !/^[A-Z]$/.test(o.id)), ...aisles];
+  }
+  return fallbackObjects;
+}
+
+function councilOptimizeProducts(list, currentObjects = initialObjects) {
+  const plan = buildStorePlan(list, currentObjects);
+  return plan.placed;
+}
+
+function recalcObjectsFromProducts(objects, products) {
+  return updateObjectsFromPlan(objects, buildStorePlan(products, objects));
+}
+
+
+function productKey(p = {}, idx = 0) {
+  return String(
+    p.sku ||
+    p.SKU ||
+    p.barcode ||
+    p.Barcodes ||
+    p.product.sku ||
+    p.SKU ||
+    p.barcode ||
+    p.Barcodes ||
+    p.product_barcodes ||
+    p.name ||
+    p.product_name ||
+    `ROW-${idx}`
+  ).trim();
+}
+
+
+function objectCapacityScore(list = []) {
+  return (list || []).reduce((sum, o) => {
+    return sum + Math.max(1, Number(o.modules || 0)) * Math.max(1, Number(o.shelves || 0));
+  }, 0);
+}
+
+function collectObjectArrays(value, out = [], seen = new Set()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return out;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    if (value.length && value.some((x) => x && typeof x === 'object' && ('modules' in x || 'shelves' in x || 'type' in x || 'zone' in x))) {
+      out.push(value);
+    }
+    value.forEach((x) => collectObjectArrays(x, out, seen));
+    return out;
+  }
+
+  Object.values(value).forEach((x) => collectObjectArrays(x, out, seen));
+  return out;
+}
+
+function resolvePlanObjects(currentObjects = [], storeDna = null) {
+  const candidates = [
+    currentObjects,
+    ...(collectObjectArrays(storeDna) || []),
+  ].filter((x) => Array.isArray(x) && x.length);
+
+  if (!candidates.length) return currentObjects;
+
+  return candidates
+    .map((list) => ({ list, score: objectCapacityScore(list), count: list.length }))
+    .sort((a, b) => b.score - a.score || b.count - a.count)[0].list;
+}
+
+
+function normalizeStorageTruthForApp(value) {
+  const raw = String(value || "").trim().toUpperCase();
+
+  if (!raw || raw === "NULL" || raw === "NAN" || raw === "UNKNOWN") return "";
+
+  if (raw.includes("FROZEN") || raw.includes("DONUK") || raw.includes("-18") || raw.includes("ICE_CREAM")) return "FROZEN";
+  if (raw.includes("CHILLED") || raw.includes("SO?UK") || raw.includes("SOGUK") || raw.includes("+4")) return "CHILLED";
+  if (raw.includes("AMBIENT")) return "AMBIENT";
+
+  return "";
+}
+
+function catalogStorageTruthForApp(product = {}) {
+  const catalogStorage =
+    product.catalog_storage_type ||
+    product.catalog_storage_class ||
+    product.catalog_storage ||
+    product.catalogStorage ||
+    product.master_storage_type ||
+    product.master_storage_class ||
+    product.master_storage ||
+    product.canonical_storage_type ||
+    product.source_catalog_storage_type ||
+    product.storage_truth ||
+    product.catalog?.storage_type ||
+    product.catalog?.storage_class ||
+    product.master_product?.storage_type ||
+    product.master_product?.storage_class ||
+    "";
+
+  const catalogTruth = normalizeStorageTruthForApp(catalogStorage);
+  if (catalogTruth) return { value: catalogTruth, source: "catalog" };
+
+  const abcStorage =
+    product["Storage Type"] ||
+    product.abc_storage_type ||
+    product.abcStorageType ||
+    "";
+
+  const abcTruth = normalizeStorageTruthForApp(abcStorage);
+  if (abcTruth) return { value: abcTruth, source: "abc_fallback" };
+
+  return { value: "", source: "" };
+}
+
+function normalizeCandidateProductsForAllocator(products = []) {
+  return (products || []).map((product) => {
+    const truth = catalogStorageTruthForApp(product);
+
+    if (!truth.value) return product;
+
+    return {
+      ...product,
+      catalog_storage_type: truth.value,
+      storage: truth.value,
+      storage_type: truth.value,
+      storage_class: truth.value,
+      storage_source: truth.source,
+    };
+  });
+}
+
+function normalizeLayoutObjectsForAllocator(objects = []) {
+  return (objects || []).map((object) => {
+    const text = [
+      object?.id,
+      object?.label,
+      object?.name,
+      object?.title,
+      object?.type,
+      object?.zone,
+      object?.fixture_type,
+      object?.fixture_class,
+      object?.storage,
+      object?.storage_type,
+    ].filter(Boolean).join(" ").toUpperCase();
+
+    const isMartek = text.includes("MARTEK");
+
+    if (!isMartek) return object;
+
+    return {
+      ...object,
+      modules: Math.max(2, Number(object.modules || 0) || 2),
+      shelves: Math.max(10, Number(object.shelves || 0) || 10),
+      storage: "CHILLED",
+      storage_type: "CHILLED",
+      storage_class: "CHILLED",
+      fixture_class: "CHILLED",
+      fixture_type: object.fixture_type || "MARTEK_CHILLED",
+      zone: "CHILLED",
+    };
+  });
+}
+
+function mergeCandidateProducts(...lists) {
+  const map = new Map();
+
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item) continue;
+      const key = productKey(item, map.size);
+      if (!key) continue;
+
+      const prev = map.get(key) || {};
+      map.set(key, {
+        ...prev,
+        ...item,
+        sku: item.sku || item.SKU || prev.sku || prev.SKU || key,
+      });
+    }
+  }
+
+  return [...map.values()];
+}
+
+
+// === V1.9.22 Command Center Engine Panel + Plan Run Modal ===
+function MiniMetric({ label, value, tone = 'pink' }) {
+  return (
+    <div className="card kpi" style={{ minHeight: 92 }}>
+      <div className="kpi-label">{label}</div>
+      <div className={`kpi-value ${tone}`} style={{ fontSize: 26 }}>{value}</div>
+    </div>
+  );
+}
+
+function CommandCenterEnginePanel({
+  products = [],
+  unplacedProducts = [],
+  placementRules = [],
+  setPlacementRules,
+  optimizationWeights = DEFAULT_OPTIMIZATION_WEIGHTS,
+  setOptimizationWeights,
+  strategyProfile = DEFAULT_STRATEGY_PROFILE,
+  setStrategyProfile,
+  storeDna,
+  readiness,
+  notify,
+  onOpenPlanModal,
+}) {
+  const [draftRule, setDraftRule] = useState({
+    type: 'brand',
+    value: 'Ülker',
+    zone: 'A',
+    side: 'R',
+    behavior: 'block_prefer',
+    priority: 8,
+  });
+
+  const candidateCount = (products?.length || 0) + (unplacedProducts?.length || 0);
+  const storeDnaReady = Boolean(storeDna || readiness?.store_dna || readiness?.dna);
+  const catalogReady = candidateCount > 0;
+  const abcReady = (products || []).some((p) => p.abc || p.abc_class || p.ABC) || (unplacedProducts || []).some((p) => p.abc || p.abc_class || p.ABC);
+  const casePackReady = [...(products || []), ...(unplacedProducts || [])].filter((p) => Number(p.case_pack_qty || p.casePackQty || 0) > 0).length;
+
+  function setWeight(key, value) {
+    const next = { ...(optimizationWeights || DEFAULT_OPTIMIZATION_WEIGHTS), [key]: Number(value) };
+    setOptimizationWeights?.(next);
+  }
+
+  function addRule() {
+    const record = {
+      id: `RULE-${Date.now().toString().slice(-6)}`,
+      ...draftRule,
+      created_at: new Date().toISOString(),
+      source: 'command_center',
+    };
+    setPlacementRules?.([record, ...(placementRules || [])]);
+    notify?.('Kural Komuta Merkezi motoruna eklendi. Optimum plan üretirken uygulanacak.');
+  }
+
+  return (
+    <div className="card pad" style={{ marginTop: 20, border: '1px solid rgba(223,16,103,.22)', boxShadow: '0 18px 48px rgba(223,16,103,.08)' }}>
+      <div className="section-eyebrow">COMMAND RULE ENGINE</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ margin: '6px 0 6px', fontSize: 28 }}>Kural ve Ağırlık Motoru</h2>
+          <p className="muted" style={{ maxWidth: 860 }}>
+            Komuta Merkezi sadece özet ekranı değil; planı hangi kuralla, hangi ağırlıkla ve hangi veri güveniyle üreteceğini buradan yönetir. Ayrı sekmede aratmaz.
+          </p>
+        </div>
+        <button className="btn primary" onClick={onOpenPlanModal}>Optimum plan ayarlarını aç</button>
+      </div>
+
+      <div className="grid cols-4" style={{ marginTop: 16 }}>
+        <MiniMetric label="Catalog / SKU" value={catalogReady ? `${candidateCount}` : 'Eksik'} tone={catalogReady ? 'green' : 'red'} />
+        <MiniMetric label="Store DNA" value={storeDnaReady ? 'Hazır' : 'Eksik'} tone={storeDnaReady ? 'green' : 'amber'} />
+        <MiniMetric label="ABC sinyali" value={abcReady ? 'Var' : 'Yok'} tone={abcReady ? 'green' : 'amber'} />
+        <MiniMetric label="Koli bilgisi" value={casePackReady ? `${casePackReady} SKU` : 'Eksik'} tone={casePackReady ? 'cyan' : 'amber'} />
+      </div>
+
+      <div className="grid cols-2" style={{ alignItems: 'start', marginTop: 18 }}>
+        <div className="card pad soft-card">
+          <h3 style={{ marginTop: 0 }}>Yeni kural</h3>
+          <div className="form-grid">
+            <div className="field">
+              <label>Kural tipi</label>
+              <select value={draftRule.type} onChange={(e) => setDraftRule({ ...draftRule, type: e.target.value })}>
+                <option value="brand">Marka</option>
+                <option value="category">Kategori</option>
+                <option value="subcategory">Alt kategori</option>
+                <option value="storage_raw">Storage raw</option>
+                <option value="case_pack">Koli / case pack</option>
+                <option value="fast_sku">Hızlı SKU</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Değer</label>
+              <input value={draftRule.value} onChange={(e) => setDraftRule({ ...draftRule, value: e.target.value })} placeholder="Örn: Ülker, İçecek, Raf" />
+            </div>
+            <div className="field">
+              <label>Hedef koridor / zone</label>
+              <select value={draftRule.zone} onChange={(e) => setDraftRule({ ...draftRule, zone: e.target.value })}>
+                <option value="A">A koridoru</option>
+                <option value="B">B koridoru</option>
+                <option value="CHILLED">+4 Soğuk</option>
+                <option value="FROZEN">-18 Donuk</option>
+                <option value="BACK_AMBIENT">Arka ambient</option>
+                <option value="DISPATCH">Dispatch yakını</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Hedef taraf</label>
+              <select value={draftRule.side} onChange={(e) => setDraftRule({ ...draftRule, side: e.target.value })}>
+                <option value="L">Sol</option>
+                <option value="R">Sağ</option>
+                <option value="ANY">Fark etmez</option>
+              </select>
+            </div>
+            <div className="field full">
+              <label>Davranış</label>
+              <select value={draftRule.behavior} onChange={(e) => setDraftRule({ ...draftRule, behavior: e.target.value })}>
+                <option value="block_prefer">Blok tercih et</option>
+                <option value="hard_isolate">İzole et</option>
+                <option value="front_prefer">Ön hatta taşı</option>
+                <option value="back_prefer">Arka hatta al</option>
+                <option value="increase_facing">Facing artır</option>
+              </select>
+            </div>
+          </div>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={addRule}>Kuralı kaydet</button>
+          <div className="muted" style={{ marginTop: 10 }}>{placementRules?.length || 0} aktif kural var.</div>
+        </div>
+
+        <div className="card pad soft-card">
+          <h3 style={{ marginTop: 0 }}>Ağırlık motoru</h3>
+          {[
+            ['sales', 'Satış hızı'],
+            ['category', 'Kategori bütünlüğü'],
+            ['brand', 'Marka bloklama'],
+            ['refill', 'Refill maliyeti'],
+            ['route', 'Picker rotası'],
+            ['cold', 'Soğuk zincir'],
+          ].map(([key, label]) => (
+            <div className="field" key={key} style={{ marginBottom: 10 }}>
+              <label>{label}: <b>{Number(optimizationWeights?.[key] ?? DEFAULT_OPTIMIZATION_WEIGHTS[key] ?? 5)}</b></label>
+              <input type="range" min="0" max="10" step="1" value={Number(optimizationWeights?.[key] ?? DEFAULT_OPTIMIZATION_WEIGHTS[key] ?? 5)} onChange={(e) => setWeight(key, e.target.value)} />
+            </div>
+          ))}
+          <div className="mini-metric" style={{ marginTop: 10 }}>
+            <b>{strategyProfile?.label || strategyProfile?.mode || 'Strateji seçilecek'}</b>
+            <span>Aktif strateji</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanRunModal({
+  open,
+  onClose,
+  onRun,
+  optimizationWeights = DEFAULT_OPTIMIZATION_WEIGHTS,
+  setOptimizationWeights,
+  strategyProfile = DEFAULT_STRATEGY_PROFILE,
+  setStrategyProfile,
+  placementRules = [],
+  products = [],
+  unplacedProducts = [],
+  storeDna,
+}) {
+  const [mode, setMode] = useState(strategyProfile?.mode || 'CATEGORY_SALES');
+  if (!open) return null;
+
+  const labels = {
+    CATEGORY_SALES: 'Kategori içinde satış sıralı',
+    ABC_DIRECT: 'ABC direkt',
+    HYBRID_CATEGORY_ABC_SALES: 'Hibrit: kategori + ABC + satış',
+    HYBRID_BRAND_BLOCK_SALES: 'Hibrit: marka blok + satış',
+  };
+  const candidateCount = (products?.length || 0) + (unplacedProducts?.length || 0);
+
+  function confirmRun() {
+    const nextProfile = {
+      ...(strategyProfile || DEFAULT_STRATEGY_PROFILE),
+      mode,
+      label: labels[mode] || mode,
+      confirmed_at: new Date().toISOString(),
+      source: 'command_center_modal',
+    };
+    try {
+      localStorage.setItem('plonagram_strategy_confirmed', '1');
+      localStorage.setItem('plonagram_strategy_profile', JSON.stringify(nextProfile));
+      window.__PLONAGRAM_MODAL_STRATEGY__ = nextProfile;
+    } catch {}
+    setStrategyProfile?.(nextProfile);
+    onRun?.();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(16,19,26,.38)', backdropFilter: 'blur(8px)', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <div className="card pad" style={{ width: 'min(980px, 96vw)', maxHeight: '90vh', overflow: 'auto', border: '1px solid rgba(223,16,103,.25)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+          <div>
+            <div className="section-eyebrow">OPTIMUM PLAN ENGINE</div>
+            <h2 style={{ margin: '8px 0', fontSize: 32 }}>Plan üretim ayarları</h2>
+            <p className="muted">Plan üretmeden önce strateji, aktif kurallar ve ağırlıklar burada onaylanır. Kullanıcı artık ayrı Kural Motoru ekranı aramaz.</p>
+          </div>
+          <button className="btn ghost" onClick={onClose}>Kapat</button>
+        </div>
+
+        <div className="grid cols-4" style={{ marginTop: 16 }}>
+          <MiniMetric label="Aday SKU" value={candidateCount} tone={candidateCount ? 'green' : 'red'} />
+          <MiniMetric label="Aktif kural" value={placementRules?.length || 0} tone="pink" />
+          <MiniMetric label="Store DNA" value={storeDna ? 'Hazır' : 'Eksik'} tone={storeDna ? 'green' : 'amber'} />
+          <MiniMetric label="Kural seti" value="storage_raw + case_pack" tone="cyan" />
+        </div>
+
+        <div className="grid cols-2" style={{ marginTop: 18, alignItems: 'start' }}>
+          <div className="card pad soft-card">
+            <h3>Strateji seçimi</h3>
+            <div className="field">
+              <label>Planogram stratejisi</label>
+              <select value={mode} onChange={(e) => setMode(e.target.value)}>
+                {Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+            <div className="list" style={{ marginTop: 12 }}>
+              <div className="item"><b>Hard rule</b><span className="muted">storage_raw: Raf → raf, Dolap → +4 dolap, Donuk → -18/freezer</span></div>
+              <div className="item"><b>Hard rule</b><span className="muted">case_pack_qty: kırık koli değil, tam koli katı</span></div>
+              <div className="item"><b>Güven</b><span className="muted">Ürün önerileri placement confidence skoruna göre sıralanır</span></div>
+            </div>
+          </div>
+
+          <div className="card pad soft-card">
+            <h3>Ağırlık özeti</h3>
+            {[
+              ['sales', 'Satış'], ['category', 'Kategori'], ['brand', 'Marka'], ['refill', 'Refill'], ['route', 'Rota'], ['cold', 'Soğuk zincir']
+            ].map(([key, label]) => (
+              <div className="field" key={key} style={{ marginBottom: 10 }}>
+                <label>{label}: <b>{Number(optimizationWeights?.[key] ?? DEFAULT_OPTIMIZATION_WEIGHTS[key] ?? 5)}</b></label>
+                <input type="range" min="0" max="10" step="1" value={Number(optimizationWeights?.[key] ?? DEFAULT_OPTIMIZATION_WEIGHTS[key] ?? 5)} onChange={(e) => setOptimizationWeights?.({ ...(optimizationWeights || DEFAULT_OPTIMIZATION_WEIGHTS), [key]: Number(e.target.value) })} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+          <button className="btn ghost" onClick={onClose}>Vazgeç</button>
+          <button className="btn primary" onClick={confirmRun}>Ayarlarla optimum plan üret</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// === /V1.9.22 Command Center Engine Panel + Plan Run Modal ===
+export default function App() {
+  window.__PLONAGRAM_ACTIVE_PIPELINE__ = 'V1.9.47_STRATEGY_FIRST_ACTIVE';
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState('command');
+  const [lang, setLang] = useState('tr');
+  const [store, setStore] = useState('ANKA');
+  const [objects, setObjects] = useState(initialObjects);
+  const [products, setProducts] = useState(productsSeed);
+  const [unplacedProducts, setUnplacedProducts] = useState([]);
+  const [tasks, setTasks] = useState(initialTasks);
+  const [storeDna, setStoreDna] = useState(null);
+  const [readiness, setReadiness] = useState(null);
+  const [optimizationWeights, setOptimizationWeights] = useState(() => {
+    try {
+      return {
+        ...DEFAULT_OPTIMIZATION_WEIGHTS,
+        ...JSON.parse(localStorage.getItem('plonagram_optimization_weights') || '{}'),
+      };
+    } catch (e) {
+      return DEFAULT_OPTIMIZATION_WEIGHTS;
+    }
+  });
+
+  const [placementRules, setPlacementRules] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('plonagram_placement_rules') || '[]');
+    } catch (e) {
+      return [];
+    }
+  });
+  const [strategyProfile, setStrategyProfile] = useState(() => loadStrategyProfile());
+  const [toast, setToast] = useState('');
+  const [operation, setOperation] = useState({ open: false, mode: 'plan', progress: 0, title: '', subtitle: '' });
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const skuInput = useRef(null);
+  const layoutInput = useRef(null);
+  const abortRef = useRef(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLoading(false), 1150);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadPersistedState() {
+      try {
+        const boot = await api.bootstrap(store);
+        if (!mounted || !boot || boot.status !== 'success') return;
+
+        const savedLayout = boot.layout?.payload;
+        const savedPlan = boot.planogram?.payload;
+        if (boot.dna) setStoreDna(boot.dna);
+        try { const ready = await api.readiness(store); if (mounted) setReadiness(ready); } catch (e) {}
+
+        if (savedLayout?.objects?.length) {
+          setObjects(savedLayout.objects);
+        }
+
+        if (savedPlan?.products?.length) {
+          setProducts(savedPlan.products.map(normalizeBackendProduct));
+        }
+        if (Array.isArray(savedPlan?.unplacedProducts)) {
+          setUnplacedProducts(savedPlan.unplacedProducts);
+        }
+        if (!savedLayout?.objects?.length && savedPlan?.objects?.length) {
+          setObjects(savedPlan.objects);
+        }
+        if (boot.tasks?.length) {
+          setTasks(boot.tasks.map((t) => ({
+            id: t.external_id || t.id,
+            store: t.store_code || store,
+            title: t.title,
+            owner: t.owner || 'Store Manager',
+            priority: t.priority || 'Medium',
+            deadline: t.deadline || '',
+            status: t.status || 'Open',
+            response: t.response || '',
+          })));
+        }
+      } catch (err) {
+        // DB kapalıysa ürün deneyimini düşürme; local state ile devam et.
+      }
+    }
+    loadPersistedState();
+    return () => { mounted = false; };
+  }, [store]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('plonagram_optimization_weights', JSON.stringify(optimizationWeights || DEFAULT_OPTIMIZATION_WEIGHTS));
+    } catch (e) {}
+  }, [optimizationWeights]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('plonagram_placement_rules', JSON.stringify(placementRules || []));
+    } catch (e) {}
+  }, [placementRules]);
+
+  function notify(msg) {
+    setToast(msg);
+    window.setTimeout(() => setToast(''), 3000);
+  }
+
+  async function runOperation(meta, work) {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let p = 8;
+    setOperation({ open: true, progress: p, ...meta });
+    const timer = window.setInterval(() => {
+      p = Math.min(88, p + Math.random() * 12 + 4);
+      setOperation((prev) => ({ ...prev, progress: p }));
+    }, 420);
+    try {
+      const result = await work(controller.signal);
+      window.clearInterval(timer);
+      setOperation((prev) => ({ ...prev, progress: 100 }));
+      await new Promise((resolve) => window.setTimeout(resolve, 380));
+      return result;
+    } catch (err) {
+      if (!isAbort(err)) throw err;
+      notify('İşlem iptal edildi. Mevcut plan korunuyor.');
+      return null;
+    } finally {
+      window.clearInterval(timer);
+      abortRef.current = null;
+      setOperation((prev) => ({ ...prev, open: false }));
+      if (skuInput.current) skuInput.current.value = '';
+      if (layoutInput.current) layoutInput.current.value = '';
+    }
+  }
+
+  function cancelOperation() {
+    abortRef.current?.abort();
+    setOperation((prev) => ({ ...prev, open: false }));
+  }
+
+  async function handleSkuFile(file) {
+    if (!file) return;
+    await runOperation({ mode: 'sku', title: 'SKU dosyası işleniyor', subtitle: `${file.name} okunuyor. İstersen işlemi iptal edebilirsin.` }, async (signal) => {
+      let nextProducts = [];
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      try {
+        const res = await api.uploadProducts(file, signal);
+        nextProducts = (res.products || []).map(normalizeBackendProduct);
+
+        // Upload backend master catalog'a yazıldıktan sonra Product Library'nin gerçek kaynağını tekrar oku.
+        // Böylece kütüphane mock/state değil, /product-library üzerinden canlı catalog gösterir.
+        try {
+          const lib = await api.productLibrary(5000, 0, signal);
+          if (Array.isArray(lib?.products) && lib.products.length) {
+            nextProducts = lib.products.map(normalizeBackendProduct);
+          }
+        } catch (catalogErr) {
+          // Catalog reload başarısız olursa upload response'u ile devam et; kullanıcıyı bloke etme.
+        }
+      } catch (err) {
+        if (isAbort(err)) throw err;
+        if (ext === 'csv') nextProducts = await parseCsvProducts(file);
+        else throw new Error('XLSX/Excel okuma için backend açık olmalı. CSV yükleme tarayıcı içinde çalışır.');
+      }
+      if (!nextProducts.length) throw new Error('Dosyada okunabilir SKU bulunamadı. Header alanlarını kontrol et: sku, product_name, brand, storage_type, sales_qty_7d veya % Orders.');
+
+      // Düzeltme #1: Yükleme ARTIK otomatik plan üretmez.
+      // SKU'lar yalnızca aday havuzu olarak normalize edilip saklanır; yerleştirme,
+      // strateji seçilip "Optimum plan üret" çalıştırıldığında yapılır.
+      // Böylece strateji-öncesi sessizce plan oluşturma (ve source:'sku_upload' planı kaydetme) ortadan kalkar.
+      const candidates = nextProducts.map((p, idx) => normalizeProduct(p, idx));
+      setProducts([]);
+      setUnplacedProducts(candidates);
+      try {
+        localStorage.setItem(`plonagram_candidate_products_${store}`, JSON.stringify(candidates));
+      } catch (e) {}
+      window.__PLONAGRAM_LAST_SKU_UPLOAD_COUNT__ = candidates.length;
+      setActive('library');
+      // Aday havuzu planogram olarak kaydedilmez.
+      // Aksi halde mevcut plan, ürün yükleme anında boş planla ezilebilir.
+      notify(`${nextProducts.length} SKU aday havuzuna alındı. Plan üretmek için strateji seç ve "Optimum plan üret"e bas.`);
+      return candidates;
+    }).catch((err) => notify(err.message || 'SKU yükleme başarısız.'));
+  }
+
+  async function handleLayoutFile(file) {
+    if (!file) return;
+    await runOperation({ mode: 'layout', title: 'Layout dijital ikize çevriliyor', subtitle: `${file.name} içinden oda, fixture ve koridor bilgisi okunuyor.` }, async (signal) => {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      let nextObjects = null;
+      if (ext === 'json') {
+        nextObjects = await parseJsonLayout(file);
+      } else {
+        const res = await api.uploadLayout(file, store, signal);
+        if (!res?.success) throw new Error(res?.message || 'Layout parse edilemedi.');
+        nextObjects = objectsFromLayout(res.layout, objects);
+      }
+      if (!nextObjects?.length) throw new Error('Layout içinde kullanılabilir obje bulunamadı.');
+      setObjects(nextObjects);
+      try {
+        await api.saveLayout(store, { objects: nextObjects, source_file: file.name }, 'Layout upload auto-save', signal);
+      } catch (err) {}
+      setActive('architect');
+      notify(`${file.name} yüklendi. Layout Architect ve 3D twin aynı state ile güncellendi.`);
+      return nextObjects;
+    }).catch((err) => {
+      if (!isAbort(err)) notify(err.message || 'Layout yükleme başarısız.');
+    });
+  }
+
+  function openPlanRunModal() {
+    setPlanModalOpen(true);
+  }
+
+  async function runPlanFromModal() {
+    setPlanModalOpen(false);
+    try {
+      localStorage.setItem('plonagram_strategy_confirmed', '1');
+    } catch {}
+    await generateOptimalPlan();
+  }
+  async function generateOptimalPlan() {
+    // Düzeltme #2/#3: Strateji seçilmeden plan üretimi engellenir.
+    // Üstteki "Optimum plan üret" ve RuleEngine'deki "Stratejiyle plan üret" düğmeleri
+    // ikisi de bu fonksiyonu çağırdığından, bu engel her iki düğme için de geçerlidir.
+    let strategyConfirmed = false;
+    try {
+      strategyConfirmed = localStorage.getItem('plonagram_strategy_confirmed') === '1';
+    } catch {}
+    const activeStrategy = window.__PLONAGRAM_MODAL_STRATEGY__ || strategyProfile || loadStrategyProfile();
+    if (!strategyConfirmed || !activeStrategy?.mode) {
+      notify('Önce bir planogram stratejisi seç. Strateji ekranına yönlendiriliyorsun.');
+      setActive('strategy');
+      return;
+    }
+    setStrategyProfile(activeStrategy);
+
+    if (!storeDna) {
+      notify('Bu depo için Store DNA eksik. Önce Depo Kurulumu ekranında layout/fixture gerçekliğini kaydet.');
+      setActive('storeDna');
+      return;
+    }
+    await runOperation({ mode: 'plan', title: 'Council Engine planogram üretiyor', subtitle: `Strateji: ${activeStrategy.label || activeStrategy.mode}. Satış, storage, fixture, facing, depth ve refill maliyeti birlikte hesaplanıyor.` }, async (signal) => {
+      // V1.9.17:
+      // Tek yerleştirme doğrusu lokal domain-aware allocator.
+      // products state'i önceki yerleşenleri, unplacedProducts ise önceki atanamayanları tutar.
+      // Optimum plan üretirken ikisini tekrar tek aday havuzuna toplamazsak 2800+ SKU sonsuza kadar dışarıda kalır.
+      const sourceProducts = normalizeCandidateProductsForAllocator(mergeCandidateProducts(products, unplacedProducts));
+
+      if (!sourceProducts.length) {
+        throw new Error('Plan üretmek için aday SKU bulunamadı. Önce ABC/SKU dosyası yükle.');
+      }
+
+      try {
+        // Backend yalnızca sağlık/enrichment kontrolü için çağrılabilir; sonucu placement source olarak kullanmıyoruz.
+        // Eski backend planı sourceProducts üzerine yazarsa tek motor ilkesi bozulur.
+        const payload = { products: normalizeProductsForBackend(sourceProducts.slice(0, 250)), layout: null, mode: 'COUNCIL_HEALTH_CHECK' };
+        await api.generatePlanogramCouncil(payload, signal);
+      } catch (err) {
+        if (isAbort(err)) throw err;
+      }
+
+      const planObjects = normalizeLayoutObjectsForAllocator(resolvePlanObjects(objects, storeDna));
+      let affinityMap = {};
+      try {
+        const affinityRes = await api.getBasketAffinity(
+          sourceProducts.map((p, idx) => productKey(p, idx)),
+          store,
+          signal
+        );
+        affinityMap = affinityRes?.affinity_map || {};
+      } catch (err) {
+        affinityMap = {};
+      }
+
+      // Düzeltme #4/#5: Aday SKU'lar allocator'a girmeden ÖNCE strateji + manuel kural adaptöründen geçer.
+      // Bu adım kategori→satış sıralamasını uygular ve Ülker A-sağ / Eti A-sol gibi marka/taraf
+      // kurallarını ürünlere preferred_aisle/preferred_side olarak basar; allocator'ın slot scorer'ı bunları okur.
+      const prepared = applyPlacementRulesBeforePlan(
+        sourceProducts,
+        placementRules,
+        optimizationWeights,
+        activeStrategy
+      );
+
+      // Kategori kapsama uyarısı (#4): SKU'ların çoğu "Genel"e düşerse kategori-satış stratejisi
+      // pratikte saf satış sıralamasına dejenere olur. Kullanıcıyı veri eşlemesi konusunda uyar.
+      const genelCount = prepared.filter((p) => {
+        const c = String(p.category || p.category_l1 || '').trim().toLowerCase();
+        return !c || c === 'genel';
+      }).length;
+      if (prepared.length && genelCount / prepared.length > 0.3) {
+        notify(`Uyarı: SKU'ların %${Math.round((genelCount / prepared.length) * 100)}'i kategori="Genel" olarak geldi. Kategori stratejisi etkisini göstermesi için SKU dosyasındaki kategori alanını kontrol et.`);
+      }
+
+      const assigned = buildStorePlan(prepared, planObjects, {
+        forceFrontBalance: true,
+        affinityMap,
+      });
+      const nextObjects = updateObjectsFromPlan(planObjects, assigned);
+      const nextTask = { id: `T-${Date.now().toString().slice(-5)}`, store: 'Anka (İstanbul)', title: `Council planogram sonrası ${assigned.unplaced.length} atanamayan SKU kontrolü`, owner: 'Store Manager', priority: assigned.unplaced.length ? 'High' : 'Medium', deadline: 'Bugün', status: 'Open', response: '' };
+      setProducts(assigned.placed);
+      setUnplacedProducts(assigned.unplaced);
+      setObjects(nextObjects);
+      setTasks((prev) => [nextTask, ...prev]);
+      try {
+        await api.savePlanogram(store, { products: assigned.placed, unplacedProducts: assigned.unplaced, objects: nextObjects, source: 'council_engine', strategy_mode: activeStrategy.mode, strategy_label: activeStrategy.label }, { placed: assigned.placed.length, unplaced: assigned.unplaced.length }, 'Council Engine generated plan', signal);
+        await api.saveLayout(store, { objects: nextObjects, source: 'council_engine' }, 'Layout state after Council plan', signal);
+        await api.createTask({ ...nextTask, store_code: store, external_id: nextTask.id }, signal);
+      } catch (err) {}
+      notify(`Council Engine planı uygulandı (${activeStrategy.label || activeStrategy.mode}). ${assigned.placed.length} ürün yerleşti, ${assigned.unplaced.length} ürün atanamadı raporlandı.`);
+      setActive('planogram');
+      return assigned.placed;
+    }).catch((err) => {
+      if (!isAbort(err)) notify(err.message || 'Optimum plan üretilemedi.');
+    });
+  }
+
+  if (loading) return <LoadingScreen lang={lang} />;
+
+  
+  
+
+
+const common = { lang, objects, setObjects, products, setProducts, unplacedProducts, setUnplacedProducts, tasks, setTasks, store, notify, setActive, onGenerate: openPlanRunModal, storeDna, setStoreDna, readiness, setReadiness, placementRules, setPlacementRules, optimizationWeights, setOptimizationWeights, strategyProfile, setStrategyProfile };
+  const pages = {
+    command: (
+      <>
+        <CommandCenter {...common} />
+        <CommandCenterEnginePanel {...common} onOpenPlanModal={openPlanRunModal} />
+      </>
+    ),
+    storeDna: <StoreDNAWorkspace {...common} storeName={store} />,
+    live3d: <Live3D {...common} />,
+    architect: <LayoutArchitect {...common} />,
+    placement: <ProductPlacementStudio {...common} />,
+    library: <ProductLibrary {...common} />,
+    fixture: <FixtureLibrary {...common} />,
+    planogram: (
+      <>
+        <PlanogramExportPanel {...common} />
+        <PlanogramWorkspace {...common} />
+      </>
+    ),
+    rules: <RuleEngineReal {...common} />,
+    delta: <DeltaPlanogramReal {...common} />,
+    publishing: <Publishing {...common} />,
+    tasks: <Tasks {...common} />,
+    photos: <PhotoEvidence {...common} />,
+    reports: <Reports {...common} />,
+    admin: <Admin {...common} />,
+  };
+
+  return (
+    <>
+      <input ref={skuInput} type="file" accept=".csv,.xlsx" hidden onChange={(e) => handleSkuFile(e.target.files?.[0])} />
+      <input ref={layoutInput} type="file" accept=".dxf,.json,.csv" hidden onChange={(e) => handleLayoutFile(e.target.files?.[0])} />
+      <Shell
+        lang={lang}
+        setLang={setLang}
+        active={active}
+        setActive={setActive}
+        store={store}
+        setStore={setStore}
+        onGenerate={openPlanRunModal}
+        onUploadSku={() => skuInput.current?.click()}
+        onUploadLayout={() => layoutInput.current?.click()}
+      >
+        {pages[active] || pages.command}
+      </Shell>
+      <OperationLoadingOverlay {...operation} onCancel={cancelOperation} />
+      <PlanRunModal
+        open={planModalOpen}
+        onClose={() => setPlanModalOpen(false)}
+        onRun={runPlanFromModal}
+        optimizationWeights={optimizationWeights}
+        setOptimizationWeights={setOptimizationWeights}
+        strategyProfile={strategyProfile}
+        setStrategyProfile={setStrategyProfile}
+        placementRules={placementRules}
+        products={products}
+        unplacedProducts={unplacedProducts}
+        storeDna={storeDna}
+      />
+      {toast && <div className="toast">{toast}</div>}
+    </>
+  );
+}
+
+

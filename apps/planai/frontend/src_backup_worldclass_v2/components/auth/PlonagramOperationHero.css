@@ -1,0 +1,57 @@
+.plh-hero3d{
+  position:relative;
+  width:100%;
+  height:430px;
+  border-radius:34px;
+  overflow:hidden;
+  background:#f2f6fb;
+  border:1px solid rgba(255,255,255,.66);
+  box-shadow:0 28px 90px rgba(15,23,42,.28), inset 0 0 0 1px rgba(255,255,255,.55);
+}
+.plh-hero3d canvas{width:100%!important;height:100%!important;display:block;}
+.plh-caption{
+  position:absolute;
+  left:50%;
+  bottom:18px;
+  transform:translateX(-50%);
+  padding:10px 18px;
+  border-radius:999px;
+  background:rgba(15,23,42,.94);
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.01em;
+  box-shadow:0 14px 36px rgba(15,23,42,.28);
+  white-space:nowrap;
+}
+.plh-zone-chip{
+  padding:6px 10px;
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+  border:1px solid;
+  font-size:10px;
+  font-weight:950;
+  letter-spacing:.05em;
+  box-shadow:0 8px 24px rgba(15,23,42,.14);
+  backdrop-filter:blur(10px);
+  white-space:nowrap;
+}
+.plh-floor-label{
+  font-size:11px;
+  font-weight:950;
+  letter-spacing:.08em;
+  opacity:.82;
+  text-shadow:0 1px 0 rgba(255,255,255,.7);
+  white-space:nowrap;
+}
+.plh-dispatch{
+  padding:8px 16px;
+  border-radius:14px;
+  background:#0f172a;
+  color:#fff;
+  font-size:11px;
+  font-weight:950;
+  letter-spacing:.08em;
+  box-shadow:0 12px 30px rgba(15,23,42,.24);
+}
+@media(max-width:900px){.plh-hero3d{height:340px}.plh-caption{font-size:10px;max-width:90%;white-space:normal;text-align:center}}

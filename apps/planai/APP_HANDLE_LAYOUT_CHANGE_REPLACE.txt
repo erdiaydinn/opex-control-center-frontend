@@ -1,0 +1,88 @@
+// App.jsx içinde mevcut handleLayoutChange fonksiyonunu bununla değiştir.
+// Bu fonksiyon modül sayısı ve modül yönünü gerçekten planograma yazar.
+
+function cloneModuleFromTemplate(template, moduleId, orientation = "vertical") {
+  const base = template || {
+    module_type: "regular_shelf",
+    module_width_cm: 100,
+    module_depth_cm: 50,
+    module_height_cm: 210,
+    shelves: makeShelves(6, "AMBIENT", 100, 35, 50, 45),
+  };
+
+  return {
+    ...clone(base),
+    module_id: moduleId,
+    layout_rotation: orientation === "horizontal" ? 90 : 0,
+    layout_orientation: orientation,
+    shelves: (base.shelves?.length ? clone(base.shelves) : makeShelves(6, "AMBIENT", 100, 35, 50, 45)).map((s, i) => ({
+      ...s,
+      shelf_no: i + 1,
+      products: s.products || [],
+    })),
+  };
+}
+
+function syncAisleModules(aisle, pos) {
+  const targetCount = Number(pos.module_count ?? aisle.modules?.length ?? 0);
+  if (!Number.isFinite(targetCount) || targetCount < 0) return aisle;
+
+  const current = Array.isArray(aisle.modules) ? aisle.modules : [];
+  const orientations = Array.isArray(pos.module_orientations) ? pos.module_orientations : [];
+
+  let nextModules = current.slice(0, targetCount).map((m, idx) => ({
+    ...m,
+    module_id: idx + 1,
+    layout_orientation: orientations[idx] || m.layout_orientation || "vertical",
+    layout_rotation: (orientations[idx] || m.layout_orientation) === "horizontal" ? 90 : 0,
+  }));
+
+  const template = current[current.length - 1] || current[0];
+
+  while (nextModules.length < targetCount) {
+    const idx = nextModules.length;
+    nextModules.push(
+      cloneModuleFromTemplate(
+        template,
+        idx + 1,
+        orientations[idx] || "vertical"
+      )
+    );
+  }
+
+  return {
+    ...aisle,
+    modules: nextModules,
+  };
+}
+
+function handleLayoutChange(nextPositions = [], nextObjects = null) {
+  const next = clone(planogram);
+
+  next.aisles = (next.aisles || []).map((aisle) => {
+    const pos = nextPositions.find((p) => String(p.aisle_id) === String(aisle.aisle_id));
+    if (!pos) return aisle;
+
+    const moved = {
+      ...aisle,
+      layout_position: {
+        grid_x: n(pos.grid_x ?? pos.x, 0),
+        grid_y: n(pos.grid_y ?? pos.y, 0),
+        rotation: n(pos.rotation, 0),
+      },
+    };
+
+    return syncAisleModules(moved, pos);
+  });
+
+  if (nextObjects) {
+    next.layout_objects = nextObjects;
+  }
+
+  commitPlan(next, "layout_positions_updated", {
+    positions: nextPositions,
+    objects: nextObjects,
+  });
+
+  setStatus("Layout kaydedildi: koridor pozisyonu, modül sayısı ve modül yönleri güncellendi.");
+}

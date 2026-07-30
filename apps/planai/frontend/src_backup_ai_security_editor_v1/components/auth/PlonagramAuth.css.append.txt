@@ -1,0 +1,2 @@
+.auth-hero-visual{margin-top:22px;max-width:1180px}
+.auth-hero-visual .mtv-shell{border-radius:30px}

@@ -1,0 +1,908 @@
+import PlonagramAuth from "./components/auth/PlonagramAuth";
+import { I18nProvider } from "./i18n/I18nProvider";
+import LanguageSelector from "./components/i18n/LanguageSelector";
+import ArchitecturalLoading from "./components/loading/ArchitecturalLoading";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import "./App.css";
+import "./App.extra.css";
+import "./App.premium.css";
+import "./App.ultra.css";
+import "./App.reference.css";
+import ReferenceHeroTwin from "./components/visuals/ReferenceHeroTwin";
+import TopBar from "./components/TopBar";
+import Depot3D from "./components/Depot3D";
+import Planogram2D from "./components/Planogram2D";
+import RuleEnginePanel from "./components/RuleEnginePanel";
+import AnalyticsPanel from "./components/AnalyticsPanel";
+import ShelfEditor from "./components/ShelfEditor";
+import { RuleDialog, SizeDialog } from "./components/EditDialogs";
+import { printModule, printShelf } from "./components/FieldPrint";
+import { api, apiPost, apiUploadLayout } from "./services/api";
+import MarketDigitalTwinVisual from "./components/visuals/MarketDigitalTwinVisual";
+import StudioRealismHero from "./components/StudioRealismHero";
+import "./components/StudioRealismHero.css";
+import {
+  clone,
+  compareByRule,
+  computeMetrics,
+  DEFAULT_PRODUCTS,
+  findShelf,
+  generateDefaultLayout,
+  localGeneratePlanogram,
+  makeShelves,
+  n,
+  normalizeProduct,
+  parseCSV,
+  productWidth,
+  recalcShelf,
+} from "./utils/planogram";
+
+const DEFAULT_SCORE_WEIGHTS = {
+  sales: 1.35,
+  picking: 1.2,
+  ergonomics: 1,
+  refill: 0.85,
+  risk: 1.15,
+  fixture: 1.4,
+};
+
+function normalizeResult(data, fallbackLayout) {
+  const planogram = data?.planogram || data?.plan || data?.layout || fallbackLayout;
+  return {
+    planogram,
+    summary:
+      data?.summary || {
+        total_products: 0,
+        placed_products: 0,
+        unplaced_products: 0,
+        capacity_utilization_pct: 0,
+      },
+    unplaced_products: data?.unplaced_products || data?.unplaced || [],
+  };
+}
+
+function normText(v) {
+  return String(v || "").trim().toLocaleLowerCase("tr-TR");
+}
+
+function storageFromZone(zone) {
+  const z = normText(zone);
+  if (z.includes("soğuk") || z.includes("chilled") || z.includes("+4")) return "CHILLED";
+  if (z.includes("donuk") || z.includes("frozen") || z.includes("-18")) return "FROZEN";
+  return "AMBIENT";
+}
+
+function productMatchesAdvancedRule(product, rule) {
+  const p = normalizeProduct(product);
+  const type = normText(rule?.type || rule?.ruleType || "");
+  const value = normText(rule?.value || rule?.query || "");
+  if (!value) return false;
+
+  if (type.includes("marka") || type.includes("brand")) {
+    return normText(p.brand || p.brand_name).includes(value);
+  }
+  if (type.includes("alt") || type.includes("subcategory")) {
+    return normText(p.category_l2 || p.frontend_subcategory_local).includes(value);
+  }
+  if (type.includes("sku")) {
+    return normText(p.sku).includes(value) || normText(p.barcode).includes(value);
+  }
+  return (
+    normText(p.category_l1 || p.frontend_category_local).includes(value) ||
+    normText(p.product_name).includes(value)
+  );
+}
+
+function shelfStorageOk(product, shelf, targetZone) {
+  const wantedStorage = storageFromZone(targetZone || shelf?.allowed_storage_type);
+  const allowed = String(shelf?.allowed_storage_type || "AMBIENT").toUpperCase();
+  const productStorage = String(product?.storage_type || "AMBIENT").toUpperCase();
+  return allowed === wantedStorage && productStorage === wantedStorage;
+}
+
+function removeProductsBySku(plan, skuSet) {
+  for (const aisle of plan.aisles || []) {
+    for (const module of aisle.modules || []) {
+      for (const shelf of module.shelves || []) {
+        shelf.products = (shelf.products || []).filter((p) => !skuSet.has(String(p.sku)));
+        recalcShelf(shelf);
+      }
+    }
+  }
+}
+
+function collectTargetShelves(plan, rule) {
+  const side = String(rule?.side || rule?.taraf || "ANY").toUpperCase();
+  const targetStorage = storageFromZone(rule?.zone || rule?.targetZone || "Kuru zone");
+  const shelves = [];
+
+  for (const aisle of plan.aisles || []) {
+    for (const module of aisle.modules || []) {
+      const moduleSide = String(module.side || "").toUpperCase();
+      if (side !== "ANY" && side !== "FARK ETMEZ" && moduleSide && moduleSide !== side) continue;
+      for (const shelf of module.shelves || []) {
+        const allowed = String(shelf.allowed_storage_type || "AMBIENT").toUpperCase();
+        if (allowed !== targetStorage) continue;
+        shelves.push({ aisle, module, shelf });
+      }
+    }
+  }
+
+  return shelves.sort((a, b) => {
+    const ad = Number(a.aisle.distance_to_dispatch || 999);
+    const bd = Number(b.aisle.distance_to_dispatch || 999);
+    if (ad !== bd) return ad - bd;
+    return Number(a.module.module_id || 0) - Number(b.module.module_id || 0);
+  });
+}
+
+function packProductsToShelves(plan, productsToPlace, rule, scoreWeights) {
+  const shelves = collectTargetShelves(plan, rule);
+  const sorted = [...productsToPlace]
+    .map(normalizeProduct)
+    .sort(compareByRule(rule?.priority === "Sales" ? "SALES" : "DARKSTORE_AI", scoreWeights));
+
+  const unplaced = [];
+  for (const raw of sorted) {
+    let placed = false;
+    let facing = Math.max(1, Math.min(8, Number(raw.facing_count || raw.facing || 1)));
+
+    while (!placed && facing >= 1) {
+      const p = { ...raw, facing_count: facing, facing };
+      const width = productWidth(p);
+      for (const target of shelves) {
+        const shelf = target.shelf;
+        if (!shelfStorageOk(p, shelf, rule?.zone || rule?.targetZone)) continue;
+        const cap = Number(shelf.shelf_width_cm || 100);
+        const used = Number(shelf.used_width_cm || 0);
+        if (used + width > cap * 0.92) continue;
+        shelf.products = [
+          ...(shelf.products || []),
+          {
+            ...p,
+            aisle_id: target.aisle.aisle_id,
+            module_id: target.module.module_id,
+            shelf_no: shelf.shelf_no,
+            position_order: (shelf.products || []).length + 1,
+          },
+        ];
+        recalcShelf(shelf);
+        placed = true;
+        break;
+      }
+      if (!placed) facing -= 1;
+    }
+    if (!placed) unplaced.push(raw);
+  }
+  return unplaced;
+}
+
+function applyAdvancedRulesToPlan(basePlan, allProducts, rules, scoreWeights) {
+  const next = clone(basePlan);
+  if (!Array.isArray(rules) || !rules.length) return { plan: next, touched: 0, unplaced: [] };
+
+  let touched = 0;
+  const unplacedAll = [];
+
+  for (const rule of rules) {
+    const matched = (allProducts || []).map(normalizeProduct).filter((p) => productMatchesAdvancedRule(p, rule));
+    if (!matched.length) continue;
+    const skuSet = new Set(matched.map((p) => String(p.sku)));
+    removeProductsBySku(next, skuSet);
+    const unplaced = packProductsToShelves(next, matched, rule, scoreWeights);
+    touched += matched.length - unplaced.length;
+    unplacedAll.push(...unplaced.map((p) => ({ ...p, rule })));
+  }
+
+  return { plan: next, touched, unplaced: unplacedAll };
+}
+
+export default function App() {
+  const [authUser, setAuthUser] = useState(() => {
+    const isAuth = localStorage.getItem("plonagram_auth") === "1";
+    if (!isAuth) return null;
+    return {
+      username: localStorage.getItem("plonagram_user") || "user",
+      role: localStorage.getItem("plonagram_role") || "USER",
+    };
+  });
+
+  const [user, setUser] = useState(() => ({
+    username: localStorage.getItem("plonagram_user") || "local",
+    role: localStorage.getItem("plonagram_role") || "USER",
+  }));
+  const [storeCode, setStoreCode] = useState("ACIBADEM");
+  const [storeInfo, setStoreInfo] = useState(null);
+  const [storeList, setStoreList] = useState([]);
+  const productInputRef = useRef(null);
+  const layoutInputRef = useRef(null);
+  const [layout, setLayout] = useState(() => generateDefaultLayout("ACIBADEM"));
+  const [planogram, setPlanogram] = useState(() => generateDefaultLayout("ACIBADEM"));
+  const [products, setProducts] = useState(DEFAULT_PRODUCTS.map(normalizeProduct));
+  const [rule, setRule] = useState("DARKSTORE_AI");
+  const [view, setView] = useState("3D");
+  const [status, setStatus] = useState("Hazır. Ürün yükle, kural seç, planogram üret.");
+  const [generating, setGenerating] = useState(false);
+  const [selectedShelf, setSelectedShelf] = useState(null);
+  const [sizeTarget, setSizeTarget] = useState(null);
+  const [ruleTarget, setRuleTarget] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [advancedRules, setAdvancedRules] = useState([]);
+  const [scoreWeights, setScoreWeights] = useState(DEFAULT_SCORE_WEIGHTS);
+  const [pickingFlow, setPickingFlow] = useState(["AMBIENT", "CHILLED", "FROZEN", "HEAVY_LAST"]);
+  const [uploadStats, setUploadStats] = useState({ loaded: DEFAULT_PRODUCTS.length, file: "sample", columns: 0 });
+  const [lastSummary, setLastSummary] = useState(null);
+  const [bootLoading, setBootLoading] = useState(true);
+
+  const metrics = useMemo(() => computeMetrics(planogram), [planogram]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function bootFromBackend() {
+      console.log("PLONAGRAM_API_BASE:", api.baseUrl);
+
+      try {
+        const storesRes = await api.getStores();
+        console.log("CORE_STORES:", storesRes);
+
+        if (alive) setStoreList(storesRes?.stores || []);
+
+        const firstStore =
+          storesRes?.stores?.find((s) => String(s.store_code).toLowerCase() === "u5w4") ||
+          storesRes?.stores?.[0];
+
+        if (alive && firstStore) setStoreInfo(firstStore);
+
+        if (alive && firstStore?.store_code && (!storeCode || storeCode === "ACIBADEM")) {
+          const nextCode = firstStore.store_code;
+          setStoreCode(nextCode);
+          let baseLayout = generateDefaultLayout(nextCode);
+          try {
+            const saved = localStorage.getItem(`plonagram_layout_${nextCode}`);
+            if (saved) baseLayout = JSON.parse(saved);
+          } catch (err) {
+            console.warn("LOCAL_LAYOUT_LOAD_ERROR", err);
+          }
+          setLayout(baseLayout);
+          setPlanogram(baseLayout);
+          setStatus(`Backend bağlantısı hazır. Aktif depo: ${firstStore.display_name || firstStore.store_name || nextCode}`);
+        }
+      } catch (err) {
+        console.error("CORE_STORES_ERROR:", err);
+        if (alive) setStatus(`Backend store bağlantısı kurulamadı: ${err.message}`);
+      }
+
+      try {
+        const libraryRes = await api.getObjectLibrary();
+        console.log("OBJECT_LIBRARY:", libraryRes);
+      } catch (err) {
+        console.warn("OBJECT_LIBRARY_ERROR:", err.message);
+      }
+
+      try {
+        const productsRes = await api.getProducts(200, 0);
+        console.log("MASTER_PRODUCTS:", productsRes);
+        const rows = productsRes?.products || [];
+        if (alive && rows.length) {
+          setProducts(rows.map(normalizeProduct));
+          setUploadStats({ loaded: rows.length, file: "backend master_products", columns: 0 });
+        }
+      } catch (err) {
+        console.warn("MASTER_PRODUCTS_ERROR:", err.message);
+      } finally {
+        if (alive) {
+          window.setTimeout(() => setBootLoading(false), 420);
+        }
+      }
+    }
+
+    bootFromBackend();
+    return () => { alive = false; };
+  }, []);
+
+  if (!authUser) return (
+    <I18nProvider>
+      <LanguageSelector compact />
+      <PlonagramAuth onLogin={(u) => { setAuthUser(u); setUser(u || { username: "local", role: "USER" }); }} />
+    </I18nProvider>
+  );
+
+  function log(action, payload = {}) {
+    setLogs((prev) => [
+      ...prev,
+      { ts: new Date().toISOString(), user: user?.username || "local", role: user?.role || "USER", action, payload },
+    ].slice(-1000));
+  }
+
+  function commitPlan(next, action, payload) {
+  const normalized = { ...next, store_code: storeCode };
+  setPlanogram(normalized);
+  setLayout(clone(normalized));
+
+  try {
+    localStorage.setItem(`plonagram_layout_${storeCode}`, JSON.stringify(normalized));
+  } catch (err) {
+    console.warn("LOCAL_LAYOUT_SAVE_ERROR", err);
+  }
+
+  if (action) log(action, payload);
+}
+
+
+
+  function logout() {
+    localStorage.removeItem("plonagram_auth");
+    localStorage.removeItem("plonagram_user");
+    localStorage.removeItem("plonagram_role");
+    setAuthUser(null);
+    setStatus("Çıkış yapıldı.");
+  }
+
+  function handleStoreChange(nextCode) {
+    const store = storeList.find((s) => String(s.store_code) === String(nextCode));
+    setStoreCode(nextCode);
+    if (store) setStoreInfo(store);
+    let nextLayout = generateDefaultLayout(nextCode);
+    try {
+      const saved = localStorage.getItem(`plonagram_layout_${nextCode}`);
+      if (saved) nextLayout = JSON.parse(saved);
+    } catch (err) {
+      console.warn("LOCAL_LAYOUT_LOAD_ERROR", err);
+    }
+    setLayout(nextLayout);
+    setPlanogram(clone(nextLayout));
+    setStatus(`Aktif depo değişti: ${store?.display_name || store?.store_name || nextCode}`);
+    log("store_changed", { storeCode: nextCode });
+  }
+
+  async function handleProducts(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const rows = parseCSV(text);
+    const header = String(text || "").split(/\r?\n/)[0] || "";
+    const colCount = header.includes(";") ? header.split(";").length : header.split(",").length;
+    setProducts(rows);
+    setUploadStats({ loaded: rows.length, file: file.name, columns: colCount });
+    setStatus(`${rows.length} ürün yüklendi. Planogram üretince yerleşen/yerleşmeyen sayısı burada görünecek.`);
+    log("products_uploaded", { file: file.name, rows: rows.length, columns: colCount });
+    e.target.value = "";
+  }
+
+  async function handleLayout(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    try {
+      if (name.endsWith(".json")) {
+        const parsed = JSON.parse(await file.text());
+        if (!Array.isArray(parsed.aisles)) throw new Error("JSON içinde aisles array yok.");
+        const next = { ...parsed, store_code: storeCode };
+        setLayout(next);
+        setPlanogram(clone(next));
+        setStatus(`${file.name} JSON planı yüklendi.`);
+        log("layout_json_uploaded", { file: file.name });
+        return;
+      }
+      if (name.endsWith(".dxf")) {
+        setStatus(`${file.name} DXF parser'a gönderiliyor...`);
+        const data = await apiUploadLayout(file, storeCode);
+        if (!data?.success || !data?.layout?.aisles) throw new Error(data?.message || "DXF parse edilemedi.");
+        const next = { ...data.layout, store_code: storeCode };
+        setLayout(next);
+        setPlanogram(clone(next));
+        setStatus(`${file.name} okundu: ${next.aisles.length} koridor.`);
+        log("layout_dxf_uploaded", { file: file.name, aisles: next.aisles.length });
+        return;
+      }
+      setStatus("Şimdilik JSON ve DXF aktif. DWG/PDF için DXF'e çevir.");
+    } catch (err) {
+      setStatus(`Layout okunamadı: ${err.message}`);
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  function loadSample() {
+    const next = generateDefaultLayout(storeCode);
+    const sample = DEFAULT_PRODUCTS.map(normalizeProduct);
+    setProducts(sample);
+    setUploadStats({ loaded: sample.length, file: "sample", columns: 0 });
+    setLayout(next);
+    setPlanogram(clone(next));
+    setLastSummary(null);
+    setStatus("Sample ürün ve default depo iskeleti yüklendi.");
+    log("sample_loaded");
+  }
+
+  async function generatePlanogram() {
+    setGenerating(true);
+    try {
+      const ruleEngine = { mode: rule, score_weights: scoreWeights, advanced_rules: advancedRules, picking_flow: pickingFlow, user_role: user?.role || "USER" };
+      const payload = { products, layout: { ...layout, store_code: storeCode }, mode: rule, rule_engine: ruleEngine };
+      let data;
+      try {
+        data = await apiPost("/generate-planogram", payload);
+      } catch (backendErr) {
+        data = localGeneratePlanogram(products, layout, rule, ruleEngine);
+        data.backend_warning = backendErr.message;
+      }
+      let normalized = normalizeResult(data, layout);
+      const applied = applyAdvancedRulesToPlan(normalized.planogram, products, advancedRules, scoreWeights);
+      normalized.planogram = applied.plan;
+      normalized.unplaced_products = [...(normalized.unplaced_products || []), ...applied.unplaced];
+      normalized.summary = {
+        ...normalized.summary,
+        placed_products: computeMetrics(normalized.planogram).total_products,
+        unplaced_products: normalized.unplaced_products.length,
+        advanced_rule_applied_products: applied.touched,
+      };
+      setLastSummary(normalized.summary);
+      commitPlan(normalized.planogram, "planogram_generated", { rule, advancedRules, scoreWeights, pickingFlow, summary: normalized.summary, backend_warning: data.backend_warning });
+      setStatus(`Planogram üretildi: ${normalized.summary.placed_products}/${products.length} ürün yerleşti, ${normalized.summary.unplaced_products || 0} yerleşmedi.`);
+      setView("3D");
+    } catch (err) {
+      setStatus(`Planogram üretilemedi: ${err.message}`);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function applyRulesNow(nextRules = advancedRules) {
+    const applied = applyAdvancedRulesToPlan(planogram, products, nextRules, scoreWeights);
+    commitPlan(applied.plan, "advanced_rules_applied_now", { rules: nextRules, touched: applied.touched, unplaced: applied.unplaced.length });
+    setStatus(`Kural uygulandı: ${applied.touched} ürün yeniden konumlandı, ${applied.unplaced.length} ürün sığmadı.`);
+  }
+
+  function handleAdvancedRulesChange(nextRules) {
+    setAdvancedRules(nextRules);
+    applyRulesNow(nextRules);
+  }
+
+  function addModule(aisleId) {
+    const next = clone(planogram);
+    const aisle = (next.aisles || []).find((a) => String(a.aisle_id) === String(aisleId));
+    if (!aisle) return;
+    const id = Math.max(0, ...(aisle.modules || []).map((m) => Number(m.module_id) || 0)) + 1;
+    const cold = aisle.zone_type === "COLD_ZONE";
+    const frozen = aisle.zone_type === "FROZEN_ZONE";
+    aisle.modules = [...(aisle.modules || []), { module_id: id, side: id % 2 ? "L" : "R", module_type: frozen ? "freezer" : cold ? "fridge" : "regular_shelf", module_width_cm: cold || frozen ? 150 : 100, module_depth_cm: cold || frozen ? 60 : 50, module_height_cm: 210, shelves: makeShelves(frozen ? 4 : cold ? 5 : 6, frozen ? "FROZEN" : cold ? "CHILLED" : "AMBIENT", cold || frozen ? 150 : 100, frozen ? 40 : 35, cold || frozen ? 60 : 50) }];
+    commitPlan(next, "module_added", { aisleId, moduleId: id });
+  }
+
+  function addShelf(aisleId, moduleId) {
+    const next = clone(planogram);
+    const module = (next.aisles || []).find((a) => String(a.aisle_id) === String(aisleId))?.modules?.find((m) => String(m.module_id) === String(moduleId));
+    if (!module) return;
+    const base = module.shelves?.[module.shelves.length - 1] || {};
+    const shelf = { ...base, shelf_no: (module.shelves || []).length + 1, products: [], used_width_cm: 0, used_volume_cm3: 0, zone_type: "top" };
+    module.shelves = [...(module.shelves || []), shelf];
+    commitPlan(next, "shelf_added", { aisleId, moduleId, shelfNo: shelf.shelf_no });
+  }
+
+  function addAisle() {
+    const next = clone(planogram);
+    const existing = new Set((next.aisles || []).map((a) => String(a.aisle_id)));
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let id = "A";
+    for (const ch of letters) if (!existing.has(ch)) { id = ch; break; }
+    if (existing.has(id)) id = `K${(next.aisles || []).length + 1}`;
+    next.aisles = [...(next.aisles || []), { aisle_id: id, row: Math.floor((next.aisles || []).length / 4) + 1, position: ((next.aisles || []).length % 4) + 1, direction: "LTR", distance_to_dispatch: (next.aisles || []).length + 1, aisle_type: "double_sided", sides: ["L", "R"], modules: [{ module_id: 1, side: "L", module_type: "regular_shelf", module_width_cm: 100, module_depth_cm: 50, module_height_cm: 210, shelves: makeShelves(6, "AMBIENT", 100, 35, 50, 45) }] }];
+    commitPlan(next, "aisle_added", { aisleId: id });
+    setStatus(`Koridor ${id} eklendi.`);
+  }
+
+  function deleteAisle(aisleId) {
+    if (!window.confirm(`Koridor ${aisleId} silinsin mi? Bu koridordaki tüm modül ve raflar silinir.`)) return;
+    const next = clone(planogram);
+    next.aisles = (next.aisles || []).filter((a) => String(a.aisle_id) !== String(aisleId));
+    commitPlan(next, "aisle_deleted", { aisleId });
+    setSelectedShelf(null);
+    setStatus(`Koridor ${aisleId} silindi.`);
+  }
+
+  function deleteModule(aisleId, moduleId) {
+    if (!window.confirm(`Koridor ${aisleId} / Modül ${moduleId} silinsin mi?`)) return;
+    const next = clone(planogram);
+    const aisle = (next.aisles || []).find((a) => String(a.aisle_id) === String(aisleId));
+    if (!aisle) return;
+    aisle.modules = (aisle.modules || []).filter((m) => String(m.module_id) !== String(moduleId));
+    commitPlan(next, "module_deleted", { aisleId, moduleId });
+    setSelectedShelf(null);
+    setStatus(`Koridor ${aisleId} / Modül ${moduleId} silindi.`);
+  }
+
+  function deleteShelf(aisleId, moduleId, shelfNo) {
+    if (!window.confirm(`Koridor ${aisleId} / Modül ${moduleId} / Raf ${shelfNo} silinsin mi?`)) return;
+    const next = clone(planogram);
+    const module = (next.aisles || []).find((a) => String(a.aisle_id) === String(aisleId))?.modules?.find((m) => String(m.module_id) === String(moduleId));
+    if (!module) return;
+    module.shelves = (module.shelves || []).filter((s) => String(s.shelf_no) !== String(shelfNo)).map((s, i) => ({ ...s, shelf_no: i + 1 }));
+    commitPlan(next, "shelf_deleted", { aisleId, moduleId, shelfNo });
+    setSelectedShelf(null);
+    setStatus(`Koridor ${aisleId} / Modül ${moduleId} / Raf ${shelfNo} silindi.`);
+  }
+
+  function cloneModuleFromTemplate(template, moduleId, orientation = "vertical") {
+  const base = template || {
+    module_type: "regular_shelf",
+    module_width_cm: 100,
+    module_depth_cm: 50,
+    module_height_cm: 210,
+    shelves: makeShelves(6, "AMBIENT", 100, 35, 50, 45),
+  };
+
+  return {
+    ...clone(base),
+    module_id: moduleId,
+    layout_rotation: orientation === "horizontal" ? 90 : 0,
+    layout_orientation: orientation,
+    shelves: (base.shelves?.length ? clone(base.shelves) : makeShelves(6, "AMBIENT", 100, 35, 50, 45)).map((s, i) => ({
+      ...s,
+      shelf_no: i + 1,
+      products: s.products || [],
+    })),
+  };
+}
+
+function syncAisleModules(aisle, pos) {
+  const targetCount = Number(pos.module_count ?? aisle.modules?.length ?? 0);
+  if (!Number.isFinite(targetCount) || targetCount < 0) return aisle;
+
+  const current = Array.isArray(aisle.modules) ? aisle.modules : [];
+  const orientations = Array.isArray(pos.module_orientations) ? pos.module_orientations : [];
+  const layouts = Array.isArray(pos.module_layouts) ? pos.module_layouts : [];
+
+  let nextModules = current.slice(0, targetCount).map((m, idx) => {
+    const lay = layouts[idx] || layouts.find((x) => String(x.module_id) === String(idx + 1)) || {};
+    const existingPos = m.layout_position || {};
+    const orientation = lay.orientation || orientations[idx] || m.layout_orientation || ((Number(existingPos.rotation || m.layout_rotation || 0) % 180 === 90) ? "horizontal" : "vertical");
+
+    return {
+      ...m,
+      module_id: idx + 1,
+      side: lay.side || m.side || (idx % 2 ? "R" : "L"),
+      fixture_type: lay.fixture_type || m.fixture_type || "regular_shelf",
+      module_type: lay.fixture_type || m.module_type || m.fixture_type,
+      layout_orientation: orientation,
+      layout_rotation: Number(lay.rotation ?? existingPos.rotation ?? m.layout_rotation ?? (orientation === "horizontal" ? 90 : 0)),
+      layout_position: {
+        x: Number(lay.x ?? existingPos.x ?? existingPos.grid_x ?? 0),
+        y: Number(lay.y ?? existingPos.y ?? existingPos.grid_y ?? 0),
+        grid_x: Number(lay.x ?? existingPos.x ?? existingPos.grid_x ?? 0),
+        grid_y: Number(lay.y ?? existingPos.y ?? existingPos.grid_y ?? 0),
+        w: Number(lay.w ?? existingPos.w ?? 1),
+        h: Number(lay.h ?? existingPos.h ?? 1),
+        rotation: Number(lay.rotation ?? existingPos.rotation ?? m.layout_rotation ?? (orientation === "horizontal" ? 90 : 0)),
+      },
+    };
+  });
+
+  const template = current[current.length - 1] || current[0];
+
+  while (nextModules.length < targetCount) {
+    const idx = nextModules.length;
+    const lay = layouts[idx] || {};
+    const orientation = lay.orientation || orientations[idx] || "vertical";
+    const created = cloneModuleFromTemplate(template, idx + 1, orientation);
+
+    nextModules.push({
+      ...created,
+      side: lay.side || (idx % 2 ? "R" : "L"),
+      fixture_type: lay.fixture_type || created.fixture_type || "regular_shelf",
+      module_type: lay.fixture_type || created.module_type || created.fixture_type,
+      layout_position: {
+        x: Number(lay.x ?? 0),
+        y: Number(lay.y ?? 0),
+        grid_x: Number(lay.x ?? 0),
+        grid_y: Number(lay.y ?? 0),
+        w: Number(lay.w ?? 1),
+        h: Number(lay.h ?? 1),
+        rotation: Number(lay.rotation ?? (orientation === "horizontal" ? 90 : 0)),
+      },
+    });
+  }
+
+  return {
+    ...aisle,
+    walkway_m: Number(pos.walkway_m ?? aisle.walkway_m ?? aisle.walkway_width_m ?? 1.2),
+    walkway_width_m: Number(pos.walkway_m ?? aisle.walkway_m ?? aisle.walkway_width_m ?? 1.2),
+    module_layouts: layouts,
+    module_orientations: orientations,
+    modules: nextModules,
+  };
+}
+
+
+
+function handleLayoutChange(nextPositions = [], nextObjects = null) {
+  const next = clone(planogram);
+
+  next.aisles = (next.aisles || []).map((aisle) => {
+    const pos = nextPositions.find((p) => String(p.aisle_id) === String(aisle.aisle_id));
+    if (!pos) return aisle;
+
+    const moved = {
+      ...aisle,
+      layout_position: {
+        grid_x: n(pos.grid_x ?? pos.x, aisle.layout_position?.grid_x ?? 0),
+        grid_y: n(pos.grid_y ?? pos.y, aisle.layout_position?.grid_y ?? 0),
+        x: n(pos.grid_x ?? pos.x, aisle.layout_position?.x ?? 0),
+        y: n(pos.grid_y ?? pos.y, aisle.layout_position?.y ?? 0),
+        rotation: n(pos.rotation, aisle.layout_position?.rotation ?? 0),
+      },
+      module_layouts: Array.isArray(pos.module_layouts) ? pos.module_layouts : [],
+      module_orientations: Array.isArray(pos.module_orientations) ? pos.module_orientations : [],
+      walkway_m: Number(pos.walkway_m ?? aisle.walkway_m ?? aisle.walkway_width_m ?? 1.2),
+      walkway_width_m: Number(pos.walkway_m ?? aisle.walkway_m ?? aisle.walkway_width_m ?? 1.2),
+    };
+
+    return syncAisleModules(moved, pos);
+  });
+
+  if (Array.isArray(nextObjects)) {
+    next.layout_objects = nextObjects;
+  }
+
+  next.layout_updated_at = new Date().toISOString();
+
+  try {
+    localStorage.setItem(`plonagram_layout_${storeCode}`, JSON.stringify(next));
+  } catch (err) {
+    console.warn("LOCAL_LAYOUT_SAVE_ERROR", err);
+  }
+
+  commitPlan(next, "layout_positions_updated", {
+    positions: nextPositions,
+    objects: nextObjects,
+  });
+
+  setStatus("Layout kaydedildi: koridor, modül pozisyonları, kolon/duvar ve modül içi ayarlar kaydedildi.");
+}
+
+
+
+
+  function openModuleSize(aisleId, moduleId) {
+    const module = (planogram.aisles || []).find((a) => String(a.aisle_id) === String(aisleId))?.modules?.find((m) => String(m.module_id) === String(moduleId));
+    if (!module) return;
+    setSizeTarget({ kind: "module", aisleId, moduleId, title: `Koridor ${aisleId} / Modül ${moduleId}`, values: { module_width_cm: module.module_width_cm || 100, module_depth_cm: module.module_depth_cm || 50, module_height_cm: module.module_height_cm || 210 } });
+  }
+
+  function openShelfSize(aisleId, moduleId, shelfNo) {
+    const found = findShelf(planogram, aisleId, moduleId, shelfNo);
+    if (!found?.shelf) return;
+    setSizeTarget({ kind: "shelf", aisleId, moduleId, shelfNo, title: `Koridor ${aisleId} / Modül ${moduleId} / Raf ${shelfNo}`, values: { shelf_width_cm: found.shelf.shelf_width_cm || 100, shelf_depth_cm: found.shelf.shelf_depth_cm || 50, shelf_height_cm: found.shelf.shelf_height_cm || 35 } });
+  }
+
+  function saveSize(values) {
+    const next = clone(planogram);
+    if (sizeTarget.kind === "module") {
+      const aisle = next.aisles.find((a) => String(a.aisle_id) === String(sizeTarget.aisleId));
+      const module = aisle?.modules?.find((m) => String(m.module_id) === String(sizeTarget.moduleId));
+      if (module) Object.entries(values).forEach(([k, v]) => { module[k] = n(v, module[k]); });
+      commitPlan(next, "module_size_updated", { ...sizeTarget, values });
+    } else {
+      const found = findShelf(next, sizeTarget.aisleId, sizeTarget.moduleId, sizeTarget.shelfNo);
+      if (found?.shelf) { Object.entries(values).forEach(([k, v]) => { found.shelf[k] = n(v, found.shelf[k]); }); recalcShelf(found.shelf); }
+      commitPlan(next, "shelf_size_updated", { ...sizeTarget, values });
+    }
+    setSizeTarget(null);
+  }
+
+  function openRule(kind, aisleId, moduleId, shelfNo = null) { setRuleTarget({ kind, aisleId, moduleId, shelfNo }); }
+
+  function saveRule(ruleObj) {
+    const next = clone(planogram);
+    if (ruleTarget.kind === "module") {
+      const module = next.aisles.find((a) => String(a.aisle_id) === String(ruleTarget.aisleId))?.modules?.find((m) => String(m.module_id) === String(ruleTarget.moduleId));
+      if (module) module.assignment_rule = ruleObj;
+    } else {
+      const found = findShelf(next, ruleTarget.aisleId, ruleTarget.moduleId, ruleTarget.shelfNo);
+      if (found?.shelf) { found.shelf.assignment_rule = ruleObj; if (ruleObj.allowed_storage_type) found.shelf.allowed_storage_type = ruleObj.allowed_storage_type; }
+    }
+    commitPlan(next, `${ruleTarget.kind}_rule_updated`, { target: ruleTarget, rule: ruleObj });
+    setRuleTarget(null);
+  }
+
+  function refreshSelectedShelf(nextPlan, selected = selectedShelf) {
+    if (!selected) return;
+    const found = findShelf(nextPlan, selected.aisle_id, selected.module_id, selected.shelf?.shelf_no || selected.shelf_no);
+    if (found?.shelf) setSelectedShelf({ ...selected, shelf: found.shelf });
+  }
+
+  function changeFacing(sku, delta) {
+    const next = clone(planogram);
+    for (const a of next.aisles || []) for (const m of a.modules || []) for (const s of m.shelves || []) {
+      const p = (s.products || []).find((x) => String(x.sku) === String(sku));
+      if (p) { p.facing_count = Math.max(1, Math.min(24, n(p.facing_count ?? p.facing, 1) + delta)); p.facing = p.facing_count; recalcShelf(s); }
+    }
+    commitPlan(next, "facing_changed", { sku, delta });
+    refreshSelectedShelf(next);
+  }
+
+  function removeProduct(sku) {
+    const next = clone(planogram);
+    for (const a of next.aisles || []) for (const m of a.modules || []) for (const s of m.shelves || []) { s.products = (s.products || []).filter((p) => String(p.sku) !== String(sku)); recalcShelf(s); }
+    commitPlan(next, "product_removed", { sku });
+    refreshSelectedShelf(next);
+  }
+
+  function addProductToShelf(target, product) {
+    const next = clone(planogram);
+    const found = findShelf(next, target.aisle_id, target.module_id, target.shelf.shelf_no);
+    if (!found?.shelf) return;
+    const p = { ...normalizeProduct(product), facing: 1, facing_count: 1, aisle_id: target.aisle_id, module_id: target.module_id, shelf_no: target.shelf.shelf_no, position_order: (found.shelf.products || []).length + 1 };
+    if (productWidth(p) + (found.shelf.used_width_cm || 0) > (found.shelf.shelf_width_cm || 100)) { setStatus("Ürün bu rafa sığmıyor. Facing/raf ölçüsü kontrol et."); return; }
+    found.shelf.products.push(p);
+    recalcShelf(found.shelf);
+    commitPlan(next, "product_added_to_shelf", { sku: p.sku, target });
+    refreshSelectedShelf(next, target);
+  }
+
+  function sortShelf(target, ruleId) {
+    const next = clone(planogram);
+    const found = findShelf(next, target.aisle_id, target.module_id, target.shelf.shelf_no);
+    if (!found?.shelf) return;
+    found.shelf.products = [...(found.shelf.products || [])].sort(compareByRule(ruleId, scoreWeights)).map((p, i) => ({ ...p, position_order: i + 1 }));
+    recalcShelf(found.shelf);
+    commitPlan(next, "shelf_sorted", { ruleId, target });
+    refreshSelectedShelf(next, target);
+  }
+
+  function moveProduct(target, sku, direction) {
+    const next = clone(planogram);
+    const found = findShelf(next, target.aisle_id, target.module_id, target.shelf.shelf_no);
+    const arr = found?.shelf?.products || [];
+    const idx = arr.findIndex((p) => String(p.sku) === String(sku));
+    if (idx < 0) return;
+    const ni = direction === "left" ? Math.max(0, idx - 1) : Math.min(arr.length - 1, idx + 1);
+    [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+    found.shelf.products = arr.map((p, i) => ({ ...p, position_order: i + 1 }));
+    commitPlan(next, "product_moved", { sku, direction });
+    refreshSelectedShelf(next, target);
+  }
+
+  function exportJSON() {
+    const payload = { store_code: storeCode, exported_at: new Date().toISOString(), selected_rule: rule, rule_engine: { advancedRules, scoreWeights, pickingFlow }, uploadStats, lastSummary, metrics, logs, products, layout, planogram };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${storeCode}_plonagram_export.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printAll() {
+    const firstAisle = planogram.aisles?.[0];
+    const firstModule = firstAisle?.modules?.[0];
+    if (firstAisle && firstModule) printModule(firstAisle, firstModule);
+  }
+
+  const activeViewLabel = view === "3D" ? "3D Studio" : view === "2D" ? "2D Plan" : "Analytics";
+  const storeDisplay = storeInfo?.store_name || storeCode;
+  const storeMeta = [storeInfo?.city, storeInfo?.district, storeInfo?.store_code].filter(Boolean).join(" · ");
+  const totalAisles = planogram?.aisles?.length || 0;
+  const totalModules = (planogram?.aisles || []).reduce((a, aisle) => a + (aisle.modules?.length || 0), 0);
+  const totalShelves = (planogram?.aisles || []).reduce((a, aisle) => a + (aisle.modules || []).reduce((b, m) => b + (m.shelves?.length || 0), 0), 0);
+
+  return (
+    <I18nProvider>
+    <div className="plg-os-shell" data-view={view}>
+      {(bootLoading || generating) && <ArchitecturalLoading mode={generating ? "optimize" : "boot"} />}
+
+      <aside className="plg-side-rail" aria-label="Plonagram navigation">
+        <div className="plg-side-logo"><span>P</span></div>
+        <nav className="plg-side-nav">
+          <button className={view === "3D" ? "active" : ""} onClick={() => setView("3D")}><span>◈</span><b>3D Studio</b></button>
+          <button className={view === "2D" ? "active" : ""} onClick={() => setView("2D")}><span>▦</span><b>2D Plan</b></button>
+          <button className={view === "ANALYTICS" ? "active" : ""} onClick={() => setView("ANALYTICS")}><span>⌁</span><b>Analytics</b></button>
+          <button onClick={loadSample}><span>✦</span><b>Sample</b></button>
+        </nav>
+        <div className="plg-ea-mark"><span>EA</span><small>INTELLIGENCE</small></div>
+      </aside>
+
+      <header className="plg-top-orbit">
+        <div className="plg-brand-zone">
+          <div className="plg-brand-kicker">AI RETAIL DIGITAL TWIN</div>
+          <h1>PLONAGRAM <em>OS</em></h1>
+          <p>Store master, depot DNA, sales intelligence and operational rules work from one command layer.</p>
+        </div>
+
+        <div className="plg-status-zone">
+          <div className="plg-status-pill"><i /> System Status <b>Online</b></div>
+          <select className="plg-store-switch" value={storeCode} onChange={(e) => handleStoreChange(e.target.value)}>
+            {(storeList.length ? storeList : [{ store_code: storeCode, store_name: storeCode }]).map((s) => (
+              <option key={s.store_code} value={s.store_code}>{s.store_name || s.store_code}</option>
+            ))}
+          </select>
+          <div className="plg-view-chip">{activeViewLabel}</div>
+          <LanguageSelector compact embedded />
+          <button className="plg-avatar" onClick={logout} title="Logout">EA</button>
+        </div>
+      </header>
+
+      <main className="plg-command-main">
+        <section className="plg-hero-grid">
+          <div className="plg-hero-copy">
+            <span className="plg-neon-eyebrow">WELCOME TO THE FUTURE OF RETAIL</span>
+            <h2>Intelligent Warehousing.<br />Perfect Execution.</h2>
+            <p>AI-powered planogram optimization, space intelligence and real-time warehouse orchestration.</p>
+            <div className="plg-hero-actions">
+              <button className="plg-primary-cta" onClick={generatePlanogram} disabled={generating}>✦ Generate Planogram</button>
+              <button className="plg-secondary-cta" onClick={() => setView("3D")}>Open 3D Studio →</button>
+            </div>
+          </div>
+
+          <div className="plg-hero-twin plg-reference-hero-twin" aria-label="Digital twin overview">
+            <ReferenceHeroTwin plan={planogram} />
+          </div>
+
+        </section>
+
+        <section className="plg-kpi-strip">
+          <article><span>Space Utilization</span><strong>{Math.round(metrics?.capacity_utilization_pct || 76)}%</strong><small>+12% vs last plan</small></article>
+          <article><span>Planogram Score</span><strong>{lastSummary?.score || 92}</strong><small>Excellent</small></article>
+          <article><span>Picking Efficiency</span><strong>1.35</strong><small>min / order</small></article>
+          <article><span>AI Optimization</span><strong>+18%</strong><small>Improvement</small></article>
+          <article><span>Active SKUs</span><strong>{products.length.toLocaleString("tr-TR")}</strong><small>Across all zones</small></article>
+          <article><span>Alerts</span><strong>{lastSummary?.unplaced_products || 0}</strong><small>Requires attention</small></article>
+        </section>
+
+        <section className="plg-control-deck">
+          <div className="plg-store-card">
+            <span className="plg-neon-eyebrow">ACTIVE DEPOT</span>
+            <h3>{storeDisplay}</h3>
+            <p>{storeMeta}</p>
+            <div className="plg-store-badges"><b>{storeInfo?.store_type || "Corporate"}</b><b>{storeInfo?.region || "Region"}</b><b>{storeInfo?.regional_executive || "Executive"}</b></div>
+          </div>
+          <div className="plg-action-card">
+            <span className="plg-neon-eyebrow">DATA INGESTION</span>
+            <h3>Upload Intelligence</h3>
+            <p>{uploadStats.loaded} SKUs loaded · {uploadStats.file}</p>
+            <div className="plg-button-row">
+              <button onClick={() => productInputRef.current?.click()}>Upload Product CSV</button>
+              <button onClick={() => layoutInputRef.current?.click()}>Upload Plan JSON/DXF</button>
+              <button onClick={exportJSON}>Export</button>
+            </div>
+            <input ref={productInputRef} type="file" accept=".csv,.txt" hidden onChange={handleProducts} />
+            <input ref={layoutInputRef} type="file" accept=".json,.dxf" hidden onChange={handleLayout} />
+          </div>
+          <div className="plg-metrics-card">
+            <span className="plg-neon-eyebrow">DIGITAL TWIN STATUS</span>
+            <div className="plg-metric-pills"><b>{totalAisles} aisles</b><b>{totalModules} modules</b><b>{totalShelves} shelves</b></div>
+            <p>{status}</p>
+          </div>
+        </section>
+
+        <section className="plg-engine-panel">
+          <RuleEnginePanel rule={rule} setRule={setRule} products={products} onGenerate={generatePlanogram} generating={generating} advancedRules={advancedRules} onAdvancedRulesChange={handleAdvancedRulesChange} scoreWeights={scoreWeights} onScoreWeightsChange={setScoreWeights} pickingFlow={pickingFlow} onPickingFlowChange={setPickingFlow} uploadStats={uploadStats} lastSummary={lastSummary} onApplyRulesNow={() => applyRulesNow()} />
+        </section>
+
+        <section className="plg-studio-shell">
+          <div className="plg-section-heading">
+            <div><span className="plg-neon-eyebrow">DIGITAL TWIN STUDIO</span><h2>Live Operations Command Center</h2></div>
+            <div className="plg-tabs">
+              <button className={view === "3D" ? "active" : ""} onClick={() => setView("3D")}>3D View</button>
+              <button className={view === "2D" ? "active" : ""} onClick={() => setView("2D")}>2D Plan</button>
+              <button className={view === "ANALYTICS" ? "active" : ""} onClick={() => setView("ANALYTICS")}>Heatmap</button>
+            </div>
+          </div>
+
+          <div className="plg-studio-frame">
+            {view === "3D" && <Depot3D plan={planogram} onShelfOpen={setSelectedShelf} onAddModule={addModule} onAddShelf={addShelf} onModuleSize={openModuleSize} onShelfSize={openShelfSize} onPrintModule={printModule} onLayoutChange={handleLayoutChange} onAddAisle={addAisle} onDeleteAisle={deleteAisle} onDeleteModule={deleteModule} onDeleteShelf={deleteShelf} />}
+            {view === "2D" && <Planogram2D plan={planogram} onShelfOpen={setSelectedShelf} onAddModule={addModule} onAddShelf={addShelf} onModuleSize={openModuleSize} onShelfSize={openShelfSize} onRule={openRule} onPrintModule={printModule} onAddAisle={addAisle} onDeleteAisle={deleteAisle} onDeleteModule={deleteModule} onDeleteShelf={deleteShelf} />}
+            {view === "ANALYTICS" && <AnalyticsPanel metrics={metrics} logs={logs} onExport={exportJSON} />}
+          </div>
+        </section>
+      </main>
+
+      <ShelfEditor selected={selectedShelf} plan={planogram} products={products} onClose={() => setSelectedShelf(null)} onFacing={changeFacing} onRemove={removeProduct} onAddProduct={addProductToShelf} onSortShelf={sortShelf} onMoveProduct={moveProduct} onPrintShelf={printShelf} />
+      <SizeDialog target={sizeTarget} onClose={() => setSizeTarget(null)} onSave={saveSize} />
+      <RuleDialog target={ruleTarget} products={products} onClose={() => setRuleTarget(null)} onSave={saveRule} />
+    </div>
+    </I18nProvider>
+  );
+}

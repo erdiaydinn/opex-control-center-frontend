@@ -632,15 +632,124 @@ export function Reports({ lang, products = [], unplacedProducts = [], objects = 
   );
 }
 
-export function Admin({ lang }) {
+export function Admin({
+  lang,
+  products = [],
+  unplacedProducts = [],
+  objects = [],
+  readiness,
+  notify,
+}) {
+  const [audit, setAudit] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [loadingAdmin, setLoadingAdmin] = useState(true);
+  const [adminError, setAdminError] = useState('');
+
+  async function loadAdmin() {
+    setLoadingAdmin(true);
+    setAdminError('');
+    const results = await Promise.allSettled([
+      api.auditLogs({ limit: 50 }),
+      api.pendingDimensionChanges(),
+    ]);
+    const auditResult = results[0].status === 'fulfilled' ? results[0].value : null;
+    const pendingResult = results[1].status === 'fulfilled' ? results[1].value : null;
+    setAudit(auditResult?.logs || []);
+    setPending(pendingResult?.requests || pendingResult?.pending || []);
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length === results.length) {
+      setAdminError(failures[0]?.reason?.message || 'Admin verileri alınamadı.');
+    }
+    setLoadingAdmin(false);
+  }
+
+  useEffect(() => {
+    loadAdmin();
+  }, []);
+
+  async function review(requestId, approve) {
+    try {
+      await api.approveDimensionChange({ request_id: requestId, approve });
+      notify?.(approve ? 'Ürün master değişikliği onaylandı.' : 'Ürün master değişikliği reddedildi.');
+      await loadAdmin();
+    } catch (error) {
+      notify?.(error?.message || 'Onay işlemi tamamlanamadı.');
+    }
+  }
+
+  const missingDimensions = [...products, ...unplacedProducts].filter(
+    (product) =>
+      product?.dimension_source === 'missing' ||
+      !Number(product?.width_cm) ||
+      !Number(product?.height_cm) ||
+      !Number(product?.depth_cm)
+  ).length;
+  const dataQualityScore = Math.max(
+    0,
+    Math.round(
+      100 -
+        (missingDimensions / Math.max(1, products.length + unplacedProducts.length)) * 100
+    )
+  );
+
   return (
     <div className="page">
-      <div className="section-eyebrow">ADMIN</div>
+      <div className="section-eyebrow">PLANOGRAM OPERATIONS</div>
       <h1 style={{ fontSize: 42, margin: '8px 0' }}>{L(lang, 'admin')}</h1>
-      <div className="grid cols-3">
-        <div className="card pad"><h3>Kullanıcılar</h3><p className="muted">Rol, depo ve onay yönetimi.</p></div>
-        <div className="card pad"><h3>Veri Kalitesi</h3><p className="muted">Catalog, ABC, Store DNA ve fixture uyarıları.</p></div>
-        <div className="card pad"><h3>Engine Ayarları</h3><p className="muted">Kural ağırlıkları, score ve AI güven eşikleri.</p></div>
+      <p className="muted">
+        Kullanıcı ve rol yönetimi OPEX Access Control’dadır. Bu ekran yalnızca planogram
+        onayları, veri kalitesi ve audit kayıtlarını yönetir.
+      </p>
+
+      <div className="grid cols-4">
+        <div className="card kpi"><div className="kpi-label">Veri Kalitesi</div><div className="kpi-value">%{dataQualityScore}</div><div className="kpi-trend">{missingDimensions} eksik ölçü</div></div>
+        <div className="card kpi"><div className="kpi-label">Yerleşen SKU</div><div className="kpi-value">{products.length}</div><div className="kpi-trend">Aktif plan</div></div>
+        <div className="card kpi"><div className="kpi-label">Atanamayan SKU</div><div className="kpi-value">{unplacedProducts.length}</div><div className="kpi-trend">Gerekçeli aksiyon havuzu</div></div>
+        <div className="card kpi"><div className="kpi-label">Onay Kuyruğu</div><div className="kpi-value">{pending.length}</div><div className="kpi-trend">{objects.length} fixture · {readiness?.status || 'durum bekliyor'}</div></div>
+      </div>
+
+      {adminError ? <div className="auth-error" style={{ marginTop: 18 }}>{adminError}</div> : null}
+
+      <div className="grid cols-2" style={{ marginTop: 18 }}>
+        <section className="card pad">
+          <div className="section-eyebrow">MASTER DEĞİŞİKLİK ONAYI</div>
+          <h3>Bekleyen ürün ölçüsü talepleri</h3>
+          {loadingAdmin ? <p className="muted">Yükleniyor…</p> : pending.length ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {pending.map((item) => (
+                <div className="card pad" key={item.id || item.request_id}>
+                  <strong>{item.product_name || item.sku || 'Ürün değişikliği'}</strong>
+                  <p className="muted">SKU: {item.sku || '-'} · Talep eden: {item.requested_by || item.actor || '-'}</p>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn primary" onClick={() => review(item.id || item.request_id, true)}>Onayla</button>
+                    <button className="btn ghost" onClick={() => review(item.id || item.request_id, false)}>Reddet</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <p className="muted">Bekleyen master değişikliği yok.</p>}
+        </section>
+
+        <section className="card pad">
+          <div className="section-eyebrow">AUDIT LOG</div>
+          <h3>Son 50 işlem</h3>
+          <div style={{ overflow: 'auto', maxHeight: 420 }}>
+            <table className="table">
+              <thead><tr><th>Zaman</th><th>İşlem</th><th>Kullanıcı</th><th>Depo</th></tr></thead>
+              <tbody>
+                {audit.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.created_at || '-'}</td>
+                    <td>{row.action || '-'}</td>
+                    <td>{row.actor || '-'}</td>
+                    <td>{row.store_code || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!loadingAdmin && !audit.length ? <p className="muted">Audit kaydı bulunamadı.</p> : null}
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -66,7 +66,7 @@ from change_request_store import (
     list_change_requests,
     review_change_request,
 )
-from security import authenticate_authorization, ensure_store_access, get_current_user, require_roles
+from security import authenticate_authorization, ensure_store_access, get_current_user, require_action, require_roles
 from equipment_library import EQUIPMENT, equipment_to_layout_object, get_equipment, list_equipment
 from rule_catalog import RULE_CATALOG, scoring_config_with_defaults, validate_rule_payload
 
@@ -136,6 +136,7 @@ async def request_id_middleware(request: Request, call_next):
         "/auth/register",
         "/auth/forgot-password",
         "/auth/stores",
+        "/auth/opex-dev-exchange",
     )
     if request.method != "OPTIONS" and request.url.path not in public_paths and not request.url.path.startswith(public_prefixes):
         request.state.user = authenticate_authorization(request.headers.get("Authorization"))
@@ -503,7 +504,7 @@ def reload_master(current_user: Dict[str, Any] = Depends(require_roles("ADMIN", 
 async def upload_products_csv(
     file: UploadFile = File(...),
     allow_ai_dimensions: bool = True,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(require_action("create")),
 ):
     filename = (file.filename or "").lower()
     if not filename.endswith((".csv", ".xlsx", ".xls")):
@@ -566,7 +567,7 @@ def enrich_products(payload: Dict[str, Any] = Body(...)):
 # =====================================================
 
 @app.post("/generate-planogram")
-def generate(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def generate(req: GenerateRequest, current_user: Dict[str, Any] = Depends(require_action("create"))):
     ensure_store_access(current_user, req.store_code)
     started = time.perf_counter()
     result = generate_planogram(
@@ -592,7 +593,7 @@ def generate(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_cu
 
 
 @app.post("/generate-planogram-fast")
-def generate_fast(req: GenerateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def generate_fast(req: GenerateRequest, current_user: Dict[str, Any] = Depends(require_action("create"))):
     ensure_store_access(current_user, req.store_code)
     started = time.perf_counter()
     result = run_engine(
@@ -670,7 +671,7 @@ def validate_strict_rules(req: PlanRequest):
 # =====================================================
 
 @app.post("/update-facing")
-def update_facing(req: FacingRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def update_facing(req: FacingRequest, current_user: Dict[str, Any] = Depends(require_action("edit"))):
     result = engine_update_facing(
         plan=req.planogram,
         target_sku=req.sku,
@@ -681,7 +682,7 @@ def update_facing(req: FacingRequest, current_user: Dict[str, Any] = Depends(get
 
 
 @app.post("/rotate-product")
-def rotate_product(req: RotateRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def rotate_product(req: RotateRequest, current_user: Dict[str, Any] = Depends(require_action("edit"))):
     result = engine_rotate_product(
         plan=req.planogram,
         target_sku=req.sku,
@@ -691,7 +692,7 @@ def rotate_product(req: RotateRequest, current_user: Dict[str, Any] = Depends(ge
 
 
 @app.post("/move-product")
-def move_product(req: MoveRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def move_product(req: MoveRequest, current_user: Dict[str, Any] = Depends(require_action("edit"))):
     result = engine_move_product(
         plan=req.planogram,
         target_sku=req.sku,
@@ -705,7 +706,7 @@ def move_product(req: MoveRequest, current_user: Dict[str, Any] = Depends(get_cu
 
 
 @app.post("/remove-product")
-def remove_product(req: RemoveProductRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def remove_product(req: RemoveProductRequest, current_user: Dict[str, Any] = Depends(require_action("edit"))):
     plan = copy.deepcopy(req.planogram)
     removed = remove_product_from_plan(plan, req.sku)
 
@@ -729,7 +730,7 @@ def remove_product(req: RemoveProductRequest, current_user: Dict[str, Any] = Dep
 
 
 @app.post("/add-product-to-shelf")
-def add_product_to_shelf(req: AddProductToShelfRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def add_product_to_shelf(req: AddProductToShelfRequest, current_user: Dict[str, Any] = Depends(require_action("edit"))):
     result = engine_add_product_to_shelf(
         plan=req.planogram,
         product=req.product,
@@ -743,7 +744,7 @@ def add_product_to_shelf(req: AddProductToShelfRequest, current_user: Dict[str, 
 
 
 @app.post("/reorder-shelf")
-def reorder_shelf(req: ReorderShelfRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+def reorder_shelf(req: ReorderShelfRequest, current_user: Dict[str, Any] = Depends(require_action("edit"))):
     plan = copy.deepcopy(req.planogram)
     aisle, module, shelf = find_shelf(
         plan,

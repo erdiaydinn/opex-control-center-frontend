@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 
 from app.core.config import Settings
 from app.core.security import _decode_development_token
@@ -30,5 +31,5 @@ def test_development_token_carries_tenant_context() -> None:
 
 
 def test_development_token_rejects_missing_tenant() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException):
         _decode_development_token("dev.user-1..viewer")

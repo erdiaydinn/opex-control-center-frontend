@@ -8,6 +8,7 @@ The platform branch starts:
 
 - Edge gateway
 - OPEX frontend
+- Database migration job
 - OPEX Core API
 - PostgreSQL
 - Redis
@@ -45,10 +46,10 @@ Start the base platform:
 docker compose -f docker-compose.platform.yml up --build -d
 ```
 
-Check status:
+The `migrate` service must finish successfully before `core-api` starts. Check status:
 
 ```powershell
-docker compose -f docker-compose.platform.yml ps
+docker compose -f docker-compose.platform.yml ps -a
 ```
 
 Open:
@@ -84,11 +85,12 @@ OPEX_AUTH_MODE=development
 OPEX_ENVIRONMENT is not production
 ```
 
-Example PowerShell request:
+Tenant identities are UUIDs. Example PowerShell request:
 
 ```powershell
+$tenantId = "00000000-0000-0000-0000-000000000001"
 $headers = @{
-  Authorization = "Bearer dev.user-1.tenant-a.platform_admin"
+  Authorization = "Bearer dev.user-1.$tenantId.platform_admin"
 }
 
 Invoke-RestMethod `
@@ -99,13 +101,26 @@ Invoke-RestMethod `
 Expected response includes:
 
 - actor `user-1`
-- tenant `tenant-a`
+- tenant `00000000-0000-0000-0000-000000000001`
 - role `platform_admin`
 - request ID
 
 Development tokens are not passwords and are not production authentication. Production refuses to start with development authentication enabled.
 
-## 5. Start local AI
+## 5. Tenant database boundary
+
+Every tenant-owned transaction must use the authenticated principal through `get_tenant_session`. That dependency writes transaction-local PostgreSQL settings:
+
+```text
+app.tenant_id
+app.actor_subject
+```
+
+PostgreSQL Row-Level Security uses `app.tenant_id` to allow matching rows and deny all others. Missing tenant context returns no tenant rows. A mismatched tenant write is rejected by PostgreSQL.
+
+Application code must not create an unrestricted database session for tenant-owned business queries.
+
+## 6. Start local AI
 
 Ollama is optional and external AI is disabled by default.
 
@@ -125,12 +140,18 @@ The model name must match `OPEX_OLLAMA_MODEL`.
 
 The current foundation starts Ollama infrastructure only. Jarvis workflows, tenant-scoped retrieval and tool approval are separate implementation stages. Do not describe the current stack as a completed AI agent.
 
-## 6. Logs
+## 7. Logs
 
 All services:
 
 ```powershell
 docker compose -f docker-compose.platform.yml logs -f
+```
+
+Migration job:
+
+```powershell
+docker compose -f docker-compose.platform.yml logs migrate
 ```
 
 Core API only:
@@ -151,7 +172,7 @@ Database only:
 docker compose -f docker-compose.platform.yml logs -f postgres
 ```
 
-## 7. Normal shutdown
+## 8. Normal shutdown
 
 ```powershell
 docker compose -f docker-compose.platform.yml down
@@ -159,7 +180,7 @@ docker compose -f docker-compose.platform.yml down
 
 This keeps named volumes.
 
-## 8. Destructive local reset
+## 9. Destructive local reset
 
 The following deletes the local PostgreSQL, Redis and Ollama volumes:
 
@@ -169,7 +190,7 @@ docker compose -f docker-compose.platform.yml down -v
 
 Use it only for disposable development data. Never use this as a production recovery procedure.
 
-## 9. Configuration rules
+## 10. Configuration rules
 
 - Never commit `.env`.
 - Never put API keys, passwords or private credentials in frontend variables.
@@ -178,8 +199,9 @@ Use it only for disposable development data. Never use this as a production reco
 - Custom customer domains must be verified and mapped to a tenant before use.
 - External AI remains disabled unless a tenant policy, data policy and budget explicitly enable it.
 - Real customer data must not be used while the repository visibility and sanitization security issue remains open.
+- Runtime and migration database roles must be separated before production deployment.
 
-## 10. No-domain pilot access
+## 11. No-domain pilot access
 
 For a controlled local network pilot, another device may connect to:
 
@@ -196,7 +218,7 @@ Required conditions:
 
 Do not expose port 8080 directly to the public internet as the final production design.
 
-## 11. Customer-domain target
+## 12. Customer-domain target
 
 Later, the edge layer will map verified domains such as:
 
@@ -207,32 +229,47 @@ control.customer-b.com
 
 to tenant records. Branding, licensed modules and policy will load from the resolved tenant. A new customer must not require a fork of the codebase.
 
-## 12. Known gaps before production
+## 13. Implemented security foundation
 
-The foundation is intentionally fail-closed but is not yet production-complete. Required next controls include:
+This branch includes:
 
-- tenant, membership, role and entitlement database schema
+- tenant and verified-domain schema
+- tenant memberships
+- tenant roles and scoped permissions
+- module entitlements
+- append-only audit event table
+- Alembic migrations
 - PostgreSQL Row-Level Security
-- authorization policy service
-- cross-tenant denial integration tests
-- audit event persistence
+- `FORCE ROW LEVEL SECURITY`
+- transaction-local tenant context
+- migration-before-API startup
+- real PostgreSQL isolation tests in CI
+
+## 14. Remaining gaps before production
+
+- authorization policy service and permission evaluation
+- audit event writing service and security event views
+- separate migration and runtime database roles
 - rate limiting
-- migration and rollback tooling
 - encrypted backups and restore drills
-- white-label domain verification
+- white-label domain verification flow
 - Platform Health UI
 - frontend migration away from localStorage authorization
 - PlanAI service migration or explicit gateway integration
+- secret scanning and repository sanitization
 
-## 13. CI gate
+## 15. CI gate
 
 Every pull request must pass:
 
 - frontend production build
 - Core API lint
-- Core API tests
+- Alembic migration on a fresh PostgreSQL service
+- Core API security tests
+- cross-tenant read and write denial test
 - module catalog JSON validation
 - Docker Compose validation
 - Core API container build
+- frontend container build
 
 A red CI result is a blocked release, not a warning.

@@ -26,6 +26,16 @@ def test_production_rejects_wildcard_cors() -> None:
         )
 
 
+def test_runtime_and_migration_credentials_must_differ() -> None:
+    shared_url = "postgresql+asyncpg://shared:shared@postgres:5432/opex"
+
+    with pytest.raises(ValueError, match="credentials must differ"):
+        Settings(
+            database_url=shared_url,
+            migration_database_url=shared_url,
+        )
+
+
 def test_development_token_carries_tenant_context() -> None:
     principal = _decode_development_token(
         f"dev.user-1.{TENANT_ID}.inventory_admin,viewer"

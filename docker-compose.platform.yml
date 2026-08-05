@@ -27,6 +27,20 @@ services:
     networks:
       - internal
 
+  migrate:
+    build:
+      context: ./services/core-api
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - internal
+
   core-api:
     build:
       context: ./services/core-api
@@ -36,8 +50,8 @@ services:
     expose:
       - "8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:

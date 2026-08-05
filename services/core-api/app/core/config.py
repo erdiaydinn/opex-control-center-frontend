@@ -72,9 +72,8 @@ class Settings(BaseSettings):
         if self.environment == "production" and "*" in self.cors_origin_list:
             raise ValueError("Wildcard CORS is forbidden in production")
 
-        if self.environment in {"staging", "production"}:
-            if self.database_url == self.migration_database_url:
-                raise ValueError("Runtime and migration database credentials must differ")
+        if self.database_url == self.migration_database_url:
+            raise ValueError("Runtime and migration database credentials must differ")
 
         return self
 

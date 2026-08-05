@@ -69,12 +69,14 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: "${OPEX_POSTGRES_DB:-opex}"
-      POSTGRES_USER: "${OPEX_POSTGRES_USER:-opex_app}"
-      POSTGRES_PASSWORD: "${OPEX_POSTGRES_PASSWORD:?Set OPEX_POSTGRES_PASSWORD in .env}"
+      POSTGRES_USER: opex_migrator
+      POSTGRES_PASSWORD: "${OPEX_POSTGRES_MIGRATOR_PASSWORD:?Set OPEX_POSTGRES_MIGRATOR_PASSWORD in .env}"
+      OPEX_POSTGRES_RUNTIME_PASSWORD: "${OPEX_POSTGRES_RUNTIME_PASSWORD:?Set OPEX_POSTGRES_RUNTIME_PASSWORD in .env}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-runtime-role.sh:/docker-entrypoint-initdb.d/10-runtime-role.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${OPEX_POSTGRES_USER:-opex_app} -d ${OPEX_POSTGRES_DB:-opex}"]
+      test: ["CMD-SHELL", "pg_isready -U opex_migrator -d ${OPEX_POSTGRES_DB:-opex}"]
       interval: 5s
       timeout: 3s
       retries: 12

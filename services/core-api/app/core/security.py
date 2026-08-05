@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Annotated, Any
+from uuid import UUID
 
 import anyio
 import jwt
@@ -15,7 +16,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 class Principal(BaseModel):
     subject: str
-    tenant_id: str
+    tenant_id: UUID
     roles: tuple[str, ...] = ()
     auth_mode: str
 
@@ -33,8 +34,18 @@ def _normalize_roles(value: Any) -> tuple[str, ...]:
     return ()
 
 
+def _require_tenant_uuid(value: Any, *, invalid_status: int) -> UUID:
+    try:
+        return UUID(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=invalid_status,
+            detail="Token has no valid tenant context",
+        ) from exc
+
+
 def _decode_development_token(token: str) -> Principal:
-    # Local-only format: dev.<subject>.<tenant_id>.<comma-separated-roles>
+    # Local-only format: dev.<subject>.<tenant_uuid>.<comma-separated-roles>
     parts = token.split(".", maxsplit=3)
     if len(parts) != 4 or parts[0] != "dev":
         raise HTTPException(
@@ -51,7 +62,10 @@ def _decode_development_token(token: str) -> Principal:
 
     return Principal(
         subject=subject,
-        tenant_id=tenant_id,
+        tenant_id=_require_tenant_uuid(
+            tenant_id,
+            invalid_status=status.HTTP_401_UNAUTHORIZED,
+        ),
         roles=_normalize_roles(roles),
         auth_mode="development",
     )
@@ -83,16 +97,12 @@ async def _decode_oidc_token(token: str, settings: Settings) -> Principal:
             detail="Identity provider verification is unavailable",
         ) from exc
 
-    tenant_id = str(claims.get(settings.oidc_tenant_claim, "")).strip()
-    if not tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Token has no tenant context",
-        )
-
     return Principal(
         subject=str(claims["sub"]),
-        tenant_id=tenant_id,
+        tenant_id=_require_tenant_uuid(
+            claims.get(settings.oidc_tenant_claim),
+            invalid_status=status.HTTP_403_FORBIDDEN,
+        ),
         roles=_normalize_roles(claims.get(settings.oidc_roles_claim)),
         auth_mode="oidc",
     )

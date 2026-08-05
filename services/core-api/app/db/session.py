@@ -30,7 +30,6 @@ async def apply_tenant_context(session: AsyncSession, principal: Principal) -> N
 async def get_tenant_session(
     principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> AsyncIterator[AsyncSession]:
-    async with TenantSessionFactory() as session:
-        async with session.begin():
-            await apply_tenant_context(session, principal)
-            yield session
+    async with TenantSessionFactory() as session, session.begin():
+        await apply_tenant_context(session, principal)
+        yield session

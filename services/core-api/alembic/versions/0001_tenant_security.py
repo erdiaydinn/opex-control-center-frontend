@@ -7,9 +7,10 @@ Create Date: 2026-08-05
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0001_tenant_security"
 down_revision: str | None = None

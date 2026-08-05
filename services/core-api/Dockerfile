@@ -9,6 +9,8 @@ WORKDIR /app
 RUN addgroup --system opex && adduser --system --ingroup opex opex
 
 COPY pyproject.toml ./
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY app ./app
 RUN pip install --upgrade pip && pip install .
 

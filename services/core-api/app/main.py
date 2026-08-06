@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 from contextlib import asynccontextmanager
@@ -12,9 +13,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.core.audit import build_audit_event
 from app.core.config import get_settings
-from app.core.resources import check_database, check_redis, close_resources
-from app.core.security import Principal, get_current_principal, require_platform_admin
+from app.core.resources import (
+    check_database,
+    check_redis,
+    close_resources,
+    write_audit_event,
+)
+from app.core.security import Principal, require_platform_admin, require_viewer
 
 settings = get_settings()
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
@@ -56,6 +63,54 @@ async def request_context_and_security_headers(request: Request, call_next):
     request.state.request_id = request_id
 
     response = await call_next(request)
+
+    principal = getattr(request.state, "principal", None)
+
+    audit_event = build_audit_event(
+        request_id=request_id,
+        actor=getattr(principal, "subject", None),
+        tenant_id=(
+            str(getattr(principal, "tenant_id", ""))
+            if principal is not None
+            else None
+        ),
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        action=f"{request.method.lower()}:{request.url.path}",
+        metadata={
+            "client_host": (
+                request.client.host
+                if request.client is not None
+                else None
+            ),
+        },
+    )
+
+    if request.url.path not in {"/health/live", "/health/ready"}:
+        print(
+            json.dumps(
+                {"event": "audit", **audit_event},
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+
+        try:
+            await write_audit_event(audit_event)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "event": "audit_write_failed",
+                        "request_id": request_id,
+                        "error": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -90,7 +145,7 @@ async def readiness() -> JSONResponse:
 @app.get("/v1/context", tags=["platform"])
 async def current_context(
     request: Request,
-    principal: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(require_viewer),
 ) -> dict[str, object]:
     return {
         "request_id": request.state.request_id,

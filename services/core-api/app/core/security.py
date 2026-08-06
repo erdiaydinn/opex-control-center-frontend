@@ -130,15 +130,71 @@ async def get_current_principal(
     return principal
 
 
-async def require_platform_admin(
-    principal: Annotated[Principal, Depends(get_current_principal)],
-) -> Principal:
-    roles = {role.strip().lower() for role in principal.roles}
+ROLE_SUPER_ADMIN = "super_admin"
+ROLE_PLATFORM_ADMIN = "platform_admin"
+ROLE_OPERATOR = "operator"
+ROLE_VIEWER = "viewer"
 
-    if "super_admins" not in roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Platform administrator permission is required",
-        )
+ROLE_ALIASES = {
+    "super_admins": ROLE_SUPER_ADMIN,
+    "platform_admins": ROLE_PLATFORM_ADMIN,
+    "operators": ROLE_OPERATOR,
+    "viewers": ROLE_VIEWER,
+}
 
-    return principal
+
+def normalize_principal_roles(principal: Principal) -> set[str]:
+    roles: set[str] = set()
+
+    for role in principal.roles:
+        normalized = role.strip().lower()
+        roles.add(ROLE_ALIASES.get(normalized, normalized))
+
+    return roles
+
+
+def require_roles(*allowed_roles: str):
+    normalized_allowed = {
+        ROLE_ALIASES.get(role.strip().lower(), role.strip().lower())
+        for role in allowed_roles
+    }
+
+    async def dependency(
+        principal: Annotated[Principal, Depends(get_current_principal)],
+    ) -> Principal:
+        principal_roles = normalize_principal_roles(principal)
+
+        if ROLE_SUPER_ADMIN in principal_roles:
+            return principal
+
+        if principal_roles.isdisjoint(normalized_allowed):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": "You do not have permission to perform this action",
+                    "required_roles": sorted(normalized_allowed),
+                },
+            )
+
+        return principal
+
+    return dependency
+
+
+require_platform_admin = require_roles(
+    ROLE_SUPER_ADMIN,
+    ROLE_PLATFORM_ADMIN,
+)
+
+require_operator = require_roles(
+    ROLE_SUPER_ADMIN,
+    ROLE_PLATFORM_ADMIN,
+    ROLE_OPERATOR,
+)
+
+require_viewer = require_roles(
+    ROLE_SUPER_ADMIN,
+    ROLE_PLATFORM_ADMIN,
+    ROLE_OPERATOR,
+    ROLE_VIEWER,
+)

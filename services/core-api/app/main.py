@@ -20,6 +20,7 @@ from app.core.resources import (
     check_redis,
     close_resources,
     write_audit_event,
+    list_audit_events,
 )
 from app.core.security import Principal, require_platform_admin, require_viewer
 
@@ -153,6 +154,39 @@ async def current_context(
         "tenant_id": principal.tenant_id,
         "roles": principal.roles,
         "auth_mode": principal.auth_mode,
+    }
+
+
+@app.get("/v1/audit/events", tags=["platform"])
+async def get_audit_events(
+    principal: Principal = Depends(require_platform_admin),
+    limit: int = 50,
+    actor: str | None = None,
+    decision: str | None = None,
+    action: str | None = None,
+) -> dict[str, object]:
+    safe_limit = max(1, min(limit, 200))
+
+    if decision not in {None, "allowed", "denied", "error"}:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": "decision must be allowed, denied or error",
+            },
+        )
+
+    items = await list_audit_events(
+        tenant_id=str(principal.tenant_id),
+        limit=safe_limit,
+        actor=actor,
+        decision=decision,
+        action=action,
+    )
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "count": len(items),
+        "items": items,
     }
 
 @app.get("/v1/platform/health", tags=["platform"])

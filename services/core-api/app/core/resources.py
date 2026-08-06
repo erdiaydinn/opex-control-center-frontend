@@ -124,6 +124,91 @@ async def write_audit_event(event: dict[str, object]) -> None:
         await connection.execute(statement, values)
 
 
+async def list_audit_events(
+    *,
+    tenant_id: str,
+    limit: int = 50,
+    actor: str | None = None,
+    decision: str | None = None,
+    action: str | None = None,
+) -> list[dict[str, object]]:
+    filters = []
+    values: dict[str, object] = {
+        "tenant_id": tenant_id,
+        "limit": limit,
+    }
+
+    if actor:
+        filters.append("actor_subject = :actor")
+        values["actor"] = actor
+
+    if decision:
+        filters.append("decision = :decision")
+        values["decision"] = decision
+
+    if action:
+        filters.append("action = :action")
+        values["action"] = action
+
+    where_clause = ""
+
+    if filters:
+        where_clause = " AND " + " AND ".join(filters)
+
+    statement = text(
+        f"""
+        SELECT
+            id,
+            tenant_id,
+            actor_subject,
+            action,
+            resource_type,
+            resource_id,
+            decision,
+            request_id,
+            data,
+            created_at
+        FROM audit_events
+        WHERE tenant_id = CAST(:tenant_id AS UUID)
+        {where_clause}
+        ORDER BY created_at DESC
+        LIMIT :limit
+        """
+    )
+
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                """
+                SELECT set_config(
+                    'app.tenant_id',
+                    :tenant_id,
+                    true
+                )
+                """
+            ),
+            {"tenant_id": tenant_id},
+        )
+
+        result = await connection.execute(statement, values)
+
+        return [
+            {
+                "id": str(row.id),
+                "tenant_id": str(row.tenant_id),
+                "actor": row.actor_subject,
+                "action": row.action,
+                "resource_type": row.resource_type,
+                "resource_id": row.resource_id,
+                "decision": row.decision,
+                "request_id": row.request_id,
+                "data": row.data,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in result
+        ]
+
+
 async def close_resources() -> None:
     await redis_client.aclose()
     await engine.dispose()

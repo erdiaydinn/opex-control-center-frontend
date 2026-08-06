@@ -6,11 +6,13 @@ export function getDemoEmail() {
 
 export async function apiFetch(path, options = {}) {
   const email = getDemoEmail();
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
       "X-User-Email": email,
       ...(options.headers || {}),
     },
@@ -54,4 +56,35 @@ export function apiDelete(path) {
   return apiFetch(path, {
     method: "DELETE",
   });
+}
+
+export function apiPatch(path, data = {}) {
+  return apiFetch(path, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function apiUpload(path, formData) {
+  return apiFetch(path, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function apiDownload(path) {
+  const email = getDemoEmail();
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      "X-User-Email": email,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `Download error: ${response.status}`);
+  }
+
+  return response.blob();
 }

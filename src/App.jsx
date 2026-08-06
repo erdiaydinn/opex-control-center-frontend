@@ -9,6 +9,11 @@ import BudgetIntelligence from "./modules/budget-intelligence/BudgetIntelligence
 import DockOSDashboard from "./modules/DockOS/DockOSDashboard.jsx";
 import AccessControl from "./modules/access-control/AccessControl.jsx";
 import InventoryDashboard from "./modules/inventory/InventoryDashboard.jsx";
+import WorkforceControl from "./modules/workforce/WorkforceControl.jsx";
+import WorkforcePickerApp from "./modules/workforce/WorkforcePickerApp.jsx";
+import { WorkforceUiProvider } from "./modules/workforce/WorkforceUiContext.jsx";
+import RecruitmentControl from "./modules/recruitment/RecruitmentControl.jsx";
+import PlatformHealth from "./modules/platform-health/PlatformHealth.jsx";
 
 export default function App() {
   return (
@@ -61,6 +66,37 @@ export default function App() {
       />
 
       <Route
+        path="/workforce"
+        element={
+          <ProtectedRoute moduleKey="workforce">
+            <WorkforceUiProvider>
+              <WorkforceControl />
+            </WorkforceUiProvider>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/workforce/app"
+        element={
+          <ProtectedRoute moduleKey="workforce">
+            <WorkforceUiProvider>
+              <WorkforcePickerApp />
+            </WorkforceUiProvider>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/recruitment"
+        element={
+          <ProtectedRoute moduleKey="recruitment">
+            <RecruitmentControl />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/access-control"
         element={
           <ProtectedRoute moduleKey="admin_access" action="admin">
@@ -69,8 +105,18 @@ export default function App() {
         }
       />
 
+
+      <Route
+        path="/platform-health"
+        element={
+          <ProtectedRoute>
+            <PlatformHealth />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/river" element={<Navigate to="/dockos" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
+

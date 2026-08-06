@@ -98,6 +98,97 @@ services:
     networks:
       - internal
 
+  postgres-backup:
+    build:
+      context: ./services/postgres-backup
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: opex_migrator
+      PGPASSWORD: "${OPEX_POSTGRES_MIGRATOR_PASSWORD}"
+      OPEX_POSTGRES_DB: "${OPEX_POSTGRES_DB:-opex}"
+      OPEX_BACKUP_INTERVAL_HOURS: "${OPEX_BACKUP_INTERVAL_HOURS:-24}"
+      OPEX_BACKUP_RETENTION_DAYS: "${OPEX_BACKUP_RETENTION_DAYS:-14}"
+      TZ: "${OPEX_BACKUP_TIMEZONE:-Europe/Istanbul}"
+      BACKUP_DIR: /backups
+    volumes:
+      - ./runtime/postgres-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+  platform-alerts:
+    build:
+      context: ./services/platform-alerts
+      dockerfile: Dockerfile
+    environment:
+      PYTHONUNBUFFERED: "1"
+      OPEX_PLATFORM_HEALTH_URL: "http://core-api:8000/v1/platform/health"
+      OPEX_PLATFORM_HEALTH_TOKEN: "dev.platform-alerts.11111111-1111-1111-1111-111111111111.super_admins"
+      OPEX_ALERT_POLL_SECONDS: "${OPEX_ALERT_POLL_SECONDS:-300}"
+      OPEX_ALERT_COOLDOWN_HOURS: "${OPEX_ALERT_COOLDOWN_HOURS:-6}"
+      OPEX_ALERT_EMAIL_ENABLED: "${OPEX_ALERT_EMAIL_ENABLED:-false}"
+      OPEX_SMTP_HOST: "${OPEX_SMTP_HOST:-}"
+      OPEX_SMTP_PORT: "${OPEX_SMTP_PORT:-587}"
+      OPEX_SMTP_USERNAME: "${OPEX_SMTP_USERNAME:-}"
+      OPEX_SMTP_PASSWORD: "${OPEX_SMTP_PASSWORD:-}"
+      OPEX_SMTP_FROM: "${OPEX_SMTP_FROM:-EAY OneOps Alerts}"
+      OPEX_ALERT_RECIPIENTS: "${OPEX_ALERT_RECIPIENTS:-}"
+      OPEX_SMTP_STARTTLS: "${OPEX_SMTP_STARTTLS:-true}"
+      OPEX_ALERT_STATE_FILE: "/state/alert-state.json"
+    volumes:
+      - platform_alert_state:/state
+    depends_on:
+      core-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+      - egress
+
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: "1"
+      INFO: "0"
+      EVENTS: "0"
+      POST: "0"
+      LOG_LEVEL: "warning"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose:
+      - "2375"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  platform-agent:
+    build:
+      context: ./services/platform-agent
+      dockerfile: Dockerfile
+    environment:
+      DOCKER_API_URL: "http://docker-socket-proxy:2375"
+      BACKUP_STATUS_FILE: "/backups/backup-status.json"
+    volumes:
+      - ./runtime/postgres-backups:/backups:ro
+    expose:
+      - "8010"
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - monitoring
+      - internal
   ollama:
     image: ollama/ollama:latest
     profiles: ["ai"]
@@ -113,6 +204,8 @@ services:
 networks:
   edge:
   egress:
+  monitoring:
+    internal: true
   internal:
     internal: true
 
@@ -120,3 +213,5 @@ volumes:
   postgres_data:
   redis_data:
   ollama_data:
+  postgres_backups:
+  platform_alert_state:

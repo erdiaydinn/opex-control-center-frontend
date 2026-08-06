@@ -95,6 +95,24 @@ export function AuthProvider({ children }) {
     [user]
   );
 
+  const getAccessToken = useCallback(() => {
+    if (!user?.email) return null;
+
+    const tenantId =
+      import.meta.env.VITE_TENANT_ID ||
+      "11111111-1111-1111-1111-111111111111";
+
+    const subject = user.email
+      .split("@")[0]
+      .replace(/[^a-zA-Z0-9_-]/g, "-");
+
+    const role = isUserSuperAdmin(user.email)
+      ? "super_admins"
+      : "viewer";
+
+    return `dev.${subject}.${tenantId}.${role}`;
+  }, [user]);
+
   const isSuperAdmin = useCallback(() => {
     if (!user?.email) return false;
     return isUserSuperAdmin(user.email);
@@ -120,6 +138,7 @@ export function AuthProvider({ children }) {
       canAction,
       getModuleScope,
       isSuperAdmin,
+      getAccessToken,
       refreshAccess,
       updateAccessConfig,
     }),
@@ -133,6 +152,7 @@ export function AuthProvider({ children }) {
       canAction,
       getModuleScope,
       isSuperAdmin,
+      getAccessToken,
       refreshAccess,
       updateAccessConfig,
     ]
@@ -150,3 +170,4 @@ export function useAuth() {
 
   return value;
 }
+

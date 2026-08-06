@@ -1,7 +1,11 @@
 import asyncio
+import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from uuid import uuid4
+
+import httpx
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +14,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import get_settings
 from app.core.resources import check_database, check_redis, close_resources
-from app.core.security import Principal, get_current_principal
+from app.core.security import Principal, get_current_principal, require_platform_admin
 
 settings = get_settings()
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
@@ -95,3 +99,156 @@ async def current_context(
         "roles": principal.roles,
         "auth_mode": principal.auth_mode,
     }
+
+@app.get("/v1/platform/health", tags=["platform"])
+async def platform_health(
+    request: Request,
+    principal: Principal = Depends(require_platform_admin),
+) -> JSONResponse:
+    async def check_platform_agent() -> dict[str, object]:
+        agent_url = os.getenv(
+            "PLATFORM_AGENT_URL",
+            "http://platform-agent:8010",
+        )
+
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            container_response, backup_response = await asyncio.gather(
+                client.get(f"{agent_url}/v1/containers"),
+                client.get(f"{agent_url}/v1/backups/status"),
+            )
+
+            container_response.raise_for_status()
+            backup_response.raise_for_status()
+
+            return {
+                "containers": container_response.json(),
+                "backup": backup_response.json(),
+            }
+
+    database_result, redis_result, agent_result = await asyncio.gather(
+        check_database(),
+        check_redis(),
+        check_platform_agent(),
+        return_exceptions=True,
+    )
+
+    backup_warning_after_hours = float(
+        os.getenv("OPEX_BACKUP_WARNING_AFTER_HOURS", "26")
+    )
+    backup_stale_after_hours = float(
+        os.getenv("OPEX_BACKUP_STALE_AFTER_HOURS", "30")
+    )
+
+    backup_details: dict[str, object] = {}
+    backup_status = "unavailable"
+    backup_age_hours: float | None = None
+
+    if not isinstance(agent_result, Exception):
+        backup_details = dict(agent_result.get("backup", {}))
+        recorded_status = backup_details.get("status")
+
+        if recorded_status == "success":
+            completed_at = backup_details.get("completed_at")
+
+            if isinstance(completed_at, str):
+                try:
+                    completed_time = datetime.fromisoformat(
+                        completed_at.replace("Z", "+00:00")
+                    )
+
+                    if completed_time.tzinfo is None:
+                        completed_time = completed_time.replace(
+                            tzinfo=timezone.utc
+                        )
+
+                    backup_age_hours = max(
+                        0.0,
+                        (
+                            datetime.now(timezone.utc)
+                            - completed_time.astimezone(timezone.utc)
+                        ).total_seconds()
+                        / 3600,
+                    )
+
+                    if backup_age_hours > backup_stale_after_hours:
+                        backup_status = "stale"
+                    elif backup_age_hours > backup_warning_after_hours:
+                        backup_status = "warning"
+                    else:
+                        backup_status = "ok"
+                except ValueError:
+                    backup_status = "unavailable"
+        elif recorded_status == "failed":
+            backup_status = "failed"
+
+    backup_details.update(
+        {
+            "age_hours": (
+                round(backup_age_hours, 2)
+                if backup_age_hours is not None
+                else None
+            ),
+            "warning_after_hours": backup_warning_after_hours,
+            "stale_after_hours": backup_stale_after_hours,
+        }
+    )
+
+    checks = {
+        "api": {
+            "status": "ok",
+            "version": app.version,
+        },
+        "database": {
+            "status": (
+                "ok"
+                if not isinstance(database_result, Exception)
+                else "unavailable"
+            ),
+        },
+        "redis": {
+            "status": (
+                "ok"
+                if not isinstance(redis_result, Exception)
+                else "unavailable"
+            ),
+        },
+        "containers": {
+            "status": (
+                agent_result.get("containers", {}).get("status", "unavailable")
+                if not isinstance(agent_result, Exception)
+                else "unavailable"
+            ),
+            "summary": (
+                agent_result.get("containers", {}).get("summary", {})
+                if not isinstance(agent_result, Exception)
+                else {}
+            ),
+            "items": (
+                agent_result.get("containers", {}).get("containers", [])
+                if not isinstance(agent_result, Exception)
+                else []
+            ),
+        },
+        "backup": {
+            "status": backup_status,
+            "details": backup_details,
+        },
+    }
+
+    healthy = all(
+        item["status"] in {"ok", "healthy"}
+        for item in checks.values()
+    )
+
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "healthy" if healthy else "degraded",
+            "environment": settings.environment,
+            "version": app.version,
+            "request_id": request.state.request_id,
+            "tenant_id": str(principal.tenant_id),
+            "actor": principal.subject,
+            "checks": checks,
+        },
+    )

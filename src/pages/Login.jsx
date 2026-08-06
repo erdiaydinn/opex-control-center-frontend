@@ -10,6 +10,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext.jsx";
+import { branding } from "../config/branding.js";
 
 const DEMO_USERS = [
   {
@@ -75,7 +76,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [forgotMessage, setForgotMessage] = useState("");
   const [doorOpen, setDoorOpen] = useState(false);
-  const [inside, setInside] = useState(false);
+  const [inside, setInside] = useState(!branding.showEntranceScene);
 
   const [doorStyle, setDoorStyle] = useState({
     "--door-left": "42.4%",
@@ -203,7 +204,7 @@ export default function Login() {
   return (
     <main className={`ym-real-login ${doorOpen ? "door-open" : ""} ${inside ? "inside" : "outside"}`}>
       <AnimatePresence mode="wait">
-        {!inside ? (
+        {branding.showEntranceScene && !inside ? (
           <motion.section
             key="outside"
             ref={sceneRef}
@@ -217,8 +218,8 @@ export default function Login() {
             <img
               ref={imageRef}
               className="ym-real-image"
-              src="/assets/ymarket-entry.png"
-              alt="Yemeksepeti Market Opex Control Center"
+              src={branding.loginImage}
+              alt="EAY OneOps operasyon platformu"
             />
 
             <button
@@ -246,7 +247,7 @@ export default function Login() {
             transition={{ duration: 0.58, ease: [0.16, 0.86, 0.22, 1] }}
           >
             <div className="ym-real-inside-bg">
-              <img src="/assets/ymarket-entry.png" alt="" />
+              {branding.loginImage ? <img src={branding.loginImage} alt="" /> : null}
             </div>
 
             <section className="ym-real-layout">
@@ -260,9 +261,17 @@ export default function Login() {
                   <ShieldCheck size={16} />
                   Yetkili operasyon girişi
                 </div>
-
-                <h1>Yemeksepeti Market</h1>
-                <p>Opex Control Center</p>
+                {branding.companyName ? (
+                  <>
+                    <h1>{branding.companyName}</h1>
+                    <p>{branding.productName}</p>
+                  </>
+                ) : (
+                  <>
+                    <h1>{branding.productName}</h1>
+                    <p>{branding.slogan}</p>
+                  </>
+                )}
 
                 <span>
                   Kullanıcı rolüne göre modüller açılır. Ana admin görünürlüğü,
@@ -369,3 +378,6 @@ export default function Login() {
     </main>
   );
 }
+
+
+

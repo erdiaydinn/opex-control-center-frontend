@@ -92,8 +92,8 @@ export default function ControlCenterHome() {
             </div>
 
             <div>
-              <strong>OPEX</strong>
-              <span>Control Center</span>
+              <strong>EAY</strong>
+              <span>OneOps</span>
             </div>
           </div>
 
@@ -127,9 +127,9 @@ export default function ControlCenterHome() {
               {getGreeting()}, kontrol merkezi hazır.
             </div>
 
-            <h1>OPEX</h1>
+            <h1>EAY OneOps</h1>
 
-            <p>Operasyonel mükemmellik için omuz omuza.</p>
+            <p>Operasyonu takip etme. Ona yön ver.</p>
 
             <div className="ocx-search">
               <Search size={18} />
@@ -208,3 +208,5 @@ export default function ControlCenterHome() {
     </main>
   );
 }
+
+

@@ -14,6 +14,7 @@ import WorkforcePickerApp from "./modules/workforce/WorkforcePickerApp.jsx";
 import { WorkforceUiProvider } from "./modules/workforce/WorkforceUiContext.jsx";
 import RecruitmentControl from "./modules/recruitment/RecruitmentControl.jsx";
 import PlatformHealth from "./modules/platform-health/PlatformHealth.jsx";
+import AuditLog from "./modules/audit-log/AuditLog.jsx";
 
 export default function App() {
   return (
@@ -105,6 +106,16 @@ export default function App() {
         }
       />
 
+
+
+      <Route
+        path="/audit-log"
+        element={
+          <ProtectedRoute moduleKey="admin_access" action="admin">
+            <AuditLog />
+          </ProtectedRoute>
+        }
+      />
 
       <Route
         path="/platform-health"

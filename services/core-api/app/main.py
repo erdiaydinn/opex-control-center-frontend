@@ -88,7 +88,11 @@ async def request_context_and_security_headers(request: Request, call_next):
         },
     )
 
-    if request.url.path not in {"/health/live", "/health/ready"}:
+    if request.url.path not in {
+        "/health/live",
+        "/health/ready",
+        "/v1/audit/events",
+    }:
         print(
             json.dumps(
                 {"event": "audit", **audit_event},

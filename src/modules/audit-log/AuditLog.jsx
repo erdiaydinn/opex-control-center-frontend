@@ -1,5 +1,6 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { fetchAuditEvents } from "./auditLogApi";
+import { useAuth } from "../../auth/AuthContext.jsx";
 import "./audit-log.css";
 
 function formatDate(value) {
@@ -22,6 +23,7 @@ function decisionLabel(decision) {
 }
 
 export default function AuditLog() {
+  const { getAccessToken } = useAuth();
   const [items, setItems] = useState([]);
   const [actor, setActor] = useState("");
   const [decision, setDecision] = useState("");
@@ -39,6 +41,7 @@ export default function AuditLog() {
         actor,
         decision,
         action,
+        accessToken: getAccessToken(),
       });
 
       setItems(result?.items || []);

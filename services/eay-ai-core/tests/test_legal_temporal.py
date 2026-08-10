@@ -22,13 +22,13 @@ def _instrument(engine: LegalEngine, instrument_id: str, effective_from: date):
 def test_supersedes_switches_active_version_on_source_effective_date(tmp_path):
     db = tmp_path / "eay.db"
     engine = LegalEngine(db)
-    _instrument(engine, "v1", date(2026, 1, 1))
-    _instrument(engine, "v2", date(2026, 6, 1))
+    _instrument(engine, "version-1", date(2026, 1, 1))
+    _instrument(engine, "version-2", date(2026, 6, 1))
     relations = LegalRelationStore(db)
     relation = relations.propose(
-        source_instrument_id="v2",
+        source_instrument_id="version-2",
         relation_type="supersedes",
-        target_instrument_id="v1",
+        target_instrument_id="version-1",
         evidence_ref="verification:2:promotion:abc",
     )
     relations.decide(relation.id, decision="approved", reviewer_ref="LEGAL-REVIEW-1")
@@ -36,12 +36,12 @@ def test_supersedes_switches_active_version_on_source_effective_date(tmp_path):
     resolver = LegalTemporalResolver(db)
     may = resolver.resolve(date(2026, 5, 31))
     assert may.resolved is True
-    assert may.active_instrument_ids == ("v1",)
+    assert may.active_instrument_ids == ("version-1",)
 
     june = resolver.resolve(date(2026, 6, 1))
     assert june.resolved is True
-    assert june.active_instrument_ids == ("v2",)
-    assert june.inactive_instrument_ids == ("v1",)
+    assert june.active_instrument_ids == ("version-2",)
+    assert june.inactive_instrument_ids == ("version-1",)
     assert june.applied_relation_ids == (relation.id,)
     assert len(june.resolution_fingerprint) == 64
 
@@ -69,19 +69,19 @@ def test_amends_keeps_both_verified_instruments_temporally_active(tmp_path):
 def test_approved_relation_cycle_fails_closed(tmp_path):
     db = tmp_path / "eay.db"
     engine = LegalEngine(db)
-    _instrument(engine, "a", date(2026, 1, 1))
-    _instrument(engine, "b", date(2026, 2, 1))
+    _instrument(engine, "node-a", date(2026, 1, 1))
+    _instrument(engine, "node-b", date(2026, 2, 1))
     relations = LegalRelationStore(db)
     first = relations.propose(
-        source_instrument_id="a",
+        source_instrument_id="node-a",
         relation_type="amends",
-        target_instrument_id="b",
+        target_instrument_id="node-b",
         evidence_ref="evidence-a",
     )
     second = relations.propose(
-        source_instrument_id="b",
+        source_instrument_id="node-b",
         relation_type="amends",
-        target_instrument_id="a",
+        target_instrument_id="node-a",
         evidence_ref="evidence-b",
     )
     relations.decide(first.id, decision="approved", reviewer_ref="LEGAL-REVIEW-3")

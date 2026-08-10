@@ -1,6 +1,7 @@
 import pytest
 
 from app.bigquery_safe_executor import ExecutionAuditStore
+from app.legal_engine import LegalEngine, LegalInstrumentUpsert, LegalRequirementUpsert
 from app.tool_execution import (
     TemplateBigQueryAdapter,
     TemplateToolExecutionRequest,
@@ -59,9 +60,10 @@ def test_template_execution_never_accepts_model_sql(tmp_path):
         granted_scopes=["catalog:read"],
         reason="catalog lookup",
     )
-    request, query_id, scopes = prepare_execution(payload)
+    request, query_id, scopes, grounding = prepare_execution(payload)
     assert query_id == "catalog.lookup.v1"
     assert scopes == ["catalog:read"]
+    assert grounding is None
     assert "pandora__vendor_products_qcomm_catalog_details" in request.sql
     assert "milk" not in request.sql
     assert request.parameters["query"] == "milk"
@@ -105,11 +107,91 @@ def test_tool_semantics_fail_closed_when_template_not_implemented():
         prepare_execution(payload)
 
 
-def test_regulatory_impact_requires_reviewed_topic():
+def test_regulatory_impact_rejects_caller_authored_topic():
     payload = TemplateToolExecutionRequest(
         tool="regulatory_impact_query",
         arguments={
             "instrument_id": "tgk-1",
+            "as_of": "2026-08-10",
+            "topic": "caller supplied milk",
+            "entities": ["sku"],
+            "limit": 20,
+        },
+        granted_scopes=["legal:read", "catalog:read"],
+        reason="impact review",
+    )
+    with pytest.raises(ValueError, match="extra_forbidden"):
+        prepare_execution(payload)
+
+
+def test_regulatory_impact_resolves_topics_from_verified_effective_instrument(tmp_path):
+    db = tmp_path / "eay.db"
+    engine = LegalEngine(db)
+    engine.upsert_instrument(
+        LegalInstrumentUpsert(
+            id="tgk-etiket",
+            title="Türk Gıda Kodeksi Etiketleme Kuralı",
+            instrument_type="regulation",
+            publication_date="2026-01-01",
+            effective_from="2026-02-01",
+            source_url="https://www.resmigazete.gov.tr/example",
+            verification_status="verified",
+            topics=["yumurta", "etiketleme"],
+        )
+    )
+    engine.upsert_requirement(
+        LegalRequirementUpsert(
+            id="tgk-etiket-r1",
+            authority="legal",
+            source_id="tgk-etiket",
+            scope="yumurta",
+            dimension="etiketleme",
+            operator="required",
+            text_value="son tüketim tarihi",
+            effective_from="2026-02-01",
+            citation="Madde 5",
+        )
+    )
+    payload = TemplateToolExecutionRequest(
+        tool="regulatory_impact_query",
+        arguments={
+            "instrument_id": "tgk-etiket",
+            "as_of": "2026-08-10",
+            "entities": ["sku", "category"],
+            "limit": 20,
+        },
+        granted_scopes=["legal:read", "catalog:read"],
+        reason="impact review",
+    )
+    request, query_id, scopes, grounding = prepare_execution(payload, legal_db_path=db)
+    assert query_id == "regulatory.impact.v1"
+    assert scopes == ["legal:read", "catalog:read"]
+    assert request.parameters["topics"][:2] == ["yumurta", "etiketleme"]
+    assert grounding["instrument_id"] == "tgk-etiket"
+    assert grounding["citation_ids"] == ["tgk-etiket-r1"]
+    assert grounding["source_url"].startswith("https://www.resmigazete.gov.tr/")
+    assert "UNNEST(@topics)" in request.sql
+
+
+def test_regulatory_impact_rejects_unverified_or_not_effective_instrument(tmp_path):
+    db = tmp_path / "eay.db"
+    engine = LegalEngine(db)
+    engine.upsert_instrument(
+        LegalInstrumentUpsert(
+            id="draft-1",
+            title="Draft Food Rule",
+            instrument_type="regulation",
+            publication_date="2026-01-01",
+            effective_from="2026-09-01",
+            source_url="https://www.resmigazete.gov.tr/example",
+            verification_status="draft",
+            topics=["süt"],
+        )
+    )
+    payload = TemplateToolExecutionRequest(
+        tool="regulatory_impact_query",
+        arguments={
+            "instrument_id": "draft-1",
             "as_of": "2026-08-10",
             "entities": ["sku"],
             "limit": 20,
@@ -117,8 +199,8 @@ def test_regulatory_impact_requires_reviewed_topic():
         granted_scopes=["legal:read", "catalog:read"],
         reason="impact review",
     )
-    with pytest.raises(ValueError, match="reviewed_regulatory_topic_required"):
-        prepare_execution(payload)
+    with pytest.raises(ValueError, match="verified_effective_legal_instrument_required"):
+        prepare_execution(payload, legal_db_path=db)
 
 
 def test_template_bigquery_adapter_encodes_array_parameter_without_network():

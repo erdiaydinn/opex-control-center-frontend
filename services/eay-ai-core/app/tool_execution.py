@@ -18,6 +18,7 @@ from .bigquery_safe_executor import (
     GoogleBigQueryAdapter,
     SafeBigQueryExecutor,
 )
+from .kpi_provenance import provenance_from_activation
 from .kpi_registry import get_kpi_definition
 from .kpi_runtime_contracts import verify_kpi_runtime_activation
 from .kpi_semantics import verify_semantic_contract
@@ -48,6 +49,7 @@ class TemplateToolExecutionResult(BaseModel):
     semantic_verification: dict[str, Any] | None = None
     schema_verification: dict[str, Any] | None = None
     runtime_activation: dict[str, Any] | None = None
+    activation_provenance_fingerprint: str | None = None
     model_authored_sql_allowed: bool = False
 
 
@@ -128,13 +130,37 @@ def _runtime_activation(
     )
 
 
+def _activation_provenance(
+    payload: TemplateToolExecutionRequest,
+    semantic_verification: dict[str, Any] | None,
+    schema_verification: dict[str, Any] | None,
+    runtime_activation: dict[str, Any] | None,
+) -> str | None:
+    if payload.tool != "ops_kpi_query":
+        return None
+    if semantic_verification is None or schema_verification is None:
+        raise ValueError("kpi_activation_provenance_prerequisites_required")
+    return provenance_from_activation(
+        metric=str(payload.arguments.get("metric") or ""),
+        semantic_verification=semantic_verification,
+        schema_verification=schema_verification,
+        runtime_activation=runtime_activation,
+    )
+
+
 def _attach_contract_audit(
     request: ExecuteRequest,
     semantic_verification: dict[str, Any] | None,
     schema_verification: dict[str, Any] | None,
     runtime_activation: dict[str, Any] | None = None,
+    activation_provenance_fingerprint: str | None = None,
 ) -> ExecuteRequest:
-    if semantic_verification is None and schema_verification is None and runtime_activation is None:
+    if (
+        semantic_verification is None
+        and schema_verification is None
+        and runtime_activation is None
+        and activation_provenance_fingerprint is None
+    ):
         return request
     return request.model_copy(
         update={
@@ -165,6 +191,7 @@ def _attach_contract_audit(
                 if runtime_activation and runtime_activation.get("aggregation_contract_fingerprint")
                 else None
             ),
+            "activation_provenance_fingerprint": activation_provenance_fingerprint,
         }
     )
 
@@ -182,8 +209,15 @@ def execute_with_adapter(
     semantic_verification = _semantic_verification(payload)
     schema_verification = _schema_verification(payload, adapter)
     runtime_activation = _runtime_activation(payload, semantic_verification, schema_verification)
+    activation_provenance_fingerprint = _activation_provenance(
+        payload, semantic_verification, schema_verification, runtime_activation
+    )
     request = _attach_contract_audit(
-        request, semantic_verification, schema_verification, runtime_activation
+        request,
+        semantic_verification,
+        schema_verification,
+        runtime_activation,
+        activation_provenance_fingerprint,
     )
     executor = SafeBigQueryExecutor(adapter, audit_store)
     execution = executor.run(request, execute=payload.execute)
@@ -196,6 +230,7 @@ def execute_with_adapter(
         semantic_verification=semantic_verification,
         schema_verification=schema_verification,
         runtime_activation=runtime_activation,
+        activation_provenance_fingerprint=activation_provenance_fingerprint,
         model_authored_sql_allowed=False,
     )
 
@@ -261,8 +296,15 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
         runtime_activation = _runtime_activation(
             payload, semantic_verification, schema_verification
         )
+        activation_provenance_fingerprint = _activation_provenance(
+            payload, semantic_verification, schema_verification, runtime_activation
+        )
         request = _attach_contract_audit(
-            request, semantic_verification, schema_verification, runtime_activation
+            request,
+            semantic_verification,
+            schema_verification,
+            runtime_activation,
+            activation_provenance_fingerprint,
         )
         audit_store = ExecutionAuditStore(db_path)
         execution = SafeBigQueryExecutor(adapter, audit_store).run(request, execute=payload.execute)
@@ -275,6 +317,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             semantic_verification=semantic_verification,
             schema_verification=schema_verification,
             runtime_activation=runtime_activation,
+            activation_provenance_fingerprint=activation_provenance_fingerprint,
             model_authored_sql_allowed=False,
         )
     except PermissionError as exc:

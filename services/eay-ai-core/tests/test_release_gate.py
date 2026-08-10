@@ -1,4 +1,10 @@
+from datetime import date
+
 from app.canary_evals import CanaryMetrics
+from app.historical_legal_rag_evals import (
+    HistoricalLegalRagCase,
+    evaluate_historical_legal_rag,
+)
 from app.release_gate import (
     HistoricalLegalReleaseMetrics,
     RagReleaseMetrics,
@@ -106,3 +112,24 @@ def test_release_gate_blocks_inactive_legal_leak_and_temporal_bypass():
     assert "historical_legal_source_match_failed" in decision.violations
     assert "inactive_legal_source_leak_detected" in decision.violations
     assert "temporal_legal_block_bypass_detected" in decision.violations
+
+
+def test_release_metrics_are_derived_losslessly_from_historical_eval_result():
+    result = evaluate_historical_legal_rag(
+        [
+            HistoricalLegalRagCase(
+                case_id="historical-v2",
+                as_of=date(2026, 6, 1),
+                expected_source_ids=("v2",),
+                retrieved_source_ids=("v2",),
+                temporal_resolution_fingerprint="a" * 64,
+            )
+        ]
+    )
+    metrics = HistoricalLegalReleaseMetrics.from_eval(result)
+    assert metrics.sample_size == result.sample_size
+    assert metrics.pass_rate == result.pass_rate
+    assert metrics.source_match_rate == result.source_match_rate
+    assert metrics.fingerprint_validity_rate == result.fingerprint_validity_rate
+    assert metrics.inactive_legal_leak_rate == result.inactive_legal_leak_rate
+    assert metrics.temporal_block_bypass_rate == result.temporal_block_bypass_rate

@@ -86,6 +86,7 @@ def test_provenance_rejects_malformed_fingerprint():
 def test_current_registry_runtime_alignment_passes():
     result = verify_kpi_registry_runtime_alignment()
     assert "orders" in result.executable_metrics
+    assert {"nsfr", "pfr", "refund"}.issubset(set(result.result_contract_metrics))
     assert result.passed is True
 
 
@@ -123,3 +124,19 @@ def test_release_guard_blocks_putaway_registry_activation_without_policy_contrac
     )
     with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:putaway=putaway"):
         verify_kpi_registry_runtime_alignment(registry=registry)
+
+
+def test_release_guard_blocks_nsfr_activation_without_result_contract():
+    registry = dict(KPI_REGISTRY)
+    registry["nsfr"] = replace(
+        registry["nsfr"],
+        review_state="reviewed",
+        query_id="ops.kpi.nsfr.v1",
+        schema_contract_id="ops.nsfr.v1",
+    )
+    result_contracts = {"pfr": object(), "refund": object()}
+    with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:result=nsfr"):
+        verify_kpi_registry_runtime_alignment(
+            registry=registry,
+            result_contracts=result_contracts,
+        )

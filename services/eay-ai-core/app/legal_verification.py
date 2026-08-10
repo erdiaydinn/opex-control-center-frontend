@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import sqlite3
 import uuid
@@ -194,12 +193,7 @@ class LegalVerificationStore:
         return self._row(row)
 
     def verify_and_apply(self, record_id: str, note: str | None) -> VerificationRecord:
-        """Atomically verify evidence and promote its instrument.
-
-        This prevents the previous split-brain failure mode where a verification
-        record could become `verified` while the legal instrument remained draft.
-        Existing amendment/repeal/topic metadata is preserved verbatim.
-        """
+        """Atomically verify evidence and promote its instrument."""
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -267,6 +261,17 @@ class LegalVerificationStore:
         assert row is not None
         return self._row(row)
 
+    def decide(
+        self,
+        record_id: str,
+        decision: Literal["verified", "rejected"],
+        note: str | None,
+    ) -> VerificationRecord:
+        """Backward-compatible decision API with the new atomic semantics."""
+        if decision == "verified":
+            return self.verify_and_apply(record_id, note)
+        return self.reject(record_id, note)
+
 
 store = LegalVerificationStore(DB_PATH)
 router = APIRouter(prefix="/v1/legal/verification", tags=["legal-verification"])
@@ -295,8 +300,6 @@ def list_verifications(
 def verify(record_id: str, payload: DecisionRequest):
     try:
         record = store.verify_and_apply(record_id, payload.note)
-        # Indexing is deliberately idempotent. A later explicit /knowledge/sync can
-        # safely recover if local indexing fails after legal verification commits.
         indexer.sync_verified(record.instrument_id)
         return record
     except KeyError as exc:

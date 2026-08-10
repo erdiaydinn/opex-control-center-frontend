@@ -44,6 +44,26 @@ def test_activation_provenance_is_deterministic_and_sensitive_to_lineage():
     assert base != changed
 
 
+def test_policy_and_formula_contracts_change_combined_provenance():
+    base = activation_provenance_fingerprint(
+        metric="putaway",
+        semantic_fingerprint=FP_A,
+        schema_fingerprint=FP_B,
+        schema_evidence_fingerprint=FP_C,
+        policy_contract_fingerprint=FP_D,
+        formula_contract_fingerprint=FP_E,
+    )
+    changed = activation_provenance_fingerprint(
+        metric="putaway",
+        semantic_fingerprint=FP_A,
+        schema_fingerprint=FP_B,
+        schema_evidence_fingerprint=FP_C,
+        policy_contract_fingerprint=FP_E,
+        formula_contract_fingerprint=FP_D,
+    )
+    assert base != changed
+
+
 def test_provenance_from_activation_preserves_optional_runtime_nulls():
     digest = provenance_from_activation(
         metric="orders",
@@ -90,4 +110,16 @@ def test_release_guard_blocks_otp_registry_activation_without_rate_contract():
         schema_contract_id="ops.otp.v1",
     )
     with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:rate=otp"):
+        verify_kpi_registry_runtime_alignment(registry=registry)
+
+
+def test_release_guard_blocks_putaway_registry_activation_without_policy_contract():
+    registry = dict(KPI_REGISTRY)
+    registry["putaway"] = replace(
+        registry["putaway"],
+        review_state="reviewed",
+        query_id="ops.kpi.putaway.v1",
+        schema_contract_id="ops.putaway.v1",
+    )
+    with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:putaway=putaway"):
         verify_kpi_registry_runtime_alignment(registry=registry)

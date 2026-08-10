@@ -39,6 +39,7 @@ class ExecuteRequest(ToolCallRequest):
     aggregation_contract_fingerprint: str | None = Field(default=None, max_length=64)
     policy_contract_fingerprint: str | None = Field(default=None, max_length=64)
     formula_contract_fingerprint: str | None = Field(default=None, max_length=64)
+    result_contract_fingerprint: str | None = Field(default=None, max_length=64)
     activation_provenance_fingerprint: str | None = Field(default=None, max_length=64)
 
 
@@ -112,6 +113,7 @@ class ExecutionAuditStore:
                     aggregation_contract_fingerprint TEXT,
                     policy_contract_fingerprint TEXT,
                     formula_contract_fingerprint TEXT,
+                    result_contract_fingerprint TEXT,
                     activation_provenance_fingerprint TEXT,
                     created_at TEXT NOT NULL
                 )
@@ -128,6 +130,7 @@ class ExecutionAuditStore:
                 "aggregation_contract_fingerprint",
                 "policy_contract_fingerprint",
                 "formula_contract_fingerprint",
+                "result_contract_fingerprint",
                 "activation_provenance_fingerprint",
             ):
                 if name not in existing:
@@ -146,8 +149,8 @@ class ExecutionAuditStore:
                     schema_contract_id, schema_fingerprint, schema_evidence_fingerprint,
                     unit_contract_fingerprint, aggregation_contract_fingerprint,
                     policy_contract_fingerprint, formula_contract_fingerprint,
-                    activation_provenance_fingerprint, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    result_contract_fingerprint, activation_provenance_fingerprint, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     execution_id, payload.tool, digest, dry_run_bytes,
@@ -160,6 +163,7 @@ class ExecutionAuditStore:
                     payload.aggregation_contract_fingerprint,
                     payload.policy_contract_fingerprint,
                     payload.formula_contract_fingerprint,
+                    payload.result_contract_fingerprint,
                     payload.activation_provenance_fingerprint,
                     datetime.now(timezone.utc).isoformat(),
                 ),

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from .bigquery_safe_executor import router as bigquery_router
 from .company_knowledge import router as company_knowledge_router
 from .eval_guardrails import router as eval_router
 from .grounded_chat import router as grounded_chat_router
@@ -30,7 +29,10 @@ app.include_router(grounded_chat_router)
 app.include_router(tool_router)
 app.include_router(tool_intent_router)
 app.include_router(tool_execution_router)
-app.include_router(bigquery_router)
+# Deliberately do not expose bigquery_safe_executor.router. The executor classes are an
+# internal implementation detail used only after vetted template, scope, semantic, schema
+# and runtime-contract gates in tool_execution. Publishing /v1/bigquery/execute would let
+# callers submit arbitrary read-only SQL and bypass those governed KPI/legal contracts.
 app.include_router(eval_router)
 app.include_router(observability_router)
 app.include_router(vision_audit_router)

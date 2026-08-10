@@ -4,14 +4,18 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ToolName = Literal["ops_kpi_query", "regulatory_impact_query", "catalog_query"]
 OpsMetric = Literal["orders", "cancel_rate", "nsfr", "pfr", "refund", "prep", "picking", "putaway", "otp", "defect"]
 ImpactEntity = Literal["sku", "category", "store", "supplier"]
 
 
-class OpsKpiArgs(BaseModel):
+class StrictArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpsKpiArgs(StrictArgs):
     metric: OpsMetric
     start_date: date
     end_date: date
@@ -27,15 +31,16 @@ class OpsKpiArgs(BaseModel):
         return self
 
 
-class CatalogArgs(BaseModel):
+class CatalogArgs(StrictArgs):
     query: str = Field(min_length=1, max_length=300)
     field: Literal["sku", "barcode", "product", "category", "supplier"] = "product"
     limit: int = Field(default=50, ge=1, le=500)
 
 
-class RegulatoryImpactArgs(BaseModel):
+class RegulatoryImpactArgs(StrictArgs):
     instrument_id: str = Field(min_length=3, max_length=180)
     as_of: date
+    topic: str | None = Field(default=None, min_length=2, max_length=300)
     entities: list[ImpactEntity] = Field(default_factory=lambda: ["sku", "category"], min_length=1, max_length=4)
     limit: int = Field(default=100, ge=1, le=500)
 

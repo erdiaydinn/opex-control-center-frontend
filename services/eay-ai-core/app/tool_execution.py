@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -18,6 +19,7 @@ from .bigquery_safe_executor import (
     SafeBigQueryExecutor,
 )
 from .query_templates import compile_tool_plan
+from .regulatory_impact import resolve_verified_regulatory_impact
 from .tool_contracts import ToolName, build_tool_plan
 
 
@@ -38,14 +40,37 @@ class TemplateToolExecutionResult(BaseModel):
     query_id: str
     required_scope: list[str]
     execution: ExecutionResult
+    legal_grounding: dict[str, Any] | None = None
     model_authored_sql_allowed: bool = False
 
 
-def prepare_execution(payload: TemplateToolExecutionRequest) -> tuple[ExecuteRequest, str, list[str]]:
+def prepare_execution(
+    payload: TemplateToolExecutionRequest,
+    *,
+    legal_db_path: Path | None = None,
+) -> tuple[ExecuteRequest, str, list[str], dict[str, Any] | None]:
     plan = build_tool_plan(payload.tool, payload.arguments)
     missing = sorted(set(plan.required_scope) - set(payload.granted_scopes))
     if missing:
         raise PermissionError(f"missing_required_scope:{','.join(missing)}")
+
+    legal_grounding: dict[str, Any] | None = None
+    if plan.tool == "regulatory_impact_query":
+        db_path = legal_db_path or Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
+        grounding = resolve_verified_regulatory_impact(
+            db_path,
+            instrument_id=plan.arguments["instrument_id"],
+            as_of=date.fromisoformat(plan.arguments["as_of"]),
+        )
+        plan.arguments["verified_topics"] = list(grounding.topics)
+        legal_grounding = {
+            "instrument_id": grounding.instrument_id,
+            "source_url": grounding.source_url,
+            "citation_ids": list(grounding.citation_ids),
+            "topics": list(grounding.topics),
+            "as_of": plan.arguments["as_of"],
+        }
+
     sql, parameters = compile_tool_plan(plan)
     contract_limit = int(plan.arguments.get("limit", payload.max_rows))
     effective_max_rows = min(payload.max_rows, contract_limit)
@@ -59,7 +84,7 @@ def prepare_execution(payload: TemplateToolExecutionRequest) -> tuple[ExecuteReq
         maximum_bytes_billed=payload.maximum_bytes_billed,
         timeout_ms=payload.timeout_ms,
     )
-    return request, plan.query_id, plan.required_scope
+    return request, plan.query_id, plan.required_scope, legal_grounding
 
 
 def execute_with_adapter(
@@ -67,8 +92,11 @@ def execute_with_adapter(
     *,
     adapter,
     audit_store: ExecutionAuditStore,
+    legal_db_path: Path | None = None,
 ) -> TemplateToolExecutionResult:
-    request, query_id, required_scope = prepare_execution(payload)
+    request, query_id, required_scope, legal_grounding = prepare_execution(
+        payload, legal_db_path=legal_db_path
+    )
     executor = SafeBigQueryExecutor(adapter, audit_store)
     execution = executor.run(request, execute=payload.execute)
     return TemplateToolExecutionResult(
@@ -76,6 +104,7 @@ def execute_with_adapter(
         query_id=query_id,
         required_scope=required_scope,
         execution=execution,
+        legal_grounding=legal_grounding,
         model_authored_sql_allowed=False,
     )
 
@@ -127,17 +156,19 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
     if not EXECUTION_ENABLED:
         raise HTTPException(status_code=409, detail="BigQuery execution is disabled by default")
     try:
-        request, query_id, required_scope = prepare_execution(payload)
-        adapter = TemplateBigQueryAdapter()
-        audit_store = ExecutionAuditStore(
-            __import__("pathlib").Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
+        db_path = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
+        request, query_id, required_scope, legal_grounding = prepare_execution(
+            payload, legal_db_path=db_path
         )
+        adapter = TemplateBigQueryAdapter()
+        audit_store = ExecutionAuditStore(db_path)
         execution = SafeBigQueryExecutor(adapter, audit_store).run(request, execute=payload.execute)
         return TemplateToolExecutionResult(
             tool=payload.tool,
             query_id=query_id,
             required_scope=required_scope,
             execution=execution,
+            legal_grounding=legal_grounding,
             model_authored_sql_allowed=False,
         )
     except PermissionError as exc:

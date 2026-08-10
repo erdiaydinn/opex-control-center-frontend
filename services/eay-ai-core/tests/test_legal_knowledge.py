@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -30,6 +30,10 @@ def _draft(engine: LegalEngine) -> None:
     )
 
 
+def _exact_text(body: str) -> str:
+    return "1 Ocak 2026 Resmî Gazete Sayı : 99999\n" + body
+
+
 def test_only_verified_instrument_can_enter_legal_knowledge(tmp_path: Path):
     db = tmp_path / "eay.db"
     Store(db)
@@ -48,7 +52,7 @@ def test_verified_text_is_hashed_chunked_and_searchable(tmp_path: Path):
     _draft(engine)
     verification = LegalVerificationStore(db)
 
-    authoritative_text = """BİRİNCİ BÖLÜM
+    authoritative_text = _exact_text("""BİRİNCİ BÖLÜM
 Amaç ve kapsam
 
 MADDE 1
@@ -56,7 +60,7 @@ Bu Yönetmeliğin amacı gıda etiketleme kurallarını belirlemektir.
 
 MADDE 2
 İşletmeciler zorunlu bilgileri tüketiciye sunar.
-"""
+""")
     record = verification.create(
         VerificationCreate(
             instrument_id="tgk-test",
@@ -67,7 +71,11 @@ MADDE 2
             official_gazette_number="99999",
         )
     )
-    verification.verify_and_apply(record.id, "verified in test")
+    verification.verify_and_apply(
+        record.id,
+        "verified in test",
+        human_approval_ref="LEGAL-TEST-002",
+    )
 
     indexer = LegalKnowledgeIndexer(db)
     chunks = indexer.sync_verified("tgk-test")
@@ -109,12 +117,17 @@ def test_verification_preserves_relationship_metadata(tmp_path: Path):
         VerificationCreate(
             instrument_id="tgk-test",
             authoritative_url="https://www.resmigazete.gov.tr/test",
-            authoritative_text="MADDE 1\nBu yeterince uzun ve resmi test metnidir.",
+            authoritative_text=_exact_text("MADDE 1\nBu yeterince uzun ve resmi test metnidir."),
             publication_date=date(2026, 1, 1),
             effective_from=date(2026, 1, 2),
+            official_gazette_number="99999",
         )
     )
-    verification.verify_and_apply(record.id, None)
+    verification.verify_and_apply(
+        record.id,
+        "relationship metadata test",
+        human_approval_ref="LEGAL-TEST-003",
+    )
 
     with verification._connect() as conn:
         row = conn.execute("SELECT * FROM legal_instruments WHERE id='tgk-test'").fetchone()

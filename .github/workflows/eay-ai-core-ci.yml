@@ -1,0 +1,46 @@
+name: EAY AI Core CI
+
+on:
+  push:
+    branches:
+      - "feature/eay-ai-core-*"
+    paths:
+      - "services/eay-ai-core/**"
+      - ".github/workflows/eay-ai-core-ci.yml"
+  pull_request:
+    paths:
+      - "services/eay-ai-core/**"
+      - ".github/workflows/eay-ai-core-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Compile
+        run: python -m compileall -q app tests
+
+      - name: Test
+        run: pytest -q

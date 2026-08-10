@@ -27,6 +27,8 @@ The model learns stable capabilities such as food/retail reasoning, root-cause a
 - A larger **local** Ollama model can optionally act as the teacher.
 - Only approved learning candidates are exported as future fine-tuning examples.
 - The service never auto-deploys new model weights.
+- Regulatory source monitoring uses an allow-listed official-source registry; arbitrary URLs are not accepted.
+- Detected website changes are never auto-promoted to binding legal knowledge.
 
 ## Architecture
 
@@ -50,9 +52,24 @@ SQLite/FTS5          feedback/low confidence
           approved SFT data
                  |
         future LoRA/QLoRA job
+
+Official Turkish Sources
+        |
+        v
+ Regulatory Watcher
+        |
+ baseline -> hash -> diff -> relevance filter
+        |
+        v
+ pending regulatory change
+        |
+ exact legal text + effective-date verification
+        |
+        v
+      LEGAL layer
 ```
 
-Qdrant, Graphiti, regulatory watchers, vision audit, Langfuse and Superset are later adapters. The v0.1 core stays intentionally small.
+Qdrant, Graphiti, document ingestion, vision audit, Langfuse and Superset are later adapters. The v0.1 core stays intentionally small.
 
 ## Windows quick start
 
@@ -112,6 +129,45 @@ For `layer=legal`:
 
 Do not seed legal text from blogs or model memory.
 
+## Regulatory Watcher v0.1
+
+The source registry is stored at:
+
+`config/regulatory_sources.json`
+
+Initial official Turkish sources:
+
+- T.C. Tarım ve Orman Bakanlığı / GKGM home and announcements — discovery.
+- Gıda Kodeks ve Yem Mevzuatı Daire Başkanlığı — official registry/guidance discovery.
+- KAYSİS GKGM legislation registry — official registry.
+- T.C. Resmî Gazete — binding-publication index.
+- Tarım ve Orman Bakanlığı Güvenilir Gıda — official guidance/discovery.
+
+List configured sources:
+
+`GET /v1/regulatory/sources`
+
+Create the first baseline or check for changes:
+
+`POST /v1/regulatory/check`
+
+Check one source:
+
+`POST /v1/regulatory/check?source_id=tr-gkgm-kodeks`
+
+Pending changes:
+
+`GET /v1/regulatory/changes?status=pending`
+
+Acknowledge/reject a signal:
+
+- `POST /v1/regulatory/changes/{change_id}/acknowledge`
+- `POST /v1/regulatory/changes/{change_id}/reject`
+
+**Important:** acknowledgement means “this change was reviewed as a signal.” It does **not** mean that the changed web page has become a binding legal source. Promotion to `LEGAL / binding` requires the exact legal instrument, publication/source verification and effective dates.
+
+The watcher intentionally checks official government sources sequentially rather than aggressively scraping them in parallel.
+
 ## Ask a question
 
 `POST /v1/chat`
@@ -159,16 +215,23 @@ Export approved SFT dataset:
 
 This output becomes the controlled input for the future LoRA/QLoRA training pipeline.
 
+## CI quality gate
+
+`.github/workflows/eay-ai-core-ci.yml` compiles and tests EAY AI Core on relevant branch/PR changes.
+
+The goal is that autonomous development remains constrained by a repeatable test gate rather than relying only on model-generated code review.
+
 ## Next implementation layers
 
-1. Official Turkish regulatory watcher with source/version diffing.
-2. Qdrant hybrid retrieval and Graphiti temporal knowledge.
-3. Company document ingestion with Docling/PaddleOCR.
-4. BigQuery/tool connectors with scoped permissions.
-5. Vision audit service: OpenCV + detection + Anomalib + SAM2 + OCR.
-6. Langfuse traces/evals and Promptfoo regression gates.
-7. Superset embedded analytics.
-8. LoRA/QLoRA training job + model registry + canary rollout.
+1. Exact legal-instrument ingestion + effective-date/version extraction and regulatory impact classification.
+2. Company-vs-law conflict engine with stricter/looser/incompatible classification.
+3. Qdrant hybrid retrieval and Graphiti temporal knowledge.
+4. Company document ingestion with Docling/PaddleOCR.
+5. BigQuery/tool connectors with scoped permissions.
+6. Vision audit service: OpenCV + detection + Anomalib + SAM2 + OCR.
+7. Langfuse traces/evals and Promptfoo regression gates.
+8. Superset embedded analytics.
+9. LoRA/QLoRA training job + model registry + canary rollout.
 
 ## Safety rule
 

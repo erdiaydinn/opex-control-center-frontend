@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
@@ -19,6 +21,19 @@ class KpiResultContract:
     metric: str
     required_fields: tuple[str, ...]
     validator: ResultValidator
+    version: str = "1"
+
+    @property
+    def fingerprint(self) -> str:
+        payload = {
+            "contract_id": self.contract_id,
+            "metric": self.metric,
+            "required_fields": list(self.required_fields),
+            "validator": f"{self.validator.__module__}.{self.validator.__qualname__}",
+            "version": self.version,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _validate_nsfr_family(rows: Sequence[Mapping[str, object]]) -> None:
@@ -46,6 +61,7 @@ KPI_RESULT_CONTRACTS: dict[str, KpiResultContract] = {
         metric=metric,
         required_fields=NSFR_RESULT_FIELDS,
         validator=_validate_nsfr_family,
+        version="1",
     )
     for metric in ("nsfr", "pfr", "refund")
 }
@@ -53,6 +69,11 @@ KPI_RESULT_CONTRACTS: dict[str, KpiResultContract] = {
 
 def get_result_contract(metric: str) -> KpiResultContract | None:
     return KPI_RESULT_CONTRACTS.get(metric)
+
+
+def get_result_contract_fingerprint(metric: str) -> str | None:
+    contract = get_result_contract(metric)
+    return contract.fingerprint if contract else None
 
 
 def validate_kpi_result(metric: str, rows: Sequence[Mapping[str, object]]) -> None:

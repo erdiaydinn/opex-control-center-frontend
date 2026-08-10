@@ -52,7 +52,9 @@ class LegalRelationStore:
 
     @staticmethod
     def ensure_schema(conn: sqlite3.Connection) -> None:
-        conn.executescript(
+        # Do not use executescript here: callers may already hold BEGIN IMMEDIATE and
+        # sqlite3.executescript can implicitly commit before running the script.
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS legal_instrument_relations (
                 id TEXT PRIMARY KEY,
@@ -66,10 +68,13 @@ class LegalRelationStore:
                 created_at TEXT NOT NULL,
                 decided_at TEXT,
                 UNIQUE(source_instrument_id, relation_type, target_instrument_id)
-            );
-
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_legal_relations_status
-            ON legal_instrument_relations(status, created_at DESC);
+            ON legal_instrument_relations(status, created_at DESC)
             """
         )
 

@@ -12,9 +12,12 @@ from .main import app
 from .model_registry import router as model_registry_router
 from .observability import router as observability_router
 from .regulatory import router as regulatory_router
+from .tool_execution import router as tool_execution_router
 from .tool_intent import router as tool_intent_router
 from .tool_router import router as tool_router
+from .training_manifest import router as training_manifest_router
 from .vision_audit import router as vision_audit_router
+from .vision_provenance import router as vision_provenance_router
 
 
 app.include_router(regulatory_router)
@@ -26,8 +29,11 @@ app.include_router(company_knowledge_router)
 app.include_router(grounded_chat_router)
 app.include_router(tool_router)
 app.include_router(tool_intent_router)
+app.include_router(tool_execution_router)
 app.include_router(bigquery_router)
 app.include_router(eval_router)
 app.include_router(observability_router)
 app.include_router(vision_audit_router)
+app.include_router(vision_provenance_router)
+app.include_router(training_manifest_router)
 app.include_router(model_registry_router)

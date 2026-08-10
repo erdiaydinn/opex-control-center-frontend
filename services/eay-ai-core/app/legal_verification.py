@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from .legal_knowledge import indexer
 from .legal_promotion_gate import LegalPromotionCandidate, RelationType, evaluate_legal_promotion
+from .legal_relations import LegalRelationStore
 from .regulatory import SourceDefinition
 from .regulatory_authority import assess_regulatory_authority
 
@@ -63,6 +64,8 @@ class VerificationRecord(BaseModel):
     official_gazette_number: str | None = None
     relation_type: RelationType = "new"
     related_instrument_id: str | None = None
+    relation_record_id: str | None = None
+    relation_fingerprint: str | None = None
     authority_level: str | None = None
     authority_assessment_fingerprint: str | None = None
     promotion_decision_fingerprint: str | None = None
@@ -118,6 +121,8 @@ class LegalVerificationStore:
             migrations = {
                 "relation_type": "ALTER TABLE legal_verifications ADD COLUMN relation_type TEXT NOT NULL DEFAULT 'new'",
                 "related_instrument_id": "ALTER TABLE legal_verifications ADD COLUMN related_instrument_id TEXT",
+                "relation_record_id": "ALTER TABLE legal_verifications ADD COLUMN relation_record_id TEXT",
+                "relation_fingerprint": "ALTER TABLE legal_verifications ADD COLUMN relation_fingerprint TEXT",
                 "authority_level": "ALTER TABLE legal_verifications ADD COLUMN authority_level TEXT",
                 "authority_assessment_fingerprint": "ALTER TABLE legal_verifications ADD COLUMN authority_assessment_fingerprint TEXT",
                 "promotion_decision_fingerprint": "ALTER TABLE legal_verifications ADD COLUMN promotion_decision_fingerprint TEXT",
@@ -139,6 +144,8 @@ class LegalVerificationStore:
             official_gazette_number=row["official_gazette_number"],
             relation_type=row["relation_type"] if "relation_type" in keys else "new",
             related_instrument_id=row["related_instrument_id"] if "related_instrument_id" in keys else None,
+            relation_record_id=row["relation_record_id"] if "relation_record_id" in keys else None,
+            relation_fingerprint=row["relation_fingerprint"] if "relation_fingerprint" in keys else None,
             authority_level=row["authority_level"] if "authority_level" in keys else None,
             authority_assessment_fingerprint=row["authority_assessment_fingerprint"] if "authority_assessment_fingerprint" in keys else None,
             promotion_decision_fingerprint=row["promotion_decision_fingerprint"] if "promotion_decision_fingerprint" in keys else None,
@@ -266,7 +273,7 @@ class LegalVerificationStore:
         note: str | None,
         human_approval_ref: str | None = None,
     ) -> VerificationRecord:
-        """Atomically run the legal promotion gate, verify evidence and promote its instrument."""
+        """Atomically promote evidence and stage any legal relation for separate review."""
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -348,14 +355,41 @@ class LegalVerificationStore:
                     record["instrument_id"],
                 ),
             )
+
+            relation_record_id: str | None = None
+            relation_fingerprint: str | None = None
+            if record["relation_type"] != "new":
+                if not record["related_instrument_id"]:
+                    raise ValueError("related_instrument_required")
+                relation = LegalRelationStore.propose_with_connection(
+                    conn,
+                    source_instrument_id=record["instrument_id"],
+                    relation_type=record["relation_type"],
+                    target_instrument_id=record["related_instrument_id"],
+                    evidence_ref=(
+                        f"verification:{record['id']}:promotion:{promotion.decision_fingerprint}"
+                    ),
+                    created_at=now,
+                )
+                relation_record_id = relation.id
+                relation_fingerprint = relation.relation_fingerprint
+
             conn.execute(
                 """
                 UPDATE legal_verifications
                 SET decision='verified', verifier_note=COALESCE(?, verifier_note),
-                    promotion_decision_fingerprint=?, decided_at=?
+                    promotion_decision_fingerprint=?, relation_record_id=?,
+                    relation_fingerprint=?, decided_at=?
                 WHERE id=?
                 """,
-                (note, promotion.decision_fingerprint, now, record_id),
+                (
+                    note,
+                    promotion.decision_fingerprint,
+                    relation_record_id,
+                    relation_fingerprint,
+                    now,
+                    record_id,
+                ),
             )
             row = conn.execute("SELECT * FROM legal_verifications WHERE id = ?", (record_id,)).fetchone()
         assert row is not None

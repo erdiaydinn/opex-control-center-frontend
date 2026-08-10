@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+import os
+from datetime import date
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Query
+
+from .legal_engine import (
+    ConflictFinding,
+    LegalEngine,
+    LegalInstrumentUpsert,
+    LegalRequirementUpsert,
+)
+
+
+DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
+engine = LegalEngine(DB_PATH)
+router = APIRouter(prefix="/v1/legal", tags=["legal"])
+
+
+@router.post("/instruments", status_code=204)
+def upsert_instrument(item: LegalInstrumentUpsert):
+    engine.upsert_instrument(item)
+    return None
+
+
+@router.get("/instruments")
+def list_instruments(as_of: date = Query(default_factory=date.today)):
+    return engine.instruments_as_of(as_of)
+
+
+@router.post("/requirements", status_code=204)
+def upsert_requirement(item: LegalRequirementUpsert):
+    try:
+        engine.upsert_requirement(item)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return None
+
+
+@router.get("/conflicts", response_model=list[ConflictFinding])
+def company_vs_law(as_of: date = Query(default_factory=date.today)):
+    return engine.compare_company_to_law(as_of)

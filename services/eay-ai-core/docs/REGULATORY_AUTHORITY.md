@@ -30,6 +30,8 @@ The chain is source-scoped: activity on one official source cannot rewrite the p
 
 `verify_source_chain()` recomputes the chain and reports the exact first broken record if historical evidence or a parent link has been altered. `import_existing_watcher_rows()` deterministically and idempotently backfills the existing `regulatory_snapshots` and `regulatory_changes` tables while preserving their original timestamps.
 
+The lineage engine is intentionally separate from legal promotion. The current watcher tables can already be backfilled and verified; the next integration step is to write lineage records and authority-assessment fingerprints transactionally at watcher-change creation time.
+
 A valid lineage proves what EAY observed and in which sequence; it does **not** prove that the observation is binding law. Authority classification, exact-instrument verification, effective-date/version resolution and human approval remain independent gates.
 
 ## Current fixtures

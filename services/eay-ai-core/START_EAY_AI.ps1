@@ -28,6 +28,8 @@ if (-not $ModelExists) {
   ollama create eay-ops:0.1 -f ".\models\EAY-Ops.Modelfile"
 }
 
-Write-Host "EAY AI Core: http://127.0.0.1:8010" -ForegroundColor Green
-Write-Host "Swagger:     http://127.0.0.1:8010/docs" -ForegroundColor Green
-uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
+Write-Host "EAY AI Core:           http://127.0.0.1:8010" -ForegroundColor Green
+Write-Host "Swagger:               http://127.0.0.1:8010/docs" -ForegroundColor Green
+Write-Host "Regulatory sources:    http://127.0.0.1:8010/v1/regulatory/sources" -ForegroundColor Green
+Write-Host "Regulatory check POST: http://127.0.0.1:8010/v1/regulatory/check" -ForegroundColor Green
+uvicorn app.entrypoint:app --host 127.0.0.1 --port 8010 --reload

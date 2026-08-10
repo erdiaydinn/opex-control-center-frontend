@@ -13,11 +13,13 @@ from .legal_engine import (
     LegalRequirementUpsert,
 )
 from .legal_temporal import LegalTemporalResolver
+from .legal_temporal_conflicts import TemporalConflictEngine, TemporalResolutionBlocked
 
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 engine = LegalEngine(DB_PATH)
 temporal_resolver = LegalTemporalResolver(DB_PATH)
+temporal_conflicts = TemporalConflictEngine(DB_PATH)
 router = APIRouter(prefix="/v1/legal", tags=["legal"])
 
 
@@ -60,4 +62,16 @@ def upsert_requirement(item: LegalRequirementUpsert):
 
 @router.get("/conflicts", response_model=list[ConflictFinding])
 def company_vs_law(as_of: date = Query(default_factory=date.today)):
-    return engine.compare_company_to_law(as_of)
+    try:
+        findings, _resolution_fingerprint = temporal_conflicts.compare_company_to_law(as_of)
+        return findings
+    except TemporalResolutionBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "legal_temporal_resolution_blocked",
+                "as_of": as_of.isoformat(),
+                "blockers": list(exc.blockers),
+                "resolution_fingerprint": exc.resolution_fingerprint,
+            },
+        ) from exc

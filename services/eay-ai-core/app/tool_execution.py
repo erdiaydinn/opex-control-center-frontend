@@ -20,7 +20,12 @@ from .bigquery_safe_executor import (
 )
 from .kpi_provenance import provenance_from_activation
 from .kpi_registry import get_kpi_definition
-from .kpi_result_validation import KpiResultValidationError, ResultValidatingAdapter, get_result_contract
+from .kpi_result_validation import (
+    KpiResultValidationError,
+    ResultValidatingAdapter,
+    get_result_contract,
+    get_result_contract_fingerprint,
+)
 from .kpi_runtime_contracts import verify_kpi_runtime_activation
 from .kpi_semantics import verify_semantic_contract
 from .query_templates import compile_tool_plan
@@ -51,6 +56,7 @@ class TemplateToolExecutionResult(BaseModel):
     schema_verification: dict[str, Any] | None = None
     runtime_activation: dict[str, Any] | None = None
     activation_provenance_fingerprint: str | None = None
+    result_contract_fingerprint: str | None = None
     model_authored_sql_allowed: bool = False
 
 
@@ -155,18 +161,26 @@ def _activation_provenance(
     )
 
 
+def _result_contract_fingerprint(payload: TemplateToolExecutionRequest) -> str | None:
+    if payload.tool != "ops_kpi_query":
+        return None
+    return get_result_contract_fingerprint(str(payload.arguments.get("metric") or ""))
+
+
 def _attach_contract_audit(
     request: ExecuteRequest,
     semantic_verification: dict[str, Any] | None,
     schema_verification: dict[str, Any] | None,
     runtime_activation: dict[str, Any] | None = None,
     activation_provenance_fingerprint: str | None = None,
+    result_contract_fingerprint: str | None = None,
 ) -> ExecuteRequest:
     if (
         semantic_verification is None
         and schema_verification is None
         and runtime_activation is None
         and activation_provenance_fingerprint is None
+        and result_contract_fingerprint is None
     ):
         return request
     return request.model_copy(
@@ -208,6 +222,7 @@ def _attach_contract_audit(
                 if runtime_activation and runtime_activation.get("quantity_contract_fingerprint")
                 else None
             ),
+            "result_contract_fingerprint": result_contract_fingerprint,
             "activation_provenance_fingerprint": activation_provenance_fingerprint,
         }
     )
@@ -258,12 +273,14 @@ def execute_with_adapter(
     activation_provenance_fingerprint = _activation_provenance(
         payload, semantic_verification, schema_verification, runtime_activation
     )
+    result_contract_fingerprint = _result_contract_fingerprint(payload)
     request = _attach_contract_audit(
         request,
         semantic_verification,
         schema_verification,
         runtime_activation,
         activation_provenance_fingerprint,
+        result_contract_fingerprint,
     )
     execution = _run_executor(
         payload=payload,
@@ -281,6 +298,7 @@ def execute_with_adapter(
         schema_verification=schema_verification,
         runtime_activation=runtime_activation,
         activation_provenance_fingerprint=activation_provenance_fingerprint,
+        result_contract_fingerprint=result_contract_fingerprint,
         model_authored_sql_allowed=False,
     )
 
@@ -349,12 +367,14 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
         activation_provenance_fingerprint = _activation_provenance(
             payload, semantic_verification, schema_verification, runtime_activation
         )
+        result_contract_fingerprint = _result_contract_fingerprint(payload)
         request = _attach_contract_audit(
             request,
             semantic_verification,
             schema_verification,
             runtime_activation,
             activation_provenance_fingerprint,
+            result_contract_fingerprint,
         )
         audit_store = ExecutionAuditStore(db_path)
         execution = _run_executor(
@@ -373,6 +393,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             schema_verification=schema_verification,
             runtime_activation=runtime_activation,
             activation_provenance_fingerprint=activation_provenance_fingerprint,
+            result_contract_fingerprint=result_contract_fingerprint,
             model_authored_sql_allowed=False,
         )
     except PermissionError as exc:

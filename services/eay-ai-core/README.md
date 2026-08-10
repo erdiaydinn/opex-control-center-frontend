@@ -29,6 +29,7 @@ The model learns stable capabilities such as food/retail reasoning, root-cause a
 - The service never auto-deploys new model weights.
 - Regulatory source monitoring uses an allow-listed official-source registry; arbitrary URLs are not accepted.
 - Detected website changes are never auto-promoted to binding legal knowledge.
+- Operational KPI execution is allowed only when both a reviewed business-semantic contract and a reviewed live-schema contract pass. Their SHA-256 fingerprints are stored with the execution audit.
 
 ## Architecture
 
@@ -227,7 +228,7 @@ The goal is that autonomous development remains constrained by a repeatable test
 2. Company-vs-law conflict engine with stricter/looser/incompatible classification.
 3. Qdrant hybrid retrieval and Graphiti temporal knowledge.
 4. Company document ingestion with Docling/PaddleOCR.
-5. BigQuery/tool connectors with scoped permissions.
+5. BigQuery/tool connectors with scoped permissions and dual semantic/schema KPI contracts.
 6. Vision audit service: OpenCV + detection + Anomalib + SAM2 + OCR.
 7. Langfuse traces/evals and Promptfoo regression gates.
 8. Superset embedded analytics.

@@ -20,6 +20,7 @@ from .bigquery_safe_executor import (
 )
 from .query_templates import compile_tool_plan
 from .regulatory_impact import resolve_verified_regulatory_impact
+from .schema_contracts import verify_kpi_schema
 from .tool_contracts import ToolName, build_tool_plan
 
 
@@ -41,6 +42,7 @@ class TemplateToolExecutionResult(BaseModel):
     required_scope: list[str]
     execution: ExecutionResult
     legal_grounding: dict[str, Any] | None = None
+    schema_verification: dict[str, Any] | None = None
     model_authored_sql_allowed: bool = False
 
 
@@ -87,6 +89,13 @@ def prepare_execution(
     return request, plan.query_id, plan.required_scope, legal_grounding
 
 
+def _schema_verification(payload: TemplateToolExecutionRequest, adapter) -> dict[str, Any] | None:
+    if payload.tool != "ops_kpi_query":
+        return None
+    metric = str(payload.arguments.get("metric") or "")
+    return verify_kpi_schema(adapter, metric)
+
+
 def execute_with_adapter(
     payload: TemplateToolExecutionRequest,
     *,
@@ -97,6 +106,7 @@ def execute_with_adapter(
     request, query_id, required_scope, legal_grounding = prepare_execution(
         payload, legal_db_path=legal_db_path
     )
+    schema_verification = _schema_verification(payload, adapter)
     executor = SafeBigQueryExecutor(adapter, audit_store)
     execution = executor.run(request, execute=payload.execute)
     return TemplateToolExecutionResult(
@@ -105,6 +115,7 @@ def execute_with_adapter(
         required_scope=required_scope,
         execution=execution,
         legal_grounding=legal_grounding,
+        schema_verification=schema_verification,
         model_authored_sql_allowed=False,
     )
 
@@ -147,6 +158,10 @@ class TemplateBigQueryAdapter(GoogleBigQueryAdapter):
             )
         return params
 
+    def table_schema(self, table_id: str) -> dict[str, str]:
+        table = self.client.get_table(table_id)
+        return {field.name: field.field_type for field in table.schema}
+
 
 router = APIRouter(prefix="/v1/tool-execution", tags=["tool-execution"])
 
@@ -161,6 +176,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             payload, legal_db_path=db_path
         )
         adapter = TemplateBigQueryAdapter()
+        schema_verification = _schema_verification(payload, adapter)
         audit_store = ExecutionAuditStore(db_path)
         execution = SafeBigQueryExecutor(adapter, audit_store).run(request, execute=payload.execute)
         return TemplateToolExecutionResult(
@@ -169,6 +185,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             required_scope=required_scope,
             execution=execution,
             legal_grounding=legal_grounding,
+            schema_verification=schema_verification,
             model_authored_sql_allowed=False,
         )
     except PermissionError as exc:

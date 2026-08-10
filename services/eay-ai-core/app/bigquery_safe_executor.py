@@ -35,6 +35,8 @@ class ExecuteRequest(ToolCallRequest):
     schema_contract_id: str | None = Field(default=None, max_length=180)
     schema_fingerprint: str | None = Field(default=None, max_length=64)
     schema_evidence_fingerprint: str | None = Field(default=None, max_length=64)
+    unit_contract_fingerprint: str | None = Field(default=None, max_length=64)
+    aggregation_contract_fingerprint: str | None = Field(default=None, max_length=64)
 
 
 class ExecutionResult(BaseModel):
@@ -103,6 +105,8 @@ class ExecutionAuditStore:
                     schema_contract_id TEXT,
                     schema_fingerprint TEXT,
                     schema_evidence_fingerprint TEXT,
+                    unit_contract_fingerprint TEXT,
+                    aggregation_contract_fingerprint TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -114,6 +118,8 @@ class ExecutionAuditStore:
                 "schema_contract_id",
                 "schema_fingerprint",
                 "schema_evidence_fingerprint",
+                "unit_contract_fingerprint",
+                "aggregation_contract_fingerprint",
             ):
                 if name not in existing:
                     conn.execute(f"ALTER TABLE bigquery_execution_audit ADD COLUMN {name} TEXT")
@@ -129,8 +135,9 @@ class ExecutionAuditStore:
                     timeout_ms, max_rows, status, requested_by, reason,
                     semantic_contract_id, semantic_fingerprint,
                     schema_contract_id, schema_fingerprint, schema_evidence_fingerprint,
+                    unit_contract_fingerprint, aggregation_contract_fingerprint,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     execution_id, payload.tool, digest, dry_run_bytes,
@@ -139,6 +146,8 @@ class ExecutionAuditStore:
                     payload.semantic_contract_id, payload.semantic_fingerprint,
                     payload.schema_contract_id, payload.schema_fingerprint,
                     payload.schema_evidence_fingerprint,
+                    payload.unit_contract_fingerprint,
+                    payload.aggregation_contract_fingerprint,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )

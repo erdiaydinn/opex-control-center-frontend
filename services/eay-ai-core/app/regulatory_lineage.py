@@ -62,50 +62,74 @@ class RegulatoryLineageStore:
         conn.row_factory = sqlite3.Row
         return conn
 
+    @staticmethod
+    def ensure_schema(conn: sqlite3.Connection) -> None:
+        # Keep this safe for callers that already own an explicit transaction.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS regulatory_evidence_lineage (
+                record_type TEXT NOT NULL,
+                record_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                parent_chain_hash TEXT,
+                metadata_json TEXT NOT NULL,
+                chain_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(record_type, record_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_regulatory_lineage_source_time
+            ON regulatory_evidence_lineage(source_id, created_at ASC)
+            """
+        )
+
     def _init_db(self) -> None:
         with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS regulatory_evidence_lineage (
-                    record_type TEXT NOT NULL,
-                    record_id TEXT NOT NULL,
-                    source_id TEXT NOT NULL,
-                    content_hash TEXT NOT NULL,
-                    parent_chain_hash TEXT,
-                    metadata_json TEXT NOT NULL,
-                    chain_hash TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY(record_type, record_id)
-                );
+            self.ensure_schema(conn)
 
-                CREATE INDEX IF NOT EXISTS idx_regulatory_lineage_source_time
-                ON regulatory_evidence_lineage(source_id, created_at ASC);
-                """
-            )
+    @classmethod
+    def _latest_with_connection(
+        cls, conn: sqlite3.Connection, source_id: str
+    ) -> RegulatoryLineageRecord | None:
+        cls.ensure_schema(conn)
+        row = conn.execute(
+            """
+            SELECT * FROM regulatory_evidence_lineage
+            WHERE source_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (source_id,),
+        ).fetchone()
+        return cls._row_to_record(row) if row else None
 
     def latest_for_source(self, source_id: str) -> RegulatoryLineageRecord | None:
         with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM regulatory_evidence_lineage
-                WHERE source_id = ?
-                ORDER BY created_at DESC, rowid DESC
-                LIMIT 1
-                """,
-                (source_id,),
-            ).fetchone()
-        return self._row_to_record(row) if row else None
+            return self._latest_with_connection(conn, source_id)
+
+    @classmethod
+    def _get_with_connection(
+        cls, conn: sqlite3.Connection, record_type: str, record_id: str
+    ) -> RegulatoryLineageRecord | None:
+        cls.ensure_schema(conn)
+        row = conn.execute(
+            "SELECT * FROM regulatory_evidence_lineage WHERE record_type = ? AND record_id = ?",
+            (record_type, record_id),
+        ).fetchone()
+        return cls._row_to_record(row) if row else None
 
     def get(self, record_type: str, record_id: str) -> RegulatoryLineageRecord | None:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM regulatory_evidence_lineage WHERE record_type = ? AND record_id = ?",
-                (record_type, record_id),
-            ).fetchone()
-        return self._row_to_record(row) if row else None
+            return self._get_with_connection(conn, record_type, record_id)
 
-    def append(
-        self,
+    @classmethod
+    def append_with_connection(
+        cls,
+        conn: sqlite3.Connection,
         *,
         record_type: str,
         record_id: str,
@@ -114,7 +138,8 @@ class RegulatoryLineageStore:
         metadata: dict[str, Any],
         created_at: str | None = None,
     ) -> RegulatoryLineageRecord:
-        existing = self.get(record_type, record_id)
+        """Append evidence using the caller's transaction without implicit commits."""
+        existing = cls._get_with_connection(conn, record_type, record_id)
         if existing is not None:
             expected_metadata = json.loads(_canonical_json(metadata))
             if (
@@ -125,7 +150,7 @@ class RegulatoryLineageStore:
                 raise ValueError("immutable_regulatory_lineage_conflict")
             return existing
 
-        parent = self.latest_for_source(source_id)
+        parent = cls._latest_with_connection(conn, source_id)
         parent_hash = parent.chain_hash if parent else None
         normalized_metadata = json.loads(_canonical_json(metadata))
         digest = _chain_hash(
@@ -137,25 +162,24 @@ class RegulatoryLineageStore:
             metadata=normalized_metadata,
         )
         timestamp = created_at or datetime.now(timezone.utc).isoformat()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO regulatory_evidence_lineage(
-                    record_type, record_id, source_id, content_hash,
-                    parent_chain_hash, metadata_json, chain_hash, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record_type,
-                    record_id,
-                    source_id,
-                    content_hash,
-                    parent_hash,
-                    _canonical_json(normalized_metadata),
-                    digest,
-                    timestamp,
-                ),
-            )
+        conn.execute(
+            """
+            INSERT INTO regulatory_evidence_lineage(
+                record_type, record_id, source_id, content_hash,
+                parent_chain_hash, metadata_json, chain_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_type,
+                record_id,
+                source_id,
+                content_hash,
+                parent_hash,
+                _canonical_json(normalized_metadata),
+                digest,
+                timestamp,
+            ),
+        )
         return RegulatoryLineageRecord(
             record_type=record_type,
             record_id=record_id,
@@ -166,6 +190,27 @@ class RegulatoryLineageStore:
             chain_hash=digest,
             created_at=timestamp,
         )
+
+    def append(
+        self,
+        *,
+        record_type: str,
+        record_id: str,
+        source_id: str,
+        content_hash: str,
+        metadata: dict[str, Any],
+        created_at: str | None = None,
+    ) -> RegulatoryLineageRecord:
+        with self._connect() as conn:
+            return self.append_with_connection(
+                conn,
+                record_type=record_type,
+                record_id=record_id,
+                source_id=source_id,
+                content_hash=content_hash,
+                metadata=metadata,
+                created_at=created_at,
+            )
 
     def verify_source_chain(self, source_id: str) -> dict[str, Any]:
         with self._connect() as conn:

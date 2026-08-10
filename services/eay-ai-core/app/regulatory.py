@@ -17,6 +17,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
 
+from .regulatory_atomic import AtomicRegulatoryPersistence
 from .regulatory_lineage import RegulatoryLineageStore
 
 
@@ -229,12 +230,14 @@ class RegulatoryStore:
                 """
                 SELECT * FROM regulatory_snapshots
                 WHERE source_id = ?
-                ORDER BY fetched_at DESC
+                ORDER BY fetched_at DESC, rowid DESC
                 LIMIT 1
                 """,
                 (source_id,),
             ).fetchone()
 
+    # Legacy write helpers remain for migration/backfill callers. The live watcher
+    # no longer uses them; process_text routes through AtomicRegulatoryPersistence.
     def save_snapshot(self, source_id: str, content_hash: str, content_text: str) -> tuple[str, str]:
         snapshot_id = str(uuid.uuid4())
         fetched_at = datetime.now(timezone.utc).isoformat()
@@ -358,6 +361,7 @@ class RegulatoryWatcher:
     def __init__(self, db_path: Path = DB_PATH, sources_path: Path = SOURCES_PATH) -> None:
         self.store = RegulatoryStore(db_path)
         self.lineage = RegulatoryLineageStore(db_path)
+        self.atomic = AtomicRegulatoryPersistence(db_path)
         self.sources_path = sources_path
 
     def sources(self) -> list[SourceDefinition]:
@@ -385,28 +389,6 @@ class RegulatoryWatcher:
                 hits.append(keyword)
         return sorted(set(hits), key=str.casefold)
 
-    def _persist_snapshot_lineage(
-        self,
-        *,
-        source: SourceDefinition,
-        snapshot_id: str,
-        content_hash: str,
-        fetched_at: str,
-    ) -> str:
-        record = self.lineage.append(
-            record_type="snapshot",
-            record_id=snapshot_id,
-            source_id=source.id,
-            content_hash=content_hash,
-            metadata={
-                "origin": "regulatory_watcher",
-                "source_role": source.role,
-                "jurisdiction": source.jurisdiction,
-            },
-            created_at=fetched_at,
-        )
-        return record.chain_hash
-
     def process_text(
         self,
         source: SourceDefinition,
@@ -427,27 +409,8 @@ class RegulatoryWatcher:
 
         content_hash = _hash_text(normalized)
         previous = self.store.latest_snapshot(source.id)
-        if previous is None:
-            snapshot_id, snapshot_fetched_at = self.store.save_snapshot(
-                source.id, content_hash, normalized
-            )
-            snapshot_chain_hash = self._persist_snapshot_lineage(
-                source=source,
-                snapshot_id=snapshot_id,
-                content_hash=content_hash,
-                fetched_at=snapshot_fetched_at,
-            )
-            return SourceCheckResult(
-                source_id=source.id,
-                source_name=source.name,
-                state="baseline",
-                fetched_at=fetched_at,
-                content_hash=content_hash,
-                snapshot_id=snapshot_id,
-                snapshot_chain_hash=snapshot_chain_hash,
-            )
+        previous_hash = previous["content_hash"] if previous is not None else None
 
-        previous_hash = previous["content_hash"]
         if previous_hash == content_hash:
             return SourceCheckResult(
                 source_id=source.id,
@@ -458,21 +421,41 @@ class RegulatoryWatcher:
                 previous_hash=previous_hash,
             )
 
+        if previous is None:
+            persisted = self.atomic.persist_observation(
+                source_id=source.id,
+                source_name=source.name,
+                source_url=str(source.url),
+                source_role=source.role,
+                jurisdiction=source.jurisdiction,
+                content_hash=content_hash,
+                content_text=normalized,
+                expected_previous_hash=None,
+            )
+            return SourceCheckResult(
+                source_id=source.id,
+                source_name=source.name,
+                state="baseline",
+                fetched_at=fetched_at,
+                content_hash=content_hash,
+                snapshot_id=persisted.snapshot_id,
+                snapshot_chain_hash=persisted.snapshot_chain_hash,
+            )
+
         diff_text = _safe_diff(previous["content_text"], normalized)
         relevance_hits = self._relevance_hits(source, diff_text)
-        # Save the new baseline even for irrelevant changes so the same unrelated
-        # site chrome change does not alert forever.
-        snapshot_id, snapshot_fetched_at = self.store.save_snapshot(
-            source.id, content_hash, normalized
-        )
-        snapshot_chain_hash = self._persist_snapshot_lineage(
-            source=source,
-            snapshot_id=snapshot_id,
-            content_hash=content_hash,
-            fetched_at=snapshot_fetched_at,
-        )
 
         if source.keywords and not relevance_hits:
+            persisted = self.atomic.persist_observation(
+                source_id=source.id,
+                source_name=source.name,
+                source_url=str(source.url),
+                source_role=source.role,
+                jurisdiction=source.jurisdiction,
+                content_hash=content_hash,
+                content_text=normalized,
+                expected_previous_hash=previous_hash,
+            )
             return SourceCheckResult(
                 source_id=source.id,
                 source_name=source.name,
@@ -480,8 +463,8 @@ class RegulatoryWatcher:
                 fetched_at=fetched_at,
                 content_hash=content_hash,
                 previous_hash=previous_hash,
-                snapshot_id=snapshot_id,
-                snapshot_chain_hash=snapshot_chain_hash,
+                snapshot_id=persisted.snapshot_id,
+                snapshot_chain_hash=persisted.snapshot_chain_hash,
             )
 
         # Local import avoids a module cycle because regulatory_authority uses the
@@ -494,32 +477,19 @@ class RegulatoryWatcher:
             text=normalized,
         )
         authority_payload = assessment_dict(authority)
-        change_id, detected_at = self.store.save_change(
-            source=source,
-            old_hash=previous_hash,
-            new_hash=content_hash,
+        persisted = self.atomic.persist_observation(
+            source_id=source.id,
+            source_name=source.name,
+            source_url=str(source.url),
+            source_role=source.role,
+            jurisdiction=source.jurisdiction,
+            content_hash=content_hash,
+            content_text=normalized,
+            expected_previous_hash=previous_hash,
             diff_excerpt=diff_text,
             relevance_hits=relevance_hits,
             authority_assessment=authority_payload,
         )
-        change_lineage = self.lineage.append(
-            record_type="change",
-            record_id=change_id,
-            source_id=source.id,
-            content_hash=content_hash,
-            metadata={
-                "origin": "regulatory_watcher",
-                "old_hash": previous_hash,
-                "source_role": source.role,
-                "relevance_hits": relevance_hits,
-                "requires_binding_verification": True,
-                "authority_level": authority.authority_level,
-                "authority_fingerprint": authority.assessment_fingerprint,
-                "snapshot_chain_hash": snapshot_chain_hash,
-            },
-            created_at=detected_at,
-        )
-        self.store.set_change_lineage_hash(change_id, change_lineage.chain_hash)
         return SourceCheckResult(
             source_id=source.id,
             source_name=source.name,
@@ -527,10 +497,10 @@ class RegulatoryWatcher:
             fetched_at=fetched_at,
             content_hash=content_hash,
             previous_hash=previous_hash,
-            change_id=change_id,
-            snapshot_id=snapshot_id,
-            snapshot_chain_hash=snapshot_chain_hash,
-            change_chain_hash=change_lineage.chain_hash,
+            change_id=persisted.change_id,
+            snapshot_id=persisted.snapshot_id,
+            snapshot_chain_hash=persisted.snapshot_chain_hash,
+            change_chain_hash=persisted.change_chain_hash,
             authority_level=authority.authority_level,
             authority_fingerprint=authority.assessment_fingerprint,
             relevance_hits=relevance_hits,

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import APIRouter, HTTPException
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from .tool_router import ToolCallRequest, bounded_sql, validate_read_only_sql
 
@@ -30,9 +30,10 @@ class BigQueryAdapter(Protocol):
 class ExecuteRequest(ToolCallRequest):
     maximum_bytes_billed: int = Field(default=DEFAULT_MAX_BYTES, ge=1, le=10 * 1024 * 1024 * 1024)
     timeout_ms: int = Field(default=DEFAULT_TIMEOUT_MS, ge=1000, le=120000)
-
-
-from pydantic import BaseModel
+    semantic_contract_id: str | None = Field(default=None, max_length=180)
+    semantic_fingerprint: str | None = Field(default=None, max_length=64)
+    schema_contract_id: str | None = Field(default=None, max_length=180)
+    schema_fingerprint: str | None = Field(default=None, max_length=64)
 
 
 class ExecutionResult(BaseModel):
@@ -96,10 +97,23 @@ class ExecutionAuditStore:
                     status TEXT NOT NULL,
                     requested_by TEXT,
                     reason TEXT NOT NULL,
+                    semantic_contract_id TEXT,
+                    semantic_fingerprint TEXT,
+                    schema_contract_id TEXT,
+                    schema_fingerprint TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
             )
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(bigquery_execution_audit)")}
+            for name in (
+                "semantic_contract_id",
+                "semantic_fingerprint",
+                "schema_contract_id",
+                "schema_fingerprint",
+            ):
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE bigquery_execution_audit ADD COLUMN {name} TEXT")
 
     def save(self, *, payload: ExecuteRequest, dry_run_bytes: int | None, status: str) -> str:
         execution_id = str(uuid.uuid4())
@@ -109,13 +123,17 @@ class ExecutionAuditStore:
                 """
                 INSERT INTO bigquery_execution_audit(
                     id, tool, sql_sha256, dry_run_bytes, maximum_bytes_billed,
-                    timeout_ms, max_rows, status, requested_by, reason, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    timeout_ms, max_rows, status, requested_by, reason,
+                    semantic_contract_id, semantic_fingerprint,
+                    schema_contract_id, schema_fingerprint, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     execution_id, payload.tool, digest, dry_run_bytes,
                     payload.maximum_bytes_billed, payload.timeout_ms, payload.max_rows,
                     status, payload.requested_by, payload.reason,
+                    payload.semantic_contract_id, payload.semantic_fingerprint,
+                    payload.schema_contract_id, payload.schema_fingerprint,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )

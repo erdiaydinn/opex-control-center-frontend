@@ -7,8 +7,6 @@ from dataclasses import asdict, dataclass
 from typing import Literal
 from urllib.parse import urlparse
 
-from .regulatory import SourceDefinition
-
 DocumentKind = Literal[
     "draft",
     "announcement",
@@ -22,6 +20,12 @@ AuthorityLevel = Literal[
     "official_nonbinding",
     "official_registry",
     "binding_candidate_unverified",
+]
+SourceRoleValue = Literal[
+    "discovery",
+    "official_registry",
+    "binding_publication_index",
+    "guidance",
 ]
 
 
@@ -49,8 +53,6 @@ def _looks_like_exact_resmi_gazete_instrument(url: str, text: str) -> bool:
     host = (urlparse(url).hostname or "").casefold()
     if host not in {"resmigazete.gov.tr", "www.resmigazete.gov.tr"}:
         return False
-    # Exact instrument pages normally carry publication metadata and legal article text.
-    # Homepage/index signals deliberately fail this predicate.
     metadata = bool(re.search(r"\b\d{1,2}\s+[A-Za-zÇĞİÖŞÜçğıöşü]+\s+20\d{2}\b", text)) or bool(
         re.search(r"\bResm[îi]\s+Gazete\s+Say[ıi]\s*:\s*\d+\b", text, flags=re.IGNORECASE)
     )
@@ -59,8 +61,9 @@ def _looks_like_exact_resmi_gazete_instrument(url: str, text: str) -> bool:
 
 
 def assess_regulatory_authority(
-    source: SourceDefinition,
     *,
+    source_id: str,
+    source_role: SourceRoleValue,
     document_url: str,
     text: str,
 ) -> RegulatoryAuthorityAssessment:
@@ -71,23 +74,23 @@ def assess_regulatory_authority(
         kind: DocumentKind = "draft"
         authority: AuthorityLevel = "official_nonbinding"
         reasons.append("draft_or_public_consultation_text")
-    elif source.role == "guidance" or _contains_any(normalized, ("kılavuz", "rehber", "açıklamalar")):
+    elif source_role == "guidance" or _contains_any(normalized, ("kılavuz", "rehber", "açıklamalar")):
         kind = "guidance"
         authority = "official_nonbinding"
         reasons.append("guidance_or_explanatory_material")
-    elif source.role == "official_registry":
+    elif source_role == "official_registry":
         kind = "registry_entry"
         authority = "official_registry"
         reasons.append("official_registry_requires_exact_instrument_resolution")
-    elif source.role == "binding_publication_index" and _looks_like_exact_resmi_gazete_instrument(document_url, normalized):
+    elif source_role == "binding_publication_index" and _looks_like_exact_resmi_gazete_instrument(document_url, normalized):
         kind = "binding_instrument_candidate"
         authority = "binding_candidate_unverified"
         reasons.append("exact_resmi_gazete_candidate_requires_legal_verification")
-    elif source.role == "binding_publication_index":
+    elif source_role == "binding_publication_index":
         kind = "announcement"
         authority = "discovery_signal"
         reasons.append("publication_index_or_homepage_is_not_exact_instrument")
-    elif source.role == "discovery":
+    elif source_role == "discovery":
         kind = "announcement"
         authority = "discovery_signal"
         reasons.append("discovery_surface_only")
@@ -97,8 +100,8 @@ def assess_regulatory_authority(
         reasons.append("unclassified_official_signal")
 
     payload = {
-        "source_id": source.id,
-        "source_role": source.role,
+        "source_id": source_id,
+        "source_role": source_role,
         "document_url": document_url,
         "document_kind": kind,
         "authority_level": authority,

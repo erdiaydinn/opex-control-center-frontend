@@ -92,6 +92,10 @@ SEMANTIC_CONTRACTS: dict[str, KpiSemanticContract] = {
         denominator="eligible orders with valid preparation duration",
         unit="seconds_per_order",
         aggregation="weighted average duration per eligible order",
+        notes=(
+            "Production source duration unit must be explicitly pinned as seconds or minutes; "
+            "value-based unit guessing is forbidden before activation."
+        ),
     ),
     "ops.picking.semantic.v1": KpiSemanticContract(
         contract_id="ops.picking.semantic.v1",
@@ -101,6 +105,10 @@ SEMANTIC_CONTRACTS: dict[str, KpiSemanticContract] = {
         denominator="eligible picked orders",
         unit="seconds_per_order",
         aggregation="weighted average picking duration per order",
+        notes=(
+            "Production source duration unit and aggregation grain must be explicitly reviewed; "
+            "the runtime normalizes only from a pinned seconds/minutes contract."
+        ),
     ),
     "ops.otp.semantic.v1": KpiSemanticContract(
         contract_id="ops.otp.semantic.v1",
@@ -110,6 +118,10 @@ SEMANTIC_CONTRACTS: dict[str, KpiSemanticContract] = {
         denominator="100 percent scale",
         unit="percent",
         aggregation="OTP 4.25 percentage from reviewed late-prep percentage",
+        notes=(
+            "late_prep_rate source scale must be explicitly pinned as fraction or percent. "
+            "Heuristics such as value <= 1 => fraction are forbidden because values like 0.8 are ambiguous."
+        ),
     ),
     "ops.putaway.semantic.v1": KpiSemanticContract(
         contract_id="ops.putaway.semantic.v1",

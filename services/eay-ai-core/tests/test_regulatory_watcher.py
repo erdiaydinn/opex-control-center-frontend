@@ -1,8 +1,10 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from app.regulatory import RegulatoryWatcher, SourceDefinition, _host_allowed
+from app.regulatory_lineage import RegulatoryLineageStore
 
 
 def _source() -> SourceDefinition:
@@ -83,9 +85,51 @@ def test_unrelated_site_chrome_change_does_not_alert_but_is_lineaged(tmp_path: P
     assert chain["record_count"] == 2
 
 
-def test_existing_database_gets_additive_authority_columns(tmp_path: Path):
-    import sqlite3
+def test_process_text_rolls_back_snapshot_change_and_lineage_together(tmp_path: Path, monkeypatch):
+    db = tmp_path / "eay.db"
+    sources_path = tmp_path / "sources.json"
+    sources_path.write_text('{"sources": []}', encoding="utf-8")
+    watcher = RegulatoryWatcher(db, sources_path)
+    source = _source()
 
+    watcher.process_text(
+        source,
+        "<html><body>" + ("Türk Gıda Kodeksi mevcut durum. " * 8) + "</body></html>",
+    )
+
+    original = RegulatoryLineageStore.append_with_connection.__func__
+
+    def fail_on_change(cls, conn, **kwargs):
+        if kwargs.get("record_type") == "change":
+            raise RuntimeError("simulated_change_lineage_failure")
+        return original(cls, conn, **kwargs)
+
+    monkeypatch.setattr(
+        RegulatoryLineageStore,
+        "append_with_connection",
+        classmethod(fail_on_change),
+    )
+
+    with pytest.raises(RuntimeError, match="simulated_change_lineage_failure"):
+        watcher.process_text(
+            source,
+            "<html><body>"
+            + ("Türk Gıda Kodeksi mevcut durum. " * 8)
+            + " Etiket mevzuatında yeni düzenleme yayımlandı."
+            + "</body></html>",
+        )
+
+    with sqlite3.connect(db) as conn:
+        snapshot_count = conn.execute("SELECT COUNT(*) FROM regulatory_snapshots").fetchone()[0]
+        change_count = conn.execute("SELECT COUNT(*) FROM regulatory_changes").fetchone()[0]
+        lineage_count = conn.execute("SELECT COUNT(*) FROM regulatory_evidence_lineage").fetchone()[0]
+    assert snapshot_count == 1
+    assert change_count == 0
+    assert lineage_count == 1
+    assert watcher.lineage.verify_source_chain(source.id)["verified"] is True
+
+
+def test_existing_database_gets_additive_authority_columns(tmp_path: Path):
     db = tmp_path / "eay.db"
     with sqlite3.connect(db) as conn:
         conn.executescript(

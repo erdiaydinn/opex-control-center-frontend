@@ -57,11 +57,11 @@ NSFR_RESULT_FIELDS = (
 
 KPI_RESULT_CONTRACTS: dict[str, KpiResultContract] = {
     metric: KpiResultContract(
-        contract_id="ops.nsfr-family.result.v1",
+        contract_id="ops.nsfr-family.result.v2",
         metric=metric,
         required_fields=NSFR_RESULT_FIELDS,
         validator=_validate_nsfr_family,
-        version="1",
+        version="2",
     )
     for metric in ("nsfr", "pfr", "refund")
 }

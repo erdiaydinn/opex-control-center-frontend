@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
 import uuid
@@ -12,7 +13,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
-from .legal_engine import LegalEngine, LegalInstrumentUpsert
+from .legal_knowledge import indexer
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 
@@ -123,6 +124,13 @@ class LegalVerificationStore:
                 raise KeyError("instrument_not_found")
             if instrument["verification_status"] not in {"draft", "superseded"}:
                 raise ValueError("instrument_not_verifiable")
+            pending = conn.execute(
+                "SELECT id FROM legal_verifications WHERE instrument_id = ? AND decision = 'pending' LIMIT 1",
+                (payload.instrument_id,),
+            ).fetchone()
+            if pending is not None:
+                raise ValueError("pending_verification_already_exists")
+
             record_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc).isoformat()
             content_hash = hashlib.sha256(payload.authoritative_text.encode("utf-8")).hexdigest()
@@ -169,7 +177,7 @@ class LegalVerificationStore:
             ).fetchall()
         return [self._row(row) for row in rows]
 
-    def decide(self, record_id: str, decision: Literal["verified", "rejected"], note: str | None) -> VerificationRecord:
+    def reject(self, record_id: str, note: str | None) -> VerificationRecord:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM legal_verifications WHERE id = ?", (record_id,)).fetchone()
@@ -178,8 +186,82 @@ class LegalVerificationStore:
             if row["decision"] != "pending":
                 raise ValueError("verification_not_pending")
             conn.execute(
-                "UPDATE legal_verifications SET decision=?, verifier_note=COALESCE(?, verifier_note), decided_at=? WHERE id=?",
-                (decision, note, now, record_id),
+                "UPDATE legal_verifications SET decision='rejected', verifier_note=COALESCE(?, verifier_note), decided_at=? WHERE id=?",
+                (note, now, record_id),
+            )
+            row = conn.execute("SELECT * FROM legal_verifications WHERE id = ?", (record_id,)).fetchone()
+        assert row is not None
+        return self._row(row)
+
+    def verify_and_apply(self, record_id: str, note: str | None) -> VerificationRecord:
+        """Atomically verify evidence and promote its instrument.
+
+        This prevents the previous split-brain failure mode where a verification
+        record could become `verified` while the legal instrument remained draft.
+        Existing amendment/repeal/topic metadata is preserved verbatim.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            record = conn.execute(
+                "SELECT * FROM legal_verifications WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if record is None:
+                raise KeyError("verification_not_found")
+            if record["decision"] != "pending":
+                raise ValueError("verification_not_pending")
+
+            instrument = conn.execute(
+                "SELECT * FROM legal_instruments WHERE id = ?",
+                (record["instrument_id"],),
+            ).fetchone()
+            if instrument is None:
+                raise KeyError("instrument_not_found")
+            if instrument["verification_status"] not in {"draft", "superseded"}:
+                raise ValueError("instrument_not_verifiable")
+
+            actual_hash = hashlib.sha256(record["authoritative_text"].encode("utf-8")).hexdigest()
+            if actual_hash != record["content_sha256"]:
+                raise ValueError("authoritative_text_hash_mismatch")
+
+            source_host = (urlparse(record["authoritative_url"]).hostname or "").lower()
+            if source_host not in AUTHORITATIVE_HOSTS:
+                raise ValueError("authoritative_source_host_not_allowed")
+
+            notes = instrument["notes"] or ""
+            audit_line = (
+                f"Verified content sha256: {record['content_sha256']}; "
+                f"verification record: {record['id']}"
+            )
+            if audit_line not in notes:
+                notes = (notes + "\n" + audit_line).strip()
+
+            conn.execute(
+                """
+                UPDATE legal_instruments
+                SET publication_date=?, effective_from=?,
+                    official_gazette_number=COALESCE(?, official_gazette_number),
+                    source_url=?, verification_status='verified', notes=?, updated_at=?
+                WHERE id=?
+                """,
+                (
+                    record["publication_date"],
+                    record["effective_from"],
+                    record["official_gazette_number"],
+                    record["authoritative_url"],
+                    notes,
+                    now,
+                    record["instrument_id"],
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE legal_verifications
+                SET decision='verified', verifier_note=COALESCE(?, verifier_note), decided_at=?
+                WHERE id=?
+                """,
+                (note, now, record_id),
             )
             row = conn.execute("SELECT * FROM legal_verifications WHERE id = ?", (record_id,)).fetchone()
         assert row is not None
@@ -187,7 +269,6 @@ class LegalVerificationStore:
 
 
 store = LegalVerificationStore(DB_PATH)
-engine = LegalEngine(DB_PATH)
 router = APIRouter(prefix="/v1/legal/verification", tags=["legal-verification"])
 
 
@@ -213,42 +294,21 @@ def list_verifications(
 @router.post("/{record_id}/verify", response_model=VerificationRecord)
 def verify(record_id: str, payload: DecisionRequest):
     try:
-        record = store.decide(record_id, "verified", payload.note)
+        record = store.verify_and_apply(record_id, payload.note)
+        # Indexing is deliberately idempotent. A later explicit /knowledge/sync can
+        # safely recover if local indexing fails after legal verification commits.
+        indexer.sync_verified(record.instrument_id)
+        return record
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Verification record not found") from exc
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-    with store._connect() as conn:
-        instrument = conn.execute("SELECT * FROM legal_instruments WHERE id = ?", (record.instrument_id,)).fetchone()
-    if instrument is None:
-        raise HTTPException(status_code=404, detail="Instrument not found")
-
-    verified = LegalInstrumentUpsert(
-        id=instrument["id"],
-        title=instrument["title"],
-        instrument_type=instrument["instrument_type"],
-        jurisdiction=instrument["jurisdiction"],
-        publication_date=record.publication_date,
-        effective_from=record.effective_from,
-        effective_to=date.fromisoformat(instrument["effective_to"]) if instrument["effective_to"] else None,
-        transition_deadline=date.fromisoformat(instrument["transition_deadline"]) if instrument["transition_deadline"] else None,
-        official_gazette_number=record.official_gazette_number or instrument["official_gazette_number"],
-        source_url=record.authoritative_url,
-        verification_status="verified",
-        amends=[],
-        repeals=[],
-        topics=[],
-        notes=(instrument["notes"] or "") + f"\nVerified content sha256: {record.content_sha256}; verification record: {record.id}",
-    )
-    engine.upsert_instrument(verified)
-    return record
 
 
 @router.post("/{record_id}/reject", response_model=VerificationRecord)
 def reject(record_id: str, payload: DecisionRequest):
     try:
-        return store.decide(record_id, "rejected", payload.note)
+        return store.reject(record_id, payload.note)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Verification record not found") from exc
     except ValueError as exc:

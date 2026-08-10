@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .kpi_registry import KPI_REGISTRY, KpiDefinition
+from .kpi_result_validation import KPI_RESULT_CONTRACTS
 from .kpi_runtime_contracts import (
     DURATION_RUNTIME_CONTRACTS,
     DURATION_RUNTIME_METRICS,
@@ -13,6 +14,8 @@ from .kpi_runtime_contracts import (
     RATE_RUNTIME_METRICS,
 )
 
+RESULT_CONTRACT_REQUIRED_METRICS = frozenset({"nsfr", "pfr", "refund"})
+
 
 @dataclass(frozen=True)
 class KpiReleaseGuardResult:
@@ -20,6 +23,7 @@ class KpiReleaseGuardResult:
     duration_runtime_metrics: tuple[str, ...]
     rate_runtime_metrics: tuple[str, ...]
     putaway_runtime_metrics: tuple[str, ...]
+    result_contract_metrics: tuple[str, ...]
     passed: bool = True
 
 
@@ -29,12 +33,14 @@ def verify_kpi_registry_runtime_alignment(
     duration_contracts: Mapping[str, object] = DURATION_RUNTIME_CONTRACTS,
     rate_contracts: Mapping[str, object] = RATE_RUNTIME_CONTRACTS,
     putaway_contracts: Mapping[str, object] = PUTAWAY_RUNTIME_CONTRACTS,
+    result_contracts: Mapping[str, object] = KPI_RESULT_CONTRACTS,
 ) -> KpiReleaseGuardResult:
-    """Block releases that expose a runtime-sensitive KPI without its reviewed contract.
+    """Block releases that expose a governed KPI without all runtime/result contracts.
 
     This is intentionally independent of BigQuery availability. A future code review that
-    flips Prep/Picking/OTP/Putaway to executable must add the corresponding runtime contract
-    in the same release, otherwise CI fails before any production query is attempted.
+    flips Prep/Picking/OTP/Putaway or the NSFR family to executable must add the corresponding
+    runtime and post-query result contracts in the same release, otherwise CI fails before
+    any production query is attempted.
     """
 
     executable = tuple(sorted(metric for metric, definition in registry.items() if definition.executable))
@@ -48,7 +54,10 @@ def verify_kpi_registry_runtime_alignment(
     missing_putaway = sorted(
         metric for metric in executable if metric in PUTAWAY_RUNTIME_METRICS and metric not in putaway_contracts
     )
-    if missing_duration or missing_rate or missing_putaway:
+    missing_result = sorted(
+        metric for metric in executable if metric in RESULT_CONTRACT_REQUIRED_METRICS and metric not in result_contracts
+    )
+    if missing_duration or missing_rate or missing_putaway or missing_result:
         blockers = []
         if missing_duration:
             blockers.append("duration=" + ",".join(missing_duration))
@@ -56,12 +65,15 @@ def verify_kpi_registry_runtime_alignment(
             blockers.append("rate=" + ",".join(missing_rate))
         if missing_putaway:
             blockers.append("putaway=" + ",".join(missing_putaway))
+        if missing_result:
+            blockers.append("result=" + ",".join(missing_result))
         raise ValueError("kpi_release_runtime_contract_missing:" + ";".join(blockers))
 
     unknown_duration = sorted(set(duration_contracts) - set(DURATION_RUNTIME_METRICS))
     unknown_rate = sorted(set(rate_contracts) - set(RATE_RUNTIME_METRICS))
     unknown_putaway = sorted(set(putaway_contracts) - set(PUTAWAY_RUNTIME_METRICS))
-    if unknown_duration or unknown_rate or unknown_putaway:
+    unknown_result = sorted(set(result_contracts) - set(RESULT_CONTRACT_REQUIRED_METRICS))
+    if unknown_duration or unknown_rate or unknown_putaway or unknown_result:
         blockers = []
         if unknown_duration:
             blockers.append("duration=" + ",".join(unknown_duration))
@@ -69,6 +81,8 @@ def verify_kpi_registry_runtime_alignment(
             blockers.append("rate=" + ",".join(unknown_rate))
         if unknown_putaway:
             blockers.append("putaway=" + ",".join(unknown_putaway))
+        if unknown_result:
+            blockers.append("result=" + ",".join(unknown_result))
         raise ValueError("kpi_release_unregistered_runtime_contract:" + ";".join(blockers))
 
     return KpiReleaseGuardResult(
@@ -76,4 +90,5 @@ def verify_kpi_registry_runtime_alignment(
         duration_runtime_metrics=tuple(sorted(duration_contracts)),
         rate_runtime_metrics=tuple(sorted(rate_contracts)),
         putaway_runtime_metrics=tuple(sorted(putaway_contracts)),
+        result_contract_metrics=tuple(sorted(result_contracts)),
     )

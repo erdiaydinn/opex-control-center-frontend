@@ -109,6 +109,31 @@ def _schema_verification(payload: TemplateToolExecutionRequest, adapter) -> dict
     return verify_kpi_schema(adapter, metric)
 
 
+def _attach_contract_audit(
+    request: ExecuteRequest,
+    semantic_verification: dict[str, Any] | None,
+    schema_verification: dict[str, Any] | None,
+) -> ExecuteRequest:
+    if semantic_verification is None and schema_verification is None:
+        return request
+    return request.model_copy(
+        update={
+            "semantic_contract_id": (
+                str(semantic_verification["contract_id"]) if semantic_verification else None
+            ),
+            "semantic_fingerprint": (
+                str(semantic_verification["fingerprint"]) if semantic_verification else None
+            ),
+            "schema_contract_id": (
+                str(schema_verification["contract_id"]) if schema_verification else None
+            ),
+            "schema_fingerprint": (
+                str(schema_verification["observed_fingerprint"]) if schema_verification else None
+            ),
+        }
+    )
+
+
 def execute_with_adapter(
     payload: TemplateToolExecutionRequest,
     *,
@@ -121,6 +146,7 @@ def execute_with_adapter(
     )
     semantic_verification = _semantic_verification(payload)
     schema_verification = _schema_verification(payload, adapter)
+    request = _attach_contract_audit(request, semantic_verification, schema_verification)
     executor = SafeBigQueryExecutor(adapter, audit_store)
     execution = executor.run(request, execute=payload.execute)
     return TemplateToolExecutionResult(
@@ -193,6 +219,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
         adapter = TemplateBigQueryAdapter()
         semantic_verification = _semantic_verification(payload)
         schema_verification = _schema_verification(payload, adapter)
+        request = _attach_contract_audit(request, semantic_verification, schema_verification)
         audit_store = ExecutionAuditStore(db_path)
         execution = SafeBigQueryExecutor(adapter, audit_store).run(request, execute=payload.execute)
         return TemplateToolExecutionResult(

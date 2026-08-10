@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
+
+from .license_gate import assert_model_license_allowed
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 ModelStatus = Literal["candidate", "approved", "canary", "production", "rejected", "retired"]
@@ -109,6 +111,7 @@ class ModelRegistry:
             )
 
     def create(self, payload: ModelCandidateCreate) -> ModelRecord:
+        assert_model_license_allowed(payload.license_id)
         record_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
         with sqlite3.connect(self.db_path) as conn:

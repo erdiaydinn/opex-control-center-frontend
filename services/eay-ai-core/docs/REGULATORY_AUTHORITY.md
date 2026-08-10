@@ -36,4 +36,4 @@ A valid lineage proves what EAY observed and in which sequence; it does **not** 
 
 ## Current fixtures
 
-Regression tests include GKGM public-consultation drafts, GKGM publication announcements, KAYSİS registry pages, the Resmî Gazete index, exact Resmî Gazete-like article text, Ministry guidance, immutable lineage conflict rejection, tamper detection and watcher-row backfill. These fixtures test authority/provenance behavior rather than copying legal conclusions into model weights.
+Regression tests include GKGM public-consultation drafts, GKGM publication announcements, KAYSİS registry pages, the Resmî Gazete index, exact Resmî Gazete-like article text, Ministry guidance, immutable lineage conflict rejection, tamper detection and watcher-row backfill. The CI suite verifies both compilation and these provenance invariants before changes are considered usable.

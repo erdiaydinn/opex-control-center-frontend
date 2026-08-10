@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Literal
@@ -8,11 +10,27 @@ DurationUnit = Literal["seconds", "minutes"]
 RateScale = Literal["fraction", "percent"]
 
 
+def _fingerprint(payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True)
 class DurationContract:
     metric: str
     source_unit: DurationUnit
     output_unit: Literal["seconds_per_order"] = "seconds_per_order"
+
+    @property
+    def fingerprint(self) -> str:
+        return _fingerprint(
+            {
+                "kind": "duration",
+                "metric": self.metric,
+                "source_unit": self.source_unit,
+                "output_unit": self.output_unit,
+            }
+        )
 
     def normalize(self, value: object) -> Decimal:
         number = _finite_non_negative_decimal(value, f"{self.metric}_duration")
@@ -27,6 +45,17 @@ class DurationContract:
 class RateContract:
     metric: str
     source_scale: RateScale
+
+    @property
+    def fingerprint(self) -> str:
+        return _fingerprint(
+            {
+                "kind": "rate",
+                "metric": self.metric,
+                "source_scale": self.source_scale,
+                "output_scale": "percent",
+            }
+        )
 
     def to_percent(self, value: object) -> Decimal:
         number = _finite_non_negative_decimal(value, f"{self.metric}_rate")

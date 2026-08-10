@@ -52,16 +52,21 @@ def test_provenance_resolves_verified_legal_chunk(tmp_path):
         )
     )
     verification = LegalVerificationStore(db)
+    authoritative_text = (
+        "1 Ağustos 2026 Resmî Gazete Sayı : 99991\n"
+        + ("MADDE 1\nTest mevzuat metni ve yükümlülük açıklaması.\n\n" * 8)
+    )
     record = verification.create(
         VerificationCreate(
             instrument_id="tgk-x",
             authoritative_url="https://www.resmigazete.gov.tr/eskiler/2026/08/test.htm",
-            authoritative_text=("MADDE 1\nTest mevzuat metni ve yükümlülük açıklaması.\n\n" * 8),
+            authoritative_text=authoritative_text,
             publication_date=date(2026, 8, 1),
             effective_from=date(2026, 8, 1),
+            official_gazette_number="99991",
         )
     )
-    verification.decide(record.id, "verified", "checked")
+    verification.verify_and_apply(record.id, "checked", human_approval_ref="LEGAL-TEST-001")
     engine.upsert_instrument(
         LegalInstrumentUpsert(
             id="tgk-x",

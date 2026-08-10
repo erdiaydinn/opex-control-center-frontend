@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 DocumentKind = Literal[
@@ -61,12 +61,30 @@ def _looks_like_exact_resmi_gazete_instrument(url: str, text: str) -> bool:
 
 
 def assess_regulatory_authority(
+    source: Any | None = None,
     *,
-    source_id: str,
-    source_role: SourceRoleValue,
+    source_id: str | None = None,
+    source_role: SourceRoleValue | None = None,
     document_url: str,
     text: str,
 ) -> RegulatoryAuthorityAssessment:
+    """Classify authority without importing watcher types.
+
+    Callers may pass either the watcher's source object or explicit source_id/source_role.
+    Supporting both forms keeps this module independent from regulatory.py and avoids
+    circular imports while preserving a strict deterministic classification contract.
+    """
+    if source is not None:
+        source_id = str(getattr(source, "id", source_id or ""))
+        source_role = getattr(source, "role", source_role)
+    if not source_id or source_role not in {
+        "discovery",
+        "official_registry",
+        "binding_publication_index",
+        "guidance",
+    }:
+        raise ValueError("valid_source_id_and_role_required")
+
     normalized = " ".join(text.split())
     reasons: list[str] = []
 

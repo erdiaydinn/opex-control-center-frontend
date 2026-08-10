@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .canary_evals import CanaryDecision, CanaryMetrics, evaluate_canary
+from .historical_legal_rag_evals import HistoricalLegalRagEvalResult
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,22 @@ class HistoricalLegalReleaseMetrics:
     fingerprint_validity_rate: float
     inactive_legal_leak_rate: float
     temporal_block_bypass_rate: float
+
+    @classmethod
+    def from_eval(cls, result: HistoricalLegalRagEvalResult) -> "HistoricalLegalReleaseMetrics":
+        """Losslessly map deterministic historical eval output into the release gate.
+
+        Keeping this conversion in one reviewed place avoids callers accidentally
+        swapping or omitting hard legal-temporal metrics before a rollout decision.
+        """
+        return cls(
+            sample_size=result.sample_size,
+            pass_rate=result.pass_rate,
+            source_match_rate=result.source_match_rate,
+            fingerprint_validity_rate=result.fingerprint_validity_rate,
+            inactive_legal_leak_rate=result.inactive_legal_leak_rate,
+            temporal_block_bypass_rate=result.temporal_block_bypass_rate,
+        )
 
 
 @dataclass(frozen=True)

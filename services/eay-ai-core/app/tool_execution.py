@@ -20,6 +20,7 @@ from .bigquery_safe_executor import (
 )
 from .kpi_provenance import provenance_from_activation
 from .kpi_registry import get_kpi_definition
+from .kpi_result_validation import KpiResultValidationError, ResultValidatingAdapter, get_result_contract
 from .kpi_runtime_contracts import verify_kpi_runtime_activation
 from .kpi_semantics import verify_semantic_contract
 from .query_templates import compile_tool_plan
@@ -212,6 +213,35 @@ def _attach_contract_audit(
     )
 
 
+def _execution_adapter(payload: TemplateToolExecutionRequest, adapter):
+    if payload.tool != "ops_kpi_query":
+        return adapter
+    metric = str(payload.arguments.get("metric") or "")
+    if get_result_contract(metric) is None:
+        return adapter
+    return ResultValidatingAdapter(adapter, metric=metric)
+
+
+def _run_executor(
+    *,
+    payload: TemplateToolExecutionRequest,
+    request: ExecuteRequest,
+    adapter,
+    audit_store: ExecutionAuditStore,
+) -> ExecutionResult:
+    try:
+        return SafeBigQueryExecutor(_execution_adapter(payload, adapter), audit_store).run(
+            request, execute=payload.execute
+        )
+    except KpiResultValidationError:
+        audit_store.save(
+            payload=request,
+            dry_run_bytes=None,
+            status="rejected_result_contract",
+        )
+        raise
+
+
 def execute_with_adapter(
     payload: TemplateToolExecutionRequest,
     *,
@@ -235,8 +265,12 @@ def execute_with_adapter(
         runtime_activation,
         activation_provenance_fingerprint,
     )
-    executor = SafeBigQueryExecutor(adapter, audit_store)
-    execution = executor.run(request, execute=payload.execute)
+    execution = _run_executor(
+        payload=payload,
+        request=request,
+        adapter=adapter,
+        audit_store=audit_store,
+    )
     return TemplateToolExecutionResult(
         tool=payload.tool,
         query_id=query_id,
@@ -323,7 +357,12 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             activation_provenance_fingerprint,
         )
         audit_store = ExecutionAuditStore(db_path)
-        execution = SafeBigQueryExecutor(adapter, audit_store).run(request, execute=payload.execute)
+        execution = _run_executor(
+            payload=payload,
+            request=request,
+            adapter=adapter,
+            audit_store=audit_store,
+        )
         return TemplateToolExecutionResult(
             tool=payload.tool,
             query_id=query_id,

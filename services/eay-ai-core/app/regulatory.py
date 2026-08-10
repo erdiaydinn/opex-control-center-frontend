@@ -17,6 +17,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
 
+from .regulatory_lineage import RegulatoryLineageStore
+
 
 SourceRole = Literal[
     "discovery",
@@ -71,6 +73,11 @@ class SourceCheckResult(BaseModel):
     content_hash: str | None = None
     previous_hash: str | None = None
     change_id: str | None = None
+    snapshot_id: str | None = None
+    snapshot_chain_hash: str | None = None
+    change_chain_hash: str | None = None
+    authority_level: str | None = None
+    authority_fingerprint: str | None = None
     relevance_hits: list[str] = Field(default_factory=list)
     error: str | None = None
 
@@ -87,6 +94,9 @@ class RegulatoryChange(BaseModel):
     relevance_hits: list[str]
     status: ChangeStatus
     requires_binding_verification: bool
+    authority_assessment: dict[str, object] | None = None
+    authority_fingerprint: str | None = None
+    lineage_chain_hash: str | None = None
     detected_at: datetime
 
 
@@ -154,6 +164,12 @@ def _host_allowed(url: str) -> bool:
     return any(host == suffix or host.endswith("." + suffix) for suffix in ALLOWED_HOST_SUFFIXES)
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
 class RegulatoryStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -192,6 +208,9 @@ class RegulatoryStore:
                     relevance_hits_json TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
                     requires_binding_verification INTEGER NOT NULL DEFAULT 1,
+                    authority_assessment_json TEXT,
+                    authority_fingerprint TEXT,
+                    lineage_chain_hash TEXT,
                     detected_at TEXT NOT NULL
                 );
 
@@ -199,6 +218,10 @@ class RegulatoryStore:
                 ON regulatory_changes(status, detected_at DESC);
                 """
             )
+            # Additive migration for databases created by earlier EAY AI Core builds.
+            _ensure_column(conn, "regulatory_changes", "authority_assessment_json", "TEXT")
+            _ensure_column(conn, "regulatory_changes", "authority_fingerprint", "TEXT")
+            _ensure_column(conn, "regulatory_changes", "lineage_chain_hash", "TEXT")
 
     def latest_snapshot(self, source_id: str) -> sqlite3.Row | None:
         with self._connect() as conn:
@@ -212,7 +235,9 @@ class RegulatoryStore:
                 (source_id,),
             ).fetchone()
 
-    def save_snapshot(self, source_id: str, content_hash: str, content_text: str) -> None:
+    def save_snapshot(self, source_id: str, content_hash: str, content_text: str) -> tuple[str, str]:
+        snapshot_id = str(uuid.uuid4())
+        fetched_at = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
@@ -220,14 +245,9 @@ class RegulatoryStore:
                     id, source_id, content_hash, content_text, fetched_at
                 ) VALUES (?, ?, ?, ?, ?)
                 """,
-                (
-                    str(uuid.uuid4()),
-                    source_id,
-                    content_hash,
-                    content_text,
-                    datetime.now(timezone.utc).isoformat(),
-                ),
+                (snapshot_id, source_id, content_hash, content_text, fetched_at),
             )
+        return snapshot_id, fetched_at
 
     def save_change(
         self,
@@ -237,16 +257,20 @@ class RegulatoryStore:
         new_hash: str,
         diff_excerpt: str,
         relevance_hits: list[str],
-    ) -> str:
+        authority_assessment: dict[str, object],
+    ) -> tuple[str, str]:
         change_id = str(uuid.uuid4())
+        detected_at = datetime.now(timezone.utc).isoformat()
+        authority_fingerprint = str(authority_assessment.get("assessment_fingerprint") or "")
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO regulatory_changes (
                     id, source_id, source_name, source_url, source_role,
                     old_hash, new_hash, diff_excerpt, relevance_hits_json,
-                    status, requires_binding_verification, detected_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?)
+                    status, requires_binding_verification, authority_assessment_json,
+                    authority_fingerprint, lineage_chain_hash, detected_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, NULL, ?)
                 """,
                 (
                     change_id,
@@ -258,10 +282,29 @@ class RegulatoryStore:
                     new_hash,
                     diff_excerpt,
                     json.dumps(relevance_hits, ensure_ascii=False),
-                    datetime.now(timezone.utc).isoformat(),
+                    json.dumps(authority_assessment, ensure_ascii=False, sort_keys=True),
+                    authority_fingerprint,
+                    detected_at,
                 ),
             )
-        return change_id
+        return change_id, detected_at
+
+    def set_change_lineage_hash(self, change_id: str, chain_hash: str) -> None:
+        with self._connect() as conn:
+            count = conn.execute(
+                "UPDATE regulatory_changes SET lineage_chain_hash = ? WHERE id = ? AND lineage_chain_hash IS NULL",
+                (chain_hash, change_id),
+            ).rowcount
+        if count == 0:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT lineage_chain_hash FROM regulatory_changes WHERE id = ?",
+                    (change_id,),
+                ).fetchone()
+            if row is None:
+                raise KeyError(change_id)
+            if row["lineage_chain_hash"] != chain_hash:
+                raise ValueError("immutable_regulatory_change_lineage_conflict")
 
     def list_changes(self, status: ChangeStatus | None, limit: int) -> list[RegulatoryChange]:
         where = "WHERE status = ?" if status else ""
@@ -289,6 +332,13 @@ class RegulatoryStore:
                 relevance_hits=json.loads(row["relevance_hits_json"]),
                 status=row["status"],
                 requires_binding_verification=bool(row["requires_binding_verification"]),
+                authority_assessment=(
+                    json.loads(row["authority_assessment_json"])
+                    if row["authority_assessment_json"]
+                    else None
+                ),
+                authority_fingerprint=row["authority_fingerprint"],
+                lineage_chain_hash=row["lineage_chain_hash"],
                 detected_at=datetime.fromisoformat(row["detected_at"]),
             )
             for row in rows
@@ -307,6 +357,7 @@ class RegulatoryStore:
 class RegulatoryWatcher:
     def __init__(self, db_path: Path = DB_PATH, sources_path: Path = SOURCES_PATH) -> None:
         self.store = RegulatoryStore(db_path)
+        self.lineage = RegulatoryLineageStore(db_path)
         self.sources_path = sources_path
 
     def sources(self) -> list[SourceDefinition]:
@@ -334,6 +385,28 @@ class RegulatoryWatcher:
                 hits.append(keyword)
         return sorted(set(hits), key=str.casefold)
 
+    def _persist_snapshot_lineage(
+        self,
+        *,
+        source: SourceDefinition,
+        snapshot_id: str,
+        content_hash: str,
+        fetched_at: str,
+    ) -> str:
+        record = self.lineage.append(
+            record_type="snapshot",
+            record_id=snapshot_id,
+            source_id=source.id,
+            content_hash=content_hash,
+            metadata={
+                "origin": "regulatory_watcher",
+                "source_role": source.role,
+                "jurisdiction": source.jurisdiction,
+            },
+            created_at=fetched_at,
+        )
+        return record.chain_hash
+
     def process_text(
         self,
         source: SourceDefinition,
@@ -355,13 +428,23 @@ class RegulatoryWatcher:
         content_hash = _hash_text(normalized)
         previous = self.store.latest_snapshot(source.id)
         if previous is None:
-            self.store.save_snapshot(source.id, content_hash, normalized)
+            snapshot_id, snapshot_fetched_at = self.store.save_snapshot(
+                source.id, content_hash, normalized
+            )
+            snapshot_chain_hash = self._persist_snapshot_lineage(
+                source=source,
+                snapshot_id=snapshot_id,
+                content_hash=content_hash,
+                fetched_at=snapshot_fetched_at,
+            )
             return SourceCheckResult(
                 source_id=source.id,
                 source_name=source.name,
                 state="baseline",
                 fetched_at=fetched_at,
                 content_hash=content_hash,
+                snapshot_id=snapshot_id,
+                snapshot_chain_hash=snapshot_chain_hash,
             )
 
         previous_hash = previous["content_hash"]
@@ -379,7 +462,15 @@ class RegulatoryWatcher:
         relevance_hits = self._relevance_hits(source, diff_text)
         # Save the new baseline even for irrelevant changes so the same unrelated
         # site chrome change does not alert forever.
-        self.store.save_snapshot(source.id, content_hash, normalized)
+        snapshot_id, snapshot_fetched_at = self.store.save_snapshot(
+            source.id, content_hash, normalized
+        )
+        snapshot_chain_hash = self._persist_snapshot_lineage(
+            source=source,
+            snapshot_id=snapshot_id,
+            content_hash=content_hash,
+            fetched_at=snapshot_fetched_at,
+        )
 
         if source.keywords and not relevance_hits:
             return SourceCheckResult(
@@ -389,15 +480,46 @@ class RegulatoryWatcher:
                 fetched_at=fetched_at,
                 content_hash=content_hash,
                 previous_hash=previous_hash,
+                snapshot_id=snapshot_id,
+                snapshot_chain_hash=snapshot_chain_hash,
             )
 
-        change_id = self.store.save_change(
+        # Local import avoids a module cycle because regulatory_authority uses the
+        # SourceDefinition contract declared above.
+        from .regulatory_authority import assess_regulatory_authority, assessment_dict
+
+        authority = assess_regulatory_authority(
+            source,
+            document_url=str(source.url),
+            text=normalized,
+        )
+        authority_payload = assessment_dict(authority)
+        change_id, detected_at = self.store.save_change(
             source=source,
             old_hash=previous_hash,
             new_hash=content_hash,
             diff_excerpt=diff_text,
             relevance_hits=relevance_hits,
+            authority_assessment=authority_payload,
         )
+        change_lineage = self.lineage.append(
+            record_type="change",
+            record_id=change_id,
+            source_id=source.id,
+            content_hash=content_hash,
+            metadata={
+                "origin": "regulatory_watcher",
+                "old_hash": previous_hash,
+                "source_role": source.role,
+                "relevance_hits": relevance_hits,
+                "requires_binding_verification": True,
+                "authority_level": authority.authority_level,
+                "authority_fingerprint": authority.assessment_fingerprint,
+                "snapshot_chain_hash": snapshot_chain_hash,
+            },
+            created_at=detected_at,
+        )
+        self.store.set_change_lineage_hash(change_id, change_lineage.chain_hash)
         return SourceCheckResult(
             source_id=source.id,
             source_name=source.name,
@@ -406,6 +528,11 @@ class RegulatoryWatcher:
             content_hash=content_hash,
             previous_hash=previous_hash,
             change_id=change_id,
+            snapshot_id=snapshot_id,
+            snapshot_chain_hash=snapshot_chain_hash,
+            change_chain_hash=change_lineage.chain_hash,
+            authority_level=authority.authority_level,
+            authority_fingerprint=authority.assessment_fingerprint,
             relevance_hits=relevance_hits,
         )
 
@@ -480,6 +607,11 @@ def list_changes(
     limit: int = Query(default=100, ge=1, le=500),
 ):
     return watcher.store.list_changes(status, limit)
+
+
+@router.get("/lineage/{source_id}")
+def verify_source_lineage(source_id: str):
+    return watcher.lineage.verify_source_chain(source_id)
 
 
 @router.post("/changes/{change_id}/{decision}")

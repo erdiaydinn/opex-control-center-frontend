@@ -13,11 +13,16 @@ class KpiDefinition:
     review_state: KpiReviewState
     source_table: str | None
     value_semantics: str
+    schema_contract_id: str | None = None
     blocked_reason: str | None = None
 
     @property
     def executable(self) -> bool:
-        return self.review_state == "reviewed" and bool(self.query_id)
+        return (
+            self.review_state == "reviewed"
+            and bool(self.query_id)
+            and bool(self.schema_contract_id)
+        )
 
 
 # This registry is intentionally conservative. A metric is executable only after its
@@ -30,6 +35,7 @@ KPI_REGISTRY: dict[str, KpiDefinition] = {
         review_state="reviewed",
         source_table="curated_data_shared_coredata_business.orders",
         value_semantics="COUNT(DISTINCT order_id) grouped by local date and vendor/store",
+        schema_contract_id="ops.orders.v1",
     ),
     "cancel_rate": KpiDefinition(
         metric="cancel_rate",

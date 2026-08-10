@@ -1,15 +1,19 @@
-from app.regulatory import SourceDefinition
 from app.regulatory_authority import assess_regulatory_authority
 
 
-def source(role, url="https://www.tarimorman.gov.tr/GKGM/"):
-    return SourceDefinition(id="src-1", name="Official Source", url=url, role=role)
+def assess(role, *, url, text):
+    return assess_regulatory_authority(
+        source_id="src-1",
+        source_role=role,
+        document_url=url,
+        text=text,
+    )
 
 
 def test_gkgm_draft_never_becomes_binding():
-    assessment = assess_regulatory_authority(
-        source("discovery"),
-        document_url="https://www.tarimorman.gov.tr/GKGM/Duyuru/684/example",
+    assessment = assess(
+        "discovery",
+        url="https://www.tarimorman.gov.tr/GKGM/Duyuru/684/example",
         text="Mevzuat Taslağı - Türk Gıda Kodeksi Tebliği Taslağı. Görüş bildirme tarihi 04.05.2026.",
     )
     assert assessment.document_kind == "draft"
@@ -19,9 +23,9 @@ def test_gkgm_draft_never_becomes_binding():
 
 
 def test_ministry_announcement_of_resmi_gazete_publication_is_still_not_binding_text():
-    assessment = assess_regulatory_authority(
-        source("discovery"),
-        document_url="https://www.tarimorman.gov.tr/GKGM/Haber/1317/example",
+    assessment = assess(
+        "discovery",
+        url="https://www.tarimorman.gov.tr/GKGM/Haber/1317/example",
         text="Türk Gıda Kodeksi Yeni Gıdalar Yönetmeliği Resmî Gazete'de yayımlandı ve yürürlüğe girdi.",
     )
     assert assessment.document_kind == "announcement"
@@ -30,9 +34,9 @@ def test_ministry_announcement_of_resmi_gazete_publication_is_still_not_binding_
 
 
 def test_registry_entry_requires_exact_instrument_resolution():
-    assessment = assess_regulatory_authority(
-        source("official_registry", "https://kms.kaysis.gov.tr/Home/Kurum/24308110"),
-        document_url="https://kms.kaysis.gov.tr/Home/Kurum/24308110",
+    assessment = assess(
+        "official_registry",
+        url="https://kms.kaysis.gov.tr/Home/Kurum/24308110",
         text="Türk Gıda Kodeksi Yönetmelikleri ve Tebliğleri",
     )
     assert assessment.document_kind == "registry_entry"
@@ -40,9 +44,9 @@ def test_registry_entry_requires_exact_instrument_resolution():
 
 
 def test_resmi_gazete_homepage_is_only_discovery_signal():
-    assessment = assess_regulatory_authority(
-        source("binding_publication_index", "https://www.resmigazete.gov.tr/"),
-        document_url="https://www.resmigazete.gov.tr/",
+    assessment = assess(
+        "binding_publication_index",
+        url="https://www.resmigazete.gov.tr/",
         text="T.C. Resmî Gazete günlük fihrist yönetmelikler tebliğler",
     )
     assert assessment.document_kind == "announcement"
@@ -50,9 +54,9 @@ def test_resmi_gazete_homepage_is_only_discovery_signal():
 
 
 def test_exact_resmi_gazete_like_text_is_candidate_but_still_requires_verification():
-    assessment = assess_regulatory_authority(
-        source("binding_publication_index", "https://www.resmigazete.gov.tr/"),
-        document_url="https://www.resmigazete.gov.tr/eskiler/2026/05/20260520-1.htm",
+    assessment = assess(
+        "binding_publication_index",
+        url="https://www.resmigazete.gov.tr/eskiler/2026/05/20260520-1.htm",
         text="20 Mayıs 2026 Resmî Gazete Sayı : 33259 MADDE 1 Amaç ve kapsam ... MADDE 2 Dayanak ...",
     )
     assert assessment.document_kind == "binding_instrument_candidate"
@@ -62,9 +66,9 @@ def test_exact_resmi_gazete_like_text_is_candidate_but_still_requires_verificati
 
 
 def test_guidance_cannot_override_binding_layer():
-    assessment = assess_regulatory_authority(
-        source("guidance", "https://guvenilirgida.tarimorman.gov.tr/"),
-        document_url="https://guvenilirgida.tarimorman.gov.tr/example",
+    assessment = assess(
+        "guidance",
+        url="https://guvenilirgida.tarimorman.gov.tr/example",
         text="Gıda etiketleme rehberi ve tüketici kılavuzu",
     )
     assert assessment.document_kind == "guidance"

@@ -8,6 +8,7 @@ from .kpi_activation_gate import (
     verify_rate_kpi_activation,
 )
 from .kpi_aggregation_contracts import WeightedAverageContract
+from .kpi_provenance import provenance_from_activation
 from .kpi_unit_contracts import DurationContract, RateContract
 
 
@@ -25,6 +26,23 @@ RATE_RUNTIME_CONTRACTS: dict[str, RateContract] = {}
 
 DURATION_RUNTIME_METRICS = frozenset({"prep", "picking"})
 RATE_RUNTIME_METRICS = frozenset({"otp"})
+
+
+def _with_provenance(
+    *,
+    metric: str,
+    bundle: object,
+    semantic_verification: Mapping[str, object],
+    schema_verification: Mapping[str, object],
+) -> dict[str, object]:
+    result = asdict(bundle)
+    result["activation_provenance_fingerprint"] = provenance_from_activation(
+        metric=metric,
+        semantic_verification=semantic_verification,
+        schema_verification=schema_verification,
+        runtime_activation=result,
+    )
+    return result
 
 
 def verify_kpi_runtime_activation(
@@ -51,7 +69,12 @@ def verify_kpi_runtime_activation(
             unit_contract=runtime.unit,
             aggregation_contract=runtime.aggregation,
         )
-        return asdict(bundle)
+        return _with_provenance(
+            metric=metric,
+            bundle=bundle,
+            semantic_verification=semantic_verification,
+            schema_verification=schema_verification,
+        )
 
     if metric in RATE_RUNTIME_METRICS:
         contract = RATE_RUNTIME_CONTRACTS.get(metric)
@@ -63,6 +86,11 @@ def verify_kpi_runtime_activation(
             schema_verification=schema_verification,
             rate_contract=contract,
         )
-        return asdict(bundle)
+        return _with_provenance(
+            metric=metric,
+            bundle=bundle,
+            semantic_verification=semantic_verification,
+            schema_verification=schema_verification,
+        )
 
     return None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -46,13 +47,15 @@ def prepare_execution(payload: TemplateToolExecutionRequest) -> tuple[ExecuteReq
     if missing:
         raise PermissionError(f"missing_required_scope:{','.join(missing)}")
     sql, parameters = compile_tool_plan(plan)
+    contract_limit = int(plan.arguments.get("limit", payload.max_rows))
+    effective_max_rows = min(payload.max_rows, contract_limit)
     request = ExecuteRequest(
         tool=plan.tool,
         sql=sql,
         parameters=parameters,
         requested_by=payload.requested_by,
         reason=payload.reason,
-        max_rows=payload.max_rows,
+        max_rows=effective_max_rows,
         maximum_bytes_billed=payload.maximum_bytes_billed,
         timeout_ms=payload.timeout_ms,
     )
@@ -77,6 +80,45 @@ def execute_with_adapter(
     )
 
 
+class TemplateBigQueryAdapter(GoogleBigQueryAdapter):
+    """BigQuery adapter for vetted templates, including named ARRAY parameters."""
+
+    @staticmethod
+    def _scalar_type(value: Any) -> str:
+        if isinstance(value, bool):
+            return "BOOL"
+        if isinstance(value, int):
+            return "INT64"
+        if isinstance(value, float):
+            return "FLOAT64"
+        if isinstance(value, datetime):
+            return "TIMESTAMP"
+        if isinstance(value, date):
+            return "DATE"
+        if isinstance(value, str):
+            return "STRING"
+        raise ValueError("unsupported_query_parameter_type")
+
+    def _parameters(self, values: dict[str, Any]):
+        params = []
+        for name, value in values.items():
+            if isinstance(value, list):
+                if not value:
+                    array_type = "STRING"
+                else:
+                    array_type = self._scalar_type(value[0])
+                    if any(self._scalar_type(item) != array_type for item in value):
+                        raise ValueError(f"mixed_array_parameter_types:{name}")
+                params.append(self.bigquery.ArrayQueryParameter(name, array_type, value))
+                continue
+            if value is None:
+                raise ValueError(f"null_query_parameter_not_allowed:{name}")
+            params.append(
+                self.bigquery.ScalarQueryParameter(name, self._scalar_type(value), value)
+            )
+        return params
+
+
 router = APIRouter(prefix="/v1/tool-execution", tags=["tool-execution"])
 
 
@@ -86,7 +128,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
         raise HTTPException(status_code=409, detail="BigQuery execution is disabled by default")
     try:
         request, query_id, required_scope = prepare_execution(payload)
-        adapter = GoogleBigQueryAdapter()
+        adapter = TemplateBigQueryAdapter()
         audit_store = ExecutionAuditStore(
             __import__("pathlib").Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
         )

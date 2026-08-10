@@ -1,8 +1,10 @@
 import pytest
 
 from app.kpi_result_validation import (
+    KPI_RESULT_CONTRACTS,
     KpiResultValidationError,
     ResultValidatingAdapter,
+    get_result_contract_fingerprint,
     validate_kpi_result,
 )
 
@@ -55,3 +57,12 @@ def test_result_validating_adapter_blocks_bad_rows_before_return():
 
 def test_unregistered_metric_has_no_result_contract_side_effect():
     validate_kpi_result("orders", [{"orders": 5}])
+
+
+def test_result_contract_fingerprint_is_deterministic_and_metric_bound():
+    nsfr = get_result_contract_fingerprint("nsfr")
+    refund = get_result_contract_fingerprint("refund")
+    assert nsfr is not None and len(nsfr) == 64
+    assert nsfr == KPI_RESULT_CONTRACTS["nsfr"].fingerprint
+    assert nsfr != refund
+    assert get_result_contract_fingerprint("orders") is None

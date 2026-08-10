@@ -32,6 +32,7 @@ The BigQuery path is fail closed:
 - KPI schema contracts expose deterministic SHA-256 fingerprints over only the required columns. Additive unrelated columns do not break execution, while a missing required column or required-column type drift blocks the query before dry-run.
 - If schema introspection is unavailable, KPI execution fails closed rather than trusting a stale contract.
 - Successful KPI tool results return both semantic and schema verification fingerprints so the calculation meaning and data shape are auditable together.
+- The execution audit persists semantic contract ID/fingerprint and schema contract ID/fingerprint alongside SQL SHA-256, cost limit, timeout, requester and reason. Existing SQLite audit databases are migrated additively; production actions remain reversible and provenance-preserving.
 - Regulatory-impact callers provide only `instrument_id` + `as_of`; free-text impact topics are forbidden. The executor resolves search topics deterministically from the verified, effective instrument and its effective normalized legal requirements, then returns source/citation grounding with the result.
 - Draft, superseded, expired, future-effective or topic-less legal evidence cannot drive a regulatory-impact catalog query.
 - SELECT/WITH only, single statement only, dataset allow-list, and bounded result rows.
@@ -39,7 +40,6 @@ The BigQuery path is fail closed:
 - Dry-run cost estimate occurs before execution.
 - Maximum bytes billed and timeout policies are enforced.
 - Sensitive result-column masking is applied before rows leave the executor.
-- Execution audit records preserve SQL SHA-256 without storing model-authored executable SQL.
 - Runtime execution is disabled unless the deployment explicitly enables the trusted BigQuery adapter.
 
 Google BigQuery's official Python client supports named scalar/array parameters, dry-run queries, `maximum_bytes_billed` and `job_timeout_ms`; the EAY adapter maps the template contract to those controls.

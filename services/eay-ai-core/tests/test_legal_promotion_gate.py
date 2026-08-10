@@ -8,7 +8,7 @@ from app.regulatory_authority import assess_regulatory_authority
 
 def _assessment():
     source = SourceDefinition(
-        id="rg",
+        id="rg-source",
         name="Resmi Gazete",
         url="https://www.resmigazete.gov.tr/",
         role="binding_publication_index",

@@ -70,14 +70,13 @@ def validate_read_only_sql(sql: str) -> None:
         raise ValueError("empty_sql")
     if ";" in normalized.rstrip(";"):
         raise ValueError("multiple_statements_not_allowed")
-    if not re.match(r"^(?:WITH\b|SELECT\b)", normalized, flags=re.IGNORECASE):
-        raise ValueError("only_select_or_with_queries_allowed")
     if FORBIDDEN_SQL.search(normalized):
         raise ValueError("mutating_or_privileged_sql_not_allowed")
+    if not re.match(r"^(?:WITH\b|SELECT\b)", normalized, flags=re.IGNORECASE):
+        raise ValueError("only_select_or_with_queries_allowed")
 
     refs = TABLE_REF.findall(normalized)
     for ref in refs:
-        # Project-qualified references are accepted if their dataset portion is allow-listed.
         pieces = ref.split(".")
         dataset_table = ".".join(pieces[-2:]) if len(pieces) >= 2 else ref
         if not any(dataset_table.startswith(prefix) for prefix in ALLOWED_DATASET_PREFIXES):
@@ -86,7 +85,6 @@ def validate_read_only_sql(sql: str) -> None:
 
 def bounded_sql(sql: str, max_rows: int) -> str:
     normalized = sql.strip().rstrip(";")
-    # Outer wrapper enforces a hard result cap without rewriting the user's query body.
     return f"SELECT * FROM ({normalized}) AS eay_safe_query LIMIT {int(max_rows)}"
 
 

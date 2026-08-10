@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from app.bigquery_safe_executor import ExecutionAuditStore
@@ -54,7 +56,8 @@ def test_semantic_contract_rejects_metric_binding_mismatch():
         verify_semantic_contract(metric="refund", contract_id="ops.orders.semantic.v1")
 
 
-def test_orders_execution_returns_both_semantic_and_schema_fingerprints(tmp_path):
+def test_orders_execution_returns_and_audits_both_contract_fingerprints(tmp_path):
+    db = tmp_path / "eay.db"
     payload = TemplateToolExecutionRequest(
         tool="ops_kpi_query",
         arguments={
@@ -72,10 +75,25 @@ def test_orders_execution_returns_both_semantic_and_schema_fingerprints(tmp_path
     result = execute_with_adapter(
         payload,
         adapter=adapter,
-        audit_store=ExecutionAuditStore(tmp_path / "eay.db"),
+        audit_store=ExecutionAuditStore(db),
     )
     assert result.semantic_verification["reviewed"] is True
     assert len(result.semantic_verification["fingerprint"]) == 64
     assert result.schema_verification["verified"] is True
     assert len(result.schema_verification["expected_fingerprint"]) == 64
     assert adapter.dry_run_called is True
+
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            """
+            SELECT semantic_contract_id, semantic_fingerprint,
+                   schema_contract_id, schema_fingerprint
+            FROM bigquery_execution_audit
+            WHERE id = ?
+            """,
+            (result.execution.execution_id,),
+        ).fetchone()
+    assert row[0] == "ops.orders.semantic.v1"
+    assert row[1] == result.semantic_verification["fingerprint"]
+    assert row[2] == "ops.orders.v1"
+    assert row[3] == result.schema_verification["observed_fingerprint"]

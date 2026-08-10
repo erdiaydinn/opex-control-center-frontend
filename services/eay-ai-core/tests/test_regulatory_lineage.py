@@ -86,6 +86,29 @@ def test_chain_verifier_detects_tampering(tmp_path):
     assert result["broken_record_id"] == "s1"
 
 
+def test_append_with_connection_obeys_caller_rollback(tmp_path):
+    db = tmp_path / "eay.db"
+    store = RegulatoryLineageStore(db)
+    conn = store._connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        RegulatoryLineageStore.append_with_connection(
+            conn,
+            record_type="snapshot",
+            record_id="rollback-snapshot",
+            source_id="tr-gkgm-home",
+            content_hash="c" * 64,
+            metadata={"origin": "watcher-transaction"},
+            created_at="2026-08-10T10:10:00+00:00",
+        )
+        conn.rollback()
+    finally:
+        conn.close()
+
+    assert store.get("snapshot", "rollback-snapshot") is None
+    assert store.verify_source_chain("tr-gkgm-home")["record_count"] == 0
+
+
 def test_existing_watcher_rows_backfill_idempotently(tmp_path):
     db = tmp_path / "eay.db"
     with sqlite3.connect(db) as conn:

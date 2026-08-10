@@ -66,6 +66,8 @@ def compile_tool_plan(plan: ToolPlan) -> tuple[str, dict[str, Any]]:
     validate_read_only_sql(template.sql)
     args = plan.arguments
     if plan.query_id == "ops.kpi.v1":
+        if args["metric"] != "orders":
+            raise ValueError(f"metric_template_not_implemented:{args['metric']}")
         params = {
             "start_date": args["start_date"],
             "end_date": args["end_date"],
@@ -73,10 +75,18 @@ def compile_tool_plan(plan: ToolPlan) -> tuple[str, dict[str, Any]]:
             "stores_empty": not bool(args.get("stores")),
         }
     elif plan.query_id == "catalog.lookup.v1":
+        if args["field"] != "product":
+            raise ValueError(f"catalog_field_template_not_implemented:{args['field']}")
         params = {"query": args["query"], "limit": args["limit"]}
     elif plan.query_id == "regulatory.impact.v1":
-        # Instrument text/topic resolution stays outside SQL; caller must supply a reviewed topic.
-        topic = args.get("topic") or args["instrument_id"]
+        topic = (args.get("topic") or "").strip()
+        if not topic:
+            raise ValueError("reviewed_regulatory_topic_required")
+        unsupported_entities = set(args.get("entities", [])) - {"sku", "category", "supplier"}
+        if unsupported_entities:
+            raise ValueError(
+                "impact_entity_template_not_implemented:" + ",".join(sorted(unsupported_entities))
+            )
         params = {"topic": topic, "limit": args["limit"]}
     else:
         raise ValueError("unsupported_query_template")

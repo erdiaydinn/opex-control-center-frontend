@@ -150,3 +150,21 @@ def test_execution_audit_persists_policy_and_formula_contract_fingerprints(tmp_p
         ).fetchone()
 
     assert row == (policy, formula)
+
+
+def test_execution_audit_persists_result_contract_fingerprint(tmp_path):
+    db = tmp_path / "audit.db"
+    result_contract = "d" * 64
+    executor = SafeBigQueryExecutor(FakeAdapter(dry_bytes=50), ExecutionAuditStore(db))
+    result = executor.run(
+        payload(result_contract_fingerprint=result_contract),
+        execute=False,
+    )
+
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            "SELECT result_contract_fingerprint FROM bigquery_execution_audit WHERE id = ?",
+            (result.execution_id,),
+        ).fetchone()
+
+    assert row == (result_contract,)

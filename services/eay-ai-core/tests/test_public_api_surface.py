@@ -2,11 +2,7 @@ from app.entrypoint import app
 
 
 def _paths() -> set[str]:
-    return {
-        path
-        for route in app.routes
-        if (path := getattr(route, "path", None)) is not None
-    }
+    return set(app.openapi().get("paths", {}))
 
 
 def test_governed_tool_execution_is_public_but_raw_bigquery_executor_is_not():

@@ -65,4 +65,60 @@ def test_result_contract_fingerprint_is_deterministic_and_metric_bound():
     assert nsfr is not None and len(nsfr) == 64
     assert nsfr == KPI_RESULT_CONTRACTS["nsfr"].fingerprint
     assert nsfr != refund
+    assert KPI_RESULT_CONTRACTS["nsfr"].version == "2"
     assert get_result_contract_fingerprint("orders") is None
+
+
+def test_nsfr_family_reconciles_returned_rates_exactly_at_six_decimals():
+    row = dict(VALID_ROW)
+    row.update(
+        pfr_rate_percent="3.000000",
+        refund_rate_percent="2.000000",
+        compensation_rate_percent="1.000000",
+        nsfr_rate_percent="6.000000",
+    )
+    validate_kpi_result("nsfr", [row])
+
+
+def test_nsfr_family_rejects_rate_denominator_drift_without_tolerance():
+    row = dict(VALID_ROW)
+    row["nsfr_rate_percent"] = "6.000001"
+    with pytest.raises(KpiResultValidationError, match="rate_reconciliation_mismatch"):
+        validate_kpi_result("nsfr", [row])
+
+
+def test_nsfr_family_rejects_excess_rate_precision():
+    row = dict(VALID_ROW)
+    row["refund_rate_percent"] = "2.0000001"
+    with pytest.raises(KpiResultValidationError, match="rate_precision_exceeded"):
+        validate_kpi_result("refund", [row])
+
+
+def test_nsfr_family_reconciles_repeating_decimal_with_half_up_precision():
+    row = {
+        "successful_orders": 3,
+        "pfr_orders": 1,
+        "refund_orders": 0,
+        "compensation_orders": 0,
+        "nsfr_orders": 1,
+        "pfr_rate_percent": "33.333333",
+        "nsfr_rate_percent": "33.333333",
+    }
+    validate_kpi_result("pfr", [row])
+
+
+def test_zero_denominator_requires_zero_returned_rates():
+    row = {
+        "successful_orders": 0,
+        "pfr_orders": 0,
+        "refund_orders": 0,
+        "compensation_orders": 0,
+        "nsfr_orders": 0,
+        "nsfr_rate_percent": "0.000000",
+    }
+    validate_kpi_result("nsfr", [row])
+
+    bad = dict(row)
+    bad["nsfr_rate_percent"] = "0.000001"
+    with pytest.raises(KpiResultValidationError, match="rate_reconciliation_mismatch"):
+        validate_kpi_result("nsfr", [bad])

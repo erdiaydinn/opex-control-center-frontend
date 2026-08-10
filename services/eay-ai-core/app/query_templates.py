@@ -15,8 +15,8 @@ class QueryTemplate:
 
 
 TEMPLATES: dict[str, QueryTemplate] = {
-    "ops.kpi.v1": QueryTemplate(
-        query_id="ops.kpi.v1",
+    "ops.kpi.orders.v1": QueryTemplate(
+        query_id="ops.kpi.orders.v1",
         sql="""
 SELECT
   DATE(partition_date_local) AS date,
@@ -70,9 +70,9 @@ def compile_tool_plan(plan: ToolPlan) -> tuple[str, dict[str, Any]]:
         raise ValueError("unknown_query_template")
     validate_read_only_sql(template.sql)
     args = plan.arguments
-    if plan.query_id == "ops.kpi.v1":
+    if plan.query_id == "ops.kpi.orders.v1":
         if args["metric"] != "orders":
-            raise ValueError(f"metric_template_not_implemented:{args['metric']}")
+            raise ValueError(f"metric_template_mismatch:{args['metric']}:{plan.query_id}")
         params = {
             "start_date": args["start_date"],
             "end_date": args["end_date"],

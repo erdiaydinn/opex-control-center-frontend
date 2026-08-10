@@ -37,6 +37,7 @@ class ExecuteRequest(ToolCallRequest):
     schema_evidence_fingerprint: str | None = Field(default=None, max_length=64)
     unit_contract_fingerprint: str | None = Field(default=None, max_length=64)
     aggregation_contract_fingerprint: str | None = Field(default=None, max_length=64)
+    activation_provenance_fingerprint: str | None = Field(default=None, max_length=64)
 
 
 class ExecutionResult(BaseModel):
@@ -107,6 +108,7 @@ class ExecutionAuditStore:
                     schema_evidence_fingerprint TEXT,
                     unit_contract_fingerprint TEXT,
                     aggregation_contract_fingerprint TEXT,
+                    activation_provenance_fingerprint TEXT,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -120,6 +122,7 @@ class ExecutionAuditStore:
                 "schema_evidence_fingerprint",
                 "unit_contract_fingerprint",
                 "aggregation_contract_fingerprint",
+                "activation_provenance_fingerprint",
             ):
                 if name not in existing:
                     conn.execute(f"ALTER TABLE bigquery_execution_audit ADD COLUMN {name} TEXT")
@@ -136,8 +139,8 @@ class ExecutionAuditStore:
                     semantic_contract_id, semantic_fingerprint,
                     schema_contract_id, schema_fingerprint, schema_evidence_fingerprint,
                     unit_contract_fingerprint, aggregation_contract_fingerprint,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    activation_provenance_fingerprint, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     execution_id, payload.tool, digest, dry_run_bytes,
@@ -148,6 +151,7 @@ class ExecutionAuditStore:
                     payload.schema_evidence_fingerprint,
                     payload.unit_contract_fingerprint,
                     payload.aggregation_contract_fingerprint,
+                    payload.activation_provenance_fingerprint,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )

@@ -107,3 +107,21 @@ def test_execution_audit_persists_unit_and_aggregation_contract_fingerprints(tmp
         ).fetchone()
 
     assert row == (unit_contract.fingerprint, aggregation_contract.fingerprint)
+
+
+def test_execution_audit_persists_combined_activation_provenance(tmp_path):
+    db = tmp_path / "audit.db"
+    fingerprint = "a" * 64
+    executor = SafeBigQueryExecutor(FakeAdapter(dry_bytes=50), ExecutionAuditStore(db))
+    result = executor.run(
+        payload(activation_provenance_fingerprint=fingerprint),
+        execute=False,
+    )
+
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            "SELECT activation_provenance_fingerprint FROM bigquery_execution_audit WHERE id = ?",
+            (result.execution_id,),
+        ).fetchone()
+
+    assert row == (fingerprint,)

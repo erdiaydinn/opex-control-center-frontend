@@ -9,16 +9,30 @@ def test_ops_plan_never_allows_model_sql():
     plan = build_tool_plan(
         "ops_kpi_query",
         {
-            "metric": "nsfr",
+            "metric": "orders",
             "start_date": "2026-08-01",
             "end_date": "2026-08-10",
             "stores": ["Fulya"],
             "limit": 20,
         },
     )
-    assert plan.query_id == "ops.kpi.v1"
+    assert plan.query_id == "ops.kpi.orders.v1"
     assert plan.model_authored_sql_allowed is False
     assert plan.required_scope == ["ops:read"]
+
+
+def test_ops_plan_rejects_metric_without_reviewed_schema_contract():
+    with pytest.raises(ValueError, match="metric_template_not_implemented:nsfr"):
+        build_tool_plan(
+            "ops_kpi_query",
+            {
+                "metric": "nsfr",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-10",
+                "stores": ["Fulya"],
+                "limit": 20,
+            },
+        )
 
 
 def test_ops_plan_rejects_unbounded_date_window():

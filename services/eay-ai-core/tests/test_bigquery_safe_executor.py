@@ -1,4 +1,8 @@
+import sqlite3
+
 from app.bigquery_safe_executor import ExecuteRequest, ExecutionAuditStore, SafeBigQueryExecutor, mask_sensitive_rows
+from app.kpi_aggregation_contracts import WeightedAverageContract
+from app.kpi_unit_contracts import DurationContract, RateContract
 
 
 class FakeAdapter:
@@ -59,3 +63,47 @@ def test_execution_masks_sensitive_columns(tmp_path):
 
 def test_masking_handles_short_values():
     assert mask_sensitive_rows([{"phone": "123"}])[0]["phone"] == "***"
+
+
+def test_unit_contract_fingerprints_are_deterministic_and_semantic():
+    minutes = DurationContract(metric="picking", source_unit="minutes")
+    seconds = DurationContract(metric="picking", source_unit="seconds")
+    fraction = RateContract(metric="late_prep", source_scale="fraction")
+    percent = RateContract(metric="late_prep", source_scale="percent")
+
+    assert len(minutes.fingerprint) == 64
+    assert minutes.fingerprint == DurationContract(metric="picking", source_unit="minutes").fingerprint
+    assert minutes.fingerprint != seconds.fingerprint
+    assert fraction.fingerprint != percent.fingerprint
+
+
+def test_execution_audit_persists_unit_and_aggregation_contract_fingerprints(tmp_path):
+    db = tmp_path / "audit.db"
+    unit_contract = DurationContract(metric="picking", source_unit="minutes")
+    aggregation_contract = WeightedAverageContract(
+        metric="picking",
+        source_grain="picker_day",
+        value_field="picking_time_min",
+        weight_field="eligible_orders",
+        output_unit="seconds_per_order",
+    )
+    executor = SafeBigQueryExecutor(FakeAdapter(dry_bytes=50), ExecutionAuditStore(db))
+    result = executor.run(
+        payload(
+            unit_contract_fingerprint=unit_contract.fingerprint,
+            aggregation_contract_fingerprint=aggregation_contract.fingerprint,
+        ),
+        execute=False,
+    )
+
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            """
+            SELECT unit_contract_fingerprint, aggregation_contract_fingerprint
+            FROM bigquery_execution_audit
+            WHERE id = ?
+            """,
+            (result.execution_id,),
+        ).fetchone()
+
+    assert row == (unit_contract.fingerprint, aggregation_contract.fingerprint)

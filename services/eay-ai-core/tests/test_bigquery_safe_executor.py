@@ -125,3 +125,28 @@ def test_execution_audit_persists_combined_activation_provenance(tmp_path):
         ).fetchone()
 
     assert row == (fingerprint,)
+
+
+def test_execution_audit_persists_policy_and_formula_contract_fingerprints(tmp_path):
+    db = tmp_path / "audit.db"
+    policy = "b" * 64
+    formula = "c" * 64
+    executor = SafeBigQueryExecutor(FakeAdapter(dry_bytes=50), ExecutionAuditStore(db))
+    result = executor.run(
+        payload(
+            policy_contract_fingerprint=policy,
+            formula_contract_fingerprint=formula,
+        ),
+        execute=False,
+    )
+
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            """
+            SELECT policy_contract_fingerprint, formula_contract_fingerprint
+            FROM bigquery_execution_audit WHERE id = ?
+            """,
+            (result.execution_id,),
+        ).fetchone()
+
+    assert row == (policy, formula)

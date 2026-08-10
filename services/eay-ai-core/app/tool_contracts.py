@@ -6,6 +6,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .kpi_registry import require_executable_kpi
+
 ToolName = Literal["ops_kpi_query", "regulatory_impact_query", "catalog_query"]
 OpsMetric = Literal["orders", "cancel_rate", "nsfr", "pfr", "refund", "prep", "picking", "putaway", "otp", "defect"]
 ImpactEntity = Literal["sku", "category", "store", "supplier"]
@@ -55,7 +57,6 @@ class ToolPlan(BaseModel):
 
 
 QUERY_IDS = {
-    "ops_kpi_query": "ops.kpi.v1",
     "catalog_query": "catalog.lookup.v1",
     "regulatory_impact_query": "regulatory.impact.v1",
 }
@@ -70,15 +71,21 @@ SCOPES = {
 def build_tool_plan(tool: ToolName, arguments: dict) -> ToolPlan:
     if tool == "ops_kpi_query":
         parsed = OpsKpiArgs(**arguments)
+        kpi = require_executable_kpi(parsed.metric)
+        query_id = kpi.query_id
+        if query_id is None:
+            raise ValueError(f"metric_template_not_implemented:{parsed.metric}")
     elif tool == "catalog_query":
         parsed = CatalogArgs(**arguments)
+        query_id = QUERY_IDS[tool]
     elif tool == "regulatory_impact_query":
         parsed = RegulatoryImpactArgs(**arguments)
+        query_id = QUERY_IDS[tool]
     else:
         raise ValueError("unsupported_tool")
     return ToolPlan(
         tool=tool,
-        query_id=QUERY_IDS[tool],
+        query_id=query_id,
         required_scope=SCOPES[tool],
         arguments=parsed.model_dump(mode="json"),
         read_only=True,

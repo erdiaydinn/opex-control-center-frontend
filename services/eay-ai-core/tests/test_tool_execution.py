@@ -1,9 +1,12 @@
-from pathlib import Path
-
 import pytest
 
 from app.bigquery_safe_executor import ExecutionAuditStore
-from app.tool_execution import TemplateToolExecutionRequest, execute_with_adapter, prepare_execution
+from app.tool_execution import (
+    TemplateBigQueryAdapter,
+    TemplateToolExecutionRequest,
+    execute_with_adapter,
+    prepare_execution,
+)
 
 
 class FakeAdapter:
@@ -22,6 +25,20 @@ class FakeAdapter:
         self.last_sql = sql
         self.last_parameters = parameters
         return self.rows
+
+
+class FakeBQ:
+    class ArrayQueryParameter:
+        def __init__(self, name, type_name, value):
+            self.name = name
+            self.type_name = type_name
+            self.value = value
+
+    class ScalarQueryParameter:
+        def __init__(self, name, type_name, value):
+            self.name = name
+            self.type_name = type_name
+            self.value = value
 
 
 def test_template_execution_rejects_missing_scope(tmp_path):
@@ -69,3 +86,45 @@ def test_template_execution_runs_bounded_query_and_audits(tmp_path):
     assert result.execution.status == "executed"
     assert "LIMIT 2" in adapter.last_sql
     assert result.execution.rows[0]["email"] != "user@example.com"
+
+
+def test_tool_semantics_fail_closed_when_template_not_implemented():
+    payload = TemplateToolExecutionRequest(
+        tool="ops_kpi_query",
+        arguments={
+            "metric": "nsfr",
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-10",
+            "stores": [],
+            "limit": 20,
+        },
+        granted_scopes=["ops:read"],
+        reason="nsfr review",
+    )
+    with pytest.raises(ValueError, match="metric_template_not_implemented"):
+        prepare_execution(payload)
+
+
+def test_regulatory_impact_requires_reviewed_topic():
+    payload = TemplateToolExecutionRequest(
+        tool="regulatory_impact_query",
+        arguments={
+            "instrument_id": "tgk-1",
+            "as_of": "2026-08-10",
+            "entities": ["sku"],
+            "limit": 20,
+        },
+        granted_scopes=["legal:read", "catalog:read"],
+        reason="impact review",
+    )
+    with pytest.raises(ValueError, match="reviewed_regulatory_topic_required"):
+        prepare_execution(payload)
+
+
+def test_template_bigquery_adapter_encodes_array_parameter_without_network():
+    adapter = TemplateBigQueryAdapter.__new__(TemplateBigQueryAdapter)
+    adapter.bigquery = FakeBQ
+    params = adapter._parameters({"stores": ["Fulya", "Dicle"], "stores_empty": False})
+    assert params[0].type_name == "STRING"
+    assert params[0].value == ["Fulya", "Dicle"]
+    assert params[1].type_name == "BOOL"

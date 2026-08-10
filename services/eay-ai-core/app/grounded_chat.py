@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .legal_engine import LegalEngine
+from .legal_interaction_audit import LegalInteractionAuditStore
 from .legal_temporal import LegalTemporalResolver, LegalTemporalState
 from .main import (
     ANSWER_SCHEMA,
@@ -27,6 +28,7 @@ from .main import (
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 legal_engine = LegalEngine(DB_PATH)
 temporal_resolver = LegalTemporalResolver(DB_PATH)
+legal_interaction_audit = LegalInteractionAuditStore(DB_PATH)
 router = APIRouter(prefix="/v1/grounded", tags=["grounded-chat"])
 
 
@@ -49,6 +51,7 @@ class GroundedChatAnswer(BaseModel):
     provenance: list[ProvenanceItem] = Field(default_factory=list)
     conflicts: list[dict] = Field(default_factory=list)
     temporal_resolution_fingerprint: str | None = None
+    legal_audit_fingerprint: str | None = None
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -277,6 +280,18 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         evidence=evidence,
         confidence=answer.confidence,
     )
+
+    legal_audit_fingerprint: str | None = None
+    if temporal_state is not None:
+        audit = legal_interaction_audit.record(
+            interaction_id=interaction_id,
+            as_of=request.as_of.isoformat(),
+            temporal_resolution_fingerprint=temporal_state.resolution_fingerprint,
+            active_instrument_ids=temporal_state.active_instrument_ids,
+            evidence_ids=[item.id for item in evidence],
+        )
+        legal_audit_fingerprint = audit.audit_fingerprint
+
     if answer.confidence < settings.low_confidence_threshold:
         store.create_low_confidence_candidate(interaction_id)
 
@@ -296,4 +311,5 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         provenance=provenance,
         conflicts=conflicts,
         temporal_resolution_fingerprint=temporal_fingerprint,
+        legal_audit_fingerprint=legal_audit_fingerprint,
     )

@@ -1,4 +1,4 @@
-# Regulatory authority classification
+# Regulatory authority classification and evidence lineage
 
 EAY treats official Turkish regulatory web surfaces as evidence with different legal authority. Official origin alone does not make every page binding law.
 
@@ -22,6 +22,16 @@ Every assessment has a deterministic SHA-256 fingerprint and always sets `auto_p
 
 A Ministry announcement that says a rule was published in the Resmî Gazete remains a discovery signal until the exact Resmî Gazete instrument is verified. A draft published for public consultation remains non-binding even when published on an official Ministry domain.
 
+## Immutable watcher evidence lineage
+
+`app/regulatory_lineage.py` adds an append-only SHA-256 chain for watcher evidence. Each lineage record stores the immutable record ID/type, source ID, content hash, canonical metadata, previous chain hash for the same source, deterministic chain hash and original timestamp.
+
+The chain is source-scoped: activity on one official source cannot rewrite the provenance history of another source. Registering the exact same record twice is idempotent. Reusing an existing record ID with different content or metadata fails with `immutable_regulatory_lineage_conflict`.
+
+`verify_source_chain()` recomputes the chain and reports the exact first broken record if historical evidence or a parent link has been altered. `import_existing_watcher_rows()` deterministically and idempotently backfills the existing `regulatory_snapshots` and `regulatory_changes` tables while preserving their original timestamps.
+
+A valid lineage proves what EAY observed and in which sequence; it does **not** prove that the observation is binding law. Authority classification, exact-instrument verification, effective-date/version resolution and human approval remain independent gates.
+
 ## Current fixtures
 
-Regression tests include the patterns currently seen on official Turkish food-regulation surfaces: GKGM public-consultation drafts, GKGM publication announcements, KAYSİS registry pages, the Resmî Gazete index, exact Resmî Gazete-like article text, and Ministry guidance. These fixtures test authority behavior rather than copying legal conclusions into model weights.
+Regression tests include GKGM public-consultation drafts, GKGM publication announcements, KAYSİS registry pages, the Resmî Gazete index, exact Resmî Gazete-like article text, Ministry guidance, immutable lineage conflict rejection, tamper detection and watcher-row backfill. These fixtures test authority/provenance behavior rather than copying legal conclusions into model weights.

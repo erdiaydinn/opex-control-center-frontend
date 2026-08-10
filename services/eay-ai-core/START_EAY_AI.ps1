@@ -32,4 +32,6 @@ Write-Host "EAY AI Core:           http://127.0.0.1:8010" -ForegroundColor Green
 Write-Host "Swagger:               http://127.0.0.1:8010/docs" -ForegroundColor Green
 Write-Host "Regulatory sources:    http://127.0.0.1:8010/v1/regulatory/sources" -ForegroundColor Green
 Write-Host "Regulatory check POST: http://127.0.0.1:8010/v1/regulatory/check" -ForegroundColor Green
+Write-Host "Legal instruments:     http://127.0.0.1:8010/v1/legal/instruments" -ForegroundColor Green
+Write-Host "Company-law conflicts: http://127.0.0.1:8010/v1/legal/conflicts" -ForegroundColor Green
 uvicorn app.entrypoint:app --host 127.0.0.1 --port 8010 --reload

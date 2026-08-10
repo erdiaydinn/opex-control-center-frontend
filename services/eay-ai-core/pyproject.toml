@@ -19,6 +19,9 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+bigquery = [
+  "google-cloud-bigquery>=3.42,<4",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

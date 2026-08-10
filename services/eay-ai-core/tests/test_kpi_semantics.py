@@ -39,16 +39,28 @@ def test_orders_semantic_contract_is_reviewed_and_fingerprinted():
     assert result["contract_id"] == "ops.orders.semantic.v1"
 
 
-def test_nsfr_contract_pins_precedence_but_stays_blocked_until_schema_review():
+def test_nsfr_contract_pins_precedence_and_semantics_but_schema_stays_separate():
     definition = get_kpi_definition("nsfr")
     contract = get_semantic_contract(definition.semantic_contract_id)
     assert contract.precedence == (
         "PFR overrides Refund",
         "Refund overrides Compensation",
     )
-    assert contract.review_state == "blocked_pending_schema"
-    with pytest.raises(ValueError, match="kpi_semantic_contract_not_reviewed"):
-        verify_semantic_contract(metric="nsfr", contract_id=definition.semantic_contract_id)
+    assert contract.denominator == "successful_orders"
+    assert contract.review_state == "reviewed"
+    result = verify_semantic_contract(metric="nsfr", contract_id=definition.semantic_contract_id)
+    assert result["reviewed"] is True
+    assert definition.executable is False
+    assert definition.schema_contract_id is None
+
+
+@pytest.mark.parametrize("metric", ["pfr", "refund"])
+def test_nsfr_component_semantics_are_reviewed_without_enabling_execution(metric):
+    definition = get_kpi_definition(metric)
+    result = verify_semantic_contract(metric=metric, contract_id=definition.semantic_contract_id)
+    assert result["reviewed"] is True
+    assert definition.executable is False
+    assert definition.schema_contract_id is None
 
 
 def test_semantic_contract_rejects_metric_binding_mismatch():

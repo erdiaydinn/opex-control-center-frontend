@@ -123,10 +123,16 @@ def _runtime_activation(
     if semantic_verification is None or schema_verification is None:
         raise ValueError("kpi_runtime_activation_prerequisites_required")
     metric = str(payload.arguments.get("metric") or "")
+    start_raw = payload.arguments.get("start_date")
+    end_raw = payload.arguments.get("end_date")
+    start_date = date.fromisoformat(str(start_raw)) if start_raw else None
+    end_date = date.fromisoformat(str(end_raw)) if end_raw else None
     return verify_kpi_runtime_activation(
         metric=metric,
         semantic_verification=semantic_verification,
         schema_verification=schema_verification,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 
@@ -189,6 +195,16 @@ def _attach_contract_audit(
             "aggregation_contract_fingerprint": (
                 str(runtime_activation["aggregation_contract_fingerprint"])
                 if runtime_activation and runtime_activation.get("aggregation_contract_fingerprint")
+                else None
+            ),
+            "policy_contract_fingerprint": (
+                str(runtime_activation["sla_contract_fingerprint"])
+                if runtime_activation and runtime_activation.get("sla_contract_fingerprint")
+                else None
+            ),
+            "formula_contract_fingerprint": (
+                str(runtime_activation["quantity_contract_fingerprint"])
+                if runtime_activation and runtime_activation.get("quantity_contract_fingerprint")
                 else None
             ),
             "activation_provenance_fingerprint": activation_provenance_fingerprint,

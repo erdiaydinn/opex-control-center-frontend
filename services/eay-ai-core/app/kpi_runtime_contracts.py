@@ -11,7 +11,7 @@ from .kpi_activation_gate import (
 from .kpi_aggregation_contracts import WeightedAverageContract
 from .kpi_provenance import provenance_from_activation
 from .kpi_putaway_contracts import PutawayQuantityContract, verify_putaway_activation
-from .kpi_putaway_sla import PutawaySlaContract
+from .kpi_putaway_sla import PutawaySlaContract, resolve_putaway_sla_contract
 from .kpi_unit_contracts import DurationContract, RateContract
 
 
@@ -61,13 +61,14 @@ def verify_kpi_runtime_activation(
     metric: str,
     semantic_verification: Mapping[str, object],
     schema_verification: Mapping[str, object],
-    as_of: date | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> dict[str, object] | None:
     """Verify runtime-only KPI contracts after semantic + live schema verification.
 
-    Orders/count KPIs do not require unit/grain contracts. Duration, rate and putaway KPIs
-    do. Runtime registries remain empty until reviewed production evidence pins the source
-    unit/scale/grain or temporal SLA policy, preventing a registry-only activation.
+    Putaway additionally requires one reviewed SLA contract to cover the entire requested
+    window. Queries spanning an SLA-version boundary fail closed instead of silently
+    applying the end-date policy to historical rows.
     """
 
     if metric in DURATION_RUNTIME_METRICS:
@@ -109,13 +110,21 @@ def verify_kpi_runtime_activation(
         runtime = PUTAWAY_RUNTIME_CONTRACTS.get(metric)
         if runtime is None:
             raise ValueError(f"kpi_runtime_contract_required:{metric}")
-        if as_of is None:
-            raise ValueError("kpi_runtime_as_of_required:putaway")
+        if start_date is None or end_date is None:
+            raise ValueError("kpi_runtime_date_window_required:putaway")
+        start_sla = resolve_putaway_sla_contract(runtime.sla_contracts, as_of=start_date)
+        end_sla = resolve_putaway_sla_contract(runtime.sla_contracts, as_of=end_date)
+        if start_sla.fingerprint != end_sla.fingerprint:
+            raise ValueError("putaway_runtime_query_spans_sla_versions")
+        if start_sla.effective_from > start_date or (
+            start_sla.effective_to is not None and start_sla.effective_to < end_date
+        ):
+            raise ValueError("putaway_runtime_sla_does_not_cover_query_window")
         bundle = verify_putaway_activation(
             semantic_verification=semantic_verification,
             schema_verification=schema_verification,
-            sla_contracts=runtime.sla_contracts,
-            as_of=as_of,
+            sla_contracts=(start_sla,),
+            as_of=end_date,
             quantity_contract=runtime.quantity,
         )
         return _with_provenance(

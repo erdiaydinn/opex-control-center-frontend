@@ -130,6 +130,11 @@ def _attach_contract_audit(
             "schema_fingerprint": (
                 str(schema_verification["observed_fingerprint"]) if schema_verification else None
             ),
+            "schema_evidence_fingerprint": (
+                str(schema_verification["evidence_fingerprint"])
+                if schema_verification and schema_verification.get("evidence_fingerprint")
+                else None
+            ),
         }
     )
 

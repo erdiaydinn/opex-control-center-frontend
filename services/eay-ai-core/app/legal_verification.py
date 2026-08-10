@@ -13,6 +13,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from .legal_knowledge import indexer
+from .legal_promotion_gate import LegalPromotionCandidate, RelationType, evaluate_legal_promotion
+from .regulatory import SourceDefinition
+from .regulatory_authority import assess_regulatory_authority
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 
@@ -32,6 +35,8 @@ class VerificationCreate(BaseModel):
     publication_date: date
     effective_from: date
     official_gazette_number: str | None = Field(default=None, max_length=80)
+    relation_type: RelationType = "new"
+    related_instrument_id: str | None = Field(default=None, max_length=180)
     verifier_note: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
@@ -41,6 +46,10 @@ class VerificationCreate(BaseModel):
             raise ValueError("verification requires Resmi Gazete or Mevzuat Bilgi Sistemi source")
         if self.effective_from < self.publication_date:
             raise ValueError("effective_from cannot be before publication_date")
+        if self.relation_type != "new" and not self.related_instrument_id:
+            raise ValueError("related_instrument_required")
+        if self.relation_type == "new" and self.related_instrument_id:
+            raise ValueError("new_instrument_must_not_reference_relation_target")
         return self
 
 
@@ -52,6 +61,11 @@ class VerificationRecord(BaseModel):
     publication_date: date
     effective_from: date
     official_gazette_number: str | None = None
+    relation_type: RelationType = "new"
+    related_instrument_id: str | None = None
+    authority_level: str | None = None
+    authority_assessment_fingerprint: str | None = None
+    promotion_decision_fingerprint: str | None = None
     decision: VerificationDecision
     verifier_note: str | None = None
     created_at: datetime
@@ -60,6 +74,7 @@ class VerificationRecord(BaseModel):
 
 class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
+    approval_ref: str | None = Field(default=None, min_length=3, max_length=180)
 
 
 class LegalVerificationStore:
@@ -96,9 +111,24 @@ class LegalVerificationStore:
                 ON legal_verifications(instrument_id, created_at DESC);
                 """
             )
+            columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(legal_verifications)").fetchall()
+            }
+            migrations = {
+                "relation_type": "ALTER TABLE legal_verifications ADD COLUMN relation_type TEXT NOT NULL DEFAULT 'new'",
+                "related_instrument_id": "ALTER TABLE legal_verifications ADD COLUMN related_instrument_id TEXT",
+                "authority_level": "ALTER TABLE legal_verifications ADD COLUMN authority_level TEXT",
+                "authority_assessment_fingerprint": "ALTER TABLE legal_verifications ADD COLUMN authority_assessment_fingerprint TEXT",
+                "promotion_decision_fingerprint": "ALTER TABLE legal_verifications ADD COLUMN promotion_decision_fingerprint TEXT",
+            }
+            for column, sql in migrations.items():
+                if column not in columns:
+                    conn.execute(sql)
 
     @staticmethod
     def _row(row: sqlite3.Row) -> VerificationRecord:
+        keys = set(row.keys())
         return VerificationRecord(
             id=row["id"],
             instrument_id=row["instrument_id"],
@@ -107,13 +137,36 @@ class LegalVerificationStore:
             publication_date=date.fromisoformat(row["publication_date"]),
             effective_from=date.fromisoformat(row["effective_from"]),
             official_gazette_number=row["official_gazette_number"],
+            relation_type=row["relation_type"] if "relation_type" in keys else "new",
+            related_instrument_id=row["related_instrument_id"] if "related_instrument_id" in keys else None,
+            authority_level=row["authority_level"] if "authority_level" in keys else None,
+            authority_assessment_fingerprint=row["authority_assessment_fingerprint"] if "authority_assessment_fingerprint" in keys else None,
+            promotion_decision_fingerprint=row["promotion_decision_fingerprint"] if "promotion_decision_fingerprint" in keys else None,
             decision=row["decision"],
             verifier_note=row["verifier_note"],
             created_at=datetime.fromisoformat(row["created_at"]),
             decided_at=datetime.fromisoformat(row["decided_at"]) if row["decided_at"] else None,
         )
 
+    @staticmethod
+    def _authority_assessment(authoritative_url: str, authoritative_text: str):
+        host = (urlparse(authoritative_url).hostname or "").lower()
+        if host not in {"resmigazete.gov.tr", "www.resmigazete.gov.tr"}:
+            raise ValueError("exact_resmi_gazete_instrument_required_for_promotion")
+        source = SourceDefinition(
+            id="tr-resmi-gazete-verification",
+            name="T.C. Resmi Gazete verification source",
+            url="https://www.resmigazete.gov.tr/",
+            role="binding_publication_index",
+        )
+        return assess_regulatory_authority(
+            source,
+            document_url=authoritative_url,
+            text=authoritative_text,
+        )
+
     def create(self, payload: VerificationCreate) -> VerificationRecord:
+        assessment = self._authority_assessment(str(payload.authoritative_url), payload.authoritative_text)
         with self._connect() as conn:
             instrument = conn.execute(
                 "SELECT id, verification_status FROM legal_instruments WHERE id = ?",
@@ -123,6 +176,15 @@ class LegalVerificationStore:
                 raise KeyError("instrument_not_found")
             if instrument["verification_status"] not in {"draft", "superseded"}:
                 raise ValueError("instrument_not_verifiable")
+            if payload.related_instrument_id:
+                target = conn.execute(
+                    "SELECT verification_status FROM legal_instruments WHERE id = ?",
+                    (payload.related_instrument_id,),
+                ).fetchone()
+                if target is None:
+                    raise KeyError("related_instrument_not_found")
+                if target["verification_status"] == "draft":
+                    raise ValueError("related_instrument_must_not_be_draft")
             pending = conn.execute(
                 "SELECT id FROM legal_verifications WHERE instrument_id = ? AND decision = 'pending' LIMIT 1",
                 (payload.instrument_id,),
@@ -138,8 +200,10 @@ class LegalVerificationStore:
                 INSERT INTO legal_verifications(
                     id, instrument_id, authoritative_url, authoritative_text,
                     content_sha256, publication_date, effective_from,
-                    official_gazette_number, decision, verifier_note, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                    official_gazette_number, relation_type, related_instrument_id,
+                    authority_level, authority_assessment_fingerprint,
+                    decision, verifier_note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     record_id,
@@ -150,6 +214,10 @@ class LegalVerificationStore:
                     payload.publication_date.isoformat(),
                     payload.effective_from.isoformat(),
                     payload.official_gazette_number,
+                    payload.relation_type,
+                    payload.related_instrument_id,
+                    assessment.authority_level,
+                    assessment.assessment_fingerprint,
                     payload.verifier_note,
                     now,
                 ),
@@ -192,8 +260,13 @@ class LegalVerificationStore:
         assert row is not None
         return self._row(row)
 
-    def verify_and_apply(self, record_id: str, note: str | None) -> VerificationRecord:
-        """Atomically verify evidence and promote its instrument."""
+    def verify_and_apply(
+        self,
+        record_id: str,
+        note: str | None,
+        human_approval_ref: str | None = None,
+    ) -> VerificationRecord:
+        """Atomically run the legal promotion gate, verify evidence and promote its instrument."""
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -215,18 +288,44 @@ class LegalVerificationStore:
             if instrument["verification_status"] not in {"draft", "superseded"}:
                 raise ValueError("instrument_not_verifiable")
 
-            actual_hash = hashlib.sha256(record["authoritative_text"].encode("utf-8")).hexdigest()
-            if actual_hash != record["content_sha256"]:
-                raise ValueError("authoritative_text_hash_mismatch")
+            assessment = self._authority_assessment(
+                record["authoritative_url"], record["authoritative_text"]
+            )
+            if record["authority_assessment_fingerprint"] and record["authority_assessment_fingerprint"] != assessment.assessment_fingerprint:
+                raise ValueError("authority_assessment_fingerprint_mismatch")
 
-            source_host = (urlparse(record["authoritative_url"]).hostname or "").lower()
-            if source_host not in AUTHORITATIVE_HOSTS:
-                raise ValueError("authoritative_source_host_not_allowed")
+            approval_ref = human_approval_ref or note
+            candidate = LegalPromotionCandidate(
+                instrument_id=record["instrument_id"],
+                authoritative_url=record["authoritative_url"],
+                authoritative_text=record["authoritative_text"],
+                expected_content_sha256=record["content_sha256"],
+                publication_date=date.fromisoformat(record["publication_date"]),
+                effective_from=date.fromisoformat(record["effective_from"]),
+                authority_assessment=assessment,
+                relation_type=record["relation_type"],
+                related_instrument_id=record["related_instrument_id"],
+                human_approval_ref=approval_ref,
+            )
+            promotion = evaluate_legal_promotion(candidate)
+            if not promotion.eligible:
+                raise ValueError("legal_promotion_blocked:" + ",".join(promotion.blockers))
+
+            if record["related_instrument_id"]:
+                target = conn.execute(
+                    "SELECT verification_status FROM legal_instruments WHERE id = ?",
+                    (record["related_instrument_id"],),
+                ).fetchone()
+                if target is None:
+                    raise KeyError("related_instrument_not_found")
+                if target["verification_status"] == "draft":
+                    raise ValueError("related_instrument_must_not_be_draft")
 
             notes = instrument["notes"] or ""
             audit_line = (
                 f"Verified content sha256: {record['content_sha256']}; "
-                f"verification record: {record['id']}"
+                f"verification record: {record['id']}; "
+                f"promotion decision: {promotion.decision_fingerprint}"
             )
             if audit_line not in notes:
                 notes = (notes + "\n" + audit_line).strip()
@@ -252,10 +351,11 @@ class LegalVerificationStore:
             conn.execute(
                 """
                 UPDATE legal_verifications
-                SET decision='verified', verifier_note=COALESCE(?, verifier_note), decided_at=?
+                SET decision='verified', verifier_note=COALESCE(?, verifier_note),
+                    promotion_decision_fingerprint=?, decided_at=?
                 WHERE id=?
                 """,
-                (note, now, record_id),
+                (note, promotion.decision_fingerprint, now, record_id),
             )
             row = conn.execute("SELECT * FROM legal_verifications WHERE id = ?", (record_id,)).fetchone()
         assert row is not None
@@ -267,9 +367,9 @@ class LegalVerificationStore:
         decision: Literal["verified", "rejected"],
         note: str | None,
     ) -> VerificationRecord:
-        """Backward-compatible decision API with the new atomic semantics."""
+        """Backward-compatible decision API; note acts as approval ref for legacy callers."""
         if decision == "verified":
-            return self.verify_and_apply(record_id, note)
+            return self.verify_and_apply(record_id, note, human_approval_ref=note)
         return self.reject(record_id, note)
 
 
@@ -282,7 +382,7 @@ def create_verification(payload: VerificationCreate):
     try:
         return store.create(payload)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Instrument not found") from exc
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -299,7 +399,11 @@ def list_verifications(
 @router.post("/{record_id}/verify", response_model=VerificationRecord)
 def verify(record_id: str, payload: DecisionRequest):
     try:
-        record = store.verify_and_apply(record_id, payload.note)
+        if not payload.approval_ref:
+            raise ValueError("human_approval_required")
+        record = store.verify_and_apply(
+            record_id, payload.note, human_approval_ref=payload.approval_ref
+        )
         indexer.sync_verified(record.instrument_id)
         return record
     except KeyError as exc:

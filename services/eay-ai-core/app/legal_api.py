@@ -12,10 +12,12 @@ from .legal_engine import (
     LegalInstrumentUpsert,
     LegalRequirementUpsert,
 )
+from .legal_temporal import LegalTemporalResolver
 
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 engine = LegalEngine(DB_PATH)
+temporal_resolver = LegalTemporalResolver(DB_PATH)
 router = APIRouter(prefix="/v1/legal", tags=["legal"])
 
 
@@ -28,6 +30,23 @@ def upsert_instrument(item: LegalInstrumentUpsert):
 @router.get("/instruments")
 def list_instruments(as_of: date = Query(default_factory=date.today)):
     return engine.instruments_as_of(as_of)
+
+
+@router.get("/temporal-state")
+def temporal_state(as_of: date = Query(default_factory=date.today)):
+    """Return fail-closed historical legal graph state for the requested date."""
+    state = temporal_resolver.resolve(as_of)
+    if not state.resolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "legal_temporal_resolution_blocked",
+                "as_of": state.as_of,
+                "blockers": list(state.blockers),
+                "resolution_fingerprint": state.resolution_fingerprint,
+            },
+        )
+    return state.as_dict()
 
 
 @router.post("/requirements", status_code=204)

@@ -49,10 +49,15 @@ SELECT
   category_name,
   vendor_name
 FROM `pandata_datamart.pandora__vendor_products_qcomm_catalog_details`
-WHERE LOWER(CONCAT(COALESCE(product_name,''),' ',COALESCE(category_name,''))) LIKE CONCAT('%', LOWER(@topic), '%')
+WHERE EXISTS (
+  SELECT 1
+  FROM UNNEST(@topics) AS topic
+  WHERE LOWER(CONCAT(COALESCE(product_name,''),' ',COALESCE(category_name,'')))
+    LIKE CONCAT('%', LOWER(topic), '%')
+)
 LIMIT @limit
 """.strip(),
-        parameter_names=("topic", "limit"),
+        parameter_names=("topics", "limit"),
     ),
 }
 
@@ -79,15 +84,17 @@ def compile_tool_plan(plan: ToolPlan) -> tuple[str, dict[str, Any]]:
             raise ValueError(f"catalog_field_template_not_implemented:{args['field']}")
         params = {"query": args["query"], "limit": args["limit"]}
     elif plan.query_id == "regulatory.impact.v1":
-        topic = (args.get("topic") or "").strip()
-        if not topic:
-            raise ValueError("reviewed_regulatory_topic_required")
+        topics = args.get("verified_topics") or []
+        if not isinstance(topics, list) or not topics:
+            raise ValueError("verified_legal_impact_topics_required")
+        if any(not isinstance(topic, str) or not topic.strip() for topic in topics):
+            raise ValueError("invalid_verified_legal_impact_topics")
         unsupported_entities = set(args.get("entities", [])) - {"sku", "category", "supplier"}
         if unsupported_entities:
             raise ValueError(
                 "impact_entity_template_not_implemented:" + ",".join(sorted(unsupported_entities))
             )
-        params = {"topic": topic, "limit": args["limit"]}
+        params = {"topics": topics, "limit": args["limit"]}
     else:
         raise ValueError("unsupported_query_template")
     missing = set(template.parameter_names) - set(params)

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Mapping, Protocol
 
 from .kpi_registry import get_kpi_definition
+from .kpi_schema_evidence import KpiSchemaEvidence, verify_schema_evidence
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class TableSchemaContract:
     contract_id: str
     table_id: str
     required_columns: tuple[ColumnContract, ...]
+    evidence_fingerprint: str | None = None
 
     @property
     def expected_fingerprint(self) -> str:
@@ -54,6 +56,38 @@ def _fingerprint(schema: Mapping[str, str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def schema_contract_from_reviewed_evidence(
+    *,
+    contract_id: str,
+    evidence: KpiSchemaEvidence,
+    required_columns: tuple[str, ...],
+) -> TableSchemaContract:
+    """Create an immutable contract only from human-reviewed schema evidence.
+
+    This helper deliberately does not mutate ``SCHEMA_CONTRACTS``. Activation remains a
+    separate reviewed code change, while the evidence fingerprint permanently binds the
+    resulting contract to the observation from which its BigQuery types were pinned.
+    """
+
+    if not contract_id.strip():
+        raise ValueError("schema_contract_id_required")
+    verified = verify_schema_evidence(
+        evidence,
+        expected_table=evidence.table_id,
+        required_columns=required_columns,
+    )
+    column_types = verified["column_types"]
+    assert isinstance(column_types, dict)
+    return TableSchemaContract(
+        contract_id=contract_id,
+        table_id=evidence.table_id,
+        required_columns=tuple(
+            ColumnContract(name, str(column_types[name]).upper()) for name in required_columns
+        ),
+        evidence_fingerprint=str(verified["fingerprint"]),
+    )
+
+
 def get_schema_contract(contract_id: str) -> TableSchemaContract:
     contract = SCHEMA_CONTRACTS.get(contract_id)
     if contract is None:
@@ -81,6 +115,7 @@ def verify_table_schema(contract: TableSchemaContract, observed_schema: Mapping[
             "type_mismatches": type_mismatches,
             "expected_fingerprint": expected_fingerprint,
             "observed_fingerprint": observed_fingerprint,
+            "evidence_fingerprint": contract.evidence_fingerprint,
         }
         raise ValueError("schema_contract_mismatch:" + json.dumps(details, sort_keys=True))
     return {
@@ -88,6 +123,7 @@ def verify_table_schema(contract: TableSchemaContract, observed_schema: Mapping[
         "table_id": contract.table_id,
         "expected_fingerprint": expected_fingerprint,
         "observed_fingerprint": observed_fingerprint,
+        "evidence_fingerprint": contract.evidence_fingerprint,
         "verified": True,
     }
 

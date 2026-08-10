@@ -8,6 +8,7 @@ from .legal_review import router as legal_review_router
 from .legal_verification import router as legal_verification_router
 from .main import app
 from .regulatory import router as regulatory_router
+from .tool_router import router as tool_router
 
 
 app.include_router(regulatory_router)
@@ -17,3 +18,4 @@ app.include_router(legal_verification_router)
 app.include_router(legal_knowledge_router)
 app.include_router(company_knowledge_router)
 app.include_router(grounded_chat_router)
+app.include_router(tool_router)

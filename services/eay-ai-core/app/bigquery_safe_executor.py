@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from .tool_router import ToolCallRequest, bounded_sql, validate_read_only_sql
 
@@ -19,6 +18,8 @@ DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 DEFAULT_MAX_BYTES = int(os.getenv("EAY_BQ_MAX_BYTES", str(250 * 1024 * 1024)))
 DEFAULT_TIMEOUT_MS = int(os.getenv("EAY_BQ_TIMEOUT_MS", "20000"))
 EXECUTION_ENABLED = os.getenv("EAY_BQ_EXECUTION_ENABLED", "false").lower() == "true"
+BQ_PROJECT = os.getenv("EAY_BQ_PROJECT", "").strip() or None
+BQ_LOCATION = os.getenv("EAY_BQ_LOCATION", "").strip() or None
 
 
 class BigQueryAdapter(Protocol):
@@ -29,6 +30,9 @@ class BigQueryAdapter(Protocol):
 class ExecuteRequest(ToolCallRequest):
     maximum_bytes_billed: int = Field(default=DEFAULT_MAX_BYTES, ge=1, le=10 * 1024 * 1024 * 1024)
     timeout_ms: int = Field(default=DEFAULT_TIMEOUT_MS, ge=1000, le=120000)
+
+
+from pydantic import BaseModel
 
 
 class ExecutionResult(BaseModel):
@@ -165,6 +169,71 @@ class SafeBigQueryExecutor:
         )
 
 
+class GoogleBigQueryAdapter:
+    """Optional adapter; import google-cloud-bigquery only in deployments that enable it."""
+
+    def __init__(self, *, project: str | None = BQ_PROJECT, location: str | None = BQ_LOCATION):
+        try:
+            from google.cloud import bigquery  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "google-cloud-bigquery is required only when EAY_BQ_EXECUTION_ENABLED=true"
+            ) from exc
+        self.bigquery = bigquery
+        self.client = bigquery.Client(project=project, location=location)
+
+    def _parameters(self, values: dict[str, Any]):
+        params = []
+        for name, value in values.items():
+            if isinstance(value, bool):
+                type_name = "BOOL"
+            elif isinstance(value, int):
+                type_name = "INT64"
+            elif isinstance(value, float):
+                type_name = "FLOAT64"
+            elif isinstance(value, datetime):
+                type_name = "TIMESTAMP"
+            elif isinstance(value, date):
+                type_name = "DATE"
+            elif isinstance(value, str) or value is None:
+                type_name = "STRING"
+            else:
+                raise ValueError(f"unsupported_query_parameter_type:{name}")
+            params.append(self.bigquery.ScalarQueryParameter(name, type_name, value))
+        return params
+
+    def _job_config(self, parameters: dict[str, Any], *, dry_run: bool, timeout_ms: int, maximum_bytes_billed: int | None = None):
+        config = self.bigquery.QueryJobConfig(
+            dry_run=dry_run,
+            use_query_cache=False if dry_run else True,
+            query_parameters=self._parameters(parameters),
+            job_timeout_ms=timeout_ms,
+        )
+        if maximum_bytes_billed is not None:
+            config.maximum_bytes_billed = maximum_bytes_billed
+        return config
+
+    def dry_run(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int) -> int:
+        job = self.client.query(
+            sql,
+            job_config=self._job_config(parameters, dry_run=True, timeout_ms=timeout_ms),
+        )
+        return int(job.total_bytes_processed or 0)
+
+    def execute(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int, maximum_bytes_billed: int) -> list[dict[str, Any]]:
+        job = self.client.query(
+            sql,
+            job_config=self._job_config(
+                parameters,
+                dry_run=False,
+                timeout_ms=timeout_ms,
+                maximum_bytes_billed=maximum_bytes_billed,
+            ),
+        )
+        rows = job.result(timeout=max(1, timeout_ms / 1000))
+        return [dict(row.items()) for row in rows]
+
+
 class DisabledAdapter:
     def dry_run(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int) -> int:
         raise RuntimeError("BigQuery adapter is not configured")
@@ -177,8 +246,31 @@ audit_store = ExecutionAuditStore(DB_PATH)
 router = APIRouter(prefix="/v1/bigquery", tags=["bigquery-safe-executor"])
 
 
+def _runtime_executor() -> SafeBigQueryExecutor:
+    if not EXECUTION_ENABLED:
+        raise HTTPException(status_code=409, detail="BigQuery execution is disabled by default")
+    try:
+        adapter = GoogleBigQueryAdapter()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return SafeBigQueryExecutor(adapter, audit_store)
+
+
 @router.post("/dry-run", response_model=ExecutionResult)
 def dry_run(payload: ExecuteRequest):
-    if not EXECUTION_ENABLED:
-        raise HTTPException(status_code=409, detail="BigQuery execution adapter is disabled; use dependency-injected executor in trusted runtime")
-    raise HTTPException(status_code=501, detail="Runtime adapter must be provided by deployment integration")
+    try:
+        return _runtime_executor().run(payload, execute=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"BigQuery dry-run failed: {exc}") from exc
+
+
+@router.post("/execute", response_model=ExecutionResult)
+def execute(payload: ExecuteRequest):
+    try:
+        return _runtime_executor().run(payload, execute=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"BigQuery execution failed: {exc}") from exc

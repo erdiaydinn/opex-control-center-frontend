@@ -59,6 +59,7 @@ def _fingerprint(schema: Mapping[str, str]) -> str:
 def schema_contract_from_reviewed_evidence(
     *,
     contract_id: str,
+    expected_table: str,
     evidence: KpiSchemaEvidence,
     required_columns: tuple[str, ...],
 ) -> TableSchemaContract:
@@ -71,16 +72,18 @@ def schema_contract_from_reviewed_evidence(
 
     if not contract_id.strip():
         raise ValueError("schema_contract_id_required")
+    if not expected_table.strip():
+        raise ValueError("schema_contract_expected_table_required")
     verified = verify_schema_evidence(
         evidence,
-        expected_table=evidence.table_id,
+        expected_table=expected_table,
         required_columns=required_columns,
     )
     column_types = verified["column_types"]
     assert isinstance(column_types, dict)
     return TableSchemaContract(
         contract_id=contract_id,
-        table_id=evidence.table_id,
+        table_id=expected_table,
         required_columns=tuple(
             ColumnContract(name, str(column_types[name]).upper()) for name in required_columns
         ),

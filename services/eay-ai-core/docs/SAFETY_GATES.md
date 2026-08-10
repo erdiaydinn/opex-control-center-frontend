@@ -13,6 +13,8 @@ EAY keeps changing knowledge, actions and model weights behind separate gates.
 
 A watcher event never becomes binding law by itself.
 
+Official-source evidence also has an append-only, source-scoped SHA-256 lineage chain. Existing snapshot/change rows can be backfilled idempotently, and chain verification detects altered historical evidence or broken parent links. A valid chain proves observation history only; it never upgrades discovery, draft, guidance, registry or unverified instrument-candidate material into binding law.
+
 ## Company knowledge
 
 Company policies are versioned independently from law. Only approved policy versions enter COMPANY retrieval. Historical `effective_from` / `effective_to` dates remain queryable.

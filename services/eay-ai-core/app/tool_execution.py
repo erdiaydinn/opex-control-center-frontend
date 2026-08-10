@@ -18,6 +18,8 @@ from .bigquery_safe_executor import (
     GoogleBigQueryAdapter,
     SafeBigQueryExecutor,
 )
+from .kpi_registry import get_kpi_definition
+from .kpi_semantics import verify_semantic_contract
 from .query_templates import compile_tool_plan
 from .regulatory_impact import resolve_verified_regulatory_impact
 from .schema_contracts import verify_kpi_schema
@@ -42,6 +44,7 @@ class TemplateToolExecutionResult(BaseModel):
     required_scope: list[str]
     execution: ExecutionResult
     legal_grounding: dict[str, Any] | None = None
+    semantic_verification: dict[str, Any] | None = None
     schema_verification: dict[str, Any] | None = None
     model_authored_sql_allowed: bool = False
 
@@ -89,6 +92,16 @@ def prepare_execution(
     return request, plan.query_id, plan.required_scope, legal_grounding
 
 
+def _semantic_verification(payload: TemplateToolExecutionRequest) -> dict[str, Any] | None:
+    if payload.tool != "ops_kpi_query":
+        return None
+    metric = str(payload.arguments.get("metric") or "")
+    definition = get_kpi_definition(metric)
+    if not definition.semantic_contract_id:
+        raise ValueError(f"kpi_semantic_contract_required:{metric}")
+    return verify_semantic_contract(metric=metric, contract_id=definition.semantic_contract_id)
+
+
 def _schema_verification(payload: TemplateToolExecutionRequest, adapter) -> dict[str, Any] | None:
     if payload.tool != "ops_kpi_query":
         return None
@@ -106,6 +119,7 @@ def execute_with_adapter(
     request, query_id, required_scope, legal_grounding = prepare_execution(
         payload, legal_db_path=legal_db_path
     )
+    semantic_verification = _semantic_verification(payload)
     schema_verification = _schema_verification(payload, adapter)
     executor = SafeBigQueryExecutor(adapter, audit_store)
     execution = executor.run(request, execute=payload.execute)
@@ -115,6 +129,7 @@ def execute_with_adapter(
         required_scope=required_scope,
         execution=execution,
         legal_grounding=legal_grounding,
+        semantic_verification=semantic_verification,
         schema_verification=schema_verification,
         model_authored_sql_allowed=False,
     )
@@ -176,6 +191,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             payload, legal_db_path=db_path
         )
         adapter = TemplateBigQueryAdapter()
+        semantic_verification = _semantic_verification(payload)
         schema_verification = _schema_verification(payload, adapter)
         audit_store = ExecutionAuditStore(db_path)
         execution = SafeBigQueryExecutor(adapter, audit_store).run(request, execute=payload.execute)
@@ -185,6 +201,7 @@ def execute_template_tool(payload: TemplateToolExecutionRequest):
             required_scope=required_scope,
             execution=execution,
             legal_grounding=legal_grounding,
+            semantic_verification=semantic_verification,
             schema_verification=schema_verification,
             model_authored_sql_allowed=False,
         )

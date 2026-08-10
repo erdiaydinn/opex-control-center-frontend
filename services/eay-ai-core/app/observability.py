@@ -16,8 +16,14 @@ class MetricsSnapshot(BaseModel):
     feedback: int = 0
     learning_candidates_pending: int = 0
     legal_verified: int = 0
+    regulatory_changes_pending: int = 0
     company_approved: int = 0
     tool_calls: int = 0
+    bigquery_executions: int = 0
+    bigquery_cost_rejections: int = 0
+    vision_audits_pending: int = 0
+    model_candidates: int = 0
+    model_canaries: int = 0
     knowledge_by_layer: dict[str, int] = Field(default_factory=dict)
     latest_interaction_at: datetime | None = None
     latest_tool_call_at: datetime | None = None
@@ -64,8 +70,14 @@ def metrics_snapshot(db_path: Path = DB_PATH) -> MetricsSnapshot:
             feedback=_count(conn, "feedback"),
             learning_candidates_pending=_count(conn, "learning_candidates", "status='pending'"),
             legal_verified=_count(conn, "legal_instruments", "verification_status='verified'"),
+            regulatory_changes_pending=_count(conn, "regulatory_changes", "status='pending'"),
             company_approved=_count(conn, "company_policy_versions", "status='approved'"),
             tool_calls=_count(conn, "tool_call_audit"),
+            bigquery_executions=_count(conn, "bigquery_execution_audit", "status='executed'"),
+            bigquery_cost_rejections=_count(conn, "bigquery_execution_audit", "status='rejected_cost'"),
+            vision_audits_pending=_count(conn, "vision_audits", "decision='pending'"),
+            model_candidates=_count(conn, "model_registry", "status='candidate'"),
+            model_canaries=_count(conn, "model_registry", "status='canary'"),
             knowledge_by_layer=by_layer,
             latest_interaction_at=latest_interaction,
             latest_tool_call_at=latest_tool,

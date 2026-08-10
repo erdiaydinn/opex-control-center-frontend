@@ -26,6 +26,8 @@ def test_regulatory_baseline_unchanged_and_relevant_change(tmp_path: Path):
         "<html><body>" + ("Türk Gıda Kodeksi mevcut durum. " * 8) + "</body></html>",
     )
     assert first.state == "baseline"
+    assert first.snapshot_id
+    assert len(first.snapshot_chain_hash or "") == 64
 
     second = watcher.process_text(
         source,
@@ -42,14 +44,26 @@ def test_regulatory_baseline_unchanged_and_relevant_change(tmp_path: Path):
     )
     assert changed.state == "changed_relevant"
     assert changed.change_id
+    assert changed.snapshot_id
+    assert changed.authority_level == "discovery_signal"
+    assert len(changed.authority_fingerprint or "") == 64
+    assert len(changed.change_chain_hash or "") == 64
     assert "etiket" in [item.casefold() for item in changed.relevance_hits]
 
     rows = watcher.store.list_changes("pending", 10)
     assert len(rows) == 1
     assert rows[0].requires_binding_verification is True
+    assert rows[0].authority_assessment["authority_level"] == "discovery_signal"
+    assert rows[0].authority_fingerprint == changed.authority_fingerprint
+    assert rows[0].lineage_chain_hash == changed.change_chain_hash
+
+    chain = watcher.lineage.verify_source_chain(source.id)
+    assert chain["verified"] is True
+    assert chain["record_count"] == 3
+    assert chain["head_chain_hash"] == changed.change_chain_hash
 
 
-def test_unrelated_site_chrome_change_does_not_alert(tmp_path: Path):
+def test_unrelated_site_chrome_change_does_not_alert_but_is_lineaged(tmp_path: Path):
     sources_path = tmp_path / "sources.json"
     sources_path.write_text('{"sources": []}', encoding="utf-8")
     watcher = RegulatoryWatcher(tmp_path / "eay.db", sources_path)
@@ -61,7 +75,39 @@ def test_unrelated_site_chrome_change_does_not_alert(tmp_path: Path):
         "<html><body>" + ("Ana sayfa içerik A. " * 10) + " Footer tasarımı değişti.</body></html>",
     )
     assert changed.state == "changed_irrelevant"
+    assert changed.snapshot_id
+    assert len(changed.snapshot_chain_hash or "") == 64
     assert watcher.store.list_changes("pending", 10) == []
+    chain = watcher.lineage.verify_source_chain(source.id)
+    assert chain["verified"] is True
+    assert chain["record_count"] == 2
+
+
+def test_existing_database_gets_additive_authority_columns(tmp_path: Path):
+    import sqlite3
+
+    db = tmp_path / "eay.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE regulatory_snapshots(
+                id TEXT PRIMARY KEY, source_id TEXT, content_hash TEXT,
+                content_text TEXT, fetched_at TEXT
+            );
+            CREATE TABLE regulatory_changes(
+                id TEXT PRIMARY KEY, source_id TEXT, source_name TEXT,
+                source_url TEXT, source_role TEXT, old_hash TEXT, new_hash TEXT,
+                diff_excerpt TEXT, relevance_hits_json TEXT, status TEXT,
+                requires_binding_verification INTEGER, detected_at TEXT
+            );
+            """
+        )
+    sources_path = tmp_path / "sources.json"
+    sources_path.write_text('{"sources": []}', encoding="utf-8")
+    RegulatoryWatcher(db, sources_path)
+    with sqlite3.connect(db) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(regulatory_changes)")}
+    assert {"authority_assessment_json", "authority_fingerprint", "lineage_chain_hash"} <= columns
 
 
 def test_source_host_allowlist_blocks_arbitrary_urls():

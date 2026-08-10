@@ -40,7 +40,6 @@ class CatalogArgs(StrictArgs):
 class RegulatoryImpactArgs(StrictArgs):
     instrument_id: str = Field(min_length=3, max_length=180)
     as_of: date
-    topic: str | None = Field(default=None, min_length=2, max_length=300)
     entities: list[ImpactEntity] = Field(default_factory=lambda: ["sku", "category"], min_length=1, max_length=4)
     limit: int = Field(default=100, ge=1, le=500)
 

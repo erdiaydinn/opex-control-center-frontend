@@ -11,6 +11,8 @@ _FINGERPRINT_FIELDS = (
     "schema_evidence_fingerprint",
     "unit_contract_fingerprint",
     "aggregation_contract_fingerprint",
+    "policy_contract_fingerprint",
+    "formula_contract_fingerprint",
 )
 
 
@@ -31,12 +33,14 @@ def activation_provenance_fingerprint(
     schema_evidence_fingerprint: object = None,
     unit_contract_fingerprint: object = None,
     aggregation_contract_fingerprint: object = None,
+    policy_contract_fingerprint: object = None,
+    formula_contract_fingerprint: object = None,
 ) -> str:
     """Bind all reviewed KPI activation lineage into one deterministic digest.
 
     Optional runtime fingerprints remain explicit ``null`` values in the canonical payload;
-    this prevents a count KPI and a duration KPI with missing runtime contracts from being
-    accidentally treated as equivalent provenance shapes.
+    this prevents KPIs with different runtime-policy shapes from being treated as equivalent
+    when unit, aggregation, SLA/policy or formula contracts are absent.
     """
 
     if not metric.strip():
@@ -53,6 +57,12 @@ def activation_provenance_fingerprint(
         ),
         "aggregation_contract_fingerprint": _validate_sha256(
             aggregation_contract_fingerprint, "aggregation_contract", optional=True
+        ),
+        "policy_contract_fingerprint": _validate_sha256(
+            policy_contract_fingerprint, "policy_contract", optional=True
+        ),
+        "formula_contract_fingerprint": _validate_sha256(
+            formula_contract_fingerprint, "formula_contract", optional=True
         ),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -76,5 +86,11 @@ def provenance_from_activation(
         ),
         aggregation_contract_fingerprint=(
             runtime_activation.get("aggregation_contract_fingerprint") if runtime_activation else None
+        ),
+        policy_contract_fingerprint=(
+            runtime_activation.get("sla_contract_fingerprint") if runtime_activation else None
+        ),
+        formula_contract_fingerprint=(
+            runtime_activation.get("quantity_contract_fingerprint") if runtime_activation else None
         ),
     )

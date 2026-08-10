@@ -10,11 +10,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .legal_engine import LegalEngine
+from .legal_temporal import LegalTemporalResolver, LegalTemporalState
 from .main import (
     ANSWER_SCHEMA,
     SYSTEM_PROMPT,
     ChatAnswer,
     ChatRequest,
+    Evidence,
     _format_evidence,
     ollama,
     settings,
@@ -24,6 +26,7 @@ from .main import (
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 legal_engine = LegalEngine(DB_PATH)
+temporal_resolver = LegalTemporalResolver(DB_PATH)
 router = APIRouter(prefix="/v1/grounded", tags=["grounded-chat"])
 
 
@@ -38,12 +41,14 @@ class ProvenanceItem(BaseModel):
     source_url: str | None = None
     content_sha256: str | None = None
     chunk_sha256: str | None = None
+    temporal_resolution_fingerprint: str | None = None
 
 
 class GroundedChatAnswer(BaseModel):
     response: ChatAnswer
     provenance: list[ProvenanceItem] = Field(default_factory=list)
     conflicts: list[dict] = Field(default_factory=list)
+    temporal_resolution_fingerprint: str | None = None
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -56,7 +61,10 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     )
 
 
-def _provenance_for_evidence(evidence_ids: list[str]) -> list[ProvenanceItem]:
+def _provenance_for_evidence(
+    evidence_ids: list[str],
+    temporal_resolution_fingerprint: str | None = None,
+) -> list[ProvenanceItem]:
     if not evidence_ids:
         return []
     placeholders = ",".join("?" for _ in evidence_ids)
@@ -104,6 +112,7 @@ def _provenance_for_evidence(evidence_ids: list[str]) -> list[ProvenanceItem]:
                     source_url=doc["source_url"],
                     content_sha256=legal["content_sha256"],
                     chunk_sha256=legal["chunk_sha256"],
+                    temporal_resolution_fingerprint=temporal_resolution_fingerprint,
                 )
             )
             continue
@@ -147,17 +156,83 @@ def _provenance_for_evidence(evidence_ids: list[str]) -> list[ProvenanceItem]:
     return result
 
 
+def _resolve_temporal_state(as_of: date) -> LegalTemporalState:
+    state = temporal_resolver.resolve(as_of)
+    if not state.resolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "legal_temporal_resolution_blocked",
+                "as_of": state.as_of,
+                "blockers": list(state.blockers),
+                "resolution_fingerprint": state.resolution_fingerprint,
+            },
+        )
+    return state
+
+
+def _filter_temporally_active_legal_evidence(
+    evidence: list[Evidence],
+    state: LegalTemporalState,
+) -> list[Evidence]:
+    """Remove legal chunks whose source instrument is not active at `state.as_of`.
+
+    Legal evidence without a verified legal-chunk provenance row is also excluded.
+    This keeps older/manual `legal` knowledge rows from bypassing the temporal graph.
+    Non-legal evidence is preserved unchanged.
+    """
+    legal_ids = [item.id for item in evidence if item.layer == "legal"]
+    if not legal_ids:
+        return evidence
+
+    placeholders = ",".join("?" for _ in legal_ids)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        if not _table_exists(conn, "legal_knowledge_chunks"):
+            legal_sources: dict[str, str] = {}
+        else:
+            legal_sources = {
+                row["id"]: row["instrument_id"]
+                for row in conn.execute(
+                    f"SELECT id, instrument_id FROM legal_knowledge_chunks WHERE id IN ({placeholders})",
+                    legal_ids,
+                ).fetchall()
+            }
+
+    active = set(state.active_instrument_ids)
+    return [
+        item
+        for item in evidence
+        if item.layer != "legal" or legal_sources.get(item.id) in active
+    ]
+
+
 @router.post("/chat", response_model=GroundedChatAnswer)
 async def grounded_chat(request: ChatRequest):
+    temporal_state: LegalTemporalState | None = None
+    if "legal" in request.layers:
+        temporal_state = _resolve_temporal_state(request.as_of)
+
+    retrieval_limit = settings.top_k
+    if temporal_state is not None:
+        # Inactive historical legal chunks can occupy lexical top-k positions. Search
+        # a bounded wider window, apply the temporal graph, then restore the public cap.
+        retrieval_limit = min(max(settings.top_k * 4, settings.top_k), 32)
+
     evidence = store.search(
         request.message,
         request.as_of,
         request.layers,
-        settings.top_k,
+        retrieval_limit,
     )
+    if temporal_state is not None:
+        evidence = _filter_temporally_active_legal_evidence(evidence, temporal_state)
+        evidence = evidence[: settings.top_k]
+
     prompt = f"""
 AS_OF: {request.as_of.isoformat()}
 COMPANY: {request.company or 'not_specified'}
+LEGAL_TEMPORAL_RESOLUTION: {temporal_state.resolution_fingerprint if temporal_state else 'not_requested'}
 
 USER QUESTION:
 {request.message}
@@ -209,9 +284,16 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         item.model_dump()
         for item in legal_engine.compare_company_to_law(request.as_of)
     ]
-    provenance = _provenance_for_evidence([item.id for item in evidence])
+    temporal_fingerprint = (
+        temporal_state.resolution_fingerprint if temporal_state is not None else None
+    )
+    provenance = _provenance_for_evidence(
+        [item.id for item in evidence],
+        temporal_resolution_fingerprint=temporal_fingerprint,
+    )
     return GroundedChatAnswer(
         response=answer,
         provenance=provenance,
         conflicts=conflicts,
+        temporal_resolution_fingerprint=temporal_fingerprint,
     )

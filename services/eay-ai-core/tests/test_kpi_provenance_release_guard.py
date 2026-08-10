@@ -1,0 +1,93 @@
+from dataclasses import replace
+
+import pytest
+
+from app.kpi_provenance import activation_provenance_fingerprint, provenance_from_activation
+from app.kpi_registry import KPI_REGISTRY
+from app.kpi_release_guard import verify_kpi_registry_runtime_alignment
+
+
+FP_A = "a" * 64
+FP_B = "b" * 64
+FP_C = "c" * 64
+FP_D = "d" * 64
+FP_E = "e" * 64
+
+
+def test_activation_provenance_is_deterministic_and_sensitive_to_lineage():
+    base = activation_provenance_fingerprint(
+        metric="picking",
+        semantic_fingerprint=FP_A,
+        schema_fingerprint=FP_B,
+        schema_evidence_fingerprint=FP_C,
+        unit_contract_fingerprint=FP_D,
+        aggregation_contract_fingerprint=FP_E,
+    )
+    same = activation_provenance_fingerprint(
+        metric="picking",
+        semantic_fingerprint=FP_A,
+        schema_fingerprint=FP_B,
+        schema_evidence_fingerprint=FP_C,
+        unit_contract_fingerprint=FP_D,
+        aggregation_contract_fingerprint=FP_E,
+    )
+    changed = activation_provenance_fingerprint(
+        metric="picking",
+        semantic_fingerprint=FP_A,
+        schema_fingerprint=FP_B,
+        schema_evidence_fingerprint=FP_C,
+        unit_contract_fingerprint=FP_E,
+        aggregation_contract_fingerprint=FP_D,
+    )
+    assert len(base) == 64
+    assert base == same
+    assert base != changed
+
+
+def test_provenance_from_activation_preserves_optional_runtime_nulls():
+    digest = provenance_from_activation(
+        metric="orders",
+        semantic_verification={"fingerprint": FP_A},
+        schema_verification={"observed_fingerprint": FP_B, "evidence_fingerprint": None},
+        runtime_activation=None,
+    )
+    assert len(digest) == 64
+
+
+def test_provenance_rejects_malformed_fingerprint():
+    with pytest.raises(ValueError, match="kpi_provenance_invalid_fingerprint:schema"):
+        activation_provenance_fingerprint(
+            metric="orders",
+            semantic_fingerprint=FP_A,
+            schema_fingerprint="not-a-sha",
+        )
+
+
+def test_current_registry_runtime_alignment_passes():
+    result = verify_kpi_registry_runtime_alignment()
+    assert "orders" in result.executable_metrics
+    assert result.passed is True
+
+
+def test_release_guard_blocks_picking_registry_activation_without_runtime_contract():
+    registry = dict(KPI_REGISTRY)
+    registry["picking"] = replace(
+        registry["picking"],
+        review_state="reviewed",
+        query_id="ops.kpi.picking.v1",
+        schema_contract_id="ops.picking.v1",
+    )
+    with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:duration=picking"):
+        verify_kpi_registry_runtime_alignment(registry=registry)
+
+
+def test_release_guard_blocks_otp_registry_activation_without_rate_contract():
+    registry = dict(KPI_REGISTRY)
+    registry["otp"] = replace(
+        registry["otp"],
+        review_state="reviewed",
+        query_id="ops.kpi.otp.v1",
+        schema_contract_id="ops.otp.v1",
+    )
+    with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:rate=otp"):
+        verify_kpi_registry_runtime_alignment(registry=registry)

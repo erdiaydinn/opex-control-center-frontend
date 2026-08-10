@@ -22,6 +22,12 @@ Every assessment has a deterministic SHA-256 fingerprint and always sets `auto_p
 
 A Ministry announcement that says a rule was published in the Resmî Gazete remains a discovery signal until the exact Resmî Gazete instrument is verified. A draft published for public consultation remains non-binding even when published on an official Ministry domain.
 
+## Deterministic promotion gate
+
+`app/legal_promotion_gate.py` evaluates exact-instrument candidates before a promotion workflow can proceed. It checks the authoritative host, exact-text SHA-256, publication/effective-date ordering, authority-assessment class, explicit human approval reference and amendment/repeal/supersession target requirements. Its output has a deterministic decision fingerprint.
+
+Passing the gate means only `eligible_for_human_controlled_promotion`. The decision object hard-codes `auto_promote=false` and `requires_human_action=true`; no production legal knowledge or model weights are modified by this evaluator.
+
 ## Immutable watcher evidence lineage
 
 `app/regulatory_lineage.py` adds an append-only SHA-256 chain for watcher evidence. Each lineage record stores the immutable record ID/type, source ID, content hash, canonical metadata, previous chain hash for the same source, deterministic chain hash and original timestamp.
@@ -32,8 +38,8 @@ The chain is source-scoped: activity on one official source cannot rewrite the p
 
 The lineage engine is intentionally separate from legal promotion. The current watcher tables can already be backfilled and verified; the next integration step is to write lineage records and authority-assessment fingerprints transactionally at watcher-change creation time.
 
-A valid lineage proves what EAY observed and in which sequence; it does **not** prove that the observation is binding law. Authority classification, exact-instrument verification, effective-date/version resolution and human approval remain independent gates.
+A valid lineage proves what EAY observed and in which sequence; it does **not** prove that the observation is binding law. Authority classification, exact-instrument verification, effective-date/version resolution, promotion-gate eligibility and human approval remain independent gates.
 
 ## Current fixtures
 
-Regression tests include GKGM public-consultation drafts, GKGM publication announcements, KAYSİS registry pages, the Resmî Gazete index, exact Resmî Gazete-like article text, Ministry guidance, immutable lineage conflict rejection, tamper detection and watcher-row backfill. The CI suite verifies both compilation and these provenance invariants before changes are considered usable.
+Regression tests include GKGM public-consultation drafts, GKGM publication announcements, KAYSİS registry pages, the Resmî Gazete index, exact Resmî Gazete-like article text, Ministry guidance, immutable lineage conflict rejection, tamper detection, watcher-row backfill, content-hash mismatch, invalid temporal ordering, missing human approval and missing amendment/repeal targets. The CI suite verifies both compilation and these provenance invariants before changes are considered usable.

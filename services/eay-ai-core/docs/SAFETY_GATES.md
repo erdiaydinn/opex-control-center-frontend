@@ -26,7 +26,8 @@ The BigQuery path is fail closed:
 - Required scopes are checked before SQL compilation.
 - Tool arguments use strict schemas (`extra=forbid`).
 - Unsupported KPI semantics or catalog fields fail closed instead of silently returning a different metric.
-- Regulatory-impact queries require a reviewed topic rather than using an instrument ID as a search term.
+- Regulatory-impact callers provide only `instrument_id` + `as_of`; free-text impact topics are forbidden. The executor resolves search topics deterministically from the verified, effective instrument and its effective normalized legal requirements, then returns source/citation grounding with the result.
+- Draft, superseded, expired, future-effective or topic-less legal evidence cannot drive a regulatory-impact catalog query.
 - SELECT/WITH only, single statement only, dataset allow-list, and bounded result rows.
 - BigQuery parameters remain separate from SQL; ARRAY parameters use the client library's array-parameter type.
 - Dry-run cost estimate occurs before execution.

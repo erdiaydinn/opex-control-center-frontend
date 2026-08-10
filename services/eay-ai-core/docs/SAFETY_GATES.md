@@ -26,6 +26,9 @@ The BigQuery path is fail closed:
 - Required scopes are checked before SQL compilation.
 - Tool arguments use strict schemas (`extra=forbid`).
 - Unsupported KPI semantics or catalog fields fail closed instead of silently returning a different metric.
+- A reviewed KPI must also reference a reviewed schema contract. Immediately before KPI dry-run/execution, the adapter introspects the live BigQuery table and verifies the required column names/types against the contract.
+- KPI schema contracts expose deterministic SHA-256 fingerprints over only the required columns. Additive unrelated columns do not break execution, while a missing required column or required-column type drift blocks the query before dry-run.
+- If schema introspection is unavailable, KPI execution fails closed rather than trusting a stale contract.
 - Regulatory-impact callers provide only `instrument_id` + `as_of`; free-text impact topics are forbidden. The executor resolves search topics deterministically from the verified, effective instrument and its effective normalized legal requirements, then returns source/citation grounding with the result.
 - Draft, superseded, expired, future-effective or topic-less legal evidence cannot drive a regulatory-impact catalog query.
 - SELECT/WITH only, single statement only, dataset allow-list, and bounded result rows.

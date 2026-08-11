@@ -16,11 +16,19 @@ def _sha256(payload: object) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _require_sha256(value: str, field: str) -> str:
+    if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+        raise ValueError(f"release_evaluation_evidence_invalid_{field}")
+    return value
+
+
 @dataclass(frozen=True)
 class ReleaseEvaluationEvidence:
     fingerprint: str
     historical_legal_fingerprint: str
     safety_eval_fingerprint: str
+    eval_dataset_sha256: str
+    training_manifest_chain_sha256: str
     historical_sample_size: int
     safety_sample_size: int
     created_at: str
@@ -29,10 +37,10 @@ class ReleaseEvaluationEvidence:
 class ReleaseEvaluationEvidenceRegistry:
     """Persist passing deterministic release-eval evidence before model promotion.
 
-    Production promotion must reference one immutable record produced from both the
-    curated historical legal RAG eval and the cross-layer safety eval. The registry
-    revalidates the hard release invariants and stores only fingerprints/metrics, so no
-    user text or potentially sensitive examples are copied into promotion lineage.
+    Evidence is bound to the exact evaluation dataset and training-manifest chain. This
+    prevents a passing legal/safety result produced for one candidate lineage from being
+    replayed to promote another model candidate that happens to use the same thresholds.
+    No user text or potentially sensitive examples are copied into promotion lineage.
     """
 
     MIN_HISTORICAL_SAMPLES = 20
@@ -46,6 +54,8 @@ class ReleaseEvaluationEvidenceRegistry:
                 fingerprint TEXT PRIMARY KEY,
                 historical_legal_fingerprint TEXT NOT NULL,
                 safety_eval_fingerprint TEXT NOT NULL,
+                eval_dataset_sha256 TEXT,
+                training_manifest_chain_sha256 TEXT,
                 historical_sample_size INTEGER NOT NULL,
                 safety_sample_size INTEGER NOT NULL,
                 historical_metrics_json TEXT NOT NULL,
@@ -53,6 +63,13 @@ class ReleaseEvaluationEvidenceRegistry:
                 created_at TEXT NOT NULL
                 )"""
             )
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(release_evaluation_evidence)")}
+            if "eval_dataset_sha256" not in existing:
+                conn.execute("ALTER TABLE release_evaluation_evidence ADD COLUMN eval_dataset_sha256 TEXT")
+            if "training_manifest_chain_sha256" not in existing:
+                conn.execute(
+                    "ALTER TABLE release_evaluation_evidence ADD COLUMN training_manifest_chain_sha256 TEXT"
+                )
 
     @staticmethod
     def _historical_payload(result: HistoricalLegalRagEvalResult) -> dict[str, object]:
@@ -117,8 +134,14 @@ class ReleaseEvaluationEvidenceRegistry:
         *,
         historical: HistoricalLegalRagEvalResult,
         safety: SafetyEvalResult,
+        eval_dataset_sha256: str,
+        training_manifest_chain_sha256: str,
     ) -> ReleaseEvaluationEvidence:
         self._validate(historical, safety)
+        eval_dataset_sha256 = _require_sha256(eval_dataset_sha256, "eval_dataset_sha256")
+        training_manifest_chain_sha256 = _require_sha256(
+            training_manifest_chain_sha256, "training_manifest_chain_sha256"
+        )
         historical_payload = self._historical_payload(historical)
         safety_payload = self._safety_payload(safety)
         historical_fp = _sha256(historical_payload)
@@ -136,6 +159,8 @@ class ReleaseEvaluationEvidenceRegistry:
         fingerprint = _sha256({
             "historical_legal_fingerprint": historical_fp,
             "safety_eval_fingerprint": safety_fp,
+            "eval_dataset_sha256": eval_dataset_sha256,
+            "training_manifest_chain_sha256": training_manifest_chain_sha256,
             "historical_sample_size": historical.sample_size,
             "safety_sample_size": safety.sample_size,
         })
@@ -144,12 +169,15 @@ class ReleaseEvaluationEvidenceRegistry:
             conn.execute(
                 """INSERT OR IGNORE INTO release_evaluation_evidence(
                 fingerprint,historical_legal_fingerprint,safety_eval_fingerprint,
+                eval_dataset_sha256,training_manifest_chain_sha256,
                 historical_sample_size,safety_sample_size,historical_metrics_json,
-                safety_metrics_json,created_at) VALUES (?,?,?,?,?,?,?,?)""",
+                safety_metrics_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (
                     fingerprint,
                     historical_fp,
                     safety_fp,
+                    eval_dataset_sha256,
+                    training_manifest_chain_sha256,
                     historical.sample_size,
                     safety.sample_size,
                     json.dumps(historical_payload, sort_keys=True, separators=(",", ":")),
@@ -161,14 +189,15 @@ class ReleaseEvaluationEvidenceRegistry:
             fingerprint=fingerprint,
             historical_legal_fingerprint=historical_fp,
             safety_eval_fingerprint=safety_fp,
+            eval_dataset_sha256=eval_dataset_sha256,
+            training_manifest_chain_sha256=training_manifest_chain_sha256,
             historical_sample_size=historical.sample_size,
             safety_sample_size=safety.sample_size,
             created_at=created_at,
         )
 
     def verify(self, fingerprint: str) -> ReleaseEvaluationEvidence:
-        if len(fingerprint) != 64 or any(ch not in "0123456789abcdef" for ch in fingerprint):
-            raise ValueError("release_evaluation_evidence_invalid_fingerprint")
+        _require_sha256(fingerprint, "fingerprint")
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -176,9 +205,17 @@ class ReleaseEvaluationEvidenceRegistry:
             ).fetchone()
         if row is None:
             raise KeyError("release_evaluation_evidence_not_found")
+        eval_dataset_sha256 = _require_sha256(
+            str(row["eval_dataset_sha256"] or ""), "eval_dataset_sha256"
+        )
+        training_manifest_chain_sha256 = _require_sha256(
+            str(row["training_manifest_chain_sha256"] or ""), "training_manifest_chain_sha256"
+        )
         expected = _sha256({
             "historical_legal_fingerprint": row["historical_legal_fingerprint"],
             "safety_eval_fingerprint": row["safety_eval_fingerprint"],
+            "eval_dataset_sha256": eval_dataset_sha256,
+            "training_manifest_chain_sha256": training_manifest_chain_sha256,
             "historical_sample_size": row["historical_sample_size"],
             "safety_sample_size": row["safety_sample_size"],
         })
@@ -192,7 +229,23 @@ class ReleaseEvaluationEvidenceRegistry:
             fingerprint=row["fingerprint"],
             historical_legal_fingerprint=row["historical_legal_fingerprint"],
             safety_eval_fingerprint=row["safety_eval_fingerprint"],
+            eval_dataset_sha256=eval_dataset_sha256,
+            training_manifest_chain_sha256=training_manifest_chain_sha256,
             historical_sample_size=row["historical_sample_size"],
             safety_sample_size=row["safety_sample_size"],
             created_at=row["created_at"],
         )
+
+    def verify_for_lineage(
+        self,
+        *,
+        fingerprint: str,
+        eval_dataset_sha256: str,
+        training_manifest_chain_sha256: str,
+    ) -> ReleaseEvaluationEvidence:
+        evidence = self.verify(fingerprint)
+        if evidence.eval_dataset_sha256 != eval_dataset_sha256:
+            raise ValueError("release_evaluation_evidence_eval_dataset_mismatch")
+        if evidence.training_manifest_chain_sha256 != training_manifest_chain_sha256:
+            raise ValueError("release_evaluation_evidence_training_manifest_mismatch")
+        return evidence

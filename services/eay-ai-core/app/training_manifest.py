@@ -19,6 +19,8 @@ DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 class TrainingManifest(BaseModel):
     id: str
     dataset_sha256: str
+    dataset_integrity_sha256: str
+    quality_lineage_sha256: str
     chain_sha256: str
     example_count: int
     approved_by: str
@@ -45,6 +47,8 @@ class TrainingManifestStore:
                 CREATE TABLE IF NOT EXISTS training_dataset_manifests (
                     id TEXT PRIMARY KEY,
                     dataset_sha256 TEXT NOT NULL UNIQUE,
+                    dataset_integrity_sha256 TEXT,
+                    quality_lineage_sha256 TEXT,
                     chain_sha256 TEXT NOT NULL UNIQUE,
                     example_count INTEGER NOT NULL,
                     approved_by TEXT NOT NULL,
@@ -55,11 +59,25 @@ class TrainingManifestStore:
                 )
                 """
             )
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(training_dataset_manifests)")}
+            if "dataset_integrity_sha256" not in existing:
+                conn.execute(
+                    "ALTER TABLE training_dataset_manifests ADD COLUMN dataset_integrity_sha256 TEXT"
+                )
+            if "quality_lineage_sha256" not in existing:
+                conn.execute(
+                    "ALTER TABLE training_dataset_manifests ADD COLUMN quality_lineage_sha256 TEXT"
+                )
 
     def create(self, payload: TrainingManifestCreate) -> TrainingManifest:
         gate = validate_training_examples(payload.examples)
         if not gate.accepted:
             raise ValueError("training_gate_failed:" + ",".join(gate.violations))
+        if not gate.integrity_sha256:
+            raise ValueError("training_integrity_fingerprint_required")
+
+        quality_material = "|".join(gate.quality_fingerprints)
+        quality_lineage_sha = hashlib.sha256(quality_material.encode("utf-8")).hexdigest()
 
         parent_chain = None
         with sqlite3.connect(self.db_path) as conn:
@@ -77,6 +95,8 @@ class TrainingManifestStore:
                 [
                     parent_chain or "ROOT",
                     gate.dataset_sha256,
+                    gate.integrity_sha256,
+                    quality_lineage_sha,
                     payload.approved_by,
                     payload.approval_reference,
                 ]
@@ -88,14 +108,16 @@ class TrainingManifestStore:
                 conn.execute(
                     """
                     INSERT INTO training_dataset_manifests(
-                        id, dataset_sha256, chain_sha256, example_count,
-                        approved_by, approval_reference, parent_manifest_id,
-                        parent_chain_sha256, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        id, dataset_sha256, dataset_integrity_sha256, quality_lineage_sha256,
+                        chain_sha256, example_count, approved_by, approval_reference,
+                        parent_manifest_id, parent_chain_sha256, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         manifest_id,
                         gate.dataset_sha256,
+                        gate.integrity_sha256,
+                        quality_lineage_sha,
                         chain_sha,
                         gate.example_count,
                         payload.approved_by,
@@ -111,6 +133,8 @@ class TrainingManifestStore:
         return TrainingManifest(
             id=manifest_id,
             dataset_sha256=gate.dataset_sha256,
+            dataset_integrity_sha256=gate.integrity_sha256,
+            quality_lineage_sha256=quality_lineage_sha,
             chain_sha256=chain_sha,
             example_count=gate.example_count,
             approved_by=payload.approved_by,

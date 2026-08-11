@@ -50,6 +50,8 @@ class PromotionRecord(BaseModel):
     release_evaluation_evidence_fingerprint: str
     historical_legal_eval_fingerprint: str
     safety_eval_fingerprint: str
+    eval_dataset_sha256: str
+    training_manifest_chain_sha256: str
     model_record_id: str
     artifact_sha256: str
     artifact_provenance_fingerprint: str
@@ -63,10 +65,10 @@ class PromotionRecord(BaseModel):
 class ModelPromotionGate:
     """Final fail-closed gate for production status.
 
-    The append-only release proof binds the exact training job, primary artifact provenance,
-    offline evaluation, registered historical-legal + cross-layer safety evaluation evidence,
-    passing canary evidence and explicit human promotion approval before the local model
-    status can atomically move to production.
+    The append-only release proof binds exact training/model/artifact lineage, the exact
+    evaluation dataset and training-manifest chain used by registered legal+safety eval
+    evidence, passing canary evidence and explicit human promotion approval before the
+    local model status can atomically move to production.
     """
 
     def __init__(self, db_path: Path):
@@ -83,6 +85,8 @@ class ModelPromotionGate:
                 release_evaluation_evidence_fingerprint TEXT,
                 historical_legal_eval_fingerprint TEXT,
                 safety_eval_fingerprint TEXT,
+                eval_dataset_sha256 TEXT,
+                training_manifest_chain_sha256 TEXT,
                 model_record_id TEXT NOT NULL UNIQUE, artifact_sha256 TEXT NOT NULL,
                 artifact_provenance_fingerprint TEXT,
                 training_job_fingerprint TEXT, canary_evidence_fingerprint TEXT NOT NULL,
@@ -96,6 +100,8 @@ class ModelPromotionGate:
                 "release_evaluation_evidence_fingerprint",
                 "historical_legal_eval_fingerprint",
                 "safety_eval_fingerprint",
+                "eval_dataset_sha256",
+                "training_manifest_chain_sha256",
                 "artifact_provenance_fingerprint",
             ):
                 if name not in existing:
@@ -112,7 +118,15 @@ class ModelPromotionGate:
         if not model["approved_by"] or not model["approved_at"]:
             raise ValueError("production_promotion_requires_prior_human_approval")
 
-        release_evidence = self.release_evidence.verify(payload.release_evaluation_evidence_fingerprint)
+        eval_dataset_sha256 = str(model["eval_dataset_sha256"] or "")
+        training_manifest_chain_sha256 = str(model["training_manifest_chain_sha256"] or "")
+        if not eval_dataset_sha256 or not training_manifest_chain_sha256:
+            raise ValueError("production_promotion_requires_complete_eval_lineage")
+        release_evidence = self.release_evidence.verify_for_lineage(
+            fingerprint=payload.release_evaluation_evidence_fingerprint,
+            eval_dataset_sha256=eval_dataset_sha256,
+            training_manifest_chain_sha256=training_manifest_chain_sha256,
+        )
 
         training_job_fingerprint = model["training_job_fingerprint"]
         if not training_job_fingerprint:
@@ -122,8 +136,8 @@ class ModelPromotionGate:
             base_model=model["base_model"],
             license_id=model["license_id"],
             training_dataset_sha256=model["training_dataset_sha256"],
-            training_manifest_chain_sha256=model["training_manifest_chain_sha256"],
-            eval_dataset_sha256=model["eval_dataset_sha256"],
+            training_manifest_chain_sha256=training_manifest_chain_sha256,
+            eval_dataset_sha256=eval_dataset_sha256,
         )
         primary_artifact = self.primary_artifacts.verify(
             artifact_sha256=model["artifact_sha256"],
@@ -143,7 +157,7 @@ class ModelPromotionGate:
         )
         if canary.artifact_sha256 != model["artifact_sha256"]:
             raise ValueError("production_promotion_canary_artifact_mismatch")
-        if canary.eval_dataset_sha256 != model["eval_dataset_sha256"]:
+        if canary.eval_dataset_sha256 != eval_dataset_sha256:
             raise ValueError("production_promotion_canary_eval_dataset_mismatch")
 
         eval_fingerprint = offline_eval_fingerprint(model)
@@ -151,8 +165,10 @@ class ModelPromotionGate:
             {
                 "model_record_id": payload.model_record_id,
                 "training_job_fingerprint": training_job_fingerprint,
+                "training_manifest_chain_sha256": training_manifest_chain_sha256,
                 "artifact_sha256": model["artifact_sha256"],
                 "artifact_provenance_fingerprint": artifact_provenance_fingerprint,
+                "eval_dataset_sha256": eval_dataset_sha256,
                 "offline_eval_fingerprint": eval_fingerprint,
                 "release_evaluation_evidence_fingerprint": release_evidence.fingerprint,
                 "historical_legal_eval_fingerprint": release_evidence.historical_legal_fingerprint,
@@ -180,21 +196,31 @@ class ModelPromotionGate:
                     raise ValueError("production_promotion_stale_model_state")
                 if current["artifact_provenance_fingerprint"] != artifact_provenance_fingerprint:
                     raise ValueError("production_promotion_stale_model_state")
+                if str(current["eval_dataset_sha256"] or "") != eval_dataset_sha256:
+                    raise ValueError("production_promotion_stale_eval_dataset")
+                if str(current["training_manifest_chain_sha256"] or "") != training_manifest_chain_sha256:
+                    raise ValueError("production_promotion_stale_training_manifest")
                 if offline_eval_fingerprint(current) != eval_fingerprint:
                     raise ValueError("production_promotion_stale_offline_eval")
-                self.release_evidence.verify(release_evidence.fingerprint)
+                self.release_evidence.verify_for_lineage(
+                    fingerprint=release_evidence.fingerprint,
+                    eval_dataset_sha256=eval_dataset_sha256,
+                    training_manifest_chain_sha256=training_manifest_chain_sha256,
+                )
                 conn.execute(
                     """INSERT INTO model_production_promotions(
                     id,fingerprint,release_proof_fingerprint,offline_eval_fingerprint,
                     release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,
-                    safety_eval_fingerprint,model_record_id,artifact_sha256,
-                    artifact_provenance_fingerprint,training_job_fingerprint,
-                    canary_evidence_fingerprint,approved_by,approval_reference,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,
+                    model_record_id,artifact_sha256,artifact_provenance_fingerprint,
+                    training_job_fingerprint,canary_evidence_fingerprint,
+                    approved_by,approval_reference,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         record_id, fingerprint, release_proof, eval_fingerprint,
                         release_evidence.fingerprint, release_evidence.historical_legal_fingerprint,
-                        release_evidence.safety_eval_fingerprint, payload.model_record_id,
+                        release_evidence.safety_eval_fingerprint, eval_dataset_sha256,
+                        training_manifest_chain_sha256, payload.model_record_id,
                         model["artifact_sha256"], artifact_provenance_fingerprint,
                         training_job_fingerprint, payload.canary_evidence_fingerprint,
                         payload.approved_by.strip(), payload.approval_reference.strip(),
@@ -219,6 +245,8 @@ class ModelPromotionGate:
             release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
             historical_legal_eval_fingerprint=release_evidence.historical_legal_fingerprint,
             safety_eval_fingerprint=release_evidence.safety_eval_fingerprint,
+            eval_dataset_sha256=eval_dataset_sha256,
+            training_manifest_chain_sha256=training_manifest_chain_sha256,
             model_record_id=payload.model_record_id,
             artifact_sha256=model["artifact_sha256"],
             artifact_provenance_fingerprint=artifact_provenance_fingerprint,

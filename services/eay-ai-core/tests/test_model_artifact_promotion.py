@@ -1,7 +1,9 @@
 import sqlite3
+from datetime import date
 
 import pytest
 
+from app.historical_legal_rag_evals import HistoricalLegalRagCase, evaluate_historical_legal_rag
 from app.model_artifact_provenance import (
     ArtifactRegistration as PromotionArtifactRegistration,
     CanaryEvidenceRegistration,
@@ -10,6 +12,8 @@ from app.model_artifact_provenance import (
 from app.model_artifact_registry import ArtifactRegistration as RegistryArtifactRegistration
 from app.model_promotion_gate import ModelPromotionGate, PromotionRequest
 from app.model_registry import ApprovalRequest, CanaryRequest, EvalSummary, ModelCandidateCreate, ModelRegistry
+from app.release_evidence_registry import ReleaseEvaluationEvidenceRegistry
+from app.safety_evals import SafetyEvalCase, evaluate_safety_evals
 from app.training_job_registry import TrainingJobRegistration
 
 DATASET = "b" * 64
@@ -87,12 +91,48 @@ def _good_canary(model_id):
     )
 
 
+def _release_evidence(db_path):
+    historical = evaluate_historical_legal_rag([
+        HistoricalLegalRagCase(
+            case_id=f"historical-{idx}", as_of=date(2026, 6, 1),
+            expected_source_ids=(f"legal-{idx}",), retrieved_source_ids=(f"legal-{idx}",),
+            temporal_resolution_fingerprint=f"{idx % 10}" * 64,
+        )
+        for idx in range(20)
+    ])
+    safety = evaluate_safety_evals([
+        SafetyEvalCase(
+            case_id=f"safety-{idx}", expected_evidence_ids=(f"e-{idx}",),
+            cited_evidence_ids=(f"e-{idx}",), expected_tool_answer="42", actual_tool_answer="42",
+        )
+        for idx in range(20)
+    ])
+    return ReleaseEvaluationEvidenceRegistry(db_path).record(historical=historical, safety=safety)
+
+
 def test_artifact_requires_registered_training_job(tmp_path):
     provenance = ModelArtifactProvenanceRegistry(tmp_path / "eay.db")
     with pytest.raises(KeyError, match="training_job_not_found"):
         provenance.register_artifact(PromotionArtifactRegistration(
             training_job_fingerprint="d" * 64, artifact_sha256=ARTIFACT,
             format="safetensors", created_by="trainer", build_reference="BUILD-1",
+        ))
+
+
+def test_production_promotion_requires_registered_release_eval_evidence(tmp_path):
+    registry = ModelRegistry(tmp_path / "eay.db")
+    model_id, job_fp = _seed(registry)
+    provenance = ModelArtifactProvenanceRegistry(registry.db_path)
+    provenance.register_artifact(PromotionArtifactRegistration(
+        training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
+        format="safetensors", created_by="trainer", build_reference="BUILD-1",
+    ))
+    evidence = provenance.register_canary_evidence(_good_canary(model_id))
+    with pytest.raises(KeyError, match="release_evaluation_evidence_not_found"):
+        ModelPromotionGate(registry.db_path).promote(PromotionRequest(
+            model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
+            release_evaluation_evidence_fingerprint="7" * 64,
+            approved_by="release-manager", approval_reference="REL-MISSING-EVAL",
         ))
 
 
@@ -106,10 +146,12 @@ def test_failed_canary_cannot_promote(tmp_path):
     ))
     weak = _good_canary(model_id).model_copy(update={"request_count": 20})
     evidence = provenance.register_canary_evidence(weak)
+    release_evidence = _release_evidence(registry.db_path)
     assert evidence.passed is False
     with pytest.raises(ValueError, match="canary_evidence_release_gate_failed"):
         ModelPromotionGate(registry.db_path).promote(PromotionRequest(
             model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
+            release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
             approved_by="release-manager", approval_reference="REL-1",
         ))
 
@@ -123,6 +165,7 @@ def test_production_promotion_blocks_tampered_primary_artifact_provenance(tmp_pa
         format="safetensors", created_by="trainer", build_reference="BUILD-1",
     ))
     evidence = provenance.register_canary_evidence(_good_canary(model_id))
+    release_evidence = _release_evidence(registry.db_path)
     with sqlite3.connect(registry.db_path) as conn:
         conn.execute(
             "UPDATE model_registry SET artifact_provenance_fingerprint=? WHERE id=?",
@@ -131,11 +174,12 @@ def test_production_promotion_blocks_tampered_primary_artifact_provenance(tmp_pa
     with pytest.raises(ValueError, match="production_promotion_artifact_provenance_mismatch"):
         ModelPromotionGate(registry.db_path).promote(PromotionRequest(
             model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
+            release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
             approved_by="release-manager", approval_reference="REL-TAMPER",
         ))
 
 
-def test_production_promotion_binds_registered_artifact_canary_and_human_approval(tmp_path):
+def test_production_promotion_binds_registered_artifact_evals_canary_and_human_approval(tmp_path):
     registry = ModelRegistry(tmp_path / "eay.db")
     model_id, job_fp = _seed(registry)
     provenance = ModelArtifactProvenanceRegistry(registry.db_path)
@@ -144,15 +188,20 @@ def test_production_promotion_binds_registered_artifact_canary_and_human_approva
         format="safetensors", created_by="trainer", build_reference="BUILD-1",
     ))
     evidence = provenance.register_canary_evidence(_good_canary(model_id))
+    release_evidence = _release_evidence(registry.db_path)
     assert evidence.passed is True
 
     proof = ModelPromotionGate(registry.db_path).promote(PromotionRequest(
         model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
+        release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
         approved_by="release-manager", approval_reference="REL-1",
     ))
     assert len(proof.fingerprint) == 64
     assert len(proof.release_proof_fingerprint) == 64
     assert len(proof.offline_eval_fingerprint) == 64
+    assert proof.release_evaluation_evidence_fingerprint == release_evidence.fingerprint
+    assert proof.historical_legal_eval_fingerprint == release_evidence.historical_legal_fingerprint
+    assert proof.safety_eval_fingerprint == release_evidence.safety_eval_fingerprint
     assert proof.artifact_sha256 == artifact.artifact_sha256
     assert proof.training_job_fingerprint == job_fp
 
@@ -160,17 +209,23 @@ def test_production_promotion_binds_registered_artifact_canary_and_human_approva
         status = conn.execute("SELECT status FROM model_registry WHERE id=?", (model_id,)).fetchone()[0]
         row = conn.execute(
             """SELECT release_proof_fingerprint,offline_eval_fingerprint,
-            artifact_provenance_fingerprint FROM model_production_promotions"""
+            release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,
+            safety_eval_fingerprint,artifact_provenance_fingerprint
+            FROM model_production_promotions"""
         ).fetchone()
     assert status == "production"
     assert row == (
         proof.release_proof_fingerprint,
         proof.offline_eval_fingerprint,
+        proof.release_evaluation_evidence_fingerprint,
+        proof.historical_legal_eval_fingerprint,
+        proof.safety_eval_fingerprint,
         proof.artifact_provenance_fingerprint,
     )
 
     with pytest.raises(ValueError, match="production_promotion_requires_canary_status"):
         ModelPromotionGate(registry.db_path).promote(PromotionRequest(
             model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
+            release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
             approved_by="release-manager", approval_reference="REL-2",
         ))

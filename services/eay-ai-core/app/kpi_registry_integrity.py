@@ -16,6 +16,8 @@ class KpiRegistryBinding:
     semantic_contract_fingerprint: str
     query_template_fingerprint: str
     promotion_decision_fingerprint: str | None
+    promotion_schema_fingerprint: str | None
+    review_artifact_fingerprint: str | None
     legacy_bootstrap: bool = False
 
     @property
@@ -30,6 +32,8 @@ class KpiRegistryBinding:
             "semantic_contract_fingerprint": self.semantic_contract_fingerprint,
             "query_template_fingerprint": self.query_template_fingerprint,
             "promotion_decision_fingerprint": self.promotion_decision_fingerprint,
+            "promotion_schema_fingerprint": self.promotion_schema_fingerprint,
+            "review_artifact_fingerprint": self.review_artifact_fingerprint,
             "legacy_bootstrap": self.legacy_bootstrap,
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -44,14 +48,7 @@ def _sha(value: object, field: str) -> str:
 
 
 def verify_registry_binding(definition: object) -> KpiRegistryBinding:
-    """Fail closed when executable KPI code drifts from reviewed registry lineage.
-
-    The binding covers the query template plus the exact schema and semantic contracts.
-    Changing SQL, parameters, schema columns/types or business semantics invalidates the
-    previously pinned binding. New KPIs additionally require not only a promotion hash,
-    but the exact sealed promotion decision to be registered independently. Orders
-    remains the sole explicit legacy bootstrap exception.
-    """
+    """Fail closed when executable KPI code drifts from reviewed registry lineage."""
 
     metric = str(getattr(definition, "metric", "") or "")
     query_id = str(getattr(definition, "query_id", "") or "")
@@ -63,18 +60,25 @@ def verify_registry_binding(definition: object) -> KpiRegistryBinding:
     expected_semantic_fp = _sha(getattr(definition, "semantic_contract_fingerprint", None), "semantic_contract")
     expected_binding_fp = _sha(getattr(definition, "registry_binding_fingerprint", None), "registry_binding")
     promotion_fp_raw = getattr(definition, "registry_promotion_fingerprint", None)
+    promotion_schema_raw = getattr(definition, "promotion_schema_fingerprint", None)
+    review_artifact_raw = getattr(definition, "review_artifact_fingerprint", None)
     legacy_bootstrap = bool(getattr(definition, "legacy_bootstrap", False))
 
     if not all((metric, query_id, source_table, schema_contract_id, semantic_contract_id)):
         raise ValueError(f"kpi_registry_integrity_definition_incomplete:{metric}")
     if legacy_bootstrap and metric != "orders":
         raise ValueError("kpi_registry_integrity_legacy_bootstrap_forbidden")
+
     if not legacy_bootstrap:
         promotion_fp = _sha(promotion_fp_raw, "registry_promotion")
+        promotion_schema_fp = _sha(promotion_schema_raw, "promotion_schema")
+        review_artifact_fp = _sha(review_artifact_raw, "review_artifact")
     else:
-        if promotion_fp_raw is not None:
-            raise ValueError("kpi_registry_integrity_legacy_promotion_must_be_empty")
+        if any(value is not None for value in (promotion_fp_raw, promotion_schema_raw, review_artifact_raw)):
+            raise ValueError("kpi_registry_integrity_legacy_promotion_lineage_must_be_empty")
         promotion_fp = None
+        promotion_schema_fp = None
+        review_artifact_fp = None
 
     from .query_templates import TEMPLATES
     from .schema_contracts import get_schema_contract
@@ -104,11 +108,15 @@ def verify_registry_binding(definition: object) -> KpiRegistryBinding:
         from .kpi_registry_promotion_gate import verify_registered_kpi_promotion
 
         assert promotion_fp is not None
+        assert promotion_schema_fp is not None
+        assert review_artifact_fp is not None
         verify_registered_kpi_promotion(
             promotion_fingerprint=promotion_fp,
             metric=metric,
             query_id=query_id,
             query_template_fingerprint=expected_template_fp,
+            schema_fingerprint=promotion_schema_fp,
+            review_artifact_fingerprint=review_artifact_fp,
         )
 
     binding = KpiRegistryBinding(
@@ -121,6 +129,8 @@ def verify_registry_binding(definition: object) -> KpiRegistryBinding:
         semantic_contract_fingerprint=expected_semantic_fp,
         query_template_fingerprint=expected_template_fp,
         promotion_decision_fingerprint=promotion_fp,
+        promotion_schema_fingerprint=promotion_schema_fp,
+        review_artifact_fingerprint=review_artifact_fp,
         legacy_bootstrap=legacy_bootstrap,
     )
     if binding.fingerprint != expected_binding_fp:

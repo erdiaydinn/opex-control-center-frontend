@@ -36,13 +36,20 @@ def test_pending_visual_audit_not_eligible_for_learning(tmp_path):
     assert provenance.learning_eligibility(audit.id) is False
 
 
-def test_accepted_visual_audit_with_provenance_becomes_eligible(tmp_path):
+def test_accepted_visual_audit_requires_sealed_review_lineage(tmp_path):
     db = tmp_path / "eay.db"
     audit_store = VisionAuditStore(db)
     audit = _audit(audit_store)
     provenance = VisionProvenanceStore(db)
     provenance.register(audit.id)
     audit_store.decide(audit.id, "accepted", "verified against source image")
+    assert provenance.learning_eligibility(audit.id) is False
+    sealed = provenance.reviews.seal(
+        audit.id,
+        reviewer="vision-reviewer",
+        approval_reference="VISION-REV-1",
+    )
+    assert len(sealed.fingerprint) == 64
     assert provenance.learning_eligibility(audit.id) is True
 
 

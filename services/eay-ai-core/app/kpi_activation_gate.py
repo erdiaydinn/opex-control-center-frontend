@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .kpi_aggregation_contracts import WeightedAverageContract, validate_weighted_average_contract
+from .kpi_rate_aggregation import RateAggregationContract, validate_rate_aggregation_contract
 from .kpi_result_validation import KpiResultContract, NSFR_RESULT_FIELDS
 from .kpi_unit_contracts import DurationContract, RateContract
 
@@ -25,7 +26,7 @@ class KpiRateActivationBundle:
     schema_fingerprint: str
     schema_evidence_fingerprint: str | None
     unit_contract_fingerprint: str
-    aggregation_contract_fingerprint: None = None
+    aggregation_contract_fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -113,8 +114,9 @@ def verify_rate_kpi_activation(
     semantic_verification: Mapping[str, object],
     schema_verification: Mapping[str, object],
     rate_contract: RateContract,
+    aggregation_contract: RateAggregationContract,
 ) -> KpiRateActivationBundle:
-    """Require an explicitly pinned source scale for percentage KPIs such as OTP."""
+    """Require pinned scale and denominator lineage for percentage KPIs such as OTP."""
 
     semantic_fp, schema_fp, evidence_fp = _verified_lineage(
         metric=metric,
@@ -123,6 +125,10 @@ def verify_rate_kpi_activation(
     )
     if rate_contract.metric != metric:
         raise ValueError("kpi_activation_unit_metric_mismatch")
+    if aggregation_contract.metric != metric:
+        raise ValueError("kpi_activation_aggregation_metric_mismatch")
+
+    validate_rate_aggregation_contract(aggregation_contract)
 
     return KpiRateActivationBundle(
         metric=metric,
@@ -130,6 +136,7 @@ def verify_rate_kpi_activation(
         schema_fingerprint=schema_fp,
         schema_evidence_fingerprint=evidence_fp,
         unit_contract_fingerprint=rate_contract.fingerprint,
+        aggregation_contract_fingerprint=aggregation_contract.fingerprint,
     )
 
 

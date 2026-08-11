@@ -20,9 +20,13 @@ def test_rejects_legal_claim_without_provenance():
         {
             "messages": [
                 {"role": "user", "content": "Is this mandatory?"},
-                {"role": "assistant", "content": "Yasal olarak bu işlem zorunludur."},
+                {"role": "assistant", "content": "Yasal olarak bu işlem zorunludur ve ilgili operasyon bu kurala uymalıdır."},
             ],
-            "metadata": {"human_approved": True},
+            "metadata": {
+                "human_approved": True,
+                "reason": "legal correction",
+                "teacher_reviewed": True,
+            },
         }
     ])
     assert not result.accepted
@@ -34,14 +38,34 @@ def test_accepts_human_approved_grounded_example():
         {
             "messages": [
                 {"role": "user", "content": "Is this mandatory?"},
-                {"role": "assistant", "content": "Mevzuata göre bu şart uygulanır."},
+                {
+                    "role": "assistant",
+                    "content": "Mevzuata göre bu şart belirtilen tarih için uygulanır; operasyon kararı doğrulanmış kaynak ve yürürlük bilgisine dayanmalıdır.",
+                },
             ],
             "metadata": {
                 "human_approved": True,
                 "contains_personal_data": False,
+                "teacher_reviewed": True,
+                "reason": "verified legal correction",
                 "legal_provenance": {"instrument_id": "tgk-x", "verification_id": "v1"},
             },
         }
     ])
     assert result.accepted
     assert len(result.dataset_sha256) == 64
+
+
+def test_rejects_thin_or_unreasoned_target_even_when_human_flag_is_true():
+    result = validate_training_examples([
+        {
+            "messages": [
+                {"role": "user", "content": "Explain this"},
+                {"role": "assistant", "content": "Use it."},
+            ],
+            "metadata": {"human_approved": True},
+        }
+    ])
+    assert not result.accepted
+    assert "example_0:target_answer_too_short" in result.violations
+    assert "example_0:learning_reason_required" in result.violations

@@ -5,8 +5,47 @@ import json
 from dataclasses import dataclass
 from typing import Literal, Mapping
 
-ClientEvent = Literal["wake", "audio_frame", "stt_partial", "stt_final", "barge_in", "approval"]
-ServerEvent = Literal["listening", "thinking", "approval_required", "tts_chunk", "cancelled", "done", "error"]
+ClientEvent = Literal[
+    "wake",
+    "audio_frame",
+    "stt_partial",
+    "stt_final",
+    "task_start",
+    "task_result",
+    "barge_in",
+    "approval",
+]
+ServerEvent = Literal[
+    "listening",
+    "thinking",
+    "task_started",
+    "task_result_accepted",
+    "approval_required",
+    "tts_chunk",
+    "cancelled",
+    "done",
+    "error",
+]
+
+_ALLOWED_EVENTS = {
+    "wake",
+    "audio_frame",
+    "stt_partial",
+    "stt_final",
+    "task_start",
+    "task_result",
+    "barge_in",
+    "approval",
+    "listening",
+    "thinking",
+    "task_started",
+    "task_result_accepted",
+    "approval_required",
+    "tts_chunk",
+    "cancelled",
+    "done",
+    "error",
+}
 
 
 def _sha256(payload: object) -> str:
@@ -43,9 +82,13 @@ def seal_envelope(
         raise ValueError("voice_ws_message_id_required")
     if sequence < 0:
         raise ValueError("voice_ws_sequence_invalid")
-    if event not in {"wake", "audio_frame", "stt_partial", "stt_final", "barge_in", "approval", "listening", "thinking", "approval_required", "tts_chunk", "cancelled", "done", "error"}:
+    if event not in _ALLOWED_EVENTS:
         raise ValueError("voice_ws_event_invalid")
-    forbidden = {key for key in payload if key.lower() in {"raw_audio", "audio_bytes", "transcript", "prompt"}}
+    forbidden = {
+        key
+        for key in payload
+        if key.lower() in {"raw_audio", "audio_bytes", "transcript", "prompt", "result_text", "tts_text"}
+    }
     if forbidden:
         raise ValueError("voice_ws_raw_content_forbidden")
     payload_sha = _sha256(dict(payload))

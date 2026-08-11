@@ -18,6 +18,7 @@ from .tool_router import router as tool_router
 from .training_manifest import router as training_manifest_router
 from .vision_audit import router as vision_audit_router
 from .vision_provenance import router as vision_provenance_router
+from .voice_ws_api import router as voice_ws_router
 
 
 # The legacy learning export in main emitted approved candidates without the newer
@@ -50,3 +51,4 @@ app.include_router(vision_provenance_router)
 app.include_router(training_manifest_router)
 app.include_router(learning_export_router)
 app.include_router(model_registry_router)
+app.include_router(voice_ws_router)

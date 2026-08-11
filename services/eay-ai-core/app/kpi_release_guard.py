@@ -27,6 +27,23 @@ class KpiReleaseGuardResult:
     passed: bool = True
 
 
+def _registry_activation_intent(definition: KpiDefinition) -> bool:
+    """Return true as soon as a registry entry is being prepared for activation.
+
+    Runtime/result contract safety must be checked *before* the newer promotion and
+    registry-binding fingerprints are sealed. Otherwise adding stricter promotion
+    fields can accidentally hide an incomplete activation from the release guard simply
+    because ``definition.executable`` remains false until the final review step.
+    """
+
+    return (
+        definition.review_state == "reviewed"
+        and bool(definition.query_id)
+        and bool(definition.schema_contract_id)
+        and bool(definition.semantic_contract_id)
+    )
+
+
 def verify_kpi_registry_runtime_alignment(
     *,
     registry: Mapping[str, KpiDefinition] = KPI_REGISTRY,
@@ -35,27 +52,40 @@ def verify_kpi_registry_runtime_alignment(
     putaway_contracts: Mapping[str, object] = PUTAWAY_RUNTIME_CONTRACTS,
     result_contracts: Mapping[str, object] = KPI_RESULT_CONTRACTS,
 ) -> KpiReleaseGuardResult:
-    """Block releases that expose a governed KPI without all runtime/result contracts.
+    """Block releases that prepare a governed KPI without all runtime/result contracts.
 
-    This is intentionally independent of BigQuery availability. A future code review that
-    flips Prep/Picking/OTP/Putaway or the NSFR family to executable must add the corresponding
-    runtime and post-query result contracts in the same release, otherwise CI fails before
-    any production query is attempted.
+    This is intentionally independent of BigQuery availability and of final registry
+    promotion sealing. A code review that starts activating Prep/Picking/OTP/Putaway or
+    the NSFR family must add the corresponding runtime and post-query result contracts
+    in the same release. The guard evaluates activation intent rather than only the final
+    ``executable`` property so stricter promotion gates can never mask missing safety
+    contracts.
     """
 
+    activation_candidates = tuple(
+        sorted(metric for metric, definition in registry.items() if _registry_activation_intent(definition))
+    )
     executable = tuple(sorted(metric for metric, definition in registry.items() if definition.executable))
 
     missing_duration = sorted(
-        metric for metric in executable if metric in DURATION_RUNTIME_METRICS and metric not in duration_contracts
+        metric
+        for metric in activation_candidates
+        if metric in DURATION_RUNTIME_METRICS and metric not in duration_contracts
     )
     missing_rate = sorted(
-        metric for metric in executable if metric in RATE_RUNTIME_METRICS and metric not in rate_contracts
+        metric
+        for metric in activation_candidates
+        if metric in RATE_RUNTIME_METRICS and metric not in rate_contracts
     )
     missing_putaway = sorted(
-        metric for metric in executable if metric in PUTAWAY_RUNTIME_METRICS and metric not in putaway_contracts
+        metric
+        for metric in activation_candidates
+        if metric in PUTAWAY_RUNTIME_METRICS and metric not in putaway_contracts
     )
     missing_result = sorted(
-        metric for metric in executable if metric in RESULT_CONTRACT_REQUIRED_METRICS and metric not in result_contracts
+        metric
+        for metric in activation_candidates
+        if metric in RESULT_CONTRACT_REQUIRED_METRICS and metric not in result_contracts
     )
     if missing_duration or missing_rate or missing_putaway or missing_result:
         blockers = []

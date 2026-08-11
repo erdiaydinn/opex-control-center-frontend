@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .vision_retention import VisionRetentionStore
+from .vision_review_lineage import VisionReviewDecisionStore
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 
@@ -32,6 +33,7 @@ class VisionProvenanceStore:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.retention = VisionRetentionStore(db_path)
+        self.reviews = VisionReviewDecisionStore(db_path)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -100,7 +102,7 @@ class VisionProvenanceStore:
             retention_fingerprint=retention.fingerprint,
             metadata=metadata,
             human_review_required=decision == "pending",
-            eligible_for_learning=decision == "accepted" and self.retention.is_active(audit_id),
+            eligible_for_learning=False,
         )
 
     def pending_reviews(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -148,8 +150,11 @@ class VisionProvenanceStore:
         if row[0] != "accepted" or row[1] is None:
             return False
         try:
-            return self.retention.is_active(audit_id)
-        except KeyError:
+            if not self.retention.is_active(audit_id):
+                return False
+            review = self.reviews.verify(audit_id)
+            return review.decision == "accepted"
+        except (KeyError, ValueError):
             return False
 
 

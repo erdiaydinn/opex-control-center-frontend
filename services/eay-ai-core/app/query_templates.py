@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +14,16 @@ class QueryTemplate:
     query_id: str
     sql: str
     parameter_names: tuple[str, ...]
+
+    @property
+    def fingerprint(self) -> str:
+        payload = {
+            "query_id": self.query_id,
+            "sql": self.sql,
+            "parameter_names": list(self.parameter_names),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 TEMPLATES: dict[str, QueryTemplate] = {

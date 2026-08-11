@@ -3,6 +3,9 @@ import pytest
 from app.training_manifest import TrainingManifestCreate, TrainingManifestStore
 
 
+TEACHER_FP = "f" * 64
+
+
 def _example(text="Use the reviewed warehouse procedure and verify the supporting source before taking operational action.", user="question"):
     return {
         "messages": [
@@ -13,6 +16,8 @@ def _example(text="Use the reviewed warehouse procedure and verify the supportin
             "human_approved": True,
             "contains_personal_data": False,
             "teacher_reviewed": True,
+            "teacher_quality_accepted": True,
+            "teacher_quality_sha256": TEACHER_FP,
             "reason": "approved training correction",
         },
     }
@@ -66,9 +71,11 @@ def test_manifest_chain_binds_quality_lineage(tmp_path):
             approval_reference="APR-QUALITY-1",
         )
     )
+    changed = _example("Use the reviewed receiving procedure, verify all source evidence, and document the operational decision before closure.")
+    changed["metadata"]["teacher_quality_sha256"] = "e" * 64
     second = store.create(
         TrainingManifestCreate(
-            examples=[_example("Use the reviewed receiving procedure, verify all source evidence, and document the operational decision before closure.")],
+            examples=[changed],
             approved_by="reviewer",
             approval_reference="APR-QUALITY-2",
             parent_manifest_id=first.id,
@@ -97,16 +104,18 @@ def test_manifest_rejects_train_eval_leakage(tmp_path):
 
 def test_manifest_persists_distinct_eval_split_hash(tmp_path):
     store = TrainingManifestStore(tmp_path / "eay.db")
+    eval_item = _example(
+        "Use the effective SLA version and compare elapsed minutes with the reviewed threshold before classifying compliance.",
+        user="How should putaway SLA compliance be evaluated?",
+    )
+    eval_item["metadata"]["teacher_quality_sha256"] = "e" * 64
     manifest = store.create(
         TrainingManifestCreate(
             examples=[_example(
                 "Use the reviewed receiving procedure and verify the source before accepting the operational conclusion.",
                 user="How should receiving be reviewed?",
             )],
-            eval_examples=[_example(
-                "Use the effective SLA version and compare elapsed minutes with the reviewed threshold before classifying compliance.",
-                user="How should putaway SLA compliance be evaluated?",
-            )],
+            eval_examples=[eval_item],
             approved_by="reviewer",
             approval_reference="APR-EVAL-1",
         )

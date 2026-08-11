@@ -3,10 +3,11 @@ import sqlite3
 import pytest
 
 from app.model_artifact_provenance import (
-    ArtifactRegistration,
+    ArtifactRegistration as PromotionArtifactRegistration,
     CanaryEvidenceRegistration,
     ModelArtifactProvenanceRegistry,
 )
+from app.model_artifact_registry import ArtifactRegistration as RegistryArtifactRegistration
 from app.model_promotion_gate import ModelPromotionGate, PromotionRequest
 from app.model_registry import ApprovalRequest, CanaryRequest, EvalSummary, ModelCandidateCreate, ModelRegistry
 from app.training_job_registry import TrainingJobRegistration
@@ -49,6 +50,16 @@ def _seed(registry: ModelRegistry):
     job = registry.training_jobs.register(
         TrainingJobRegistration(spec=spec, approved_by="reviewer", approval_reference="JOB-1")
     )
+    registry.artifacts.register(
+        RegistryArtifactRegistration(
+            training_job_fingerprint=job.fingerprint,
+            artifact_sha256=ARTIFACT,
+            artifact_format="safetensors",
+            local_path_reference="artifacts/eay-ops/0.3/model.safetensors",
+            produced_by="local-trainer",
+            approval_reference="ARTIFACT-1",
+        )
+    )
     evals = EvalSummary(
         legal_grounding_rate=0.995, citation_validity_rate=1.0,
         unsafe_tool_call_rate=0.0, regression_pass_rate=0.99,
@@ -79,7 +90,7 @@ def _good_canary(model_id):
 def test_artifact_requires_registered_training_job(tmp_path):
     provenance = ModelArtifactProvenanceRegistry(tmp_path / "eay.db")
     with pytest.raises(KeyError, match="training_job_not_found"):
-        provenance.register_artifact(ArtifactRegistration(
+        provenance.register_artifact(PromotionArtifactRegistration(
             training_job_fingerprint="d" * 64, artifact_sha256=ARTIFACT,
             format="safetensors", created_by="trainer", build_reference="BUILD-1",
         ))
@@ -89,7 +100,7 @@ def test_failed_canary_cannot_promote(tmp_path):
     registry = ModelRegistry(tmp_path / "eay.db")
     model_id, job_fp = _seed(registry)
     provenance = ModelArtifactProvenanceRegistry(registry.db_path)
-    provenance.register_artifact(ArtifactRegistration(
+    provenance.register_artifact(PromotionArtifactRegistration(
         training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
         format="safetensors", created_by="trainer", build_reference="BUILD-1",
     ))
@@ -107,7 +118,7 @@ def test_production_promotion_binds_registered_artifact_canary_and_human_approva
     registry = ModelRegistry(tmp_path / "eay.db")
     model_id, job_fp = _seed(registry)
     provenance = ModelArtifactProvenanceRegistry(registry.db_path)
-    artifact = provenance.register_artifact(ArtifactRegistration(
+    artifact = provenance.register_artifact(PromotionArtifactRegistration(
         training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
         format="safetensors", created_by="trainer", build_reference="BUILD-1",
     ))

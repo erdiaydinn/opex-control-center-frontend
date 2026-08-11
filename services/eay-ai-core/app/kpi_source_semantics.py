@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Literal, Mapping
 
 from .kpi_aggregation_contracts import WeightedAverageContract
+from .kpi_rate_aggregation import RateAggregationContract
 from .kpi_schema_evidence import KpiSchemaEvidence
 from .kpi_unit_contracts import DurationContract, RateContract
 
@@ -218,7 +219,14 @@ def verify_otp_source_semantics(
     evidence: KpiSchemaEvidence,
     semantics: RateSourceSemantics,
 ) -> dict[str, object]:
-    """Bind OTP's late-prep source column to an explicit fraction/percent scale."""
+    """Bind OTP 4.25 to reviewed additive late/eligible-order lineage.
+
+    A pre-aggregated late-prep percentage may still be mapped for row-level display or
+    reconciliation, but it is never sufficient for aggregate OTP activation. Production
+    aggregation must use SUM(late_prep_orders) / SUM(eligible_orders), then complement
+    the ratio to OTP. This prevents average-of-percentages drift when store/day group
+    sizes differ.
+    """
 
     if semantics.metric != "otp":
         raise ValueError("kpi_source_semantics_metric_mismatch")
@@ -231,12 +239,6 @@ def verify_otp_source_semantics(
     if semantics.table_id != _EXPECTED_TABLES["otp"]:
         raise ValueError("kpi_source_semantics_table_mismatch")
     mapping = _canonical_mapping(semantics.role_to_column)
-    late_prep_column = _require_column(
-        mapping=mapping,
-        observed=observed,
-        role="late_prep_rate",
-        allowed_types=_NUMERIC_TYPES,
-    )
     date_column = _require_column(
         mapping=mapping,
         observed=observed,
@@ -249,16 +251,51 @@ def verify_otp_source_semantics(
         role="store",
         allowed_types={"STRING"},
     )
+    late_prep_orders_column = _require_column(
+        mapping=mapping,
+        observed=observed,
+        role="late_prep_orders",
+        allowed_types=_NUMERIC_TYPES,
+    )
+    eligible_orders_column = _require_column(
+        mapping=mapping,
+        observed=observed,
+        role="eligible_orders",
+        allowed_types=_NUMERIC_TYPES,
+    )
+    if late_prep_orders_column == eligible_orders_column:
+        raise ValueError("kpi_source_semantics_otp_numerator_denominator_must_differ")
+
+    late_prep_rate_column: str | None = None
+    if mapping.get("late_prep_rate"):
+        late_prep_rate_column = _require_column(
+            mapping=mapping,
+            observed=observed,
+            role="late_prep_rate",
+            allowed_types=_NUMERIC_TYPES,
+        )
+        if late_prep_rate_column in {late_prep_orders_column, eligible_orders_column}:
+            raise ValueError("kpi_source_semantics_otp_rate_column_must_be_distinct")
+
     rate = RateContract(metric="otp", source_scale=semantics.source_scale)
+    aggregation = RateAggregationContract(
+        metric="otp",
+        numerator_field=late_prep_orders_column,
+        denominator_field=eligible_orders_column,
+        aggregation_kind="complement_ratio_of_sums",
+    )
     return {
         "metric": "otp",
         "table_id": semantics.table_id,
-        "late_prep_rate_column": late_prep_column,
+        "late_prep_rate_column": late_prep_rate_column,
+        "late_prep_orders_column": late_prep_orders_column,
+        "eligible_orders_column": eligible_orders_column,
         "date_column": date_column,
         "store_column": store_column,
         "source_scale": semantics.source_scale,
         "schema_evidence_fingerprint": evidence.fingerprint,
         "source_semantics_fingerprint": semantics.fingerprint,
         "rate_contract": rate,
+        "aggregation_contract": aggregation,
         "reviewed": True,
     }

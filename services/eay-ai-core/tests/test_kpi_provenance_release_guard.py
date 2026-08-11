@@ -14,6 +14,27 @@ FP_D = "d" * 64
 FP_E = "e" * 64
 
 
+def _as_executable(metric: str, query_id: str, schema_contract_id: str):
+    """Build an executable-shaped fixture under the hardened registry definition.
+
+    The release guard only verifies contract presence; registry binding cryptographic
+    validation is exercised separately. Legacy bootstrap keeps this fixture focused on
+    the missing-runtime/result-contract invariant instead of promotion mechanics.
+    """
+
+    return replace(
+        KPI_REGISTRY[metric],
+        review_state="reviewed",
+        query_id=query_id,
+        schema_contract_id=schema_contract_id,
+        schema_contract_fingerprint=FP_A,
+        semantic_contract_fingerprint=FP_B,
+        query_template_fingerprint=FP_C,
+        registry_binding_fingerprint=FP_D,
+        legacy_bootstrap=True,
+    )
+
+
 def test_activation_provenance_is_deterministic_and_sensitive_to_lineage():
     base = activation_provenance_fingerprint(
         metric="picking",
@@ -92,11 +113,8 @@ def test_current_registry_runtime_alignment_passes():
 
 def test_release_guard_blocks_picking_registry_activation_without_runtime_contract():
     registry = dict(KPI_REGISTRY)
-    registry["picking"] = replace(
-        registry["picking"],
-        review_state="reviewed",
-        query_id="ops.kpi.picking.v1",
-        schema_contract_id="ops.picking.v1",
+    registry["picking"] = _as_executable(
+        "picking", "ops.kpi.picking.v1", "ops.picking.v1"
     )
     with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:duration=picking"):
         verify_kpi_registry_runtime_alignment(registry=registry)
@@ -104,23 +122,15 @@ def test_release_guard_blocks_picking_registry_activation_without_runtime_contra
 
 def test_release_guard_blocks_otp_registry_activation_without_rate_contract():
     registry = dict(KPI_REGISTRY)
-    registry["otp"] = replace(
-        registry["otp"],
-        review_state="reviewed",
-        query_id="ops.kpi.otp.v1",
-        schema_contract_id="ops.otp.v1",
-    )
+    registry["otp"] = _as_executable("otp", "ops.kpi.otp.v1", "ops.otp.v1")
     with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:rate=otp"):
         verify_kpi_registry_runtime_alignment(registry=registry)
 
 
 def test_release_guard_blocks_putaway_registry_activation_without_policy_contract():
     registry = dict(KPI_REGISTRY)
-    registry["putaway"] = replace(
-        registry["putaway"],
-        review_state="reviewed",
-        query_id="ops.kpi.putaway.v1",
-        schema_contract_id="ops.putaway.v1",
+    registry["putaway"] = _as_executable(
+        "putaway", "ops.kpi.putaway.v1", "ops.putaway.v1"
     )
     with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:putaway=putaway"):
         verify_kpi_registry_runtime_alignment(registry=registry)
@@ -128,12 +138,7 @@ def test_release_guard_blocks_putaway_registry_activation_without_policy_contrac
 
 def test_release_guard_blocks_nsfr_activation_without_result_contract():
     registry = dict(KPI_REGISTRY)
-    registry["nsfr"] = replace(
-        registry["nsfr"],
-        review_state="reviewed",
-        query_id="ops.kpi.nsfr.v1",
-        schema_contract_id="ops.nsfr.v1",
-    )
+    registry["nsfr"] = _as_executable("nsfr", "ops.kpi.nsfr.v1", "ops.nsfr.v1")
     result_contracts = {"pfr": object(), "refund": object()}
     with pytest.raises(ValueError, match="kpi_release_runtime_contract_missing:result=nsfr"):
         verify_kpi_registry_runtime_alignment(

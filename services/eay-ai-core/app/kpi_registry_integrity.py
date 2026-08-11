@@ -48,8 +48,9 @@ def verify_registry_binding(definition: object) -> KpiRegistryBinding:
 
     The binding covers the query template plus the exact schema and semantic contracts.
     Changing SQL, parameters, schema columns/types or business semantics invalidates the
-    previously pinned binding. New KPIs additionally require a human promotion-decision
-    fingerprint. Orders remains the sole explicit legacy bootstrap exception.
+    previously pinned binding. New KPIs additionally require not only a promotion hash,
+    but the exact sealed promotion decision to be registered independently. Orders
+    remains the sole explicit legacy bootstrap exception.
     """
 
     metric = str(getattr(definition, "metric", "") or "")
@@ -98,6 +99,17 @@ def verify_registry_binding(definition: object) -> KpiRegistryBinding:
         raise ValueError(f"kpi_registry_integrity_semantic_metric_drift:{metric}")
     if semantic_contract.fingerprint != expected_semantic_fp:
         raise ValueError(f"kpi_registry_integrity_semantic_contract_drift:{metric}")
+
+    if not legacy_bootstrap:
+        from .kpi_registry_promotion_gate import verify_registered_kpi_promotion
+
+        assert promotion_fp is not None
+        verify_registered_kpi_promotion(
+            promotion_fingerprint=promotion_fp,
+            metric=metric,
+            query_id=query_id,
+            query_template_fingerprint=expected_template_fp,
+        )
 
     binding = KpiRegistryBinding(
         metric=metric,

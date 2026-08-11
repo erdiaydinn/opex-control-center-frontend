@@ -13,6 +13,7 @@ def test_voice_websocket_wake_and_hashed_audio_flow():
         ready = ws.receive_json()
         assert ready["event"] == "ready"
         assert ready["protocol_version"] == "eay-voice-ws-v1"
+        assert ready["turn_epoch"] == 0
 
         ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-0", "payload": {}})
         listening = ws.receive_json()
@@ -62,7 +63,7 @@ def test_voice_websocket_rejects_raw_content_and_sequence_replay():
         assert replay["code"] == "voice_ws_sequence_gap_or_replay"
 
 
-def test_voice_websocket_stt_final_keeps_only_hash_metadata():
+def test_voice_websocket_stt_final_starts_governed_turn():
     client = TestClient(app)
     with client.websocket_connect("/v1/voice/ws/session-3?language=de") as ws:
         ws.receive_json()
@@ -80,6 +81,76 @@ def test_voice_websocket_stt_final_keeps_only_hash_metadata():
         assert result["event"] == "thinking"
         assert result["memory_turn_count"] == 1
         assert result["stt_final_sha256"] == _hash("c")
+        assert result["turn_epoch"] == 1
+
+
+def test_voice_websocket_accepts_current_task_result_and_retires_task():
+    client = TestClient(app)
+    with client.websocket_connect("/v1/voice/ws/session-5?language=tr") as ws:
+        ws.receive_json()
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}})
+        ws.receive_json()
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("d")}})
+        assert ws.receive_json()["turn_epoch"] == 1
+        ws.send_json(
+            {
+                "event": "task_start",
+                "sequence": 2,
+                "message_id": "m-2",
+                "payload": {"task_id": "model-1", "kind": "model", "request_fingerprint": _hash("e")},
+            }
+        )
+        started = ws.receive_json()
+        assert started["event"] == "task_started"
+        assert started["active_task_count"] == 1
+        assert started["task_turn_epoch"] == 1
+        ws.send_json(
+            {
+                "event": "task_result",
+                "sequence": 3,
+                "message_id": "m-3",
+                "payload": {"task_id": "model-1", "result_sha256": _hash("f")},
+            }
+        )
+        accepted = ws.receive_json()
+        assert accepted["event"] == "task_result_accepted"
+        assert accepted["active_task_count"] == 0
+        assert accepted["result_sha256"] == _hash("f")
+        assert len(accepted["accepted_result_fingerprint"]) == 64
+
+
+def test_voice_websocket_barge_in_rejects_late_task_result():
+    client = TestClient(app)
+    with client.websocket_connect("/v1/voice/ws/session-6?language=en") as ws:
+        ws.receive_json()
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}})
+        ws.receive_json()
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("1")}})
+        ws.receive_json()
+        ws.send_json(
+            {
+                "event": "task_start",
+                "sequence": 2,
+                "message_id": "m-2",
+                "payload": {"task_id": "tts-1", "kind": "tts", "request_fingerprint": _hash("2")},
+            }
+        )
+        ws.receive_json()
+        ws.send_json({"event": "barge_in", "sequence": 3, "message_id": "m-3", "payload": {}})
+        cancelled = ws.receive_json()
+        assert cancelled["event"] == "cancelled"
+        assert cancelled["turn_epoch"] == 2
+        ws.send_json(
+            {
+                "event": "task_result",
+                "sequence": 4,
+                "message_id": "m-4",
+                "payload": {"task_id": "tts-1", "result_sha256": _hash("3")},
+            }
+        )
+        late = ws.receive_json()
+        assert late["event"] == "error"
+        assert late["code"] == "voice_async_cancelled_result_rejected"
 
 
 def test_voice_websocket_invalid_language_fails_closed():

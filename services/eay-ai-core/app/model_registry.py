@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -11,6 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
+from .canary_result_registry import CanaryResultRegistry
 from .license_gate import assert_model_license_allowed
 from .model_artifact_registry import ModelArtifactRegistry
 from .training_job_registry import TrainingJobRegistry
@@ -26,6 +28,16 @@ class EvalSummary(BaseModel):
     regression_pass_rate: float = Field(ge=0, le=1)
     kvkk_leak_rate: float = Field(ge=0, le=1)
     eval_set_version: str = Field(min_length=1, max_length=100)
+
+
+def eval_summary_fingerprint(evals: EvalSummary) -> str:
+    canonical = json.dumps(
+        evals.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class ModelCandidateCreate(BaseModel):
@@ -50,10 +62,7 @@ class ModelCandidateCreate(BaseModel):
         )
         if any(value is not None for value in fields) and not all(value is not None for value in fields):
             raise ValueError("model_training_lineage_incomplete")
-        if (
-            self.training_dataset_sha256 is not None
-            and self.training_dataset_sha256 == self.eval_dataset_sha256
-        ):
+        if self.training_dataset_sha256 is not None and self.training_dataset_sha256 == self.eval_dataset_sha256:
             raise ValueError("model_train_eval_dataset_collision")
         return self
 
@@ -68,6 +77,7 @@ class ModelRecord(BaseModel):
     license_id: str
     status: ModelStatus
     evals: EvalSummary
+    offline_eval_fingerprint: str
     training_dataset_sha256: str | None = None
     training_manifest_chain_sha256: str | None = None
     training_job_fingerprint: str | None = None
@@ -75,6 +85,8 @@ class ModelRecord(BaseModel):
     created_at: datetime
     approved_at: datetime | None = None
     canary_percent: int = 0
+    canary_result_fingerprint: str | None = None
+    promoted_at: datetime | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -85,6 +97,12 @@ class ApprovalRequest(BaseModel):
 class CanaryRequest(BaseModel):
     percent: int = Field(ge=1, le=25)
     approved_by: str = Field(min_length=2, max_length=180)
+
+
+class PromotionRequest(BaseModel):
+    canary_result_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approved_by: str = Field(min_length=2, max_length=180)
+    note: str = Field(min_length=2, max_length=1000)
 
 
 class ReleasePolicy:
@@ -132,10 +150,15 @@ class ModelRegistry:
                     training_job_fingerprint TEXT,
                     eval_dataset_sha256 TEXT,
                     evals_json TEXT NOT NULL,
+                    offline_eval_fingerprint TEXT,
                     status TEXT NOT NULL,
                     approved_by TEXT,
                     approval_note TEXT,
                     canary_percent INTEGER NOT NULL DEFAULT 0,
+                    canary_result_fingerprint TEXT,
+                    promoted_by TEXT,
+                    promotion_note TEXT,
+                    promoted_at TEXT,
                     created_at TEXT NOT NULL,
                     approved_at TEXT,
                     UNIQUE(model_name, model_version)
@@ -148,9 +171,15 @@ class ModelRegistry:
                 "training_job_fingerprint",
                 "eval_dataset_sha256",
                 "artifact_provenance_fingerprint",
+                "offline_eval_fingerprint",
+                "canary_result_fingerprint",
+                "promoted_by",
+                "promotion_note",
+                "promoted_at",
             ):
                 if name not in existing:
                     conn.execute(f"ALTER TABLE model_registry ADD COLUMN {name} TEXT")
+        self.canary_results = CanaryResultRegistry(db_path)
 
     def _verify_training_lineage(self, payload: ModelCandidateCreate) -> str | None:
         if payload.training_job_fingerprint is None:
@@ -175,6 +204,7 @@ class ModelRegistry:
     def create(self, payload: ModelCandidateCreate) -> ModelRecord:
         assert_model_license_allowed(payload.license_id)
         artifact_provenance = self._verify_training_lineage(payload)
+        offline_eval_fingerprint = eval_summary_fingerprint(payload.evals)
         record_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
         with sqlite3.connect(self.db_path) as conn:
@@ -185,15 +215,16 @@ class ModelRegistry:
                         id, model_name, model_version, base_model, artifact_sha256,
                         artifact_provenance_fingerprint, license_id, training_dataset_sha256,
                         training_manifest_chain_sha256, training_job_fingerprint,
-                        eval_dataset_sha256, evals_json, status, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?)
+                        eval_dataset_sha256, evals_json, offline_eval_fingerprint, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?)
                     """,
                     (
                         record_id, payload.model_name, payload.model_version,
                         payload.base_model, payload.artifact_sha256, artifact_provenance,
                         payload.license_id, payload.training_dataset_sha256,
                         payload.training_manifest_chain_sha256, payload.training_job_fingerprint,
-                        payload.eval_dataset_sha256, payload.evals.model_dump_json(), now.isoformat(),
+                        payload.eval_dataset_sha256, payload.evals.model_dump_json(),
+                        offline_eval_fingerprint, now.isoformat(),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -203,6 +234,7 @@ class ModelRegistry:
             base_model=payload.base_model, artifact_sha256=payload.artifact_sha256,
             artifact_provenance_fingerprint=artifact_provenance,
             license_id=payload.license_id, status="candidate", evals=payload.evals,
+            offline_eval_fingerprint=offline_eval_fingerprint,
             training_dataset_sha256=payload.training_dataset_sha256,
             training_manifest_chain_sha256=payload.training_manifest_chain_sha256,
             training_job_fingerprint=payload.training_job_fingerprint,
@@ -219,6 +251,9 @@ class ModelRegistry:
         )
         if any(value is not None for value in lineage) and not all(value is not None for value in lineage):
             raise ValueError("model_training_lineage_incomplete")
+        evals = EvalSummary(**json.loads(row["evals_json"]))
+        if row["offline_eval_fingerprint"] != eval_summary_fingerprint(evals):
+            raise ValueError("model_offline_eval_provenance_mismatch")
         if row["training_job_fingerprint"]:
             self.training_jobs.verify_model_lineage(
                 fingerprint=row["training_job_fingerprint"],
@@ -266,8 +301,45 @@ class ModelRegistry:
                 raise ValueError("canary_requires_approved_model")
             self._verify_row_lineage(row)
             conn.execute(
-                "UPDATE model_registry SET status='canary', canary_percent=? WHERE id=?",
+                "UPDATE model_registry SET status='canary', canary_percent=?, canary_result_fingerprint=NULL WHERE id=?",
                 (payload.percent, record_id),
+            )
+            row = conn.execute("SELECT * FROM model_registry WHERE id=?", (record_id,)).fetchone()
+        return self._row(row)
+
+    def promote(self, record_id: str, payload: PromotionRequest) -> ModelRecord:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM model_registry WHERE id=?", (record_id,)).fetchone()
+            if row is None:
+                raise KeyError("model_not_found")
+            if row["status"] != "canary":
+                raise ValueError("production_promotion_requires_canary")
+            self._verify_row_lineage(row)
+            evals = EvalSummary(**json.loads(row["evals_json"]))
+            failures = ReleasePolicy.violations(evals)
+            if failures:
+                raise ValueError("release_gate_failed:" + ",".join(failures))
+            canary = self.canary_results.get_by_fingerprint(payload.canary_result_fingerprint)
+            if canary.model_record_id != record_id:
+                raise ValueError("production_canary_model_mismatch")
+            if canary.artifact_provenance_fingerprint != row["artifact_provenance_fingerprint"]:
+                raise ValueError("production_canary_artifact_mismatch")
+            if canary.current_percent != int(row["canary_percent"]):
+                raise ValueError("production_canary_percent_mismatch")
+            if not canary.passed:
+                raise ValueError("production_canary_gate_failed:" + ",".join(canary.violations))
+            now = datetime.now(timezone.utc)
+            conn.execute(
+                """UPDATE model_registry SET status='production', canary_result_fingerprint=?,
+                promoted_by=?, promotion_note=?, promoted_at=? WHERE id=?""",
+                (
+                    canary.result_fingerprint,
+                    payload.approved_by,
+                    payload.note,
+                    now.isoformat(),
+                    record_id,
+                ),
             )
             row = conn.execute("SELECT * FROM model_registry WHERE id=?", (record_id,)).fetchone()
         return self._row(row)
@@ -280,6 +352,7 @@ class ModelRegistry:
             artifact_provenance_fingerprint=row["artifact_provenance_fingerprint"],
             license_id=row["license_id"], status=row["status"],
             evals=EvalSummary(**json.loads(row["evals_json"])),
+            offline_eval_fingerprint=row["offline_eval_fingerprint"],
             training_dataset_sha256=row["training_dataset_sha256"],
             training_manifest_chain_sha256=row["training_manifest_chain_sha256"],
             training_job_fingerprint=row["training_job_fingerprint"],
@@ -287,6 +360,8 @@ class ModelRegistry:
             created_at=datetime.fromisoformat(row["created_at"]),
             approved_at=datetime.fromisoformat(row["approved_at"]) if row["approved_at"] else None,
             canary_percent=row["canary_percent"],
+            canary_result_fingerprint=row["canary_result_fingerprint"],
+            promoted_at=datetime.fromisoformat(row["promoted_at"]) if row["promoted_at"] else None,
         )
 
 
@@ -320,5 +395,15 @@ def canary_model(record_id: str, payload: CanaryRequest):
         return registry.set_canary(record_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Model not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/{record_id}/promote", response_model=ModelRecord)
+def promote_model(record_id: str, payload: PromotionRequest):
+    try:
+        return registry.promote(record_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 from pydantic import ValidationError
 
+from app.model_artifact_registry import ArtifactRegistration
 from app.model_registry import ApprovalRequest, CanaryRequest, EvalSummary, ModelCandidateCreate, ModelRegistry
 from app.training_job_registry import TrainingJobRegistration
 
@@ -10,6 +11,7 @@ from app.training_job_registry import TrainingJobRegistration
 DATASET = "b" * 64
 CHAIN = "c" * 64
 EVAL_DATASET = "e" * 64
+ARTIFACT = "a" * 64
 
 
 def evals():
@@ -23,7 +25,7 @@ def evals():
     )
 
 
-def seed_registered_job(registry: ModelRegistry) -> str:
+def seed_registered_job(registry: ModelRegistry, *, register_artifact: bool = True) -> str:
     with sqlite3.connect(registry.db_path) as conn:
         conn.execute(
             """CREATE TABLE IF NOT EXISTS training_dataset_manifests (
@@ -65,9 +67,21 @@ def seed_registered_job(registry: ModelRegistry) -> str:
         "allow_remote_code": False,
         "allow_network_during_training": False,
     }
-    return registry.training_jobs.register(
+    fingerprint = registry.training_jobs.register(
         TrainingJobRegistration(spec=spec, approved_by="reviewer", approval_reference="JOB-1")
     ).fingerprint
+    if register_artifact:
+        registry.artifacts.register(
+            ArtifactRegistration(
+                training_job_fingerprint=fingerprint,
+                artifact_sha256=ARTIFACT,
+                artifact_format="safetensors",
+                local_path_reference="artifacts/eay-ops-0.2",
+                produced_by="local-trainer",
+                approval_reference="ART-1",
+            )
+        )
+    return fingerprint
 
 
 def good_candidate(fingerprint="d" * 64):
@@ -75,7 +89,7 @@ def good_candidate(fingerprint="d" * 64):
         model_name="eay-ops",
         model_version="0.2",
         base_model="local-base",
-        artifact_sha256="a" * 64,
+        artifact_sha256=ARTIFACT,
         license_id="apache-2.0",
         training_dataset_sha256=DATASET,
         training_manifest_chain_sha256=CHAIN,
@@ -85,11 +99,12 @@ def good_candidate(fingerprint="d" * 64):
     )
 
 
-def test_good_candidate_requires_registered_job_and_human_approval_before_canary(tmp_path):
+def test_good_candidate_requires_registered_job_and_artifact_before_canary(tmp_path):
     registry = ModelRegistry(tmp_path / "eay.db")
     fingerprint = seed_registered_job(registry)
     record = registry.create(good_candidate(fingerprint))
     assert record.training_job_fingerprint == fingerprint
+    assert record.artifact_provenance_fingerprint is not None
     with pytest.raises(ValueError):
         registry.set_canary(record.id, CanaryRequest(percent=5, approved_by="ops"))
     approved = registry.approve(record.id, ApprovalRequest(approved_by="ops", note="evals checked"))
@@ -104,6 +119,13 @@ def test_model_candidate_rejects_unregistered_training_job(tmp_path):
         registry.create(good_candidate())
 
 
+def test_model_candidate_rejects_missing_registered_artifact(tmp_path):
+    registry = ModelRegistry(tmp_path / "eay.db")
+    fingerprint = seed_registered_job(registry, register_artifact=False)
+    with pytest.raises(KeyError, match="model_artifact_not_found"):
+        registry.create(good_candidate(fingerprint))
+
+
 def test_model_candidate_rejects_registered_job_lineage_mismatch(tmp_path):
     registry = ModelRegistry(tmp_path / "eay.db")
     fingerprint = seed_registered_job(registry)
@@ -116,7 +138,7 @@ def test_model_candidate_rejects_partial_training_lineage():
     with pytest.raises(ValidationError, match="model_training_lineage_incomplete"):
         ModelCandidateCreate(
             model_name="eay-ops", model_version="partial", base_model="local-base",
-            artifact_sha256="a" * 64, license_id="apache-2.0",
+            artifact_sha256=ARTIFACT, license_id="apache-2.0",
             training_dataset_sha256=DATASET, evals=evals(),
         )
 

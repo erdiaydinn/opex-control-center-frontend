@@ -11,6 +11,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .vision_retention import VisionRetentionStore
+
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 
 
@@ -19,6 +21,7 @@ class VisionEvidence(BaseModel):
     image_sha256: str
     source_uri_sha256: str | None = None
     evidence_chain_sha256: str
+    retention_fingerprint: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     human_review_required: bool = True
     eligible_for_learning: bool = False
@@ -28,6 +31,7 @@ class VisionProvenanceStore:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.retention = VisionRetentionStore(db_path)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -82,14 +86,21 @@ class VisionProvenanceStore:
             except sqlite3.IntegrityError as exc:
                 raise ValueError("vision_provenance_already_registered") from exc
             decision = audit["decision"]
+            created_at = datetime.fromisoformat(audit["created_at"])
+        retention = self.retention.ensure_policy(
+            audit_id=audit_id,
+            evidence_chain_sha256=chain_hash,
+            created_at=created_at,
+        )
         return VisionEvidence(
             audit_id=audit_id,
             image_sha256=audit["image_sha256"],
             source_uri_sha256=source_hash,
             evidence_chain_sha256=chain_hash,
+            retention_fingerprint=retention.fingerprint,
             metadata=metadata,
             human_review_required=decision == "pending",
-            eligible_for_learning=decision == "accepted",
+            eligible_for_learning=decision == "accepted" and self.retention.is_active(audit_id),
         )
 
     def pending_reviews(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -134,7 +145,12 @@ class VisionProvenanceStore:
             ).fetchone()
         if row is None:
             raise KeyError("audit_not_found")
-        return row[0] == "accepted" and row[1] is not None
+        if row[0] != "accepted" or row[1] is None:
+            return False
+        try:
+            return self.retention.is_active(audit_id)
+        except KeyError:
+            return False
 
 
 store = VisionProvenanceStore(DB_PATH)

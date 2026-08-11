@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .kpi_aggregation_contracts import WeightedAverageContract, validate_weighted_average_contract
+from .kpi_result_validation import KpiResultContract, NSFR_RESULT_FIELDS
 from .kpi_unit_contracts import DurationContract, RateContract
 
 
@@ -25,6 +26,16 @@ class KpiRateActivationBundle:
     schema_evidence_fingerprint: str | None
     unit_contract_fingerprint: str
     aggregation_contract_fingerprint: None = None
+
+
+@dataclass(frozen=True)
+class KpiNsfrActivationBundle:
+    metric: str
+    semantic_fingerprint: str
+    schema_fingerprint: str
+    schema_evidence_fingerprint: str
+    semantic_mapping_fingerprint: str
+    result_contract_fingerprint: str
 
 
 def _sha256_fingerprint(value: object, field: str) -> str:
@@ -119,4 +130,60 @@ def verify_rate_kpi_activation(
         schema_fingerprint=schema_fp,
         schema_evidence_fingerprint=evidence_fp,
         unit_contract_fingerprint=rate_contract.fingerprint,
+    )
+
+
+def verify_nsfr_family_activation(
+    *,
+    metric: str,
+    semantic_verification: Mapping[str, object],
+    schema_verification: Mapping[str, object],
+    semantic_mapping_verification: Mapping[str, object],
+    result_contract: KpiResultContract,
+) -> KpiNsfrActivationBundle:
+    """Require reviewed schema-to-business-role lineage before NSFR-family activation.
+
+    A live schema fingerprint alone cannot prove that a production column means PFR,
+    Refund, Compensation or the denominator. The separately reviewed semantic mapping
+    must point to the same schema-evidence fingerprint, and the post-query result
+    contract must still reconcile the canonical NSFR family output.
+    """
+
+    if metric not in {"nsfr", "pfr", "refund"}:
+        raise ValueError("kpi_activation_not_nsfr_family_metric")
+    semantic_fp, schema_fp, evidence_fp = _verified_lineage(
+        metric=metric,
+        semantic_verification=semantic_verification,
+        schema_verification=schema_verification,
+    )
+    if evidence_fp is None:
+        raise ValueError("kpi_activation_schema_evidence_required")
+
+    if semantic_mapping_verification.get("verified") is not True:
+        raise ValueError("kpi_activation_semantic_mapping_required")
+    if semantic_mapping_verification.get("metric_family") != "nsfr_family":
+        raise ValueError("kpi_activation_semantic_mapping_family_mismatch")
+    mapped_evidence_fp = _sha256_fingerprint(
+        semantic_mapping_verification.get("schema_evidence_fingerprint"),
+        "semantic_mapping_schema_evidence",
+    )
+    if mapped_evidence_fp != evidence_fp:
+        raise ValueError("kpi_activation_semantic_mapping_schema_mismatch")
+    mapping_fp = _sha256_fingerprint(
+        semantic_mapping_verification.get("mapping_fingerprint"),
+        "semantic_mapping",
+    )
+
+    if result_contract.metric != metric:
+        raise ValueError("kpi_activation_result_contract_metric_mismatch")
+    if tuple(result_contract.required_fields) != tuple(NSFR_RESULT_FIELDS):
+        raise ValueError("kpi_activation_result_contract_fields_mismatch")
+
+    return KpiNsfrActivationBundle(
+        metric=metric,
+        semantic_fingerprint=semantic_fp,
+        schema_fingerprint=schema_fp,
+        schema_evidence_fingerprint=evidence_fp,
+        semantic_mapping_fingerprint=mapping_fp,
+        result_contract_fingerprint=result_contract.fingerprint,
     )

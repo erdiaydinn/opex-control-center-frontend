@@ -49,6 +49,11 @@ def test_tombstoned_evidence_is_never_learning_eligible(tmp_path):
     provenance = VisionProvenanceStore(db)
     provenance.register(audit.id)
     audits.decide(audit.id, "accepted", "human verified")
+    provenance.reviews.seal(
+        audit.id,
+        reviewer="vision-reviewer",
+        approval_reference="VISION-REVIEW-1",
+    )
     assert provenance.learning_eligibility(audit.id) is True
 
     tombstone = provenance.retention.tombstone(audit.id, reason="retention window closed")
@@ -64,6 +69,11 @@ def test_expired_retention_blocks_learning_without_erasing_provenance(tmp_path):
     provenance = VisionProvenanceStore(db)
     evidence = provenance.register(audit.id)
     audits.decide(audit.id, "accepted", "human verified")
+    provenance.reviews.seal(
+        audit.id,
+        reviewer="vision-reviewer",
+        approval_reference="VISION-REVIEW-2",
+    )
 
     retention = provenance.retention.get(audit.id)
     after_expiry = datetime.fromisoformat(retention.retain_until) + timedelta(seconds=1)

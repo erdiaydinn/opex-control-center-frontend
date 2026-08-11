@@ -19,12 +19,19 @@ class KpiDefinition:
     semantic_contract_fingerprint: str | None = None
     query_template_fingerprint: str | None = None
     registry_promotion_fingerprint: str | None = None
+    promotion_schema_fingerprint: str | None = None
+    review_artifact_fingerprint: str | None = None
     registry_binding_fingerprint: str | None = None
     legacy_bootstrap: bool = False
     blocked_reason: str | None = None
 
     @property
     def executable(self) -> bool:
+        promotion_lineage_ready = self.legacy_bootstrap or (
+            bool(self.registry_promotion_fingerprint)
+            and bool(self.promotion_schema_fingerprint)
+            and bool(self.review_artifact_fingerprint)
+        )
         return (
             self.review_state == "reviewed"
             and bool(self.query_id)
@@ -34,14 +41,15 @@ class KpiDefinition:
             and bool(self.semantic_contract_fingerprint)
             and bool(self.query_template_fingerprint)
             and bool(self.registry_binding_fingerprint)
-            and (bool(self.registry_promotion_fingerprint) or self.legacy_bootstrap)
+            and promotion_lineage_ready
         )
 
 
-# This registry is intentionally conservative. New executable KPIs must pin the exact
-# schema contract, semantic contract, query template, promotion decision and composite
-# binding fingerprint. Orders is the sole explicit legacy bootstrap exception; it still
-# pins every contract/template fingerprint so any drift fails closed.
+# New executable KPIs must pin exact schema/semantic/query contracts plus the sealed
+# promotion decision, the schema fingerprint reviewed by that decision, the exact
+# production review artifact, and the final composite binding. Orders is the sole
+# explicit legacy bootstrap exception; it still pins every applicable contract/template
+# fingerprint so drift fails closed.
 KPI_REGISTRY: dict[str, KpiDefinition] = {
     "orders": KpiDefinition(
         metric="orders",
@@ -54,7 +62,7 @@ KPI_REGISTRY: dict[str, KpiDefinition] = {
         schema_contract_fingerprint="4957415364d06a56745d29efa2423a87499727200fd94a0df34af08af5bbcaa5",
         semantic_contract_fingerprint="f804ab70c43237caf607e78b387e959a7476526219f222a579fd4f8476c13658",
         query_template_fingerprint="aab639e0a69cd8cfbec992c2bc737e12679835259c09906bd7f4e98c9f91c7f4",
-        registry_binding_fingerprint="dff50a19e0c39eb665fdf6005d86595caa6485c2d2c91ba38b7806664db0006e",
+        registry_binding_fingerprint="ebc40cdaec8fb104c6f6957a51d98041b72efa938cbb17faffd1152ddcf0691e",
         legacy_bootstrap=True,
     ),
     "cancel_rate": KpiDefinition(metric="cancel_rate", query_id=None, review_state="blocked_schema_verification", source_table=None, value_semantics="cancelled orders / eligible orders", blocked_reason="production cancellation reason/status schema not yet pinned in this service"),

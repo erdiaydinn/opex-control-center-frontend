@@ -97,7 +97,7 @@ def test_voice_websocket_accepts_current_task_result_and_retires_task():
                 "event": "task_start",
                 "sequence": 2,
                 "message_id": "m-2",
-                "payload": {"task_id": "model-1", "kind": "model", "request_fingerprint": _hash("e")},
+                "payload": {"task_id": "stt-post-1", "kind": "stt", "request_fingerprint": _hash("e")},
             }
         )
         started = ws.receive_json()
@@ -109,7 +109,7 @@ def test_voice_websocket_accepts_current_task_result_and_retires_task():
                 "event": "task_result",
                 "sequence": 3,
                 "message_id": "m-3",
-                "payload": {"task_id": "model-1", "result_sha256": _hash("f")},
+                "payload": {"task_id": "stt-post-1", "result_sha256": _hash("f")},
             }
         )
         accepted = ws.receive_json()
@@ -117,6 +117,56 @@ def test_voice_websocket_accepts_current_task_result_and_retires_task():
         assert accepted["active_task_count"] == 0
         assert accepted["result_sha256"] == _hash("f")
         assert len(accepted["accepted_result_fingerprint"]) == 64
+
+
+def test_voice_websocket_model_and_tts_generic_start_are_forbidden():
+    client = TestClient(app)
+    with client.websocket_connect("/v1/voice/ws/session-proof-1?language=tr") as ws:
+        ws.receive_json()
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}})
+        ws.receive_json()
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("a")}})
+        ws.receive_json()
+        ws.send_json({"event": "task_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "model-1", "kind": "model", "request_fingerprint": _hash("b")}})
+        assert ws.receive_json()["code"] == "voice_ws_proof_bound_start_required"
+        ws.send_json({"event": "task_start", "sequence": 3, "message_id": "m-3", "payload": {"task_id": "tts-1", "kind": "tts", "request_fingerprint": _hash("c")}})
+        assert ws.receive_json()["code"] == "voice_ws_proof_bound_start_required"
+
+
+def test_voice_websocket_response_and_tts_are_exact_proof_bound():
+    client = TestClient(app)
+    with client.websocket_connect("/v1/voice/ws/session-proof-2?language=tr") as ws:
+        ws.receive_json()
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}})
+        ws.receive_json()
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("a")}})
+        ws.receive_json()
+        ws.send_json({"event": "response_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "model-1", "user_input_sha256": _hash("a")}})
+        started = ws.receive_json()
+        assert started["event"] == "response_started"
+        response_fp = started["response_proof_fingerprint"]
+        assert started["task_request_fingerprint"] == response_fp
+        ws.send_json({"event": "task_result", "sequence": 3, "message_id": "m-3", "payload": {"task_id": "model-1", "result_sha256": _hash("b")}})
+        assert ws.receive_json()["event"] == "task_result_accepted"
+        ws.send_json({"event": "tts_start", "sequence": 4, "message_id": "m-4", "payload": {"task_id": "tts-1", "response_proof_fingerprint": response_fp, "response_text_sha256": _hash("b"), "voice_profile_fingerprint": _hash("c")}})
+        tts = ws.receive_json()
+        assert tts["event"] == "tts_started"
+        assert tts["response_proof_fingerprint"] == response_fp
+        assert tts["task_request_fingerprint"] == tts["tts_proof_fingerprint"]
+
+
+def test_voice_websocket_response_rejects_wrong_user_input_and_unknown_tts_proof():
+    client = TestClient(app)
+    with client.websocket_connect("/v1/voice/ws/session-proof-3?language=en") as ws:
+        ws.receive_json()
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}})
+        ws.receive_json()
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("a")}})
+        ws.receive_json()
+        ws.send_json({"event": "response_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "model-1", "user_input_sha256": _hash("b")}})
+        assert ws.receive_json()["code"] == "voice_ws_response_user_input_mismatch"
+        ws.send_json({"event": "tts_start", "sequence": 3, "message_id": "m-3", "payload": {"task_id": "tts-1", "response_proof_fingerprint": _hash("c"), "response_text_sha256": _hash("d"), "voice_profile_fingerprint": _hash("e")}})
+        assert ws.receive_json()["code"] == "voice_ws_tts_response_proof_unknown"
 
 
 def test_voice_websocket_tool_result_requires_governed_execution_provenance():
@@ -178,7 +228,7 @@ def test_voice_websocket_barge_in_rejects_late_task_result():
                 "event": "task_start",
                 "sequence": 2,
                 "message_id": "m-2",
-                "payload": {"task_id": "tts-1", "kind": "tts", "request_fingerprint": _hash("2")},
+                "payload": {"task_id": "stt-post-1", "kind": "stt", "request_fingerprint": _hash("2")},
             }
         )
         ws.receive_json()
@@ -191,7 +241,7 @@ def test_voice_websocket_barge_in_rejects_late_task_result():
                 "event": "task_result",
                 "sequence": 4,
                 "message_id": "m-4",
-                "payload": {"task_id": "tts-1", "result_sha256": _hash("3")},
+                "payload": {"task_id": "stt-post-1", "result_sha256": _hash("3")},
             }
         )
         late = ws.receive_json()

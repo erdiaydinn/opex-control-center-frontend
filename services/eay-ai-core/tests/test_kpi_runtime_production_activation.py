@@ -1,6 +1,7 @@
 import pytest
 
 from app.kpi_aggregation_contracts import WeightedAverageContract
+from app.kpi_rate_aggregation import RateAggregationContract
 from app.kpi_runtime_production_activation import (
     seal_duration_production_activation,
     seal_otp_production_activation,
@@ -56,6 +57,12 @@ def otp_source(**overrides):
         "schema_evidence_fingerprint": FP_C,
         "source_semantics_fingerprint": FP_D,
         "rate_contract": RateContract(metric="otp", source_scale="percent"),
+        "aggregation_contract": RateAggregationContract(
+            metric="otp",
+            numerator_field="late_prep_orders",
+            denominator_field="eligible_orders",
+            aggregation_kind="complement_ratio_of_sums",
+        ),
     }
     payload.update(overrides)
     return payload
@@ -97,7 +104,7 @@ def test_prep_activation_uses_reviewed_duration_unit_and_grain():
     assert artifact.executable is False
 
 
-def test_otp_activation_seals_explicit_rate_scale_contract():
+def test_otp_activation_seals_rate_scale_and_denominator_lineage():
     artifact = seal_otp_production_activation(
         semantic_verification=semantic("otp"),
         schema_verification=schema(),
@@ -105,9 +112,21 @@ def test_otp_activation_seals_explicit_rate_scale_contract():
         **review_fields(),
     )
     assert artifact.metric == "otp"
-    assert artifact.aggregation_contract_fingerprint is None
+    assert len(artifact.aggregation_contract_fingerprint) == 64
     assert len(artifact.unit_contract_fingerprint) == 64
     assert artifact.executable is False
+
+
+def test_otp_activation_rejects_missing_denominator_lineage_contract():
+    source = otp_source()
+    source.pop("aggregation_contract")
+    with pytest.raises(ValueError, match="rate_aggregation_contract_required"):
+        seal_otp_production_activation(
+            semantic_verification=semantic("otp"),
+            schema_verification=schema(),
+            source_semantics_verification=source,
+            **review_fields(),
+        )
 
 
 def test_activation_rejects_stale_source_semantics_schema_lineage():

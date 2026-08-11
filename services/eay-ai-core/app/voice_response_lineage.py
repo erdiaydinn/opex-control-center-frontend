@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass
 from typing import Iterable, Protocol
 
+from .voice_execution_identity import VoiceModelExecutionIdentity, VoiceTtsExecutionIdentity
+
 
 def _sha256(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -33,6 +35,8 @@ class VoiceResponseGenerationProof:
     governed_tool_provenance_fingerprints: tuple[str, ...]
     legal_context_fingerprint: str | None
     kpi_context_fingerprint: str | None
+    model_execution_identity_fingerprint: str
+    model_artifact_sha256: str
     fingerprint: str
 
 
@@ -43,6 +47,9 @@ class VoiceTtsGenerationProof:
     response_proof_fingerprint: str
     response_text_sha256: str
     voice_profile_fingerprint: str
+    tts_execution_identity_fingerprint: str
+    tts_adapter_artifact_sha256: str
+    tts_adapter_promotion_fingerprint: str
     fingerprint: str
 
 
@@ -51,18 +58,11 @@ def seal_response_generation_proof(
     session_id: str,
     turn_epoch: int,
     user_input_sha256: str,
+    model_execution_identity: VoiceModelExecutionIdentity,
     accepted_tool_results: Iterable[AcceptedResultLike] = (),
     legal_context_fingerprint: str | None = None,
     kpi_context_fingerprint: str | None = None,
 ) -> VoiceResponseGenerationProof:
-    """Seal the exact governed evidence allowed to feed one spoken response.
-
-    A tool result may influence response generation only when it was accepted in the
-    same turn and carries an immutable governed execution provenance fingerprint.
-    Optional legal/KPI context fingerprints are likewise pinned into the proof, so a
-    response cannot silently move to newer evidence after generation starts.
-    """
-
     session_id = session_id.strip()
     if len(session_id) < 3:
         raise ValueError("voice_response_session_id_required")
@@ -70,6 +70,10 @@ def seal_response_generation_proof(
         raise ValueError("voice_response_turn_epoch_invalid")
     if not _valid_sha256(user_input_sha256):
         raise ValueError("voice_response_user_input_fingerprint_invalid")
+    if not _valid_sha256(model_execution_identity.fingerprint):
+        raise ValueError("voice_response_model_execution_identity_required")
+    if not _valid_sha256(model_execution_identity.artifact_sha256):
+        raise ValueError("voice_response_model_artifact_required")
     if legal_context_fingerprint is not None and not _valid_sha256(legal_context_fingerprint):
         raise ValueError("voice_response_legal_context_fingerprint_invalid")
     if kpi_context_fingerprint is not None and not _valid_sha256(kpi_context_fingerprint):
@@ -93,21 +97,18 @@ def seal_response_generation_proof(
         accepted_fps.append(result.fingerprint)
         governed_fps.append(str(result.governed_provenance_fingerprint))
 
-    accepted_tuple = tuple(sorted(accepted_fps))
-    governed_tuple = tuple(sorted(governed_fps))
     payload = {
         "session_id": session_id,
         "turn_epoch": turn_epoch,
         "user_input_sha256": user_input_sha256,
-        "accepted_tool_result_fingerprints": accepted_tuple,
-        "governed_tool_provenance_fingerprints": governed_tuple,
+        "accepted_tool_result_fingerprints": tuple(sorted(accepted_fps)),
+        "governed_tool_provenance_fingerprints": tuple(sorted(governed_fps)),
         "legal_context_fingerprint": legal_context_fingerprint,
         "kpi_context_fingerprint": kpi_context_fingerprint,
+        "model_execution_identity_fingerprint": model_execution_identity.fingerprint,
+        "model_artifact_sha256": model_execution_identity.artifact_sha256,
     }
-    return VoiceResponseGenerationProof(
-        **payload,
-        fingerprint=_sha256(payload),
-    )
+    return VoiceResponseGenerationProof(**payload, fingerprint=_sha256(payload))
 
 
 def seal_tts_generation_proof(
@@ -116,9 +117,8 @@ def seal_tts_generation_proof(
     current_turn_epoch: int,
     response_text_sha256: str,
     voice_profile_fingerprint: str,
+    tts_execution_identity: VoiceTtsExecutionIdentity,
 ) -> VoiceTtsGenerationProof:
-    """Authorize TTS only from an exact, current-turn response-generation proof."""
-
     if response_proof.turn_epoch != current_turn_epoch:
         raise ValueError("voice_tts_stale_response_proof_forbidden")
     if not _valid_sha256(response_proof.fingerprint):
@@ -127,6 +127,10 @@ def seal_tts_generation_proof(
         raise ValueError("voice_tts_response_text_fingerprint_invalid")
     if not _valid_sha256(voice_profile_fingerprint):
         raise ValueError("voice_tts_voice_profile_fingerprint_invalid")
+    if not _valid_sha256(tts_execution_identity.fingerprint):
+        raise ValueError("voice_tts_execution_identity_required")
+    if tts_execution_identity.profile_fingerprint != voice_profile_fingerprint:
+        raise ValueError("voice_tts_execution_profile_mismatch")
 
     payload = {
         "session_id": response_proof.session_id,
@@ -134,5 +138,8 @@ def seal_tts_generation_proof(
         "response_proof_fingerprint": response_proof.fingerprint,
         "response_text_sha256": response_text_sha256,
         "voice_profile_fingerprint": voice_profile_fingerprint,
+        "tts_execution_identity_fingerprint": tts_execution_identity.fingerprint,
+        "tts_adapter_artifact_sha256": tts_execution_identity.artifact_sha256,
+        "tts_adapter_promotion_fingerprint": tts_execution_identity.promotion_fingerprint,
     }
     return VoiceTtsGenerationProof(**payload, fingerprint=_sha256(payload))

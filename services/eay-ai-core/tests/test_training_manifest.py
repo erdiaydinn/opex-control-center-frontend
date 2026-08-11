@@ -3,7 +3,7 @@ import pytest
 from app.training_manifest import TrainingManifestCreate, TrainingManifestStore
 
 
-def _example(text="safe answer"):
+def _example(text="Use the reviewed warehouse procedure and verify the supporting source before taking operational action."):
     return {
         "messages": [
             {"role": "user", "content": "question"},
@@ -12,6 +12,8 @@ def _example(text="safe answer"):
         "metadata": {
             "human_approved": True,
             "contains_personal_data": False,
+            "teacher_reviewed": True,
+            "reason": "approved training correction",
         },
     }
 
@@ -34,14 +36,14 @@ def test_manifest_builds_parent_hash_chain(tmp_path):
     store = TrainingManifestStore(tmp_path / "eay.db")
     root = store.create(
         TrainingManifestCreate(
-            examples=[_example("answer v1")],
+            examples=[_example("Apply the reviewed warehouse process for version one and verify the approved operational source before action.")],
             approved_by="reviewer",
             approval_reference="APR-1",
         )
     )
     child = store.create(
         TrainingManifestCreate(
-            examples=[_example("answer v2")],
+            examples=[_example("Apply the reviewed warehouse process for version two and verify the approved operational source before action.")],
             approved_by="reviewer",
             approval_reference="APR-2",
             parent_manifest_id=root.id,

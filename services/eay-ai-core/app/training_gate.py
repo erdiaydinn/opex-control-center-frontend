@@ -16,6 +16,7 @@ class DatasetGateResult(BaseModel):
     example_count: int
     violations: list[str] = Field(default_factory=list)
     quality_fingerprints: list[str] = Field(default_factory=list)
+    teacher_quality_fingerprints: list[str] = Field(default_factory=list)
     integrity_sha256: str | None = None
 
 
@@ -24,9 +25,15 @@ def canonical_dataset_sha256(examples: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _is_sha256(value: object) -> bool:
+    text = str(value or "")
+    return len(text) == 64 and all(ch in "0123456789abcdef" for ch in text)
+
+
 def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateResult:
     violations: list[str] = []
     quality_fingerprints: list[str] = []
+    teacher_quality_fingerprints: list[str] = []
     if not examples:
         violations.append("empty_dataset")
 
@@ -67,6 +74,16 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
         if metadata.get("contains_personal_data") is True:
             violations.append(f"example_{idx}:personal_data_not_allowed")
 
+        teacher_reviewed = metadata.get("teacher_reviewed") is True
+        if teacher_reviewed:
+            if metadata.get("teacher_quality_accepted") is not True:
+                violations.append(f"example_{idx}:teacher_quality_not_accepted")
+            teacher_fp = metadata.get("teacher_quality_sha256")
+            if not _is_sha256(teacher_fp):
+                violations.append(f"example_{idx}:teacher_quality_fingerprint_required")
+            else:
+                teacher_quality_fingerprints.append(str(teacher_fp))
+
         evidence_ids: list[str] = []
         if isinstance(provenance, dict):
             evidence_ids = [str(value) for value in provenance.values() if value]
@@ -78,7 +95,7 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
             model_answer=str(metadata.get("original_model_answer") or ""),
             target_answer=assistant_text,
             reason=str(metadata.get("reason") or ""),
-            teacher_reviewed=metadata.get("teacher_reviewed") is True,
+            teacher_reviewed=teacher_reviewed,
             human_approved=metadata.get("human_approved") is True,
             evidence_ids=evidence_ids,
             legal_claim=legal_claim,
@@ -106,5 +123,6 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
         example_count=len(examples),
         violations=violations,
         quality_fingerprints=quality_fingerprints,
+        teacher_quality_fingerprints=teacher_quality_fingerprints,
         integrity_sha256=integrity.integrity_sha256,
     )

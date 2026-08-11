@@ -8,6 +8,7 @@ from typing import Mapping
 
 from .kpi_activation_gate import verify_duration_kpi_activation, verify_rate_kpi_activation
 from .kpi_aggregation_contracts import WeightedAverageContract
+from .kpi_rate_aggregation import RateAggregationContract
 from .kpi_unit_contracts import DurationContract, RateContract
 
 
@@ -162,14 +163,18 @@ def seal_otp_production_activation(
     )
 
     rate = source_semantics_verification.get("rate_contract")
+    aggregation = source_semantics_verification.get("aggregation_contract")
     if not isinstance(rate, RateContract) or rate.metric != metric:
         raise ValueError("kpi_runtime_production_rate_contract_required")
+    if not isinstance(aggregation, RateAggregationContract) or aggregation.metric != metric:
+        raise ValueError("kpi_runtime_production_rate_aggregation_contract_required")
 
     bundle = verify_rate_kpi_activation(
         metric=metric,
         semantic_verification=semantic_verification,
         schema_verification=schema_verification,
         rate_contract=rate,
+        aggregation_contract=aggregation,
     )
     if bundle.schema_evidence_fingerprint != evidence_fp:
         raise ValueError("kpi_runtime_production_activation_schema_lineage_mismatch")
@@ -181,7 +186,9 @@ def seal_otp_production_activation(
         schema_evidence_fingerprint=evidence_fp,
         source_semantics_fingerprint=source_fp,
         unit_contract_fingerprint=_sha(bundle.unit_contract_fingerprint, "rate_contract"),
-        aggregation_contract_fingerprint=None,
+        aggregation_contract_fingerprint=_sha(
+            bundle.aggregation_contract_fingerprint, "aggregation_contract"
+        ),
         approval_reference=approval_reference.strip(),
         reviewer=reviewer.strip(),
         reviewed_at=reviewed_at,

@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Mapping
+
+
+_SUPPORTED_METRICS = frozenset({"nsfr", "pfr", "refund", "prep", "picking", "otp", "putaway"})
+
+
+@dataclass(frozen=True)
+class KpiRegistryPromotionDecision:
+    metric: str
+    query_id: str
+    review_artifact_fingerprint: str
+    query_template_fingerprint: str
+    schema_fingerprint: str
+    promotion_reference: str
+    reviewer: str
+    reviewed_at: str
+    approved_for_registry_change: bool = True
+    executable: bool = False
+
+    @property
+    def fingerprint(self) -> str:
+        payload = {
+            "metric": self.metric,
+            "query_id": self.query_id,
+            "review_artifact_fingerprint": self.review_artifact_fingerprint,
+            "query_template_fingerprint": self.query_template_fingerprint,
+            "schema_fingerprint": self.schema_fingerprint,
+            "promotion_reference": self.promotion_reference,
+            "reviewer": self.reviewer,
+            "reviewed_at": self.reviewed_at,
+            "approved_for_registry_change": self.approved_for_registry_change,
+            "executable": self.executable,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _sha(value: object, field: str) -> str:
+    text = str(value or "")
+    if len(text) != 64 or any(ch not in "0123456789abcdef" for ch in text):
+        raise ValueError(f"kpi_registry_promotion_invalid_fingerprint:{field}")
+    return text
+
+
+def _review_time(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("kpi_registry_promotion_invalid_review_time") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("kpi_registry_promotion_timezone_required")
+    if parsed.astimezone(timezone.utc) > datetime.now(timezone.utc):
+        raise ValueError("kpi_registry_promotion_future_review_time")
+    return value
+
+
+def _artifact_field(artifact: object, field: str) -> object:
+    if isinstance(artifact, Mapping):
+        return artifact.get(field)
+    return getattr(artifact, field, None)
+
+
+def seal_kpi_registry_promotion(
+    *,
+    metric: str,
+    query_id: str,
+    review_artifact: object,
+    query_template_fingerprint: str,
+    schema_fingerprint: str,
+    promotion_reference: str,
+    reviewer: str,
+    reviewed_at: str,
+) -> KpiRegistryPromotionDecision:
+    """Authorize a *reviewed registry change* without making the KPI executable.
+
+    This gate is intentionally one-way and non-mutating. It binds the exact reviewed
+    production artifact, exact query-template fingerprint and live-schema fingerprint
+    to a second human promotion decision. A caller still has to make a separate code
+    change to the executable registry and that change must pin this decision fingerprint.
+    """
+
+    if metric not in _SUPPORTED_METRICS:
+        raise ValueError("kpi_registry_promotion_unsupported_metric")
+    if not query_id.strip():
+        raise ValueError("kpi_registry_promotion_query_id_required")
+    if not promotion_reference.strip() or not reviewer.strip():
+        raise ValueError("kpi_registry_promotion_human_approval_required")
+    _review_time(reviewed_at)
+
+    if _artifact_field(review_artifact, "approved_for_registry_review") is not True:
+        raise ValueError("kpi_registry_promotion_review_artifact_not_approved")
+    if _artifact_field(review_artifact, "executable") is not False:
+        raise ValueError("kpi_registry_promotion_review_artifact_must_be_non_executable")
+
+    artifact_metric = _artifact_field(review_artifact, "metric")
+    if artifact_metric is not None and artifact_metric != metric:
+        raise ValueError("kpi_registry_promotion_artifact_metric_mismatch")
+
+    artifact_fp = _artifact_field(review_artifact, "fingerprint")
+    if callable(artifact_fp):
+        artifact_fp = artifact_fp()
+    artifact_fp = _sha(artifact_fp, "review_artifact")
+
+    pinned_schema = _artifact_field(review_artifact, "schema_fingerprint")
+    if pinned_schema is None:
+        pinned_schema = _artifact_field(review_artifact, "schema_evidence_fingerprint")
+    pinned_schema = _sha(pinned_schema, "artifact_schema")
+    requested_schema = _sha(schema_fingerprint, "schema")
+    if pinned_schema != requested_schema:
+        raise ValueError("kpi_registry_promotion_schema_mismatch")
+
+    template_fp = _sha(query_template_fingerprint, "query_template")
+
+    return KpiRegistryPromotionDecision(
+        metric=metric,
+        query_id=query_id.strip(),
+        review_artifact_fingerprint=artifact_fp,
+        query_template_fingerprint=template_fp,
+        schema_fingerprint=requested_schema,
+        promotion_reference=promotion_reference.strip(),
+        reviewer=reviewer.strip(),
+        reviewed_at=reviewed_at,
+        approved_for_registry_change=True,
+        executable=False,
+    )

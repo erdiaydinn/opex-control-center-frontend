@@ -12,6 +12,9 @@ def _case(language: str, **overrides):
         "citation_readback_accuracy": 1.0,
         "p95_first_audio_ms": 650,
         "p95_barge_in_ms": 180,
+        "interruption_success_rate": 1.0,
+        "p95_cancel_propagation_ms": 120,
+        "approval_replay_accept_count": 0,
     }
     values.update(overrides)
     return VoiceLanguageEval(**values)
@@ -45,3 +48,21 @@ def test_slow_barge_in_blocks_release_even_if_stt_is_good():
     decision = evaluate_voice_release(cases)
     assert decision.approved is False
     assert "voice_eval_en:barge_in_latency_too_high" in decision.violations
+
+
+def test_interruption_failure_or_slow_cancel_blocks_release():
+    cases = [_case(language) for language in CORE_LANGUAGES]
+    cases[0] = _case("tr", interruption_success_rate=0.99)
+    cases[1] = _case("en", p95_cancel_propagation_ms=300)
+    decision = evaluate_voice_release(cases)
+    assert decision.approved is False
+    assert "voice_eval_tr:interruption_success_too_low" in decision.violations
+    assert "voice_eval_en:cancel_propagation_too_slow" in decision.violations
+
+
+def test_any_accepted_approval_replay_blocks_voice_release():
+    cases = [_case(language) for language in CORE_LANGUAGES]
+    cases[-1] = _case("fa", approval_replay_accept_count=1)
+    decision = evaluate_voice_release(cases)
+    assert decision.approved is False
+    assert "voice_eval_fa:approval_replay_accepted" in decision.violations

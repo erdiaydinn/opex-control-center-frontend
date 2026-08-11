@@ -16,6 +16,8 @@ VoiceEventType = Literal[
     "tool_result",
     "approval_required",
     "approval_granted",
+    "response_proof",
+    "tts_proof",
     "response_started",
     "interrupted",
     "response_finished",
@@ -178,18 +180,18 @@ class VoiceSessionLedger:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM voice_session_events WHERE session_id=? ORDER BY event_id ASC",
+                "SELECT * FROM voice_session_events WHERE session_id=? ORDER BY event_id",
                 (session_id,),
             ).fetchall()
-        previous: str | None = None
-        output: list[VoiceSessionEvent] = []
+        previous_sha: str | None = None
+        events: list[VoiceSessionEvent] = []
         for row in rows:
-            if row["previous_event_sha256"] != previous:
-                raise ValueError("voice_session_chain_drift")
             self._verify_row(row)
-            previous = row["event_sha256"]
-            output.append(VoiceSessionEvent(**dict(row)))
-        return tuple(output)
+            if row["previous_event_sha256"] != previous_sha:
+                raise ValueError("voice_session_chain_broken")
+            previous_sha = row["event_sha256"]
+            events.append(VoiceSessionEvent(**dict(row)))
+        return tuple(events)
 
     @staticmethod
     def _verify_row(row: sqlite3.Row) -> None:
@@ -206,4 +208,4 @@ class VoiceSessionLedger:
             "occurred_at": row["occurred_at"],
         }
         if _sha256(payload) != row["event_sha256"]:
-            raise ValueError("voice_session_event_fingerprint_drift")
+            raise ValueError("voice_session_event_fingerprint_mismatch")

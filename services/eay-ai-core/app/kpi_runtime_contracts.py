@@ -12,6 +12,7 @@ from .kpi_aggregation_contracts import WeightedAverageContract
 from .kpi_provenance import provenance_from_activation
 from .kpi_putaway_contracts import PutawayQuantityContract, verify_putaway_activation
 from .kpi_putaway_sla import PutawaySlaContract, resolve_putaway_sla_contract
+from .kpi_rate_aggregation import RateAggregationContract
 from .kpi_unit_contracts import DurationContract, RateContract
 
 
@@ -19,6 +20,12 @@ from .kpi_unit_contracts import DurationContract, RateContract
 class DurationRuntimeContract:
     unit: DurationContract
     aggregation: WeightedAverageContract
+
+
+@dataclass(frozen=True)
+class RateRuntimeContract:
+    unit: RateContract
+    aggregation: RateAggregationContract
 
 
 @dataclass(frozen=True)
@@ -31,7 +38,7 @@ class PutawayRuntimeContract:
 # Adding a KPI to KPI_REGISTRY as executable without adding its reviewed runtime
 # contract here will still fail closed in tool_execution.
 DURATION_RUNTIME_CONTRACTS: dict[str, DurationRuntimeContract] = {}
-RATE_RUNTIME_CONTRACTS: dict[str, RateContract] = {}
+RATE_RUNTIME_CONTRACTS: dict[str, RateRuntimeContract] = {}
 PUTAWAY_RUNTIME_CONTRACTS: dict[str, PutawayRuntimeContract] = {}
 
 DURATION_RUNTIME_METRICS = frozenset({"prep", "picking"})
@@ -66,9 +73,9 @@ def verify_kpi_runtime_activation(
 ) -> dict[str, object] | None:
     """Verify runtime-only KPI contracts after semantic + live schema verification.
 
-    Putaway additionally requires one reviewed SLA contract to cover the entire requested
-    window. Queries spanning an SLA-version boundary fail closed instead of silently
-    applying the end-date policy to historical rows.
+    Rate KPIs require a pinned numerator/denominator aggregation contract, preventing
+    average-of-percentages drift. Putaway additionally requires one reviewed SLA
+    contract to cover the entire requested window.
     """
 
     if metric in DURATION_RUNTIME_METRICS:
@@ -90,14 +97,15 @@ def verify_kpi_runtime_activation(
         )
 
     if metric in RATE_RUNTIME_METRICS:
-        contract = RATE_RUNTIME_CONTRACTS.get(metric)
-        if contract is None:
+        runtime = RATE_RUNTIME_CONTRACTS.get(metric)
+        if runtime is None:
             raise ValueError(f"kpi_runtime_contract_required:{metric}")
         bundle = verify_rate_kpi_activation(
             metric=metric,
             semantic_verification=semantic_verification,
             schema_verification=schema_verification,
-            rate_contract=contract,
+            rate_contract=runtime.unit,
+            aggregation_contract=runtime.aggregation,
         )
         return _with_provenance(
             metric=metric,

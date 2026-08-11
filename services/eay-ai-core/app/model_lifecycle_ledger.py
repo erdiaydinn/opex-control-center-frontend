@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -46,6 +47,14 @@ class LifecycleRecord(BaseModel):
     approval_reference: str
     reason: str
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class LifecycleVerificationResult:
+    record_count: int
+    head_fingerprint: str | None
+    verified_release_proofs: int
+    passed: bool = True
 
 
 class ModelLifecycleLedger:
@@ -106,6 +115,67 @@ class ModelLifecycleLedger:
         if row is None:
             return 0, None
         return int(row[0]), str(row[1])
+
+    @staticmethod
+    def _canonical_row(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "sequence_no": int(row["sequence_no"]),
+            "previous_fingerprint": row["previous_fingerprint"],
+            "action": row["action"],
+            "model_record_id": row["model_record_id"],
+            "source_release_proof_fingerprint": row["source_release_proof_fingerprint"],
+            "target_model_record_id": row["target_model_record_id"],
+            "target_release_proof_fingerprint": row["target_release_proof_fingerprint"],
+            "approved_by": str(row["approved_by"]).strip(),
+            "approval_reference": str(row["approval_reference"]).strip(),
+            "reason": str(row["reason"]).strip(),
+        }
+
+    def verify_chain(self) -> LifecycleVerificationResult:
+        """Replay the append-only ledger and fail closed on tampering or broken release lineage."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM model_lifecycle_ledger ORDER BY sequence_no ASC"
+            ).fetchall()
+            previous: str | None = None
+            expected_sequence = 1
+            release_proofs = 0
+            for row in rows:
+                if int(row["sequence_no"]) != expected_sequence:
+                    raise ValueError("model_lifecycle_sequence_gap")
+                if row["previous_fingerprint"] != previous:
+                    raise ValueError("model_lifecycle_previous_fingerprint_mismatch")
+                expected = _sha256(self._canonical_row(row))
+                if row["fingerprint"] != expected:
+                    raise ValueError("model_lifecycle_fingerprint_mismatch")
+                if row["action"] not in {"retire", "rollback_authorized"}:
+                    raise ValueError("model_lifecycle_unknown_action")
+                self._load_promotion(
+                    conn,
+                    str(row["model_record_id"]),
+                    str(row["source_release_proof_fingerprint"]),
+                )
+                release_proofs += 1
+                if row["action"] == "rollback_authorized":
+                    if not row["target_model_record_id"] or not row["target_release_proof_fingerprint"]:
+                        raise ValueError("model_lifecycle_rollback_target_missing")
+                    self._load_promotion(
+                        conn,
+                        str(row["target_model_record_id"]),
+                        str(row["target_release_proof_fingerprint"]),
+                    )
+                    release_proofs += 1
+                elif row["target_model_record_id"] or row["target_release_proof_fingerprint"]:
+                    raise ValueError("model_lifecycle_unexpected_target")
+                previous = str(row["fingerprint"])
+                expected_sequence += 1
+
+        return LifecycleVerificationResult(
+            record_count=len(rows),
+            head_fingerprint=previous,
+            verified_release_proofs=release_proofs,
+        )
 
     def _record(
         self,

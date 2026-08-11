@@ -23,6 +23,9 @@ class VoiceLanguageEval:
     citation_readback_accuracy: float
     p95_first_audio_ms: int
     p95_barge_in_ms: int
+    interruption_success_rate: float = 1.0
+    p95_cancel_propagation_ms: int = 0
+    approval_replay_accept_count: int = 0
     fingerprint: str = ""
 
     def sealed(self) -> "VoiceLanguageEval":
@@ -36,6 +39,9 @@ class VoiceLanguageEval:
                 "citation_readback_accuracy": self.citation_readback_accuracy,
                 "p95_first_audio_ms": self.p95_first_audio_ms,
                 "p95_barge_in_ms": self.p95_barge_in_ms,
+                "interruption_success_rate": self.interruption_success_rate,
+                "p95_cancel_propagation_ms": self.p95_cancel_propagation_ms,
+                "approval_replay_accept_count": self.approval_replay_accept_count,
             }
         )
         return VoiceLanguageEval(**{**self.__dict__, "fingerprint": fp})
@@ -81,6 +87,12 @@ def evaluate_voice_release(cases: Iterable[VoiceLanguageEval]) -> VoiceReleaseDe
             violations.append(f"voice_eval_{language}:first_audio_latency_too_high")
         if case.p95_barge_in_ms > 300:
             violations.append(f"voice_eval_{language}:barge_in_latency_too_high")
+        if not 0.0 <= case.interruption_success_rate <= 1.0 or case.interruption_success_rate < 0.995:
+            violations.append(f"voice_eval_{language}:interruption_success_too_low")
+        if case.p95_cancel_propagation_ms < 0 or case.p95_cancel_propagation_ms > 250:
+            violations.append(f"voice_eval_{language}:cancel_propagation_too_slow")
+        if case.approval_replay_accept_count != 0:
+            violations.append(f"voice_eval_{language}:approval_replay_accepted")
 
     language_fingerprints = tuple(sorted(case.fingerprint for case in sealed))
     fingerprint = _sha256(

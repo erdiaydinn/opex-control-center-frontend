@@ -56,6 +56,8 @@ def otp_source(**overrides):
         "metric": "otp",
         "schema_evidence_fingerprint": FP_C,
         "source_semantics_fingerprint": FP_D,
+        "late_prep_orders_column": "late_prep_orders",
+        "eligible_orders_column": "eligible_orders",
         "rate_contract": RateContract(metric="otp", source_scale="percent"),
         "aggregation_contract": RateAggregationContract(
             metric="otp",

@@ -47,6 +47,26 @@ def _sha(value: object, field: str) -> str:
     return text
 
 
+def verify_promotion_schema_lineage(*, schema_contract: object, promotion_schema_fingerprint: str, metric: str) -> str:
+    """Bind a promotion decision to the exact schema observation that created its contract.
+
+    ``expected_fingerprint`` proves the required column/type projection. It is deliberately
+    different from ``evidence_fingerprint``: two later INFORMATION_SCHEMA observations can
+    have the same required-column projection while still being different reviewed evidence
+    snapshots. Production promotion must therefore match the immutable evidence fingerprint,
+    not merely the projected schema contract.
+    """
+
+    evidence_fp = getattr(schema_contract, "evidence_fingerprint", None)
+    if evidence_fp is None:
+        raise ValueError(f"kpi_registry_integrity_schema_evidence_required:{metric}")
+    observed = _sha(evidence_fp, "schema_evidence")
+    promoted = _sha(promotion_schema_fingerprint, "promotion_schema")
+    if observed != promoted:
+        raise ValueError(f"kpi_registry_integrity_promotion_schema_evidence_drift:{metric}")
+    return observed
+
+
 def verify_registry_binding(definition: object) -> KpiRegistryBinding:
     """Fail closed when executable KPI code drifts from reviewed registry lineage."""
 
@@ -110,6 +130,11 @@ def verify_registry_binding(definition: object) -> KpiRegistryBinding:
         assert promotion_fp is not None
         assert promotion_schema_fp is not None
         assert review_artifact_fp is not None
+        verify_promotion_schema_lineage(
+            schema_contract=schema_contract,
+            promotion_schema_fingerprint=promotion_schema_fp,
+            metric=metric,
+        )
         verify_registered_kpi_promotion(
             promotion_fingerprint=promotion_fp,
             metric=metric,

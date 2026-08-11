@@ -52,6 +52,30 @@ def test_manifest_builds_parent_hash_chain(tmp_path):
     assert child.parent_manifest_id == root.id
     assert child.parent_chain_sha256 == root.chain_sha256
     assert child.chain_sha256 != root.chain_sha256
+    assert len(root.dataset_integrity_sha256) == 64
+    assert len(root.quality_lineage_sha256) == 64
+    assert child.dataset_integrity_sha256 != root.dataset_integrity_sha256
+
+
+def test_manifest_chain_binds_quality_lineage(tmp_path):
+    store = TrainingManifestStore(tmp_path / "eay.db")
+    first = store.create(
+        TrainingManifestCreate(
+            examples=[_example("Use the reviewed receiving procedure and verify all evidence before closing the operational case.")],
+            approved_by="reviewer",
+            approval_reference="APR-QUALITY-1",
+        )
+    )
+    second = store.create(
+        TrainingManifestCreate(
+            examples=[_example("Use the reviewed receiving procedure, verify all source evidence, and document the operational decision before closure.")],
+            approved_by="reviewer",
+            approval_reference="APR-QUALITY-2",
+            parent_manifest_id=first.id,
+        )
+    )
+    assert first.quality_lineage_sha256 != second.quality_lineage_sha256
+    assert second.parent_chain_sha256 == first.chain_sha256
 
 
 def test_duplicate_dataset_manifest_rejected(tmp_path):

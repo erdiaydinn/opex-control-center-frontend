@@ -8,6 +8,7 @@ from .legal_knowledge import router as legal_knowledge_router
 from .legal_review import router as legal_review_router
 from .legal_verification import router as legal_verification_router
 from .main import app
+from .learning_export_guard import router as learning_export_router
 from .model_registry import router as model_registry_router
 from .observability import router as observability_router
 from .regulatory import router as regulatory_router
@@ -18,6 +19,15 @@ from .training_manifest import router as training_manifest_router
 from .vision_audit import router as vision_audit_router
 from .vision_provenance import router as vision_provenance_router
 
+
+# The legacy learning export in main emitted approved candidates without the newer
+# privacy/evidence/quality gates. Remove that route from the public surface and replace it
+# with the gated router below while keeping the same external URL.
+app.router.routes = [
+    route
+    for route in app.router.routes
+    if getattr(route, "path", None) != "/v1/learning/export"
+]
 
 app.include_router(regulatory_router)
 app.include_router(legal_router)
@@ -38,4 +48,5 @@ app.include_router(observability_router)
 app.include_router(vision_audit_router)
 app.include_router(vision_provenance_router)
 app.include_router(training_manifest_router)
+app.include_router(learning_export_router)
 app.include_router(model_registry_router)

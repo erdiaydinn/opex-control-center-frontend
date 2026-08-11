@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .learning_quality import evaluate_learning_example
+from .training_integrity import validate_dataset_integrity
 
 
 class DatasetGateResult(BaseModel):
@@ -14,6 +15,8 @@ class DatasetGateResult(BaseModel):
     dataset_sha256: str
     example_count: int
     violations: list[str] = Field(default_factory=list)
+    quality_fingerprints: list[str] = Field(default_factory=list)
+    integrity_sha256: str | None = None
 
 
 def canonical_dataset_sha256(examples: list[dict[str, Any]]) -> str:
@@ -23,6 +26,7 @@ def canonical_dataset_sha256(examples: list[dict[str, Any]]) -> str:
 
 def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateResult:
     violations: list[str] = []
+    quality_fingerprints: list[str] = []
     if not examples:
         violations.append("empty_dataset")
 
@@ -80,6 +84,7 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
             legal_claim=legal_claim,
             privacy_safe=metadata.get("contains_personal_data") is not True,
         )
+        quality_fingerprints.append(quality.target_sha256)
         for item in quality.violations:
             mapped = {
                 "human_approval_required": "not_human_approved",
@@ -90,9 +95,16 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
             if violation not in violations:
                 violations.append(violation)
 
+    integrity = validate_dataset_integrity(examples)
+    for item in integrity.violations:
+        if item not in violations:
+            violations.append(item)
+
     return DatasetGateResult(
         accepted=not violations,
         dataset_sha256=canonical_dataset_sha256(examples),
         example_count=len(examples),
         violations=violations,
+        quality_fingerprints=quality_fingerprints,
+        integrity_sha256=integrity.integrity_sha256,
     )

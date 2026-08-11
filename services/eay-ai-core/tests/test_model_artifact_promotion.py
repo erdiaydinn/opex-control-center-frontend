@@ -114,6 +114,27 @@ def test_failed_canary_cannot_promote(tmp_path):
         ))
 
 
+def test_production_promotion_blocks_tampered_primary_artifact_provenance(tmp_path):
+    registry = ModelRegistry(tmp_path / "eay.db")
+    model_id, job_fp = _seed(registry)
+    provenance = ModelArtifactProvenanceRegistry(registry.db_path)
+    provenance.register_artifact(PromotionArtifactRegistration(
+        training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
+        format="safetensors", created_by="trainer", build_reference="BUILD-1",
+    ))
+    evidence = provenance.register_canary_evidence(_good_canary(model_id))
+    with sqlite3.connect(registry.db_path) as conn:
+        conn.execute(
+            "UPDATE model_registry SET artifact_provenance_fingerprint=? WHERE id=?",
+            ("0" * 64, model_id),
+        )
+    with pytest.raises(ValueError, match="production_promotion_artifact_provenance_mismatch"):
+        ModelPromotionGate(registry.db_path).promote(PromotionRequest(
+            model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
+            approved_by="release-manager", approval_reference="REL-TAMPER",
+        ))
+
+
 def test_production_promotion_binds_registered_artifact_canary_and_human_approval(tmp_path):
     registry = ModelRegistry(tmp_path / "eay.db")
     model_id, job_fp = _seed(registry)

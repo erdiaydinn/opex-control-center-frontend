@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .voice_async_runtime import VoiceAsyncExecutionCoordinator
 from .voice_realtime_controller import VoiceRealtimeSessionController
+from .voice_response_lineage import VoiceResponseGenerationProof
 from .voice_ws_protocol import VoiceWsSequenceGuard, seal_envelope
 
 router = APIRouter(tags=["voice"])
@@ -50,7 +51,8 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
     Raw microphone bytes, transcript/prompt text and generated text are deliberately
     excluded. The endpoint coordinates immutable hashes, turn epochs and cancellation
     leases so late adapter results cannot cross a barge-in or a newer user turn.
-    Tool results additionally require an exact governed execution provenance fingerprint.
+    Tool results require exact governed execution provenance. Model-response and TTS
+    starts require server-sealed lineage proofs tied to the current turn.
     """
 
     try:
@@ -61,6 +63,8 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
         return
 
     guard = VoiceWsSequenceGuard()
+    latest_user_input_sha256: str | None = None
+    response_proofs: dict[str, VoiceResponseGenerationProof] = {}
     await websocket.accept()
     await websocket.send_json(
         {
@@ -134,11 +138,15 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                     )
                     controller.streaming.machine.end_utterance()
                     coordinator.start_turn()
+                    latest_user_input_sha256 = digest
+                    response_proofs.clear()
                     response = _response_payload(controller, coordinator, event="thinking")
                     response["stt_final_sha256"] = digest
                 elif event == "task_start":
                     task_id = str(payload.get("task_id", ""))
                     kind = str(payload.get("kind", ""))
+                    if kind in {"model", "tts"}:
+                        raise ValueError("voice_ws_proof_bound_start_required")
                     request_fingerprint = _require_sha256(
                         payload.get("request_fingerprint"), "voice_ws_task_request_fingerprint_invalid"
                     )
@@ -152,6 +160,71 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                     response["task_id"] = lease.task_id
                     response["task_kind"] = lease.kind
                     response["task_turn_epoch"] = lease.turn_epoch
+                    response["task_request_fingerprint"] = lease.request_fingerprint
+                elif event == "response_start":
+                    if latest_user_input_sha256 is None:
+                        raise ValueError("voice_ws_response_user_input_missing")
+                    supplied_user_input = _require_sha256(
+                        payload.get("user_input_sha256"), "voice_ws_response_user_input_invalid"
+                    )
+                    if supplied_user_input != latest_user_input_sha256:
+                        raise ValueError("voice_ws_response_user_input_mismatch")
+                    task_id = str(payload.get("task_id", ""))
+                    raw_tool_ids = payload.get("tool_task_ids", [])
+                    if not isinstance(raw_tool_ids, list) or any(not isinstance(item, str) for item in raw_tool_ids):
+                        raise ValueError("voice_ws_response_tool_task_ids_invalid")
+                    legal_fp = payload.get("legal_context_fingerprint")
+                    kpi_fp = payload.get("kpi_context_fingerprint")
+                    if legal_fp is not None:
+                        legal_fp = _require_sha256(legal_fp, "voice_ws_response_legal_context_invalid")
+                    if kpi_fp is not None:
+                        kpi_fp = _require_sha256(kpi_fp, "voice_ws_response_kpi_context_invalid")
+                    proof = coordinator.seal_response_generation(
+                        user_input_sha256=supplied_user_input,
+                        tool_task_ids=tuple(raw_tool_ids),
+                        legal_context_fingerprint=legal_fp,
+                        kpi_context_fingerprint=kpi_fp,
+                    )
+                    response_proofs[proof.fingerprint] = proof
+                    lease, _ = coordinator.start_task(
+                        task_id=task_id,
+                        kind="model",
+                        request_fingerprint=proof.fingerprint,
+                        cancellable=True,
+                    )
+                    response = _response_payload(controller, coordinator, event="response_started")
+                    response["task_id"] = lease.task_id
+                    response["response_proof_fingerprint"] = proof.fingerprint
+                    response["task_request_fingerprint"] = lease.request_fingerprint
+                elif event == "tts_start":
+                    task_id = str(payload.get("task_id", ""))
+                    response_proof_fp = _require_sha256(
+                        payload.get("response_proof_fingerprint"), "voice_ws_tts_response_proof_invalid"
+                    )
+                    response_proof = response_proofs.get(response_proof_fp)
+                    if response_proof is None:
+                        raise ValueError("voice_ws_tts_response_proof_unknown")
+                    response_text_sha256 = _require_sha256(
+                        payload.get("response_text_sha256"), "voice_ws_tts_response_text_invalid"
+                    )
+                    voice_profile_fingerprint = _require_sha256(
+                        payload.get("voice_profile_fingerprint"), "voice_ws_tts_voice_profile_invalid"
+                    )
+                    proof = coordinator.seal_tts_generation(
+                        response_proof=response_proof,
+                        response_text_sha256=response_text_sha256,
+                        voice_profile_fingerprint=voice_profile_fingerprint,
+                    )
+                    lease, _ = coordinator.start_task(
+                        task_id=task_id,
+                        kind="tts",
+                        request_fingerprint=proof.fingerprint,
+                        cancellable=True,
+                    )
+                    response = _response_payload(controller, coordinator, event="tts_started")
+                    response["task_id"] = lease.task_id
+                    response["tts_proof_fingerprint"] = proof.fingerprint
+                    response["response_proof_fingerprint"] = proof.response_proof_fingerprint
                     response["task_request_fingerprint"] = lease.request_fingerprint
                 elif event == "task_result":
                     task_id = str(payload.get("task_id", ""))
@@ -180,6 +253,7 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                         response["governed_provenance_fingerprint"] = accepted.governed_provenance_fingerprint
                 elif event == "barge_in":
                     cancelled_ids = coordinator.cancel_for_barge_in()
+                    response_proofs.clear()
                     response = _response_payload(controller, coordinator, event="cancelled")
                     response["cancelled_task_ids_sha256"] = hashlib.sha256(
                         json.dumps(cancelled_ids, separators=(",", ":")).encode("utf-8")

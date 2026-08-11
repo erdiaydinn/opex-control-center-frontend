@@ -119,6 +119,52 @@ def test_voice_websocket_accepts_current_task_result_and_retires_task():
         assert len(accepted["accepted_result_fingerprint"]) == 64
 
 
+def test_voice_websocket_tool_result_requires_governed_execution_provenance():
+    client = TestClient(app)
+    with client.websocket_connect("/v1/voice/ws/session-7?language=tr") as ws:
+        ws.receive_json()
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}})
+        ws.receive_json()
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("4")}})
+        ws.receive_json()
+        ws.send_json(
+            {
+                "event": "task_start",
+                "sequence": 2,
+                "message_id": "m-2",
+                "payload": {"task_id": "tool-1", "kind": "tool", "request_fingerprint": _hash("5")},
+            }
+        )
+        ws.receive_json()
+        ws.send_json(
+            {
+                "event": "task_result",
+                "sequence": 3,
+                "message_id": "m-3",
+                "payload": {"task_id": "tool-1", "result_sha256": _hash("6")},
+            }
+        )
+        rejected = ws.receive_json()
+        assert rejected["event"] == "error"
+        assert rejected["code"] == "voice_ws_tool_governed_provenance_invalid"
+
+        ws.send_json(
+            {
+                "event": "task_result",
+                "sequence": 4,
+                "message_id": "m-4",
+                "payload": {
+                    "task_id": "tool-1",
+                    "result_sha256": _hash("6"),
+                    "governed_provenance_fingerprint": _hash("7"),
+                },
+            }
+        )
+        accepted = ws.receive_json()
+        assert accepted["event"] == "task_result_accepted"
+        assert accepted["governed_provenance_fingerprint"] == _hash("7")
+
+
 def test_voice_websocket_barge_in_rejects_late_task_result():
     client = TestClient(app)
     with client.websocket_connect("/v1/voice/ws/session-6?language=en") as ws:

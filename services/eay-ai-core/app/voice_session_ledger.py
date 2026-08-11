@@ -13,6 +13,7 @@ VoiceEventType = Literal[
     "wake",
     "utterance_final",
     "tool_request",
+    "tool_result",
     "approval_required",
     "approval_granted",
     "response_started",
@@ -108,7 +109,7 @@ class VoiceSessionLedger:
             raise ValueError("voice_session_approval_risk_required")
         if event_type == "approval_granted" and len((approval_reference or "").strip()) < 3:
             raise ValueError("voice_session_approval_reference_required")
-        if event_type == "tool_request" and not (tool_call_id or "").strip():
+        if event_type in {"tool_request", "tool_result"} and not (tool_call_id or "").strip():
             raise ValueError("voice_session_tool_call_id_required")
 
         transcript_sha256 = hash_transcript(transcript) if transcript is not None else None

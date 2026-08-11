@@ -3,10 +3,10 @@ import pytest
 from app.training_manifest import TrainingManifestCreate, TrainingManifestStore
 
 
-def _example(text="Use the reviewed warehouse procedure and verify the supporting source before taking operational action."):
+def _example(text="Use the reviewed warehouse procedure and verify the supporting source before taking operational action.", user="question"):
     return {
         "messages": [
-            {"role": "user", "content": "question"},
+            {"role": "user", "content": user},
             {"role": "assistant", "content": text},
         ],
         "metadata": {
@@ -76,6 +76,44 @@ def test_manifest_chain_binds_quality_lineage(tmp_path):
     )
     assert first.quality_lineage_sha256 != second.quality_lineage_sha256
     assert second.parent_chain_sha256 == first.chain_sha256
+
+
+def test_manifest_rejects_train_eval_leakage(tmp_path):
+    store = TrainingManifestStore(tmp_path / "eay.db")
+    shared = _example(
+        "Picking averages must be weighted by eligible orders to avoid average-of-averages drift.",
+        user="How should picker-day picking time be aggregated?",
+    )
+    with pytest.raises(ValueError, match="training_eval_leakage:eval_0:exact_leakage_from_train_0"):
+        store.create(
+            TrainingManifestCreate(
+                examples=[shared],
+                eval_examples=[shared],
+                approved_by="reviewer",
+                approval_reference="APR-LEAK-1",
+            )
+        )
+
+
+def test_manifest_persists_distinct_eval_split_hash(tmp_path):
+    store = TrainingManifestStore(tmp_path / "eay.db")
+    manifest = store.create(
+        TrainingManifestCreate(
+            examples=[_example(
+                "Use the reviewed receiving procedure and verify the source before accepting the operational conclusion.",
+                user="How should receiving be reviewed?",
+            )],
+            eval_examples=[_example(
+                "Use the effective SLA version and compare elapsed minutes with the reviewed threshold before classifying compliance.",
+                user="How should putaway SLA compliance be evaluated?",
+            )],
+            approved_by="reviewer",
+            approval_reference="APR-EVAL-1",
+        )
+    )
+    assert manifest.eval_example_count == 1
+    assert len(manifest.eval_dataset_sha256 or "") == 64
+    assert manifest.eval_dataset_sha256 != manifest.dataset_sha256
 
 
 def test_duplicate_dataset_manifest_rejected(tmp_path):

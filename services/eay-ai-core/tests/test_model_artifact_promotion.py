@@ -91,7 +91,7 @@ def _good_canary(model_id):
     )
 
 
-def _release_evidence(db_path):
+def _release_evidence(db_path, *, eval_dataset=EVAL_DATASET, chain=CHAIN):
     historical = evaluate_historical_legal_rag([
         HistoricalLegalRagCase(
             case_id=f"historical-{idx}", as_of=date(2026, 6, 1),
@@ -107,7 +107,12 @@ def _release_evidence(db_path):
         )
         for idx in range(20)
     ])
-    return ReleaseEvaluationEvidenceRegistry(db_path).record(historical=historical, safety=safety)
+    return ReleaseEvaluationEvidenceRegistry(db_path).record(
+        historical=historical,
+        safety=safety,
+        eval_dataset_sha256=eval_dataset,
+        training_manifest_chain_sha256=chain,
+    )
 
 
 def test_artifact_requires_registered_training_job(tmp_path):
@@ -133,6 +138,42 @@ def test_production_promotion_requires_registered_release_eval_evidence(tmp_path
             model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
             release_evaluation_evidence_fingerprint="7" * 64,
             approved_by="release-manager", approval_reference="REL-MISSING-EVAL",
+        ))
+
+
+def test_release_eval_evidence_from_another_eval_dataset_cannot_promote(tmp_path):
+    registry = ModelRegistry(tmp_path / "eay.db")
+    model_id, job_fp = _seed(registry)
+    provenance = ModelArtifactProvenanceRegistry(registry.db_path)
+    provenance.register_artifact(PromotionArtifactRegistration(
+        training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
+        format="safetensors", created_by="trainer", build_reference="BUILD-1",
+    ))
+    canary = provenance.register_canary_evidence(_good_canary(model_id))
+    foreign = _release_evidence(registry.db_path, eval_dataset="8" * 64)
+    with pytest.raises(ValueError, match="release_evaluation_evidence_eval_dataset_mismatch"):
+        ModelPromotionGate(registry.db_path).promote(PromotionRequest(
+            model_record_id=model_id, canary_evidence_fingerprint=canary.fingerprint,
+            release_evaluation_evidence_fingerprint=foreign.fingerprint,
+            approved_by="release-manager", approval_reference="REL-CROSS-EVAL",
+        ))
+
+
+def test_release_eval_evidence_from_another_training_manifest_cannot_promote(tmp_path):
+    registry = ModelRegistry(tmp_path / "eay.db")
+    model_id, job_fp = _seed(registry)
+    provenance = ModelArtifactProvenanceRegistry(registry.db_path)
+    provenance.register_artifact(PromotionArtifactRegistration(
+        training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
+        format="safetensors", created_by="trainer", build_reference="BUILD-1",
+    ))
+    canary = provenance.register_canary_evidence(_good_canary(model_id))
+    foreign = _release_evidence(registry.db_path, chain="7" * 64)
+    with pytest.raises(ValueError, match="release_evaluation_evidence_training_manifest_mismatch"):
+        ModelPromotionGate(registry.db_path).promote(PromotionRequest(
+            model_record_id=model_id, canary_evidence_fingerprint=canary.fingerprint,
+            release_evaluation_evidence_fingerprint=foreign.fingerprint,
+            approved_by="release-manager", approval_reference="REL-CROSS-MANIFEST",
         ))
 
 
@@ -202,6 +243,8 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
     assert proof.release_evaluation_evidence_fingerprint == release_evidence.fingerprint
     assert proof.historical_legal_eval_fingerprint == release_evidence.historical_legal_fingerprint
     assert proof.safety_eval_fingerprint == release_evidence.safety_eval_fingerprint
+    assert proof.eval_dataset_sha256 == EVAL_DATASET
+    assert proof.training_manifest_chain_sha256 == CHAIN
     assert proof.artifact_sha256 == artifact.artifact_sha256
     assert proof.training_job_fingerprint == job_fp
 
@@ -210,8 +253,8 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
         row = conn.execute(
             """SELECT release_proof_fingerprint,offline_eval_fingerprint,
             release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,
-            safety_eval_fingerprint,artifact_provenance_fingerprint
-            FROM model_production_promotions"""
+            safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,
+            artifact_provenance_fingerprint FROM model_production_promotions"""
         ).fetchone()
     assert status == "production"
     assert row == (
@@ -220,6 +263,8 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
         proof.release_evaluation_evidence_fingerprint,
         proof.historical_legal_eval_fingerprint,
         proof.safety_eval_fingerprint,
+        proof.eval_dataset_sha256,
+        proof.training_manifest_chain_sha256,
         proof.artifact_provenance_fingerprint,
     )
 

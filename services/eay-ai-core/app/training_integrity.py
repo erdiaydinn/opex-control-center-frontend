@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 _TOKEN_RE = re.compile(r"[\wÇĞİÖŞÜçğıöşü-]+", re.UNICODE)
 
@@ -17,9 +18,15 @@ class TrainingIntegrityResult:
     integrity_sha256: str
 
 
+def _canonical_token(token: str) -> str:
+    folded = token.casefold().replace("ı", "i")
+    decomposed = unicodedata.normalize("NFKD", folded)
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
 def _normalize_text(value: object) -> str:
-    tokens = [token.casefold() for token in _TOKEN_RE.findall(str(value or ""))]
-    return " ".join(tokens)
+    tokens = [_canonical_token(token) for token in _TOKEN_RE.findall(str(value or ""))]
+    return " ".join(token for token in tokens if token)
 
 
 def _example_text(example: dict[str, Any]) -> tuple[str, str]:

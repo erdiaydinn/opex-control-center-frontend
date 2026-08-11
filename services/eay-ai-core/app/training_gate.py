@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .learning_quality import evaluate_learning_example
+from .multilingual_learning import LEARNING_DEPTH_VERSION, evaluate_learning_depth_bundle
 from .privacy_guard import scan_personal_data
 from .training_integrity import validate_dataset_integrity
 
@@ -19,6 +21,7 @@ class DatasetGateResult(BaseModel):
     violations: list[str] = Field(default_factory=list)
     quality_fingerprints: list[str] = Field(default_factory=list)
     teacher_quality_fingerprints: list[str] = Field(default_factory=list)
+    learning_depth_fingerprints: list[str] = Field(default_factory=list)
     integrity_sha256: str | None = None
 
 
@@ -51,6 +54,9 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
     violations: list[str] = []
     quality_fingerprints: list[str] = []
     teacher_quality_fingerprints: list[str] = []
+    learning_depth_fingerprints: list[str] = []
+    curriculum_pairs: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    curriculum_indexes: dict[str, list[int]] = defaultdict(list)
     if not examples:
         violations.append("empty_dataset")
 
@@ -82,6 +88,24 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
         if not isinstance(metadata, dict):
             violations.append(f"example_{idx}:invalid_metadata")
             continue
+
+        curriculum_profile = str(metadata.get("curriculum_profile") or "").strip()
+        if curriculum_profile:
+            if curriculum_profile != LEARNING_DEPTH_VERSION:
+                violations.append(f"example_{idx}:unsupported_curriculum_profile")
+            else:
+                concept_id = str(metadata.get("concept_id") or "").strip()
+                language = str(metadata.get("language") or "").strip()
+                learning_lens = str(metadata.get("learning_lens") or "").strip()
+                if not concept_id:
+                    violations.append(f"example_{idx}:curriculum_concept_id_required")
+                if not language:
+                    violations.append(f"example_{idx}:curriculum_language_required")
+                if not learning_lens:
+                    violations.append(f"example_{idx}:curriculum_learning_lens_required")
+                if concept_id and language and learning_lens:
+                    curriculum_pairs[concept_id].append((language, learning_lens))
+                    curriculum_indexes[concept_id].append(idx)
 
         legal_claim = any(
             token in assistant_lower
@@ -133,6 +157,22 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
             if violation not in violations:
                 violations.append(violation)
 
+    for concept_id, observed_pairs in sorted(curriculum_pairs.items()):
+        depth = evaluate_learning_depth_bundle(concept_id=concept_id, observed_pairs=observed_pairs)
+        learning_depth_fingerprints.append(depth.fingerprint)
+        if not depth.accepted:
+            prefix = f"concept_{concept_id}:learning_depth"
+            if depth.missing_languages:
+                violations.append(prefix + ":missing_languages:" + ",".join(depth.missing_languages))
+            for language, missing in depth.missing_lenses_by_language:
+                violations.append(prefix + f":{language}:missing_lenses:" + ",".join(missing))
+            if depth.duplicate_pairs:
+                violations.append(prefix + ":duplicate_pairs:" + ",".join(depth.duplicate_pairs))
+            if depth.observed_slots != depth.expected_slots:
+                violations.append(
+                    prefix + f":slot_count:{depth.observed_slots}/{depth.expected_slots}"
+                )
+
     integrity = validate_dataset_integrity(examples)
     for item in integrity.violations:
         if item not in violations:
@@ -145,5 +185,6 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
         violations=violations,
         quality_fingerprints=quality_fingerprints,
         teacher_quality_fingerprints=teacher_quality_fingerprints,
+        learning_depth_fingerprints=learning_depth_fingerprints,
         integrity_sha256=integrity.integrity_sha256,
     )

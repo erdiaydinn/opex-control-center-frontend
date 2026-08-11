@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.model_registry import ApprovalRequest, CanaryRequest, EvalSummary, ModelCandidateCreate, ModelRegistry
 
@@ -11,6 +12,9 @@ def good_candidate():
         artifact_sha256="a" * 64,
         license_id="apache-2.0",
         training_dataset_sha256="b" * 64,
+        training_manifest_chain_sha256="c" * 64,
+        training_job_fingerprint="d" * 64,
+        eval_dataset_sha256="e" * 64,
         evals=EvalSummary(
             legal_grounding_rate=0.995,
             citation_validity_rate=1.0,
@@ -25,6 +29,8 @@ def good_candidate():
 def test_good_candidate_requires_human_approval_before_canary(tmp_path):
     registry = ModelRegistry(tmp_path / "eay.db")
     record = registry.create(good_candidate())
+    assert record.training_job_fingerprint == "d" * 64
+    assert record.training_manifest_chain_sha256 == "c" * 64
     with pytest.raises(ValueError):
         registry.set_canary(record.id, CanaryRequest(percent=5, approved_by="ops"))
     approved = registry.approve(record.id, ApprovalRequest(approved_by="ops", note="evals checked"))
@@ -32,6 +38,26 @@ def test_good_candidate_requires_human_approval_before_canary(tmp_path):
     canary = registry.set_canary(record.id, CanaryRequest(percent=10, approved_by="ops"))
     assert canary.status == "canary"
     assert canary.canary_percent == 10
+
+
+def test_model_candidate_rejects_partial_training_lineage():
+    with pytest.raises(ValidationError, match="model_training_lineage_incomplete"):
+        ModelCandidateCreate(
+            model_name="eay-ops",
+            model_version="partial",
+            base_model="local-base",
+            artifact_sha256="a" * 64,
+            license_id="apache-2.0",
+            training_dataset_sha256="b" * 64,
+            evals=good_candidate().evals,
+        )
+
+
+def test_model_candidate_rejects_train_eval_collision():
+    with pytest.raises(ValidationError, match="model_train_eval_dataset_collision"):
+        good_candidate().model_copy(
+            update={"eval_dataset_sha256": "b" * 64}
+        ).__class__(**good_candidate().model_dump() | {"eval_dataset_sha256": "b" * 64})
 
 
 def test_release_gate_blocks_kvkk_leak(tmp_path):

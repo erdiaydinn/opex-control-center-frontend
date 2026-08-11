@@ -186,9 +186,9 @@ class VoiceSessionLedger:
         previous_sha: str | None = None
         events: list[VoiceSessionEvent] = []
         for row in rows:
-            self._verify_row(row)
             if row["previous_event_sha256"] != previous_sha:
-                raise ValueError("voice_session_chain_broken")
+                raise ValueError("voice_session_chain_drift")
+            self._verify_row(row)
             previous_sha = row["event_sha256"]
             events.append(VoiceSessionEvent(**dict(row)))
         return tuple(events)

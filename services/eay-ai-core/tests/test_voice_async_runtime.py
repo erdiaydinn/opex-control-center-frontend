@@ -7,6 +7,10 @@ from app.voice_async_runtime import VoiceAsyncExecutionCoordinator
 from app.voice_realtime_controller import VoiceRealtimeSessionController
 from app.voice_session_ledger import VoiceSessionLedger
 from app.voice_tool_bridge import VoiceToolIntent
+from app.voice_tool_execution_provenance import (
+    GovernedToolExecutionProof,
+    GovernedVoiceToolResult,
+)
 
 
 def _intent(*, risk: str = "read", fingerprint: str = "a" * 64) -> VoiceToolIntent:
@@ -20,6 +24,20 @@ def _intent(*, risk: str = "read", fingerprint: str = "a" * 64) -> VoiceToolInte
         reason_sha256="c" * 64,
         approval_reference="approval-1" if risk != "read" else None,
         fingerprint=fingerprint,
+    )
+
+
+def _proof() -> GovernedToolExecutionProof:
+    return GovernedToolExecutionProof(
+        tool="ops_kpi_query",
+        query_id="ops-kpi-v1",
+        execution_id="exec-1",
+        status="executed",
+        sql_sha256="5" * 64,
+        activation_provenance_fingerprint="6" * 64,
+        result_contract_fingerprint="7" * 64,
+        legal_grounding_fingerprint=None,
+        fingerprint="8" * 64,
     )
 
 
@@ -74,11 +92,14 @@ def test_approval_token_cannot_authorize_changed_intent():
         coordinator.authorize_tool_execution(intent=changed, approval_token=token)
 
 
-def test_accepted_tool_result_is_hash_only_audited(tmp_path):
+def test_accepted_tool_result_is_hash_only_audited_with_governed_provenance(tmp_path):
     class Adapter:
         async def execute(self, *, intent, cancellation):
             cancellation.checkpoint()
-            return "sensitive-result-not-persisted"
+            return GovernedVoiceToolResult(
+                content="sensitive-result-not-persisted",
+                execution_proof=_proof(),
+            )
 
     ledger = VoiceSessionLedger(tmp_path / "voice.db")
     controller = VoiceRealtimeSessionController(session_id="session-1", language="tr")
@@ -102,7 +123,34 @@ def test_accepted_tool_result_is_hash_only_audited(tmp_path):
     )
 
     assert accepted.result_sha256 == hashlib.sha256(b"sensitive-result-not-persisted").hexdigest()
+    assert accepted.governed_provenance_fingerprint == "8" * 64
     events = ledger.verify_session("session-1")
     assert [event.event_type for event in events] == ["tool_result"]
     assert events[0].tool_call_id == "tool-1"
     assert len(events[0].metadata_sha256) == 64
+
+
+def test_raw_tool_adapter_result_is_rejected_even_when_hashable():
+    class UnsafeAdapter:
+        async def execute(self, *, intent, cancellation):
+            return "unguarded tool result"
+
+    controller = VoiceRealtimeSessionController(session_id="session-1", language="tr")
+    coordinator = VoiceAsyncExecutionCoordinator(controller=controller)
+    coordinator.start_turn()
+    lease, cancellation = coordinator.start_task(
+        task_id="tool-1",
+        kind="tool",
+        request_fingerprint="9" * 64,
+    )
+
+    with pytest.raises(ValueError, match="voice_async_tool_governed_result_required"):
+        asyncio.run(
+            coordinator.execute_tool(
+                intent=_intent(),
+                approval_token=None,
+                adapter=UnsafeAdapter(),
+                lease=lease,
+                cancellation=cancellation,
+            )
+        )

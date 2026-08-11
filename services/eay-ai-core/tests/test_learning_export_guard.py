@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 
 import pytest
 
@@ -35,6 +36,14 @@ class FakeCandidateStore:
             if self.legal
             else '[{"id":"ops-1","layer":"operational"}]'
         )
+        review = {
+            "critique": "The original answer was uncertain and did not identify the reviewed source or the required operational verification step.",
+            "improved_answer": self.target,
+            "principles": [
+                "Use reviewed operational evidence before action",
+                "Record the decision and supporting source",
+            ],
+        }
         return {
             "id": "cand-1",
             "status": "approved",
@@ -42,7 +51,7 @@ class FakeCandidateStore:
             "user_message": "What should the operator do?",
             "model_answer": "Original uncertain answer that requires a reviewed correction.",
             "corrected_answer": self.target,
-            "teacher_review_json": '{"improved_answer":"reviewed"}',
+            "teacher_review_json": json.dumps(review, ensure_ascii=False),
             "evidence_json": evidence,
         }
 
@@ -80,6 +89,8 @@ def test_export_passes_quality_gate_after_privacy_review(monkeypatch):
     assert len(result.gate.integrity_sha256 or "") == 64
     assert result.examples[0]["metadata"]["human_approved"] is True
     assert result.examples[0]["metadata"]["export_reviewed_by"] == "human-reviewer"
+    assert result.examples[0]["metadata"]["teacher_quality_accepted"] is True
+    assert len(result.examples[0]["metadata"]["teacher_quality_sha256"]) == 64
 
 
 def test_legal_export_requires_explicit_evidence_review(monkeypatch):

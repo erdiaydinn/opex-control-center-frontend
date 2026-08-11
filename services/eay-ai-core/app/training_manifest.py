@@ -96,7 +96,12 @@ class TrainingManifestStore:
                 raise ValueError("training_eval_leakage:" + ",".join(leakage))
             eval_dataset_sha = eval_gate.dataset_sha256
 
-        quality_material = "|".join(gate.quality_fingerprints)
+        quality_material = "|".join(
+            [
+                *gate.quality_fingerprints,
+                *gate.teacher_quality_fingerprints,
+            ]
+        )
         quality_lineage_sha = hashlib.sha256(quality_material.encode("utf-8")).hexdigest()
 
         parent_chain = None

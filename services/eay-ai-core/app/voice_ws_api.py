@@ -50,6 +50,7 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
     Raw microphone bytes, transcript/prompt text and generated text are deliberately
     excluded. The endpoint coordinates immutable hashes, turn epochs and cancellation
     leases so late adapter results cannot cross a barge-in or a newer user turn.
+    Tool results additionally require an exact governed execution provenance fingerprint.
     """
 
     try:
@@ -158,12 +159,25 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                         payload.get("result_sha256"), "voice_ws_task_result_fingerprint_invalid"
                     )
                     lease = coordinator.lease_for(task_id)
-                    accepted = coordinator.accept_result(lease=lease, result_sha256=result_sha256)
+                    governed_fp = payload.get("governed_provenance_fingerprint")
+                    if lease.kind == "tool":
+                        governed_fp = _require_sha256(
+                            governed_fp, "voice_ws_tool_governed_provenance_invalid"
+                        )
+                    elif governed_fp is not None:
+                        raise ValueError("voice_ws_non_tool_provenance_forbidden")
+                    accepted = coordinator.accept_result(
+                        lease=lease,
+                        result_sha256=result_sha256,
+                        governed_provenance_fingerprint=governed_fp,
+                    )
                     response = _response_payload(controller, coordinator, event="task_result_accepted")
                     response["task_id"] = accepted.task_id
                     response["task_kind"] = accepted.kind
                     response["result_sha256"] = accepted.result_sha256
                     response["accepted_result_fingerprint"] = accepted.fingerprint
+                    if accepted.governed_provenance_fingerprint is not None:
+                        response["governed_provenance_fingerprint"] = accepted.governed_provenance_fingerprint
                 elif event == "barge_in":
                     cancelled_ids = coordinator.cancel_for_barge_in()
                     response = _response_payload(controller, coordinator, event="cancelled")

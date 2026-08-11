@@ -8,11 +8,16 @@ from typing import Protocol
 from .voice_realtime_controller import VoiceRealtimeSessionController
 from .voice_session_ledger import VoiceSessionLedger
 from .voice_tool_bridge import VoiceToolIntent
+from .voice_tool_execution_provenance import GovernedVoiceToolResult
 
 
 def _sha256(payload: object) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _valid_sha256(value: str | None) -> bool:
+    return bool(value) and len(str(value)) == 64 and all(ch in "0123456789abcdef" for ch in str(value))
 
 
 class AsyncSttAdapter(Protocol):
@@ -28,7 +33,9 @@ class AsyncTtsAdapter(Protocol):
 
 
 class AsyncToolAdapter(Protocol):
-    async def execute(self, *, intent: VoiceToolIntent, cancellation: "CancellationToken") -> str: ...
+    async def execute(
+        self, *, intent: VoiceToolIntent, cancellation: "CancellationToken"
+    ) -> GovernedVoiceToolResult: ...
 
 
 @dataclass
@@ -60,6 +67,7 @@ class AcceptedAsyncResult:
     turn_epoch: int
     result_sha256: str
     request_fingerprint: str
+    governed_provenance_fingerprint: str | None
     fingerprint: str
 
 
@@ -97,7 +105,7 @@ class VoiceAsyncExecutionCoordinator:
         request_fingerprint: str,
         cancellable: bool = True,
     ) -> tuple[TaskLease, CancellationToken]:
-        if len(request_fingerprint) != 64 or any(ch not in "0123456789abcdef" for ch in request_fingerprint):
+        if not _valid_sha256(request_fingerprint):
             raise ValueError("voice_async_request_fingerprint_invalid")
         if self._turn_epoch < 1:
             raise ValueError("voice_async_turn_required")
@@ -139,9 +147,21 @@ class VoiceAsyncExecutionCoordinator:
             )
         return cancelled_ids
 
-    def accept_result(self, *, lease: TaskLease, result_sha256: str) -> AcceptedAsyncResult:
-        if len(result_sha256) != 64 or any(ch not in "0123456789abcdef" for ch in result_sha256):
+    def accept_result(
+        self,
+        *,
+        lease: TaskLease,
+        result_sha256: str,
+        governed_provenance_fingerprint: str | None = None,
+    ) -> AcceptedAsyncResult:
+        if not _valid_sha256(result_sha256):
             raise ValueError("voice_async_result_fingerprint_invalid")
+        if lease.kind == "tool":
+            if not _valid_sha256(governed_provenance_fingerprint):
+                raise ValueError("voice_async_tool_governed_provenance_required")
+        elif governed_provenance_fingerprint is not None:
+            raise ValueError("voice_async_non_tool_provenance_forbidden")
+
         current = self._leases.get(lease.task_id)
         if current != lease:
             raise ValueError("voice_async_task_lease_mismatch")
@@ -163,6 +183,7 @@ class VoiceAsyncExecutionCoordinator:
             "turn_epoch": lease.turn_epoch,
             "result_sha256": result_sha256,
             "request_fingerprint": lease.request_fingerprint,
+            "governed_provenance_fingerprint": governed_provenance_fingerprint,
         }
         accepted = AcceptedAsyncResult(**payload, fingerprint=_sha256(payload))
         self._accepted.add(lease.task_id)
@@ -197,10 +218,18 @@ class VoiceAsyncExecutionCoordinator:
     ) -> AcceptedAsyncResult:
         self.authorize_tool_execution(intent=intent, approval_token=approval_token)
         cancellation.checkpoint()
-        raw_result = await adapter.execute(intent=intent, cancellation=cancellation)
+        governed_result = await adapter.execute(intent=intent, cancellation=cancellation)
         cancellation.checkpoint()
-        result_sha = hashlib.sha256(str(raw_result).encode("utf-8")).hexdigest()
-        accepted = self.accept_result(lease=lease, result_sha256=result_sha)
+        if not isinstance(governed_result, GovernedVoiceToolResult):
+            raise ValueError("voice_async_tool_governed_result_required")
+        if not governed_result.content:
+            raise ValueError("voice_async_tool_result_content_required")
+        result_sha = hashlib.sha256(governed_result.content.encode("utf-8")).hexdigest()
+        accepted = self.accept_result(
+            lease=lease,
+            result_sha256=result_sha,
+            governed_provenance_fingerprint=governed_result.execution_proof.fingerprint,
+        )
         if self.ledger is not None:
             self.ledger.append(
                 session_id=intent.session_id,
@@ -212,6 +241,7 @@ class VoiceAsyncExecutionCoordinator:
                 metadata={
                     "intent_fingerprint": intent.fingerprint,
                     "result_sha256": accepted.result_sha256,
+                    "governed_execution_provenance_fingerprint": accepted.governed_provenance_fingerprint,
                     "accepted_result_fingerprint": accepted.fingerprint,
                     "turn_epoch": accepted.turn_epoch,
                 },

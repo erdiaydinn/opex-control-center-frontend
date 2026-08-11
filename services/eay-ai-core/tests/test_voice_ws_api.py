@@ -14,26 +14,12 @@ def test_voice_websocket_wake_and_hashed_audio_flow():
         assert ready["event"] == "ready"
         assert ready["protocol_version"] == "eay-voice-ws-v1"
         assert ready["turn_epoch"] == 0
-
         ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-0", "payload": {}})
         listening = ws.receive_json()
         assert listening["event"] == "listening"
         assert listening["state"] == "listening"
         assert len(listening["envelope_fingerprint"]) == 64
-
-        ws.send_json(
-            {
-                "event": "audio_frame",
-                "sequence": 1,
-                "message_id": "msg-1",
-                "payload": {
-                    "frame_sequence": 0,
-                    "pcm_sha256": _hash("b"),
-                    "duration_ms": 20,
-                    "sample_rate_hz": 16000,
-                },
-            }
-        )
+        ws.send_json({"event": "audio_frame", "sequence": 1, "message_id": "msg-1", "payload": {"frame_sequence": 0, "pcm_sha256": _hash("b"), "duration_ms": 20, "sample_rate_hz": 16000}})
         frame = ws.receive_json()
         assert frame["event"] == "listening"
         assert frame["state"] == "listening"
@@ -43,18 +29,8 @@ def test_voice_websocket_rejects_raw_content_and_sequence_replay():
     client = TestClient(app)
     with client.websocket_connect("/v1/voice/ws/session-2?language=en") as ws:
         ws.receive_json()
-        ws.send_json(
-            {
-                "event": "wake",
-                "sequence": 0,
-                "message_id": "msg-0",
-                "transcript": "must never enter the control plane",
-                "payload": {},
-            }
-        )
-        rejected = ws.receive_json()
-        assert rejected == {"event": "error", "code": "voice_ws_raw_content_forbidden"}
-
+        ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-0", "transcript": "must never enter the control plane", "payload": {}})
+        assert ws.receive_json() == {"event": "error", "code": "voice_ws_raw_content_forbidden"}
         ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-1", "payload": {}})
         assert ws.receive_json()["event"] == "listening"
         ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-2", "payload": {}})
@@ -69,14 +45,7 @@ def test_voice_websocket_stt_final_starts_governed_turn():
         ws.receive_json()
         ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-0", "payload": {}})
         ws.receive_json()
-        ws.send_json(
-            {
-                "event": "stt_final",
-                "sequence": 1,
-                "message_id": "msg-1",
-                "payload": {"text_sha256": _hash("c"), "token_estimate": 8},
-            }
-        )
+        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "msg-1", "payload": {"text_sha256": _hash("c"), "token_estimate": 8}})
         result = ws.receive_json()
         assert result["event"] == "thinking"
         assert result["memory_turn_count"] == 1
@@ -92,26 +61,12 @@ def test_voice_websocket_accepts_current_task_result_and_retires_task():
         ws.receive_json()
         ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("d")}})
         assert ws.receive_json()["turn_epoch"] == 1
-        ws.send_json(
-            {
-                "event": "task_start",
-                "sequence": 2,
-                "message_id": "m-2",
-                "payload": {"task_id": "stt-post-1", "kind": "stt", "request_fingerprint": _hash("e")},
-            }
-        )
+        ws.send_json({"event": "task_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "tool-1", "kind": "tool", "request_fingerprint": _hash("e")}})
         started = ws.receive_json()
         assert started["event"] == "task_started"
         assert started["active_task_count"] == 1
         assert started["task_turn_epoch"] == 1
-        ws.send_json(
-            {
-                "event": "task_result",
-                "sequence": 3,
-                "message_id": "m-3",
-                "payload": {"task_id": "stt-post-1", "result_sha256": _hash("f")},
-            }
-        )
+        ws.send_json({"event": "task_result", "sequence": 3, "message_id": "m-3", "payload": {"task_id": "tool-1", "result_sha256": _hash("f"), "governed_provenance_fingerprint": _hash("1")}})
         accepted = ws.receive_json()
         assert accepted["event"] == "task_result_accepted"
         assert accepted["active_task_count"] == 0
@@ -177,39 +132,13 @@ def test_voice_websocket_tool_result_requires_governed_execution_provenance():
         ws.receive_json()
         ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("4")}})
         ws.receive_json()
-        ws.send_json(
-            {
-                "event": "task_start",
-                "sequence": 2,
-                "message_id": "m-2",
-                "payload": {"task_id": "tool-1", "kind": "tool", "request_fingerprint": _hash("5")},
-            }
-        )
+        ws.send_json({"event": "task_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "tool-1", "kind": "tool", "request_fingerprint": _hash("5")}})
         ws.receive_json()
-        ws.send_json(
-            {
-                "event": "task_result",
-                "sequence": 3,
-                "message_id": "m-3",
-                "payload": {"task_id": "tool-1", "result_sha256": _hash("6")},
-            }
-        )
+        ws.send_json({"event": "task_result", "sequence": 3, "message_id": "m-3", "payload": {"task_id": "tool-1", "result_sha256": _hash("6")}})
         rejected = ws.receive_json()
         assert rejected["event"] == "error"
         assert rejected["code"] == "voice_ws_tool_governed_provenance_invalid"
-
-        ws.send_json(
-            {
-                "event": "task_result",
-                "sequence": 4,
-                "message_id": "m-4",
-                "payload": {
-                    "task_id": "tool-1",
-                    "result_sha256": _hash("6"),
-                    "governed_provenance_fingerprint": _hash("7"),
-                },
-            }
-        )
+        ws.send_json({"event": "task_result", "sequence": 4, "message_id": "m-4", "payload": {"task_id": "tool-1", "result_sha256": _hash("6"), "governed_provenance_fingerprint": _hash("7")}})
         accepted = ws.receive_json()
         assert accepted["event"] == "task_result_accepted"
         assert accepted["governed_provenance_fingerprint"] == _hash("7")
@@ -223,27 +152,13 @@ def test_voice_websocket_barge_in_rejects_late_task_result():
         ws.receive_json()
         ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("1")}})
         ws.receive_json()
-        ws.send_json(
-            {
-                "event": "task_start",
-                "sequence": 2,
-                "message_id": "m-2",
-                "payload": {"task_id": "stt-post-1", "kind": "stt", "request_fingerprint": _hash("2")},
-            }
-        )
-        ws.receive_json()
+        ws.send_json({"event": "task_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "tool-1", "kind": "tool", "request_fingerprint": _hash("2")}})
+        assert ws.receive_json()["event"] == "task_started"
         ws.send_json({"event": "barge_in", "sequence": 3, "message_id": "m-3", "payload": {}})
         cancelled = ws.receive_json()
         assert cancelled["event"] == "cancelled"
         assert cancelled["turn_epoch"] == 2
-        ws.send_json(
-            {
-                "event": "task_result",
-                "sequence": 4,
-                "message_id": "m-4",
-                "payload": {"task_id": "stt-post-1", "result_sha256": _hash("3")},
-            }
-        )
+        ws.send_json({"event": "task_result", "sequence": 4, "message_id": "m-4", "payload": {"task_id": "tool-1", "result_sha256": _hash("3"), "governed_provenance_fingerprint": _hash("4")}})
         late = ws.receive_json()
         assert late["event"] == "error"
         assert late["code"] == "voice_async_cancelled_result_rejected"

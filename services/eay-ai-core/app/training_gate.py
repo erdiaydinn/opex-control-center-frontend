@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .learning_quality import evaluate_learning_example
+from .privacy_guard import scan_personal_data
 from .training_integrity import validate_dataset_integrity
 
 
@@ -30,6 +32,21 @@ def _is_sha256(value: object) -> bool:
     return len(text) == 64 and all(ch in "0123456789abcdef" for ch in text)
 
 
+def _iter_text_values(value: object) -> Iterable[str]:
+    """Yield string leaves without serializing/copying the whole example into logs."""
+
+    if isinstance(value, str):
+        yield value
+        return
+    if isinstance(value, Mapping):
+        for item in value.values():
+            yield from _iter_text_values(item)
+        return
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            yield from _iter_text_values(item)
+
+
 def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateResult:
     violations: list[str] = []
     quality_fingerprints: list[str] = []
@@ -38,6 +55,10 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
         violations.append("empty_dataset")
 
     for idx, example in enumerate(examples):
+        privacy = scan_personal_data(_iter_text_values(example))
+        for kind in privacy.kinds:
+            violations.append(f"example_{idx}:personal_data_detected:{kind}")
+
         messages = example.get("messages")
         if not isinstance(messages, list) or len(messages) < 2:
             violations.append(f"example_{idx}:invalid_messages")
@@ -99,7 +120,7 @@ def validate_training_examples(examples: list[dict[str, Any]]) -> DatasetGateRes
             human_approved=metadata.get("human_approved") is True,
             evidence_ids=evidence_ids,
             legal_claim=legal_claim,
-            privacy_safe=metadata.get("contains_personal_data") is not True,
+            privacy_safe=metadata.get("contains_personal_data") is not True and privacy.safe,
         )
         quality_fingerprints.append(quality.target_sha256)
         for item in quality.violations:

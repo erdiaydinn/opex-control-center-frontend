@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Protocol
+from typing import Protocol
 
 from .voice_realtime_controller import VoiceRealtimeSessionController
 from .voice_session_ledger import VoiceSessionLedger
@@ -64,15 +64,7 @@ class AcceptedAsyncResult:
 
 
 class VoiceAsyncExecutionCoordinator:
-    """Own async voice work and prevent late results from crossing turn boundaries.
-
-    Each task is bound to the current turn epoch. Barge-in advances the epoch and
-    cancels all cancellable work through the existing realtime controller. Results
-    from an older epoch, cancelled task, or mismatched task lease fail closed.
-
-    Write/critical tool execution additionally consumes a single-use approval token
-    bound to the exact sealed VoiceToolIntent before the downstream adapter is called.
-    """
+    """Own async voice work and prevent late results from crossing turn boundaries."""
 
     def __init__(
         self,
@@ -121,6 +113,12 @@ class VoiceAsyncExecutionCoordinator:
         self._tokens[task_id] = token
         return lease, token
 
+    def lease_for(self, task_id: str) -> TaskLease:
+        lease = self._leases.get(task_id.strip())
+        if lease is None:
+            raise ValueError("voice_async_task_lease_missing")
+        return lease
+
     def cancel_for_barge_in(self) -> tuple[str, ...]:
         cancelled = self.controller.cancel_for_barge_in()
         cancelled_ids = tuple(sorted(task.task_id for task in cancelled))
@@ -168,6 +166,7 @@ class VoiceAsyncExecutionCoordinator:
         }
         accepted = AcceptedAsyncResult(**payload, fingerprint=_sha256(payload))
         self._accepted.add(lease.task_id)
+        self.controller.finish_task(task_id=lease.task_id)
         return accepted
 
     def authorize_tool_execution(self, *, intent: VoiceToolIntent, approval_token: str | None = None) -> None:

@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from .license_gate import assert_model_license_allowed
+from .training_job_registry import TrainingJobRegistry
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 ModelStatus = Literal["candidate", "approved", "canary", "production", "rejected", "retired"]
@@ -111,6 +112,7 @@ class ModelRegistry:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.training_jobs = TrainingJobRegistry(db_path)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -145,8 +147,24 @@ class ModelRegistry:
                 if name not in existing:
                     conn.execute(f"ALTER TABLE model_registry ADD COLUMN {name} TEXT")
 
+    def _verify_training_lineage(self, payload: ModelCandidateCreate) -> None:
+        if payload.training_job_fingerprint is None:
+            return
+        assert payload.training_dataset_sha256 is not None
+        assert payload.training_manifest_chain_sha256 is not None
+        assert payload.eval_dataset_sha256 is not None
+        self.training_jobs.verify_model_lineage(
+            fingerprint=payload.training_job_fingerprint,
+            base_model=payload.base_model,
+            license_id=payload.license_id,
+            training_dataset_sha256=payload.training_dataset_sha256,
+            training_manifest_chain_sha256=payload.training_manifest_chain_sha256,
+            eval_dataset_sha256=payload.eval_dataset_sha256,
+        )
+
     def create(self, payload: ModelCandidateCreate) -> ModelRecord:
         assert_model_license_allowed(payload.license_id)
+        self._verify_training_lineage(payload)
         record_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
         with sqlite3.connect(self.db_path) as conn:
@@ -200,6 +218,15 @@ class ModelRegistry:
             )
             if any(value is not None for value in lineage) and not all(value is not None for value in lineage):
                 raise ValueError("model_training_lineage_incomplete")
+            if row["training_job_fingerprint"]:
+                self.training_jobs.verify_model_lineage(
+                    fingerprint=row["training_job_fingerprint"],
+                    base_model=row["base_model"],
+                    license_id=row["license_id"],
+                    training_dataset_sha256=row["training_dataset_sha256"],
+                    training_manifest_chain_sha256=row["training_manifest_chain_sha256"],
+                    eval_dataset_sha256=row["eval_dataset_sha256"],
+                )
             now = datetime.now(timezone.utc)
             conn.execute(
                 "UPDATE model_registry SET status='approved', approved_by=?, approval_note=?, approved_at=? WHERE id=?",
@@ -218,6 +245,15 @@ class ModelRegistry:
                 raise ValueError("canary_requires_approved_model")
             if row["training_dataset_sha256"] and not row["training_job_fingerprint"]:
                 raise ValueError("canary_requires_training_job_lineage")
+            if row["training_job_fingerprint"]:
+                self.training_jobs.verify_model_lineage(
+                    fingerprint=row["training_job_fingerprint"],
+                    base_model=row["base_model"],
+                    license_id=row["license_id"],
+                    training_dataset_sha256=row["training_dataset_sha256"],
+                    training_manifest_chain_sha256=row["training_manifest_chain_sha256"],
+                    eval_dataset_sha256=row["eval_dataset_sha256"],
+                )
             conn.execute(
                 "UPDATE model_registry SET status='canary', canary_percent=? WHERE id=?",
                 (payload.percent, record_id),
@@ -250,6 +286,8 @@ router = APIRouter(prefix="/v1/model-registry", tags=["model-registry"])
 def register_model(payload: ModelCandidateCreate):
     try:
         return registry.create(payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=409, detail="training_job_not_found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

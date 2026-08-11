@@ -1,6 +1,9 @@
 from app.training_gate import validate_training_examples
 
 
+TEACHER_FP = "f" * 64
+
+
 def _approved_example(user="Is this mandatory?", assistant=None):
     return {
         "messages": [
@@ -15,6 +18,8 @@ def _approved_example(user="Is this mandatory?", assistant=None):
             "human_approved": True,
             "contains_personal_data": False,
             "teacher_reviewed": True,
+            "teacher_quality_accepted": True,
+            "teacher_quality_sha256": TEACHER_FP,
             "reason": "reviewed training correction",
         },
     }
@@ -45,6 +50,8 @@ def test_rejects_legal_claim_without_provenance():
                 "human_approved": True,
                 "reason": "legal correction",
                 "teacher_reviewed": True,
+                "teacher_quality_accepted": True,
+                "teacher_quality_sha256": TEACHER_FP,
             },
         }
     ])
@@ -66,6 +73,8 @@ def test_accepts_human_approved_grounded_example():
                 "human_approved": True,
                 "contains_personal_data": False,
                 "teacher_reviewed": True,
+                "teacher_quality_accepted": True,
+                "teacher_quality_sha256": TEACHER_FP,
                 "reason": "verified legal correction",
                 "legal_provenance": {"instrument_id": "tgk-x", "verification_id": "v1"},
             },
@@ -76,6 +85,7 @@ def test_accepts_human_approved_grounded_example():
     assert len(result.integrity_sha256 or "") == 64
     assert len(result.quality_fingerprints) == 1
     assert len(result.quality_fingerprints[0]) == 64
+    assert result.teacher_quality_fingerprints == [TEACHER_FP]
 
 
 def test_rejects_thin_or_unreasoned_target_even_when_human_flag_is_true():

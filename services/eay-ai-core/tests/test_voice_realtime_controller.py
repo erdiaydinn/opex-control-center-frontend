@@ -8,10 +8,10 @@ from app.voice_realtime_controller import (
 
 
 def test_bounded_memory_evicts_oldest_turns_by_count_and_tokens():
-    memory = BoundedConversationMemory(max_turns=3, max_token_estimate=5)
-    memory.append(role="user", text="one", token_estimate=2)
-    memory.append(role="assistant", text="two", token_estimate=2)
-    memory.append(role="user", text="three", token_estimate=2)
+    memory = BoundedConversationMemory(max_turns=3, max_token_estimate=256)
+    memory.append(role="user", text="one", token_estimate=100)
+    memory.append(role="assistant", text="two", token_estimate=100)
+    memory.append(role="user", text="three", token_estimate=100)
     snapshot = memory.snapshot()
     assert len(snapshot) == 2
     assert snapshot[0].role == "assistant"

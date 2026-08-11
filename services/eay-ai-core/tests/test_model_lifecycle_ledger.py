@@ -136,3 +136,66 @@ def test_rollback_rejects_unknown_target_release_proof(tmp_path):
     with sqlite3.connect(db_path) as conn:
         source_status = conn.execute("SELECT status FROM model_registry WHERE id='source'").fetchone()[0]
     assert source_status == "production"
+
+
+def test_verify_chain_replays_retirement_and_release_proof(tmp_path):
+    db_path = tmp_path / "eay.db"
+    _seed(db_path)
+    ledger = ModelLifecycleLedger(db_path)
+    record = ledger.retire(
+        RetirementRequest(
+            model_record_id="source",
+            release_proof_fingerprint=SOURCE_PROOF,
+            approved_by="release-manager",
+            approval_reference="RET-VERIFY",
+            reason="Verify immutable lifecycle chain",
+        )
+    )
+
+    verified = ledger.verify_chain()
+    assert verified.passed is True
+    assert verified.record_count == 1
+    assert verified.head_fingerprint == record.fingerprint
+    assert verified.verified_release_proofs == 1
+
+
+def test_verify_chain_detects_payload_tampering(tmp_path):
+    db_path = tmp_path / "eay.db"
+    _seed(db_path)
+    ledger = ModelLifecycleLedger(db_path)
+    ledger.retire(
+        RetirementRequest(
+            model_record_id="source",
+            release_proof_fingerprint=SOURCE_PROOF,
+            approved_by="release-manager",
+            approval_reference="RET-TAMPER",
+            reason="Original reason",
+        )
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE model_lifecycle_ledger SET reason='tampered reason' WHERE sequence_no=1")
+
+    with pytest.raises(ValueError, match="model_lifecycle_fingerprint_mismatch"):
+        ledger.verify_chain()
+
+
+def test_verify_chain_detects_broken_release_lineage(tmp_path):
+    db_path = tmp_path / "eay.db"
+    _seed(db_path)
+    ledger = ModelLifecycleLedger(db_path)
+    ledger.authorize_rollback(
+        RollbackAuthorizationRequest(
+            model_record_id="source",
+            release_proof_fingerprint=SOURCE_PROOF,
+            target_model_record_id="target",
+            target_release_proof_fingerprint=TARGET_PROOF,
+            approved_by="incident-commander",
+            approval_reference="RB-VERIFY",
+            reason="Rollback lineage verification",
+        )
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DELETE FROM model_production_promotions WHERE model_record_id='target'")
+
+    with pytest.raises(KeyError, match="production_release_proof_not_found"):
+        ledger.verify_chain()

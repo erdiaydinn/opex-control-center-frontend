@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .license_gate import assert_model_license_allowed
 
@@ -33,7 +33,27 @@ class ModelCandidateCreate(BaseModel):
     artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     license_id: str = Field(min_length=1, max_length=120)
     training_dataset_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    training_manifest_chain_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    training_job_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    eval_dataset_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     evals: EvalSummary
+
+    @model_validator(mode="after")
+    def training_lineage_complete(self):
+        fields = (
+            self.training_dataset_sha256,
+            self.training_manifest_chain_sha256,
+            self.training_job_fingerprint,
+            self.eval_dataset_sha256,
+        )
+        if any(value is not None for value in fields) and not all(value is not None for value in fields):
+            raise ValueError("model_training_lineage_incomplete")
+        if (
+            self.training_dataset_sha256 is not None
+            and self.training_dataset_sha256 == self.eval_dataset_sha256
+        ):
+            raise ValueError("model_train_eval_dataset_collision")
+        return self
 
 
 class ModelRecord(BaseModel):
@@ -45,6 +65,10 @@ class ModelRecord(BaseModel):
     license_id: str
     status: ModelStatus
     evals: EvalSummary
+    training_dataset_sha256: str | None = None
+    training_manifest_chain_sha256: str | None = None
+    training_job_fingerprint: str | None = None
+    eval_dataset_sha256: str | None = None
     created_at: datetime
     approved_at: datetime | None = None
     canary_percent: int = 0
@@ -98,6 +122,9 @@ class ModelRegistry:
                     artifact_sha256 TEXT NOT NULL,
                     license_id TEXT NOT NULL,
                     training_dataset_sha256 TEXT,
+                    training_manifest_chain_sha256 TEXT,
+                    training_job_fingerprint TEXT,
+                    eval_dataset_sha256 TEXT,
                     evals_json TEXT NOT NULL,
                     status TEXT NOT NULL,
                     approved_by TEXT,
@@ -109,6 +136,14 @@ class ModelRegistry:
                 )
                 """
             )
+            existing = {row[1] for row in conn.execute("PRAGMA table_info(model_registry)")}
+            for name in (
+                "training_manifest_chain_sha256",
+                "training_job_fingerprint",
+                "eval_dataset_sha256",
+            ):
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE model_registry ADD COLUMN {name} TEXT")
 
     def create(self, payload: ModelCandidateCreate) -> ModelRecord:
         assert_model_license_allowed(payload.license_id)
@@ -120,14 +155,16 @@ class ModelRegistry:
                     """
                     INSERT INTO model_registry(
                         id, model_name, model_version, base_model, artifact_sha256,
-                        license_id, training_dataset_sha256, evals_json, status, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?)
+                        license_id, training_dataset_sha256, training_manifest_chain_sha256,
+                        training_job_fingerprint, eval_dataset_sha256, evals_json, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'candidate', ?)
                     """,
                     (
                         record_id, payload.model_name, payload.model_version,
                         payload.base_model, payload.artifact_sha256, payload.license_id,
-                        payload.training_dataset_sha256, payload.evals.model_dump_json(),
-                        now.isoformat(),
+                        payload.training_dataset_sha256, payload.training_manifest_chain_sha256,
+                        payload.training_job_fingerprint, payload.eval_dataset_sha256,
+                        payload.evals.model_dump_json(), now.isoformat(),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -136,6 +173,10 @@ class ModelRegistry:
             id=record_id, model_name=payload.model_name, model_version=payload.model_version,
             base_model=payload.base_model, artifact_sha256=payload.artifact_sha256,
             license_id=payload.license_id, status="candidate", evals=payload.evals,
+            training_dataset_sha256=payload.training_dataset_sha256,
+            training_manifest_chain_sha256=payload.training_manifest_chain_sha256,
+            training_job_fingerprint=payload.training_job_fingerprint,
+            eval_dataset_sha256=payload.eval_dataset_sha256,
             created_at=now,
         )
 
@@ -151,6 +192,14 @@ class ModelRegistry:
             failures = ReleasePolicy.violations(evals)
             if failures:
                 raise ValueError("release_gate_failed:" + ",".join(failures))
+            lineage = (
+                row["training_dataset_sha256"],
+                row["training_manifest_chain_sha256"],
+                row["training_job_fingerprint"],
+                row["eval_dataset_sha256"],
+            )
+            if any(value is not None for value in lineage) and not all(value is not None for value in lineage):
+                raise ValueError("model_training_lineage_incomplete")
             now = datetime.now(timezone.utc)
             conn.execute(
                 "UPDATE model_registry SET status='approved', approved_by=?, approval_note=?, approved_at=? WHERE id=?",
@@ -167,6 +216,8 @@ class ModelRegistry:
                 raise KeyError("model_not_found")
             if row["status"] not in {"approved", "canary"}:
                 raise ValueError("canary_requires_approved_model")
+            if row["training_dataset_sha256"] and not row["training_job_fingerprint"]:
+                raise ValueError("canary_requires_training_job_lineage")
             conn.execute(
                 "UPDATE model_registry SET status='canary', canary_percent=? WHERE id=?",
                 (payload.percent, record_id),
@@ -181,6 +232,10 @@ class ModelRegistry:
             base_model=row["base_model"], artifact_sha256=row["artifact_sha256"],
             license_id=row["license_id"], status=row["status"],
             evals=EvalSummary(**json.loads(row["evals_json"])),
+            training_dataset_sha256=row["training_dataset_sha256"],
+            training_manifest_chain_sha256=row["training_manifest_chain_sha256"],
+            training_job_fingerprint=row["training_job_fingerprint"],
+            eval_dataset_sha256=row["eval_dataset_sha256"],
             created_at=datetime.fromisoformat(row["created_at"]),
             approved_at=datetime.fromisoformat(row["approved_at"]) if row["approved_at"] else None,
             canary_percent=row["canary_percent"],

@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from .model_artifact_provenance import ModelArtifactProvenanceRegistry
+from .model_artifact_registry import ModelArtifactRegistry
 from .training_job_registry import TrainingJobRegistry
 
 
@@ -48,6 +49,7 @@ class ModelPromotionGate:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.artifacts = ModelArtifactProvenanceRegistry(db_path)
+        self.primary_artifacts = ModelArtifactRegistry(db_path)
         self.training_jobs = TrainingJobRegistry(db_path)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
@@ -80,6 +82,12 @@ class ModelPromotionGate:
                 training_manifest_chain_sha256=model["training_manifest_chain_sha256"],
                 eval_dataset_sha256=model["eval_dataset_sha256"],
             )
+            primary_artifact = self.primary_artifacts.verify(
+                artifact_sha256=model["artifact_sha256"],
+                training_job_fingerprint=training_job_fingerprint,
+            )
+            if model["artifact_provenance_fingerprint"] != primary_artifact.provenance_fingerprint:
+                raise ValueError("production_promotion_artifact_provenance_mismatch")
             self.artifacts.verify_artifact(
                 artifact_sha256=model["artifact_sha256"],
                 training_job_fingerprint=training_job_fingerprint,
@@ -99,6 +107,7 @@ class ModelPromotionGate:
         canonical = {
             "model_record_id": payload.model_record_id,
             "artifact_sha256": model["artifact_sha256"],
+            "artifact_provenance_fingerprint": model["artifact_provenance_fingerprint"],
             "training_job_fingerprint": training_job_fingerprint,
             "canary_evidence_fingerprint": payload.canary_evidence_fingerprint,
             "approved_by": payload.approved_by.strip(),
@@ -111,12 +120,16 @@ class ModelPromotionGate:
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 current = conn.execute(
-                    "SELECT status, artifact_sha256 FROM model_registry WHERE id=?",
+                    "SELECT status, artifact_sha256, artifact_provenance_fingerprint FROM model_registry WHERE id=?",
                     (payload.model_record_id,),
                 ).fetchone()
                 if current is None:
                     raise KeyError("model_not_found")
-                if current[0] != "canary" or current[1] != model["artifact_sha256"]:
+                if (
+                    current[0] != "canary"
+                    or current[1] != model["artifact_sha256"]
+                    or current[2] != model["artifact_provenance_fingerprint"]
+                ):
                     raise ValueError("production_promotion_stale_model_state")
                 conn.execute(
                     "INSERT INTO model_production_promotions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

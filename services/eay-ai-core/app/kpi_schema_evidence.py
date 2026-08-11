@@ -7,15 +7,6 @@ from datetime import datetime, timezone
 from typing import Mapping
 
 
-NSFR_FAMILY_REQUIRED_COLUMNS = (
-    "successful_orders",
-    "pfr_orders",
-    "refund_orders",
-    "compensation_orders",
-    "nsfr_orders",
-)
-
-
 @dataclass(frozen=True)
 class KpiSchemaEvidence:
     table_id: str
@@ -61,13 +52,15 @@ def verify_schema_evidence(
     evidence: KpiSchemaEvidence,
     *,
     expected_table: str,
-    required_columns: tuple[str, ...],
+    required_columns: tuple[str, ...] = (),
 ) -> dict[str, object]:
-    """Validate a human-reviewed production schema observation before contract pinning.
+    """Validate a human-reviewed production schema observation without inventing semantics.
 
-    This does not activate a KPI. It proves only that a reviewed, timestamped schema
-    observation contains the required production columns. Exact BigQuery types remain
-    part of the evidence fingerprint so a later contract can pin them without guessing.
+    INFORMATION_SCHEMA proves which columns/types exist at one point in time. It does not
+    prove that a column means PFR, refund, eligible orders, prep duration, or any other
+    business concept. Business-role binding is therefore a separate reviewed mapping gate.
+    `required_columns` is reserved for genuinely structural names already guaranteed by a
+    source contract; KPI semantic roles must not be passed through this argument.
     """
 
     if evidence.table_id != expected_table:
@@ -79,18 +72,29 @@ def verify_schema_evidence(
     _validate_capture_time(evidence.captured_at)
 
     columns = evidence.canonical_columns
+    if not columns:
+        raise ValueError("kpi_schema_evidence_empty_schema")
+    blank_names = sorted(name for name in columns if not name.strip())
+    if blank_names:
+        raise ValueError("kpi_schema_evidence_column_name_required")
+    blank_types = sorted(name for name, field_type in columns.items() if not field_type.strip())
+    if blank_types:
+        raise ValueError("kpi_schema_evidence_type_required:" + ",".join(blank_types))
+
     missing = sorted(set(required_columns) - set(columns))
     if missing:
         raise ValueError("kpi_schema_evidence_missing_columns:" + ",".join(missing))
 
-    blank_types = sorted(name for name in required_columns if not columns[name].strip())
-    if blank_types:
-        raise ValueError("kpi_schema_evidence_type_required:" + ",".join(blank_types))
-
+    projected = (
+        {name: columns[name] for name in required_columns}
+        if required_columns
+        else dict(columns)
+    )
     return {
         "table_id": evidence.table_id,
+        "observed_columns": dict(columns),
         "required_columns": list(required_columns),
-        "column_types": {name: columns[name] for name in required_columns},
+        "column_types": projected,
         "captured_at": evidence.captured_at,
         "source": evidence.source,
         "reviewer": evidence.reviewer,
@@ -100,8 +104,14 @@ def verify_schema_evidence(
 
 
 def verify_nsfr_schema_evidence(evidence: KpiSchemaEvidence) -> dict[str, object]:
+    """Verify only the NSFR source-table observation, not KPI business meaning.
+
+    Actual NSFR/PFR/Refund role-to-column semantics must be supplied through
+    `verify_nsfr_family_role_mapping`; accepting guessed canonical names here would make
+    the human semantic-mapping gate circular and unsafe.
+    """
+
     return verify_schema_evidence(
         evidence,
         expected_table="report_dmart_ops_nsfr_global_overview",
-        required_columns=NSFR_FAMILY_REQUIRED_COLUMNS,
     )

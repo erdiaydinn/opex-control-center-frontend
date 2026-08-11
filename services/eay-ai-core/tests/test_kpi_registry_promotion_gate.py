@@ -1,6 +1,9 @@
 import pytest
 
-from app.kpi_registry_promotion_gate import seal_kpi_registry_promotion
+from app.kpi_registry_promotion_gate import (
+    seal_kpi_registry_promotion,
+    verify_registered_kpi_promotion,
+)
 
 
 FP_A = "a" * 64
@@ -16,8 +19,8 @@ class Artifact:
     fingerprint = FP_A
 
 
-def test_registry_promotion_binds_review_artifact_template_and_schema_but_stays_non_executable():
-    decision = seal_kpi_registry_promotion(
+def make_decision():
+    return seal_kpi_registry_promotion(
         metric="picking",
         query_id="ops.kpi.picking.v1",
         review_artifact=Artifact(),
@@ -27,6 +30,10 @@ def test_registry_promotion_binds_review_artifact_template_and_schema_but_stays_
         reviewer="ops-metric-owner",
         reviewed_at="2026-08-11T12:00:00+00:00",
     )
+
+
+def test_registry_promotion_binds_review_artifact_template_and_schema_but_stays_non_executable():
+    decision = make_decision()
     assert decision.approved_for_registry_change is True
     assert decision.executable is False
     assert decision.review_artifact_fingerprint == FP_A
@@ -94,4 +101,39 @@ def test_registry_promotion_requires_second_human_promotion_reference():
             promotion_reference=" ",
             reviewer="ops-metric-owner",
             reviewed_at="2026-08-11T12:00:00+00:00",
+        )
+
+
+def test_random_promotion_hash_cannot_authorize_registry_execution():
+    with pytest.raises(ValueError, match="kpi_registry_promotion_decision_not_registered:picking"):
+        verify_registered_kpi_promotion(
+            promotion_fingerprint="9" * 64,
+            metric="picking",
+            query_id="ops.kpi.picking.v1",
+            query_template_fingerprint=FP_C,
+            promotions={},
+        )
+
+
+def test_exact_registered_promotion_decision_is_revalidated_before_use():
+    decision = make_decision()
+    verified = verify_registered_kpi_promotion(
+        promotion_fingerprint=decision.fingerprint,
+        metric="picking",
+        query_id="ops.kpi.picking.v1",
+        query_template_fingerprint=FP_C,
+        promotions={decision.fingerprint: decision},
+    )
+    assert verified == decision
+
+
+def test_registered_promotion_is_invalidated_by_query_template_drift():
+    decision = make_decision()
+    with pytest.raises(ValueError, match="kpi_registry_promotion_decision_template_drift:picking"):
+        verify_registered_kpi_promotion(
+            promotion_fingerprint=decision.fingerprint,
+            metric="picking",
+            query_id="ops.kpi.picking.v1",
+            query_template_fingerprint="d" * 64,
+            promotions={decision.fingerprint: decision},
         )

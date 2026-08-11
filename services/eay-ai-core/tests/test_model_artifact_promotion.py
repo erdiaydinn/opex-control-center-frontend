@@ -151,14 +151,23 @@ def test_production_promotion_binds_registered_artifact_canary_and_human_approva
         approved_by="release-manager", approval_reference="REL-1",
     ))
     assert len(proof.fingerprint) == 64
+    assert len(proof.release_proof_fingerprint) == 64
+    assert len(proof.offline_eval_fingerprint) == 64
     assert proof.artifact_sha256 == artifact.artifact_sha256
     assert proof.training_job_fingerprint == job_fp
 
     with sqlite3.connect(registry.db_path) as conn:
         status = conn.execute("SELECT status FROM model_registry WHERE id=?", (model_id,)).fetchone()[0]
-        promotion_count = conn.execute("SELECT COUNT(*) FROM model_production_promotions").fetchone()[0]
+        row = conn.execute(
+            """SELECT release_proof_fingerprint,offline_eval_fingerprint,
+            artifact_provenance_fingerprint FROM model_production_promotions"""
+        ).fetchone()
     assert status == "production"
-    assert promotion_count == 1
+    assert row == (
+        proof.release_proof_fingerprint,
+        proof.offline_eval_fingerprint,
+        proof.artifact_provenance_fingerprint,
+    )
 
     with pytest.raises(ValueError, match="production_promotion_requires_canary_status"):
         ModelPromotionGate(registry.db_path).promote(PromotionRequest(

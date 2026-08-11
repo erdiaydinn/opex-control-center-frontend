@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .voice_realtime_controller import VoiceRealtimeSessionController
+from .voice_response_lineage import (
+    VoiceResponseGenerationProof,
+    VoiceTtsGenerationProof,
+    seal_response_generation_proof,
+    seal_tts_generation_proof,
+)
 from .voice_session_ledger import VoiceSessionLedger
 from .voice_tool_bridge import VoiceToolIntent
 from .voice_tool_execution_provenance import GovernedVoiceToolResult
@@ -86,6 +92,7 @@ class VoiceAsyncExecutionCoordinator:
         self._leases: dict[str, TaskLease] = {}
         self._tokens: dict[str, CancellationToken] = {}
         self._accepted: set[str] = set()
+        self._accepted_results: dict[str, AcceptedAsyncResult] = {}
 
     @property
     def turn_epoch(self) -> int:
@@ -126,6 +133,12 @@ class VoiceAsyncExecutionCoordinator:
         if lease is None:
             raise ValueError("voice_async_task_lease_missing")
         return lease
+
+    def accepted_result_for(self, task_id: str) -> AcceptedAsyncResult:
+        accepted = self._accepted_results.get(task_id.strip())
+        if accepted is None:
+            raise ValueError("voice_async_accepted_result_missing")
+        return accepted
 
     def cancel_for_barge_in(self) -> tuple[str, ...]:
         cancelled = self.controller.cancel_for_barge_in()
@@ -187,8 +200,65 @@ class VoiceAsyncExecutionCoordinator:
         }
         accepted = AcceptedAsyncResult(**payload, fingerprint=_sha256(payload))
         self._accepted.add(lease.task_id)
+        self._accepted_results[lease.task_id] = accepted
         self.controller.finish_task(task_id=lease.task_id)
         return accepted
+
+    def seal_response_generation(
+        self,
+        *,
+        user_input_sha256: str,
+        tool_task_ids: tuple[str, ...] = (),
+        legal_context_fingerprint: str | None = None,
+        kpi_context_fingerprint: str | None = None,
+    ) -> VoiceResponseGenerationProof:
+        tool_results = tuple(self.accepted_result_for(task_id) for task_id in tool_task_ids)
+        proof = seal_response_generation_proof(
+            session_id=self.controller.streaming.session_id,
+            turn_epoch=self._turn_epoch,
+            user_input_sha256=user_input_sha256,
+            accepted_tool_results=tool_results,
+            legal_context_fingerprint=legal_context_fingerprint,
+            kpi_context_fingerprint=kpi_context_fingerprint,
+        )
+        if self.ledger is not None:
+            self.ledger.append(
+                session_id=self.controller.streaming.session_id,
+                event_type="response_proof",
+                language=self.controller.streaming.language,
+                metadata={
+                    "turn_epoch": self._turn_epoch,
+                    "response_proof_fingerprint": proof.fingerprint,
+                    "tool_result_count": len(tool_results),
+                },
+            )
+        return proof
+
+    def seal_tts_generation(
+        self,
+        *,
+        response_proof: VoiceResponseGenerationProof,
+        response_text_sha256: str,
+        voice_profile_fingerprint: str,
+    ) -> VoiceTtsGenerationProof:
+        proof = seal_tts_generation_proof(
+            response_proof=response_proof,
+            current_turn_epoch=self._turn_epoch,
+            response_text_sha256=response_text_sha256,
+            voice_profile_fingerprint=voice_profile_fingerprint,
+        )
+        if self.ledger is not None:
+            self.ledger.append(
+                session_id=self.controller.streaming.session_id,
+                event_type="tts_proof",
+                language=self.controller.streaming.language,
+                metadata={
+                    "turn_epoch": self._turn_epoch,
+                    "response_proof_fingerprint": response_proof.fingerprint,
+                    "tts_proof_fingerprint": proof.fingerprint,
+                },
+            )
+        return proof
 
     def authorize_tool_execution(self, *, intent: VoiceToolIntent, approval_token: str | None = None) -> None:
         if intent.session_id != self.controller.streaming.session_id:

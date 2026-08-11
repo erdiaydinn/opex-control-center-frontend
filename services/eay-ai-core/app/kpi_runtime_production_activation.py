@@ -169,6 +169,24 @@ def seal_otp_production_activation(
     if not isinstance(aggregation, RateAggregationContract) or aggregation.metric != metric:
         raise ValueError("kpi_runtime_production_rate_aggregation_contract_required")
 
+    late_prep_orders_column = str(
+        source_semantics_verification.get("late_prep_orders_column") or ""
+    ).strip().lower()
+    eligible_orders_column = str(
+        source_semantics_verification.get("eligible_orders_column") or ""
+    ).strip().lower()
+    if not late_prep_orders_column or not eligible_orders_column:
+        raise ValueError("kpi_runtime_production_otp_lineage_columns_required")
+    if late_prep_orders_column == eligible_orders_column:
+        raise ValueError("kpi_runtime_production_otp_lineage_columns_must_differ")
+    if (
+        aggregation.numerator_field.strip().lower() != late_prep_orders_column
+        or aggregation.denominator_field.strip().lower() != eligible_orders_column
+    ):
+        raise ValueError("kpi_runtime_production_otp_aggregation_lineage_mismatch")
+    if aggregation.aggregation_kind != "complement_ratio_of_sums":
+        raise ValueError("kpi_runtime_production_otp_aggregation_kind_mismatch")
+
     bundle = verify_rate_kpi_activation(
         metric=metric,
         semantic_verification=semantic_verification,

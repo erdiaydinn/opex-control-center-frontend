@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from .model_artifact_provenance import ModelArtifactProvenanceRegistry
 from .model_artifact_registry import ModelArtifactRegistry
+from .release_evidence_registry import ReleaseEvaluationEvidenceRegistry
 from .training_job_registry import TrainingJobRegistry
 
 
@@ -36,6 +37,7 @@ def offline_eval_fingerprint(model: sqlite3.Row) -> str:
 class PromotionRequest(BaseModel):
     model_record_id: str = Field(min_length=1, max_length=180)
     canary_evidence_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    release_evaluation_evidence_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     approved_by: str = Field(min_length=2, max_length=180)
     approval_reference: str = Field(min_length=2, max_length=300)
 
@@ -45,6 +47,9 @@ class PromotionRecord(BaseModel):
     fingerprint: str
     release_proof_fingerprint: str
     offline_eval_fingerprint: str
+    release_evaluation_evidence_fingerprint: str
+    historical_legal_eval_fingerprint: str
+    safety_eval_fingerprint: str
     model_record_id: str
     artifact_sha256: str
     artifact_provenance_fingerprint: str
@@ -59,8 +64,9 @@ class ModelPromotionGate:
     """Final fail-closed gate for production status.
 
     The append-only release proof binds the exact training job, primary artifact provenance,
-    offline evaluation, passing canary evidence and explicit human promotion approval before
-    the local model status can atomically move to production.
+    offline evaluation, registered historical-legal + cross-layer safety evaluation evidence,
+    passing canary evidence and explicit human promotion approval before the local model
+    status can atomically move to production.
     """
 
     def __init__(self, db_path: Path):
@@ -68,11 +74,15 @@ class ModelPromotionGate:
         self.artifacts = ModelArtifactProvenanceRegistry(db_path)
         self.primary_artifacts = ModelArtifactRegistry(db_path)
         self.training_jobs = TrainingJobRegistry(db_path)
+        self.release_evidence = ReleaseEvaluationEvidenceRegistry(db_path)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS model_production_promotions (
                 id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE,
                 release_proof_fingerprint TEXT, offline_eval_fingerprint TEXT,
+                release_evaluation_evidence_fingerprint TEXT,
+                historical_legal_eval_fingerprint TEXT,
+                safety_eval_fingerprint TEXT,
                 model_record_id TEXT NOT NULL UNIQUE, artifact_sha256 TEXT NOT NULL,
                 artifact_provenance_fingerprint TEXT,
                 training_job_fingerprint TEXT, canary_evidence_fingerprint TEXT NOT NULL,
@@ -83,6 +93,9 @@ class ModelPromotionGate:
             for name in (
                 "release_proof_fingerprint",
                 "offline_eval_fingerprint",
+                "release_evaluation_evidence_fingerprint",
+                "historical_legal_eval_fingerprint",
+                "safety_eval_fingerprint",
                 "artifact_provenance_fingerprint",
             ):
                 if name not in existing:
@@ -98,6 +111,8 @@ class ModelPromotionGate:
             raise ValueError("production_promotion_requires_canary_status")
         if not model["approved_by"] or not model["approved_at"]:
             raise ValueError("production_promotion_requires_prior_human_approval")
+
+        release_evidence = self.release_evidence.verify(payload.release_evaluation_evidence_fingerprint)
 
         training_job_fingerprint = model["training_job_fingerprint"]
         if not training_job_fingerprint:
@@ -139,6 +154,9 @@ class ModelPromotionGate:
                 "artifact_sha256": model["artifact_sha256"],
                 "artifact_provenance_fingerprint": artifact_provenance_fingerprint,
                 "offline_eval_fingerprint": eval_fingerprint,
+                "release_evaluation_evidence_fingerprint": release_evidence.fingerprint,
+                "historical_legal_eval_fingerprint": release_evidence.historical_legal_fingerprint,
+                "safety_eval_fingerprint": release_evidence.safety_eval_fingerprint,
                 "canary_evidence_fingerprint": payload.canary_evidence_fingerprint,
                 "approved_by": payload.approved_by.strip(),
                 "approval_reference": payload.approval_reference.strip(),
@@ -164,19 +182,23 @@ class ModelPromotionGate:
                     raise ValueError("production_promotion_stale_model_state")
                 if offline_eval_fingerprint(current) != eval_fingerprint:
                     raise ValueError("production_promotion_stale_offline_eval")
+                self.release_evidence.verify(release_evidence.fingerprint)
                 conn.execute(
                     """INSERT INTO model_production_promotions(
                     id,fingerprint,release_proof_fingerprint,offline_eval_fingerprint,
-                    model_record_id,artifact_sha256,artifact_provenance_fingerprint,
-                    training_job_fingerprint,canary_evidence_fingerprint,
-                    approved_by,approval_reference,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,
+                    safety_eval_fingerprint,model_record_id,artifact_sha256,
+                    artifact_provenance_fingerprint,training_job_fingerprint,
+                    canary_evidence_fingerprint,approved_by,approval_reference,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         record_id, fingerprint, release_proof, eval_fingerprint,
-                        payload.model_record_id, model["artifact_sha256"],
-                        artifact_provenance_fingerprint, training_job_fingerprint,
-                        payload.canary_evidence_fingerprint, payload.approved_by.strip(),
-                        payload.approval_reference.strip(), created_at.isoformat(),
+                        release_evidence.fingerprint, release_evidence.historical_legal_fingerprint,
+                        release_evidence.safety_eval_fingerprint, payload.model_record_id,
+                        model["artifact_sha256"], artifact_provenance_fingerprint,
+                        training_job_fingerprint, payload.canary_evidence_fingerprint,
+                        payload.approved_by.strip(), payload.approval_reference.strip(),
+                        created_at.isoformat(),
                     ),
                 )
                 updated = conn.execute(
@@ -194,6 +216,9 @@ class ModelPromotionGate:
             fingerprint=fingerprint,
             release_proof_fingerprint=release_proof,
             offline_eval_fingerprint=eval_fingerprint,
+            release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
+            historical_legal_eval_fingerprint=release_evidence.historical_legal_fingerprint,
+            safety_eval_fingerprint=release_evidence.safety_eval_fingerprint,
             model_record_id=payload.model_record_id,
             artifact_sha256=model["artifact_sha256"],
             artifact_provenance_fingerprint=artifact_provenance_fingerprint,

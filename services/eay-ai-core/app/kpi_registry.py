@@ -15,6 +15,9 @@ class KpiDefinition:
     value_semantics: str
     schema_contract_id: str | None = None
     semantic_contract_id: str | None = None
+    query_template_fingerprint: str | None = None
+    registry_promotion_fingerprint: str | None = None
+    legacy_bootstrap: bool = False
     blocked_reason: str | None = None
 
     @property
@@ -24,12 +27,15 @@ class KpiDefinition:
             and bool(self.query_id)
             and bool(self.schema_contract_id)
             and bool(self.semantic_contract_id)
+            and bool(self.query_template_fingerprint)
+            and (bool(self.registry_promotion_fingerprint) or self.legacy_bootstrap)
         )
 
 
 # This registry is intentionally conservative. A metric is executable only after its
-# production schema and business definition have both been reviewed. Merely knowing a
-# plausible table name is not enough to expose it to the model/tool runtime.
+# production schema and business definition have both been reviewed. New metrics must
+# additionally pin a registry-promotion fingerprint. Orders is the sole explicit legacy
+# bootstrap exception and still pins its exact SQL-template fingerprint to block drift.
 KPI_REGISTRY: dict[str, KpiDefinition] = {
     "orders": KpiDefinition(
         metric="orders",
@@ -39,6 +45,8 @@ KPI_REGISTRY: dict[str, KpiDefinition] = {
         value_semantics="COUNT(DISTINCT order_id) grouped by local date and vendor/store",
         schema_contract_id="ops.orders.v1",
         semantic_contract_id="ops.orders.semantic.v1",
+        query_template_fingerprint="aab639e0a69cd8cfbec992c2bc737e12679835259c09906bd7f4e98c9f91c7f4",
+        legacy_bootstrap=True,
     ),
     "cancel_rate": KpiDefinition(
         metric="cancel_rate",
@@ -133,4 +141,7 @@ def require_executable_kpi(metric: str) -> KpiDefinition:
     definition = get_kpi_definition(metric)
     if not definition.executable:
         raise ValueError(f"metric_template_not_implemented:{metric}")
+    from .kpi_registry_integrity import verify_registry_binding
+
+    verify_registry_binding(definition)
     return definition

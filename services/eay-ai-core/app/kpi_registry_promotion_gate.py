@@ -41,6 +41,13 @@ class KpiRegistryPromotionDecision:
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+# Deliberately empty until a real, human-reviewed promotion decision is checked into
+# the repository. A random 64-character value in KPI_REGISTRY is therefore insufficient
+# to make a new KPI executable. The exact decision object must be independently present
+# here and must still match the pinned metric/query/template lineage at runtime.
+APPROVED_KPI_REGISTRY_PROMOTIONS: dict[str, KpiRegistryPromotionDecision] = {}
+
+
 def _sha(value: object, field: str) -> str:
     text = str(value or "")
     if len(text) != 64 or any(ch not in "0123456789abcdef" for ch in text):
@@ -129,3 +136,30 @@ def seal_kpi_registry_promotion(
         approved_for_registry_change=True,
         executable=False,
     )
+
+
+def verify_registered_kpi_promotion(
+    *,
+    promotion_fingerprint: str,
+    metric: str,
+    query_id: str,
+    query_template_fingerprint: str,
+    promotions: Mapping[str, KpiRegistryPromotionDecision] = APPROVED_KPI_REGISTRY_PROMOTIONS,
+) -> KpiRegistryPromotionDecision:
+    """Require the exact sealed promotion object, not merely a plausible hash string."""
+
+    fingerprint = _sha(promotion_fingerprint, "registered_promotion")
+    decision = promotions.get(fingerprint)
+    if decision is None:
+        raise ValueError(f"kpi_registry_promotion_decision_not_registered:{metric}")
+    if decision.fingerprint != fingerprint:
+        raise ValueError(f"kpi_registry_promotion_decision_fingerprint_drift:{metric}")
+    if decision.approved_for_registry_change is not True or decision.executable is not False:
+        raise ValueError(f"kpi_registry_promotion_decision_state_invalid:{metric}")
+    if decision.metric != metric:
+        raise ValueError(f"kpi_registry_promotion_decision_metric_mismatch:{metric}")
+    if decision.query_id != query_id:
+        raise ValueError(f"kpi_registry_promotion_decision_query_mismatch:{metric}")
+    if decision.query_template_fingerprint != _sha(query_template_fingerprint, "registered_template"):
+        raise ValueError(f"kpi_registry_promotion_decision_template_drift:{metric}")
+    return decision

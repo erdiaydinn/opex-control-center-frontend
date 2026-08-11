@@ -1,6 +1,25 @@
 from app.training_gate import validate_training_examples
 
 
+def _approved_example(user="Is this mandatory?", assistant=None):
+    return {
+        "messages": [
+            {"role": "user", "content": user},
+            {
+                "role": "assistant",
+                "content": assistant
+                or "Use the reviewed operational procedure, verify the supporting source, and record the decision before taking action.",
+            },
+        ],
+        "metadata": {
+            "human_approved": True,
+            "contains_personal_data": False,
+            "teacher_reviewed": True,
+            "reason": "reviewed training correction",
+        },
+    }
+
+
 def test_rejects_unapproved_training_example():
     result = validate_training_examples([
         {
@@ -54,6 +73,9 @@ def test_accepts_human_approved_grounded_example():
     ])
     assert result.accepted
     assert len(result.dataset_sha256) == 64
+    assert len(result.integrity_sha256 or "") == 64
+    assert len(result.quality_fingerprints) == 1
+    assert len(result.quality_fingerprints[0]) == 64
 
 
 def test_rejects_thin_or_unreasoned_target_even_when_human_flag_is_true():
@@ -69,3 +91,10 @@ def test_rejects_thin_or_unreasoned_target_even_when_human_flag_is_true():
     assert not result.accepted
     assert "example_0:target_answer_too_short" in result.violations
     assert "example_0:learning_reason_required" in result.violations
+
+
+def test_training_gate_rejects_duplicate_examples_before_manifest():
+    item = _approved_example()
+    result = validate_training_examples([item, item])
+    assert result.accepted is False
+    assert "example_1:exact_duplicate_of_0" in result.violations

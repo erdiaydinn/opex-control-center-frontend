@@ -51,8 +51,8 @@ def test_tombstoned_evidence_is_never_learning_eligible(tmp_path):
     audits.decide(audit.id, "accepted", "human verified")
     provenance.reviews.seal(
         audit.id,
-        reviewer="vision-reviewer",
-        approval_reference="VISION-REVIEW-1",
+        reviewer="reviewer-1",
+        approval_reference="vision-review-approval-1",
     )
     assert provenance.learning_eligibility(audit.id) is True
 
@@ -71,8 +71,8 @@ def test_expired_retention_blocks_learning_without_erasing_provenance(tmp_path):
     audits.decide(audit.id, "accepted", "human verified")
     provenance.reviews.seal(
         audit.id,
-        reviewer="vision-reviewer",
-        approval_reference="VISION-REVIEW-2",
+        reviewer="reviewer-1",
+        approval_reference="vision-review-approval-2",
     )
 
     retention = provenance.retention.get(audit.id)

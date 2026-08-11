@@ -44,7 +44,8 @@ class KpiRegistryPromotionDecision:
 # Deliberately empty until a real, human-reviewed promotion decision is checked into
 # the repository. A random 64-character value in KPI_REGISTRY is therefore insufficient
 # to make a new KPI executable. The exact decision object must be independently present
-# here and must still match the pinned metric/query/template lineage at runtime.
+# here and must still match the pinned metric/query/template/schema/review-artifact
+# lineage at runtime.
 APPROVED_KPI_REGISTRY_PROMOTIONS: dict[str, KpiRegistryPromotionDecision] = {}
 
 
@@ -84,13 +85,7 @@ def seal_kpi_registry_promotion(
     reviewer: str,
     reviewed_at: str,
 ) -> KpiRegistryPromotionDecision:
-    """Authorize a *reviewed registry change* without making the KPI executable.
-
-    This gate is intentionally one-way and non-mutating. It binds the exact reviewed
-    production artifact, exact query-template fingerprint and live-schema fingerprint
-    to a second human promotion decision. A caller still has to make a separate code
-    change to the executable registry and that change must pin this decision fingerprint.
-    """
+    """Authorize a reviewed registry change without making the KPI executable."""
 
     if metric not in _SUPPORTED_METRICS:
         raise ValueError("kpi_registry_promotion_unsupported_metric")
@@ -144,9 +139,11 @@ def verify_registered_kpi_promotion(
     metric: str,
     query_id: str,
     query_template_fingerprint: str,
+    schema_fingerprint: str,
+    review_artifact_fingerprint: str,
     promotions: Mapping[str, KpiRegistryPromotionDecision] = APPROVED_KPI_REGISTRY_PROMOTIONS,
 ) -> KpiRegistryPromotionDecision:
-    """Require the exact sealed promotion object, not merely a plausible hash string."""
+    """Require the exact sealed promotion object and its complete reviewed lineage."""
 
     fingerprint = _sha(promotion_fingerprint, "registered_promotion")
     decision = promotions.get(fingerprint)
@@ -162,4 +159,10 @@ def verify_registered_kpi_promotion(
         raise ValueError(f"kpi_registry_promotion_decision_query_mismatch:{metric}")
     if decision.query_template_fingerprint != _sha(query_template_fingerprint, "registered_template"):
         raise ValueError(f"kpi_registry_promotion_decision_template_drift:{metric}")
+    if decision.schema_fingerprint != _sha(schema_fingerprint, "registered_schema"):
+        raise ValueError(f"kpi_registry_promotion_decision_schema_drift:{metric}")
+    if decision.review_artifact_fingerprint != _sha(
+        review_artifact_fingerprint, "registered_review_artifact"
+    ):
+        raise ValueError(f"kpi_registry_promotion_decision_review_artifact_drift:{metric}")
     return decision

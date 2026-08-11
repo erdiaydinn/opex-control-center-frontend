@@ -3,7 +3,8 @@ from dataclasses import replace
 import pytest
 
 from app.kpi_registry import KPI_REGISTRY, KpiDefinition, require_executable_kpi
-from app.kpi_registry_integrity import verify_registry_binding
+from app.kpi_registry_integrity import verify_promotion_schema_lineage, verify_registry_binding
+from app.schema_contracts import ColumnContract, TableSchemaContract
 
 
 FP = "a" * 64
@@ -78,3 +79,47 @@ def test_legacy_bootstrap_cannot_be_reused_for_new_metric():
     )
     with pytest.raises(ValueError, match="kpi_registry_integrity_legacy_bootstrap_forbidden"):
         verify_registry_binding(definition)
+
+
+def _reviewed_schema_contract(evidence_fingerprint: str | None) -> TableSchemaContract:
+    return TableSchemaContract(
+        contract_id="ops.test.v1",
+        table_id="project.dataset.table",
+        required_columns=(ColumnContract("value", "FLOAT64"),),
+        evidence_fingerprint=evidence_fingerprint,
+    )
+
+
+def test_promotion_schema_must_match_exact_reviewed_schema_evidence_snapshot():
+    contract = _reviewed_schema_contract("b" * 64)
+    assert (
+        verify_promotion_schema_lineage(
+            schema_contract=contract,
+            promotion_schema_fingerprint="b" * 64,
+            metric="otp",
+        )
+        == "b" * 64
+    )
+
+
+def test_same_projected_contract_cannot_reuse_promotion_from_different_schema_observation():
+    contract = _reviewed_schema_contract("b" * 64)
+    with pytest.raises(
+        ValueError,
+        match="kpi_registry_integrity_promotion_schema_evidence_drift:otp",
+    ):
+        verify_promotion_schema_lineage(
+            schema_contract=contract,
+            promotion_schema_fingerprint="c" * 64,
+            metric="otp",
+        )
+
+
+def test_promoted_nonlegacy_kpi_requires_schema_evidence_lineage():
+    contract = _reviewed_schema_contract(None)
+    with pytest.raises(ValueError, match="kpi_registry_integrity_schema_evidence_required:otp"):
+        verify_promotion_schema_lineage(
+            schema_contract=contract,
+            promotion_schema_fingerprint="b" * 64,
+            metric="otp",
+        )

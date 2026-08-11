@@ -116,15 +116,27 @@ def test_duration_source_semantics_rejects_stale_schema_evidence():
         verify_duration_source_semantics(ev, semantics)
 
 
-def test_otp_requires_explicit_percent_or_fraction_scale():
+def test_otp_requires_additive_numerator_denominator_lineage():
     ev = evidence(
         "report__tableau_store_performance_report",
-        {"event_day": "DATE", "vendor_name": "STRING", "late_rate": "FLOAT64"},
+        {
+            "event_day": "DATE",
+            "vendor_name": "STRING",
+            "late_rate": "FLOAT64",
+            "late_orders": "INT64",
+            "eligible_orders": "INT64",
+        },
     )
     semantics = RateSourceSemantics(
         metric="otp",
         table_id=ev.table_id,
-        role_to_column={"date": "event_day", "store": "vendor_name", "late_prep_rate": "late_rate"},
+        role_to_column={
+            "date": "event_day",
+            "store": "vendor_name",
+            "late_prep_rate": "late_rate",
+            "late_prep_orders": "late_orders",
+            "eligible_orders": "eligible_orders",
+        },
         schema_evidence_fingerprint=ev.fingerprint,
         source_scale="fraction",
         reviewed_at="2026-08-11T07:05:00Z",
@@ -135,12 +147,47 @@ def test_otp_requires_explicit_percent_or_fraction_scale():
     assert result["source_scale"] == "fraction"
     assert result["rate_contract"].source_scale == "fraction"
     assert result["late_prep_rate_column"] == "late_rate"
+    assert result["late_prep_orders_column"] == "late_orders"
+    assert result["eligible_orders_column"] == "eligible_orders"
+    assert result["aggregation_contract"].numerator_field == "late_orders"
+    assert result["aggregation_contract"].denominator_field == "eligible_orders"
+    assert result["aggregation_contract"].aggregation_kind == "complement_ratio_of_sums"
 
 
-def test_otp_rejects_string_rate_column():
+def test_otp_preaggregated_rate_is_optional_but_not_sufficient():
     ev = evidence(
         "report__tableau_store_performance_report",
-        {"event_day": "DATE", "vendor_name": "STRING", "late_rate": "STRING"},
+        {
+            "event_day": "DATE",
+            "vendor_name": "STRING",
+            "late_orders": "INT64",
+            "eligible_orders": "INT64",
+        },
+    )
+    semantics = RateSourceSemantics(
+        metric="otp",
+        table_id=ev.table_id,
+        role_to_column={
+            "date": "event_day",
+            "store": "vendor_name",
+            "late_prep_orders": "late_orders",
+            "eligible_orders": "eligible_orders",
+        },
+        schema_evidence_fingerprint=ev.fingerprint,
+        source_scale="percent",
+        reviewed_at="2026-08-11T07:05:00Z",
+        reviewer="metric-owner",
+        reviewed=True,
+    )
+    result = verify_otp_source_semantics(ev, semantics)
+    assert result["late_prep_rate_column"] is None
+    assert result["aggregation_contract"].numerator_field == "late_orders"
+
+
+def test_otp_rejects_rate_only_mapping_without_additive_lineage():
+    ev = evidence(
+        "report__tableau_store_performance_report",
+        {"event_day": "DATE", "vendor_name": "STRING", "late_rate": "FLOAT64"},
     )
     semantics = RateSourceSemantics(
         metric="otp",
@@ -152,7 +199,60 @@ def test_otp_rejects_string_rate_column():
         reviewer="metric-owner",
         reviewed=True,
     )
-    with pytest.raises(ValueError, match="kpi_source_semantics_invalid_type:late_prep_rate:STRING"):
+    with pytest.raises(ValueError, match="kpi_source_semantics_missing_role:late_prep_orders"):
+        verify_otp_source_semantics(ev, semantics)
+
+
+def test_otp_rejects_string_denominator_column():
+    ev = evidence(
+        "report__tableau_store_performance_report",
+        {
+            "event_day": "DATE",
+            "vendor_name": "STRING",
+            "late_orders": "INT64",
+            "eligible_orders": "STRING",
+        },
+    )
+    semantics = RateSourceSemantics(
+        metric="otp",
+        table_id=ev.table_id,
+        role_to_column={
+            "date": "event_day",
+            "store": "vendor_name",
+            "late_prep_orders": "late_orders",
+            "eligible_orders": "eligible_orders",
+        },
+        schema_evidence_fingerprint=ev.fingerprint,
+        source_scale="percent",
+        reviewed_at="2026-08-11T07:05:00Z",
+        reviewer="metric-owner",
+        reviewed=True,
+    )
+    with pytest.raises(ValueError, match="kpi_source_semantics_invalid_type:eligible_orders:STRING"):
+        verify_otp_source_semantics(ev, semantics)
+
+
+def test_otp_rejects_same_column_for_numerator_and_denominator():
+    ev = evidence(
+        "report__tableau_store_performance_report",
+        {"event_day": "DATE", "vendor_name": "STRING", "orders": "INT64"},
+    )
+    semantics = RateSourceSemantics(
+        metric="otp",
+        table_id=ev.table_id,
+        role_to_column={
+            "date": "event_day",
+            "store": "vendor_name",
+            "late_prep_orders": "orders",
+            "eligible_orders": "orders",
+        },
+        schema_evidence_fingerprint=ev.fingerprint,
+        source_scale="percent",
+        reviewed_at="2026-08-11T07:05:00Z",
+        reviewer="metric-owner",
+        reviewed=True,
+    )
+    with pytest.raises(ValueError, match="kpi_source_semantics_otp_numerator_denominator_must_differ"):
         verify_otp_source_semantics(ev, semantics)
 
 

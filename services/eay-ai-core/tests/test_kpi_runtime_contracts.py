@@ -4,12 +4,14 @@ import pytest
 
 from app.kpi_aggregation_contracts import WeightedAverageContract
 from app.kpi_putaway_sla import PutawaySlaContract
+from app.kpi_rate_aggregation import RateAggregationContract
 from app.kpi_runtime_contracts import (
     DURATION_RUNTIME_CONTRACTS,
     PUTAWAY_RUNTIME_CONTRACTS,
     RATE_RUNTIME_CONTRACTS,
     DurationRuntimeContract,
     PutawayRuntimeContract,
+    RateRuntimeContract,
     verify_kpi_runtime_activation,
 )
 from app.kpi_unit_contracts import DurationContract, RateContract
@@ -98,19 +100,28 @@ def test_picking_runtime_bundle_binds_unit_aggregation_and_evidence(monkeypatch)
     assert len(result["aggregation_contract_fingerprint"]) == 64
 
 
-def test_otp_runtime_bundle_requires_explicit_scale(monkeypatch):
+def test_otp_runtime_bundle_binds_scale_and_denominator_lineage(monkeypatch):
     monkeypatch.setitem(
         RATE_RUNTIME_CONTRACTS,
         "otp",
-        RateContract(metric="otp", source_scale="fraction"),
+        RateRuntimeContract(
+            unit=RateContract(metric="otp", source_scale="percent"),
+            aggregation=RateAggregationContract(
+                metric="otp",
+                numerator_field="late_prep_orders",
+                denominator_field="eligible_orders",
+                aggregation_kind="complement_ratio_of_sums",
+            ),
+        ),
     )
     result = verify_kpi_runtime_activation(
         metric="otp",
         semantic_verification=semantic("otp"),
         schema_verification=schema(),
     )
-    assert result["aggregation_contract_fingerprint"] is None
+    assert len(result["aggregation_contract_fingerprint"]) == 64
     assert len(result["unit_contract_fingerprint"]) == 64
+    assert len(result["activation_provenance_fingerprint"]) == 64
 
 
 def test_putaway_runtime_bundle_binds_temporal_sla_and_quantity(monkeypatch):

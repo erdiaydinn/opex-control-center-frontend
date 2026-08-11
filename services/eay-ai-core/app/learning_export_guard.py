@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .main import settings, store as candidate_store
+from .teacher_quality import evaluate_teacher_review
 from .training_gate import DatasetGateResult, validate_training_examples
 
 
@@ -131,6 +132,23 @@ def _evidence_provenance(row: sqlite3.Row) -> dict[str, str]:
     return result
 
 
+def _teacher_quality(row: sqlite3.Row, evidence_ids: list[str]):
+    raw = row["teacher_review_json"]
+    if not raw:
+        return None
+    try:
+        review = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("learning_export_invalid_teacher_review_json") from exc
+    if not isinstance(review, dict):
+        raise ValueError("learning_export_invalid_teacher_review_json")
+    return evaluate_teacher_review(
+        model_answer=str(row["model_answer"] or ""),
+        review=review,
+        evidence_ids=evidence_ids,
+    )
+
+
 def build_gated_export(
     *,
     review_store: LearningExportReviewStore,
@@ -155,7 +173,14 @@ def build_gated_export(
             continue
 
         provenance = _evidence_provenance(row)
-        teacher_reviewed = bool(row["teacher_review_json"])
+        teacher_quality = _teacher_quality(row, list(provenance.values()))
+        teacher_reviewed = teacher_quality is not None
+        if teacher_quality is not None and not teacher_quality.accepted:
+            preflight_violations.extend(
+                f"example_{index}:{violation}" for violation in teacher_quality.violations
+            )
+            continue
+
         target = str(item["messages"][-1].get("content") or "")
         assistant_lower = target.casefold()
         legal_claim = any(
@@ -173,6 +198,15 @@ def build_gated_export(
                     "candidate_id": candidate_id,
                     "reason": row["reason"],
                     "teacher_reviewed": teacher_reviewed,
+                    "teacher_quality_accepted": (
+                        teacher_quality.accepted if teacher_quality is not None else None
+                    ),
+                    "teacher_quality_score": (
+                        teacher_quality.score if teacher_quality is not None else None
+                    ),
+                    "teacher_quality_sha256": (
+                        teacher_quality.review_sha256 if teacher_quality is not None else None
+                    ),
                     "human_approved": True,
                     "contains_personal_data": False,
                     "original_model_answer": row["model_answer"],

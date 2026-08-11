@@ -27,11 +27,7 @@ class MemoryTurn:
 
 
 class BoundedConversationMemory:
-    """Hash-only bounded conversational memory metadata.
-
-    Raw transcript text is intentionally owned by the live runtime, not this durable
-    control structure. Only hashes and token estimates are retained here.
-    """
+    """Hash-only bounded conversational memory metadata."""
 
     def __init__(self, *, max_turns: int = 24, max_token_estimate: int = 6000):
         if max_turns < 2 or max_turns > 200:
@@ -152,6 +148,15 @@ class VoiceRealtimeSessionController:
             raise ValueError("voice_realtime_task_already_active")
         task = ActiveTask(task_id=task_id, kind=kind, cancellable=cancellable)
         self._tasks[task_id] = task
+        return task
+
+    def finish_task(self, *, task_id: str) -> ActiveTask:
+        task = self._tasks.get(task_id)
+        if task is None:
+            raise ValueError("voice_realtime_task_unknown")
+        if task.cancelled:
+            raise ValueError("voice_realtime_cancelled_task_cannot_finish")
+        self._tasks.pop(task_id, None)
         return task
 
     def cancel_for_barge_in(self) -> tuple[ActiveTask, ...]:

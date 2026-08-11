@@ -13,6 +13,7 @@ class PutawayProductionActivationArtifact:
     activation_fingerprint: str
     schema_evidence_fingerprint: str
     source_mapping_fingerprint: str
+    inbound_classification_fingerprint: str
     sla_contract_fingerprint: str
     quantity_contract_fingerprint: str
     approval_reference: str
@@ -27,6 +28,7 @@ class PutawayProductionActivationArtifact:
             "activation_fingerprint": self.activation_fingerprint,
             "schema_evidence_fingerprint": self.schema_evidence_fingerprint,
             "source_mapping_fingerprint": self.source_mapping_fingerprint,
+            "inbound_classification_fingerprint": self.inbound_classification_fingerprint,
             "sla_contract_fingerprint": self.sla_contract_fingerprint,
             "quantity_contract_fingerprint": self.quantity_contract_fingerprint,
             "approval_reference": self.approval_reference,
@@ -49,15 +51,15 @@ def seal_putaway_production_activation(
     *,
     activation: PutawayActivationBundle,
     source_mapping_verification: Mapping[str, object],
+    inbound_classification_verification: Mapping[str, object],
     approval_reference: str,
     reviewer: str,
 ) -> PutawayProductionActivationArtifact:
-    """Seal reviewed putaway source semantics around the existing SLA activation bundle.
+    """Seal source roles + inbound classification around reviewed putaway SLA semantics.
 
-    This is a review artifact only. It prevents the generic putaway activation bundle
-    from being treated as production proof unless the exact source-role mapping is
-    tied to the same schema evidence. Registry/execution enablement remains a separate
-    human-reviewed code change.
+    Raw inbound strings are not allowed to inherit SLA meaning merely because their text
+    resembles ST/PO labels. A separate human-reviewed classification contract must map
+    every accepted raw value into ST_CDC, ST_OTHER or PO before registry review.
     """
 
     if activation.metric != "putaway":
@@ -66,6 +68,8 @@ def seal_putaway_production_activation(
         raise ValueError("putaway_production_activation_source_mapping_required")
     if source_mapping_verification.get("metric") != "putaway":
         raise ValueError("putaway_production_activation_source_mapping_metric_mismatch")
+    if inbound_classification_verification.get("verified") is not True:
+        raise ValueError("putaway_production_activation_inbound_classification_required")
 
     activation_evidence = _sha(
         activation.schema_evidence_fingerprint, "activation_schema_evidence"
@@ -92,6 +96,14 @@ def seal_putaway_production_activation(
     if set(required) - set(role_map) or set(required) - set(role_types):
         raise ValueError("putaway_production_activation_source_roles_incomplete")
 
+    classification_map = inbound_classification_verification.get("mapping")
+    if not isinstance(classification_map, Mapping) or not classification_map:
+        raise ValueError("putaway_production_activation_inbound_classification_mapping_required")
+    classification_fp = _sha(
+        inbound_classification_verification.get("classification_fingerprint"),
+        "inbound_classification",
+    )
+
     approval = approval_reference.strip()
     reviewer_name = reviewer.strip()
     if not approval:
@@ -105,6 +117,7 @@ def seal_putaway_production_activation(
         source_mapping_fingerprint=_sha(
             source_mapping_verification.get("mapping_fingerprint"), "source_mapping"
         ),
+        inbound_classification_fingerprint=classification_fp,
         sla_contract_fingerprint=_sha(
             activation.sla_contract_fingerprint, "sla_contract"
         ),

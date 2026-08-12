@@ -27,6 +27,7 @@ JARVIS_SERVICE_ASSERTION_TYP = "opex-jarvis-service+jwt"
 JARVIS_SERVICE_SUBJECT = "eay-ai-core"
 JARVIS_SERVICE_PURPOSE = "jarvis-tool-execution"
 JARVIS_SERVICE_ALGORITHM = "ES256"
+JARVIS_SERVICE_JWKS_MAX_BYTES = 64 * 1024
 
 JARVIS_SERVICE_ALLOWED_CLAIMS = {
     "iss",
@@ -110,18 +111,11 @@ class VerifiedJarvisService(BaseModel):
     assertion_id: str
 
 
-@lru_cache(maxsize=4)
-def _load_jarvis_jwks(jwks_file: str) -> dict[str, object]:
-    if not jwks_file:
-        raise InternalAssertionUnavailable(
-            "Jarvis service JWKS file is not configured"
-        )
-
+@lru_cache(maxsize=16)
+def _parse_jarvis_jwks_snapshot(snapshot: bytes) -> dict[str, object]:
     try:
-        raw = json.loads(
-            Path(jwks_file).read_text(encoding="utf-8")
-        )
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raw = json.loads(snapshot.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise InternalAssertionUnavailable(
             "Jarvis service JWKS cannot be loaded"
         ) from exc
@@ -143,6 +137,28 @@ def _load_jarvis_jwks(jwks_file: str) -> dict[str, object]:
         )
 
     return raw
+
+
+def _load_jarvis_jwks(jwks_file: str) -> dict[str, object]:
+    if not jwks_file:
+        raise InternalAssertionUnavailable(
+            "Jarvis service JWKS file is not configured"
+        )
+
+    try:
+        with Path(jwks_file).open("rb") as handle:
+            snapshot = handle.read(JARVIS_SERVICE_JWKS_MAX_BYTES + 1)
+    except OSError as exc:
+        raise InternalAssertionUnavailable(
+            "Jarvis service JWKS cannot be loaded"
+        ) from exc
+
+    if not snapshot or len(snapshot) > JARVIS_SERVICE_JWKS_MAX_BYTES:
+        raise InternalAssertionUnavailable(
+            "Jarvis service JWKS size is invalid"
+        )
+
+    return _parse_jarvis_jwks_snapshot(snapshot)
 
 
 def _select_jarvis_verification_key(

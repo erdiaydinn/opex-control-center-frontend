@@ -1,9 +1,9 @@
 """Canonical, fail-closed data scope for Jarvis read tools.
 
 The scope originates only from DB-backed role_permissions.scope records.
-It is deliberately narrow: V1 supports an explicit finite list of canonical
-store names. Empty scope, wildcards and unknown keys are rejected instead of
-being interpreted as tenant-wide or global access.
+V1 supports an explicit finite list of canonical store names. Empty scope,
+wildcards and unknown keys are rejected instead of being interpreted as
+tenant-wide or global access.
 """
 
 from __future__ import annotations
@@ -14,12 +14,18 @@ import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationError,
+    field_validator,
+)
 
 AI_DATA_SCOPE_VERSION = 1
 AI_DATA_SCOPE_ROOT_KEY = "ai_data_scope"
 AI_DATA_SCOPE_MAX_STORES = 250
 AI_DATA_SCOPE_MAX_STORE_NAME_LENGTH = 200
+OPS_KPI_MAX_REQUESTED_STORES = 200
 
 _BLOCKED_SCOPE_NAMES = frozenset(
     {
@@ -42,13 +48,6 @@ class AiDataScopeInvalid(AiDataScopeError):
 
 class AiDataScopeEmpty(AiDataScopeError):
     """The persisted scope resolves to no authorized data."""
-
-
-class AiDataScope(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    version: Literal[1] = AI_DATA_SCOPE_VERSION
-    store_names: tuple[str, ...]
 
 
 def _normalize_store_name(value: Any) -> str:
@@ -85,7 +84,11 @@ def _normalize_store_name(value: Any) -> str:
     return normalized
 
 
-def _normalize_store_names(value: Any) -> tuple[str, ...]:
+def _normalize_store_names(
+    value: Any,
+    *,
+    max_items: int = AI_DATA_SCOPE_MAX_STORES,
+) -> tuple[str, ...]:
     if (
         not isinstance(value, Sequence)
         or isinstance(value, (str, bytes, bytearray))
@@ -94,7 +97,7 @@ def _normalize_store_names(value: Any) -> tuple[str, ...]:
             "AI data scope store_names must be a list"
         )
 
-    if not 1 <= len(value) <= AI_DATA_SCOPE_MAX_STORES:
+    if not 1 <= len(value) <= max_items:
         raise AiDataScopeEmpty(
             "AI data scope must contain a bounded store list"
         )
@@ -125,6 +128,36 @@ def _normalize_store_names(value: Any) -> tuple[str, ...]:
     )
 
 
+class AiDataScope(BaseModel):
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    version: Literal[1]
+    store_names: tuple[str, ...]
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def validate_version(cls, value: Any) -> Any:
+        if (
+            isinstance(value, bool)
+            or value != AI_DATA_SCOPE_VERSION
+        ):
+            raise ValueError(
+                "ai_data_scope version is unsupported"
+            )
+        return value
+
+    @field_validator("store_names", mode="before")
+    @classmethod
+    def validate_store_names(cls, value: Any) -> tuple[str, ...]:
+        try:
+            return _normalize_store_names(value)
+        except AiDataScopeError as exc:
+            raise ValueError(str(exc)) from exc
+
+
 def parse_ai_data_scope(
     permission_scope: Mapping[str, Any],
 ) -> AiDataScope:
@@ -146,26 +179,12 @@ def parse_ai_data_scope(
             "ai_data_scope must be an object"
         )
 
-    if set(raw) != {"version", "store_names"}:
+    try:
+        return AiDataScope.model_validate(raw)
+    except ValidationError as exc:
         raise AiDataScopeInvalid(
-            "ai_data_scope keys are unsupported"
-        )
-
-    version = raw.get("version")
-    if (
-        isinstance(version, bool)
-        or version != AI_DATA_SCOPE_VERSION
-    ):
-        raise AiDataScopeInvalid(
-            "ai_data_scope version is unsupported"
-        )
-
-    return AiDataScope(
-        version=AI_DATA_SCOPE_VERSION,
-        store_names=_normalize_store_names(
-            raw.get("store_names")
-        ),
-    )
+            "ai_data_scope is invalid"
+        ) from exc
 
 
 def union_ai_data_scopes(
@@ -201,6 +220,7 @@ def union_ai_data_scopes(
         )
 
     return AiDataScope(
+        version=AI_DATA_SCOPE_VERSION,
         store_names=tuple(
             sorted(
                 stores.values(),
@@ -209,7 +229,7 @@ def union_ai_data_scopes(
                     item,
                 ),
             )
-        )
+        ),
     )
 
 
@@ -255,6 +275,7 @@ def intersect_ai_data_scopes(
         canonical.append(next(iter(variants)))
 
     return AiDataScope(
+        version=AI_DATA_SCOPE_VERSION,
         store_names=tuple(
             sorted(
                 canonical,
@@ -263,8 +284,59 @@ def intersect_ai_data_scopes(
                     item,
                 ),
             )
-        )
+        ),
     )
+
+
+def validate_ai_data_scope_invocation(
+    *,
+    tool: str,
+    arguments: Mapping[str, Any],
+    data_scope: AiDataScope,
+) -> tuple[str, ...]:
+    """Require concrete tool arguments to stay inside trusted data scope.
+
+    V1 has an enforceable dimension only for ops_kpi_query because the frozen
+    AI Core foundation exposes its store filter as arguments.stores. Catalog
+    and regulatory tools stay fail-closed until they gain a reviewed tenant /
+    entity data-scope adapter instead of pretending store scope protects them.
+    """
+
+    if tool != "ops_kpi_query":
+        raise AiDataScopeInvalid(
+            "AI tool has no enforceable V1 data scope adapter"
+        )
+
+    if not isinstance(arguments, Mapping):
+        raise AiDataScopeInvalid(
+            "AI tool arguments must be an object"
+        )
+
+    raw_stores = arguments.get("stores")
+    try:
+        requested = _normalize_store_names(
+            raw_stores,
+            max_items=OPS_KPI_MAX_REQUESTED_STORES,
+        )
+    except AiDataScopeError as exc:
+        raise AiDataScopeInvalid(
+            "ops_kpi_query requires explicit scoped stores"
+        ) from exc
+
+    # Do not silently rewrite execution arguments. The caller must use the
+    # same canonical store names that were approved in role_permissions.scope.
+    if tuple(raw_stores) != requested:
+        raise AiDataScopeInvalid(
+            "ops_kpi_query store arguments are not canonical"
+        )
+
+    authorized = set(data_scope.store_names)
+    if not set(requested).issubset(authorized):
+        raise AiDataScopeInvalid(
+            "ops_kpi_query store arguments exceed authorized data scope"
+        )
+
+    return requested
 
 
 def ai_data_scope_fingerprint(scope: AiDataScope) -> str:

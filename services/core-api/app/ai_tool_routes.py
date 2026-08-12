@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.ai_data_scope import AiDataScope
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolAccessDenied,
@@ -36,6 +37,8 @@ _ai_tool_grant_store = RedisAiToolGrantStore(
 
 
 class AiToolGrantIssueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tool: AiToolName
     arguments: dict[str, Any]
     reason: str = Field(
@@ -49,9 +52,12 @@ class AiToolGrantIssueResponse(BaseModel):
     grant_token: str
     expires_in_seconds: int
     tool: AiToolName
+    data_scope_fingerprint: str
 
 
 class InternalAiToolAuthorizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     grant_token: str = Field(
         min_length=32,
         max_length=256,
@@ -70,6 +76,8 @@ class InternalAiToolAuthorizationResponse(BaseModel):
     actor_subject: str
     tool: AiToolName
     granted_scopes: tuple[str, ...]
+    data_scope: AiDataScope
+    data_scope_fingerprint: str
     authorization_fingerprint: str
     arguments_sha256: str
     reason_sha256: str
@@ -143,6 +151,9 @@ async def issue_ai_tool_grant(
         grant_token=issued.token.get_secret_value(),
         expires_in_seconds=issued.expires_in_seconds,
         tool=capability.tool,
+        data_scope_fingerprint=(
+            capability.data_scope_fingerprint
+        ),
     )
 
 
@@ -202,6 +213,12 @@ async def authorize_internal_ai_tool_execution(
             "authorization_fingerprint": (
                 binding.authorization_fingerprint
             ),
+            "data_scope_fingerprint": (
+                binding.data_scope_fingerprint
+            ),
+            "data_scope_store_count": len(
+                binding.data_scope.store_names
+            ),
         },
     )
 
@@ -224,6 +241,10 @@ async def authorize_internal_ai_tool_execution(
         actor_subject=binding.actor_subject,
         tool=binding.tool,
         granted_scopes=tuple(sorted(scopes)),
+        data_scope=binding.data_scope,
+        data_scope_fingerprint=(
+            binding.data_scope_fingerprint
+        ),
         authorization_fingerprint=(
             binding.authorization_fingerprint
         ),

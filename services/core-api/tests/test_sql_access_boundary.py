@@ -31,10 +31,6 @@ RUNTIME_SQL_EXECUTION_POINTS = {
     ("db/session.py", "apply_tenant_context"),
 }
 
-AI_SQL_GUARD_POINTS = {
-    ("core/ai_query_executor.py", "apply_ai_session_guards"),
-}
-
 PRIVILEGED_ADMIN_SQL_POINTS = {
     ("cli/bootstrap_access.py", "bootstrap"),
     ("cli/sync_backup_role_password.py", "synchronize"),
@@ -42,7 +38,6 @@ PRIVILEGED_ADMIN_SQL_POINTS = {
 
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
-    | AI_SQL_GUARD_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
 )
 
@@ -272,7 +267,6 @@ def test_privileged_admin_sql_uses_migration_identity() -> None:
 
 
 EXPECTED_EXECUTION_CALL_COUNTS = {
-    ("core/ai_query_executor.py", "apply_ai_session_guards"): 5,
     ("core/resources.py", "check_database"): 1,
     ("core/resources.py", "ensure_audit_table"): 1,
     ("core/resources.py", "write_audit_event"): 2,

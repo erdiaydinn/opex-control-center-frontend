@@ -105,7 +105,7 @@ jobs:
           PY
       - name: Lint
         run: ruff check services/core-api
-      - name: Secure SQL and AI data-access boundary
+      - name: Secure SQL data-access boundary
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
 
       - name: Apply database migrations as migrator
@@ -115,8 +115,6 @@ jobs:
       - name: Enforce AI database role isolation
         run: pytest -q services/core-api/tests/test_ai_database_role_boundary.py
 
-      - name: Enforce AI Redis concurrency isolation
-        run: pytest -q services/core-api/tests/test_ai_concurrency_integration.py
       - name: Test as RLS-bound runtime role
         run: pytest services/core-api/tests
 

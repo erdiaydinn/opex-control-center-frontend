@@ -1,14 +1,13 @@
 """Distributed fail-closed admission and emergency controls for Jarvis.
 
-Idempotency prevents one client key from executing twice. Admission control
-limits a different blast radius: many unique requests from one tenant, actor or
-tool. Redis operations are atomic and use a shared hash slot. Raw tenant IDs,
-actors and tool names are never embedded in Redis keys.
+Idempotency prevents one client key from executing twice. Admission limits a
+different blast radius: many unique requests from one tenant, actor or tool.
+Redis admission decisions are atomic and share the ``{ai}`` hash slot. Raw
+tenant IDs, actor subjects and tool names are never embedded in Redis keys.
 
-The runtime control mode is deliberately explicit. A missing, malformed or
-unreachable control state fails closed; execution never assumes "enabled".
-Bootstrap starts halted and recovery from an emergency halt must pass through
-read-only before full execution can be enabled again.
+Dynamic control is explicit and fail closed. Missing, malformed or unreachable
+control state never implies enabled. Bootstrap starts halted. Recovery from an
+emergency halt must pass through read-only before full execution can resume.
 """
 
 from __future__ import annotations
@@ -104,18 +103,12 @@ if tool_rate >= tool_rate_limit then
     return {0, 'tool_rate'}
 end
 
-local new_tenant_rate = redis.call('INCR', tenant_rate_key)
-if new_tenant_rate == 1 then
-    redis.call('PEXPIRE', tenant_rate_key, window_ms)
-end
-local new_actor_rate = redis.call('INCR', actor_rate_key)
-if new_actor_rate == 1 then
-    redis.call('PEXPIRE', actor_rate_key, window_ms)
-end
-local new_tool_rate = redis.call('INCR', tool_rate_key)
-if new_tool_rate == 1 then
-    redis.call('PEXPIRE', tool_rate_key, window_ms)
-end
+local tenant_rate = redis.call('INCR', tenant_rate_key)
+if tenant_rate == 1 then redis.call('PEXPIRE', tenant_rate_key, window_ms) end
+local actor_rate = redis.call('INCR', actor_rate_key)
+if actor_rate == 1 then redis.call('PEXPIRE', actor_rate_key, window_ms) end
+local tool_rate = redis.call('INCR', tool_rate_key)
+if tool_rate == 1 then redis.call('PEXPIRE', tool_rate_key, window_ms) end
 
 redis.call('ZADD', tenant_concurrency_key, lease_expires_ms, lease_id)
 redis.call('ZADD', actor_concurrency_key, lease_expires_ms, lease_id)
@@ -123,7 +116,6 @@ redis.call('ZADD', tool_concurrency_key, lease_expires_ms, lease_id)
 redis.call('PEXPIRE', tenant_concurrency_key, lease_ttl_ms + 1000)
 redis.call('PEXPIRE', actor_concurrency_key, lease_ttl_ms + 1000)
 redis.call('PEXPIRE', tool_concurrency_key, lease_ttl_ms + 1000)
-
 return {1, mode}
 """
 
@@ -132,28 +124,30 @@ local removed_tenant = redis.call('ZREM', KEYS[1], ARGV[1])
 local removed_actor = redis.call('ZREM', KEYS[2], ARGV[1])
 local removed_tool = redis.call('ZREM', KEYS[3], ARGV[1])
 for index = 1, 3 do
-    if redis.call('ZCARD', KEYS[index]) == 0 then
-        redis.call('DEL', KEYS[index])
-    end
+    if redis.call('ZCARD', KEYS[index]) == 0 then redis.call('DEL', KEYS[index]) end
 end
 return removed_tenant + removed_actor + removed_tool
 """
 
 _INITIALIZE_CONTROL_SCRIPT = r"""
-if redis.call('EXISTS', KEYS[1]) ~= 0 then
-    return {0, 'already_initialized'}
-end
+if redis.call('EXISTS', KEYS[1]) ~= 0 then return {0, 'already_initialized'} end
 redis.call('SET', KEYS[1], ARGV[1])
 return {1, ARGV[1]}
 """
 
 _CHANGE_CONTROL_SCRIPT = r"""
 local current = redis.call('GET', KEYS[1])
-if not current then
-    return {0, 'control_missing'}
+if not current then return {0, 'control_missing'} end
+if current ~= ARGV[1] then return {0, 'compare_failed'} end
+if current == ARGV[2] then return {0, 'transition_denied'} end
+if current == 'halted' and ARGV[2] ~= 'read_only' then
+    return {0, 'transition_denied'}
 end
-if current ~= ARGV[1] then
-    return {0, 'compare_failed'}
+if current == 'read_only' and ARGV[2] ~= 'enabled' and ARGV[2] ~= 'halted' then
+    return {0, 'transition_denied'}
+end
+if current == 'enabled' and ARGV[2] ~= 'read_only' and ARGV[2] ~= 'halted' then
+    return {0, 'transition_denied'}
 end
 redis.call('SET', KEYS[1], ARGV[2])
 return {1, ARGV[2]}
@@ -189,7 +183,7 @@ class JarvisReadOnlyModeDenied(JarvisAdmissionError):
 
 
 class JarvisControlConflict(JarvisAdmissionError):
-    """A control-mode compare-and-set precondition failed."""
+    """A control compare-and-set precondition failed."""
 
 
 class JarvisExecutionAdmissionSettings(BaseSettings):
@@ -249,9 +243,7 @@ def broker_lease_ttl_seconds(
 
     ttl = math.ceil(float(request_timeout_seconds)) + ADMISSION_LEASE_SAFETY_SECONDS
     if ttl > maximum_lease_ttl_seconds:
-        raise JarvisAdmissionInvalid(
-            "Jarvis broker timeout exceeds admission lease capacity"
-        )
+        raise JarvisAdmissionInvalid("Jarvis broker timeout exceeds admission lease capacity")
     return ttl
 
 
@@ -259,7 +251,7 @@ def _scope_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _decode_reason(value: object) -> str:
+def _decode_text(value: object) -> str:
     if isinstance(value, bytes):
         try:
             return value.decode("utf-8", errors="strict")
@@ -268,28 +260,14 @@ def _decode_reason(value: object) -> str:
                 "Jarvis admission authority returned invalid text"
             ) from exc
     if not isinstance(value, str):
-        raise JarvisAdmissionUnavailable(
-            "Jarvis admission authority returned invalid text"
-        )
+        raise JarvisAdmissionUnavailable("Jarvis admission authority returned invalid text")
     return value
 
 
 def _validate_mode(mode: str) -> JarvisControlMode:
-    if mode not in {"enabled", "read_only", "halted"}:
+    if mode not in ALLOWED_CONTROL_TRANSITIONS:
         raise JarvisAdmissionInvalid("Jarvis control mode is invalid")
     return mode  # type: ignore[return-value]
-
-
-def _validate_control_transition(
-    expected_mode: JarvisControlMode,
-    new_mode: JarvisControlMode,
-) -> None:
-    if expected_mode == new_mode:
-        raise JarvisAdmissionInvalid("Jarvis control transition is a no-op")
-    if new_mode not in ALLOWED_CONTROL_TRANSITIONS[expected_mode]:
-        raise JarvisAdmissionInvalid(
-            "Jarvis control transition violates staged recovery policy"
-        )
 
 
 class RedisJarvisExecutionAdmissionStore:
@@ -326,11 +304,7 @@ class RedisJarvisExecutionAdmissionStore:
     ) -> tuple[str, str, str, str, str, str, str]:
         if not isinstance(tenant_id, UUID):
             raise JarvisAdmissionInvalid("Jarvis admission tenant is invalid")
-        if (
-            not isinstance(actor_subject, str)
-            or not actor_subject
-            or len(actor_subject) > 512
-        ):
+        if not isinstance(actor_subject, str) or not actor_subject or len(actor_subject) > 512:
             raise JarvisAdmissionInvalid("Jarvis admission actor is invalid")
         if not isinstance(tool, str) or not tool or len(tool) > 128:
             raise JarvisAdmissionInvalid("Jarvis admission tool is invalid")
@@ -351,9 +325,7 @@ class RedisJarvisExecutionAdmissionStore:
     async def initialize_control_mode(self, mode: JarvisControlMode) -> JarvisControlMode:
         mode = _validate_mode(mode)
         if mode != "halted":
-            raise JarvisAdmissionInvalid(
-                "Jarvis control must be initialized in halted mode"
-            )
+            raise JarvisAdmissionInvalid("Jarvis control must initialize halted")
         try:
             response = await self._redis.eval(
                 _INITIALIZE_CONTROL_SCRIPT,
@@ -362,9 +334,7 @@ class RedisJarvisExecutionAdmissionStore:
                 mode,
             )
         except RedisError as exc:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis control authority is unavailable"
-            ) from exc
+            raise JarvisAdmissionUnavailable("Jarvis control authority is unavailable") from exc
         return self._parse_control_write(response, expected_mode=mode)
 
     async def change_control_mode(
@@ -375,7 +345,8 @@ class RedisJarvisExecutionAdmissionStore:
     ) -> JarvisControlMode:
         expected_mode = _validate_mode(expected_mode)
         new_mode = _validate_mode(new_mode)
-        _validate_control_transition(expected_mode, new_mode)
+        if expected_mode == new_mode:
+            raise JarvisAdmissionInvalid("Jarvis control transition is a no-op")
         try:
             response = await self._redis.eval(
                 _CHANGE_CONTROL_SCRIPT,
@@ -385,9 +356,7 @@ class RedisJarvisExecutionAdmissionStore:
                 new_mode,
             )
         except RedisError as exc:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis control authority is unavailable"
-            ) from exc
+            raise JarvisAdmissionUnavailable("Jarvis control authority is unavailable") from exc
         return self._parse_control_write(response, expected_mode=new_mode)
 
     async def require_control_allows(
@@ -400,13 +369,11 @@ class RedisJarvisExecutionAdmissionStore:
         try:
             raw_mode = await self._redis.get(self.control_key)
         except RedisError as exc:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis control authority is unavailable"
-            ) from exc
+            raise JarvisAdmissionUnavailable("Jarvis control authority is unavailable") from exc
         if raw_mode is None:
             raise JarvisAdmissionUnavailable("Jarvis control state is missing")
 
-        mode = _decode_reason(raw_mode)
+        mode = _decode_text(raw_mode)
         if mode == "halted":
             raise JarvisEmergencyHalt("Jarvis emergency stop is active")
         if mode == "read_only":
@@ -424,24 +391,22 @@ class RedisJarvisExecutionAdmissionStore:
         expected_mode: JarvisControlMode,
     ) -> JarvisControlMode:
         if not isinstance(response, (list, tuple)) or len(response) != 2:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis control authority returned an invalid result"
-            )
-        accepted, reason = response
-        reason = _decode_reason(reason)
+            raise JarvisAdmissionUnavailable("Jarvis control authority returned invalid result")
+        accepted, raw_reason = response
+        reason = _decode_text(raw_reason)
         if accepted in {1, "1", b"1"} and reason == expected_mode:
             return expected_mode
         if accepted not in {0, "0", b"0"}:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis control authority returned an invalid decision"
-            )
+            raise JarvisAdmissionUnavailable("Jarvis control authority returned invalid decision")
         if reason in {"already_initialized", "compare_failed"}:
             raise JarvisControlConflict("Jarvis control state changed concurrently")
+        if reason == "transition_denied":
+            raise JarvisAdmissionInvalid(
+                "Jarvis control transition violates staged recovery policy"
+            )
         if reason == "control_missing":
             raise JarvisAdmissionUnavailable("Jarvis control state is missing")
-        raise JarvisAdmissionUnavailable(
-            "Jarvis control authority returned an unknown denial"
-        )
+        raise JarvisAdmissionUnavailable("Jarvis control authority returned unknown denial")
 
     async def acquire(
         self,
@@ -482,17 +447,12 @@ class RedisJarvisExecutionAdmissionStore:
                 side_effect_class,
             )
         except RedisError as exc:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis admission authority is unavailable"
-            ) from exc
+            raise JarvisAdmissionUnavailable("Jarvis admission authority is unavailable") from exc
 
         if not isinstance(response, (list, tuple)) or len(response) != 2:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis admission authority returned an invalid result"
-            )
-
-        admitted, reason = response
-        reason = _decode_reason(reason)
+            raise JarvisAdmissionUnavailable("Jarvis admission authority returned invalid result")
+        admitted, raw_reason = response
+        reason = _decode_text(raw_reason)
         if admitted in {1, "1", b"1"} and reason in {"enabled", "read_only"}:
             return JarvisAdmissionLease(
                 token=SecretStr(lease_token),
@@ -500,16 +460,10 @@ class RedisJarvisExecutionAdmissionStore:
                 control_mode=reason,  # type: ignore[arg-type]
             )
         if admitted not in {0, "0", b"0"}:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis admission authority returned an invalid decision"
-            )
+            raise JarvisAdmissionUnavailable("Jarvis admission authority returned invalid decision")
         if reason in {"tenant_rate", "actor_rate", "tool_rate"}:
             raise JarvisAdmissionRateLimited("Jarvis execution rate limit exceeded")
-        if reason in {
-            "tenant_concurrency",
-            "actor_concurrency",
-            "tool_concurrency",
-        }:
+        if reason in {"tenant_concurrency", "actor_concurrency", "tool_concurrency"}:
             raise JarvisAdmissionConcurrencyLimited(
                 "Jarvis execution concurrency limit exceeded"
             )
@@ -518,12 +472,8 @@ class RedisJarvisExecutionAdmissionStore:
         if reason == "read_only":
             raise JarvisReadOnlyModeDenied("Jarvis runtime is read-only")
         if reason in {"control_missing", "control_invalid"}:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis control state is unavailable"
-            )
-        raise JarvisAdmissionUnavailable(
-            "Jarvis admission authority returned an unknown denial"
-        )
+            raise JarvisAdmissionUnavailable("Jarvis control state is unavailable")
+        raise JarvisAdmissionUnavailable("Jarvis admission authority returned unknown denial")
 
     async def release(
         self,
@@ -541,7 +491,7 @@ class RedisJarvisExecutionAdmissionStore:
         if not isinstance(lease, JarvisAdmissionLease):
             raise JarvisAdmissionInvalid("Jarvis admission lease is invalid")
         lease_token = lease.token.get_secret_value()
-        if len(lease_token) < 32 or len(lease_token) > 256:
+        if not 32 <= len(lease_token) <= 256:
             raise JarvisAdmissionInvalid("Jarvis admission lease is invalid")
 
         try:
@@ -557,12 +507,7 @@ class RedisJarvisExecutionAdmissionStore:
             raise JarvisAdmissionUnavailable(
                 "Jarvis admission lease could not be released"
             ) from exc
-
         if isinstance(response, bool) or not isinstance(response, int):
-            raise JarvisAdmissionUnavailable(
-                "Jarvis admission release returned an invalid result"
-            )
+            raise JarvisAdmissionUnavailable("Jarvis admission release returned invalid result")
         if response not in {0, 1, 2, 3}:
-            raise JarvisAdmissionUnavailable(
-                "Jarvis admission release returned an invalid count"
-            )
+            raise JarvisAdmissionUnavailable("Jarvis admission release returned invalid count")

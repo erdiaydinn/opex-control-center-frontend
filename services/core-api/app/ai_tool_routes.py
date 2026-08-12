@@ -26,6 +26,17 @@ from app.core.ai_tool_grants import (
     canonical_reason_sha256,
 )
 from app.core.audit import build_audit_event
+from app.core.jarvis_execution_admission import (
+    JarvisAdmissionConcurrencyLimited,
+    JarvisAdmissionInvalid,
+    JarvisAdmissionLease,
+    JarvisAdmissionRateLimited,
+    JarvisAdmissionUnavailable,
+    JarvisEmergencyHalt,
+    JarvisExecutionAdmissionSettings,
+    JarvisReadOnlyModeDenied,
+    RedisJarvisExecutionAdmissionStore,
+)
 from app.core.jarvis_execution_broker import (
     BrokerToolExecutionResult,
     JarvisExecutionBroker,
@@ -63,6 +74,11 @@ _jarvis_execution_broker = JarvisExecutionBroker(
 )
 _jarvis_idempotency_store = PostgresJarvisExecutionIdempotencyStore(
     engine
+)
+_jarvis_admission_settings = JarvisExecutionAdmissionSettings()
+_jarvis_admission_store = RedisJarvisExecutionAdmissionStore(
+    redis_client,
+    _jarvis_admission_settings,
 )
 
 
@@ -103,6 +119,14 @@ def _ai_tool_safety_denied() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="AI tool execution denied by safety policy",
+    )
+
+
+def _ai_tool_capacity_limited() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="AI tool execution capacity reached; retry later",
+        headers={"Retry-After": str(_jarvis_admission_settings.window_seconds)},
     )
 
 
@@ -160,8 +184,6 @@ async def _release_reserved_idempotency(
             request_fingerprint=request_fingerprint,
         )
     except JarvisIdempotencyUnavailable:
-        # Keeping a stale reserved record is safer than accidentally allowing
-        # another execution under the same key.
         logger.warning(
             "Jarvis reserved idempotency state could not be released",
             exc_info=True,
@@ -185,10 +207,29 @@ async def _finalize_dispatched_idempotency(
             new_state=new_state,
         )
     except JarvisIdempotencyUnavailable:
-        # `dispatched` was durably committed before network I/O. Leaving that
-        # state in place still blocks duplicate execution until expiry.
         logger.warning(
             "Jarvis dispatched idempotency state could not be finalized",
+            exc_info=True,
+        )
+
+
+async def _release_admission(
+    *,
+    capability,
+    lease: JarvisAdmissionLease,
+) -> None:
+    try:
+        await _jarvis_admission_store.release(
+            tenant_id=capability.tenant_id,
+            actor_subject=capability.actor_subject,
+            tool=capability.tool,
+            lease=lease,
+        )
+    except (JarvisAdmissionInvalid, JarvisAdmissionUnavailable):
+        # Leases are TTL bounded. A release failure must never turn a known
+        # successful tool result into an execution retry hazard.
+        logger.warning(
+            "Jarvis admission lease could not be released",
             exc_info=True,
         )
 
@@ -206,7 +247,7 @@ async def execute_ai_tool(
         Depends(get_current_principal),
     ],
 ) -> BrokerToolExecutionResult:
-    """Broker one governed invocation with durable request idempotency."""
+    """Broker one governed invocation with durable idempotency and admission."""
 
     idempotency_key = _require_idempotency_key(request)
 
@@ -281,6 +322,49 @@ async def execute_ai_tool(
             "AI tool idempotency authority is unavailable"
         ) from exc
 
+    try:
+        admission_lease = await _jarvis_admission_store.acquire(
+            tenant_id=capability.tenant_id,
+            actor_subject=capability.actor_subject,
+            tool=capability.tool,
+            side_effect_class=execution_policy.side_effect_class,
+            request_timeout_seconds=(
+                _jarvis_execution_broker_settings.request_timeout_seconds
+            ),
+        )
+    except (JarvisAdmissionRateLimited, JarvisAdmissionConcurrencyLimited) as exc:
+        await _release_reserved_idempotency(
+            capability=capability,
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        raise _ai_tool_capacity_limited() from exc
+    except JarvisReadOnlyModeDenied as exc:
+        await _release_reserved_idempotency(
+            capability=capability,
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        raise _ai_tool_safety_denied() from exc
+    except JarvisEmergencyHalt as exc:
+        await _release_reserved_idempotency(
+            capability=capability,
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        raise _ai_tool_runtime_unavailable(
+            "AI tool execution is temporarily suspended"
+        ) from exc
+    except (JarvisAdmissionInvalid, JarvisAdmissionUnavailable) as exc:
+        await _release_reserved_idempotency(
+            capability=capability,
+            idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        raise _ai_tool_runtime_unavailable(
+            "AI tool admission authority is unavailable"
+        ) from exc
+
     request_event = build_audit_event(
         request_id=request.state.request_id,
         actor=capability.actor_subject,
@@ -300,12 +384,15 @@ async def execute_ai_tool(
             "risk_class": execution_policy.risk_class,
             "data_sensitivity": execution_policy.data_sensitivity,
             "side_effect_class": execution_policy.side_effect_class,
+            "admission_control_mode": admission_lease.control_mode,
+            "admission_lease_ttl_seconds": admission_lease.lease_ttl_seconds,
         },
     )
 
     try:
         await write_audit_event(request_event)
     except Exception as exc:
+        await _release_admission(capability=capability, lease=admission_lease)
         await _release_reserved_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -322,6 +409,7 @@ async def execute_ai_tool(
             reason=payload.reason,
         )
     except AiToolGrantInvalid as exc:
+        await _release_admission(capability=capability, lease=admission_lease)
         await _release_reserved_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -332,6 +420,7 @@ async def execute_ai_tool(
             detail="AI tool request is invalid",
         ) from exc
     except AiToolGrantUnavailable as exc:
+        await _release_admission(capability=capability, lease=admission_lease)
         await _release_reserved_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -351,8 +440,7 @@ async def execute_ai_tool(
             new_state="dispatched",
         )
     except JarvisIdempotencyUnavailable as exc:
-        # The grant token never leaves this process on this path. It may remain
-        # in Redis until expiry, but AI Core never receives it.
+        await _release_admission(capability=capability, lease=admission_lease)
         raise _ai_tool_runtime_unavailable(
             "AI tool idempotency dispatch state is unavailable"
         ) from exc
@@ -366,6 +454,7 @@ async def execute_ai_tool(
             execution_policy=execution_policy,
         )
     except JarvisExecutionBrokerDenied as exc:
+        await _release_admission(capability=capability, lease=admission_lease)
         await _finalize_dispatched_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -374,6 +463,8 @@ async def execute_ai_tool(
         )
         raise _ai_tool_access_denied() from exc
     except JarvisExecutionBrokerIndeterminate as exc:
+        # Do not release the concurrency lease here. The remote execution may
+        # still be running; the bounded TTL is the safe recovery mechanism.
         await _finalize_dispatched_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -384,6 +475,7 @@ async def execute_ai_tool(
             "AI tool execution outcome is unknown; do not retry automatically"
         ) from exc
     except JarvisExecutionBrokerUnavailable as exc:
+        await _release_admission(capability=capability, lease=admission_lease)
         await _finalize_dispatched_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -394,6 +486,7 @@ async def execute_ai_tool(
             "AI tool execution broker is unavailable; do not retry automatically"
         ) from exc
     except JarvisExecutionBrokerContractError as exc:
+        await _release_admission(capability=capability, lease=admission_lease)
         await _finalize_dispatched_idempotency(
             capability=capability,
             idempotency_key=idempotency_key,
@@ -408,6 +501,7 @@ async def execute_ai_tool(
             ),
         ) from exc
 
+    await _release_admission(capability=capability, lease=admission_lease)
     await _finalize_dispatched_idempotency(
         capability=capability,
         idempotency_key=idempotency_key,
@@ -464,13 +558,13 @@ async def authorize_internal_ai_tool_execution(
             "arguments_sha256": binding.arguments_sha256,
             "reason_sha256": binding.reason_sha256,
             "authorization_fingerprint": binding.authorization_fingerprint,
+            "safety_policy_fingerprint": binding.safety_policy_fingerprint,
         },
     )
 
     try:
         await write_audit_event(audit_event)
     except Exception as exc:
-        # Grant is already consumed. Never execute without durable audit.
         raise _ai_tool_runtime_unavailable(
             "AI tool execution audit is unavailable"
         ) from exc

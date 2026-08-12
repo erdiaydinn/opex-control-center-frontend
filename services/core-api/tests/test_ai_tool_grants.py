@@ -6,6 +6,10 @@ from uuid import UUID
 import pytest
 from redis.exceptions import RedisError
 
+from app.core.ai_data_scope import (
+    AiDataScope,
+    ai_data_scope_fingerprint,
+)
 from app.core.ai_tool_authorization import AiToolCapability
 from app.core.ai_tool_grants import (
     AI_TOOL_GRANT_MAX_TTL_SECONDS,
@@ -79,7 +83,11 @@ def capability(
     tenant_id: UUID = TENANT_A,
     actor_subject: str = "user-1",
     fingerprint: str = "a" * 64,
+    store_names: tuple[str, ...] = ("Fulya",),
 ) -> AiToolCapability:
+    data_scope = AiDataScope(
+        store_names=store_names
+    )
     return AiToolCapability(
         tenant_id=tenant_id,
         actor_subject=actor_subject,
@@ -89,6 +97,10 @@ def capability(
             "action:ai_assistant:executeOpsRead",
         ),
         authorizing_roles=("super_admin",),
+        data_scope=data_scope,
+        data_scope_fingerprint=(
+            ai_data_scope_fingerprint(data_scope)
+        ),
         authorization_fingerprint=fingerprint,
     )
 
@@ -129,7 +141,7 @@ def test_arguments_reject_ambiguous_or_nonfinite_json() -> None:
         )
 
 
-def test_internal_consume_contract_accepts_no_caller_identity() -> None:
+def test_internal_consume_contract_accepts_no_caller_authorization_data() -> None:
     signature = inspect.signature(
         RedisAiToolGrantStore.consume_authorized_invocation
     )
@@ -138,10 +150,12 @@ def test_internal_consume_contract_accepts_no_caller_identity() -> None:
     assert "tenant_id" not in signature.parameters
     assert "actor_subject" not in signature.parameters
     assert "granted_scopes" not in signature.parameters
+    assert "data_scope" not in signature.parameters
+    assert "store_names" not in signature.parameters
 
 
 @pytest.mark.asyncio
-async def test_issue_stores_only_hashed_token_and_hashed_context() -> None:
+async def test_issue_stores_only_hashed_token_and_invocation_content() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
 
@@ -162,6 +176,10 @@ async def test_issue_stores_only_hashed_token_and_hashed_context() -> None:
     assert "secret-metric" not in stored_payload
     assert "secret reason" not in stored_payload
     assert token not in repr(issued)
+
+    # The short-lived authoritative data scope must be recoverable by the
+    # machine caller without trusting request-body authorization fields.
+    assert "Fulya" in stored_payload
 
 
 @pytest.mark.asyncio
@@ -187,6 +205,7 @@ async def test_single_use_grant_consumes_exact_binding() -> None:
     )
 
     assert binding == issued.binding
+    assert binding.data_scope.store_names == ("Fulya",)
 
     with pytest.raises(
         AiToolGrantReplayOrExpired
@@ -200,13 +219,14 @@ async def test_single_use_grant_consumes_exact_binding() -> None:
 
 
 @pytest.mark.asyncio
-async def test_internal_consume_recovers_trusted_actor_and_tenant() -> None:
+async def test_internal_consume_recovers_trusted_actor_tenant_and_data_scope() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
     cap = capability(
         tenant_id=TENANT_B,
         actor_subject="trusted-user",
         fingerprint="b" * 64,
+        store_names=("Anka", "Fulya"),
     )
     arguments = {"metric": "orders"}
     reason = "read KPI"
@@ -227,6 +247,13 @@ async def test_internal_consume_recovers_trusted_actor_and_tenant() -> None:
     assert binding.tenant_id == TENANT_B
     assert binding.actor_subject == "trusted-user"
     assert binding.authorization_fingerprint == "b" * 64
+    assert binding.data_scope.store_names == (
+        "Anka",
+        "Fulya",
+    )
+    assert binding.data_scope_fingerprint == (
+        cap.data_scope_fingerprint
+    )
 
 
 @pytest.mark.asyncio
@@ -306,9 +333,10 @@ async def test_internal_mismatch_burns_grant() -> None:
         capability(actor_subject="user-2"),
         capability(tenant_id=TENANT_B),
         capability(fingerprint="b" * 64),
+        capability(store_names=("Anka",)),
     ],
 )
-async def test_grant_is_bound_to_actor_tenant_and_authorization_snapshot(
+async def test_grant_is_bound_to_actor_tenant_authorization_and_data_scope(
     changed: AiToolCapability,
 ) -> None:
     redis = FakeRedis()

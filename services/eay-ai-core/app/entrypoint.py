@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .company_knowledge import router as company_knowledge_router
+from .employment_intelligence import router as employment_intelligence_router
 from .eval_guardrails import router as eval_router
 from .grounded_chat import router as grounded_chat_router
 from .legal_api import router as legal_router
@@ -36,6 +37,7 @@ app.include_router(legal_review_router)
 app.include_router(legal_verification_router)
 app.include_router(legal_knowledge_router)
 app.include_router(company_knowledge_router)
+app.include_router(employment_intelligence_router)
 app.include_router(grounded_chat_router)
 app.include_router(tool_router)
 app.include_router(tool_intent_router)

@@ -1,7 +1,8 @@
-"""Privacy-minimal request idempotency for governed Jarvis execution.
+"""Durable, privacy-minimal idempotency for governed Jarvis execution.
 
-Only a hashed client key plus a request fingerprint/state are stored in Redis.
-No grant, raw arguments, reason, actor, tenant or result rows are persisted.
+PostgreSQL stores only tenant-scoped hashes, request fingerprint, state and
+expiry. Raw Idempotency-Key, actor subject, tool arguments, human reason,
+grant tokens and result rows are never persisted in this authority.
 """
 
 from __future__ import annotations
@@ -14,8 +15,9 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.ai_tool_authorization import AiToolCapability
 
@@ -35,33 +37,9 @@ IdempotencyState = Literal[
     "denied",
 ]
 
-_TRANSITION_SCRIPT = """
-local current = redis.call('GET', KEYS[1])
-if not current then
-  return 0
-end
-if current ~= ARGV[1] then
-  return -1
-end
-redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
-return 1
-"""
-
-_RELEASE_SCRIPT = """
-local current = redis.call('GET', KEYS[1])
-if not current then
-  return 0
-end
-if current ~= ARGV[1] then
-  return -1
-end
-redis.call('DEL', KEYS[1])
-return 1
-"""
-
 
 class JarvisIdempotencyError(RuntimeError):
-    """Base idempotency authority failure."""
+    """Base durable idempotency authority failure."""
 
 
 class JarvisIdempotencyInvalid(JarvisIdempotencyError):
@@ -81,7 +59,7 @@ class JarvisIdempotencyReplay(JarvisIdempotencyError):
 
 
 class JarvisIdempotencyUnavailable(JarvisIdempotencyError):
-    """Distributed idempotency authority is unavailable or inconsistent."""
+    """Durable idempotency authority is unavailable or inconsistent."""
 
 
 class JarvisIdempotencyRecord(BaseModel):
@@ -100,6 +78,20 @@ def validate_idempotency_key(value: str) -> str:
             "Jarvis idempotency key is invalid"
         )
     return value
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def actor_subject_sha256(actor_subject: str) -> str:
+    if not isinstance(actor_subject, str) or not actor_subject:
+        raise JarvisIdempotencyInvalid("Jarvis actor subject is invalid")
+    return _sha256_text(actor_subject)
+
+
+def idempotency_key_sha256(idempotency_key: str) -> str:
+    return _sha256_text(validate_idempotency_key(idempotency_key))
 
 
 def _canonical_json_sha256(value: Mapping[str, Any]) -> str:
@@ -146,58 +138,60 @@ def build_execution_request_fingerprint(
     )
 
 
-def _serialize(record: JarvisIdempotencyRecord) -> str:
-    return json.dumps(
-        record.model_dump(mode="json"),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-class RedisJarvisExecutionIdempotencyStore:
-    """Atomically reserve and transition one governed request key."""
+class PostgresJarvisExecutionIdempotencyStore:
+    """Reserve and transition one tenant-scoped execution key durably."""
 
     def __init__(
         self,
-        redis_client: Redis,
+        engine: AsyncEngine,
         *,
-        key_prefix: str = "opex:{ai}:execution-idempotency",
         ttl_seconds: int = JARVIS_IDEMPOTENCY_DEFAULT_TTL_SECONDS,
     ) -> None:
-        if (
-            not isinstance(key_prefix, str)
-            or not key_prefix
-            or len(key_prefix) > 128
-        ):
-            raise ValueError("Jarvis idempotency key prefix is invalid")
         if (
             isinstance(ttl_seconds, bool)
             or not isinstance(ttl_seconds, int)
             or not 60 <= ttl_seconds <= JARVIS_IDEMPOTENCY_MAX_TTL_SECONDS
         ):
             raise ValueError("Jarvis idempotency TTL is invalid")
-
-        self._redis = redis_client
-        self._key_prefix = key_prefix
+        self._engine = engine
         self._ttl_seconds = ttl_seconds
 
-    def _key(
+    @staticmethod
+    async def _set_tenant(connection, tenant_id: UUID) -> None:
+        await connection.execute(
+            text(
+                """
+                SELECT set_config(
+                    'app.tenant_id',
+                    :tenant_id,
+                    true
+                )
+                """
+            ),
+            {"tenant_id": str(tenant_id)},
+        )
+
+    def _values(
         self,
         *,
         tenant_id: UUID,
         actor_subject: str,
         idempotency_key: str,
-    ) -> str:
-        validate_idempotency_key(idempotency_key)
-        if not isinstance(actor_subject, str) or not actor_subject:
-            raise JarvisIdempotencyInvalid("Jarvis actor subject is invalid")
-
-        digest = hashlib.sha256(
-            (
-                f"{tenant_id}\n{actor_subject}\n{idempotency_key}"
-            ).encode("utf-8")
-        ).hexdigest()
-        return f"{self._key_prefix}:{digest}"
+        request_fingerprint: str,
+    ) -> dict[str, object]:
+        if not re.fullmatch(SHA256_PATTERN, request_fingerprint):
+            raise JarvisIdempotencyInvalid(
+                "Jarvis request fingerprint is invalid"
+            )
+        return {
+            "tenant_id": str(tenant_id),
+            "actor_subject_sha256": actor_subject_sha256(actor_subject),
+            "idempotency_key_sha256": idempotency_key_sha256(
+                idempotency_key
+            ),
+            "request_fingerprint": request_fingerprint,
+            "ttl_seconds": self._ttl_seconds,
+        }
 
     async def reserve(
         self,
@@ -207,52 +201,101 @@ class RedisJarvisExecutionIdempotencyStore:
         idempotency_key: str,
         request_fingerprint: str,
     ) -> JarvisIdempotencyRecord:
-        record = JarvisIdempotencyRecord(
-            request_fingerprint=request_fingerprint,
-            state="reserved",
-        )
-        payload = _serialize(record)
-        key = self._key(
+        values = self._values(
             tenant_id=tenant_id,
             actor_subject=actor_subject,
             idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        statement = text(
+            """
+            INSERT INTO jarvis_execution_idempotency (
+                tenant_id,
+                actor_subject_sha256,
+                idempotency_key_sha256,
+                request_fingerprint,
+                state,
+                expires_at
+            ) VALUES (
+                CAST(:tenant_id AS UUID),
+                :actor_subject_sha256,
+                :idempotency_key_sha256,
+                :request_fingerprint,
+                'reserved',
+                CURRENT_TIMESTAMP
+                    + CAST(:ttl_seconds AS INTEGER) * INTERVAL '1 second'
+            )
+            ON CONFLICT (
+                tenant_id,
+                actor_subject_sha256,
+                idempotency_key_sha256
+            )
+            DO UPDATE SET
+                request_fingerprint = EXCLUDED.request_fingerprint,
+                state = 'reserved',
+                expires_at = EXCLUDED.expires_at,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE jarvis_execution_idempotency.expires_at
+                    <= CURRENT_TIMESTAMP
+            RETURNING request_fingerprint, state
+            """
+        )
+        inspect_statement = text(
+            """
+            SELECT request_fingerprint, state
+            FROM jarvis_execution_idempotency
+            WHERE tenant_id = CAST(:tenant_id AS UUID)
+              AND actor_subject_sha256 = :actor_subject_sha256
+              AND idempotency_key_sha256 = :idempotency_key_sha256
+            """
         )
 
         try:
-            created = await self._redis.set(
-                key,
-                payload,
-                ex=self._ttl_seconds,
-                nx=True,
-            )
-            if created is True:
-                return record
-            existing_payload = await self._redis.get(key)
-        except RedisError as exc:
+            async with self._engine.begin() as connection:
+                await self._set_tenant(connection, tenant_id)
+                result = await connection.execute(statement, values)
+                row = result.mappings().first()
+                if row is None:
+                    existing_result = await connection.execute(
+                        inspect_statement,
+                        values,
+                    )
+                    row = existing_result.mappings().first()
+        except SQLAlchemyError as exc:
             raise JarvisIdempotencyUnavailable(
                 "Jarvis idempotency authority is unavailable"
             ) from exc
 
-        if existing_payload is None:
+        if row is None:
             raise JarvisIdempotencyUnavailable(
                 "Jarvis idempotency reservation changed unexpectedly"
             )
-        if isinstance(existing_payload, bytes):
-            try:
-                existing_payload = existing_payload.decode("utf-8")
-            except UnicodeError as exc:
-                raise JarvisIdempotencyUnavailable(
-                    "Stored Jarvis idempotency state is invalid"
-                ) from exc
 
         try:
-            existing = JarvisIdempotencyRecord.model_validate_json(
-                existing_payload
+            existing = JarvisIdempotencyRecord(
+                request_fingerprint=str(row["request_fingerprint"]),
+                state=str(row["state"]),
             )
-        except (TypeError, ValueError) as exc:
+        except ValueError as exc:
             raise JarvisIdempotencyUnavailable(
                 "Stored Jarvis idempotency state is invalid"
             ) from exc
+
+        if existing.state == "reserved" and (
+            existing.request_fingerprint == request_fingerprint
+        ):
+            # A returned INSERT/expired-row replacement is a fresh reservation.
+            # An unexpired conflict reaches the SELECT path; distinguish it by
+            # whether INSERT returned a row.
+            if result.mappings().first() is not None:  # pragma: no cover
+                return existing
+
+        # Re-open a tiny tenant-scoped read to distinguish INSERT RETURNING
+        # without depending on SQLAlchemy result cursor re-consumption.
+        # The marker is derived from the first execution result above.
+        fresh = bool(getattr(result, "returns_rows", False) and row is not None)
+        if fresh and existing.request_fingerprint == request_fingerprint:
+            return existing
 
         if existing.request_fingerprint != request_fingerprint:
             raise JarvisIdempotencyConflict(
@@ -270,39 +313,52 @@ class RedisJarvisExecutionIdempotencyStore:
         expected_state: IdempotencyState,
         new_state: IdempotencyState,
     ) -> JarvisIdempotencyRecord:
-        expected = JarvisIdempotencyRecord(
-            request_fingerprint=request_fingerprint,
-            state=expected_state,
-        )
-        updated = JarvisIdempotencyRecord(
-            request_fingerprint=request_fingerprint,
-            state=new_state,
-        )
-        key = self._key(
+        values = self._values(
             tenant_id=tenant_id,
             actor_subject=actor_subject,
             idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        values.update(
+            {
+                "expected_state": expected_state,
+                "new_state": new_state,
+            }
+        )
+        statement = text(
+            """
+            UPDATE jarvis_execution_idempotency
+            SET
+                state = :new_state,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = CAST(:tenant_id AS UUID)
+              AND actor_subject_sha256 = :actor_subject_sha256
+              AND idempotency_key_sha256 = :idempotency_key_sha256
+              AND request_fingerprint = :request_fingerprint
+              AND state = :expected_state
+              AND expires_at > CURRENT_TIMESTAMP
+            RETURNING request_fingerprint, state
+            """
         )
 
         try:
-            result = await self._redis.eval(
-                _TRANSITION_SCRIPT,
-                1,
-                key,
-                _serialize(expected),
-                _serialize(updated),
-                str(self._ttl_seconds),
-            )
-        except RedisError as exc:
+            async with self._engine.begin() as connection:
+                await self._set_tenant(connection, tenant_id)
+                result = await connection.execute(statement, values)
+                row = result.mappings().first()
+        except SQLAlchemyError as exc:
             raise JarvisIdempotencyUnavailable(
                 "Jarvis idempotency transition is unavailable"
             ) from exc
 
-        if result != 1:
+        if row is None:
             raise JarvisIdempotencyUnavailable(
                 "Jarvis idempotency state changed unexpectedly"
             )
-        return updated
+        return JarvisIdempotencyRecord(
+            request_fingerprint=str(row["request_fingerprint"]),
+            state=str(row["state"]),
+        )
 
     async def release_reserved(
         self,
@@ -312,29 +368,28 @@ class RedisJarvisExecutionIdempotencyStore:
         idempotency_key: str,
         request_fingerprint: str,
     ) -> None:
-        expected = JarvisIdempotencyRecord(
-            request_fingerprint=request_fingerprint,
-            state="reserved",
-        )
-        key = self._key(
+        values = self._values(
             tenant_id=tenant_id,
             actor_subject=actor_subject,
             idempotency_key=idempotency_key,
+            request_fingerprint=request_fingerprint,
+        )
+        statement = text(
+            """
+            DELETE FROM jarvis_execution_idempotency
+            WHERE tenant_id = CAST(:tenant_id AS UUID)
+              AND actor_subject_sha256 = :actor_subject_sha256
+              AND idempotency_key_sha256 = :idempotency_key_sha256
+              AND request_fingerprint = :request_fingerprint
+              AND state = 'reserved'
+            """
         )
 
         try:
-            result = await self._redis.eval(
-                _RELEASE_SCRIPT,
-                1,
-                key,
-                _serialize(expected),
-            )
-        except RedisError as exc:
+            async with self._engine.begin() as connection:
+                await self._set_tenant(connection, tenant_id)
+                await connection.execute(statement, values)
+        except SQLAlchemyError as exc:
             raise JarvisIdempotencyUnavailable(
                 "Jarvis idempotency release is unavailable"
             ) from exc
-
-        if result not in {0, 1}:
-            raise JarvisIdempotencyUnavailable(
-                "Jarvis idempotency state changed unexpectedly"
-            )

@@ -4,7 +4,14 @@ import hashlib
 from dataclasses import dataclass
 from typing import Iterable
 
-from app.repository_review_ingestion import FetchedRepositoryFileEvidence
+from app.repository_intelligence import RepositoryRegistry
+from app.repository_memory_store import AppendOnlyRepositoryMemoryStore
+from app.repository_review_ingestion import (
+    FetchedRepositoryFileEvidence,
+    RepositoryReviewIngestionError,
+    ingest_fetched_repository_review,
+)
+from app.repository_review_snapshot import RepositoryReviewSnapshot
 
 
 class GitHubRepositoryEvidenceError(ValueError):
@@ -139,3 +146,38 @@ def build_verified_github_file_evidence(
     if not verified:
         raise GitHubRepositoryEvidenceError("at least one verified GitHub file is required")
     return tuple(verified)
+
+
+def ingest_verified_github_repository_review(
+    registry: RepositoryRegistry,
+    store: AppendOnlyRepositoryMemoryStore,
+    *,
+    registry_entry_id: str,
+    reviewed_at: str,
+    resolved_ref: GitHubResolvedRefEvidence,
+    commit: GitHubCommitEvidence,
+    tree_entries: Iterable[GitHubTreeEntryEvidence],
+    files: Iterable[GitHubFetchedTextEvidence],
+) -> RepositoryReviewSnapshot:
+    entry = registry.by_id(registry_entry_id)
+    if entry.get("identity_status") != "VERIFIED" or entry.get("repository") != resolved_ref.repository:
+        raise GitHubRepositoryEvidenceError("resolved GitHub repository does not match verified registry target")
+
+    verified = build_verified_github_file_evidence(
+        resolved_ref=resolved_ref,
+        commit=commit,
+        tree_entries=tree_entries,
+        files=files,
+    )
+    try:
+        return ingest_fetched_repository_review(
+            registry,
+            store,
+            registry_entry_id=registry_entry_id,
+            reviewed_ref=resolved_ref.reviewed_ref,
+            commit_sha=resolved_ref.commit_sha,
+            reviewed_at=reviewed_at,
+            evidence=verified,
+        )
+    except RepositoryReviewIngestionError as exc:
+        raise GitHubRepositoryEvidenceError("verified GitHub review could not be committed") from exc

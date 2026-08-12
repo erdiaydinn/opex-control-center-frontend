@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 BASE_COMPOSE = ROOT / "docker-compose.platform.yml"
 BROKER_COMPOSE = ROOT / "docker-compose.jarvis-broker.yml"

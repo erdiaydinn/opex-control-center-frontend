@@ -8,17 +8,16 @@ from uuid import UUID
 import pytest
 
 from app.core.ai_tool_authorization import (
-    AiToolAccessDenied,
-    AiToolPermissionScopeUnsupported,
     SCOPE_PERMISSION_KEYS,
     TOOL_REQUIRED_SCOPES,
+    AiToolAccessDenied,
+    AiToolPermissionScopeUnsupported,
     derive_ai_tool_capability,
 )
 from app.core.permission_catalog import (
     ALL_PERMISSION_KEYS,
     SYSTEM_ROLE_PERMISSIONS,
 )
-
 
 TENANT_A = UUID(
     "11111111-1111-4111-8111-111111111111"

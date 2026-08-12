@@ -26,6 +26,9 @@ class VoiceDeploymentExecutionBindings:
     model: VoiceModelExecutionIdentity
     tts: VoiceTtsExecutionIdentity
     deployment_manifest_fingerprint: str
+    wakeword_identity_fingerprint: str = "0" * 64
+    vad_identity_fingerprint: str = "0" * 64
+    stt_identity_fingerprint: str = "0" * 64
     model_record_id: str = "synthetic-test-binding"
 
     def validate(self) -> None:
@@ -37,6 +40,13 @@ class VoiceDeploymentExecutionBindings:
             raise ValueError("voice_deployment_tts_promotion_invalid")
         if not _valid_sha256(self.deployment_manifest_fingerprint):
             raise ValueError("voice_deployment_manifest_fingerprint_invalid")
+        for value, code in (
+            (self.wakeword_identity_fingerprint, "voice_deployment_wakeword_identity_invalid"),
+            (self.vad_identity_fingerprint, "voice_deployment_vad_identity_invalid"),
+            (self.stt_identity_fingerprint, "voice_deployment_stt_identity_invalid"),
+        ):
+            if not _valid_sha256(value):
+                raise ValueError(code)
         if len(self.model_record_id.strip()) < 3:
             raise ValueError("voice_deployment_model_record_id_required")
 
@@ -101,6 +111,9 @@ def configure_verified_voice_deployment(
         model=model_identity,
         tts=tts_identity,
         deployment_manifest_fingerprint=manifest.fingerprint,
+        wakeword_identity_fingerprint=manifest.wakeword_identity_fingerprint,
+        vad_identity_fingerprint=manifest.vad_identity_fingerprint,
+        stt_identity_fingerprint=manifest.stt_identity_fingerprint,
         model_record_id=model_record_id,
     )
     bindings.validate()
@@ -134,6 +147,12 @@ def _revalidate_verified_source(bindings: VoiceDeploymentExecutionBindings) -> N
         raise ValueError("voice_deployment_manifest_drift")
     if model_identity.fingerprint != bindings.model.fingerprint:
         raise ValueError("voice_deployment_model_identity_drift")
+    if manifest.wakeword_identity_fingerprint != bindings.wakeword_identity_fingerprint:
+        raise ValueError("voice_deployment_wakeword_identity_drift")
+    if manifest.vad_identity_fingerprint != bindings.vad_identity_fingerprint:
+        raise ValueError("voice_deployment_vad_identity_drift")
+    if manifest.stt_identity_fingerprint != bindings.stt_identity_fingerprint:
+        raise ValueError("voice_deployment_stt_identity_drift")
     tts_adapter = next((adapter for adapter in source.profile.adapters if adapter.kind == "tts"), None)
     if tts_adapter is None:
         raise ValueError("voice_deployment_tts_adapter_missing")

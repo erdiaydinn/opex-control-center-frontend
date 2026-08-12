@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,6 +15,20 @@ from .voice_response_lineage import VoiceResponseGenerationProof
 from .voice_ws_protocol import VoiceWsSequenceGuard, seal_envelope
 
 router = APIRouter(tags=["voice"])
+
+
+_ALLOWED_RUNTIME_MODES = {"production", "evaluation", "development", "test"}
+
+
+def _voice_runtime_mode() -> str:
+    mode = os.getenv("EAY_VOICE_RUNTIME_MODE", "production").strip().lower()
+    if mode not in _ALLOWED_RUNTIME_MODES:
+        raise ValueError("voice_runtime_mode_invalid")
+    return mode
+
+
+def _production_release_required() -> bool:
+    return _voice_runtime_mode() == "production"
 
 
 def _safe_error(code: str) -> dict[str, str]:
@@ -50,13 +65,27 @@ def _require_sha256(value: object, code: str) -> str:
 async def voice_websocket(websocket: WebSocket, session_id: str, language: str = "tr") -> None:
     """Governed local-first voice control plane pinned to one verified deployment."""
     try:
-        bindings = require_voice_deployment_bindings(revalidate=True)
+        runtime_mode = _voice_runtime_mode()
+        require_release = runtime_mode == "production"
+        bindings = require_voice_deployment_bindings(
+            revalidate=True,
+            require_production_release=require_release,
+        )
         session_manifest_fingerprint = bindings.deployment_manifest_fingerprint
+        session_release_decision_fingerprint = bindings.governed_release_decision_fingerprint
+        session_runtime_attestation_fingerprint = bindings.runtime_attestation_bundle_fingerprint
 
         def _fresh_manifest_fingerprint() -> str:
-            current = require_voice_deployment_bindings(revalidate=True)
+            current = require_voice_deployment_bindings(
+                revalidate=True,
+                require_production_release=require_release,
+            )
             if current.deployment_manifest_fingerprint != session_manifest_fingerprint:
                 raise ValueError("voice_session_deployment_manifest_drift")
+            if current.governed_release_decision_fingerprint != session_release_decision_fingerprint:
+                raise ValueError("voice_session_release_decision_drift")
+            if current.runtime_attestation_bundle_fingerprint != session_runtime_attestation_fingerprint:
+                raise ValueError("voice_session_runtime_attestation_drift")
             return current.deployment_manifest_fingerprint
 
         controller = VoiceRealtimeSessionController(session_id=session_id, language=language)
@@ -88,6 +117,10 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
             "session_id": session_id,
             "language": language,
             "protocol_version": "eay-voice-ws-v1",
+            "runtime_mode": runtime_mode,
+            "production_released": bindings.production_released,
+            "governed_release_decision_fingerprint": session_release_decision_fingerprint,
+            "runtime_attestation_bundle_fingerprint": session_runtime_attestation_fingerprint,
             "turn_epoch": coordinator.turn_epoch,
             "deployment_manifest_fingerprint": session_manifest_fingerprint,
         }
@@ -95,7 +128,10 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
 
     def _fresh_bindings():
         _fresh_manifest_fingerprint()
-        return require_voice_deployment_bindings(revalidate=True)
+        return require_voice_deployment_bindings(
+            revalidate=True,
+            require_production_release=require_release,
+        )
 
     try:
         while True:

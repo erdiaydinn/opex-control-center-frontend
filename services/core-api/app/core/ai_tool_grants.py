@@ -15,18 +15,20 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolCapability,
+    AiToolName,
 )
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
 AI_TOOL_GRANT_VERSION = 1
+SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
 class AiToolGrantError(PermissionError):
@@ -54,11 +56,20 @@ class AiToolGrantBinding(BaseModel):
 
     version: int = AI_TOOL_GRANT_VERSION
     tenant_id: UUID
-    actor_subject: str
-    tool: str
-    arguments_sha256: str
-    reason_sha256: str
-    authorization_fingerprint: str
+    actor_subject: str = Field(
+        min_length=1,
+        max_length=512,
+    )
+    tool: AiToolName
+    arguments_sha256: str = Field(
+        pattern=SHA256_PATTERN
+    )
+    reason_sha256: str = Field(
+        pattern=SHA256_PATTERN
+    )
+    authorization_fingerprint: str = Field(
+        pattern=SHA256_PATTERN
+    )
 
 
 class IssuedAiToolGrant(BaseModel):

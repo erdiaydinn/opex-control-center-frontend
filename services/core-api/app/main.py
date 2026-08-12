@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.ai_tool_routes import router as ai_tool_router
 from app.core.audit import build_audit_event
 from app.core.client_ip import resolve_client_ip
 from app.core.config import get_settings
@@ -82,6 +83,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
 )
+app.include_router(ai_tool_router)
 
 
 @app.middleware("http")

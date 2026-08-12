@@ -52,6 +52,7 @@ def _tts_bundle_identity(
             voice_id_sha256=_hash("1"),
             model_sha256=_hash(ch),
             config_sha256=_hash("2"),
+            tokens_sha256=_hash("6"),
             model_card_sha256=_hash("3"),
             artifact_license_id_sha256=_hash("4"),
             artifact_fingerprint=_hash("5"),
@@ -65,6 +66,9 @@ def _tts_bundle_identity(
         runtime_adapter_id="tts-local-v1",
         runtime_adapter_promotion_fingerprint=runtime_promotion_fp,
         profile_fingerprint=profile_fp,
+        phonemizer_data_manifest_fingerprint=_hash("c"),
+        phonemizer_license_id_sha256=_hash("d"),
+        phonemizer_source_sha256=_hash("e"),
         language_artifacts=language_artifacts,
         fingerprint=_hash("8"),
     )
@@ -153,6 +157,9 @@ def test_tts_requires_current_response_proof_exact_profile_and_language_artifact
     assert tts.tts_bundle_execution_identity_fingerprint == _hash("8")
     assert tts.tts_bundle_promotion_fingerprint == _hash("7")
     assert tts.tts_voice_model_sha256 == _hash("a")
+    assert tts.tts_voice_tokens_sha256 == _hash("6")
+    assert tts.tts_phonemizer_data_manifest_fingerprint == _hash("c")
+    assert tts.tts_phonemizer_license_id_sha256 == _hash("d")
     assert len(tts.fingerprint) == 64
     assert [event.event_type for event in ledger.verify_session("session-1")] == ["response_proof", "tts_proof"]
 

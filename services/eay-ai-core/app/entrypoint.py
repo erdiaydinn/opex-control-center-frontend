@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from .authorized_tool_execution import router as authorized_tool_execution_router
 from .company_knowledge import router as company_knowledge_router
 from .employment_intelligence import router as employment_intelligence_router
 from .employment_temporal_grounding import router as employment_grounding_router
 from .eval_guardrails import router as eval_router
 from .grounded_chat import router as grounded_chat_router
+from .jarvis_core_bridge import JarvisCoreBridgeSettings
+from .jarvis_tenant_policy import legacy_caller_scope_execution_allowed
 from .legal_api import router as legal_router
 from .legal_knowledge import router as legal_knowledge_router
 from .legal_review import router as legal_review_router
@@ -45,7 +48,14 @@ app.include_router(payroll_router)
 app.include_router(grounded_chat_router)
 app.include_router(tool_router)
 app.include_router(tool_intent_router)
-app.include_router(tool_execution_router)
+
+# Caller-supplied granted_scopes are a development/test compatibility surface only.
+# Staging and production publish only the Platform Core grant-authorized route.
+_bridge_settings = JarvisCoreBridgeSettings.from_environment()
+if legacy_caller_scope_execution_allowed(_bridge_settings.environment):
+    app.include_router(tool_execution_router)
+app.include_router(authorized_tool_execution_router)
+
 # Deliberately do not expose bigquery_safe_executor.router. The executor classes are an
 # internal implementation detail used only after vetted template, scope, semantic, schema
 # and runtime-contract gates in tool_execution. Publishing /v1/bigquery/execute would let

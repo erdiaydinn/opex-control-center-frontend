@@ -73,6 +73,7 @@ class VoiceTransientSttResult:
 
 class PinnedLocalVadAdapter:
     def __init__(self, *, runtime_seal: VoiceRuntimeArtifactSeal, engine: InMemoryVadEngine) -> None:
+        runtime_seal.validate()
         if runtime_seal.kind != "vad":
             raise ValueError("voice_local_vad_runtime_kind_mismatch")
         self.runtime_seal = runtime_seal
@@ -109,11 +110,14 @@ class PinnedLocalVadAdapter:
             }
             return VoiceVadExecutionResult(**payload, fingerprint=_sha256(payload))
 
-        return audio.process_next(max_frames=max_frames, processor=_run)
+        # VAD inspects without consuming: the same utterance audio must remain available
+        # to STT. STT is the one-shot consumer that wipes accepted PCM afterward.
+        return audio.inspect_next(max_frames=max_frames, processor=_run)
 
 
 class PinnedLocalSttAdapter:
     def __init__(self, *, runtime_seal: VoiceRuntimeArtifactSeal, engine: InMemorySttEngine) -> None:
+        runtime_seal.validate()
         if runtime_seal.kind != "stt":
             raise ValueError("voice_local_stt_runtime_kind_mismatch")
         self.runtime_seal = runtime_seal

@@ -162,10 +162,15 @@ jobs:
         run: >-
           ruff check
           services/core-api/app/core/ai_tool_authorization.py
+          services/core-api/app/core/ai_tool_grants.py
           services/core-api/tests/test_ai_tool_authorization.py
+          services/core-api/tests/test_ai_tool_grants.py
           services/core-api/alembic/versions/0009_ai_tool_permissions.py
-      - name: Test Jarvis authorization contract
-        run: pytest -q services/core-api/tests/test_ai_tool_authorization.py
+      - name: Test Jarvis authorization and single-use grants
+        run: >-
+          pytest -q
+          services/core-api/tests/test_ai_tool_authorization.py
+          services/core-api/tests/test_ai_tool_grants.py
       - name: Create RLS-bound runtime role
         run: |
           python - <<'PY'

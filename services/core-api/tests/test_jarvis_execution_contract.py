@@ -80,7 +80,7 @@ def test_mutating_internal_ai_routes_require_fresh_jarvis_identity() -> None:
 def test_grant_binding_schema_rejects_unknown_version() -> None:
     with pytest.raises(ValidationError):
         AiToolGrantBinding(
-            version=2,
+            version=2,  # type: ignore[arg-type]
             tenant_id="11111111-1111-4111-8111-111111111111",
             actor_subject="user-1",
             tool="ops_kpi_query",

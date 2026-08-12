@@ -13,6 +13,7 @@ from app.core.jarvis_execution_broker import (
     JarvisExecutionBrokerSettings,
     JarvisExecutionBrokerUnavailable,
 )
+from app.core.jarvis_safety_policy import execution_envelope
 
 
 def valid_response(*, maximum_bytes_billed: int) -> dict[str, object]:
@@ -51,6 +52,13 @@ def settings(**updates) -> JarvisExecutionBrokerSettings:
     }
     values.update(updates)
     return JarvisExecutionBrokerSettings(**values)
+
+
+def ops_policy():
+    return execution_envelope(
+        "ops_kpi_query",
+        arguments={"metric": "orders"},
+    )
 
 
 def test_broker_settings_reject_unsafe_or_ambiguous_base_urls() -> None:
@@ -97,6 +105,7 @@ async def test_disabled_broker_fails_before_network() -> None:
                 tool="ops_kpi_query",
                 arguments={"metric": "orders"},
                 reason="read orders",
+                execution_policy=ops_policy(),
             )
 
     assert calls == 0
@@ -106,6 +115,7 @@ async def test_disabled_broker_fails_before_network() -> None:
 async def test_broker_sends_grant_once_with_server_owned_execution_policy() -> None:
     seen: dict[str, object] = {}
     broker_settings = settings()
+    policy = ops_policy()
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["path"] = request.url.path
@@ -113,7 +123,7 @@ async def test_broker_sends_grant_once_with_server_owned_execution_policy() -> N
         return httpx.Response(
             200,
             json=valid_response(
-                maximum_bytes_billed=broker_settings.maximum_bytes_billed
+                maximum_bytes_billed=policy.maximum_bytes_billed
             ),
         )
 
@@ -130,6 +140,7 @@ async def test_broker_sends_grant_once_with_server_owned_execution_policy() -> N
             tool="ops_kpi_query",
             arguments={"metric": "orders"},
             reason="read orders",
+            execution_policy=policy,
         )
 
     assert seen["path"] == AI_CORE_EXECUTION_PATH
@@ -141,15 +152,44 @@ async def test_broker_sends_grant_once_with_server_owned_execution_policy() -> N
         "grant_token": "g" * 43,
         "reason": "read orders",
         "execute": True,
-        "maximum_bytes_billed": broker_settings.maximum_bytes_billed,
-        "timeout_ms": broker_settings.tool_timeout_ms,
-        "max_rows": broker_settings.max_rows,
+        "maximum_bytes_billed": policy.maximum_bytes_billed,
+        "timeout_ms": policy.timeout_ms,
+        "max_rows": policy.max_rows,
     }
     assert "tenant_id" not in body
     assert "actor_subject" not in body
     assert "granted_scopes" not in body
     assert "permissions" not in body
     assert result.execution.status == "executed"
+
+
+@pytest.mark.asyncio
+async def test_safety_envelope_cannot_exceed_broker_ceiling() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500)
+
+    async with httpx.AsyncClient(
+        base_url="http://eay-ai-core:8030",
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        broker = JarvisExecutionBroker(
+            settings(max_rows=100),
+            client=client,
+        )
+        with pytest.raises(JarvisExecutionBrokerContractError, match="row budget"):
+            await broker.execute(
+                grant_token="g" * 43,
+                tool="ops_kpi_query",
+                arguments={"metric": "orders"},
+                reason="read orders",
+                execution_policy=ops_policy(),
+            )
+
+    assert calls == 0
 
 
 @pytest.mark.asyncio
@@ -172,6 +212,7 @@ async def test_transport_failure_is_indeterminate_and_never_retried() -> None:
                 tool="ops_kpi_query",
                 arguments={"metric": "orders"},
                 reason="read orders",
+                execution_policy=ops_policy(),
             )
 
     assert calls == 1
@@ -197,6 +238,7 @@ async def test_503_is_indeterminate_and_never_retried() -> None:
                 tool="ops_kpi_query",
                 arguments={"metric": "orders"},
                 reason="read orders",
+                execution_policy=ops_policy(),
             )
 
     assert calls == 1
@@ -205,11 +247,12 @@ async def test_503_is_indeterminate_and_never_retried() -> None:
 @pytest.mark.asyncio
 async def test_oversized_success_response_is_indeterminate() -> None:
     broker_settings = settings(max_response_bytes=64 * 1024)
+    policy = ops_policy()
 
     def handler(request: httpx.Request) -> httpx.Response:
         del request
         payload = valid_response(
-            maximum_bytes_billed=broker_settings.maximum_bytes_billed
+            maximum_bytes_billed=policy.maximum_bytes_billed
         )
         payload["execution"]["rows"] = [  # type: ignore[index]
             {"value": "x" * (70 * 1024)}
@@ -227,17 +270,19 @@ async def test_oversized_success_response_is_indeterminate() -> None:
                 tool="ops_kpi_query",
                 arguments={"metric": "orders"},
                 reason="read orders",
+                execution_policy=policy,
             )
 
 
 @pytest.mark.asyncio
 async def test_response_scope_tampering_is_rejected() -> None:
     broker_settings = settings()
+    policy = ops_policy()
 
     def handler(request: httpx.Request) -> httpx.Response:
         del request
         payload = valid_response(
-            maximum_bytes_billed=broker_settings.maximum_bytes_billed
+            maximum_bytes_billed=policy.maximum_bytes_billed
         )
         payload["required_scope"] = ["ops:read", "legal:read"]
         return httpx.Response(200, json=payload)
@@ -253,6 +298,7 @@ async def test_response_scope_tampering_is_rejected() -> None:
                 tool="ops_kpi_query",
                 arguments={"metric": "orders"},
                 reason="read orders",
+                execution_policy=policy,
             )
 
 
@@ -278,4 +324,5 @@ async def test_response_cannot_change_server_owned_byte_budget() -> None:
                 tool="ops_kpi_query",
                 arguments={"metric": "orders"},
                 reason="read orders",
+                execution_policy=ops_policy(),
             )

@@ -154,3 +154,56 @@ def test_raw_tool_adapter_result_is_rejected_even_when_hashable():
                 cancellation=cancellation,
             )
         )
+
+
+def test_task_result_is_rejected_if_deployment_drifted_after_task_start():
+    state = {"manifest": "0" * 64}
+    controller = VoiceRealtimeSessionController(session_id="session-1", language="tr")
+    coordinator = VoiceAsyncExecutionCoordinator(
+        controller=controller,
+        deployment_manifest_fingerprint="0" * 64,
+        deployment_freshness_check=lambda: state["manifest"],
+    )
+    coordinator.start_turn()
+    lease, _ = coordinator.start_task(
+        task_id="model-1",
+        kind="model",
+        request_fingerprint="d" * 64,
+    )
+    state["manifest"] = "1" * 64
+
+    with pytest.raises(ValueError, match="voice_async_deployment_manifest_drift"):
+        coordinator.accept_result(lease=lease, result_sha256="e" * 64)
+
+
+def test_tool_adapter_completion_revalidates_deployment_before_result_acceptance():
+    state = {"manifest": "0" * 64}
+
+    class DriftAdapter:
+        async def execute(self, *, intent, cancellation):
+            state["manifest"] = "1" * 64
+            return GovernedVoiceToolResult(content="result", execution_proof=_proof())
+
+    controller = VoiceRealtimeSessionController(session_id="session-1", language="tr")
+    coordinator = VoiceAsyncExecutionCoordinator(
+        controller=controller,
+        deployment_manifest_fingerprint="0" * 64,
+        deployment_freshness_check=lambda: state["manifest"],
+    )
+    coordinator.start_turn()
+    lease, cancellation = coordinator.start_task(
+        task_id="tool-1",
+        kind="tool",
+        request_fingerprint="3" * 64,
+    )
+
+    with pytest.raises(ValueError, match="voice_async_deployment_manifest_drift"):
+        asyncio.run(
+            coordinator.execute_tool(
+                intent=_intent(),
+                approval_token=None,
+                adapter=DriftAdapter(),
+                lease=lease,
+                cancellation=cancellation,
+            )
+        )

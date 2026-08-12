@@ -14,13 +14,33 @@ The version-controlled registry at `config/repository_intelligence_registry.json
 
 ## Learning boundary
 
-Repository learning must preserve provenance at this granularity when available:
+Repository learning preserves provenance at this granularity:
 
 `repository -> upstream/fork relation -> branch/tag -> commit SHA -> file -> symbol/contract`
 
-The first implementation provides the canonical registry, deterministic fingerprint, integrity gates, and a file-path admission filter. The filter excludes secret/private-key material and generated/vendor noise including `.env*`, private key containers, `node_modules`, `vendor`, build outputs, Python virtual environments, and caches.
+The registry layer provides the canonical source map, deterministic fingerprint, integrity gates, and a file-path admission filter. The filter excludes secret/private-key material and generated/vendor noise including `.env*`, private key containers, `node_modules`, `vendor`, build outputs, Python virtual environments, and caches.
 
 Do not index raw secrets, credentials, tokens, generated dependency trees, or unnecessary personal data. Repository intelligence is retrieval/project memory, not an authorization source.
+
+## Immutable review snapshots
+
+`app/repository_review_snapshot.py` adds the temporal evidence layer above the registry. A review snapshot is an immutable manifest bound to:
+
+- exact registry fingerprint,
+- exact registry entry / repository identity,
+- canonical upstream and relation,
+- reviewed branch/tag/ref,
+- exact 40-character commit SHA,
+- review timestamp,
+- one or more admitted file facts,
+- file Git blob SHA,
+- extracted symbol names and explicit contract statements,
+- optional content SHA-256,
+- prior snapshot fingerprint when the review continues an existing history.
+
+The snapshot itself receives a deterministic SHA-256 fingerprint. A sequence of snapshots is hash-chained with `previous_snapshot_fingerprint`, so new reviews append history instead of replacing earlier project truth. Reordering, deletion of an interior review, field mutation, repository identity substitution, upstream substitution, registry-version substitution, duplicate paths, invalid Git/content hashes, unresolved identities, and excluded secret/generated paths fail closed.
+
+Historical snapshots intentionally remain tied to the exact registry fingerprint that existed when they were reviewed. Because the registry is version controlled, historical validation uses that registry revision rather than silently reinterpreting old evidence under a newer source map.
 
 ## External-source policy
 
@@ -32,4 +52,4 @@ The supplied `council-of-high-intelligence-main.zip` archive is bound to verifie
 
 ## Next layer
 
-The next repository-intelligence slice should add immutable per-review snapshot manifests and symbol/contract extraction records bound to registry fingerprint + repository commit SHA. Any automated GitHub refresh must remain read-only by default and must never silently rewrite historical review truth.
+The next repository-intelligence slice should add read-only GitHub review ingestion that creates persisted snapshot artifacts from selected commits and extracts safe code/API/schema/SQL/CI/security contract facts without storing repository credentials or raw secret material. Snapshot persistence must be append-only and historical registry revisions must remain independently verifiable.

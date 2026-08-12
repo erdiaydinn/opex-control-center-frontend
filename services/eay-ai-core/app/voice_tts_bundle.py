@@ -112,10 +112,7 @@ class VoiceTtsArtifactBundle:
                 "runtime_adapter_id": self.runtime_adapter_id.strip(),
                 "voice_identity_id": self.voice_identity_id.strip(),
                 "artifacts": [
-                    {
-                        "language": item.language.strip().lower(),
-                        "fingerprint": item.fingerprint,
-                    }
+                    {"language": item.language.strip().lower(), "fingerprint": item.fingerprint}
                     for item in ordered
                 ],
             }
@@ -140,6 +137,126 @@ class VoiceTtsBundlePromotion:
     approval_reference: str
     promoted_at: str
     fingerprint: str
+
+
+@dataclass(frozen=True)
+class VoiceTtsLanguageExecutionIdentity:
+    language: str
+    voice_id_sha256: str
+    model_sha256: str
+    config_sha256: str
+    model_card_sha256: str
+    artifact_license_id_sha256: str
+    artifact_fingerprint: str
+    fingerprint: str
+
+    def validate(self) -> None:
+        if self.language not in CORE_LANGUAGES:
+            raise ValueError("voice_tts_execution_language_invalid")
+        for value, code in (
+            (self.voice_id_sha256, "voice_tts_execution_voice_id_hash_invalid"),
+            (self.model_sha256, "voice_tts_execution_model_hash_invalid"),
+            (self.config_sha256, "voice_tts_execution_config_hash_invalid"),
+            (self.model_card_sha256, "voice_tts_execution_model_card_hash_invalid"),
+            (self.artifact_license_id_sha256, "voice_tts_execution_license_hash_invalid"),
+            (self.artifact_fingerprint, "voice_tts_execution_artifact_fingerprint_invalid"),
+            (self.fingerprint, "voice_tts_execution_language_fingerprint_invalid"),
+        ):
+            if not _valid_sha256(value):
+                raise ValueError(code)
+
+
+@dataclass(frozen=True)
+class VoiceTtsBundleExecutionIdentity:
+    bundle_fingerprint: str
+    bundle_promotion_fingerprint: str
+    runtime_adapter_id: str
+    runtime_adapter_promotion_fingerprint: str
+    profile_fingerprint: str
+    language_artifacts: tuple[VoiceTtsLanguageExecutionIdentity, ...]
+    fingerprint: str
+
+    def validate(self) -> None:
+        for value, code in (
+            (self.bundle_fingerprint, "voice_tts_execution_bundle_fingerprint_invalid"),
+            (self.bundle_promotion_fingerprint, "voice_tts_execution_bundle_promotion_invalid"),
+            (self.runtime_adapter_promotion_fingerprint, "voice_tts_execution_runtime_promotion_invalid"),
+            (self.profile_fingerprint, "voice_tts_execution_profile_fingerprint_invalid"),
+            (self.fingerprint, "voice_tts_execution_bundle_identity_invalid"),
+        ):
+            if not _valid_sha256(value):
+                raise ValueError(code)
+        if len(self.runtime_adapter_id.strip()) < 3:
+            raise ValueError("voice_tts_execution_runtime_adapter_required")
+        for artifact in self.language_artifacts:
+            artifact.validate()
+        by_language = {artifact.language: artifact for artifact in self.language_artifacts}
+        if len(by_language) != len(self.language_artifacts) or set(by_language) != set(CORE_LANGUAGES):
+            raise ValueError("voice_tts_execution_core_language_coverage_required")
+
+    def artifact_for(self, language: str) -> VoiceTtsLanguageExecutionIdentity:
+        base = language.strip().lower().split("-", 1)[0].split("_", 1)[0]
+        for artifact in self.language_artifacts:
+            if artifact.language == base:
+                return artifact
+        raise KeyError("voice_tts_execution_language_artifact_not_found")
+
+
+def seal_tts_bundle_execution_identity(
+    *,
+    bundle: VoiceTtsArtifactBundle,
+    promotion: VoiceTtsBundlePromotion,
+) -> VoiceTtsBundleExecutionIdentity:
+    bundle.validate()
+    if promotion.bundle_fingerprint != bundle.fingerprint:
+        raise ValueError("voice_tts_execution_bundle_promotion_mismatch")
+    if promotion.runtime_adapter_id != bundle.runtime_adapter_id:
+        raise ValueError("voice_tts_execution_runtime_adapter_mismatch")
+    for value, code in (
+        (promotion.fingerprint, "voice_tts_execution_bundle_promotion_invalid"),
+        (promotion.runtime_adapter_promotion_fingerprint, "voice_tts_execution_runtime_promotion_invalid"),
+        (promotion.profile_fingerprint, "voice_tts_execution_profile_fingerprint_invalid"),
+    ):
+        if not _valid_sha256(value):
+            raise ValueError(code)
+
+    language_identities: list[VoiceTtsLanguageExecutionIdentity] = []
+    for artifact in sorted(bundle.artifacts, key=lambda item: item.base_language):
+        artifact.validate()
+        payload = {
+            "language": artifact.base_language,
+            "voice_id_sha256": hashlib.sha256(artifact.voice_id.strip().encode("utf-8")).hexdigest(),
+            "model_sha256": artifact.model_sha256,
+            "config_sha256": artifact.config_sha256,
+            "model_card_sha256": artifact.model_card_sha256,
+            "artifact_license_id_sha256": hashlib.sha256(
+                artifact.artifact_license_id.strip().lower().encode("utf-8")
+            ).hexdigest(),
+            "artifact_fingerprint": artifact.fingerprint,
+        }
+        identity = VoiceTtsLanguageExecutionIdentity(**payload, fingerprint=_sha256(payload))
+        identity.validate()
+        language_identities.append(identity)
+
+    payload = {
+        "bundle_fingerprint": bundle.fingerprint,
+        "bundle_promotion_fingerprint": promotion.fingerprint,
+        "runtime_adapter_id": bundle.runtime_adapter_id,
+        "runtime_adapter_promotion_fingerprint": promotion.runtime_adapter_promotion_fingerprint,
+        "profile_fingerprint": promotion.profile_fingerprint,
+        "language_artifact_fingerprints": tuple(item.fingerprint for item in language_identities),
+    }
+    identity = VoiceTtsBundleExecutionIdentity(
+        bundle_fingerprint=bundle.fingerprint,
+        bundle_promotion_fingerprint=promotion.fingerprint,
+        runtime_adapter_id=bundle.runtime_adapter_id,
+        runtime_adapter_promotion_fingerprint=promotion.runtime_adapter_promotion_fingerprint,
+        profile_fingerprint=promotion.profile_fingerprint,
+        language_artifacts=tuple(language_identities),
+        fingerprint=_sha256(payload),
+    )
+    identity.validate()
+    return identity
 
 
 class VoiceTtsBundlePromotionRegistry:

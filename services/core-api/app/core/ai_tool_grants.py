@@ -1,8 +1,8 @@
 """Single-use execution grants for authorized Jarvis tool calls.
 
 A capability answers *what* an actor may do and *which data* it may touch. A
-tool grant binds that capability and the current reviewed downstream query
-contract to exactly one concrete invocation and can be consumed once.
+tool grant binds that capability and the current version-controlled downstream
+query contract to exactly one concrete invocation and can be consumed once.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from app.core.ai_query_contract_policy import (
     AiQueryContractPolicy,
     ai_execution_scope_fingerprint,
     ai_query_contract_policy_fingerprint,
+    get_ai_query_contract_policy,
 )
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
@@ -244,14 +245,12 @@ def _query_contract_binding(
 def build_ai_tool_grant_binding(
     capability: AiToolCapability,
     *,
-    query_policy: AiQueryContractPolicy,
     arguments: Mapping[str, Any],
     reason: str,
 ) -> AiToolGrantBinding:
-    if query_policy.tool != capability.tool:
-        raise AiToolGrantInvalid(
-            "AI query contract does not match tool capability"
-        )
+    query_policy = get_ai_query_contract_policy(
+        capability.tool
+    )
 
     _validate_scope_binding(
         tool=capability.tool,
@@ -373,7 +372,6 @@ class RedisAiToolGrantStore:
         self,
         capability: AiToolCapability,
         *,
-        query_policy: AiQueryContractPolicy,
         arguments: Mapping[str, Any],
         reason: str,
         ttl_seconds: int = (
@@ -391,7 +389,6 @@ class RedisAiToolGrantStore:
 
         binding = build_ai_tool_grant_binding(
             capability,
-            query_policy=query_policy,
             arguments=arguments,
             reason=reason,
         )
@@ -428,13 +425,11 @@ class RedisAiToolGrantStore:
         *,
         token: str,
         capability: AiToolCapability,
-        query_policy: AiQueryContractPolicy,
         arguments: Mapping[str, Any],
         reason: str,
     ) -> AiToolGrantBinding:
         expected = build_ai_tool_grant_binding(
             capability,
-            query_policy=query_policy,
             arguments=arguments,
             reason=reason,
         )
@@ -442,8 +437,6 @@ class RedisAiToolGrantStore:
             token=token
         )
 
-        # GETDEL happens before comparison on purpose. A mismatched attempt
-        # burns the grant instead of leaving a usable bearer capability.
         if stored != expected:
             raise AiToolGrantBindingMismatch(
                 "AI tool grant binding does not match"
@@ -456,7 +449,6 @@ class RedisAiToolGrantStore:
         *,
         token: str,
         tool: str,
-        query_policy: AiQueryContractPolicy,
         arguments: Mapping[str, Any],
         reason: str,
     ) -> AiToolGrantBinding:
@@ -466,11 +458,8 @@ class RedisAiToolGrantStore:
             raise AiToolGrantInvalid(
                 "AI tool is not supported"
             )
-        if query_policy.tool != tool:
-            raise AiToolGrantInvalid(
-                "AI query contract does not match requested tool"
-            )
 
+        query_policy = get_ai_query_contract_policy(tool)  # type: ignore[arg-type]
         arguments_sha256 = canonical_arguments_sha256(
             arguments
         )

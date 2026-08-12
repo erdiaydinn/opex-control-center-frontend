@@ -41,12 +41,26 @@ class VoiceAdapterSpec:
     license_id: str
     languages: tuple[str, ...]
     artifact_sha256: str | None = None
+    runtime_license_id: str | None = None
+    artifact_license_id: str | None = None
+
+    @property
+    def resolved_runtime_license_id(self) -> str:
+        return (self.runtime_license_id or self.license_id).strip().lower()
+
+    @property
+    def resolved_artifact_license_id(self) -> str:
+        return (self.artifact_license_id or self.license_id).strip().lower()
 
     def validate(self) -> None:
         if not self.adapter_id.strip() or not self.implementation.strip():
             raise ValueError("voice_adapter_identity_required")
         if not self.license_id.strip():
             raise ValueError("voice_adapter_license_required")
+        if not self.resolved_runtime_license_id:
+            raise ValueError("voice_adapter_runtime_license_required")
+        if not self.resolved_artifact_license_id:
+            raise ValueError("voice_adapter_artifact_license_required")
         unknown = sorted(set(self.languages) - set(CORE_LANGUAGES))
         if unknown:
             raise ValueError(f"voice_adapter_unknown_language:{','.join(unknown)}")
@@ -206,6 +220,8 @@ def default_jarvis_profile() -> VoiceProfile:
 
     Implementation names are adapter targets, not bundled dependencies. Deployment
     must independently verify package/model licenses and artifact hashes before use.
+    Runtime code and model/voice artifact licenses are deliberately tracked as
+    separate contracts because a permissive engine does not imply permissive weights.
     """
 
     adapters = (

@@ -62,10 +62,12 @@ class VoiceAudioDataPlane(Generic[T]):
     """Bounded, RAM-only PCM ownership boundary for the local voice runtime.
 
     The control plane continues to receive hashes only. Raw PCM enters this object as
-    an owned ``bytearray`` and is never serialized by the data plane. Consumption is
-    callback-only; after the callback returns (or raises), consumed buffers are
-    overwritten in-place and removed. This is a best-effort application-memory wipe,
-    not a claim that Python/OS/runtime copies outside this owner can be erased.
+    an owned ``bytearray`` and is never serialized by the data plane. STT-style
+    consumption is callback-only and wipes consumed buffers after the callback.
+    VAD-style inspection can read the same buffers without consuming them so speech
+    detection does not destroy audio that STT still needs. This is a best-effort
+    application-memory wipe, not a claim that Python/OS/runtime copies outside this
+    owner can be erased.
     """
 
     def __init__(
@@ -100,6 +102,34 @@ class VoiceAudioDataPlane(Generic[T]):
     def _require_open(self) -> None:
         if self._closed:
             raise ValueError("voice_audio_dataplane_closed")
+
+    def _selected_views(self, max_frames: int) -> tuple[list[_OwnedFrame], tuple[EphemeralPcmFrameView, ...]]:
+        self._require_open()
+        if max_frames < 1:
+            raise ValueError("voice_audio_dataplane_process_frame_count_invalid")
+        if not self._frames:
+            raise ValueError("voice_audio_dataplane_empty")
+        count = min(int(max_frames), len(self._frames))
+        selected = self._frames[:count]
+        views = tuple(
+            EphemeralPcmFrameView(
+                sequence=item.metadata.sequence,
+                pcm=memoryview(item.pcm).toreadonly(),
+                pcm_sha256=item.metadata.pcm_sha256,
+                duration_ms=item.metadata.duration_ms,
+                sample_rate_hz=item.metadata.sample_rate_hz,
+            )
+            for item in selected
+        )
+        return selected, views
+
+    @staticmethod
+    def _release_views(views: tuple[EphemeralPcmFrameView, ...]) -> None:
+        for view in views:
+            try:
+                view.pcm.release()
+            except Exception:
+                pass
 
     def push_owned_pcm(
         self,
@@ -166,38 +196,26 @@ class VoiceAudioDataPlane(Generic[T]):
             fingerprint=_sha256(payload),
         )
 
-    def process_next(self, *, max_frames: int, processor: Callable[[tuple[EphemeralPcmFrameView, ...]], T]) -> T:
-        """Process and one-shot consume up to ``max_frames`` without returning PCM."""
-        self._require_open()
-        if max_frames < 1:
-            raise ValueError("voice_audio_dataplane_process_frame_count_invalid")
-        if not self._frames:
-            raise ValueError("voice_audio_dataplane_empty")
-        count = min(int(max_frames), len(self._frames))
-        selected = self._frames[:count]
-        views = tuple(
-            EphemeralPcmFrameView(
-                sequence=item.metadata.sequence,
-                pcm=memoryview(item.pcm).toreadonly(),
-                pcm_sha256=item.metadata.pcm_sha256,
-                duration_ms=item.metadata.duration_ms,
-                sample_rate_hz=item.metadata.sample_rate_hz,
-            )
-            for item in selected
-        )
+    def inspect_next(self, *, max_frames: int, processor: Callable[[tuple[EphemeralPcmFrameView, ...]], T]) -> T:
+        """Read buffered PCM in-memory without consuming it, intended for streaming VAD."""
+        _, views = self._selected_views(max_frames)
         try:
             return processor(views)
         finally:
-            for view in views:
-                try:
-                    view.pcm.release()
-                except Exception:
-                    pass
+            self._release_views(views)
+
+    def process_next(self, *, max_frames: int, processor: Callable[[tuple[EphemeralPcmFrameView, ...]], T]) -> T:
+        """Process and one-shot consume up to ``max_frames`` without returning PCM."""
+        selected, views = self._selected_views(max_frames)
+        try:
+            return processor(views)
+        finally:
+            self._release_views(views)
             consumed_bytes = 0
             for item in selected:
                 consumed_bytes += len(item.pcm)
                 self._wipe(item.pcm)
-            del self._frames[:count]
+            del self._frames[: len(selected)]
             self._buffered_bytes -= consumed_bytes
 
     def discard_all(self) -> None:

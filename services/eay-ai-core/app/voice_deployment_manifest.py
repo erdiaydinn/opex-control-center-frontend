@@ -12,6 +12,11 @@ from .model_promotion_gate import ModelPromotionGate
 from .voice_adapter_promotion import VoiceAdapterPromotionRegistry, adapter_fingerprint
 from .voice_execution_identity import VoiceModelExecutionIdentity, seal_model_execution_identity
 from .voice_runtime import VoiceProfile
+from .voice_tts_bundle import (
+    VoiceTtsArtifactBundle,
+    VoiceTtsBundlePromotionRegistry,
+    seal_tts_bundle_execution_identity,
+)
 
 
 def _sha256(payload: object) -> str:
@@ -44,6 +49,10 @@ class VoiceRuntimeDeploymentManifest:
     vad_identity_fingerprint: str
     stt_identity_fingerprint: str
     tts_identity_fingerprint: str
+    tts_bundle_execution_identity_fingerprint: str
+    tts_bundle_fingerprint: str
+    tts_bundle_promotion_fingerprint: str
+    tts_language_artifact_fingerprints: tuple[str, ...]
     fingerprint: str
 
 
@@ -73,14 +82,17 @@ def build_verified_voice_deployment_manifest(
     model_record_id: str,
     profile: VoiceProfile,
     capabilities: Iterable[LanguageCapability],
+    tts_bundle: VoiceTtsArtifactBundle,
 ) -> tuple[VoiceRuntimeDeploymentManifest, VoiceModelExecutionIdentity]:
     """Build a startup manifest only from currently verified production registries.
 
-    No caller-authored model/adapter fingerprints are trusted. The model must still be
-    the exact production promotion head and every wake/VAD/STT/TTS adapter must still
-    match its immutable human-gated promotion, artifact, profile and language evals.
+    No caller-authored model/adapter/bundle fingerprints are trusted. The model must
+    still be the exact production promotion head, every wake/VAD/STT/TTS adapter must
+    match its immutable promotion, and the full five-language TTS artifact bundle must
+    still match its separate human-gated bundle promotion.
     """
     profile.validate()
+    tts_bundle.validate()
     caps = tuple(capabilities)
     production = ModelPromotionGate(db_path).require_current_production(model_record_id=model_record_id)
     artifact = ModelArtifactProvenanceRegistry(db_path).verify_artifact(
@@ -91,17 +103,37 @@ def build_verified_voice_deployment_manifest(
 
     registry = VoiceAdapterPromotionRegistry(db_path)
     by_kind: dict[str, VoiceAdapterDeploymentIdentity] = {}
+    adapters_by_kind = {}
     for adapter in profile.adapters:
         promotion = registry.verify(adapter=adapter, profile=profile, capabilities=caps)
         identity = _seal_adapter_identity(adapter=adapter, profile=profile, promotion=promotion)
         if identity.kind in by_kind:
             raise ValueError("voice_deployment_duplicate_adapter_kind")
         by_kind[identity.kind] = identity
+        adapters_by_kind[identity.kind] = adapter
     required = {"wakeword", "vad", "stt", "tts"}
     if set(by_kind) != required:
         raise ValueError("voice_deployment_adapter_coverage_incomplete")
 
+    tts_adapter = adapters_by_kind["tts"]
+    bundle_promotion = VoiceTtsBundlePromotionRegistry(db_path).verify(
+        bundle=tts_bundle,
+        runtime_adapter=tts_adapter,
+        profile=profile,
+        capabilities=caps,
+    )
+    bundle_identity = seal_tts_bundle_execution_identity(bundle=tts_bundle, promotion=bundle_promotion)
+    if bundle_identity.runtime_adapter_id != tts_adapter.adapter_id:
+        raise ValueError("voice_deployment_tts_bundle_runtime_adapter_mismatch")
+    if bundle_identity.runtime_adapter_promotion_fingerprint != by_kind["tts"].promotion_fingerprint:
+        raise ValueError("voice_deployment_tts_bundle_runtime_promotion_mismatch")
+    if bundle_identity.profile_fingerprint != profile.fingerprint:
+        raise ValueError("voice_deployment_tts_bundle_profile_mismatch")
+
     ordered = tuple(by_kind[k].fingerprint for k in ("wakeword", "vad", "stt", "tts"))
+    language_artifact_fps = tuple(
+        bundle_identity.artifact_for(language).fingerprint for language in profile.languages
+    )
     payload = {
         "model_record_id": model_record_id,
         "model_production_promotion_fingerprint": production.fingerprint,
@@ -114,5 +146,9 @@ def build_verified_voice_deployment_manifest(
         "vad_identity_fingerprint": by_kind["vad"].fingerprint,
         "stt_identity_fingerprint": by_kind["stt"].fingerprint,
         "tts_identity_fingerprint": by_kind["tts"].fingerprint,
+        "tts_bundle_execution_identity_fingerprint": bundle_identity.fingerprint,
+        "tts_bundle_fingerprint": bundle_identity.bundle_fingerprint,
+        "tts_bundle_promotion_fingerprint": bundle_identity.bundle_promotion_fingerprint,
+        "tts_language_artifact_fingerprints": language_artifact_fps,
     }
     return VoiceRuntimeDeploymentManifest(**payload, fingerprint=_sha256(payload)), model_identity

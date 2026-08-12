@@ -145,9 +145,10 @@ async def test_runtime_idempotency_is_durable_unique_and_tenant_isolated() -> No
         async with migrator.begin() as connection:
             await set_tenant(connection, TENANT_A)
             stored = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT actor_subject_sha256,
                                idempotency_key_sha256,
                                request_fingerprint,
@@ -155,10 +156,13 @@ async def test_runtime_idempotency_is_durable_unique_and_tenant_isolated() -> No
                         FROM jarvis_execution_idempotency
                         WHERE tenant_id = :tenant_id
                         """
-                    ),
-                    {"tenant_id": TENANT_A},
+                        ),
+                        {"tenant_id": TENANT_A},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
         assert stored["actor_subject_sha256"] == actor_subject_sha256(ACTOR)
         assert stored["idempotency_key_sha256"] == idempotency_key_sha256(KEY)

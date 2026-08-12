@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from uuid import UUID
 
 import pytest
@@ -128,6 +129,17 @@ def test_arguments_reject_ambiguous_or_nonfinite_json() -> None:
         )
 
 
+def test_internal_consume_contract_accepts_no_caller_identity() -> None:
+    signature = inspect.signature(
+        RedisAiToolGrantStore.consume_authorized_invocation
+    )
+
+    assert "capability" not in signature.parameters
+    assert "tenant_id" not in signature.parameters
+    assert "actor_subject" not in signature.parameters
+    assert "granted_scopes" not in signature.parameters
+
+
 @pytest.mark.asyncio
 async def test_issue_stores_only_hashed_token_and_hashed_context() -> None:
     redis = FakeRedis()
@@ -188,6 +200,36 @@ async def test_single_use_grant_consumes_exact_binding() -> None:
 
 
 @pytest.mark.asyncio
+async def test_internal_consume_recovers_trusted_actor_and_tenant() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability(
+        tenant_id=TENANT_B,
+        actor_subject="trusted-user",
+        fingerprint="b" * 64,
+    )
+    arguments = {"metric": "orders"}
+    reason = "read KPI"
+
+    issued = await store.issue(
+        cap,
+        arguments=arguments,
+        reason=reason,
+    )
+
+    binding = await store.consume_authorized_invocation(
+        token=issued.token.get_secret_value(),
+        tool="ops_kpi_query",
+        arguments=arguments,
+        reason=reason,
+    )
+
+    assert binding.tenant_id == str(TENANT_B)
+    assert binding.actor_subject == "trusted-user"
+    assert binding.authorization_fingerprint == "b" * 64
+
+
+@pytest.mark.asyncio
 async def test_binding_mismatch_burns_grant() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
@@ -217,6 +259,41 @@ async def test_binding_mismatch_burns_grant() -> None:
         await store.consume(
             token=token,
             capability=cap,
+            arguments=original,
+            reason="read orders",
+        )
+
+
+@pytest.mark.asyncio
+async def test_internal_mismatch_burns_grant() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability()
+    original = {"metric": "orders"}
+
+    issued = await store.issue(
+        cap,
+        arguments=original,
+        reason="read orders",
+    )
+    token = issued.token.get_secret_value()
+
+    with pytest.raises(
+        AiToolGrantBindingMismatch
+    ):
+        await store.consume_authorized_invocation(
+            token=token,
+            tool="ops_kpi_query",
+            arguments={"metric": "refunds"},
+            reason="read orders",
+        )
+
+    with pytest.raises(
+        AiToolGrantReplayOrExpired
+    ):
+        await store.consume_authorized_invocation(
+            token=token,
+            tool="ops_kpi_query",
             arguments=original,
             reason="read orders",
         )

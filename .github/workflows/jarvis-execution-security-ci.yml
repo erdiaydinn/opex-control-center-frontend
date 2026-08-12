@@ -7,12 +7,14 @@ on:
       - platform-core/eay-v2-jarvis-trust-wiring
       - platform-core/eay-v2-jarvis-key-rotation
       - platform-core/eay-v2-jarvis-execution-broker
+      - platform-core/eay-v2-jarvis-request-idempotency
   pull_request:
     branches:
       - platform-core/eay-v2-jarvis-security
       - platform-core/eay-v2-jarvis-execution-security
       - platform-core/eay-v2-jarvis-trust-wiring
       - platform-core/eay-v2-jarvis-key-rotation
+      - platform-core/eay-v2-jarvis-execution-broker
 
 permissions:
   contents: read
@@ -69,9 +71,11 @@ jobs:
       - name: Lint Jarvis execution slice
         run: >-
           ruff check
+          services/core-api/alembic/versions/0010_jarvis_execution_idempotency.py
           services/core-api/app/ai_tool_routes.py
           services/core-api/app/core/ai_tool_grants.py
           services/core-api/app/core/jarvis_execution_broker.py
+          services/core-api/app/core/jarvis_execution_idempotency.py
           services/core-api/app/core/jarvis_service_identity.py
           services/core-api/app/core/jarvis_service_security.py
           services/core-api/tests/test_ai_tool_routes.py
@@ -80,6 +84,9 @@ jobs:
           services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
+          services/core-api/tests/test_jarvis_execution_idempotency.py
+          services/core-api/tests/test_jarvis_execution_idempotency_runtime.py
+          services/core-api/tests/test_jarvis_idempotency_migration_contract.py
           services/core-api/tests/test_jarvis_jwks_rotation.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
@@ -95,6 +102,8 @@ jobs:
           services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
+          services/core-api/tests/test_jarvis_execution_idempotency.py
+          services/core-api/tests/test_jarvis_idempotency_migration_contract.py
           services/core-api/tests/test_jarvis_jwks_rotation.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
@@ -175,10 +184,19 @@ jobs:
           asyncio.run(main())
           PY
 
-      - name: Apply migrations through Jarvis permission revision
+      - name: Apply migrations through durable Jarvis idempotency
         working-directory: services/core-api
-        run: alembic upgrade 0009_ai_tool_permissions
+        run: alembic upgrade 0010_jarvis_execution_idempotency
 
       - name: Verify migration head
         working-directory: services/core-api
-        run: alembic current
+        run: |
+          alembic current
+          alembic current | grep -q '0010_jarvis_execution_idempotency'
+
+      - name: Test runtime-role durable Jarvis idempotency
+        env:
+          EAY_RUN_JARVIS_IDEMPOTENCY_DB_TEST: "1"
+        run: >-
+          pytest -q
+          services/core-api/tests/test_jarvis_execution_idempotency_runtime.py

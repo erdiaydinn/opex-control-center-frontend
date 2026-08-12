@@ -13,6 +13,7 @@ import math
 import secrets
 from collections.abc import Mapping, Sequence
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 from redis.asyncio import Redis
@@ -52,7 +53,7 @@ class AiToolGrantBinding(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     version: int = AI_TOOL_GRANT_VERSION
-    tenant_id: str
+    tenant_id: UUID
     actor_subject: str
     tool: str
     arguments_sha256: str
@@ -165,7 +166,7 @@ def build_ai_tool_grant_binding(
     reason: str,
 ) -> AiToolGrantBinding:
     return AiToolGrantBinding(
-        tenant_id=str(capability.tenant_id),
+        tenant_id=capability.tenant_id,
         actor_subject=capability.actor_subject,
         tool=capability.tool,
         arguments_sha256=canonical_arguments_sha256(

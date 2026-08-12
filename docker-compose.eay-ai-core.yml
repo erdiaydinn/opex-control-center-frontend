@@ -1,0 +1,54 @@
+# Opt-in EAY AI Core runtime overlay.
+#
+# This service is internal-only: no host port is published and no gateway route
+# is added. The Jarvis private key is mounted only into the AI Core container.
+services:
+  eay-ai-core:
+    build:
+      context: ./services/eay-ai-core
+      dockerfile: Dockerfile
+    profiles: ["jarvis"]
+    environment:
+      EAY_AI_DB_PATH: /data/eay_ai.db
+      EAY_OLLAMA_URL: "${EAY_OLLAMA_URL:-http://ollama:11434}"
+      EAY_MODEL: "${EAY_MODEL:-eay-ops:0.1}"
+      EAY_TEACHER_MODEL: "${EAY_TEACHER_MODEL:-}"
+      EAY_TOP_K: "${EAY_TOP_K:-8}"
+      EAY_LOW_CONFIDENCE_THRESHOLD: "${EAY_LOW_CONFIDENCE_THRESHOLD:-0.62}"
+      EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE: /run/secrets/eay_jarvis_service_private_key
+      EAY_JARVIS_SERVICE_SIGNING_KID: "${EAY_JARVIS_SERVICE_SIGNING_KID:?Set EAY Jarvis signing key ID}"
+      EAY_JARVIS_SERVICE_ISSUER: eay-ai-core
+      EAY_JARVIS_SERVICE_AUDIENCE: opex-core-jarvis
+      EAY_JARVIS_SERVICE_LIFETIME_SECONDS: "30"
+      EAY_PLATFORM_CORE_BASE_URL: "${EAY_PLATFORM_CORE_BASE_URL:-http://core-api:8000}"
+      EAY_PLATFORM_CORE_AUTH_TIMEOUT_SECONDS: "${EAY_PLATFORM_CORE_AUTH_TIMEOUT_SECONDS:-5}"
+    secrets:
+      - source: eay_jarvis_service_private_key
+        target: eay_jarvis_service_private_key
+    volumes:
+      - eay_ai_core_data:/data
+    expose:
+      - "8030"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8030/health', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - ai_plane
+
+secrets:
+  eay_jarvis_service_private_key:
+    file: "${EAY_JARVIS_SERVICE_PRIVATE_KEY_SOURCE_FILE:?Set EAY Jarvis private key secret source file path}"
+
+volumes:
+  eay_ai_core_data:

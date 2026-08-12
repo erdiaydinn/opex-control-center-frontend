@@ -44,6 +44,11 @@ from app.core.jarvis_execution_idempotency import (
     build_execution_request_fingerprint,
     validate_idempotency_key,
 )
+from app.core.jarvis_safety_policy import (
+    JarvisSafetyPolicyDenied,
+    ToolExecutionEnvelope,
+    execution_envelope,
+)
 from app.core.jarvis_service_identity import VerifiedJarvisService
 from app.core.jarvis_service_security import require_fresh_jarvis_service
 from app.core.resources import engine, redis_client, write_audit_event
@@ -94,6 +99,13 @@ def _ai_tool_access_denied() -> HTTPException:
     )
 
 
+def _ai_tool_safety_denied() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="AI tool execution denied by safety policy",
+    )
+
+
 def _ai_tool_grant_failed() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -124,15 +136,13 @@ def _require_idempotency_key(request: Request) -> str:
         ) from exc
 
 
-def _broker_execution_policy() -> dict[str, object]:
+def _execution_policy_payload(
+    execution_policy: ToolExecutionEnvelope,
+) -> dict[str, object]:
     return {
-        "contract": "jarvis-broker-v1",
+        "contract": "jarvis-safety-v1",
         "execute": True,
-        "maximum_bytes_billed": (
-            _jarvis_execution_broker_settings.maximum_bytes_billed
-        ),
-        "tool_timeout_ms": _jarvis_execution_broker_settings.tool_timeout_ms,
-        "max_rows": _jarvis_execution_broker_settings.max_rows,
+        **execution_policy.model_dump(mode="json"),
     }
 
 
@@ -224,13 +234,21 @@ async def execute_ai_tool(
         ) from exc
 
     try:
+        execution_policy = execution_envelope(
+            payload.tool,
+            arguments=payload.arguments,
+        )
+    except JarvisSafetyPolicyDenied as exc:
+        raise _ai_tool_safety_denied() from exc
+
+    try:
         arguments_sha256 = canonical_arguments_sha256(payload.arguments)
         reason_sha256 = canonical_reason_sha256(payload.reason)
         request_fingerprint = build_execution_request_fingerprint(
             capability,
             arguments_sha256=arguments_sha256,
             reason_sha256=reason_sha256,
-            execution_policy=_broker_execution_policy(),
+            execution_policy=_execution_policy_payload(execution_policy),
         )
     except (AiToolGrantInvalid, JarvisIdempotencyInvalid) as exc:
         raise HTTPException(
@@ -275,10 +293,13 @@ async def execute_ai_tool(
             "tool": capability.tool,
             "arguments_sha256": arguments_sha256,
             "reason_sha256": reason_sha256,
-            "authorization_fingerprint": (
-                capability.authorization_fingerprint
-            ),
+            "authorization_fingerprint": capability.authorization_fingerprint,
             "idempotency_request_fingerprint": request_fingerprint,
+            "safety_policy_version": execution_policy.policy_version,
+            "safety_policy_fingerprint": execution_policy.safety_policy_fingerprint,
+            "risk_class": execution_policy.risk_class,
+            "data_sensitivity": execution_policy.data_sensitivity,
+            "side_effect_class": execution_policy.side_effect_class,
         },
     )
 
@@ -342,6 +363,7 @@ async def execute_ai_tool(
             tool=payload.tool,
             arguments=payload.arguments,
             reason=payload.reason,
+            execution_policy=execution_policy,
         )
     except JarvisExecutionBrokerDenied as exc:
         await _finalize_dispatched_idempotency(
@@ -441,9 +463,7 @@ async def authorize_internal_ai_tool_execution(
             "tool": binding.tool,
             "arguments_sha256": binding.arguments_sha256,
             "reason_sha256": binding.reason_sha256,
-            "authorization_fingerprint": (
-                binding.authorization_fingerprint
-            ),
+            "authorization_fingerprint": binding.authorization_fingerprint,
         },
     )
 
@@ -463,9 +483,7 @@ async def authorize_internal_ai_tool_execution(
         actor_subject=binding.actor_subject,
         tool=binding.tool,
         granted_scopes=tuple(sorted(scopes)),
-        authorization_fingerprint=(
-            binding.authorization_fingerprint
-        ),
+        authorization_fingerprint=binding.authorization_fingerprint,
         arguments_sha256=binding.arguments_sha256,
         reason_sha256=binding.reason_sha256,
     )

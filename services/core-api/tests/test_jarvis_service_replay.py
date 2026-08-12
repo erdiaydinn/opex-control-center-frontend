@@ -22,8 +22,10 @@ from app.core.jarvis_service_replay import (
 ASSERTION_ID = "jarvis-service-replay-test-0001"
 
 
-def _verified(*, replay_ttl_seconds: int = 40) -> VerifiedJarvisService:
-    return VerifiedJarvisService(
+def _verified(*, replay_ttl_seconds: object = 40) -> VerifiedJarvisService:
+    # model_construct deliberately lets adversarial tests represent a corrupted
+    # in-memory verifier result so the replay boundary proves its own checks.
+    return VerifiedJarvisService.model_construct(
         service_subject=JARVIS_SERVICE_SUBJECT,
         assertion_id=ASSERTION_ID,
         issued_at=1_700_000_000,

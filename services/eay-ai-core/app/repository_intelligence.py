@@ -146,9 +146,9 @@ def _validate_entry(entry: dict[str, Any]) -> None:
         raise RepositoryRegistryError(f"capability mapping required for {entry['id']}")
 
 
-def load_repository_registry(path: str | Path) -> RepositoryRegistry:
-    registry_path = Path(path)
-    payload = json.loads(registry_path.read_text(encoding="utf-8"))
+def _parse_repository_registry_payload(payload: Any) -> RepositoryRegistry:
+    if not isinstance(payload, dict):
+        raise RepositoryRegistryError("repository registry must be a JSON object")
     if payload.get("schema_version") != 1:
         raise RepositoryRegistryError("unsupported repository registry schema_version")
     if not isinstance(payload.get("updated_at"), str) or not payload["updated_at"]:
@@ -177,6 +177,24 @@ def load_repository_registry(path: str | Path) -> RepositoryRegistry:
         entries=tuple(entries),
         fingerprint=registry_fingerprint(payload),
     )
+
+
+def load_repository_registry_text(source_text: str) -> RepositoryRegistry:
+    """Load a registry from already-verified UTF-8 text without weakening validation.
+
+    This entry point exists for immutable historical Git/GitHub evidence. It intentionally applies
+    the exact same schema, seed-preservation, identity and license gates as the filesystem loader.
+    """
+    try:
+        payload = json.loads(source_text)
+    except json.JSONDecodeError as exc:
+        raise RepositoryRegistryError("repository registry is not valid JSON") from exc
+    return _parse_repository_registry_payload(payload)
+
+
+def load_repository_registry(path: str | Path) -> RepositoryRegistry:
+    registry_path = Path(path)
+    return load_repository_registry_text(registry_path.read_text(encoding="utf-8"))
 
 
 def should_index_repository_path(path: str) -> bool:

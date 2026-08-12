@@ -29,6 +29,7 @@ class VoiceTtsLanguageArtifact:
     voice_id: str
     model_sha256: str
     config_sha256: str
+    tokens_sha256: str
     model_card_sha256: str
     artifact_license_id: str
     model_card_source: str
@@ -44,6 +45,7 @@ class VoiceTtsLanguageArtifact:
         for value, code in (
             (self.model_sha256, "voice_tts_bundle_model_hash_invalid"),
             (self.config_sha256, "voice_tts_bundle_config_hash_invalid"),
+            (self.tokens_sha256, "voice_tts_bundle_tokens_hash_invalid"),
             (self.model_card_sha256, "voice_tts_bundle_model_card_hash_invalid"),
         ):
             if not _valid_sha256(value):
@@ -64,6 +66,7 @@ class VoiceTtsLanguageArtifact:
                 "voice_id": self.voice_id.strip(),
                 "model_sha256": self.model_sha256,
                 "config_sha256": self.config_sha256,
+                "tokens_sha256": self.tokens_sha256,
                 "model_card_sha256": self.model_card_sha256,
                 "artifact_license_id": self.artifact_license_id.strip().lower(),
                 "model_card_source": self.model_card_source,
@@ -77,6 +80,9 @@ class VoiceTtsArtifactBundle:
     bundle_version: str
     runtime_adapter_id: str
     voice_identity_id: str
+    phonemizer_data_manifest_fingerprint: str
+    phonemizer_license_id: str
+    phonemizer_source: str
     artifacts: tuple[VoiceTtsLanguageArtifact, ...]
 
     def validate(self) -> None:
@@ -86,6 +92,11 @@ class VoiceTtsArtifactBundle:
             raise ValueError("voice_tts_bundle_runtime_adapter_required")
         if len(self.voice_identity_id.strip()) < 3:
             raise ValueError("voice_tts_bundle_voice_identity_required")
+        if not _valid_sha256(self.phonemizer_data_manifest_fingerprint):
+            raise ValueError("voice_tts_bundle_phonemizer_manifest_invalid")
+        if not self.phonemizer_source.startswith("https://"):
+            raise ValueError("voice_tts_bundle_phonemizer_source_required")
+        assert_model_license_allowed(self.phonemizer_license_id)
         if not self.artifacts:
             raise ValueError("voice_tts_bundle_artifacts_required")
         for artifact in self.artifacts:
@@ -111,6 +122,9 @@ class VoiceTtsArtifactBundle:
                 "bundle_version": self.bundle_version.strip(),
                 "runtime_adapter_id": self.runtime_adapter_id.strip(),
                 "voice_identity_id": self.voice_identity_id.strip(),
+                "phonemizer_data_manifest_fingerprint": self.phonemizer_data_manifest_fingerprint,
+                "phonemizer_license_id": self.phonemizer_license_id.strip().lower(),
+                "phonemizer_source": self.phonemizer_source,
                 "artifacts": [
                     {"language": item.language.strip().lower(), "fingerprint": item.fingerprint}
                     for item in ordered
@@ -145,6 +159,7 @@ class VoiceTtsLanguageExecutionIdentity:
     voice_id_sha256: str
     model_sha256: str
     config_sha256: str
+    tokens_sha256: str
     model_card_sha256: str
     artifact_license_id_sha256: str
     artifact_fingerprint: str
@@ -157,6 +172,7 @@ class VoiceTtsLanguageExecutionIdentity:
             (self.voice_id_sha256, "voice_tts_execution_voice_id_hash_invalid"),
             (self.model_sha256, "voice_tts_execution_model_hash_invalid"),
             (self.config_sha256, "voice_tts_execution_config_hash_invalid"),
+            (self.tokens_sha256, "voice_tts_execution_tokens_hash_invalid"),
             (self.model_card_sha256, "voice_tts_execution_model_card_hash_invalid"),
             (self.artifact_license_id_sha256, "voice_tts_execution_license_hash_invalid"),
             (self.artifact_fingerprint, "voice_tts_execution_artifact_fingerprint_invalid"),
@@ -173,6 +189,9 @@ class VoiceTtsBundleExecutionIdentity:
     runtime_adapter_id: str
     runtime_adapter_promotion_fingerprint: str
     profile_fingerprint: str
+    phonemizer_data_manifest_fingerprint: str
+    phonemizer_license_id_sha256: str
+    phonemizer_source_sha256: str
     language_artifacts: tuple[VoiceTtsLanguageExecutionIdentity, ...]
     fingerprint: str
 
@@ -182,6 +201,9 @@ class VoiceTtsBundleExecutionIdentity:
             (self.bundle_promotion_fingerprint, "voice_tts_execution_bundle_promotion_invalid"),
             (self.runtime_adapter_promotion_fingerprint, "voice_tts_execution_runtime_promotion_invalid"),
             (self.profile_fingerprint, "voice_tts_execution_profile_fingerprint_invalid"),
+            (self.phonemizer_data_manifest_fingerprint, "voice_tts_execution_phonemizer_manifest_invalid"),
+            (self.phonemizer_license_id_sha256, "voice_tts_execution_phonemizer_license_invalid"),
+            (self.phonemizer_source_sha256, "voice_tts_execution_phonemizer_source_invalid"),
             (self.fingerprint, "voice_tts_execution_bundle_identity_invalid"),
         ):
             if not _valid_sha256(value):
@@ -228,6 +250,7 @@ def seal_tts_bundle_execution_identity(
             "voice_id_sha256": hashlib.sha256(artifact.voice_id.strip().encode("utf-8")).hexdigest(),
             "model_sha256": artifact.model_sha256,
             "config_sha256": artifact.config_sha256,
+            "tokens_sha256": artifact.tokens_sha256,
             "model_card_sha256": artifact.model_card_sha256,
             "artifact_license_id_sha256": hashlib.sha256(
                 artifact.artifact_license_id.strip().lower().encode("utf-8")
@@ -244,6 +267,11 @@ def seal_tts_bundle_execution_identity(
         "runtime_adapter_id": bundle.runtime_adapter_id,
         "runtime_adapter_promotion_fingerprint": promotion.runtime_adapter_promotion_fingerprint,
         "profile_fingerprint": promotion.profile_fingerprint,
+        "phonemizer_data_manifest_fingerprint": bundle.phonemizer_data_manifest_fingerprint,
+        "phonemizer_license_id_sha256": hashlib.sha256(
+            bundle.phonemizer_license_id.strip().lower().encode("utf-8")
+        ).hexdigest(),
+        "phonemizer_source_sha256": hashlib.sha256(bundle.phonemizer_source.encode("utf-8")).hexdigest(),
         "language_artifact_fingerprints": tuple(item.fingerprint for item in language_identities),
     }
     identity = VoiceTtsBundleExecutionIdentity(
@@ -252,6 +280,9 @@ def seal_tts_bundle_execution_identity(
         runtime_adapter_id=bundle.runtime_adapter_id,
         runtime_adapter_promotion_fingerprint=promotion.runtime_adapter_promotion_fingerprint,
         profile_fingerprint=promotion.profile_fingerprint,
+        phonemizer_data_manifest_fingerprint=bundle.phonemizer_data_manifest_fingerprint,
+        phonemizer_license_id_sha256=payload["phonemizer_license_id_sha256"],
+        phonemizer_source_sha256=payload["phonemizer_source_sha256"],
         language_artifacts=tuple(language_identities),
         fingerprint=_sha256(payload),
     )
@@ -260,12 +291,12 @@ def seal_tts_bundle_execution_identity(
 
 
 class VoiceTtsBundlePromotionRegistry:
-    """Human-gated promotion for exact per-language TTS voice artifacts.
+    """Human-gated promotion for exact per-language TTS voice artifacts and resources.
 
     The existing TTS adapter promotion remains the runtime/adapter gate. This registry
-    adds the missing voice-weight layer: each core language must pin its own model,
-    config, model-card bytes and allow-listed artifact license before the bundle can be
-    used by a deployment.
+    adds the voice-weight/resource layer: every core language pins model, config,
+    tokens, model-card bytes and artifact license, while the bundle separately pins the
+    shared phonemizer resource manifest and its license/source provenance.
     """
 
     def __init__(self, db_path: Path):

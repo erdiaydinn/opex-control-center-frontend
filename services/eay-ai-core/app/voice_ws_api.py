@@ -250,7 +250,11 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                         "tts_language_artifact_fingerprint",
                         "tts_voice_model_sha256",
                         "tts_voice_config_sha256",
+                        "tts_voice_tokens_sha256",
                         "tts_voice_model_card_sha256",
+                        "tts_phonemizer_data_manifest_fingerprint",
+                        "tts_phonemizer_license_id_sha256",
+                        "tts_phonemizer_source_sha256",
                     }.intersection(payload)
                     if forbidden_tts_overrides:
                         raise ValueError("voice_ws_tts_server_binding_override_forbidden")
@@ -306,7 +310,11 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                             "tts_language_artifact_fingerprint": proof.tts_language_artifact_fingerprint,
                             "tts_voice_model_sha256": proof.tts_voice_model_sha256,
                             "tts_voice_config_sha256": proof.tts_voice_config_sha256,
+                            "tts_voice_tokens_sha256": proof.tts_voice_tokens_sha256,
                             "tts_voice_model_card_sha256": proof.tts_voice_model_card_sha256,
+                            "tts_phonemizer_data_manifest_fingerprint": proof.tts_phonemizer_data_manifest_fingerprint,
+                            "tts_phonemizer_license_id_sha256": proof.tts_phonemizer_license_id_sha256,
+                            "tts_phonemizer_source_sha256": proof.tts_phonemizer_source_sha256,
                             "task_request_fingerprint": lease.request_fingerprint,
                         }
                     )

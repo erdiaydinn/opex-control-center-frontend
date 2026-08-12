@@ -1,0 +1,136 @@
+name: Jarvis Tenant Query Context CI
+
+on:
+  push:
+    branches:
+      - platform-core/eay-v2-jarvis-tenant-query-context
+  pull_request:
+    branches:
+      - platform-core/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-tenant-query-context-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tenant-query-context-security:
+    name: Tenant query context security
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_query_context_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_query_context_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_query_context_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_query_context_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Lint tenant query context slice
+        run: >-
+          ruff check
+          services/core-api/app/ai_tenant_query_context_routes.py
+          services/core-api/app/core/ai_tenant_query_context.py
+          services/core-api/tests/test_ai_tenant_query_context.py
+          services/core-api/tests/test_ai_tenant_query_context_integration.py
+          services/core-api/alembic/versions/0010_ai_tenant_query_context.py
+      - name: Test unit and route contracts
+        run: >-
+          pytest -q
+          services/core-api/tests/test_ai_tenant_query_context.py
+          services/core-api/tests/test_ai_query_contract_policy.py
+          services/core-api/tests/test_jarvis_execution_contract.py
+      - name: Verify tenant query context route is published
+        working-directory: services/core-api
+        run: |
+          python - <<'PY'
+          import app.main as main_module
+          from app.ai_tenant_query_context_routes import router
+
+          expected = {"/v1/admin/ai-query-context"}
+          own_paths = {
+              route.path
+              for route in router.routes
+              if getattr(route, "path", None) is not None
+          }
+          openapi_paths = set(main_module.app.openapi().get("paths", {}))
+
+          assert expected <= own_paths, (
+              f"Tenant query context router is missing: {sorted(expected - own_paths)}"
+          )
+          assert expected <= openapi_paths, (
+              f"Core app did not publish tenant query context route: "
+              f"{sorted(expected - openapi_paths)}"
+          )
+          PY
+      - name: Create RLS-bound runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_query_context_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Apply migrations through tenant query context
+        working-directory: services/core-api
+        run: alembic upgrade 0010_ai_tenant_query_context
+      - name: Test RLS atomic audit and SQL boundary
+        run: >-
+          pytest -q
+          services/core-api/tests/test_ai_tenant_query_context_integration.py
+          services/core-api/tests/test_sql_access_boundary.py
+      - name: Verify migration head
+        working-directory: services/core-api
+        run: |
+          current="$(alembic current)"
+          echo "$current"
+          grep -F "0010_ai_tenant_query_context (head)" <<< "$current"

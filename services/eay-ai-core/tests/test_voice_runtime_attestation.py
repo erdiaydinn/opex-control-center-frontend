@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 
+import app.voice_runtime_attestation as attestation
 from app.voice_adapter_candidates import candidate_by_id
 from app.voice_adapter_promotion import VoiceAdapterPromotion, adapter_fingerprint
 from app.voice_runtime_attestation import (
@@ -145,4 +146,18 @@ def test_runtime_directory_manifest_rejects_nested_symlink(tmp_path):
     except (OSError, NotImplementedError):
         pytest.skip("symlink unavailable")
     with pytest.raises(ValueError, match="voice_runtime_directory_symlink_forbidden"):
+        seal_runtime_directory_manifest(root, logical_name="espeak-ng-data")
+
+
+def test_runtime_directory_manifest_fails_closed_on_walk_error(tmp_path, monkeypatch):
+    root = tmp_path / "espeak-ng-data"
+    root.mkdir()
+    (root / "phontab").write_bytes(b"seed")
+
+    def broken_walk(path, *, topdown, onerror, followlinks):
+        onerror(PermissionError("denied"))
+        return iter(())
+
+    monkeypatch.setattr(attestation.os, "walk", broken_walk)
+    with pytest.raises(ValueError, match="voice_runtime_directory_walk_failed"):
         seal_runtime_directory_manifest(root, logical_name="espeak-ng-data")

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,6 +62,28 @@ class VoiceRuntimeArtifactSeal:
     promotion_fingerprint: str
     deployment_manifest_fingerprint: str
     fingerprint: str
+
+    def validate(self) -> None:
+        if len(self.candidate_id.strip()) < 3 or len(self.adapter_id.strip()) < 3:
+            raise ValueError("voice_runtime_seal_identity_invalid")
+        if self.kind not in {"wakeword", "vad", "stt", "tts"}:
+            raise ValueError("voice_runtime_seal_kind_invalid")
+        if len(self.implementation.strip()) < 3:
+            raise ValueError("voice_runtime_seal_implementation_invalid")
+        assert_model_license_allowed(self.runtime_license_id)
+        assert_model_license_allowed(self.artifact_license_id)
+        if self.runtime_artifact_size_bytes <= 0:
+            raise ValueError("voice_runtime_seal_size_invalid")
+        for value, code in (
+            (self.runtime_artifact_sha256, "voice_runtime_seal_runtime_hash_invalid"),
+            (self.model_or_voice_artifact_sha256, "voice_runtime_seal_model_hash_invalid"),
+            (self.adapter_fingerprint, "voice_runtime_seal_adapter_fingerprint_invalid"),
+            (self.promotion_fingerprint, "voice_runtime_seal_promotion_fingerprint_invalid"),
+            (self.deployment_manifest_fingerprint, "voice_runtime_seal_manifest_invalid"),
+            (self.fingerprint, "voice_runtime_seal_fingerprint_invalid"),
+        ):
+            if not _valid_sha256(value):
+                raise ValueError(code)
 
 
 def seal_local_voice_runtime(
@@ -126,4 +147,6 @@ def seal_local_voice_runtime(
         "promotion_fingerprint": promotion.fingerprint,
         "deployment_manifest_fingerprint": deployment_manifest_fingerprint,
     }
-    return VoiceRuntimeArtifactSeal(**payload, fingerprint=_sha256(payload))
+    seal = VoiceRuntimeArtifactSeal(**payload, fingerprint=_sha256(payload))
+    seal.validate()
+    return seal

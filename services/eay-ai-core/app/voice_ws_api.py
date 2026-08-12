@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .voice_async_runtime import VoiceAsyncExecutionCoordinator
 from .voice_deployment_binding import require_voice_deployment_bindings
+from .voice_input_lineage import VoiceInputLineageTracker
 from .voice_realtime_controller import VoiceRealtimeSessionController
 from .voice_response_lineage import VoiceResponseGenerationProof
 from .voice_ws_protocol import VoiceWsSequenceGuard, seal_envelope
@@ -36,24 +37,42 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
     """Governed local-first voice control plane pinned to one verified deployment."""
     try:
         bindings = require_voice_deployment_bindings(revalidate=True)
+        session_manifest_fingerprint = bindings.deployment_manifest_fingerprint
+
+        def _fresh_manifest_fingerprint() -> str:
+            current = require_voice_deployment_bindings(revalidate=True)
+            if current.deployment_manifest_fingerprint != session_manifest_fingerprint:
+                raise ValueError("voice_session_deployment_manifest_drift")
+            return current.deployment_manifest_fingerprint
+
         controller = VoiceRealtimeSessionController(session_id=session_id, language=language)
-        coordinator = VoiceAsyncExecutionCoordinator(controller=controller)
+        coordinator = VoiceAsyncExecutionCoordinator(
+            controller=controller,
+            deployment_manifest_fingerprint=session_manifest_fingerprint,
+            deployment_freshness_check=_fresh_manifest_fingerprint,
+        )
+        input_lineage = VoiceInputLineageTracker(
+            session_id=session_id,
+            language=language,
+            deployment_manifest_fingerprint=session_manifest_fingerprint,
+            wakeword_identity_fingerprint=bindings.wakeword_identity_fingerprint,
+            vad_identity_fingerprint=bindings.vad_identity_fingerprint,
+            stt_identity_fingerprint=bindings.stt_identity_fingerprint,
+        )
     except ValueError as exc:
         await websocket.close(code=1008, reason=str(exc))
         return
 
-    session_manifest_fingerprint = bindings.deployment_manifest_fingerprint
     guard = VoiceWsSequenceGuard()
     latest_user_input_sha256: str | None = None
+    latest_input_lineage_fingerprint: str | None = None
     response_proofs: dict[str, VoiceResponseGenerationProof] = {}
     await websocket.accept()
     await websocket.send_json({"event": "ready", "session_id": session_id, "language": language, "protocol_version": "eay-voice-ws-v1", "turn_epoch": coordinator.turn_epoch, "deployment_manifest_fingerprint": session_manifest_fingerprint})
 
     def _fresh_bindings():
-        current = require_voice_deployment_bindings(revalidate=True)
-        if current.deployment_manifest_fingerprint != session_manifest_fingerprint:
-            raise ValueError("voice_session_deployment_manifest_drift")
-        return current
+        _fresh_manifest_fingerprint()
+        return require_voice_deployment_bindings(revalidate=True)
 
     try:
         while True:
@@ -76,12 +95,18 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                 guard.accept(envelope)
 
                 if event == "wake":
+                    _fresh_bindings()
                     controller.streaming.wake()
+                    wake_proof = input_lineage.seal_wake()
                     response = _response_payload(controller, coordinator, event="listening")
+                    response["wake_input_proof_fingerprint"] = wake_proof.fingerprint
                 elif event == "audio_frame":
                     from .voice_streaming import AudioFrame
-                    controller.streaming.push_audio(AudioFrame(sequence=int(payload["frame_sequence"]), pcm_sha256=_require_sha256(payload["pcm_sha256"], "voice_ws_pcm_hash_invalid"), duration_ms=int(payload["duration_ms"]), sample_rate_hz=int(payload["sample_rate_hz"])))
+                    frame = AudioFrame(sequence=int(payload["frame_sequence"]), pcm_sha256=_require_sha256(payload["pcm_sha256"], "voice_ws_pcm_hash_invalid"), duration_ms=int(payload["duration_ms"]), sample_rate_hz=int(payload["sample_rate_hz"]))
+                    controller.streaming.push_audio(frame)
+                    frame_proof = input_lineage.seal_audio_frame(frame)
                     response = _response_payload(controller, coordinator, event="listening")
+                    response["audio_frame_proof_fingerprint"] = frame_proof.fingerprint
                 elif event == "stt_partial":
                     digest = _require_sha256(payload.get("text_sha256"), "voice_ws_stt_hash_invalid")
                     response = _response_payload(controller, coordinator, event="listening")
@@ -89,13 +114,18 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                 elif event == "stt_final":
                     _fresh_bindings()
                     digest = _require_sha256(payload.get("text_sha256"), "voice_ws_stt_hash_invalid")
+                    input_proof = input_lineage.seal_stt_final(text_sha256=digest)
                     controller.memory.append(role="user", text=digest, token_estimate=max(1, int(payload.get("token_estimate", 1))))
                     controller.streaming.machine.end_utterance()
                     coordinator.start_turn()
                     latest_user_input_sha256 = digest
+                    latest_input_lineage_fingerprint = input_proof.fingerprint
                     response_proofs.clear()
                     response = _response_payload(controller, coordinator, event="thinking")
                     response["stt_final_sha256"] = digest
+                    response["input_lineage_fingerprint"] = input_proof.fingerprint
+                    response["input_audio_chain_fingerprint"] = input_proof.audio_chain_fingerprint
+                    response["input_audio_frame_count"] = input_proof.audio_frame_count
                 elif event == "task_start":
                     task_id = str(payload.get("task_id", ""))
                     kind = str(payload.get("kind", ""))
@@ -107,7 +137,7 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                     response.update({"task_id": lease.task_id, "task_kind": lease.kind, "task_turn_epoch": lease.turn_epoch, "task_request_fingerprint": lease.request_fingerprint})
                 elif event == "response_start":
                     bindings = _fresh_bindings()
-                    if latest_user_input_sha256 is None:
+                    if latest_user_input_sha256 is None or latest_input_lineage_fingerprint is None:
                         raise ValueError("voice_ws_response_user_input_missing")
                     supplied_user_input = _require_sha256(payload.get("user_input_sha256"), "voice_ws_response_user_input_invalid")
                     if supplied_user_input != latest_user_input_sha256:
@@ -122,11 +152,11 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                         legal_fp = _require_sha256(legal_fp, "voice_ws_response_legal_context_invalid")
                     if kpi_fp is not None:
                         kpi_fp = _require_sha256(kpi_fp, "voice_ws_response_kpi_context_invalid")
-                    proof = coordinator.seal_response_generation(user_input_sha256=supplied_user_input, deployment_manifest_fingerprint=session_manifest_fingerprint, model_execution_identity=bindings.model, tool_task_ids=tuple(raw_tool_ids), legal_context_fingerprint=legal_fp, kpi_context_fingerprint=kpi_fp)
+                    proof = coordinator.seal_response_generation(user_input_sha256=supplied_user_input, input_lineage_fingerprint=latest_input_lineage_fingerprint, deployment_manifest_fingerprint=session_manifest_fingerprint, model_execution_identity=bindings.model, tool_task_ids=tuple(raw_tool_ids), legal_context_fingerprint=legal_fp, kpi_context_fingerprint=kpi_fp)
                     response_proofs[proof.fingerprint] = proof
                     lease, _ = coordinator.start_task(task_id=task_id, kind="model", request_fingerprint=proof.fingerprint, cancellable=True)
                     response = _response_payload(controller, coordinator, event="response_started")
-                    response.update({"task_id": lease.task_id, "response_proof_fingerprint": proof.fingerprint, "deployment_manifest_fingerprint": proof.deployment_manifest_fingerprint, "model_execution_identity_fingerprint": proof.model_execution_identity_fingerprint, "model_artifact_sha256": proof.model_artifact_sha256, "task_request_fingerprint": lease.request_fingerprint})
+                    response.update({"task_id": lease.task_id, "response_proof_fingerprint": proof.fingerprint, "input_lineage_fingerprint": proof.input_lineage_fingerprint, "deployment_manifest_fingerprint": proof.deployment_manifest_fingerprint, "model_execution_identity_fingerprint": proof.model_execution_identity_fingerprint, "model_artifact_sha256": proof.model_artifact_sha256, "task_request_fingerprint": lease.request_fingerprint})
                 elif event == "tts_start":
                     bindings = _fresh_bindings()
                     task_id = str(payload.get("task_id", ""))
@@ -141,6 +171,7 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                     response = _response_payload(controller, coordinator, event="tts_started")
                     response.update({"task_id": lease.task_id, "tts_proof_fingerprint": proof.fingerprint, "response_proof_fingerprint": proof.response_proof_fingerprint, "deployment_manifest_fingerprint": proof.deployment_manifest_fingerprint, "tts_execution_identity_fingerprint": proof.tts_execution_identity_fingerprint, "tts_adapter_artifact_sha256": proof.tts_adapter_artifact_sha256, "tts_adapter_promotion_fingerprint": proof.tts_adapter_promotion_fingerprint, "task_request_fingerprint": lease.request_fingerprint})
                 elif event == "task_result":
+                    _fresh_bindings()
                     task_id = str(payload.get("task_id", ""))
                     result_sha256 = _require_sha256(payload.get("result_sha256"), "voice_ws_task_result_fingerprint_invalid")
                     lease = coordinator.lease_for(task_id)
@@ -157,6 +188,8 @@ async def voice_websocket(websocket: WebSocket, session_id: str, language: str =
                 elif event == "barge_in":
                     cancelled_ids = coordinator.cancel_for_barge_in()
                     response_proofs.clear()
+                    latest_user_input_sha256 = None
+                    latest_input_lineage_fingerprint = None
                     response = _response_payload(controller, coordinator, event="cancelled")
                     response["cancelled_task_ids_sha256"] = hashlib.sha256(json.dumps(cancelled_ids, separators=(",", ":")).encode("utf-8")).hexdigest()
                 elif event == "approval":

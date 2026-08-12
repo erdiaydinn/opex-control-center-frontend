@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai_data_scope_admin_routes import router as ai_data_scope_admin_router
 from app.core.ai_data_scope import AiDataScope
+from app.core.ai_query_contract_policy import (
+    AiQueryContractPolicyError,
+    get_ai_query_contract_policy,
+    require_ai_query_contract_ready,
+)
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolAccessDenied,
@@ -25,6 +30,7 @@ from app.core.ai_tool_grants import (
     RedisAiToolGrantStore,
 )
 from app.core.audit import build_audit_event
+from app.core.config import get_settings
 from app.core.jarvis_service_identity import VerifiedJarvisService
 from app.core.jarvis_service_security import require_fresh_jarvis_service
 from app.core.resources import redis_client, write_audit_event
@@ -55,6 +61,10 @@ class AiToolGrantIssueResponse(BaseModel):
     expires_in_seconds: int
     tool: AiToolName
     data_scope_fingerprint: str
+    query_contract_id: str
+    query_contract_revision: int
+    query_contract_fingerprint: str
+    execution_scope_fingerprint: str
 
 
 class InternalAiToolAuthorizationRequest(BaseModel):
@@ -80,6 +90,10 @@ class InternalAiToolAuthorizationResponse(BaseModel):
     granted_scopes: tuple[str, ...]
     data_scope: AiDataScope
     data_scope_fingerprint: str
+    query_contract_id: str
+    query_contract_revision: int
+    query_contract_fingerprint: str
+    execution_scope_fingerprint: str
     authorization_fingerprint: str
     arguments_sha256: str
     reason_sha256: str
@@ -96,6 +110,13 @@ def _ai_tool_grant_failed() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="AI tool grant authentication failed",
+    )
+
+
+def _query_contract_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="AI tool execution contract is not ready",
     )
 
 
@@ -132,8 +153,17 @@ async def issue_ai_tool_grant(
         ) from exc
 
     try:
+        query_policy = require_ai_query_contract_ready(
+            tool=payload.tool,
+            environment=get_settings().environment,
+        )
+    except AiQueryContractPolicyError as exc:
+        raise _query_contract_unavailable() from exc
+
+    try:
         issued = await _ai_tool_grant_store.issue(
             capability,
+            query_policy=query_policy,
             arguments=payload.arguments,
             reason=payload.reason,
         )
@@ -148,6 +178,7 @@ async def issue_ai_tool_grant(
             detail="AI tool grant authority is unavailable",
         ) from exc
 
+    binding = issued.binding
     return AiToolGrantIssueResponse(
         request_id=request.state.request_id,
         grant_token=issued.token.get_secret_value(),
@@ -155,6 +186,16 @@ async def issue_ai_tool_grant(
         tool=capability.tool,
         data_scope_fingerprint=(
             capability.data_scope_fingerprint
+        ),
+        query_contract_id=binding.query_contract_id,
+        query_contract_revision=(
+            binding.query_contract_revision
+        ),
+        query_contract_fingerprint=(
+            binding.query_contract_fingerprint
+        ),
+        execution_scope_fingerprint=(
+            binding.execution_scope_fingerprint
         ),
     )
 
@@ -175,10 +216,18 @@ async def authorize_internal_ai_tool_execution(
     """Consume a user grant and return one trusted execution context."""
 
     try:
+        query_policy = get_ai_query_contract_policy(
+            payload.tool
+        )
+    except AiQueryContractPolicyError as exc:
+        raise _query_contract_unavailable() from exc
+
+    try:
         binding = await (
             _ai_tool_grant_store.consume_authorized_invocation(
                 token=payload.grant_token,
                 tool=payload.tool,
+                query_policy=query_policy,
                 arguments=payload.arguments,
                 reason=payload.reason,
             )
@@ -194,6 +243,17 @@ async def authorize_internal_ai_tool_execution(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI tool grant authority is unavailable",
         ) from exc
+
+    # This check deliberately happens after atomic grant consumption. If a
+    # reviewed downstream contract is withdrawn while a grant is outstanding,
+    # the stale grant is burned instead of remaining reusable.
+    try:
+        require_ai_query_contract_ready(
+            tool=payload.tool,
+            environment=get_settings().environment,
+        )
+    except AiQueryContractPolicyError as exc:
+        raise _query_contract_unavailable() from exc
 
     audit_event = build_audit_event(
         request_id=request.state.request_id,
@@ -221,6 +281,18 @@ async def authorize_internal_ai_tool_execution(
             "data_scope_store_count": len(
                 binding.data_scope.store_names
             ),
+            "query_contract_id": (
+                binding.query_contract_id
+            ),
+            "query_contract_revision": (
+                binding.query_contract_revision
+            ),
+            "query_contract_fingerprint": (
+                binding.query_contract_fingerprint
+            ),
+            "execution_scope_fingerprint": (
+                binding.execution_scope_fingerprint
+            ),
         },
     )
 
@@ -246,6 +318,16 @@ async def authorize_internal_ai_tool_execution(
         data_scope=binding.data_scope,
         data_scope_fingerprint=(
             binding.data_scope_fingerprint
+        ),
+        query_contract_id=binding.query_contract_id,
+        query_contract_revision=(
+            binding.query_contract_revision
+        ),
+        query_contract_fingerprint=(
+            binding.query_contract_fingerprint
+        ),
+        execution_scope_fingerprint=(
+            binding.execution_scope_fingerprint
         ),
         authorization_fingerprint=(
             binding.authorization_fingerprint

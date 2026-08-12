@@ -22,7 +22,16 @@ class RepositoryMemoryStoreError(RuntimeError):
 
 def _snapshot_from_payload(payload: dict) -> RepositoryReviewSnapshot:
     try:
-        files = tuple(RepositoryFileFact(**fact) for fact in payload["files"])
+        files = tuple(
+            RepositoryFileFact(
+                path=fact["path"],
+                blob_sha=fact["blob_sha"],
+                symbols=tuple(fact.get("symbols", ())),
+                contracts=tuple(fact.get("contracts", ())),
+                content_sha256=fact.get("content_sha256"),
+            )
+            for fact in payload["files"]
+        )
         return RepositoryReviewSnapshot(
             schema_version=payload["schema_version"],
             registry_fingerprint=payload["registry_fingerprint"],

@@ -312,7 +312,7 @@ def test_route_dependencies_keep_user_and_machine_auth_separate() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "request",
+    "http_request",
     [
         request_for("/v1/ai/tool-executions", idempotency_key=None),
         request_for(
@@ -327,13 +327,13 @@ def test_route_dependencies_keep_user_and_machine_auth_separate() -> None:
 )
 async def test_execution_requires_exactly_one_valid_idempotency_key(
     monkeypatch: pytest.MonkeyPatch,
-    request: Request,
+    http_request: Request,
 ) -> None:
     _, broker, idempotency = install_execution_fakes(monkeypatch)
     with pytest.raises(HTTPException) as exc_info:
         await routes.execute_ai_tool(
             execution_payload(),
-            request,
+            http_request,
             principal_with_ops_permission(),
         )
     assert exc_info.value.status_code == 400

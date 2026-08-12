@@ -1,5 +1,5 @@
-from uuid import UUID
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
@@ -91,7 +91,7 @@ async def test_admit_uses_one_atomic_script_with_only_hashed_scope_keys() -> Non
     assert all(str(TENANT) not in key for key in redis_keys)
     assert all(ACTOR not in key for key in redis_keys)
     assert lease.lease_ttl_seconds == 45
-    assert "**********" == str(lease.token)
+    assert str(lease.token) == "**********"
 
 
 @pytest.mark.parametrize(

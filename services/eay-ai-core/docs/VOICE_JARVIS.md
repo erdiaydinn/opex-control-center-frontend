@@ -43,7 +43,18 @@ The current Piper engine itself is GPL-3.0 and is not in EAY's default permissiv
 
 This is a best-effort application-memory boundary, not a claim that Python, native libraries or the operating system can erase every copy they may internally create. Executable adapters must therefore remain local and must not persist or transmit audio outside the governed runtime.
 
-`PinnedLocalVadAdapter` and `PinnedLocalSttAdapter` are the first executable in-memory adapter boundary. They require a validated runtime-artifact seal and the same deployment manifest as the audio data plane. VAD returns only probability/hash lineage and deliberately leaves audio buffered for STT. STT returns transient text to the caller while its provenance/audit identity is the text SHA-256; raw transcript text is not part of the sealed execution fingerprint.
+`PinnedLocalVadAdapter` and `PinnedLocalSttAdapter` are the in-memory adapter boundary. They require a validated runtime-artifact seal and the same deployment manifest as the audio data plane. VAD returns only probability/hash lineage and deliberately leaves audio buffered for STT. STT returns transient text to the caller while its provenance/audit identity is the text SHA-256; raw transcript text is not part of the sealed execution fingerprint.
+
+## Concrete native VAD and STT engines
+
+`voice_native_engines.py` now implements the first real local execution path rather than only Protocol interfaces.
+
+- `SileroOnnxVadEngine` re-hashes the exact ONNX model before session construction, requires the current upstream `input/state/sr` contract, uses CPU ONNX Runtime locally and passes PCM directly from RAM. EAY uses exact 512-sample windows at 16 kHz, matching the upstream streaming wrapper contract. Recurrent state/context are recreated per governed score call so raw utterance context is not retained across callbacks.
+- `WhisperCppSttEngine` passes PCM16 directly in memory to an EAY-owned stable C ABI shim. The shim uses whisper.cpp's public `whisper_full()` PCM API rather than creating a temporary WAV file. The exact model and exact shim shared-library bytes are re-hashed before execution.
+- `native/eay_whisper_shim.cpp` must be built with whisper.cpp statically linked into the attested shared-library artifact. A separately drifting dynamic libwhisper is not an eligible production build because its bytes would not be covered by the runtime seal.
+- The optional `voice-onnx` dependency group contains NumPy + ONNX Runtime for the concrete Silero path. Production still requires exact downloaded model hashes, promotion evidence and runtime attestation; installing an optional dependency alone grants no production eligibility.
+
+`VoiceLocalInputPipeline` composes the RAM data plane, frame-by-frame `VoiceInputLineageTracker`, pinned VAD, pinned STT and transient transcript handling. It requires speech to have been detected before finalization, consumes/wipes all utterance PCM through STT, and returns a hash-only end-to-end utterance proof binding wake proof, microphone chain, VAD result, STT result, STT runtime seal and text SHA-256.
 
 ## Privacy-preserving session audit
 
@@ -51,6 +62,6 @@ This is a best-effort application-memory boundary, not a claim that Python, nati
 
 ## Current runtime state
 
-The governed runtime now includes WebSocket sequencing/replay protection, bounded conversation memory, full-duplex/barge-in cancellation, single-use approval tokens, tool execution provenance, deployment freshness checks, model/TTS response lineage, microphone-to-STT hash lineage, a bounded RAM-only PCM data plane, exact runtime-binary attestation, and pinned in-memory VAD/STT execution interfaces.
+The governed runtime now includes WebSocket sequencing/replay protection, bounded conversation memory, full-duplex/barge-in cancellation, single-use approval tokens, tool execution provenance, deployment freshness checks, model/TTS response lineage, microphone-to-STT hash lineage, a bounded RAM-only PCM data plane, exact runtime-binary attestation, concrete Silero ONNX VAD, an in-memory whisper.cpp C-ABI STT path, and an end-to-end local microphone/VAD/STT coordinator.
 
-The next implementation layer is the concrete engine binding: a hash-pinned Silero ONNX VAD engine and a hash-pinned Whisper-compatible STT engine must be wired into the in-memory adapter interfaces without creating audio temp files. After that, EAY needs a commercially clean custom wake-word path and per-language TTS artifact bundles for TR/EN/DE/AR/FA. No adapter becomes production-ready until real latency, accuracy/naturalness, barge-in and multilingual consistency evals pass the existing human-gated release path.
+The next implementation layer is production packaging and voice output: build reproducible hash-pinned native artifacts for the Silero/whisper paths, bind them to deployment startup without auto-downloading models, then implement per-language TTS artifact bundles for TR/EN/DE/AR/FA. Wake-word remains custom-artifact gated. No adapter becomes production-ready until real latency, accuracy/naturalness, barge-in and multilingual consistency evals pass the existing human-gated release path.

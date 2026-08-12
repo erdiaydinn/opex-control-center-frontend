@@ -31,6 +31,7 @@ class VoiceResponseGenerationProof:
     session_id: str
     turn_epoch: int
     user_input_sha256: str
+    input_lineage_fingerprint: str
     accepted_tool_result_fingerprints: tuple[str, ...]
     governed_tool_provenance_fingerprints: tuple[str, ...]
     legal_context_fingerprint: str | None
@@ -60,6 +61,7 @@ def seal_response_generation_proof(
     session_id: str,
     turn_epoch: int,
     user_input_sha256: str,
+    input_lineage_fingerprint: str,
     deployment_manifest_fingerprint: str,
     model_execution_identity: VoiceModelExecutionIdentity,
     accepted_tool_results: Iterable[AcceptedResultLike] = (),
@@ -73,6 +75,8 @@ def seal_response_generation_proof(
         raise ValueError("voice_response_turn_epoch_invalid")
     if not _valid_sha256(user_input_sha256):
         raise ValueError("voice_response_user_input_fingerprint_invalid")
+    if not _valid_sha256(input_lineage_fingerprint):
+        raise ValueError("voice_response_input_lineage_required")
     if not _valid_sha256(deployment_manifest_fingerprint):
         raise ValueError("voice_response_deployment_manifest_required")
     if not _valid_sha256(model_execution_identity.fingerprint):
@@ -106,6 +110,7 @@ def seal_response_generation_proof(
         "session_id": session_id,
         "turn_epoch": turn_epoch,
         "user_input_sha256": user_input_sha256,
+        "input_lineage_fingerprint": input_lineage_fingerprint,
         "accepted_tool_result_fingerprints": tuple(sorted(accepted_fps)),
         "governed_tool_provenance_fingerprints": tuple(sorted(governed_fps)),
         "legal_context_fingerprint": legal_context_fingerprint,

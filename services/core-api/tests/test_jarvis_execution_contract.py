@@ -78,7 +78,7 @@ def test_mutating_internal_ai_routes_require_fresh_jarvis_identity() -> None:
 
 def valid_binding_fields() -> dict[str, object]:
     return {
-        "version": 2,
+        "version": 3,
         "tenant_id": "11111111-1111-4111-8111-111111111111",
         "actor_subject": "user-1",
         "tool": "ops_kpi_query",
@@ -87,6 +87,10 @@ def valid_binding_fields() -> dict[str, object]:
             "store_names": ["Fulya"],
         },
         "data_scope_fingerprint": "d" * 64,
+        "query_contract_id": "ops.kpi.orders.v1",
+        "query_contract_revision": 1,
+        "query_contract_fingerprint": "e" * 64,
+        "execution_scope_fingerprint": "f" * 64,
         "arguments_sha256": "a" * 64,
         "reason_sha256": "b" * 64,
         "authorization_fingerprint": "c" * 64,
@@ -95,26 +99,35 @@ def valid_binding_fields() -> dict[str, object]:
 
 def test_grant_binding_schema_rejects_unknown_version() -> None:
     fields = valid_binding_fields()
-    fields["version"] = 3
+    fields["version"] = 4
 
     with pytest.raises(ValidationError):
         AiToolGrantBinding.model_validate(fields)
 
 
-def test_grant_binding_schema_rejects_old_unscoped_version() -> None:
-    fields = valid_binding_fields()
-    fields["version"] = 1
+def test_grant_binding_schema_rejects_old_versions() -> None:
+    for old_version in (1, 2):
+        fields = valid_binding_fields()
+        fields["version"] = old_version
 
-    with pytest.raises(ValidationError):
-        AiToolGrantBinding.model_validate(fields)
+        with pytest.raises(ValidationError):
+            AiToolGrantBinding.model_validate(fields)
 
 
-def test_grant_binding_requires_trusted_data_scope() -> None:
-    fields = valid_binding_fields()
-    del fields["data_scope"]
+def test_grant_binding_requires_trusted_data_and_query_contract() -> None:
+    for field in (
+        "data_scope",
+        "data_scope_fingerprint",
+        "query_contract_id",
+        "query_contract_revision",
+        "query_contract_fingerprint",
+        "execution_scope_fingerprint",
+    ):
+        fields = valid_binding_fields()
+        del fields[field]
 
-    with pytest.raises(ValidationError):
-        AiToolGrantBinding.model_validate(fields)
+        with pytest.raises(ValidationError):
+            AiToolGrantBinding.model_validate(fields)
 
 
 def test_grant_binding_schema_rejects_unreviewed_tool() -> None:

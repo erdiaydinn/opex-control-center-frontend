@@ -112,7 +112,7 @@ class PlatformToolAuthorizerSettings:
         )
 
 
-def _arguments_sha256(arguments: dict[str, Any]) -> str:
+def tool_arguments_sha256(arguments: dict[str, Any]) -> str:
     encoded = json.dumps(
         arguments,
         sort_keys=True,
@@ -123,7 +123,7 @@ def _arguments_sha256(arguments: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _reason_sha256(reason: str) -> str:
+def tool_reason_sha256(reason: str) -> str:
     normalized = " ".join(reason.split())
 
     if not normalized or len(normalized) > 1000:
@@ -134,6 +134,43 @@ def _reason_sha256(reason: str) -> str:
     return hashlib.sha256(
         normalized.encode("utf-8")
     ).hexdigest()
+
+
+def validate_trusted_tool_execution_context(
+    context: TrustedToolExecutionContext,
+    *,
+    plan: ToolPlan,
+    reason: str,
+) -> None:
+    """Revalidate trusted Platform context at the executor boundary."""
+
+    if not REQUEST_ID_PATTERN.fullmatch(context.request_id):
+        raise PlatformToolAuthorizationContractError(
+            "Platform request ID is invalid"
+        )
+
+    if context.tool != plan.tool:
+        raise PlatformToolAuthorizationContractError(
+            "Platform authorized a different tool"
+        )
+
+    expected_scopes = tuple(sorted(SCOPES[plan.tool]))
+    if tuple(sorted(context.granted_scopes)) != expected_scopes:
+        raise PlatformToolAuthorizationContractError(
+            "Platform authorized unexpected scopes"
+        )
+
+    if context.arguments_sha256 != tool_arguments_sha256(
+        plan.arguments
+    ):
+        raise PlatformToolAuthorizationContractError(
+            "Platform authorized different arguments"
+        )
+
+    if context.reason_sha256 != tool_reason_sha256(reason):
+        raise PlatformToolAuthorizationContractError(
+            "Platform authorized a different execution reason"
+        )
 
 
 class PlatformToolAuthorizer:
@@ -169,14 +206,6 @@ class PlatformToolAuthorizer:
             raise PlatformToolAuthorizationContractError(
                 "Tool plan is not safe for governed execution"
             )
-
-        expected_scopes = tuple(
-            sorted(SCOPES[plan.tool])
-        )
-        expected_arguments_sha256 = _arguments_sha256(
-            plan.arguments
-        )
-        expected_reason_sha256 = _reason_sha256(reason)
 
         payload = {
             "grant_token": grant_token,
@@ -218,7 +247,7 @@ class PlatformToolAuthorizer:
             if owns_client:
                 await client.aclose()
 
-        if response.status_code == 401:
+        if response.status_code in {401, 403}:
             raise PlatformToolAuthorizationDenied(
                 "Platform rejected the grant or invocation"
             )
@@ -239,8 +268,7 @@ class PlatformToolAuthorizer:
 
         if response.status_code != 200:
             raise PlatformToolAuthorizationContractError(
-                f"Unexpected Platform authorization status: "
-                f"{response.status_code}"
+                "Unexpected Platform authorization status"
             )
 
         try:
@@ -252,29 +280,9 @@ class PlatformToolAuthorizer:
                 "Platform authorization response is invalid"
             ) from exc
 
-        if not REQUEST_ID_PATTERN.fullmatch(context.request_id):
-            raise PlatformToolAuthorizationContractError(
-                "Platform request ID is invalid"
-            )
-
-        if context.tool != plan.tool:
-            raise PlatformToolAuthorizationContractError(
-                "Platform authorized a different tool"
-            )
-
-        if tuple(sorted(context.granted_scopes)) != expected_scopes:
-            raise PlatformToolAuthorizationContractError(
-                "Platform authorized unexpected scopes"
-            )
-
-        if context.arguments_sha256 != expected_arguments_sha256:
-            raise PlatformToolAuthorizationContractError(
-                "Platform authorized different arguments"
-            )
-
-        if context.reason_sha256 != expected_reason_sha256:
-            raise PlatformToolAuthorizationContractError(
-                "Platform authorized a different execution reason"
-            )
-
+        validate_trusted_tool_execution_context(
+            context,
+            plan=plan,
+            reason=reason,
+        )
         return context

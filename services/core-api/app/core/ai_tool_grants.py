@@ -24,6 +24,10 @@ from app.core.ai_tool_authorization import (
     AiToolCapability,
     AiToolName,
 )
+from app.core.jarvis_safety_policy import (
+    JarvisSafetyPolicyDenied,
+    execution_envelope,
+)
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
@@ -61,6 +65,7 @@ class AiToolGrantBinding(BaseModel):
     arguments_sha256: str = Field(pattern=SHA256_PATTERN)
     reason_sha256: str = Field(pattern=SHA256_PATTERN)
     authorization_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    safety_policy_fingerprint: str = Field(pattern=SHA256_PATTERN)
 
 
 class IssuedAiToolGrant(BaseModel):
@@ -126,6 +131,20 @@ def canonical_reason_sha256(reason: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _safety_policy_fingerprint(
+    tool: AiToolName,
+    *,
+    arguments: Mapping[str, Any],
+) -> str:
+    try:
+        return execution_envelope(
+            tool,
+            arguments=arguments,
+        ).safety_policy_fingerprint
+    except JarvisSafetyPolicyDenied as exc:
+        raise AiToolGrantInvalid("AI tool invocation violates safety policy") from exc
+
+
 def build_ai_tool_grant_binding(
     capability: AiToolCapability,
     *,
@@ -139,6 +158,10 @@ def build_ai_tool_grant_binding(
         arguments_sha256=canonical_arguments_sha256(arguments),
         reason_sha256=canonical_reason_sha256(reason),
         authorization_fingerprint=capability.authorization_fingerprint,
+        safety_policy_fingerprint=_safety_policy_fingerprint(
+            capability.tool,
+            arguments=arguments,
+        ),
     )
 
 
@@ -258,12 +281,17 @@ class RedisAiToolGrantStore:
 
         arguments_sha256 = canonical_arguments_sha256(arguments)
         reason_sha256 = canonical_reason_sha256(reason)
+        safety_policy_fingerprint = _safety_policy_fingerprint(
+            tool,  # type: ignore[arg-type]
+            arguments=arguments,
+        )
         stored = await self._consume_stored_binding(token=token)
 
         if (
             stored.tool != tool
             or stored.arguments_sha256 != arguments_sha256
             or stored.reason_sha256 != reason_sha256
+            or stored.safety_policy_fingerprint != safety_policy_fingerprint
         ):
             raise AiToolGrantBindingMismatch("AI tool grant binding does not match")
 

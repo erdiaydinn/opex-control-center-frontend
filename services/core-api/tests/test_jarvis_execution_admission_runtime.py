@@ -9,6 +9,7 @@ from redis.asyncio import Redis
 from app.core.config import get_settings
 from app.core.jarvis_execution_admission import (
     JarvisAdmissionConcurrencyLimited,
+    JarvisAdmissionInvalid,
     JarvisAdmissionUnavailable,
     JarvisControlConflict,
     JarvisEmergencyHalt,
@@ -77,12 +78,18 @@ async def test_runtime_admission_is_atomic_fail_closed_and_emergency_stoppable()
                 request_timeout_seconds=30,
             )
 
-        assert (
+        with pytest.raises(JarvisAdmissionInvalid, match="staged recovery"):
             await store.change_control_mode(
                 expected_mode="halted",
                 new_mode="enabled",
             )
-            == "enabled"
+
+        assert (
+            await store.change_control_mode(
+                expected_mode="halted",
+                new_mode="read_only",
+            )
+            == "read_only"
         )
 
         with pytest.raises(JarvisControlConflict):
@@ -90,6 +97,14 @@ async def test_runtime_admission_is_atomic_fail_closed_and_emergency_stoppable()
                 expected_mode="halted",
                 new_mode="read_only",
             )
+
+        assert (
+            await store.change_control_mode(
+                expected_mode="read_only",
+                new_mode="enabled",
+            )
+            == "enabled"
+        )
 
         first = await store.acquire(
             tenant_id=TENANT,

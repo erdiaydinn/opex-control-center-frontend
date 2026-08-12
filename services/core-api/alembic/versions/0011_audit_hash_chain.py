@@ -25,7 +25,10 @@ GENESIS_HASH = "0" * 64
 
 
 def upgrade() -> None:
-    op.add_column("audit_events", sa.Column("chain_sequence", sa.BigInteger(), nullable=True))
+    op.add_column(
+        "audit_events",
+        sa.Column("chain_sequence", sa.BigInteger(), nullable=True),
+    )
     op.add_column(
         "audit_events",
         sa.Column("previous_event_hash", sa.String(length=64), nullable=True),
@@ -34,9 +37,17 @@ def upgrade() -> None:
         "audit_events",
         sa.Column("event_hash", sa.String(length=64), nullable=True),
     )
-    op.add_column("audit_events", sa.Column("event_payload", sa.Text(), nullable=True))
+    op.add_column(
+        "audit_events",
+        sa.Column("event_payload", sa.Text(), nullable=True),
+    )
 
+    # Backfill must see every tenant while runtime traffic is excluded. FORCE
+    # RLS also applies to the table owner, so temporarily relax FORCE only
+    # under an ACCESS EXCLUSIVE lock inside this migration transaction. RLS is
+    # immediately forced again before the transaction can commit.
     op.execute("LOCK TABLE public.audit_events IN ACCESS EXCLUSIVE MODE")
+    op.execute("ALTER TABLE public.audit_events NO FORCE ROW LEVEL SECURITY")
 
     op.execute(
         r"""
@@ -54,7 +65,6 @@ def upgrade() -> None:
         ) RETURNS text
         LANGUAGE sql
         IMMUTABLE
-        STRICT
         SET search_path = pg_catalog, public
         AS $$
             SELECT jsonb_build_object(
@@ -103,10 +113,12 @@ def upgrade() -> None:
         """
     )
 
-    # The existing append-only trigger intentionally blocks UPDATE. Migrations
-    # run before the service starts, so take an exclusive lock and temporarily
-    # disable only that trigger for deterministic one-time backfill.
-    op.execute("ALTER TABLE public.audit_events DISABLE TRIGGER audit_events_append_only")
+    # The existing append-only trigger intentionally blocks UPDATE. Runtime is
+    # excluded by the table lock, so only this deterministic migration
+    # backfill may temporarily bypass that trigger.
+    op.execute(
+        "ALTER TABLE public.audit_events DISABLE TRIGGER audit_events_append_only"
+    )
     op.execute(
         rf"""
         DO $$
@@ -166,7 +178,10 @@ def upgrade() -> None:
         $$
         """
     )
-    op.execute("ALTER TABLE public.audit_events ENABLE TRIGGER audit_events_append_only")
+    op.execute(
+        "ALTER TABLE public.audit_events ENABLE TRIGGER audit_events_append_only"
+    )
+    op.execute("ALTER TABLE public.audit_events FORCE ROW LEVEL SECURITY")
 
     op.execute(
         "ALTER TABLE public.audit_events ALTER COLUMN chain_sequence SET NOT NULL"
@@ -174,8 +189,12 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE public.audit_events ALTER COLUMN previous_event_hash SET NOT NULL"
     )
-    op.execute("ALTER TABLE public.audit_events ALTER COLUMN event_hash SET NOT NULL")
-    op.execute("ALTER TABLE public.audit_events ALTER COLUMN event_payload SET NOT NULL")
+    op.execute(
+        "ALTER TABLE public.audit_events ALTER COLUMN event_hash SET NOT NULL"
+    )
+    op.execute(
+        "ALTER TABLE public.audit_events ALTER COLUMN event_payload SET NOT NULL"
+    )
 
     op.create_check_constraint(
         "ck_audit_events_chain_sequence_positive",
@@ -264,33 +283,53 @@ def upgrade() -> None:
         """
     )
 
-    op.execute("REVOKE EXECUTE ON FUNCTION public.audit_event_payload_v1(uuid, uuid, text, text, text, text, text, text, jsonb, timestamptz) FROM PUBLIC")
-    op.execute("REVOKE EXECUTE ON FUNCTION public.audit_event_hash_v1(bigint, text, text) FROM PUBLIC")
-    op.execute("REVOKE EXECUTE ON FUNCTION public.seal_audit_event_v1() FROM PUBLIC")
-    op.execute(
-        f"GRANT EXECUTE ON FUNCTION public.audit_event_payload_v1(uuid, uuid, text, text, text, text, text, text, jsonb, timestamptz) TO {RUNTIME_ROLE}"
+    payload_signature = (
+        "public.audit_event_payload_v1(uuid, uuid, text, text, text, text, "
+        "text, text, jsonb, timestamptz)"
     )
-    op.execute(
-        f"GRANT EXECUTE ON FUNCTION public.audit_event_hash_v1(bigint, text, text) TO {RUNTIME_ROLE}"
-    )
-    op.execute(f"GRANT EXECUTE ON FUNCTION public.seal_audit_event_v1() TO {RUNTIME_ROLE}")
+    hash_signature = "public.audit_event_hash_v1(bigint, text, text)"
+    seal_signature = "public.seal_audit_event_v1()"
+
+    for signature in (payload_signature, hash_signature, seal_signature):
+        op.execute(f"REVOKE EXECUTE ON FUNCTION {signature} FROM PUBLIC")
+
+    # The trigger function executes as invoker and calls the payload/hash
+    # helpers, so runtime needs only these helper EXECUTEs in addition to its
+    # existing SELECT+INSERT table privileges. The trigger itself does not
+    # need to be a generally callable runtime primitive.
+    op.execute(f"GRANT EXECUTE ON FUNCTION {payload_signature} TO {RUNTIME_ROLE}")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {hash_signature} TO {RUNTIME_ROLE}")
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS audit_events_hash_chain ON public.audit_events")
-    op.execute("DROP FUNCTION IF EXISTS public.seal_audit_event_v1()")
-    op.execute("DROP FUNCTION IF EXISTS public.audit_event_hash_v1(bigint, text, text)")
     op.execute(
-        "DROP FUNCTION IF EXISTS public.audit_event_payload_v1(uuid, uuid, text, text, text, text, text, text, jsonb, timestamptz)"
+        "DROP TRIGGER IF EXISTS audit_events_hash_chain ON public.audit_events"
+    )
+    op.execute("DROP FUNCTION IF EXISTS public.seal_audit_event_v1()")
+    op.execute(
+        "DROP FUNCTION IF EXISTS public.audit_event_hash_v1(bigint, text, text)"
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS "
+        "public.audit_event_payload_v1(uuid, uuid, text, text, text, text, "
+        "text, text, jsonb, timestamptz)"
     )
 
-    op.drop_constraint("uq_audit_events_tenant_event_hash", "audit_events", type_="unique")
+    op.drop_constraint(
+        "uq_audit_events_tenant_event_hash",
+        "audit_events",
+        type_="unique",
+    )
     op.drop_constraint(
         "uq_audit_events_tenant_chain_sequence",
         "audit_events",
         type_="unique",
     )
-    op.drop_constraint("ck_audit_events_event_hash_hex", "audit_events", type_="check")
+    op.drop_constraint(
+        "ck_audit_events_event_hash_hex",
+        "audit_events",
+        type_="check",
+    )
     op.drop_constraint(
         "ck_audit_events_previous_hash_hex",
         "audit_events",

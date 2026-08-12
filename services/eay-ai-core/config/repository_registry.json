@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "preserve_temporal_history": true,
+    "never_silently_drop": true,
+    "exclude_from_corpus": ["secrets", "tokens", "credentials", "private_keys", ".env", "generated_vendor_noise", "unnecessary_personal_data"],
+    "allowed_classes": ["OWN", "IMPORTED", "DISCOVERED"],
+    "allowed_decisions": ["ADOPT", "WATCH", "REFERENCE", "REJECT", "PENDING"]
+  },
+  "repositories": [
+    {"id":"erdiaydinn/opex-control-center-frontend","class":"OWN","canonical":"erdiaydinn/opex-control-center-frontend","capabilities":["platform","eay-ai-core","operations"],"decision":"ADOPT","identity_status":"VERIFIED"},
+    {"id":"erdiaydinn/planai-audit","class":"OWN","canonical":"erdiaydinn/planai-audit","capabilities":["planogram","visual-audit"],"decision":"ADOPT","identity_status":"VERIFIED"},
+    {"id":"erdiaydinn/Adaronya","class":"OWN","canonical":"erdiaydinn/Adaronya","capabilities":["project-memory"],"decision":"ADOPT","identity_status":"VERIFIED"},
+    {"id":"council-of-high-intelligence-main.zip","class":"IMPORTED","canonical":"0xNyk/council-of-high-intelligence","capabilities":["agent-orchestration","reasoning"],"decision":"REFERENCE","identity_status":"VERIFIED"},
+    {"id":"CL4R1T4S-main.zip","class":"IMPORTED","canonical":"elder-plinius/CL4R1T4S","capabilities":["agent-orchestration","research"],"decision":"REFERENCE","identity_status":"VERIFIED"},
+    {"id":"computer-lab-automation-master.zip","class":"IMPORTED","canonical":null,"capabilities":["workflow-automation"],"decision":"PENDING","identity_status":"UNRESOLVED"},
+    {"id":"Deep-Learning-Tutorials-master.zip","class":"IMPORTED","canonical":null,"capabilities":["learning","deep-learning"],"decision":"REFERENCE","identity_status":"UNRESOLVED"},
+    {"id":"impeccable-main.zip","class":"IMPORTED","canonical":null,"capabilities":["ui-ux-quality"],"decision":"REFERENCE","identity_status":"UNRESOLVED"},
+    {"id":"image_understanding","class":"IMPORTED","canonical":null,"capabilities":["vision","image-understanding"],"decision":"REFERENCE","identity_status":"UNRESOLVED"},
+    {"id":"image_understanding-tthau","class":"IMPORTED","canonical":null,"capabilities":["vision","image-understanding"],"decision":"REFERENCE","identity_status":"UNRESOLVED"},
+    {"id":"JARVIS_ARCHIVES","class":"IMPORTED","canonical":null,"capabilities":["assistant","orchestration","tool-use"],"decision":"REFERENCE","identity_status":"UNRESOLVED","notes":"Aggregate placeholder retained until every supplied archive is recovered individually."},
+    {"id":"apache/superset","class":"DISCOVERED","canonical":"apache/superset","capabilities":["analytics","bi","semantic-layer"],"decision":"WATCH","identity_status":"VERIFIED","relation":"CANONICAL_UPSTREAM"},
+    {"id":"Patika-Global-Technology/superset-tr","class":"DISCOVERED","canonical":"apache/superset","capabilities":["analytics","bi","localization"],"decision":"REFERENCE","identity_status":"VERIFIED","relation":"LOCALIZATION_DERIVATIVE"},
+    {"id":"DISCOVERED_LOCAL_LLM","class":"DISCOVERED","canonical":null,"capabilities":["local-llm","serving","routing"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_AGENT_ORCHESTRATION","class":"DISCOVERED","canonical":null,"capabilities":["agents","tool-calling"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_RAG","class":"DISCOVERED","canonical":null,"capabilities":["rag","retrieval","vector-search"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_EVALS","class":"DISCOVERED","canonical":null,"capabilities":["evaluation","benchmarking"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_OBSERVABILITY","class":"DISCOVERED","canonical":null,"capabilities":["observability","tracing"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_VISION_DOC","class":"DISCOVERED","canonical":null,"capabilities":["vision","document-understanding"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_MODEL_LIFECYCLE","class":"DISCOVERED","canonical":null,"capabilities":["model-registry","ml-lifecycle"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_WORKFLOW","class":"DISCOVERED","canonical":null,"capabilities":["workflow-automation"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_SECURITY","class":"DISCOVERED","canonical":null,"capabilities":["security","guardrails","sandboxing"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"},
+    {"id":"DISCOVERED_FINETUNING","class":"DISCOVERED","canonical":null,"capabilities":["lora","qlora","fine-tuning"],"decision":"PENDING","identity_status":"RECOVERY_REQUIRED"}
+  ]
+}

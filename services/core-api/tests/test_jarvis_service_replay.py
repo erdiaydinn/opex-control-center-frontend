@@ -117,16 +117,18 @@ async def test_verification_failure_never_touches_replay_store() -> None:
     guard = RedisJarvisServiceReplayGuard(redis)
     settings = JarvisServiceVerifierSettings(jwks_file="unused.json")
 
-    with patch(
-        "app.core.jarvis_service_replay.verify_jarvis_service_assertion",
-        side_effect=JarvisServiceAssertionInvalid("bad assertion"),
+    with (
+        patch(
+            "app.core.jarvis_service_replay.verify_jarvis_service_assertion",
+            side_effect=JarvisServiceAssertionInvalid("bad assertion"),
+        ),
+        pytest.raises(JarvisServiceAssertionInvalid),
     ):
-        with pytest.raises(JarvisServiceAssertionInvalid):
-            await verify_and_consume_jarvis_service_assertion(
-                "bad-token",
-                settings,
-                guard,
-            )
+        await verify_and_consume_jarvis_service_assertion(
+            "bad-token",
+            settings,
+            guard,
+        )
 
     redis.set.assert_not_awaited()
 

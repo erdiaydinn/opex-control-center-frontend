@@ -110,14 +110,17 @@ jobs:
 
       - name: Verify opt-in Jarvis compose merge
         run: |
-          printf '%s\n' '{"keys":[{"kty":"EC","crv":"P-256","kid":"ci-only","use":"sig","alg":"ES256","x":"AA","y":"AA"}]}' > /tmp/jarvis-public-jwks.json
-          OPEX_JARVIS_SERVICE_JWKS_SOURCE_FILE=/tmp/jarvis-public-jwks.json \
+          mkdir -p /tmp/jarvis-trust
+          printf '%s\n' '{"keys":[{"kty":"EC","crv":"P-256","kid":"ci-only","use":"sig","alg":"ES256","x":"AA","y":"AA"}]}' > /tmp/jarvis-trust/jarvis-service.jwks.json
+          OPEX_JARVIS_SERVICE_JWKS_SOURCE_DIR=/tmp/jarvis-trust \
             docker compose \
               -f docker-compose.platform.yml \
               -f docker-compose.jarvis-trust.yml \
               config > /tmp/jarvis-compose.yml
           grep -q 'OPEX_JARVIS_SERVICE_ENABLED: "true"' /tmp/jarvis-compose.yml
-          grep -q 'OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: /run/secrets/jarvis_service_jwks' /tmp/jarvis-compose.yml
+          grep -q 'OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: /run/jarvis-trust/jarvis-service.jwks.json' /tmp/jarvis-compose.yml
+          grep -q 'target: /run/jarvis-trust' /tmp/jarvis-compose.yml
+          grep -q 'read_only: true' /tmp/jarvis-compose.yml
           if grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE' /tmp/jarvis-compose.yml; then
             echo 'private key wiring leaked into Platform Core compose' >&2
             exit 1

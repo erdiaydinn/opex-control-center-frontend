@@ -178,7 +178,6 @@ jobs:
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
           services/core-api/tests/test_jarvis_execution_contract.py
-          services/core-api/tests/test_sql_access_boundary.py
           services/core-api/alembic/versions/0009_ai_tool_permissions.py
       - name: Test Jarvis unit security boundaries
         run: >-

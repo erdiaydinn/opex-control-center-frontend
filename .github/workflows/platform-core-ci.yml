@@ -171,6 +171,7 @@ jobs:
           services/core-api/tests/test_ai_tool_routes.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
+          services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/alembic/versions/0009_ai_tool_permissions.py
       - name: Test Jarvis security boundaries
         run: >-
@@ -180,6 +181,7 @@ jobs:
           services/core-api/tests/test_ai_tool_routes.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
+          services/core-api/tests/test_jarvis_execution_contract.py
       - name: Verify Jarvis routes are registered
         working-directory: services/core-api
         run: |

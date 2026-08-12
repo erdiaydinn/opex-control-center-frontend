@@ -11,6 +11,7 @@ def _hash(ch: str) -> str:
 
 
 MANIFEST = _hash("0")
+INPUT_LINEAGE = _hash("f")
 
 
 def _model_identity() -> VoiceModelExecutionIdentity:
@@ -41,6 +42,7 @@ def _coordinator(tmp_path=None):
 def _response(coordinator, **kwargs):
     return coordinator.seal_response_generation(
         user_input_sha256=_hash("d"),
+        input_lineage_fingerprint=INPUT_LINEAGE,
         deployment_manifest_fingerprint=MANIFEST,
         model_execution_identity=_model_identity(),
         **kwargs,
@@ -54,12 +56,24 @@ def test_response_proof_binds_current_governed_tool_result(tmp_path):
     response = _response(coordinator, tool_task_ids=(accepted.task_id,), kpi_context_fingerprint=_hash("e"))
     assert response.turn_epoch == 1
     assert response.deployment_manifest_fingerprint == MANIFEST
+    assert response.input_lineage_fingerprint == INPUT_LINEAGE
     assert response.accepted_tool_result_fingerprints == (accepted.fingerprint,)
     assert response.governed_tool_provenance_fingerprints == (_hash("c"),)
     assert response.model_artifact_sha256 == _hash("1")
     assert response.model_execution_identity_fingerprint == _hash("5")
     assert len(response.fingerprint) == 64
     assert [event.event_type for event in ledger.verify_session("session-1")] == ["response_proof"]
+
+
+def test_response_requires_valid_input_lineage():
+    _, coordinator, _ = _coordinator()
+    with pytest.raises(ValueError, match="voice_response_input_lineage_required"):
+        coordinator.seal_response_generation(
+            user_input_sha256=_hash("d"),
+            input_lineage_fingerprint="bad",
+            deployment_manifest_fingerprint=MANIFEST,
+            model_execution_identity=_model_identity(),
+        )
 
 
 def test_stale_tool_result_cannot_feed_new_turn_response():

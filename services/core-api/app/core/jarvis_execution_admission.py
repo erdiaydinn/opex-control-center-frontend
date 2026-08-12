@@ -364,6 +364,33 @@ class RedisJarvisExecutionAdmissionStore:
             ) from exc
         return self._parse_control_write(response, expected_mode=new_mode)
 
+    async def require_control_allows(
+        self,
+        *,
+        side_effect_class: JarvisSideEffectClass,
+    ) -> JarvisControlMode:
+        if side_effect_class not in {"none", "read", "write", "irreversible"}:
+            raise JarvisAdmissionInvalid("Jarvis side-effect class is invalid")
+        try:
+            raw_mode = await self._redis.get(self.control_key)
+        except RedisError as exc:
+            raise JarvisAdmissionUnavailable(
+                "Jarvis control authority is unavailable"
+            ) from exc
+        if raw_mode is None:
+            raise JarvisAdmissionUnavailable("Jarvis control state is missing")
+
+        mode = _decode_reason(raw_mode)
+        if mode == "halted":
+            raise JarvisEmergencyHalt("Jarvis emergency stop is active")
+        if mode == "read_only":
+            if side_effect_class not in {"none", "read"}:
+                raise JarvisReadOnlyModeDenied("Jarvis runtime is read-only")
+            return "read_only"
+        if mode == "enabled":
+            return "enabled"
+        raise JarvisAdmissionUnavailable("Jarvis control state is invalid")
+
     @staticmethod
     def _parse_control_write(
         response: object,

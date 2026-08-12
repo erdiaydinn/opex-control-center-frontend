@@ -189,32 +189,24 @@ jobs:
           import app.main as main_module
           from app.ai_tool_routes import router as ai_tool_router
 
-          def collect_paths(routes):
-              paths = set()
-              for route in routes:
-                  path = getattr(route, "path", None)
-                  if path is not None:
-                      paths.add(path)
-                  nested = getattr(route, "routes", None)
-                  if nested is not None:
-                      paths.update(collect_paths(nested))
-              return paths
-
           expected = {
               "/v1/ai/tool-grants",
               "/internal/ai/tool-executions/authorize",
           }
-          app_paths = collect_paths(main_module.app.routes)
-          router_paths = collect_paths(ai_tool_router.routes)
-          missing = expected - app_paths
+          router_paths = {
+              route.path
+              for route in ai_tool_router.routes
+              if getattr(route, "path", None) is not None
+          }
+          openapi_paths = set(main_module.app.openapi().get("paths", {}))
+
           assert expected <= router_paths, (
               f"AI router contract is missing paths: {sorted(expected - router_paths)}; "
               f"router_paths={sorted(router_paths)}"
           )
-          assert not missing, (
-              f"Core app did not register Jarvis paths: {sorted(missing)}; "
-              f"main_file={main_module.__file__}; app_paths={sorted(app_paths)}; "
-              f"router_paths={sorted(router_paths)}"
+          assert expected <= openapi_paths, (
+              f"Core app did not register Jarvis paths: {sorted(expected - openapi_paths)}; "
+              f"main_file={main_module.__file__}; openapi_paths={sorted(openapi_paths)}"
           )
           PY
       - name: Create RLS-bound runtime role

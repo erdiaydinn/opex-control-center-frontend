@@ -1,7 +1,13 @@
 import pytest
 
 from app.bigquery_safe_executor import ExecutionAuditStore
+from app.platform_tool_authorizer import (
+    TrustedToolExecutionContext,
+    tool_arguments_sha256,
+    tool_reason_sha256,
+)
 from app.schema_contracts import get_schema_contract, verify_table_schema
+from app.tool_contracts import build_tool_plan
 from app.tool_execution import TemplateToolExecutionRequest, execute_with_adapter
 
 
@@ -20,7 +26,13 @@ class OpsAdapter:
 
     def execute(self, sql, parameters, *, timeout_ms, maximum_bytes_billed):
         self.last_sql = sql
-        return [{"date": "2026-08-10", "vendor_name": "Fulya", "orders": 42}]
+        return [
+            {
+                "date": "2026-08-10",
+                "vendor_name": "Fulya",
+                "orders": 42,
+            }
+        ]
 
 
 def _payload(execute=False):
@@ -33,10 +45,24 @@ def _payload(execute=False):
             "stores": ["Fulya"],
             "limit": 20,
         },
-        granted_scopes=["ops:read"],
+        grant_token="g" * 43,
         reason="orders review",
         execute=execute,
         maximum_bytes_billed=1000,
+    )
+
+
+def _trusted_context(payload):
+    plan = build_tool_plan(payload.tool, payload.arguments)
+    return TrustedToolExecutionContext(
+        request_id="platform-schema-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject="platform:user-1",
+        tool=plan.tool,
+        granted_scopes=tuple(plan.required_scope),
+        authorization_fingerprint="a" * 64,
+        arguments_sha256=tool_arguments_sha256(plan.arguments),
+        reason_sha256=tool_reason_sha256(payload.reason),
     )
 
 
@@ -85,8 +111,10 @@ def test_ops_execution_verifies_schema_before_dry_run(tmp_path):
             "extra": "BOOL",
         }
     )
+    payload = _payload()
     result = execute_with_adapter(
-        _payload(),
+        payload,
+        authorization_context=_trusted_context(payload),
         adapter=adapter,
         audit_store=ExecutionAuditStore(tmp_path / "eay.db"),
     )
@@ -103,9 +131,11 @@ def test_ops_execution_fails_closed_before_query_when_schema_drifts(tmp_path):
             "vendor_name": "STRING",
         }
     )
+    payload = _payload()
     with pytest.raises(ValueError, match="schema_contract_mismatch"):
         execute_with_adapter(
-            _payload(),
+            payload,
+            authorization_context=_trusted_context(payload),
             adapter=adapter,
             audit_store=ExecutionAuditStore(tmp_path / "eay.db"),
         )
@@ -120,9 +150,14 @@ def test_ops_execution_requires_schema_introspection(tmp_path):
         def execute(self, sql, parameters, *, timeout_ms, maximum_bytes_billed):
             raise AssertionError("execute must not happen")
 
-    with pytest.raises(ValueError, match="schema_introspection_not_supported"):
+    payload = _payload()
+    with pytest.raises(
+        ValueError,
+        match="schema_introspection_not_supported",
+    ):
         execute_with_adapter(
-            _payload(),
+            payload,
+            authorization_context=_trusted_context(payload),
             adapter=NoSchemaAdapter(),
             audit_store=ExecutionAuditStore(tmp_path / "eay.db"),
         )

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.ai_data_scope_admin_routes import router as ai_data_scope_admin_router
 from app.core.ai_data_scope import AiDataScope
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
@@ -30,6 +31,7 @@ from app.core.resources import redis_client, write_audit_event
 from app.core.security import Principal, get_current_principal
 
 router = APIRouter()
+router.include_router(ai_data_scope_admin_router)
 
 _ai_tool_grant_store = RedisAiToolGrantStore(
     redis_client

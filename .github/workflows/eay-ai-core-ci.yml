@@ -61,9 +61,13 @@ jobs:
           EAY_JARVIS_SERVICE_PRIVATE_KEY_SOURCE_FILE=/tmp/eay-jarvis-ci-private-key.pem \
           EAY_JARVIS_SERVICE_SIGNING_KID=ci-runtime-v1 \
             docker compose \
-              -f docker-compose.platform.yml \
               -f docker-compose.eay-ai-core.yml \
               --profile jarvis \
               config > /tmp/eay-ai-core-compose.yml
           grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE: /run/secrets/eay_jarvis_service_private_key' /tmp/eay-ai-core-compose.yml
           grep -q 'EAY_PLATFORM_CORE_BASE_URL: http://core-api:8000' /tmp/eay-ai-core-compose.yml
+          grep -q 'name: opex-platform_ai_plane' /tmp/eay-ai-core-compose.yml
+          if grep -q '^    ports:' /tmp/eay-ai-core-compose.yml; then
+            echo 'EAY AI Core unexpectedly publishes a host port' >&2
+            exit 1
+          fi

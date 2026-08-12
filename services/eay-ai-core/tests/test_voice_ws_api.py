@@ -14,7 +14,10 @@ def _hash(ch: str = "a") -> str:
     return ch * 64
 
 
-def _install_bindings(profile_fp: str = _hash("c")) -> None:
+MANIFEST = _hash("0")
+
+
+def _install_bindings(profile_fp: str = _hash("c"), manifest_fp: str = MANIFEST) -> None:
     model = VoiceModelExecutionIdentity(
         artifact_sha256=_hash("8"), artifact_provenance_fingerprint=_hash("9"),
         training_job_fingerprint=_hash("a"), artifact_format="gguf",
@@ -26,12 +29,15 @@ def _install_bindings(profile_fp: str = _hash("c")) -> None:
         promotion_fingerprint=_hash("2"), profile_fingerprint=profile_fp,
         language_capability_fingerprints=(_hash("3"),), fingerprint=_hash("4"),
     )
-    configure_voice_deployment_bindings(VoiceDeploymentExecutionBindings(model=model, tts=tts))
+    configure_voice_deployment_bindings(VoiceDeploymentExecutionBindings(
+        model=model, tts=tts, deployment_manifest_fingerprint=manifest_fp,
+    ))
 
 
 @pytest.fixture(autouse=True)
 def _reset_bindings():
     clear_voice_deployment_bindings()
+    _install_bindings()
     yield
     clear_voice_deployment_bindings()
 
@@ -43,10 +49,12 @@ def test_voice_websocket_wake_and_hashed_audio_flow():
         assert ready["event"] == "ready"
         assert ready["protocol_version"] == "eay-voice-ws-v1"
         assert ready["turn_epoch"] == 0
+        assert ready["deployment_manifest_fingerprint"] == MANIFEST
         ws.send_json({"event": "wake", "sequence": 0, "message_id": "msg-0", "payload": {}})
         listening = ws.receive_json()
         assert listening["event"] == "listening"
         assert listening["state"] == "listening"
+        assert listening["deployment_manifest_fingerprint"] == MANIFEST
         assert len(listening["envelope_fingerprint"]) == 64
         ws.send_json({"event": "audio_frame", "sequence": 1, "message_id": "msg-1", "payload": {"frame_sequence": 0, "pcm_sha256": _hash("b"), "duration_ms": 20, "sample_rate_hz": 16000}})
         frame = ws.receive_json()
@@ -80,6 +88,7 @@ def test_voice_websocket_stt_final_starts_governed_turn():
         assert result["memory_turn_count"] == 1
         assert result["stt_final_sha256"] == _hash("c")
         assert result["turn_epoch"] == 1
+        assert result["deployment_manifest_fingerprint"] == MANIFEST
 
 
 def test_voice_websocket_accepts_current_task_result_and_retires_task():
@@ -105,17 +114,15 @@ def test_voice_websocket_model_and_tts_generic_start_are_forbidden():
         assert ws.receive_json()["code"] == "voice_ws_proof_bound_start_required"
 
 
-def test_voice_websocket_spoken_response_requires_server_execution_binding():
+def test_voice_websocket_session_bootstrap_requires_server_deployment_manifest():
+    clear_voice_deployment_bindings()
     client = TestClient(app)
-    with client.websocket_connect("/v1/voice/ws/session-unbound?language=tr") as ws:
-        ws.receive_json(); ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}}); ws.receive_json()
-        ws.send_json({"event": "stt_final", "sequence": 1, "message_id": "m-1", "payload": {"text_sha256": _hash("a")}}); ws.receive_json()
-        ws.send_json({"event": "response_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "model-1", "user_input_sha256": _hash("a")}})
-        assert ws.receive_json()["code"] == "voice_execution_identity_unconfigured"
+    with pytest.raises(Exception):
+        with client.websocket_connect("/v1/voice/ws/session-unbound?language=tr"):
+            pass
 
 
 def test_voice_websocket_response_and_tts_are_exact_proof_bound():
-    _install_bindings()
     client = TestClient(app)
     with client.websocket_connect("/v1/voice/ws/session-proof-2?language=tr") as ws:
         ws.receive_json(); ws.send_json({"event": "wake", "sequence": 0, "message_id": "m-0", "payload": {}}); ws.receive_json()
@@ -123,6 +130,7 @@ def test_voice_websocket_response_and_tts_are_exact_proof_bound():
         ws.send_json({"event": "response_start", "sequence": 2, "message_id": "m-2", "payload": {"task_id": "model-1", "user_input_sha256": _hash("a")}})
         started = ws.receive_json()
         assert started["event"] == "response_started"
+        assert started["deployment_manifest_fingerprint"] == MANIFEST
         assert started["model_execution_identity_fingerprint"] == _hash("d")
         assert started["model_artifact_sha256"] == _hash("8")
         response_fp = started["response_proof_fingerprint"]
@@ -131,6 +139,7 @@ def test_voice_websocket_response_and_tts_are_exact_proof_bound():
         ws.send_json({"event": "tts_start", "sequence": 4, "message_id": "m-4", "payload": {"task_id": "tts-1", "response_proof_fingerprint": response_fp, "response_text_sha256": _hash("b"), "voice_profile_fingerprint": _hash("c")}})
         tts = ws.receive_json()
         assert tts["event"] == "tts_started"
+        assert tts["deployment_manifest_fingerprint"] == MANIFEST
         assert tts["tts_execution_identity_fingerprint"] == _hash("4")
         assert tts["tts_adapter_artifact_sha256"] == _hash("f")
         assert tts["tts_adapter_promotion_fingerprint"] == _hash("2")

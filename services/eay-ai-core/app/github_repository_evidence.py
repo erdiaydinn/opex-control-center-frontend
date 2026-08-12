@@ -4,7 +4,11 @@ import hashlib
 from dataclasses import dataclass
 from typing import Iterable
 
-from app.repository_intelligence import RepositoryRegistry
+from app.repository_intelligence import (
+    RepositoryRegistry,
+    RepositoryRegistryError,
+    load_repository_registry_text,
+)
 from app.repository_memory_store import AppendOnlyRepositoryMemoryStore
 from app.repository_review_ingestion import (
     FetchedRepositoryFileEvidence,
@@ -146,6 +150,45 @@ def build_verified_github_file_evidence(
     if not verified:
         raise GitHubRepositoryEvidenceError("at least one verified GitHub file is required")
     return tuple(verified)
+
+
+def load_verified_historical_registry_revision(
+    *,
+    resolved_ref: GitHubResolvedRefEvidence,
+    commit: GitHubCommitEvidence,
+    tree_entries: Iterable[GitHubTreeEntryEvidence],
+    registry_file: GitHubFetchedTextEvidence,
+    expected_path: str = "services/eay-ai-core/config/repository_intelligence_registry.json",
+) -> RepositoryRegistry:
+    """Load a historical registry only after exact GitHub commit/tree/blob verification.
+
+    Historical project memory must be interpreted against the registry revision that existed at
+    that reviewed commit, not today's registry. This helper makes that revision immutable evidence:
+    ref -> commit -> tree -> registry blob -> validated registry fingerprint. It accepts already-
+    fetched evidence only, performs no network access, and applies all current seed/license/identity
+    safety gates before returning a usable registry.
+    """
+    normalized_expected = expected_path.replace("\\", "/").strip("/")
+    if not normalized_expected:
+        raise GitHubRepositoryEvidenceError("historical registry path is required")
+    normalized_supplied = registry_file.path.replace("\\", "/").strip("/")
+    if normalized_supplied != normalized_expected:
+        raise GitHubRepositoryEvidenceError("historical registry path substitution detected")
+
+    verified = build_verified_github_file_evidence(
+        resolved_ref=resolved_ref,
+        commit=commit,
+        tree_entries=tree_entries,
+        files=(registry_file,),
+    )
+    evidence = verified[0]
+    if evidence.path != normalized_expected:
+        raise GitHubRepositoryEvidenceError("verified historical registry path mismatch")
+
+    try:
+        return load_repository_registry_text(evidence.source_text)
+    except RepositoryRegistryError as exc:
+        raise GitHubRepositoryEvidenceError("historical registry revision failed canonical validation") from exc
 
 
 def ingest_verified_github_repository_review(

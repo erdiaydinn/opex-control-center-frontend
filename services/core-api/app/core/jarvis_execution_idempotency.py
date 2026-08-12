@@ -207,7 +207,7 @@ class PostgresJarvisExecutionIdempotencyStore:
             idempotency_key=idempotency_key,
             request_fingerprint=request_fingerprint,
         )
-        statement = text(
+        reserve_statement = text(
             """
             INSERT INTO jarvis_execution_idempotency (
                 tenant_id,
@@ -253,8 +253,12 @@ class PostgresJarvisExecutionIdempotencyStore:
         try:
             async with self._engine.begin() as connection:
                 await self._set_tenant(connection, tenant_id)
-                result = await connection.execute(statement, values)
+                result = await connection.execute(
+                    reserve_statement,
+                    values,
+                )
                 row = result.mappings().first()
+                fresh_reservation = row is not None
                 if row is None:
                     existing_result = await connection.execute(
                         inspect_statement,
@@ -281,20 +285,11 @@ class PostgresJarvisExecutionIdempotencyStore:
                 "Stored Jarvis idempotency state is invalid"
             ) from exc
 
-        if existing.state == "reserved" and (
-            existing.request_fingerprint == request_fingerprint
-        ):
-            # A returned INSERT/expired-row replacement is a fresh reservation.
-            # An unexpired conflict reaches the SELECT path; distinguish it by
-            # whether INSERT returned a row.
-            if result.mappings().first() is not None:  # pragma: no cover
-                return existing
-
-        # Re-open a tiny tenant-scoped read to distinguish INSERT RETURNING
-        # without depending on SQLAlchemy result cursor re-consumption.
-        # The marker is derived from the first execution result above.
-        fresh = bool(getattr(result, "returns_rows", False) and row is not None)
-        if fresh and existing.request_fingerprint == request_fingerprint:
+        if fresh_reservation:
+            if existing.request_fingerprint != request_fingerprint:
+                raise JarvisIdempotencyUnavailable(
+                    "Fresh Jarvis idempotency fingerprint is inconsistent"
+                )
             return existing
 
         if existing.request_fingerprint != request_fingerprint:
@@ -382,14 +377,21 @@ class PostgresJarvisExecutionIdempotencyStore:
               AND idempotency_key_sha256 = :idempotency_key_sha256
               AND request_fingerprint = :request_fingerprint
               AND state = 'reserved'
+            RETURNING id
             """
         )
 
         try:
             async with self._engine.begin() as connection:
                 await self._set_tenant(connection, tenant_id)
-                await connection.execute(statement, values)
+                result = await connection.execute(statement, values)
+                deleted = result.scalar_one_or_none()
         except SQLAlchemyError as exc:
             raise JarvisIdempotencyUnavailable(
                 "Jarvis idempotency release is unavailable"
             ) from exc
+
+        if deleted is None:
+            raise JarvisIdempotencyUnavailable(
+                "Jarvis reserved idempotency state could not be released"
+            )

@@ -186,7 +186,11 @@ jobs:
           python - <<'PY'
           from app.main import app
 
-          paths = {route.path for route in app.routes}
+          paths = {
+              path
+              for route in app.routes
+              if (path := getattr(route, "path", None)) is not None
+          }
           assert "/v1/ai/tool-grants" in paths
           assert "/internal/ai/tool-executions/authorize" in paths
           PY

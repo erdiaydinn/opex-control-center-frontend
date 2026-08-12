@@ -18,7 +18,10 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from app.core.ai_tool_authorization import AiToolCapability
+from app.core.ai_tool_authorization import (
+    TOOL_REQUIRED_SCOPES,
+    AiToolCapability,
+)
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
@@ -212,6 +215,37 @@ class RedisAiToolGrantStore:
 
         return f"{self._key_prefix}:{digest}"
 
+    async def _consume_stored_binding(
+        self,
+        *,
+        token: str,
+    ) -> AiToolGrantBinding:
+        key = self._key(token)
+
+        try:
+            payload = await self._redis.getdel(key)
+        except RedisError as exc:
+            raise AiToolGrantUnavailable(
+                "AI tool grant authority is unavailable"
+            ) from exc
+
+        if payload is None:
+            raise AiToolGrantReplayOrExpired(
+                "AI tool grant is unavailable"
+            )
+
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8")
+
+        try:
+            return AiToolGrantBinding.model_validate_json(
+                payload
+            )
+        except (ValueError, TypeError) as exc:
+            raise AiToolGrantInvalid(
+                "Stored AI tool grant is invalid"
+            ) from exc
+
     async def issue(
         self,
         capability: AiToolCapability,
@@ -277,35 +311,57 @@ class RedisAiToolGrantStore:
             arguments=arguments,
             reason=reason,
         )
-        key = self._key(token)
-
-        try:
-            payload = await self._redis.getdel(key)
-        except RedisError as exc:
-            raise AiToolGrantUnavailable(
-                "AI tool grant authority is unavailable"
-            ) from exc
-
-        if payload is None:
-            raise AiToolGrantReplayOrExpired(
-                "AI tool grant is unavailable"
-            )
-
-        if isinstance(payload, bytes):
-            payload = payload.decode("utf-8")
-
-        try:
-            stored = AiToolGrantBinding.model_validate_json(
-                payload
-            )
-        except (ValueError, TypeError) as exc:
-            raise AiToolGrantInvalid(
-                "Stored AI tool grant is invalid"
-            ) from exc
+        stored = await self._consume_stored_binding(
+            token=token
+        )
 
         # GETDEL happens before comparison on purpose. A mismatched attempt
         # burns the grant instead of leaving a usable bearer capability.
         if stored != expected:
+            raise AiToolGrantBindingMismatch(
+                "AI tool grant binding does not match"
+            )
+
+        return stored
+
+    async def consume_authorized_invocation(
+        self,
+        *,
+        token: str,
+        tool: str,
+        arguments: Mapping[str, Any],
+        reason: str,
+    ) -> AiToolGrantBinding:
+        """Consume a Core-issued grant without trusting caller identity.
+
+        The tenant, actor and authorization fingerprint are recovered only
+        from the Redis record written during the authenticated issue flow.
+        The Jarvis caller can prove possession of the opaque token and must
+        reproduce the exact reviewed invocation, but cannot choose user
+        identity or permission scope.
+        """
+
+        if tool not in TOOL_REQUIRED_SCOPES:
+            raise AiToolGrantInvalid(
+                "AI tool is not supported"
+            )
+
+        arguments_sha256 = canonical_arguments_sha256(
+            arguments
+        )
+        reason_sha256 = canonical_reason_sha256(reason)
+
+        stored = await self._consume_stored_binding(
+            token=token
+        )
+
+        if (
+            stored.tool != tool
+            or stored.arguments_sha256
+            != arguments_sha256
+            or stored.reason_sha256
+            != reason_sha256
+        ):
             raise AiToolGrantBindingMismatch(
                 "AI tool grant binding does not match"
             )

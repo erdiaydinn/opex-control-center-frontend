@@ -78,6 +78,13 @@ def explicit_scope(*stores: str) -> dict[str, object]:
     }
 
 
+def ops_arguments(*stores: str) -> dict[str, object]:
+    return {
+        "metric": "orders",
+        "stores": list(stores or ("Fulya",)),
+    }
+
+
 def principal_with_ops_permission() -> Principal:
     permission = SCOPE_PERMISSION_KEYS[
         "ops:read"
@@ -93,8 +100,8 @@ def principal_with_ops_permission() -> Principal:
                 key=permission,
                 role_key="super_admin",
                 scope=explicit_scope(
-                    "Fulya",
                     "Anka",
+                    "Fulya",
                 ),
             ),
         ),
@@ -144,7 +151,7 @@ def test_request_models_reject_caller_authorization_smuggling() -> None:
             routes.AiToolGrantIssueRequest,
             {
                 "tool": "ops_kpi_query",
-                "arguments": {"metric": "orders"},
+                "arguments": ops_arguments(),
                 "reason": "read orders",
                 "data_scope": {"store_names": ["Other"]},
             },
@@ -154,7 +161,7 @@ def test_request_models_reject_caller_authorization_smuggling() -> None:
             {
                 "grant_token": "g" * 43,
                 "tool": "ops_kpi_query",
-                "arguments": {"metric": "orders"},
+                "arguments": ops_arguments(),
                 "reason": "read orders",
                 "tenant_id": str(TENANT),
             },
@@ -177,7 +184,7 @@ async def test_user_grant_issue_derives_capability_server_side(
 
     payload = routes.AiToolGrantIssueRequest(
         tool="ops_kpi_query",
-        arguments={"metric": "orders"},
+        arguments=ops_arguments("Fulya"),
         reason="read current orders",
     )
 
@@ -217,7 +224,7 @@ async def test_user_without_permission_cannot_issue_grant(
         await routes.issue_ai_tool_grant(
             routes.AiToolGrantIssueRequest(
                 tool="ops_kpi_query",
-                arguments={"metric": "orders"},
+                arguments=ops_arguments(),
                 reason="read current orders",
             ),
             request_for("/v1/ai/tool-grants"),
@@ -258,7 +265,7 @@ async def test_empty_data_scope_cannot_issue_grant(
         await routes.issue_ai_tool_grant(
             routes.AiToolGrantIssueRequest(
                 tool="ops_kpi_query",
-                arguments={"metric": "orders"},
+                arguments=ops_arguments(),
                 reason="read current orders",
             ),
             request_for("/v1/ai/tool-grants"),
@@ -267,6 +274,32 @@ async def test_empty_data_scope_cannot_issue_grant(
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "AI tool access denied"
+
+
+@pytest.mark.asyncio
+async def test_scope_exceeding_arguments_cannot_issue_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        routes,
+        "_ai_tool_grant_store",
+        store,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.issue_ai_tool_grant(
+            routes.AiToolGrantIssueRequest(
+                tool="ops_kpi_query",
+                arguments=ops_arguments("Dicle"),
+                reason="read current orders",
+            ),
+            request_for("/v1/ai/tool-grants"),
+            principal_with_ops_permission(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "AI tool request is invalid"
 
 
 @pytest.mark.asyncio
@@ -285,7 +318,7 @@ async def test_internal_authorization_recovers_identity_scope_and_writes_minimal
         principal,
         tool="ops_kpi_query",
     )
-    arguments = {"metric": "orders"}
+    arguments = ops_arguments("Fulya")
     reason = "read current orders"
 
     issued = await store.issue(
@@ -368,7 +401,7 @@ async def test_audit_failure_denies_execution_after_burning_grant(
         principal,
         tool="ops_kpi_query",
     )
-    arguments = {"metric": "orders"}
+    arguments = ops_arguments("Fulya")
     reason = "read current orders"
 
     issued = await store.issue(

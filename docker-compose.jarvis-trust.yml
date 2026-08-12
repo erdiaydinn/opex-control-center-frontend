@@ -1,20 +1,20 @@
 # Opt-in EAY Jarvis verification trust for Platform Core.
 #
-# Use this override only when a public JWKS exported from the EAY AI Core
-# private signing key is available on the host. The private key must never be
-# mounted into core-api or any browser/gateway container.
+# Public JWKS is mounted through a dedicated read-only directory so an atomic
+# host-side file replacement is visible to the running Core API during key
+# rotation. The AI Core private signing key must never be mounted here.
 services:
   core-api:
     environment:
       OPEX_JARVIS_SERVICE_ENABLED: "true"
       OPEX_JARVIS_SERVICE_ASSERTION_ISSUER: "${OPEX_JARVIS_SERVICE_ASSERTION_ISSUER:-eay-ai-core}"
       OPEX_JARVIS_SERVICE_ASSERTION_AUDIENCE: "${OPEX_JARVIS_SERVICE_ASSERTION_AUDIENCE:-opex-core-jarvis}"
-      OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: "/run/secrets/jarvis_service_jwks"
+      OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: "/run/jarvis-trust/jarvis-service.jwks.json"
       OPEX_JARVIS_SERVICE_ASSERTION_MAX_LIFETIME_SECONDS: "${OPEX_JARVIS_SERVICE_ASSERTION_MAX_LIFETIME_SECONDS:-30}"
-    secrets:
-      - source: jarvis_service_jwks
-        target: jarvis_service_jwks
-
-secrets:
-  jarvis_service_jwks:
-    file: "${OPEX_JARVIS_SERVICE_JWKS_SOURCE_FILE:?Set EAY Jarvis public JWKS source file path}"
+    volumes:
+      - type: bind
+        source: "${OPEX_JARVIS_SERVICE_JWKS_SOURCE_DIR:?Set dedicated EAY Jarvis public trust directory}"
+        target: /run/jarvis-trust
+        read_only: true
+        bind:
+          create_host_path: false

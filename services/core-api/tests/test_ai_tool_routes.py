@@ -162,6 +162,7 @@ class FakeBroker:
         tool: str,
         arguments: dict[str, object],
         reason: str,
+        execution_policy,
     ) -> BrokerToolExecutionResult:
         self.calls.append(
             {
@@ -169,6 +170,7 @@ class FakeBroker:
                 "tool": tool,
                 "arguments": arguments,
                 "reason": reason,
+                "execution_policy": execution_policy,
             }
         )
         if self.failure is not None:
@@ -182,7 +184,7 @@ class FakeBroker:
                     "execution_id": "execution-1",
                     "status": "executed",
                     "dry_run_bytes": 100,
-                    "maximum_bytes_billed": 250 * 1024 * 1024,
+                    "maximum_bytes_billed": execution_policy.maximum_bytes_billed,
                     "row_count": 1,
                     "rows": [{"orders": 5}],
                     "sql_sha256": "a" * 64,
@@ -372,6 +374,39 @@ async def test_broker_disabled_fails_before_reservation_audit_or_grant(
 
 
 @pytest.mark.asyncio
+async def test_safety_denial_happens_before_reservation_audit_grant_or_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis, broker, idempotency = install_execution_fakes(monkeypatch)
+    audit_calls = 0
+
+    def deny_policy(*args, **kwargs):
+        del args, kwargs
+        raise routes.JarvisSafetyPolicyDenied("blocked")
+
+    async def capture_audit(event):
+        nonlocal audit_calls
+        audit_calls += 1
+        del event
+
+    monkeypatch.setattr(routes, "execution_envelope", deny_policy)
+    monkeypatch.setattr(routes, "write_audit_event", capture_audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.execute_ai_tool(
+            execution_payload(),
+            request_for("/v1/ai/tool-executions"),
+            principal_with_ops_permission(),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert audit_calls == 0
+    assert idempotency.reserve_calls == 0
+    assert redis.values == {}
+    assert broker.calls == []
+
+
+@pytest.mark.asyncio
 async def test_request_audit_failure_releases_reservation_before_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -418,6 +453,12 @@ async def test_happy_path_dispatches_once_and_finishes_completed(
     assert len(audit_events) == 1
     metadata = audit_events[0]["metadata"]
     assert len(metadata["idempotency_request_fingerprint"]) == 64
+    assert len(metadata["safety_policy_fingerprint"]) == 64
+    assert metadata["safety_policy_version"] == 1
+    assert metadata["side_effect_class"] == "read"
+    assert broker.calls[0]["execution_policy"].safety_policy_fingerprint == metadata[
+        "safety_policy_fingerprint"
+    ]
     assert IDEMPOTENCY_KEY not in repr(audit_events)
 
 

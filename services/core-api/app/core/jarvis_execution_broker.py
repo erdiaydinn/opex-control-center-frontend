@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.ai_tool_authorization import TOOL_REQUIRED_SCOPES, AiToolName
+from app.core.jarvis_safety_policy import ToolExecutionEnvelope
 
 AI_CORE_EXECUTION_PATH = "/v1/tool-execution"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
@@ -159,6 +160,41 @@ class JarvisExecutionBroker:
                 "Jarvis execution broker is disabled"
             )
 
+    def _validate_execution_envelope(
+        self,
+        *,
+        tool: AiToolName,
+        execution_policy: ToolExecutionEnvelope,
+    ) -> None:
+        if execution_policy.tool != tool:
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis safety envelope tool does not match"
+            )
+        if execution_policy.side_effect_class not in {"none", "read"}:
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis broker refuses mutating safety envelopes"
+            )
+        if execution_policy.requires_human_approval:
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis broker cannot bypass required human approval"
+            )
+        if execution_policy.risk_class == "critical":
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis broker refuses critical auto-execution"
+            )
+        if execution_policy.maximum_bytes_billed > self._settings.maximum_bytes_billed:
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis safety byte budget exceeds broker ceiling"
+            )
+        if execution_policy.timeout_ms > self._settings.tool_timeout_ms:
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis safety timeout exceeds broker ceiling"
+            )
+        if execution_policy.max_rows > self._settings.max_rows:
+            raise JarvisExecutionBrokerContractError(
+                "Jarvis safety row budget exceeds broker ceiling"
+            )
+
     async def execute(
         self,
         *,
@@ -166,8 +202,13 @@ class JarvisExecutionBroker:
         tool: AiToolName,
         arguments: dict[str, Any],
         reason: str,
+        execution_policy: ToolExecutionEnvelope,
     ) -> BrokerToolExecutionResult:
         self.require_enabled()
+        self._validate_execution_envelope(
+            tool=tool,
+            execution_policy=execution_policy,
+        )
 
         if not isinstance(grant_token, str) or not 32 <= len(grant_token) <= 256:
             raise JarvisExecutionBrokerContractError(
@@ -180,9 +221,9 @@ class JarvisExecutionBroker:
             "grant_token": grant_token,
             "reason": reason,
             "execute": True,
-            "maximum_bytes_billed": self._settings.maximum_bytes_billed,
-            "timeout_ms": self._settings.tool_timeout_ms,
-            "max_rows": self._settings.max_rows,
+            "maximum_bytes_billed": execution_policy.maximum_bytes_billed,
+            "timeout_ms": execution_policy.timeout_ms,
+            "max_rows": execution_policy.max_rows,
         }
 
         owns_client = self._client is None
@@ -249,11 +290,11 @@ class JarvisExecutionBroker:
             raise JarvisExecutionBrokerContractError(
                 "AI Core returned a different tool"
             )
-        if result.execution.maximum_bytes_billed != self._settings.maximum_bytes_billed:
+        if result.execution.maximum_bytes_billed != execution_policy.maximum_bytes_billed:
             raise JarvisExecutionBrokerContractError(
                 "AI Core changed the server-owned byte budget"
             )
-        if result.execution.row_count > self._settings.max_rows:
+        if result.execution.row_count > execution_policy.max_rows:
             raise JarvisExecutionBrokerContractError(
                 "AI Core exceeded the server-owned row budget"
             )

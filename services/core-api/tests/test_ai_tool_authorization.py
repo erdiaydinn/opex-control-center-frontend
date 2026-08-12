@@ -42,6 +42,15 @@ class PrincipalStub:
     permission_assignments: tuple[Assignment, ...]
 
 
+def ai_scope(*stores: str) -> dict[str, object]:
+    return {
+        "ai_data_scope": {
+            "version": 1,
+            "store_names": list(stores),
+        }
+    }
+
+
 def principal_with(
     *permission_keys: str,
     tenant_id: UUID = TENANT_A,
@@ -66,7 +75,7 @@ def principal_with(
                 role_key="super_admin",
                 scope=scope_by_permission.get(
                     permission,
-                    {},
+                    ai_scope("Fulya"),
                 ),
             )
             for permission in permission_keys
@@ -89,7 +98,7 @@ def test_tool_scope_contract_matches_reviewed_ai_core_tools() -> None:
     }
 
 
-def test_ops_tool_scope_is_derived_from_permission() -> None:
+def test_ops_tool_scope_is_derived_from_permission_and_data_scope() -> None:
     ops_permission = SCOPE_PERMISSION_KEYS[
         "ops:read"
     ]
@@ -102,14 +111,16 @@ def test_ops_tool_scope_is_derived_from_permission() -> None:
     assert capability.granted_scopes == (
         "ops:read",
     )
-
     assert capability.permission_keys == (
         ops_permission,
     )
-
     assert capability.authorizing_roles == (
         "super_admin",
     )
+    assert capability.data_scope.store_names == (
+        "Fulya",
+    )
+    assert len(capability.data_scope_fingerprint) == 64
 
 
 def test_regulatory_tool_requires_both_legal_and_catalog() -> None:
@@ -138,6 +149,16 @@ def test_regulatory_tool_requires_both_legal_and_catalog() -> None:
         principal_with(
             catalog_permission,
             legal_permission,
+            scope_by_permission={
+                catalog_permission: ai_scope(
+                    "Fulya",
+                    "Anka",
+                ),
+                legal_permission: ai_scope(
+                    "Fulya",
+                    "Dicle",
+                ),
+            },
         ),
         tool="regulatory_impact_query",
     )
@@ -145,6 +166,9 @@ def test_regulatory_tool_requires_both_legal_and_catalog() -> None:
     assert capability.granted_scopes == (
         "catalog:read",
         "legal:read",
+    )
+    assert capability.data_scope.store_names == (
+        "Fulya",
     )
 
 
@@ -169,32 +193,76 @@ def test_permission_projection_without_assignment_fails_closed() -> None:
         )
 
 
-def test_nonempty_permission_scope_is_not_silently_widened() -> None:
+def test_empty_or_legacy_permission_scope_is_not_silently_widened() -> None:
     permission = SCOPE_PERMISSION_KEYS[
         "ops:read"
     ]
 
-    principal = principal_with(
-        permission,
-        scope_by_permission={
-            permission: {
-                "stores": [
-                    "store-a",
-                ],
-            },
+    for scope in (
+        {},
+        {"stores": ["Fulya"]},
+        {
+            "ai_data_scope": {
+                "version": 1,
+                "store_names": ["*"],
+            }
         },
-    )
-
-    with pytest.raises(
-        AiToolPermissionScopeUnsupported
     ):
-        derive_ai_tool_capability(
-            principal,
-            tool="ops_kpi_query",
+        principal = principal_with(
+            permission,
+            scope_by_permission={
+                permission: scope,
+            },
         )
 
+        with pytest.raises(
+            AiToolPermissionScopeUnsupported
+        ):
+            derive_ai_tool_capability(
+                principal,
+                tool="ops_kpi_query",
+            )
 
-def test_caller_cannot_supply_or_widen_granted_scopes() -> None:
+
+def test_same_permission_roles_union_their_explicit_data_scope() -> None:
+    permission = SCOPE_PERMISSION_KEYS[
+        "ops:read"
+    ]
+    principal = PrincipalStub(
+        subject="user-1",
+        tenant_id=TENANT_A,
+        permissions=(permission,),
+        permission_assignments=(
+            Assignment(
+                key=permission,
+                role_key="ops_west",
+                scope=ai_scope("Fulya", "Anka"),
+            ),
+            Assignment(
+                key=permission,
+                role_key="ops_east",
+                scope=ai_scope("Dicle"),
+            ),
+        ),
+    )
+
+    capability = derive_ai_tool_capability(
+        principal,
+        tool="ops_kpi_query",
+    )
+
+    assert capability.authorizing_roles == (
+        "ops_east",
+        "ops_west",
+    )
+    assert capability.data_scope.store_names == (
+        "Anka",
+        "Dicle",
+        "Fulya",
+    )
+
+
+def test_caller_cannot_supply_or_widen_granted_or_data_scope() -> None:
     signature = inspect.signature(
         derive_ai_tool_capability
     )
@@ -202,13 +270,14 @@ def test_caller_cannot_supply_or_widen_granted_scopes() -> None:
     assert "granted_scopes" not in (
         signature.parameters
     )
-
     assert "requested_scopes" not in (
         signature.parameters
     )
+    assert "data_scope" not in signature.parameters
+    assert "store_names" not in signature.parameters
 
 
-def test_authorization_fingerprint_binds_actor_tenant_and_tool() -> None:
+def test_authorization_fingerprint_binds_actor_tenant_tool_and_data_scope() -> None:
     ops_permission = SCOPE_PERMISSION_KEYS[
         "ops:read"
     ]
@@ -247,14 +316,25 @@ def test_authorization_fingerprint_binds_actor_tenant_and_tool() -> None:
         tool="catalog_query",
     )
 
+    changed_scope = derive_ai_tool_capability(
+        principal_with(
+            ops_permission,
+            scope_by_permission={
+                ops_permission: ai_scope("Anka"),
+            },
+        ),
+        tool="ops_kpi_query",
+    )
+
     fingerprints = {
         first.authorization_fingerprint,
         changed_actor.authorization_fingerprint,
         changed_tenant.authorization_fingerprint,
         changed_tool.authorization_fingerprint,
+        changed_scope.authorization_fingerprint,
     }
 
-    assert len(fingerprints) == 4
+    assert len(fingerprints) == 5
 
     for fingerprint in fingerprints:
         assert len(fingerprint) == 64
@@ -290,7 +370,7 @@ def test_ai_permissions_are_known_and_default_fail_closed() -> None:
     )
 
 
-def test_0009_migration_grants_only_super_admin_by_default() -> None:
+def test_0009_migration_grants_permission_but_not_global_data_scope() -> None:
     migration = (
         Path(__file__).resolve().parents[1]
         / "alembic"
@@ -306,7 +386,10 @@ def test_0009_migration_grants_only_super_admin_by_default() -> None:
         assert permission in migration
 
     assert "r.key = 'super_admin'" in migration
-
     assert "r.key = 'platform_admin'" not in migration
     assert "r.key = 'operator'" not in migration
     assert "r.key = 'viewer'" not in migration
+
+    # 0009 deliberately does not invent store scope. Until an explicit
+    # ai_data_scope is configured, capability derivation fails closed.
+    assert "ai_data_scope" not in migration

@@ -35,6 +35,7 @@ class VoiceResponseGenerationProof:
     governed_tool_provenance_fingerprints: tuple[str, ...]
     legal_context_fingerprint: str | None
     kpi_context_fingerprint: str | None
+    deployment_manifest_fingerprint: str
     model_execution_identity_fingerprint: str
     model_artifact_sha256: str
     fingerprint: str
@@ -47,6 +48,7 @@ class VoiceTtsGenerationProof:
     response_proof_fingerprint: str
     response_text_sha256: str
     voice_profile_fingerprint: str
+    deployment_manifest_fingerprint: str
     tts_execution_identity_fingerprint: str
     tts_adapter_artifact_sha256: str
     tts_adapter_promotion_fingerprint: str
@@ -58,6 +60,7 @@ def seal_response_generation_proof(
     session_id: str,
     turn_epoch: int,
     user_input_sha256: str,
+    deployment_manifest_fingerprint: str,
     model_execution_identity: VoiceModelExecutionIdentity,
     accepted_tool_results: Iterable[AcceptedResultLike] = (),
     legal_context_fingerprint: str | None = None,
@@ -70,6 +73,8 @@ def seal_response_generation_proof(
         raise ValueError("voice_response_turn_epoch_invalid")
     if not _valid_sha256(user_input_sha256):
         raise ValueError("voice_response_user_input_fingerprint_invalid")
+    if not _valid_sha256(deployment_manifest_fingerprint):
+        raise ValueError("voice_response_deployment_manifest_required")
     if not _valid_sha256(model_execution_identity.fingerprint):
         raise ValueError("voice_response_model_execution_identity_required")
     if not _valid_sha256(model_execution_identity.artifact_sha256):
@@ -105,6 +110,7 @@ def seal_response_generation_proof(
         "governed_tool_provenance_fingerprints": tuple(sorted(governed_fps)),
         "legal_context_fingerprint": legal_context_fingerprint,
         "kpi_context_fingerprint": kpi_context_fingerprint,
+        "deployment_manifest_fingerprint": deployment_manifest_fingerprint,
         "model_execution_identity_fingerprint": model_execution_identity.fingerprint,
         "model_artifact_sha256": model_execution_identity.artifact_sha256,
     }
@@ -115,6 +121,7 @@ def seal_tts_generation_proof(
     *,
     response_proof: VoiceResponseGenerationProof,
     current_turn_epoch: int,
+    deployment_manifest_fingerprint: str,
     response_text_sha256: str,
     voice_profile_fingerprint: str,
     tts_execution_identity: VoiceTtsExecutionIdentity,
@@ -123,6 +130,10 @@ def seal_tts_generation_proof(
         raise ValueError("voice_tts_stale_response_proof_forbidden")
     if not _valid_sha256(response_proof.fingerprint):
         raise ValueError("voice_tts_response_proof_fingerprint_invalid")
+    if not _valid_sha256(deployment_manifest_fingerprint):
+        raise ValueError("voice_tts_deployment_manifest_required")
+    if response_proof.deployment_manifest_fingerprint != deployment_manifest_fingerprint:
+        raise ValueError("voice_tts_deployment_manifest_mismatch")
     if not _valid_sha256(response_text_sha256):
         raise ValueError("voice_tts_response_text_fingerprint_invalid")
     if not _valid_sha256(voice_profile_fingerprint):
@@ -138,6 +149,7 @@ def seal_tts_generation_proof(
         "response_proof_fingerprint": response_proof.fingerprint,
         "response_text_sha256": response_text_sha256,
         "voice_profile_fingerprint": voice_profile_fingerprint,
+        "deployment_manifest_fingerprint": deployment_manifest_fingerprint,
         "tts_execution_identity_fingerprint": tts_execution_identity.fingerprint,
         "tts_adapter_artifact_sha256": tts_execution_identity.artifact_sha256,
         "tts_adapter_promotion_fingerprint": tts_execution_identity.promotion_fingerprint,

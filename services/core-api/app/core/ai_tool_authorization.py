@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict
 
 from app.core.permission_catalog import action_permission
 
-
 AiToolName = Literal[
     "ops_kpi_query",
     "catalog_query",

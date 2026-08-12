@@ -11,6 +11,21 @@ INTERVAL_HOURS="${OPEX_BACKUP_INTERVAL_HOURS:-24}"
 RETENTION_DAYS="${OPEX_BACKUP_RETENTION_DAYS:-14}"
 STATUS_FILE="${BACKUP_DIR}/backup-status.json"
 
+if [ -n "${PGPASSWORD_FILE:-}" ]; then
+  if [ ! -r "${PGPASSWORD_FILE}" ]; then
+    echo "[backup] PostgreSQL password secret file cannot be read" >&2
+    exit 1
+  fi
+
+  PGPASSWORD="$(cat "${PGPASSWORD_FILE}")"
+  export PGPASSWORD
+fi
+
+if [ -z "${PGPASSWORD:-}" ]; then
+  echo "[backup] PostgreSQL password is not configured" >&2
+  exit 1
+fi
+
 mkdir -p "${BACKUP_DIR}"
 
 write_status() {

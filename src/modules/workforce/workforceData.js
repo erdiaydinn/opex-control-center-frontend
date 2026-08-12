@@ -137,32 +137,123 @@ export const DEFAULT_WORKFORCE_STATE = {
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
-export function loadWorkforceState() {
-  if (typeof window === "undefined") return clone(DEFAULT_WORKFORCE_STATE);
+function allowSensitivePilotStorage() {
+  return (
+    typeof window !== "undefined" &&
+    import.meta.env.DEV
+  );
+}
+
+function purgeSensitiveWorkforceStorage() {
+  if (typeof window === "undefined") return;
+
   try {
-    const stored = JSON.parse(window.localStorage.getItem(WORKFORCE_STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY));
+    window.localStorage.removeItem(
+      WORKFORCE_STORAGE_KEY
+    );
+
+    window.localStorage.removeItem(
+      LEGACY_STORAGE_KEY
+    );
+  } catch {
+    // Browser storage may be unavailable.
+  }
+}
+
+export function loadWorkforceState() {
+  if (typeof window === "undefined") {
+    return clone(DEFAULT_WORKFORCE_STATE);
+  }
+
+  if (!allowSensitivePilotStorage()) {
+    purgeSensitiveWorkforceStorage();
+    return clone(DEFAULT_WORKFORCE_STATE);
+  }
+
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(
+        WORKFORCE_STORAGE_KEY
+      ) ||
+        window.localStorage.getItem(
+          LEGACY_STORAGE_KEY
+        )
+    );
+
     if ([2, 3, 4].includes(stored?.version)) {
-      const defaults = clone(DEFAULT_WORKFORCE_STATE);
+      const defaults = clone(
+        DEFAULT_WORKFORCE_STATE
+      );
+
       return {
         ...defaults,
         ...stored,
         version: 4,
-        settings: { ...defaults.settings, ...(stored.settings || {}) },
-        featureFlags: { ...defaults.featureFlags, ...(stored.featureFlags || {}) },
-        notificationSettings: { ...defaults.notificationSettings, ...(stored.notificationSettings || {}) },
-        people: (stored.people || defaults.people).map((person) => ({ nationalId: "", hireDate: "", terminationDate: "", ...person })),
-        staffingNorms: stored.staffingNorms || defaults.staffingNorms,
-        holidays: stored.holidays?.some((item) => item.id?.startsWith("TR-")) ? stored.holidays : defaults.holidays,
+
+        settings: {
+          ...defaults.settings,
+          ...(stored.settings || {}),
+        },
+
+        featureFlags: {
+          ...defaults.featureFlags,
+          ...(stored.featureFlags || {}),
+        },
+
+        notificationSettings: {
+          ...defaults.notificationSettings,
+          ...(stored.notificationSettings || {}),
+        },
+
+        people: (
+          stored.people ||
+          defaults.people
+        ).map((person) => ({
+          nationalId: "",
+          hireDate: "",
+          terminationDate: "",
+          ...person,
+        })),
+
+        staffingNorms:
+          stored.staffingNorms ||
+          defaults.staffingNorms,
+
+        holidays:
+          stored.holidays?.some((item) =>
+            item.id?.startsWith("TR-")
+          )
+            ? stored.holidays
+            : defaults.holidays,
       };
     }
-  } catch { /* use defaults */ }
+  } catch {
+    // Fail closed to in-memory defaults.
+  }
+
   return clone(DEFAULT_WORKFORCE_STATE);
 }
 
 export function saveWorkforceState(state) {
-  if (typeof window !== "undefined") {
-    try { window.localStorage.setItem(WORKFORCE_STORAGE_KEY, JSON.stringify({ ...state, version: 4, savedAt: new Date().toISOString() })); }
-    catch (error) { console.warn("Workforce yerel kayıt sınırına ulaştı", error); }
+  if (!allowSensitivePilotStorage()) {
+    purgeSensitiveWorkforceStorage();
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      WORKFORCE_STORAGE_KEY,
+      JSON.stringify({
+        ...state,
+        version: 4,
+        savedAt: new Date().toISOString(),
+      })
+    );
+  } catch (error) {
+    console.warn(
+      "Workforce DEV pilot storage limit reached",
+      error
+    );
   }
 }
 

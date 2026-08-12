@@ -217,7 +217,13 @@ export default function WorkforcePickerApp() {
   useDomLocalization(rootRef, locale);
   const [workforceState, setWorkforceState] = useState(() => loadWorkforceState());
   const features = { ...DEFAULT_FEATURES, ...(workforceState.featureFlags || {}) };
-  const currentPersonId = user?.employeeId || ((import.meta.env.DEV || LOCAL_PILOT_MODE) ? window.localStorage.getItem("opex_picker_person_id") || "100184" : "");
+  const currentPersonId =
+    user?.employeeId ||
+    (import.meta.env.DEV
+      ? window.localStorage.getItem(
+          "opex_picker_person_id"
+        ) || "100184"
+      : "");
   const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
   const currentPerson = workforceState.people.find((person) => String(person.id) === String(currentPersonId)) || workforceState.people[0];
   const notifications = (workforceState.notifications || []).filter((item) => String(item.personId) === String(currentPersonId));

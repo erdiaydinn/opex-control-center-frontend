@@ -1,14 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import SupplierReservation from "./SupplierReservation";
 import AdminReservations from "./AdminReservations";
-import CapacityManagement from "./CapacityManagement";
 import KpiSummary from "./KpiSummary";
-import PlanningPoUpload from "./PlanningPoUpload";
-import AuditLog from "./AuditLog";
-import NotificationCenter from "./NotificationCenter";
-import SupplierAccessManagement from "./SupplierAccessManagement";
 import { getPurchaseOrders, getReservations, getSlots, healthCheck } from "./dockosApi";
-import { canDockOSAction, canDockOSFeature, getDockOSPermissionSnapshot } from "./dockosPermissions";
+import { canDockOSAction, canDockOSFeature } from "./dockosPermissions";
 import { useDockOSUi } from "./DockOSUiContext";
 
 function StatCard({ label, value }) {
@@ -22,32 +17,44 @@ function StatCard({ label, value }) {
 
 export default function DockOSDashboardBase() {
   const { t, theme, setTheme, locale, setLocale } = useDockOSUi();
-  const snapshot = useMemo(() => getDockOSPermissionSnapshot(), []);
-  const tabs = useMemo(() => {
-    const values = [];
+  // Phase 1 fail-closed authorization:
+  // only screens backed by explicit catalogued DB
+  // permissions may enter the navigation.
+  //
+  // planning / capacity / audit / notifications /
+  // access remain quarantined until dedicated DB
+  // permissions AND backend enforcement exist.
+  const tabs = [];
 
-    if (canDockOSFeature("supplierAppointments") && canDockOSAction("create")) {
-      values.push({ key: "supplier", label: t("supplier"), icon: "↗" });
-    }
+  if (
+    canDockOSFeature("supplierAppointments") &&
+    canDockOSAction("create")
+  ) {
+    tabs.push({
+      key: "supplier",
+      label: t("supplier"),
+      icon: "?",
+    });
+  }
 
-    if (canDockOSFeature("vehicleTracking") && canDockOSAction("edit")) {
-      values.push({ key: "admin", label: t("admin"), icon: "▣" });
-    }
+  if (
+    canDockOSFeature("vehicleTracking") &&
+    canDockOSAction("edit")
+  ) {
+    tabs.push({
+      key: "admin",
+      label: t("admin"),
+      icon: "?",
+    });
+  }
 
-    if (snapshot.isAdmin || canDockOSAction("approve")) {
-      values.push({ key: "planning", label: t("planning"), icon: "⇧" });
-      values.push({ key: "capacity", label: t("capacity"), icon: "◫" });
-      values.push({ key: "audit", label: t("audit"), icon: "◎" });
-      values.push({ key: "notifications", label: t("notifications"), icon: "✉" });
-      values.push({ key: "access", label: t("accessManagement"), icon: "♙" });
-    }
-
-    if (canDockOSFeature("dashboard")) {
-      values.push({ key: "kpi", label: t("kpi"), icon: "◉" });
-    }
-
-    return values;
-  }, [snapshot.isAdmin, locale]);
+  if (canDockOSFeature("dashboard")) {
+    tabs.push({
+      key: "kpi",
+      label: t("kpi"),
+      icon: "?",
+    });
+  }
 
   const [activeTab, setActiveTab] = useState(tabs[0]?.key || "kpi");
   const [apiStatus, setApiStatus] = useState("checking");
@@ -158,7 +165,7 @@ export default function DockOSDashboardBase() {
                   ? t("disconnected")
                   : t("checking")}
             </strong>
-            <small>Port 8000</small>
+            <small>Gateway API</small>
           </div>
         </div>
       </aside>
@@ -191,11 +198,6 @@ export default function DockOSDashboardBase() {
 
         {activeTab === "supplier" && <SupplierReservation />}
         {activeTab === "admin" && <AdminReservations />}
-        {activeTab === "planning" && <PlanningPoUpload />}
-        {activeTab === "capacity" && <CapacityManagement />}
-        {activeTab === "audit" && <AuditLog />}
-        {activeTab === "notifications" && <NotificationCenter />}
-        {activeTab === "access" && <SupplierAccessManagement />}
         {activeTab === "kpi" && <KpiSummary />}
       </main>
     </div>

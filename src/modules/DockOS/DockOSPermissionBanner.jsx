@@ -30,7 +30,7 @@ export default function DockOSPermissionBanner() {
         <div>
           <span>{t("accessProfile")}</span>
           <strong>{user?.email || snapshot.user?.email || t("userMissing")}</strong>
-          <p>{snapshot.isAdmin ? t("administrator") : t("standardUser")}</p>
+          <p>{enabledFeatureCount} {t("screens")} ? {enabledActionCount} {t("actions")}</p>
         </div>
       </div>
 

@@ -1,0 +1,141 @@
+services:
+  gateway:
+    environment:
+      OPEX_PUBLIC_HOST: "${OPEX_PUBLIC_HOST:?Set production public hostname}"
+
+    ports: !override
+      - "${OPEX_GATEWAY_HTTP_PORT:-80}:80"
+      - "${OPEX_GATEWAY_HTTPS_PORT:-443}:443"
+
+    volumes: !override
+      - ./infra/nginx/platform.production.conf.template:/etc/nginx/templates/default.conf.template:ro
+
+    secrets:
+      - source: tls_certificate
+        target: tls_certificate
+      - source: tls_private_key
+        target: tls_private_key
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ""
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_migrator_password
+      OPEX_POSTGRES_RUNTIME_PASSWORD: ""
+      OPEX_POSTGRES_RUNTIME_PASSWORD_FILE: /run/secrets/postgres_runtime_password
+    secrets:
+      - source: postgres_migrator_password
+        target: postgres_migrator_password
+      - source: postgres_runtime_password
+        target: postgres_runtime_password
+
+  postgres-backup:
+    environment:
+      PGPASSWORD: ""
+      PGPASSWORD_FILE: /run/secrets/postgres_backup_password
+    secrets:
+      - source: postgres_backup_password
+        target: postgres_backup_password
+
+  platform-alerts:
+    environment:
+      OPEX_ENVIRONMENT: production
+      OPEX_PLATFORM_HEALTH_AUTH_MODE: oidc
+      OPEX_PLATFORM_HEALTH_TOKEN: ""
+      OPEX_PLATFORM_HEALTH_TOKEN_FILE: ""
+      OPEX_ALERT_OIDC_TOKEN_URL: "${OPEX_ALERT_OIDC_TOKEN_URL:?Set production alert OIDC token URL}"
+      OPEX_ALERT_OIDC_CLIENT_ID: "${OPEX_ALERT_OIDC_CLIENT_ID:?Set production alert OIDC client ID}"
+      OPEX_ALERT_OIDC_CLIENT_SECRET: ""
+      OPEX_ALERT_OIDC_CLIENT_SECRET_FILE: /run/secrets/alert_oidc_client_secret
+      OPEX_ALERT_OIDC_AUDIENCE: "${OPEX_ALERT_OIDC_AUDIENCE:-opex-core-api}"
+      OPEX_SMTP_PASSWORD: ""
+      OPEX_SMTP_PASSWORD_FILE: ""
+      OPEX_ALERT_EMAIL_ENABLED: "false"
+    secrets:
+      - source: alert_oidc_client_secret
+        target: alert_oidc_client_secret
+
+  identity-gateway:
+    environment:
+      OPEX_ENVIRONMENT: production
+      OPEX_INTERNAL_ASSERTION_ISSUER: "opex-identity-gateway"
+      OPEX_INTERNAL_ASSERTION_AUDIENCE: "opex-core-api"
+      OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE: "opex-core-preauth"
+      OPEX_INTERNAL_ASSERTION_LIFETIME_SECONDS: "30"
+      OPEX_IDENTITY_GATEWAY_SIGNING_KEY_FILE: /run/secrets/identity_gateway_signing_key
+      OPEX_IDENTITY_GATEWAY_SIGNING_KID: "${OPEX_IDENTITY_GATEWAY_SIGNING_KID:?Set production identity signing key ID}"
+    secrets: !override
+      - source: identity_gateway_signing_key
+        target: identity_gateway_signing_key
+
+  core-api:
+    environment:
+      OPEX_ENVIRONMENT: production
+      OPEX_AUTH_MODE: oidc
+      OPEX_DATABASE_URL: ""
+      OPEX_DATABASE_URL_FILE: /run/secrets/runtime_database_url
+      OPEX_OIDC_ISSUER: "${OPEX_OIDC_ISSUER:?Set production OIDC issuer}"
+      OPEX_OIDC_AUDIENCE: "${OPEX_OIDC_AUDIENCE:-opex-core-api}"
+      OPEX_OIDC_JWKS_URL: "${OPEX_OIDC_JWKS_URL:?Set production OIDC JWKS URL}"
+      OPEX_INTERNAL_ASSERTION_ISSUER: "opex-identity-gateway"
+      OPEX_INTERNAL_ASSERTION_AUDIENCE: "opex-core-api"
+      OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE: "opex-core-preauth"
+      OPEX_INTERNAL_ASSERTION_JWKS_FILE: "/run/secrets/internal_assertion_jwks"
+      OPEX_INTERNAL_ASSERTION_ALGORITHMS: "ES256"
+      OPEX_INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS: "60"
+      OPEX_ALLOWED_HOSTS: "${OPEX_ALLOWED_HOSTS:?Set production allowed hosts}"
+      OPEX_CORS_ORIGINS: "${OPEX_CORS_ORIGINS:?Set production HTTPS CORS origins}"
+    secrets: !override
+      - source: runtime_database_url
+        target: runtime_database_url
+      - source: internal_assertion_jwks
+        target: internal_assertion_jwks
+
+  migrate:
+    environment:
+      OPEX_ENVIRONMENT: production
+      OPEX_AUTH_MODE: oidc
+      OPEX_MIGRATION_DATABASE_URL: ""
+      OPEX_MIGRATION_DATABASE_URL_FILE: /run/secrets/migration_database_url
+      OPEX_POSTGRES_BACKUP_PASSWORD: ""
+      OPEX_POSTGRES_BACKUP_PASSWORD_FILE: /run/secrets/postgres_backup_password
+      OPEX_OIDC_ISSUER: "${OPEX_OIDC_ISSUER:?Set production OIDC issuer}"
+      OPEX_OIDC_AUDIENCE: "${OPEX_OIDC_AUDIENCE:-opex-core-api}"
+      OPEX_OIDC_JWKS_URL: "${OPEX_OIDC_JWKS_URL:?Set production OIDC JWKS URL}"
+      OPEX_ALLOWED_HOSTS: "${OPEX_ALLOWED_HOSTS:?Set production allowed hosts}"
+      OPEX_CORS_ORIGINS: "${OPEX_CORS_ORIGINS:?Set production HTTPS CORS origins}"
+    secrets:
+      - source: migration_database_url
+        target: migration_database_url
+      - source: postgres_backup_password
+        target: postgres_backup_password
+
+secrets:
+  identity_gateway_signing_key:
+    file: "${OPEX_IDENTITY_GATEWAY_SIGNING_KEY_SECRET_FILE:?Set production Identity Gateway signing private key secret file path}"
+
+  internal_assertion_jwks:
+    file: "${OPEX_INTERNAL_ASSERTION_JWKS_SECRET_FILE:?Set production internal assertion public JWKS secret file path}"
+
+  tls_certificate:
+    file: "${OPEX_TLS_CERTIFICATE_FILE:?Set production TLS certificate file path}"
+
+  tls_private_key:
+    file: "${OPEX_TLS_PRIVATE_KEY_FILE:?Set production TLS private key file path}"
+
+  alert_oidc_client_secret:
+    file: "${OPEX_ALERT_OIDC_CLIENT_SECRET_SECRET_FILE:?Set alert OIDC client secret file path}"
+
+  postgres_migrator_password:
+    file: "${OPEX_POSTGRES_MIGRATOR_PASSWORD_SECRET_FILE:?Set PostgreSQL migrator password secret file path}"
+
+  postgres_runtime_password:
+    file: "${OPEX_POSTGRES_RUNTIME_PASSWORD_SECRET_FILE:?Set PostgreSQL runtime password secret file path}"
+
+  postgres_backup_password:
+    file: "${OPEX_POSTGRES_BACKUP_PASSWORD_SECRET_FILE:?Set PostgreSQL backup password secret file path}"
+
+  runtime_database_url:
+    file: "${OPEX_RUNTIME_DATABASE_SECRET_FILE:?Set runtime database secret file path}"
+
+  migration_database_url:
+    file: "${OPEX_MIGRATION_DATABASE_SECRET_FILE:?Set migration database secret file path}"

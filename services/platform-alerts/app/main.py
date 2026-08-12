@@ -27,7 +27,36 @@ EMAIL_ENABLED = (
 SMTP_HOST = os.getenv("OPEX_SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("OPEX_SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("OPEX_SMTP_USERNAME", "")
-SMTP_PASSWORD = os.getenv("OPEX_SMTP_PASSWORD", "")
+def read_secret(environment_name: str, file_environment_name: str) -> str:
+    direct_value = os.getenv(environment_name, "").strip()
+    secret_file = os.getenv(file_environment_name, "").strip()
+
+    if direct_value and secret_file:
+        raise RuntimeError(
+            f"{environment_name} and {file_environment_name} cannot both be set"
+        )
+
+    if secret_file:
+        try:
+            value = Path(secret_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError(
+                f"{file_environment_name} cannot be read"
+            ) from exc
+
+        if not value:
+            raise RuntimeError(
+                f"{file_environment_name} is empty"
+            )
+
+        return value
+
+    return direct_value
+
+SMTP_PASSWORD = read_secret(
+    "OPEX_SMTP_PASSWORD",
+    "OPEX_SMTP_PASSWORD_FILE",
+)
 SMTP_FROM = os.getenv("OPEX_SMTP_FROM", "EAY OneOps Alerts")
 SMTP_STARTTLS = (
     os.getenv("OPEX_SMTP_STARTTLS", "true").strip().lower() == "true"
@@ -38,7 +67,49 @@ RECIPIENTS = [
     if item.strip()
 ]
 
-AUTH_TOKEN = os.getenv("OPEX_PLATFORM_HEALTH_TOKEN", "")
+ENVIRONMENT = os.getenv("OPEX_ENVIRONMENT", "development").strip().lower()
+
+
+AUTH_MODE = os.getenv(
+    "OPEX_PLATFORM_HEALTH_AUTH_MODE",
+    "development",
+).strip().lower()
+
+AUTH_TOKEN = read_secret(
+    "OPEX_PLATFORM_HEALTH_TOKEN",
+    "OPEX_PLATFORM_HEALTH_TOKEN_FILE",
+)
+
+OIDC_TOKEN_URL = os.getenv("OPEX_ALERT_OIDC_TOKEN_URL", "").strip()
+OIDC_CLIENT_ID = os.getenv("OPEX_ALERT_OIDC_CLIENT_ID", "").strip()
+OIDC_CLIENT_SECRET = read_secret(
+    "OPEX_ALERT_OIDC_CLIENT_SECRET",
+    "OPEX_ALERT_OIDC_CLIENT_SECRET_FILE",
+)
+OIDC_SCOPE = os.getenv("OPEX_ALERT_OIDC_SCOPE", "").strip()
+OIDC_AUDIENCE = os.getenv("OPEX_ALERT_OIDC_AUDIENCE", "").strip()
+
+if ENVIRONMENT in {"staging", "production"}:
+    forbidden_secret_environment = [
+        name
+        for name in (
+            "OPEX_PLATFORM_HEALTH_TOKEN",
+            "OPEX_ALERT_OIDC_CLIENT_SECRET",
+            "OPEX_SMTP_PASSWORD",
+        )
+        if os.getenv(name, "").strip()
+    ]
+
+    if forbidden_secret_environment:
+        raise RuntimeError(
+            "Secrets must not be supplied directly through environment "
+            "variables in staging or production"
+        )
+
+TOKEN_CACHE: dict[str, Any] = {
+    "access_token": "",
+    "expires_at": 0.0,
+}
 
 
 def utc_now() -> datetime:
@@ -90,14 +161,88 @@ def send_email(subject: str, body: str, html: str | None = None) -> None:
         smtp.send_message(message)
 
 
-def fetch_health() -> dict[str, Any]:
-    headers = {}
+def get_access_token() -> str:
+    if AUTH_MODE == "development":
+        if ENVIRONMENT in {"staging", "production"}:
+            raise RuntimeError(
+                "Static development authentication is forbidden "
+                "in staging and production"
+            )
 
-    if AUTH_TOKEN:
-        headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
+        if not AUTH_TOKEN:
+            raise RuntimeError(
+                "Platform health development token is not configured"
+            )
+
+        return AUTH_TOKEN
+
+    if AUTH_MODE != "oidc":
+        raise RuntimeError("Unsupported platform health authentication mode")
+
+    if not OIDC_TOKEN_URL or not OIDC_CLIENT_ID or not OIDC_CLIENT_SECRET:
+        raise RuntimeError("OIDC service identity configuration is incomplete")
+
+    if (
+        ENVIRONMENT in {"staging", "production"}
+        and not OIDC_TOKEN_URL.startswith("https://")
+    ):
+        raise RuntimeError(
+            "OIDC token endpoint must use HTTPS in staging and production"
+        )
+
+    now = time.monotonic()
+    cached_token = str(TOKEN_CACHE.get("access_token", ""))
+    expires_at = float(TOKEN_CACHE.get("expires_at", 0.0))
+
+    if cached_token and now < expires_at:
+        return cached_token
+
+    data = {"grant_type": "client_credentials"}
+
+    if OIDC_SCOPE:
+        data["scope"] = OIDC_SCOPE
+
+    if OIDC_AUDIENCE:
+        data["audience"] = OIDC_AUDIENCE
 
     with httpx.Client(timeout=10.0) as client:
-        response = client.get(HEALTH_URL, headers=headers)
+        response = client.post(
+            OIDC_TOKEN_URL,
+            data=data,
+            auth=httpx.BasicAuth(
+                OIDC_CLIENT_ID,
+                OIDC_CLIENT_SECRET,
+            ),
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+    access_token = str(payload.get("access_token", "")).strip()
+    token_type = str(payload.get("token_type", "Bearer")).strip()
+
+    if not access_token or token_type.lower() != "bearer":
+        raise RuntimeError("OIDC provider returned an invalid access token")
+
+    try:
+        expires_in = int(payload.get("expires_in", 300))
+    except (TypeError, ValueError):
+        expires_in = 300
+
+    TOKEN_CACHE["access_token"] = access_token
+    TOKEN_CACHE["expires_at"] = now + max(5, expires_in - 60)
+
+    return access_token
+
+
+def fetch_health() -> dict[str, Any]:
+    token = get_access_token()
+
+    with httpx.Client(timeout=10.0) as client:
+        response = client.get(
+            HEALTH_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
         if response.status_code not in {200, 503}:
             response.raise_for_status()
@@ -349,7 +494,7 @@ def main() -> None:
             health = fetch_health()
             process_health(health)
         except Exception as exc:
-            print(f"[alerts] Health check failed: {exc}")
+            print(f"[alerts] Health check failed: {type(exc).__name__}")
 
         time.sleep(POLL_SECONDS)
 

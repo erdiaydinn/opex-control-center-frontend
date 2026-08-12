@@ -1,42 +1,111 @@
-﻿const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+import { getAccessToken } from "../auth/tokenStore.js";
 
-export function getDemoEmail() {
-  return localStorage.getItem("opex_demo_email") || "";
-}
 
-export async function apiFetch(path, options = {}) {
-  const email = getDemoEmail();
-  const isFormData =
-    typeof FormData !== "undefined" && options.body instanceof FormData;
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "/api";
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
-      "X-User-Email": email,
-      ...(options.headers || {}),
-    },
-  });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || `API error: ${response.status}`);
+function requireAccessToken() {
+  const token = getAccessToken();
+
+  if (!token) {
+    throw new Error(
+      "Authenticated access token is required."
+    );
   }
 
-  const text = await response.text();
+  return token;
+}
 
-  if (!text) {
+
+function buildHeaders(options = {}) {
+  const headers = new Headers(
+    options.headers || {}
+  );
+
+  // Client-supplied identity is never authoritative.
+  headers.delete("X-User-Email");
+  headers.delete("X-OPEX-User");
+  headers.delete("X-OPEX-Role");
+
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    options.body instanceof FormData;
+
+  if (
+    options.body != null &&
+    !isFormData &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set(
+      "Content-Type",
+      "application/json"
+    );
+  }
+
+  // Callers cannot override central authentication.
+  headers.set(
+    "Authorization",
+    `Bearer ${requireAccessToken()}`
+  );
+
+  return headers;
+}
+
+
+async function readError(response, fallback) {
+  try {
+    const payload = await response.json();
+
+    if (
+      payload &&
+      typeof payload.detail === "string" &&
+      payload.detail.trim()
+    ) {
+      return payload.detail;
+    }
+  } catch {
+    // Use non-sensitive fallback.
+  }
+
+  return fallback;
+}
+
+
+export async function apiFetch(path, options = {}) {
+  const response = await fetch(
+    `${API_BASE}${path}`,
+    {
+      ...options,
+      headers: buildHeaders(options),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readError(
+        response,
+        `API error: ${response.status}`
+      )
+    );
+  }
+
+  const responseText = await response.text();
+
+  if (!responseText) {
     return null;
   }
 
-  return JSON.parse(text);
+  return JSON.parse(responseText);
 }
+
 
 export function apiGet(path) {
   return apiFetch(path, {
     method: "GET",
   });
 }
+
 
 export function apiPost(path, data = {}) {
   return apiFetch(path, {
@@ -45,6 +114,7 @@ export function apiPost(path, data = {}) {
   });
 }
 
+
 export function apiPut(path, data = {}) {
   return apiFetch(path, {
     method: "PUT",
@@ -52,11 +122,13 @@ export function apiPut(path, data = {}) {
   });
 }
 
+
 export function apiDelete(path) {
   return apiFetch(path, {
     method: "DELETE",
   });
 }
+
 
 export function apiPatch(path, data = {}) {
   return apiFetch(path, {
@@ -65,6 +137,7 @@ export function apiPatch(path, data = {}) {
   });
 }
 
+
 export function apiUpload(path, formData) {
   return apiFetch(path, {
     method: "POST",
@@ -72,18 +145,23 @@ export function apiUpload(path, formData) {
   });
 }
 
-export async function apiDownload(path) {
-  const email = getDemoEmail();
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "X-User-Email": email,
-    },
-  });
+export async function apiDownload(path) {
+  const response = await fetch(
+    `${API_BASE}${path}`,
+    {
+      method: "GET",
+      headers: buildHeaders(),
+    }
+  );
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Download error: ${response.status}`);
+    throw new Error(
+      await readError(
+        response,
+        `Download error: ${response.status}`
+      )
+    );
   }
 
   return response.blob();

@@ -24,9 +24,44 @@ const demo = {
   audit: []
 };
 
-function loadState() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || demo; } catch { return demo; }
+function allowSensitivePilotStorage() {
+  return (
+    typeof window !== "undefined" &&
+    import.meta.env.DEV
+  );
 }
+
+function purgeSensitiveInventoryStorage() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(
+      STORAGE_KEY
+    );
+  } catch {
+    // Browser storage may be unavailable.
+  }
+}
+
+function loadState() {
+  if (!allowSensitivePilotStorage()) {
+    purgeSensitiveInventoryStorage();
+    return demo;
+  }
+
+  try {
+    return (
+      JSON.parse(
+        window.localStorage.getItem(
+          STORAGE_KEY
+        )
+      ) || demo
+    );
+  } catch {
+    return demo;
+  }
+}
+
 function now() { return new Date().toISOString(); }
 function uid(prefix) { return prefix + "-" + Date.now().toString(36).toUpperCase(); }
 function csvEscape(value) {
@@ -68,9 +103,22 @@ export default function InventoryDashboard() {
   const varianceValue = varianceLines.reduce((sum, l) => sum + Math.abs(l.counted - l.expected) * (l.cost || 0), 0);
 
   function save(next, message) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    setData(next); setNotice(message || "Kaydedildi");
-    window.setTimeout(() => setNotice(""), 2400);
+    if (allowSensitivePilotStorage()) {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(next)
+      );
+    } else {
+      purgeSensitiveInventoryStorage();
+    }
+
+    setData(next);
+    setNotice(message || "Kaydedildi");
+
+    window.setTimeout(
+      () => setNotice(""),
+      2400
+    );
   }
 
   function createDocument() {

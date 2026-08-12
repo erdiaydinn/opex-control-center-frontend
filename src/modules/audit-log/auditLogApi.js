@@ -1,11 +1,10 @@
-﻿import { apiFetch } from "../../api/client";
+import { apiFetch } from "../../api/client";
 
 export async function fetchAuditEvents({
   limit = 50,
   actor = "",
   decision = "",
   action = "",
-  accessToken = "",
 } = {}) {
   const params = new URLSearchParams();
 
@@ -23,12 +22,10 @@ export async function fetchAuditEvents({
     params.set("action", action);
   }
 
-  return apiFetch(`/v1/audit/events?${params.toString()}`, {
-    method: "GET",
-    headers: accessToken
-      ? {
-          Authorization: `Bearer ${accessToken}`,
-        }
-      : {},
-  });
+  return apiFetch(
+    `/v1/audit/events?${params.toString()}`,
+    {
+      method: "GET",
+    }
+  );
 }

@@ -1,8 +1,14 @@
-﻿import React from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import React from "react";
+import {
+  Navigate,
+  Route,
+  Routes,
+} from "react-router-dom";
 
 import Login from "./pages/Login.jsx";
+import AuthCallback from "./auth/AuthCallback.jsx";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
+
 import ControlCenterHome from "./modules/control-center/ControlCenterHome.jsx";
 import PlanogramStudio from "./modules/planogram/PlanogramStudio.jsx";
 import BudgetIntelligence from "./modules/budget-intelligence/BudgetIntelligence.jsx";
@@ -16,10 +22,25 @@ import RecruitmentControl from "./modules/recruitment/RecruitmentControl.jsx";
 import PlatformHealth from "./modules/platform-health/PlatformHealth.jsx";
 import AuditLog from "./modules/audit-log/AuditLog.jsx";
 
+
+const PLATFORM_ADMIN_ROLES = [
+  "platform_admin",
+  "super_admin",
+];
+
+
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route
+        path="/login"
+        element={<Login />}
+      />
+
+      <Route
+        path="/auth/callback"
+        element={<AuthCallback />}
+      />
 
       <Route
         path="/"
@@ -100,18 +121,21 @@ export default function App() {
       <Route
         path="/access-control"
         element={
-          <ProtectedRoute moduleKey="admin_access" action="admin">
+          <ProtectedRoute
+            moduleKey="admin_access"
+            action="admin"
+          >
             <AccessControl />
           </ProtectedRoute>
         }
       />
 
-
-
       <Route
         path="/audit-log"
         element={
-          <ProtectedRoute moduleKey="admin_access" action="admin">
+          <ProtectedRoute
+            roles={PLATFORM_ADMIN_ROLES}
+          >
             <AuditLog />
           </ProtectedRoute>
         }
@@ -120,14 +144,33 @@ export default function App() {
       <Route
         path="/platform-health"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute
+            roles={PLATFORM_ADMIN_ROLES}
+          >
             <PlatformHealth />
           </ProtectedRoute>
         }
       />
-      <Route path="/river" element={<Navigate to="/dockos" replace />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+
+      <Route
+        path="/river"
+        element={
+          <Navigate
+            to="/dockos"
+            replace
+          />
+        }
+      />
+
+      <Route
+        path="*"
+        element={
+          <Navigate
+            to="/"
+            replace
+          />
+        }
+      />
     </Routes>
   );
 }
-

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from app.github_repository_evidence import (
     build_verified_github_file_evidence,
     git_blob_sha,
     ingest_verified_github_repository_review,
+    load_verified_historical_registry_revision,
 )
 from app.repository_intelligence import load_repository_registry
 from app.repository_memory_store import AppendOnlyRepositoryMemoryStore
@@ -25,6 +27,8 @@ TREE_SHA = "d" * 40
 SOURCE = 'def healthcheck():\n    return "ok"\n'
 BLOB_SHA = git_blob_sha(SOURCE)
 PATH = "superset/health.py"
+REGISTRY_REPOSITORY = "erdiaydinn/opex-control-center-frontend"
+REGISTRY_REPO_PATH = "services/eay-ai-core/config/repository_intelligence_registry.json"
 
 
 def _resolved() -> GitHubResolvedRefEvidence:
@@ -41,6 +45,35 @@ def _tree(blob_sha: str = BLOB_SHA) -> tuple[GitHubTreeEntryEvidence, ...]:
 
 def _files(source: str = SOURCE, blob_sha: str = BLOB_SHA) -> tuple[GitHubFetchedTextEvidence, ...]:
     return (GitHubFetchedTextEvidence(REPOSITORY, COMMIT_SHA, PATH, blob_sha, source),)
+
+
+def _registry_evidence(source_text: str, *, path: str = REGISTRY_REPO_PATH):
+    commit_sha = "a" * 40
+    tree_sha = "b" * 40
+    blob_sha = git_blob_sha(source_text)
+    resolved_ref = GitHubResolvedRefEvidence(
+        REGISTRY_REPOSITORY,
+        "feature/eay-repository-intelligence-v0.1",
+        commit_sha,
+    )
+    commit = GitHubCommitEvidence(REGISTRY_REPOSITORY, commit_sha, tree_sha)
+    tree_entries = (
+        GitHubTreeEntryEvidence(
+            REGISTRY_REPOSITORY,
+            tree_sha,
+            path,
+            "blob",
+            blob_sha,
+        ),
+    )
+    registry_file = GitHubFetchedTextEvidence(
+        REGISTRY_REPOSITORY,
+        commit_sha,
+        path,
+        blob_sha,
+        source_text,
+    )
+    return resolved_ref, commit, tree_entries, registry_file
 
 
 def test_git_blob_sha_matches_git_object_identity_contract() -> None:
@@ -143,4 +176,72 @@ def test_registry_identity_is_authority_over_remote_evidence(tmp_path: Path) -> 
             commit=_commit(),
             tree_entries=_tree(),
             files=_files(),
+        )
+
+
+def test_historical_registry_load_is_bound_to_exact_git_blob() -> None:
+    source_text = REGISTRY_PATH.read_text(encoding="utf-8")
+    resolved_ref, commit, tree_entries, registry_file = _registry_evidence(source_text)
+
+    registry = load_verified_historical_registry_revision(
+        resolved_ref=resolved_ref,
+        commit=commit,
+        tree_entries=tree_entries,
+        registry_file=registry_file,
+    )
+
+    assert registry.by_id("own-opex-control-center-frontend")["repository"] == REGISTRY_REPOSITORY
+    assert len(registry.fingerprint) == 64
+
+
+def test_historical_registry_rejects_path_substitution() -> None:
+    source_text = REGISTRY_PATH.read_text(encoding="utf-8")
+    resolved_ref, commit, tree_entries, registry_file = _registry_evidence(
+        source_text,
+        path="services/eay-ai-core/config/other.json",
+    )
+
+    with pytest.raises(GitHubRepositoryEvidenceError, match="path substitution"):
+        load_verified_historical_registry_revision(
+            resolved_ref=resolved_ref,
+            commit=commit,
+            tree_entries=tree_entries,
+            registry_file=registry_file,
+        )
+
+
+def test_historical_registry_rejects_content_tamper_even_with_claimed_blob() -> None:
+    source_text = REGISTRY_PATH.read_text(encoding="utf-8")
+    resolved_ref, commit, tree_entries, registry_file = _registry_evidence(source_text)
+    tampered_file = GitHubFetchedTextEvidence(
+        registry_file.repository,
+        registry_file.commit_sha,
+        registry_file.path,
+        registry_file.blob_sha,
+        source_text + "\n",
+    )
+
+    with pytest.raises(GitHubRepositoryEvidenceError, match="Git blob identity"):
+        load_verified_historical_registry_revision(
+            resolved_ref=resolved_ref,
+            commit=commit,
+            tree_entries=tree_entries,
+            registry_file=tampered_file,
+        )
+
+
+def test_historical_registry_rejects_silent_seed_deletion() -> None:
+    payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    payload["entries"] = [
+        entry for entry in payload["entries"] if entry["id"] != "imported-impeccable"
+    ]
+    source_text = json.dumps(payload, ensure_ascii=False)
+    resolved_ref, commit, tree_entries, registry_file = _registry_evidence(source_text)
+
+    with pytest.raises(GitHubRepositoryEvidenceError, match="canonical validation"):
+        load_verified_historical_registry_revision(
+            resolved_ref=resolved_ref,
+            commit=commit,
+            tree_entries=tree_entries,
+            registry_file=registry_file,
         )

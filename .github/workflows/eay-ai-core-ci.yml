@@ -6,10 +6,12 @@ on:
       - "feature/eay-ai-core-*"
     paths:
       - "services/eay-ai-core/**"
+      - "docker-compose.eay-ai-core.yml"
       - ".github/workflows/eay-ai-core-ci.yml"
   pull_request:
     paths:
       - "services/eay-ai-core/**"
+      - "docker-compose.eay-ai-core.yml"
       - ".github/workflows/eay-ai-core-ci.yml"
 
 permissions:
@@ -44,3 +46,24 @@ jobs:
 
       - name: Test
         run: pytest -q
+
+      - name: Build hardened runtime image
+        run: |
+          docker build -t eay-ai-core-ci .
+          test "$(docker image inspect eay-ai-core-ci --format '{{.Config.User}}')" = "10001:10001"
+          docker run --rm eay-ai-core-ci \
+            python -c "from app.main import app; assert app.title == 'EAY AI Core'"
+
+      - name: Validate internal-only compose overlay
+        working-directory: .
+        run: |
+          touch /tmp/eay-jarvis-ci-private-key.pem
+          EAY_JARVIS_SERVICE_PRIVATE_KEY_SOURCE_FILE=/tmp/eay-jarvis-ci-private-key.pem \
+          EAY_JARVIS_SERVICE_SIGNING_KID=ci-runtime-v1 \
+            docker compose \
+              -f docker-compose.platform.yml \
+              -f docker-compose.eay-ai-core.yml \
+              --profile jarvis \
+              config > /tmp/eay-ai-core-compose.yml
+          grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE: /run/secrets/eay_jarvis_service_private_key' /tmp/eay-ai-core-compose.yml
+          grep -q 'EAY_PLATFORM_CORE_BASE_URL: http://core-api:8000' /tmp/eay-ai-core-compose.yml

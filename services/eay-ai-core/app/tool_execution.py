@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from .bigquery_safe_executor import (
     DEFAULT_MAX_BYTES,
@@ -18,6 +18,10 @@ from .bigquery_safe_executor import (
     GoogleBigQueryAdapter,
     SafeBigQueryExecutor,
 )
+from .jarvis_runtime import (
+    JarvisRuntimeConfigurationError,
+    build_platform_tool_authorizer,
+)
 from .kpi_provenance import provenance_from_activation
 from .kpi_registry import get_kpi_definition
 from .kpi_result_validation import (
@@ -28,22 +32,48 @@ from .kpi_result_validation import (
 )
 from .kpi_runtime_contracts import verify_kpi_runtime_activation
 from .kpi_semantics import verify_semantic_contract
+from .platform_tool_authorizer import (
+    PlatformToolAuthorizationContractError,
+    PlatformToolAuthorizationDenied,
+    PlatformToolAuthorizationIndeterminate,
+    PlatformToolAuthorizer,
+    TrustedToolExecutionContext,
+    validate_trusted_tool_execution_context,
+)
 from .query_templates import compile_tool_plan
 from .regulatory_impact import resolve_verified_regulatory_impact
 from .schema_contracts import verify_kpi_schema
-from .tool_contracts import ToolName, build_tool_plan
+from .tool_contracts import ToolName, ToolPlan, build_tool_plan
 
 
 class TemplateToolExecutionRequest(BaseModel):
+    """One exact reviewed invocation carrying only an opaque Platform grant."""
+
+    model_config = ConfigDict(extra="forbid")
+
     tool: ToolName
     arguments: dict[str, Any]
-    granted_scopes: list[str] = Field(default_factory=list, max_length=32)
-    requested_by: str | None = Field(default=None, max_length=180)
+    grant_token: SecretStr
     reason: str = Field(min_length=3, max_length=1000)
     execute: bool = False
-    maximum_bytes_billed: int = Field(default=DEFAULT_MAX_BYTES, ge=1, le=10 * 1024 * 1024 * 1024)
-    timeout_ms: int = Field(default=DEFAULT_TIMEOUT_MS, ge=1000, le=120000)
+    maximum_bytes_billed: int = Field(
+        default=DEFAULT_MAX_BYTES,
+        ge=1,
+        le=10 * 1024 * 1024 * 1024,
+    )
+    timeout_ms: int = Field(
+        default=DEFAULT_TIMEOUT_MS,
+        ge=1000,
+        le=120000,
+    )
     max_rows: int = Field(default=500, ge=1, le=5000)
+
+    @model_validator(mode="after")
+    def validate_grant_token(self) -> TemplateToolExecutionRequest:
+        token = self.grant_token.get_secret_value()
+        if not 32 <= len(token) <= 256:
+            raise ValueError("platform_tool_grant_invalid")
+        return self
 
 
 class TemplateToolExecutionResult(BaseModel):
@@ -63,57 +93,94 @@ class TemplateToolExecutionResult(BaseModel):
 def prepare_execution(
     payload: TemplateToolExecutionRequest,
     *,
+    authorization_context: TrustedToolExecutionContext,
+    plan: ToolPlan | None = None,
     legal_db_path: Path | None = None,
 ) -> tuple[ExecuteRequest, str, list[str], dict[str, Any] | None]:
-    plan = build_tool_plan(payload.tool, payload.arguments)
-    missing = sorted(set(plan.required_scope) - set(payload.granted_scopes))
-    if missing:
-        raise PermissionError(f"missing_required_scope:{','.join(missing)}")
+    reviewed_plan = plan or build_tool_plan(
+        payload.tool,
+        payload.arguments,
+    )
+    validate_trusted_tool_execution_context(
+        authorization_context,
+        plan=reviewed_plan,
+        reason=payload.reason,
+    )
 
     legal_grounding: dict[str, Any] | None = None
-    if plan.tool == "regulatory_impact_query":
-        db_path = legal_db_path or Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
+    if reviewed_plan.tool == "regulatory_impact_query":
+        db_path = legal_db_path or Path(
+            os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db")
+        )
         grounding = resolve_verified_regulatory_impact(
             db_path,
-            instrument_id=plan.arguments["instrument_id"],
-            as_of=date.fromisoformat(plan.arguments["as_of"]),
+            instrument_id=reviewed_plan.arguments["instrument_id"],
+            as_of=date.fromisoformat(
+                reviewed_plan.arguments["as_of"]
+            ),
         )
-        plan.arguments["verified_topics"] = list(grounding.topics)
+        # These topics are server-derived legal evidence. They are appended
+        # only after the caller-authored arguments were authorized exactly.
+        reviewed_plan.arguments["verified_topics"] = list(
+            grounding.topics
+        )
         legal_grounding = {
             "instrument_id": grounding.instrument_id,
             "source_url": grounding.source_url,
             "citation_ids": list(grounding.citation_ids),
             "topics": list(grounding.topics),
-            "as_of": plan.arguments["as_of"],
+            "as_of": reviewed_plan.arguments["as_of"],
         }
 
-    sql, parameters = compile_tool_plan(plan)
-    contract_limit = int(plan.arguments.get("limit", payload.max_rows))
+    sql, parameters = compile_tool_plan(reviewed_plan)
+    contract_limit = int(
+        reviewed_plan.arguments.get("limit", payload.max_rows)
+    )
     effective_max_rows = min(payload.max_rows, contract_limit)
     request = ExecuteRequest(
-        tool=plan.tool,
+        tool=reviewed_plan.tool,
         sql=sql,
         parameters=parameters,
-        requested_by=payload.requested_by,
+        requested_by=authorization_context.actor_subject,
         reason=payload.reason,
         max_rows=effective_max_rows,
         maximum_bytes_billed=payload.maximum_bytes_billed,
         timeout_ms=payload.timeout_ms,
+        authorization_request_id=authorization_context.request_id,
+        tenant_id=str(authorization_context.tenant_id),
+        authorization_fingerprint=(
+            authorization_context.authorization_fingerprint
+        ),
     )
-    return request, plan.query_id, plan.required_scope, legal_grounding
+    return (
+        request,
+        reviewed_plan.query_id,
+        reviewed_plan.required_scope,
+        legal_grounding,
+    )
 
 
-def _semantic_verification(payload: TemplateToolExecutionRequest) -> dict[str, Any] | None:
+def _semantic_verification(
+    payload: TemplateToolExecutionRequest,
+) -> dict[str, Any] | None:
     if payload.tool != "ops_kpi_query":
         return None
     metric = str(payload.arguments.get("metric") or "")
     definition = get_kpi_definition(metric)
     if not definition.semantic_contract_id:
-        raise ValueError(f"kpi_semantic_contract_required:{metric}")
-    return verify_semantic_contract(metric=metric, contract_id=definition.semantic_contract_id)
+        raise ValueError(
+            f"kpi_semantic_contract_required:{metric}"
+        )
+    return verify_semantic_contract(
+        metric=metric,
+        contract_id=definition.semantic_contract_id,
+    )
 
 
-def _schema_verification(payload: TemplateToolExecutionRequest, adapter) -> dict[str, Any] | None:
+def _schema_verification(
+    payload: TemplateToolExecutionRequest,
+    adapter,
+) -> dict[str, Any] | None:
     if payload.tool != "ops_kpi_query":
         return None
     metric = str(payload.arguments.get("metric") or "")
@@ -128,12 +195,22 @@ def _runtime_activation(
     if payload.tool != "ops_kpi_query":
         return None
     if semantic_verification is None or schema_verification is None:
-        raise ValueError("kpi_runtime_activation_prerequisites_required")
+        raise ValueError(
+            "kpi_runtime_activation_prerequisites_required"
+        )
     metric = str(payload.arguments.get("metric") or "")
     start_raw = payload.arguments.get("start_date")
     end_raw = payload.arguments.get("end_date")
-    start_date = date.fromisoformat(str(start_raw)) if start_raw else None
-    end_date = date.fromisoformat(str(end_raw)) if end_raw else None
+    start_date = (
+        date.fromisoformat(str(start_raw))
+        if start_raw
+        else None
+    )
+    end_date = (
+        date.fromisoformat(str(end_raw))
+        if end_raw
+        else None
+    )
     return verify_kpi_runtime_activation(
         metric=metric,
         semantic_verification=semantic_verification,
@@ -152,7 +229,9 @@ def _activation_provenance(
     if payload.tool != "ops_kpi_query":
         return None
     if semantic_verification is None or schema_verification is None:
-        raise ValueError("kpi_activation_provenance_prerequisites_required")
+        raise ValueError(
+            "kpi_activation_provenance_prerequisites_required"
+        )
     return provenance_from_activation(
         metric=str(payload.arguments.get("metric") or ""),
         semantic_verification=semantic_verification,
@@ -161,10 +240,14 @@ def _activation_provenance(
     )
 
 
-def _result_contract_fingerprint(payload: TemplateToolExecutionRequest) -> str | None:
+def _result_contract_fingerprint(
+    payload: TemplateToolExecutionRequest,
+) -> str | None:
     if payload.tool != "ops_kpi_query":
         return None
-    return get_result_contract_fingerprint(str(payload.arguments.get("metric") or ""))
+    return get_result_contract_fingerprint(
+        str(payload.arguments.get("metric") or "")
+    )
 
 
 def _attach_contract_audit(
@@ -186,49 +269,81 @@ def _attach_contract_audit(
     return request.model_copy(
         update={
             "semantic_contract_id": (
-                str(semantic_verification["contract_id"]) if semantic_verification else None
+                str(semantic_verification["contract_id"])
+                if semantic_verification
+                else None
             ),
             "semantic_fingerprint": (
-                str(semantic_verification["fingerprint"]) if semantic_verification else None
+                str(semantic_verification["fingerprint"])
+                if semantic_verification
+                else None
             ),
             "schema_contract_id": (
-                str(schema_verification["contract_id"]) if schema_verification else None
+                str(schema_verification["contract_id"])
+                if schema_verification
+                else None
             ),
             "schema_fingerprint": (
-                str(schema_verification["observed_fingerprint"]) if schema_verification else None
+                str(schema_verification["observed_fingerprint"])
+                if schema_verification
+                else None
             ),
             "schema_evidence_fingerprint": (
                 str(schema_verification["evidence_fingerprint"])
-                if schema_verification and schema_verification.get("evidence_fingerprint")
+                if schema_verification
+                and schema_verification.get("evidence_fingerprint")
                 else None
             ),
             "unit_contract_fingerprint": (
                 str(runtime_activation["unit_contract_fingerprint"])
-                if runtime_activation and runtime_activation.get("unit_contract_fingerprint")
+                if runtime_activation
+                and runtime_activation.get("unit_contract_fingerprint")
                 else None
             ),
             "aggregation_contract_fingerprint": (
-                str(runtime_activation["aggregation_contract_fingerprint"])
-                if runtime_activation and runtime_activation.get("aggregation_contract_fingerprint")
+                str(
+                    runtime_activation[
+                        "aggregation_contract_fingerprint"
+                    ]
+                )
+                if runtime_activation
+                and runtime_activation.get(
+                    "aggregation_contract_fingerprint"
+                )
                 else None
             ),
             "policy_contract_fingerprint": (
                 str(runtime_activation["sla_contract_fingerprint"])
-                if runtime_activation and runtime_activation.get("sla_contract_fingerprint")
+                if runtime_activation
+                and runtime_activation.get("sla_contract_fingerprint")
                 else None
             ),
             "formula_contract_fingerprint": (
-                str(runtime_activation["quantity_contract_fingerprint"])
-                if runtime_activation and runtime_activation.get("quantity_contract_fingerprint")
+                str(
+                    runtime_activation[
+                        "quantity_contract_fingerprint"
+                    ]
+                )
+                if runtime_activation
+                and runtime_activation.get(
+                    "quantity_contract_fingerprint"
+                )
                 else None
             ),
-            "result_contract_fingerprint": result_contract_fingerprint,
-            "activation_provenance_fingerprint": activation_provenance_fingerprint,
+            "result_contract_fingerprint": (
+                result_contract_fingerprint
+            ),
+            "activation_provenance_fingerprint": (
+                activation_provenance_fingerprint
+            ),
         }
     )
 
 
-def _execution_adapter(payload: TemplateToolExecutionRequest, adapter):
+def _execution_adapter(
+    payload: TemplateToolExecutionRequest,
+    adapter,
+):
     if payload.tool != "ops_kpi_query":
         return adapter
     metric = str(payload.arguments.get("metric") or "")
@@ -245,8 +360,12 @@ def _run_executor(
     audit_store: ExecutionAuditStore,
 ) -> ExecutionResult:
     try:
-        return SafeBigQueryExecutor(_execution_adapter(payload, adapter), audit_store).run(
-            request, execute=payload.execute
+        return SafeBigQueryExecutor(
+            _execution_adapter(payload, adapter),
+            audit_store,
+        ).run(
+            request,
+            execute=payload.execute,
         )
     except KpiResultValidationError:
         audit_store.save(
@@ -260,18 +379,32 @@ def _run_executor(
 def execute_with_adapter(
     payload: TemplateToolExecutionRequest,
     *,
+    authorization_context: TrustedToolExecutionContext,
     adapter,
     audit_store: ExecutionAuditStore,
+    plan: ToolPlan | None = None,
     legal_db_path: Path | None = None,
 ) -> TemplateToolExecutionResult:
-    request, query_id, required_scope, legal_grounding = prepare_execution(
-        payload, legal_db_path=legal_db_path
+    request, query_id, required_scope, legal_grounding = (
+        prepare_execution(
+            payload,
+            authorization_context=authorization_context,
+            plan=plan,
+            legal_db_path=legal_db_path,
+        )
     )
     semantic_verification = _semantic_verification(payload)
     schema_verification = _schema_verification(payload, adapter)
-    runtime_activation = _runtime_activation(payload, semantic_verification, schema_verification)
+    runtime_activation = _runtime_activation(
+        payload,
+        semantic_verification,
+        schema_verification,
+    )
     activation_provenance_fingerprint = _activation_provenance(
-        payload, semantic_verification, schema_verification, runtime_activation
+        payload,
+        semantic_verification,
+        schema_verification,
+        runtime_activation,
     )
     result_contract_fingerprint = _result_contract_fingerprint(payload)
     request = _attach_contract_audit(
@@ -297,14 +430,42 @@ def execute_with_adapter(
         semantic_verification=semantic_verification,
         schema_verification=schema_verification,
         runtime_activation=runtime_activation,
-        activation_provenance_fingerprint=activation_provenance_fingerprint,
+        activation_provenance_fingerprint=(
+            activation_provenance_fingerprint
+        ),
         result_contract_fingerprint=result_contract_fingerprint,
         model_authored_sql_allowed=False,
     )
 
 
+async def authorize_and_execute_with_adapter(
+    payload: TemplateToolExecutionRequest,
+    *,
+    authorizer: PlatformToolAuthorizer,
+    adapter,
+    audit_store: ExecutionAuditStore,
+    legal_db_path: Path | None = None,
+) -> TemplateToolExecutionResult:
+    """Consume one Platform grant, then execute exactly once if authorized."""
+
+    plan = build_tool_plan(payload.tool, payload.arguments)
+    authorization_context = await authorizer.authorize(
+        grant_token=payload.grant_token.get_secret_value(),
+        plan=plan,
+        reason=payload.reason,
+    )
+    return execute_with_adapter(
+        payload,
+        authorization_context=authorization_context,
+        adapter=adapter,
+        audit_store=audit_store,
+        plan=plan,
+        legal_db_path=legal_db_path,
+    )
+
+
 class TemplateBigQueryAdapter(GoogleBigQueryAdapter):
-    """BigQuery adapter for vetted templates, including named ARRAY parameters."""
+    """BigQuery adapter for vetted templates, including ARRAY parameters."""
 
     @staticmethod
     def _scalar_type(value: Any) -> str:
@@ -330,74 +491,95 @@ class TemplateBigQueryAdapter(GoogleBigQueryAdapter):
                     array_type = "STRING"
                 else:
                     array_type = self._scalar_type(value[0])
-                    if any(self._scalar_type(item) != array_type for item in value):
-                        raise ValueError(f"mixed_array_parameter_types:{name}")
-                params.append(self.bigquery.ArrayQueryParameter(name, array_type, value))
+                    if any(
+                        self._scalar_type(item) != array_type
+                        for item in value
+                    ):
+                        raise ValueError(
+                            f"mixed_array_parameter_types:{name}"
+                        )
+                params.append(
+                    self.bigquery.ArrayQueryParameter(
+                        name,
+                        array_type,
+                        value,
+                    )
+                )
                 continue
             if value is None:
-                raise ValueError(f"null_query_parameter_not_allowed:{name}")
+                raise ValueError(
+                    f"null_query_parameter_not_allowed:{name}"
+                )
             params.append(
-                self.bigquery.ScalarQueryParameter(name, self._scalar_type(value), value)
+                self.bigquery.ScalarQueryParameter(
+                    name,
+                    self._scalar_type(value),
+                    value,
+                )
             )
         return params
 
     def table_schema(self, table_id: str) -> dict[str, str]:
         table = self.client.get_table(table_id)
-        return {field.name: field.field_type for field in table.schema}
+        return {
+            field.name: field.field_type
+            for field in table.schema
+        }
 
 
-router = APIRouter(prefix="/v1/tool-execution", tags=["tool-execution"])
+router = APIRouter(
+    prefix="/v1/tool-execution",
+    tags=["tool-execution"],
+)
 
 
 @router.post("", response_model=TemplateToolExecutionResult)
-def execute_template_tool(payload: TemplateToolExecutionRequest):
+async def execute_template_tool(
+    payload: TemplateToolExecutionRequest,
+):
     if not EXECUTION_ENABLED:
-        raise HTTPException(status_code=409, detail="BigQuery execution is disabled by default")
+        raise HTTPException(
+            status_code=409,
+            detail="BigQuery execution is disabled by default",
+        )
+
     try:
-        db_path = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
-        request, query_id, required_scope, legal_grounding = prepare_execution(
-            payload, legal_db_path=db_path
-        )
+        # Local runtime preflight happens before consuming the single-use grant.
         adapter = TemplateBigQueryAdapter()
-        semantic_verification = _semantic_verification(payload)
-        schema_verification = _schema_verification(payload, adapter)
-        runtime_activation = _runtime_activation(
-            payload, semantic_verification, schema_verification
+        authorizer = build_platform_tool_authorizer()
+        db_path = Path(
+            os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db")
         )
-        activation_provenance_fingerprint = _activation_provenance(
-            payload, semantic_verification, schema_verification, runtime_activation
-        )
-        result_contract_fingerprint = _result_contract_fingerprint(payload)
-        request = _attach_contract_audit(
-            request,
-            semantic_verification,
-            schema_verification,
-            runtime_activation,
-            activation_provenance_fingerprint,
-            result_contract_fingerprint,
-        )
-        audit_store = ExecutionAuditStore(db_path)
-        execution = _run_executor(
-            payload=payload,
-            request=request,
+        return await authorize_and_execute_with_adapter(
+            payload,
+            authorizer=authorizer,
             adapter=adapter,
-            audit_store=audit_store,
+            audit_store=ExecutionAuditStore(db_path),
+            legal_db_path=db_path,
         )
-        return TemplateToolExecutionResult(
-            tool=payload.tool,
-            query_id=query_id,
-            required_scope=required_scope,
-            execution=execution,
-            legal_grounding=legal_grounding,
-            semantic_verification=semantic_verification,
-            schema_verification=schema_verification,
-            runtime_activation=runtime_activation,
-            activation_provenance_fingerprint=activation_provenance_fingerprint,
-            result_contract_fingerprint=result_contract_fingerprint,
-            model_authored_sql_allowed=False,
-        )
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlatformToolAuthorizationDenied as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="Tool execution authorization denied",
+        ) from exc
+    except PlatformToolAuthorizationIndeterminate as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Tool authorization outcome is unknown; "
+                "do not retry this grant"
+            ),
+        ) from exc
+    except PlatformToolAuthorizationContractError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Tool authorization contract failed closed",
+        ) from exc
+    except JarvisRuntimeConfigurationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Jarvis authorization runtime is unavailable",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

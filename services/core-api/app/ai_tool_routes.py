@@ -544,6 +544,35 @@ async def authorize_internal_ai_tool_execution(
             "AI tool grant authority is unavailable"
         ) from exc
 
+    # The grant has been atomically consumed at this point. Recompute the
+    # safety envelope and re-check dynamic emergency control so a stop/change
+    # made after public admission can still burn the stale grant before use.
+    try:
+        execution_policy = execution_envelope(
+            payload.tool,
+            arguments=payload.arguments,
+        )
+    except JarvisSafetyPolicyDenied as exc:
+        raise _ai_tool_safety_denied() from exc
+
+    if execution_policy.safety_policy_fingerprint != binding.safety_policy_fingerprint:
+        raise _ai_tool_grant_failed()
+
+    try:
+        control_mode = await _jarvis_admission_store.require_control_allows(
+            side_effect_class=execution_policy.side_effect_class,
+        )
+    except JarvisReadOnlyModeDenied as exc:
+        raise _ai_tool_safety_denied() from exc
+    except JarvisEmergencyHalt as exc:
+        raise _ai_tool_runtime_unavailable(
+            "AI tool execution is temporarily suspended"
+        ) from exc
+    except (JarvisAdmissionInvalid, JarvisAdmissionUnavailable) as exc:
+        raise _ai_tool_runtime_unavailable(
+            "AI tool control authority is unavailable"
+        ) from exc
+
     audit_event = build_audit_event(
         request_id=request.state.request_id,
         actor=binding.actor_subject,
@@ -559,6 +588,7 @@ async def authorize_internal_ai_tool_execution(
             "reason_sha256": binding.reason_sha256,
             "authorization_fingerprint": binding.authorization_fingerprint,
             "safety_policy_fingerprint": binding.safety_policy_fingerprint,
+            "admission_control_mode": control_mode,
         },
     )
 

@@ -92,6 +92,7 @@ jobs:
           services/core-api/tests/test_jarvis_execution_admission_runtime.py
           services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
+          services/core-api/tests/test_jarvis_execution_control_mode.py
           services/core-api/tests/test_jarvis_execution_grants.py
           services/core-api/tests/test_jarvis_execution_idempotency.py
           services/core-api/tests/test_jarvis_execution_idempotency_runtime.py
@@ -112,6 +113,7 @@ jobs:
           services/core-api/tests/test_jarvis_execution_admission.py
           services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
+          services/core-api/tests/test_jarvis_execution_control_mode.py
           services/core-api/tests/test_jarvis_execution_grants.py
           services/core-api/tests/test_jarvis_execution_idempotency.py
           services/core-api/tests/test_jarvis_idempotency_migration_contract.py

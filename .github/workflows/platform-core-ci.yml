@@ -118,6 +118,93 @@ jobs:
       - name: Test as RLS-bound runtime role
         run: pytest services/core-api/tests
 
+  jarvis-tool-authorization:
+    name: Jarvis tool authorization
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5433/opex_jarvis_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5433/opex_jarvis_test
+      OPEX_REDIS_URL: redis://localhost:6380/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_jarvis_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_jarvis_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Lint new Jarvis authorization slice
+        run: >-
+          ruff check
+          services/core-api/app/core/ai_tool_authorization.py
+          services/core-api/app/core/ai_tool_grants.py
+          services/core-api/tests/test_ai_tool_authorization.py
+          services/core-api/tests/test_ai_tool_grants.py
+          services/core-api/alembic/versions/0009_ai_tool_permissions.py
+      - name: Test Jarvis authorization and single-use grants
+        run: >-
+          pytest -q
+          services/core-api/tests/test_ai_tool_authorization.py
+          services/core-api/tests/test_ai_tool_grants.py
+      - name: Create RLS-bound runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5433/opex_jarvis_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Apply migrations through Jarvis permission revision
+        working-directory: services/core-api
+        run: alembic upgrade 0009_ai_tool_permissions
+      - name: Verify migration head
+        working-directory: services/core-api
+        run: alembic current
+
   platform-config:
     name: Platform configuration
     runs-on: ubuntu-latest

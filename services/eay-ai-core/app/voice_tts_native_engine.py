@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import struct
 import time
@@ -11,6 +12,11 @@ from typing import Any, Protocol
 from .voice_response_lineage import VoiceTtsGenerationProof
 from .voice_runtime_attestation import VoiceRuntimeArtifactSeal, hash_regular_file, seal_runtime_directory_manifest
 from .voice_tts_bundle import VoiceTtsBundleExecutionIdentity
+
+
+def _sha256(payload: object) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class CancellationCheckpoint(Protocol):
@@ -172,6 +178,7 @@ class SherpaOnnxVitsTtsEngine:
         self._tts = self.sherpa.OfflineTts(config)
 
     def _validate_proof(self, proof: VoiceTtsGenerationProof) -> None:
+        proof.validate()
         if proof.language != self.language:
             raise ValueError("voice_sherpa_tts_proof_language_mismatch")
         if proof.deployment_manifest_fingerprint != self.runtime_seal.deployment_manifest_fingerprint:
@@ -186,6 +193,7 @@ class SherpaOnnxVitsTtsEngine:
             (proof.tts_voice_config_sha256, self.language_identity.config_sha256, "voice_sherpa_tts_config_proof_mismatch"),
             (proof.tts_voice_tokens_sha256, self.language_identity.tokens_sha256, "voice_sherpa_tts_tokens_proof_mismatch"),
             (proof.tts_voice_model_card_sha256, self.language_identity.model_card_sha256, "voice_sherpa_tts_model_card_proof_mismatch"),
+            (proof.tts_voice_license_id_sha256, self.language_identity.artifact_license_id_sha256, "voice_sherpa_tts_license_proof_mismatch"),
             (
                 proof.tts_phonemizer_data_manifest_fingerprint,
                 self.bundle_identity.phonemizer_data_manifest_fingerprint,
@@ -195,6 +203,11 @@ class SherpaOnnxVitsTtsEngine:
                 proof.tts_phonemizer_license_id_sha256,
                 self.bundle_identity.phonemizer_license_id_sha256,
                 "voice_sherpa_tts_phonemizer_license_proof_mismatch",
+            ),
+            (
+                proof.tts_phonemizer_source_sha256,
+                self.bundle_identity.phonemizer_source_sha256,
+                "voice_sherpa_tts_phonemizer_source_proof_mismatch",
             ),
         )
         for actual, expected, code in checks:
@@ -285,11 +298,7 @@ class SherpaOnnxVitsTtsEngine:
                 generation_duration_ms=generation_duration_ms,
                 audio_duration_ms=audio_duration_ms,
                 real_time_factor=rtf,
-                fingerprint=hashlib.sha256(
-                    json_bytes := __import__("json").dumps(
-                        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-                    ).encode("utf-8")
-                ).hexdigest(),
+                fingerprint=_sha256(payload),
                 _pcm=owned,
             )
         except Exception:

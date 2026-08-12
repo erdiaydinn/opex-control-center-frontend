@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 from uuid import UUID
 
 import pytest
@@ -86,7 +87,8 @@ def capability(
     store_names: tuple[str, ...] = ("Fulya",),
 ) -> AiToolCapability:
     data_scope = AiDataScope(
-        store_names=store_names
+        version=1,
+        store_names=store_names,
     )
     return AiToolCapability(
         tenant_id=tenant_id,
@@ -105,10 +107,22 @@ def capability(
     )
 
 
+def ops_arguments(
+    *,
+    metric: str = "orders",
+    stores: tuple[str, ...] = ("Fulya",),
+) -> dict[str, object]:
+    return {
+        "metric": metric,
+        "stores": list(stores),
+    }
+
+
 def test_arguments_hash_is_stable_for_key_order() -> None:
     first = canonical_arguments_sha256(
         {
             "metric": "orders",
+            "stores": ["Fulya"],
             "filters": {
                 "warehouse": "A",
                 "days": 7,
@@ -121,6 +135,7 @@ def test_arguments_hash_is_stable_for_key_order() -> None:
                 "days": 7,
                 "warehouse": "A",
             },
+            "stores": ["Fulya"],
             "metric": "orders",
         }
     )
@@ -161,9 +176,7 @@ async def test_issue_stores_only_hashed_token_and_invocation_content() -> None:
 
     issued = await store.issue(
         capability(),
-        arguments={
-            "metric": "secret-metric",
-        },
+        arguments=ops_arguments(metric="secret-metric"),
         reason="need secret reason",
     )
 
@@ -183,11 +196,30 @@ async def test_issue_stores_only_hashed_token_and_invocation_content() -> None:
 
 
 @pytest.mark.asyncio
+async def test_issue_rejects_missing_or_out_of_scope_stores() -> None:
+    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    cap = capability(store_names=("Fulya", "Anka"))
+
+    for arguments in (
+        {"metric": "orders"},
+        ops_arguments(stores=()),
+        ops_arguments(stores=("Dicle",)),
+        ops_arguments(stores=("fulya",)),
+    ):
+        with pytest.raises(AiToolGrantInvalid):
+            await store.issue(
+                cap,
+                arguments=arguments,
+                reason="read KPI",
+            )
+
+
+@pytest.mark.asyncio
 async def test_single_use_grant_consumes_exact_binding() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
     cap = capability()
-    arguments = {"metric": "orders"}
+    arguments = ops_arguments()
     reason = "authorized KPI lookup"
 
     issued = await store.issue(
@@ -205,6 +237,7 @@ async def test_single_use_grant_consumes_exact_binding() -> None:
     )
 
     assert binding == issued.binding
+    assert binding.version == 2
     assert binding.data_scope.store_names == ("Fulya",)
 
     with pytest.raises(
@@ -228,7 +261,7 @@ async def test_internal_consume_recovers_trusted_actor_tenant_and_data_scope() -
         fingerprint="b" * 64,
         store_names=("Anka", "Fulya"),
     )
-    arguments = {"metric": "orders"}
+    arguments = ops_arguments(stores=("Anka",))
     reason = "read KPI"
 
     issued = await store.issue(
@@ -257,11 +290,42 @@ async def test_internal_consume_recovers_trusted_actor_tenant_and_data_scope() -
 
 
 @pytest.mark.asyncio
+async def test_redis_scope_tamper_is_detected_after_atomic_consume() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability(store_names=("Fulya",))
+    arguments = ops_arguments()
+    issued = await store.issue(
+        cap,
+        arguments=arguments,
+        reason="read KPI",
+    )
+
+    key = next(iter(redis.values))
+    payload = json.loads(redis.values[key])
+    payload["data_scope"] = {
+        "version": 1,
+        "store_names": ["Dicle"],
+    }
+    redis.values[key] = json.dumps(payload)
+
+    with pytest.raises(AiToolGrantInvalid):
+        await store.consume_authorized_invocation(
+            token=issued.token.get_secret_value(),
+            tool="ops_kpi_query",
+            arguments=arguments,
+            reason="read KPI",
+        )
+
+    assert key not in redis.values
+
+
+@pytest.mark.asyncio
 async def test_binding_mismatch_burns_grant() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
     cap = capability()
-    original = {"metric": "orders"}
+    original = ops_arguments()
 
     issued = await store.issue(
         cap,
@@ -276,7 +340,7 @@ async def test_binding_mismatch_burns_grant() -> None:
         await store.consume(
             token=token,
             capability=cap,
-            arguments={"metric": "refunds"},
+            arguments=ops_arguments(metric="refunds"),
             reason="read orders",
         )
 
@@ -296,7 +360,7 @@ async def test_internal_mismatch_burns_grant() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
     cap = capability()
-    original = {"metric": "orders"}
+    original = ops_arguments()
 
     issued = await store.issue(
         cap,
@@ -311,7 +375,7 @@ async def test_internal_mismatch_burns_grant() -> None:
         await store.consume_authorized_invocation(
             token=token,
             tool="ops_kpi_query",
-            arguments={"metric": "refunds"},
+            arguments=ops_arguments(metric="refunds"),
             reason="read orders",
         )
 
@@ -345,17 +409,17 @@ async def test_grant_is_bound_to_actor_tenant_authorization_and_data_scope(
 
     issued = await store.issue(
         original,
-        arguments={"metric": "orders"},
+        arguments=ops_arguments(),
         reason="read KPI",
     )
 
     with pytest.raises(
-        AiToolGrantBindingMismatch
+        (AiToolGrantBindingMismatch, AiToolGrantInvalid)
     ):
         await store.consume(
             token=issued.token.get_secret_value(),
             capability=changed,
-            arguments={"metric": "orders"},
+            arguments=ops_arguments(),
             reason="read KPI",
         )
 
@@ -368,7 +432,7 @@ async def test_reason_is_part_of_single_use_binding() -> None:
 
     issued = await store.issue(
         cap,
-        arguments={"metric": "orders"},
+        arguments=ops_arguments(),
         reason="reason A",
     )
 
@@ -378,7 +442,7 @@ async def test_reason_is_part_of_single_use_binding() -> None:
         await store.consume(
             token=issued.token.get_secret_value(),
             capability=cap,
-            arguments={"metric": "orders"},
+            arguments=ops_arguments(),
             reason="reason B",
         )
 
@@ -396,7 +460,7 @@ async def test_ttl_is_strictly_bounded() -> None:
         with pytest.raises(ValueError):
             await store.issue(
                 capability(),
-                arguments={"metric": "orders"},
+                arguments=ops_arguments(),
                 reason="read KPI",
                 ttl_seconds=invalid,  # type: ignore[arg-type]
             )
@@ -412,7 +476,7 @@ async def test_redis_failure_is_fail_closed_for_issue_and_consume() -> None:
     with pytest.raises(AiToolGrantUnavailable):
         await store.issue(
             cap,
-            arguments={"metric": "orders"},
+            arguments=ops_arguments(),
             reason="read KPI",
         )
 
@@ -420,6 +484,6 @@ async def test_redis_failure_is_fail_closed_for_issue_and_consume() -> None:
         await store.consume(
             token="x" * 43,
             capability=cap,
-            arguments={"metric": "orders"},
+            arguments=ops_arguments(),
             reason="read KPI",
         )

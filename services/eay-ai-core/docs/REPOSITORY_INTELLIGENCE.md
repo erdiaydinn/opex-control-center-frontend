@@ -48,7 +48,7 @@ Historical snapshots intentionally remain tied to the exact registry fingerprint
 
 Before every append, existing history is fully reloaded and hash-chain verified. A new snapshot must point to the exact current head fingerprint or the append fails. Duplicate snapshots, history forks, missing indexed artifacts, corrupt JSON, filename/index fingerprint substitution, reordered/deleted history, and tampered snapshot content fail closed.
 
-Writes use a temporary file + `fsync` + atomic replacement for the snapshot artifact, followed by a separately `fsync`'d index append. If the index commit fails, the just-written unindexed snapshot is removed so partial history does not appear committed.
+Writes use a temporary file + `fsync` + atomic replacement for the snapshot artifact, followed by a separately `fsync`'d index append. If the index commit fails, the just-written unindexed snapshot is removed so partial history does not appear committed. JSON reload normalizes symbol/contract arrays back to immutable tuples before chain validation.
 
 This filesystem store is local-first durable project memory. It is not WORM/tamper-proof storage against an operating-system or disk administrator; cryptographically signed external checkpoints are a future control if stronger evidentiary guarantees are required.
 
@@ -58,11 +58,28 @@ This filesystem store is local-first durable project memory. It is not WORM/tamp
 
 - Python: function/class/constants, HTTP route method/path, and EAY/OPEX configuration variable names.
 - SQL/DDL: `CREATE TABLE`, `CREATE VIEW`, and `ALTER TABLE` object contracts.
-- YAML: workflow name, action identifiers, and presence of run steps without shell-command contents.
+- YAML: workflow name, action identifiers, and presence of list-form or mapping-form run steps without shell-command contents.
 
 Secret values are never copied into extracted contracts. Excluded paths are rejected before parsing, binary-like content fails closed, and invalid Python syntax is rejected rather than heuristically guessed.
 
-The current design deliberately separates remote transport from trusted extraction. GitHub fetching remains a read-only caller responsibility; credentials/tokens are never accepted by or persisted in the repository-memory model.
+## Read-only review ingestion coordinator
+
+`app/repository_review_ingestion.py` composes already-fetched repository evidence into one verified memory transaction. Remote transport remains outside the trusted memory layer: the caller performs read-only GitHub retrieval and supplies the exact repository, ref, commit SHA, file path, blob SHA, and source text returned by that retrieval.
+
+Before any snapshot is committed, the coordinator:
+
+- resolves the target through the canonical registry and refuses unresolved identities,
+- requires an exact 40-character commit SHA,
+- rejects repository, ref, or commit substitution across evidence records,
+- validates every Git blob SHA and rejects duplicate/empty paths,
+- enforces a bounded per-file review size,
+- applies the secret/generated path admission gate,
+- extracts only structural symbols/contracts,
+- stores a SHA-256 of reviewed source content rather than raw source in the snapshot,
+- reloads and verifies the existing append-only chain,
+- binds the new snapshot to the exact current head and commits through the durable store.
+
+If provenance validation, extraction, chain verification, snapshot creation, or persistence fails, the review is not accepted as repository memory. GitHub credentials/tokens are never accepted by or persisted in this model.
 
 ## External-source policy
 
@@ -74,4 +91,4 @@ The supplied `council-of-high-intelligence-main.zip` archive is bound to verifie
 
 ## Next layer
 
-The next repository-intelligence slice should add a read-only ingestion coordinator that accepts already-fetched GitHub commit/file evidence, verifies exact ref/commit/blob provenance, runs safe contract extraction, and commits one snapshot transactionally. After that, unresolved archive upstream/license recovery can continue without weakening registry completeness or adoption gates.
+The next repository-intelligence slice should add a concrete read-only GitHub evidence adapter that verifies remote commit/tree/blob relationships before handing evidence to the coordinator, plus historical registry-revision loading for long-lived snapshot verification. Unresolved archive upstream/license recovery continues in parallel without weakening registry completeness or adoption gates.

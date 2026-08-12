@@ -1,0 +1,15 @@
+# Opt-in Platform Core -> EAY AI Core execution broker.
+#
+# The browser calls Platform Core only. Core generates the opaque single-use
+# grant and forwards it over ai_plane to the internal AI Core service. This
+# overlay publishes no ports and contains no signing key material.
+services:
+  core-api:
+    environment:
+      OPEX_JARVIS_BROKER_ENABLED: "true"
+      OPEX_JARVIS_BROKER_AI_CORE_BASE_URL: "${OPEX_JARVIS_BROKER_AI_CORE_BASE_URL:-http://eay-ai-core:8030}"
+      OPEX_JARVIS_BROKER_REQUEST_TIMEOUT_SECONDS: "${OPEX_JARVIS_BROKER_REQUEST_TIMEOUT_SECONDS:-30}"
+      OPEX_JARVIS_BROKER_TOOL_TIMEOUT_MS: "${OPEX_JARVIS_BROKER_TOOL_TIMEOUT_MS:-20000}"
+      OPEX_JARVIS_BROKER_MAXIMUM_BYTES_BILLED: "${OPEX_JARVIS_BROKER_MAXIMUM_BYTES_BILLED:-262144000}"
+      OPEX_JARVIS_BROKER_MAX_ROWS: "${OPEX_JARVIS_BROKER_MAX_ROWS:-500}"
+      OPEX_JARVIS_BROKER_MAX_RESPONSE_BYTES: "${OPEX_JARVIS_BROKER_MAX_RESPONSE_BYTES:-2097152}"

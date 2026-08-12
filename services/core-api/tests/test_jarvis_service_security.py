@@ -5,14 +5,16 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 import app.core.jarvis_service_security as security
-from app.core.config import Settings
 from app.core.internal_identity import InternalAssertionInvalid
 from app.core.internal_service_replay import (
     INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
     InternalServiceReplayDetected,
     InternalServiceReplayUnavailable,
 )
-from app.core.jarvis_service_identity import VerifiedJarvisService
+from app.core.jarvis_service_identity import (
+    JarvisServiceSettings,
+    VerifiedJarvisService,
+)
 
 
 class RecordingReplayGuard:
@@ -54,6 +56,13 @@ class ReplayUnavailableGuard(RecordingReplayGuard):
         raise InternalServiceReplayUnavailable(
             "redis unavailable"
         )
+
+
+def enabled_settings() -> JarvisServiceSettings:
+    return JarvisServiceSettings(
+        enabled=True,
+        assertion_jwks_file="test-jarvis-jwks.json",
+    )
 
 
 def request_with_headers(
@@ -98,7 +107,7 @@ def install_valid_verifier(
 ) -> None:
     def verify(
         token: str,
-        settings: Settings,
+        settings: JarvisServiceSettings,
     ) -> VerifiedJarvisService:
         del settings
         assert token == "opaque-token"
@@ -112,6 +121,18 @@ def install_valid_verifier(
 
 
 @pytest.mark.asyncio
+async def test_disabled_jarvis_service_boundary_is_hidden() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await security.require_jarvis_service(
+            valid_request(),
+            JarvisServiceSettings(),
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Not Found"
+
+
+@pytest.mark.asyncio
 async def test_valid_jarvis_header_sets_machine_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -120,7 +141,7 @@ async def test_valid_jarvis_header_sets_machine_identity(
 
     verified = await security.require_jarvis_service(
         request,
-        Settings(),
+        enabled_settings(),
     )
 
     assert verified == verified_service()
@@ -145,7 +166,7 @@ async def test_duplicate_or_coalesced_jarvis_header_is_rejected() -> None:
     with pytest.raises(HTTPException) as duplicate_info:
         await security.require_jarvis_service(
             duplicate,
-            Settings(),
+            enabled_settings(),
         )
 
     assert duplicate_info.value.status_code == 401
@@ -162,7 +183,7 @@ async def test_duplicate_or_coalesced_jarvis_header_is_rejected() -> None:
     with pytest.raises(HTTPException) as coalesced_info:
         await security.require_jarvis_service(
             coalesced,
-            Settings(),
+            enabled_settings(),
         )
 
     assert coalesced_info.value.status_code == 401
@@ -174,7 +195,7 @@ async def test_verifier_failure_is_generic_401(
 ) -> None:
     def reject(
         token: str,
-        settings: Settings,
+        settings: JarvisServiceSettings,
     ) -> VerifiedJarvisService:
         del token, settings
         raise InternalAssertionInvalid(
@@ -190,7 +211,7 @@ async def test_verifier_failure_is_generic_401(
     with pytest.raises(HTTPException) as exc_info:
         await security.require_jarvis_service(
             valid_request(),
-            Settings(),
+            enabled_settings(),
         )
 
     assert exc_info.value.status_code == 401
@@ -211,7 +232,7 @@ async def test_fresh_jarvis_assertion_consumes_replay_id(
         "_jarvis_service_replay_guard",
         guard,
     )
-    settings = Settings()
+    settings = enabled_settings()
 
     verified = await security.require_fresh_jarvis_service(
         valid_request(),
@@ -222,7 +243,7 @@ async def test_fresh_jarvis_assertion_consumes_replay_id(
     assert guard.calls == [
         (
             "jarvis-assertion-0001",
-            settings.internal_assertion_max_lifetime_seconds
+            settings.assertion_max_lifetime_seconds
             + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
         )
     ]
@@ -243,7 +264,7 @@ async def test_replayed_jarvis_assertion_is_generic_401_and_clears_state(
     with pytest.raises(HTTPException) as exc_info:
         await security.require_fresh_jarvis_service(
             request,
-            Settings(),
+            enabled_settings(),
         )
 
     assert exc_info.value.status_code == 401
@@ -268,7 +289,7 @@ async def test_replay_authority_failure_is_503_and_clears_state(
     with pytest.raises(HTTPException) as exc_info:
         await security.require_fresh_jarvis_service(
             request,
-            Settings(),
+            enabled_settings(),
         )
 
     assert exc_info.value.status_code == 503

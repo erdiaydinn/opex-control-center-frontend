@@ -215,6 +215,10 @@ async def test_user_grant_issue_derives_capability_server_side(
     assert len(response.grant_token) >= 32
     assert response.expires_in_seconds <= 60
     assert len(response.data_scope_fingerprint) == 64
+    assert response.query_contract_id == "ops.kpi.orders.v1"
+    assert response.query_contract_revision == 1
+    assert len(response.query_contract_fingerprint) == 64
+    assert len(response.execution_scope_fingerprint) == 64
 
 
 @pytest.mark.asyncio
@@ -381,6 +385,10 @@ async def test_internal_authorization_recovers_identity_scope_and_writes_minimal
     assert response.data_scope_fingerprint == (
         capability.data_scope_fingerprint
     )
+    assert response.query_contract_id == "ops.kpi.orders.v1"
+    assert response.query_contract_revision == 1
+    assert len(response.query_contract_fingerprint) == 64
+    assert len(response.execution_scope_fingerprint) == 64
 
     assert len(audit_events) == 1
     event = audit_events[0]
@@ -396,7 +404,18 @@ async def test_internal_authorization_recovers_identity_scope_and_writes_minimal
     assert metadata["data_scope_fingerprint"] == (
         capability.data_scope_fingerprint
     )
-    assert "orders" not in repr(metadata)
+    assert metadata["query_contract_id"] == "ops.kpi.orders.v1"
+    assert metadata["query_contract_revision"] == 1
+    assert len(metadata["query_contract_fingerprint"]) == 64
+    assert len(metadata["execution_scope_fingerprint"]) == 64
+
+    # Query contract identifiers are approved metadata and may contain words
+    # also used by tool arguments. Verify raw invocation content by field and
+    # value, not by substring-matching the whole metadata representation.
+    assert "arguments" not in metadata
+    assert "reason" not in metadata
+    assert "stores" not in metadata
+    assert "metric" not in repr(metadata)
     assert reason not in repr(metadata)
     assert "Fulya" not in repr(metadata)
     assert "Anka" not in repr(metadata)

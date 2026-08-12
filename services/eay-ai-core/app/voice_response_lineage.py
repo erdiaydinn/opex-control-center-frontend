@@ -61,8 +61,12 @@ class VoiceTtsGenerationProof:
     tts_language_artifact_fingerprint: str
     tts_voice_model_sha256: str
     tts_voice_config_sha256: str
+    tts_voice_tokens_sha256: str
     tts_voice_model_card_sha256: str
     tts_voice_license_id_sha256: str
+    tts_phonemizer_data_manifest_fingerprint: str
+    tts_phonemizer_license_id_sha256: str
+    tts_phonemizer_source_sha256: str
     fingerprint: str
 
 
@@ -186,7 +190,11 @@ def seal_tts_generation_proof(
         "tts_language_artifact_fingerprint": language_artifact.fingerprint,
         "tts_voice_model_sha256": language_artifact.model_sha256,
         "tts_voice_config_sha256": language_artifact.config_sha256,
+        "tts_voice_tokens_sha256": language_artifact.tokens_sha256,
         "tts_voice_model_card_sha256": language_artifact.model_card_sha256,
         "tts_voice_license_id_sha256": language_artifact.artifact_license_id_sha256,
+        "tts_phonemizer_data_manifest_fingerprint": tts_bundle_execution_identity.phonemizer_data_manifest_fingerprint,
+        "tts_phonemizer_license_id_sha256": tts_bundle_execution_identity.phonemizer_license_id_sha256,
+        "tts_phonemizer_source_sha256": tts_bundle_execution_identity.phonemizer_source_sha256,
     }
     return VoiceTtsGenerationProof(**payload, fingerprint=_sha256(payload))

@@ -11,7 +11,6 @@ from app.ai_data_scope_admin_routes import router as ai_data_scope_admin_router
 from app.core.ai_data_scope import AiDataScope
 from app.core.ai_query_contract_policy import (
     AiQueryContractPolicyError,
-    get_ai_query_contract_policy,
     require_ai_query_contract_ready,
 )
 from app.core.ai_tool_authorization import (
@@ -153,7 +152,7 @@ async def issue_ai_tool_grant(
         ) from exc
 
     try:
-        query_policy = require_ai_query_contract_ready(
+        require_ai_query_contract_ready(
             tool=payload.tool,
             environment=get_settings().environment,
         )
@@ -163,7 +162,6 @@ async def issue_ai_tool_grant(
     try:
         issued = await _ai_tool_grant_store.issue(
             capability,
-            query_policy=query_policy,
             arguments=payload.arguments,
             reason=payload.reason,
         )
@@ -216,18 +214,10 @@ async def authorize_internal_ai_tool_execution(
     """Consume a user grant and return one trusted execution context."""
 
     try:
-        query_policy = get_ai_query_contract_policy(
-            payload.tool
-        )
-    except AiQueryContractPolicyError as exc:
-        raise _query_contract_unavailable() from exc
-
-    try:
         binding = await (
             _ai_tool_grant_store.consume_authorized_invocation(
                 token=payload.grant_token,
                 tool=payload.tool,
-                query_policy=query_policy,
                 arguments=payload.arguments,
                 reason=payload.reason,
             )
@@ -244,9 +234,8 @@ async def authorize_internal_ai_tool_execution(
             detail="AI tool grant authority is unavailable",
         ) from exc
 
-    # This check deliberately happens after atomic grant consumption. If a
-    # reviewed downstream contract is withdrawn while a grant is outstanding,
-    # the stale grant is burned instead of remaining reusable.
+    # Deliberately after atomic grant consumption: if downstream readiness is
+    # withdrawn while a grant is outstanding, the stale grant is burned.
     try:
         require_ai_query_contract_ready(
             tool=payload.tool,
@@ -299,9 +288,6 @@ async def authorize_internal_ai_tool_execution(
     try:
         await write_audit_event(audit_event)
     except Exception as exc:
-        # The grant is already consumed. Never authorize execution if the
-        # durable audit boundary is unavailable; the caller must obtain a
-        # new grant after the audit dependency recovers.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI tool execution audit is unavailable",

@@ -128,7 +128,7 @@ class JarvisExecutionAdmissionSettings(BaseSettings):
     maximum_lease_ttl_seconds: int = Field(default=180, ge=20, le=300)
 
     @model_validator(mode="after")
-    def validate_hierarchy(self) -> "JarvisExecutionAdmissionSettings":
+    def validate_hierarchy(self) -> JarvisExecutionAdmissionSettings:
         if self.actor_requests_per_window > self.tenant_requests_per_window:
             raise ValueError("Jarvis actor request budget cannot exceed tenant budget")
         if self.actor_concurrency > self.tenant_concurrency:

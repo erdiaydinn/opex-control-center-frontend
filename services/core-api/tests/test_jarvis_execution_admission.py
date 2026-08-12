@@ -83,7 +83,7 @@ def test_control_transition_graph_requires_staged_recovery() -> None:
         "read_only": frozenset({"enabled", "halted"}),
         "halted": frozenset({"read_only"}),
     }
-    assert "enabled" not in ALLOWED_CONTROL_TRANSITIONS["halted"]
+    assert ALLOWED_CONTROL_TRANSITIONS["halted"].isdisjoint({"enabled"})
 
 
 @pytest.mark.asyncio

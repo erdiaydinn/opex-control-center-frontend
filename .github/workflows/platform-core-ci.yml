@@ -186,11 +186,18 @@ jobs:
           python - <<'PY'
           from app.main import app
 
-          paths = {
-              path
-              for route in app.routes
-              if (path := getattr(route, "path", None)) is not None
-          }
+          def collect_paths(routes):
+              paths = set()
+              for route in routes:
+                  path = getattr(route, "path", None)
+                  if path is not None:
+                      paths.add(path)
+                  nested = getattr(route, "routes", None)
+                  if nested is not None:
+                      paths.update(collect_paths(nested))
+              return paths
+
+          paths = collect_paths(app.routes)
           assert "/v1/ai/tool-grants" in paths
           assert "/internal/ai/tool-executions/authorize" in paths
           PY

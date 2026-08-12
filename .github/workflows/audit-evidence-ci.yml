@@ -1,0 +1,263 @@
+name: Audit Evidence CI
+
+on:
+  push:
+    branches:
+      - platform-core/eay-v2-audit-hash-chain
+  pull_request:
+    branches:
+      - platform-core/eay-v2-jarvis-admission-control-v2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-evidence:
+    name: Tamper-evident audit hash chain
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5435/opex_audit_evidence_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5435/opex_audit_evidence_test
+      OPEX_REDIS_URL: redis://localhost:6382/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_audit_evidence_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_audit_evidence_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6382:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev]"
+
+      - name: Lint audit evidence slice
+        run: >-
+          ruff check --output-format=github
+          services/core-api/alembic/versions/0011_audit_hash_chain.py
+          services/core-api/tests/test_audit_hash_chain_migration_contract.py
+          services/core-api/tests/test_audit_hash_chain_runtime.py
+
+      - name: Test audit migration security contract
+        run: >-
+          pytest -q
+          services/core-api/tests/test_audit_hash_chain_migration_contract.py
+
+      - name: Create least-privilege runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5435/opex_audit_evidence_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Apply migrations through pre-hash-chain head
+        working-directory: services/core-api
+        run: alembic upgrade 0010_jarvis_idempotency
+
+      - name: Seed legacy audit rows before hash-chain migration
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+          from uuid import UUID
+
+          TENANT_A = UUID("00000000-0000-0000-0000-00000000a111")
+          TENANT_B = UUID("00000000-0000-0000-0000-00000000b111")
+
+          async def seed_tenant(connection, tenant_id, slug, events) -> None:
+              async with connection.transaction():
+                  await connection.execute(
+                      "SELECT set_config('app.tenant_id', $1, true)",
+                      str(tenant_id),
+                  )
+                  await connection.execute(
+                      """
+                      INSERT INTO tenants (id, slug, display_name, status)
+                      VALUES ($1, $2, $2, 'active')
+                      """,
+                      tenant_id,
+                      slug,
+                  )
+                  for request_id, resource_id in events:
+                      await connection.execute(
+                          """
+                          INSERT INTO audit_events (
+                              tenant_id,
+                              actor_subject,
+                              action,
+                              resource_type,
+                              resource_id,
+                              decision,
+                              request_id,
+                              data
+                          ) VALUES (
+                              $1,
+                              'legacy-audit-actor',
+                              'legacy_audit_event',
+                              'audit_event',
+                              $2,
+                              'allowed',
+                              $3,
+                              '{"source":"legacy-pre-0011"}'::jsonb
+                          )
+                          """,
+                          tenant_id,
+                          resource_id,
+                          request_id,
+                      )
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5435/opex_audit_evidence_test"
+              )
+              try:
+                  await seed_tenant(
+                      connection,
+                      TENANT_A,
+                      "audit-chain-a",
+                      (("audit-pre-a-1", None), ("audit-pre-a-2", "legacy-2")),
+                  )
+                  await seed_tenant(
+                      connection,
+                      TENANT_B,
+                      "audit-chain-b",
+                      (("audit-pre-b-1", None),),
+                  )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Apply audit hash-chain migration
+        working-directory: services/core-api
+        run: alembic upgrade 0011_audit_hash_chain
+
+      - name: Verify audit migration head
+        working-directory: services/core-api
+        run: |
+          alembic current
+          alembic current | grep -q '0011_audit_hash_chain'
+
+      - name: Verify audit functions are invoker-rights with fixed search paths
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          EXPECTED = {
+              "audit_event_payload_v1",
+              "audit_event_hash_v1",
+              "seal_audit_event_v1",
+          }
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5435/opex_audit_evidence_test"
+              )
+              try:
+                  rows = await connection.fetch(
+                      """
+                      SELECT p.proname, p.prosecdef, p.proconfig
+                      FROM pg_proc p
+                      JOIN pg_namespace n ON n.oid = p.pronamespace
+                      WHERE n.nspname = 'public'
+                        AND p.proname = ANY($1::text[])
+                      """,
+                      list(EXPECTED),
+                  )
+                  assert {row['proname'] for row in rows} == EXPECTED
+                  for row in rows:
+                      assert row['prosecdef'] is False
+                      config = set(row['proconfig'] or [])
+                      assert 'search_path=pg_catalog, public' in config
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Test real runtime audit hash chain
+        env:
+          EAY_RUN_AUDIT_HASH_CHAIN_DB_TEST: "1"
+        run: >-
+          pytest -q
+          services/core-api/tests/test_audit_hash_chain_runtime.py
+
+      - name: Verify runtime audit privileges remain append-only
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5435/opex_audit_evidence_test"
+              )
+              try:
+                  privileges = await connection.fetch(
+                      """
+                      SELECT privilege_type
+                      FROM information_schema.role_table_grants
+                      WHERE grantee = 'opex_runtime'
+                        AND table_schema = 'public'
+                        AND table_name = 'audit_events'
+                      """
+                  )
+                  values = {row['privilege_type'] for row in privileges}
+                  assert values == {'SELECT', 'INSERT'}
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY

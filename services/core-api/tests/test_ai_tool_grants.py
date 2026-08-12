@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from redis.exceptions import RedisError
 
+import app.core.ai_tool_grants as grants
 from app.core.ai_tool_authorization import AiToolCapability
 from app.core.ai_tool_grants import (
     AI_TOOL_GRANT_MAX_TTL_SECONDS,
@@ -149,6 +151,7 @@ async def test_issue_stores_only_hashed_token_and_hashed_context() -> None:
     assert token not in redis.last_key
     assert "secret-metric" not in stored_payload
     assert "secret reason" not in stored_payload
+    assert len(issued.binding.safety_policy_fingerprint) == 64
     assert token not in repr(issued)
 
 
@@ -182,6 +185,49 @@ async def test_single_use_grant_consumes_exact_binding() -> None:
         await store.consume(
             token=token,
             capability=cap,
+            arguments=arguments,
+            reason=reason,
+        )
+
+
+@pytest.mark.asyncio
+async def test_policy_change_burns_previously_issued_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    arguments = {"metric": "orders"}
+    reason = "read KPI"
+
+    issued = await store.issue(
+        capability(),
+        arguments=arguments,
+        reason=reason,
+    )
+    token = issued.token.get_secret_value()
+    old_fingerprint = issued.binding.safety_policy_fingerprint
+
+    monkeypatch.setattr(
+        grants,
+        "execution_envelope",
+        lambda *args, **kwargs: SimpleNamespace(
+            safety_policy_fingerprint="b" * 64
+        ),
+    )
+
+    assert old_fingerprint != "b" * 64
+    with pytest.raises(AiToolGrantBindingMismatch):
+        await store.consume_authorized_invocation(
+            token=token,
+            tool="ops_kpi_query",
+            arguments=arguments,
+            reason=reason,
+        )
+
+    with pytest.raises(AiToolGrantReplayOrExpired):
+        await store.consume_authorized_invocation(
+            token=token,
+            tool="ops_kpi_query",
             arguments=arguments,
             reason=reason,
         )

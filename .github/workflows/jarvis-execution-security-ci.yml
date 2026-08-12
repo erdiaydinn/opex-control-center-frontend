@@ -6,11 +6,13 @@ on:
       - platform-core/eay-v2-jarvis-execution-security
       - platform-core/eay-v2-jarvis-trust-wiring
       - platform-core/eay-v2-jarvis-key-rotation
+      - platform-core/eay-v2-jarvis-execution-broker
   pull_request:
     branches:
       - platform-core/eay-v2-jarvis-security
       - platform-core/eay-v2-jarvis-execution-security
       - platform-core/eay-v2-jarvis-trust-wiring
+      - platform-core/eay-v2-jarvis-key-rotation
 
 permissions:
   contents: read
@@ -69,10 +71,12 @@ jobs:
           ruff check
           services/core-api/app/ai_tool_routes.py
           services/core-api/app/core/ai_tool_grants.py
+          services/core-api/app/core/jarvis_execution_broker.py
           services/core-api/app/core/jarvis_service_identity.py
           services/core-api/app/core/jarvis_service_security.py
           services/core-api/tests/test_ai_tool_routes.py
           services/core-api/tests/test_jarvis_deployment_wiring.py
+          services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
           services/core-api/tests/test_jarvis_jwks_rotation.py
@@ -86,6 +90,7 @@ jobs:
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_ai_tool_routes.py
           services/core-api/tests/test_jarvis_deployment_wiring.py
+          services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
           services/core-api/tests/test_jarvis_jwks_rotation.py
@@ -99,7 +104,8 @@ jobs:
           from app.main import app
 
           paths = set(app.openapi()["paths"])
-          assert "/v1/ai/tool-grants" in paths
+          assert "/v1/ai/tool-executions" in paths
+          assert "/v1/ai/tool-grants" not in paths
           assert "/internal/ai/tool-executions/authorize" in paths
           PY
 

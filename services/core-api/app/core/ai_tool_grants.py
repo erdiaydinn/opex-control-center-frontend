@@ -1,10 +1,8 @@
 """Single-use execution grants for authorized Jarvis tool calls.
 
 A capability answers *what* an actor may do and *which data* it may touch. A
-tool grant binds that capability to exactly one concrete invocation and can be
-consumed once. Raw grant tokens, tool arguments and human reasons are never
-stored in Redis. The short-lived trusted data scope is stored because the
-consumer must recover it without trusting caller-supplied authorization data.
+tool grant binds that capability and the current reviewed downstream query
+contract to exactly one concrete invocation and can be consumed once.
 """
 
 from __future__ import annotations
@@ -27,6 +25,11 @@ from app.core.ai_data_scope import (
     ai_data_scope_fingerprint,
     validate_ai_data_scope_invocation,
 )
+from app.core.ai_query_contract_policy import (
+    AiQueryContractPolicy,
+    ai_execution_scope_fingerprint,
+    ai_query_contract_policy_fingerprint,
+)
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolCapability,
@@ -35,7 +38,7 @@ from app.core.ai_tool_authorization import (
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
-AI_TOOL_GRANT_VERSION = 2
+AI_TOOL_GRANT_VERSION = 3
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -56,7 +59,7 @@ class AiToolGrantReplayOrExpired(AiToolGrantError):
 
 
 class AiToolGrantBindingMismatch(AiToolGrantError):
-    """The grant was issued for a different invocation."""
+    """The grant was issued for a different invocation or security contract."""
 
 
 class AiToolGrantBinding(BaseModel):
@@ -65,7 +68,7 @@ class AiToolGrantBinding(BaseModel):
         extra="forbid",
     )
 
-    version: Literal[2]
+    version: Literal[3]
     tenant_id: UUID
     actor_subject: str = Field(
         min_length=1,
@@ -74,6 +77,17 @@ class AiToolGrantBinding(BaseModel):
     tool: AiToolName
     data_scope: AiDataScope
     data_scope_fingerprint: str = Field(
+        pattern=SHA256_PATTERN
+    )
+    query_contract_id: str = Field(
+        min_length=1,
+        max_length=160,
+    )
+    query_contract_revision: int = Field(ge=1)
+    query_contract_fingerprint: str = Field(
+        pattern=SHA256_PATTERN
+    )
+    execution_scope_fingerprint: str = Field(
         pattern=SHA256_PATTERN
     )
     arguments_sha256: str = Field(
@@ -212,16 +226,47 @@ def _validate_scope_binding(
         ) from exc
 
 
+def _query_contract_binding(
+    *,
+    policy: AiQueryContractPolicy,
+    data_scope_fingerprint: str,
+) -> tuple[str, str]:
+    policy_fingerprint = (
+        ai_query_contract_policy_fingerprint(policy)
+    )
+    execution_fingerprint = ai_execution_scope_fingerprint(
+        query_contract_fingerprint=policy_fingerprint,
+        data_scope_fingerprint=data_scope_fingerprint,
+    )
+    return policy_fingerprint, execution_fingerprint
+
+
 def build_ai_tool_grant_binding(
     capability: AiToolCapability,
     *,
+    query_policy: AiQueryContractPolicy,
     arguments: Mapping[str, Any],
     reason: str,
 ) -> AiToolGrantBinding:
+    if query_policy.tool != capability.tool:
+        raise AiToolGrantInvalid(
+            "AI query contract does not match tool capability"
+        )
+
     _validate_scope_binding(
         tool=capability.tool,
         arguments=arguments,
         data_scope=capability.data_scope,
+        data_scope_fingerprint=(
+            capability.data_scope_fingerprint
+        ),
+    )
+
+    (
+        query_contract_fingerprint,
+        execution_scope_fingerprint,
+    ) = _query_contract_binding(
+        policy=query_policy,
         data_scope_fingerprint=(
             capability.data_scope_fingerprint
         ),
@@ -235,6 +280,16 @@ def build_ai_tool_grant_binding(
         data_scope=capability.data_scope,
         data_scope_fingerprint=(
             capability.data_scope_fingerprint
+        ),
+        query_contract_id=query_policy.contract_id,
+        query_contract_revision=(
+            query_policy.contract_revision
+        ),
+        query_contract_fingerprint=(
+            query_contract_fingerprint
+        ),
+        execution_scope_fingerprint=(
+            execution_scope_fingerprint
         ),
         arguments_sha256=canonical_arguments_sha256(
             arguments
@@ -318,6 +373,7 @@ class RedisAiToolGrantStore:
         self,
         capability: AiToolCapability,
         *,
+        query_policy: AiQueryContractPolicy,
         arguments: Mapping[str, Any],
         reason: str,
         ttl_seconds: int = (
@@ -335,6 +391,7 @@ class RedisAiToolGrantStore:
 
         binding = build_ai_tool_grant_binding(
             capability,
+            query_policy=query_policy,
             arguments=arguments,
             reason=reason,
         )
@@ -371,11 +428,13 @@ class RedisAiToolGrantStore:
         *,
         token: str,
         capability: AiToolCapability,
+        query_policy: AiQueryContractPolicy,
         arguments: Mapping[str, Any],
         reason: str,
     ) -> AiToolGrantBinding:
         expected = build_ai_tool_grant_binding(
             capability,
+            query_policy=query_policy,
             arguments=arguments,
             reason=reason,
         )
@@ -397,20 +456,19 @@ class RedisAiToolGrantStore:
         *,
         token: str,
         tool: str,
+        query_policy: AiQueryContractPolicy,
         arguments: Mapping[str, Any],
         reason: str,
     ) -> AiToolGrantBinding:
-        """Consume a Core-issued grant without trusting caller identity.
-
-        Tenant, actor, authorization fingerprint and data scope are recovered
-        only from the short-lived Redis record written during the authenticated
-        issue flow. Jarvis can prove possession of the opaque token and must
-        reproduce the exact invocation, but cannot choose authorization data.
-        """
+        """Consume without trusting caller identity or query-contract claims."""
 
         if tool not in TOOL_REQUIRED_SCOPES:
             raise AiToolGrantInvalid(
                 "AI tool is not supported"
+            )
+        if query_policy.tool != tool:
+            raise AiToolGrantInvalid(
+                "AI query contract does not match requested tool"
             )
 
         arguments_sha256 = canonical_arguments_sha256(
@@ -422,9 +480,6 @@ class RedisAiToolGrantStore:
             token=token
         )
 
-        # Revalidate trusted authorization metadata after Redis deserialization
-        # so corruption/tampering cannot turn a stored V2 grant into wider data
-        # access even when the invocation hash itself still matches.
         _validate_scope_binding(
             tool=stored.tool,
             arguments=arguments,
@@ -434,12 +489,27 @@ class RedisAiToolGrantStore:
             ),
         )
 
+        (
+            current_query_contract_fingerprint,
+            current_execution_scope_fingerprint,
+        ) = _query_contract_binding(
+            policy=query_policy,
+            data_scope_fingerprint=(
+                stored.data_scope_fingerprint
+            ),
+        )
+
         if (
             stored.tool != tool
-            or stored.arguments_sha256
-            != arguments_sha256
-            or stored.reason_sha256
-            != reason_sha256
+            or stored.arguments_sha256 != arguments_sha256
+            or stored.reason_sha256 != reason_sha256
+            or stored.query_contract_id != query_policy.contract_id
+            or stored.query_contract_revision
+            != query_policy.contract_revision
+            or stored.query_contract_fingerprint
+            != current_query_contract_fingerprint
+            or stored.execution_scope_fingerprint
+            != current_execution_scope_fingerprint
         ):
             raise AiToolGrantBindingMismatch(
                 "AI tool grant binding does not match"

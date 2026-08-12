@@ -25,6 +25,7 @@ def _bundle_identity(profile_fp: str) -> VoiceTtsBundleExecutionIdentity:
             voice_id_sha256=_hash("5"),
             model_sha256=_hash(ch),
             config_sha256=_hash("6"),
+            tokens_sha256=_hash("4"),
             model_card_sha256=_hash("7"),
             artifact_license_id_sha256=_hash("8"),
             artifact_fingerprint=_hash("9"),
@@ -38,6 +39,9 @@ def _bundle_identity(profile_fp: str) -> VoiceTtsBundleExecutionIdentity:
         runtime_adapter_id="tts-local-v1",
         runtime_adapter_promotion_fingerprint=_hash("2"),
         profile_fingerprint=profile_fp,
+        phonemizer_data_manifest_fingerprint=_hash("a"),
+        phonemizer_license_id_sha256=_hash("b"),
+        phonemizer_source_sha256=_hash("c"),
         language_artifacts=artifacts,
         fingerprint=_hash("7"),
     )
@@ -286,6 +290,9 @@ def test_voice_websocket_response_and_tts_are_exact_proof_bound():
         assert tts["tts_bundle_execution_identity_fingerprint"] == _hash("7")
         assert tts["tts_bundle_promotion_fingerprint"] == _hash("6")
         assert tts["tts_voice_model_sha256"] == _hash("a")
+        assert tts["tts_voice_tokens_sha256"] == _hash("4")
+        assert tts["tts_phonemizer_data_manifest_fingerprint"] == _hash("a")
+        assert tts["tts_phonemizer_license_id_sha256"] == _hash("b")
 
 
 def test_voice_websocket_tts_rejects_client_artifact_override():
@@ -315,7 +322,7 @@ def test_voice_websocket_tts_rejects_client_artifact_override():
                     "response_proof_fingerprint": response_fp,
                     "response_text_sha256": _hash("b"),
                     "voice_profile_fingerprint": _hash("c"),
-                    "tts_voice_model_sha256": _hash("f"),
+                    "tts_voice_tokens_sha256": _hash("f"),
                 },
             }
         )

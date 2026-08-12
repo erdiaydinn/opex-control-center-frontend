@@ -203,11 +203,19 @@ jobs:
               "/v1/admin/ai-data-scopes",
               "/v1/admin/ai-data-scopes/{role_key}/{permission_key}",
           }
-          router_paths = {
-              route.path
-              for route in ai_tool_router.routes
-              if getattr(route, "path", None) is not None
-          }
+
+          def collect_paths(route_items):
+              paths = set()
+              for route in route_items:
+                  path = getattr(route, "path", None)
+                  if path is not None:
+                      paths.add(path)
+                  nested = getattr(route, "routes", None)
+                  if nested is not None:
+                      paths.update(collect_paths(nested))
+              return paths
+
+          router_paths = collect_paths(ai_tool_router.routes)
           openapi_paths = set(main_module.app.openapi().get("paths", {}))
 
           assert expected <= router_paths, (

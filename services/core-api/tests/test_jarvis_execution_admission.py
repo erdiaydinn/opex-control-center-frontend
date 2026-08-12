@@ -78,11 +78,14 @@ def test_broker_timeout_is_bound_to_lease_ttl_and_hard_cap() -> None:
 
 
 def test_control_transition_graph_requires_staged_recovery() -> None:
-    assert ALLOWED_CONTROL_TRANSITIONS == {
+    expected = {
         "enabled": frozenset({"read_only", "halted"}),
         "read_only": frozenset({"enabled", "halted"}),
         "halted": frozenset({"read_only"}),
     }
+    assert not set(ALLOWED_CONTROL_TRANSITIONS).symmetric_difference(expected)
+    for mode, transitions in expected.items():
+        assert not ALLOWED_CONTROL_TRANSITIONS[mode].symmetric_difference(transitions)
     assert ALLOWED_CONTROL_TRANSITIONS["halted"].isdisjoint({"enabled"})
 
 

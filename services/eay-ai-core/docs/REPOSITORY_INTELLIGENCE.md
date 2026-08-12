@@ -42,6 +42,28 @@ The snapshot itself receives a deterministic SHA-256 fingerprint. A sequence of 
 
 Historical snapshots intentionally remain tied to the exact registry fingerprint that existed when they were reviewed. Because the registry is version controlled, historical validation uses that registry revision rather than silently reinterpreting old evidence under a newer source map.
 
+## Append-only repository memory store
+
+`app/repository_memory_store.py` persists verified snapshots as immutable JSON artifacts under a repository-entry directory and maintains a minimal append-only `index.jsonl` containing only fingerprint, commit SHA, and review timestamp.
+
+Before every append, existing history is fully reloaded and hash-chain verified. A new snapshot must point to the exact current head fingerprint or the append fails. Duplicate snapshots, history forks, missing indexed artifacts, corrupt JSON, filename/index fingerprint substitution, reordered/deleted history, and tampered snapshot content fail closed.
+
+Writes use a temporary file + `fsync` + atomic replacement for the snapshot artifact, followed by a separately `fsync`'d index append. If the index commit fails, the just-written unindexed snapshot is removed so partial history does not appear committed.
+
+This filesystem store is local-first durable project memory. It is not WORM/tamper-proof storage against an operating-system or disk administrator; cryptographically signed external checkpoints are a future control if stronger evidentiary guarantees are required.
+
+## Safe contract extraction
+
+`app/repository_contract_extractor.py` performs deterministic structural extraction without retaining raw source text in repository facts:
+
+- Python: function/class/constants, HTTP route method/path, and EAY/OPEX configuration variable names.
+- SQL/DDL: `CREATE TABLE`, `CREATE VIEW`, and `ALTER TABLE` object contracts.
+- YAML: workflow name, action identifiers, and presence of run steps without shell-command contents.
+
+Secret values are never copied into extracted contracts. Excluded paths are rejected before parsing, binary-like content fails closed, and invalid Python syntax is rejected rather than heuristically guessed.
+
+The current design deliberately separates remote transport from trusted extraction. GitHub fetching remains a read-only caller responsibility; credentials/tokens are never accepted by or persisted in the repository-memory model.
+
 ## External-source policy
 
 External repositories are reference/adoption inputs, not architecture authority. Each reviewed external source records license status, capability mapping, reviewed ref/SHA, and one of `ADOPT`, `WATCH`, `REFERENCE`, `REJECT`, or `PENDING`.
@@ -52,4 +74,4 @@ The supplied `council-of-high-intelligence-main.zip` archive is bound to verifie
 
 ## Next layer
 
-The next repository-intelligence slice should add read-only GitHub review ingestion that creates persisted snapshot artifacts from selected commits and extracts safe code/API/schema/SQL/CI/security contract facts without storing repository credentials or raw secret material. Snapshot persistence must be append-only and historical registry revisions must remain independently verifiable.
+The next repository-intelligence slice should add a read-only ingestion coordinator that accepts already-fetched GitHub commit/file evidence, verifies exact ref/commit/blob provenance, runs safe contract extraction, and commits one snapshot transactionally. After that, unresolved archive upstream/license recovery can continue without weakening registry completeness or adoption gates.

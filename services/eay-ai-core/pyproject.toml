@@ -18,9 +18,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "numpy>=1.26,<3",
 ]
 bigquery = [
   "google-cloud-bigquery>=3.42,<4",
+]
+voice-onnx = [
+  "numpy>=1.26,<3",
+  "onnxruntime>=1.16.1,<2",
 ]
 
 [tool.setuptools.packages.find]

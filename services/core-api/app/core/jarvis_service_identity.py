@@ -63,7 +63,7 @@ class JarvisServiceSettings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_identity_boundary(self) -> "JarvisServiceSettings":
+    def validate_identity_boundary(self) -> JarvisServiceSettings:
         issuer = self.assertion_issuer.strip()
         audience = self.assertion_audience.strip()
         jwks_file = self.assertion_jwks_file.strip()

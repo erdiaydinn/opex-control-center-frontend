@@ -3,8 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from app.core.ai_tool_grants import AiToolGrantBinding
 

@@ -1,6 +1,6 @@
 """Add durable tenant-scoped Jarvis execution idempotency.
 
-Revision ID: 0010_jarvis_execution_idempotency
+Revision ID: 0010_jarvis_idempotency
 Revises: 0009_ai_tool_permissions
 Create Date: 2026-08-12
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "0010_jarvis_execution_idempotency"
+revision: str = "0010_jarvis_idempotency"
 down_revision: str | None = "0009_ai_tool_permissions"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

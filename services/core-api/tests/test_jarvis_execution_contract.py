@@ -3,11 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from pydantic import ValidationError
 import pytest
-
+from pydantic import ValidationError
 from app.core.ai_tool_grants import AiToolGrantBinding
-
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 

@@ -1,8 +1,10 @@
 """Single-use execution grants for authorized Jarvis tool calls.
 
-A capability answers *what* an actor may do. A tool grant binds that
-capability to exactly one concrete invocation and can be consumed once.
-Raw grant tokens, tool arguments and human reasons are never stored in Redis.
+A capability answers *what* an actor may do and *which data* it may touch. A
+tool grant binds that capability to exactly one concrete invocation and can be
+consumed once. Raw grant tokens, tool arguments and human reasons are never
+stored in Redis. The short-lived trusted data scope is stored because the
+consumer must recover it without trusting caller-supplied authorization data.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from app.core.ai_data_scope import AiDataScope
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolCapability,
@@ -27,7 +30,7 @@ from app.core.ai_tool_authorization import (
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
-AI_TOOL_GRANT_VERSION = 1
+AI_TOOL_GRANT_VERSION = 2
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -54,13 +57,17 @@ class AiToolGrantBindingMismatch(AiToolGrantError):
 class AiToolGrantBinding(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    version: Literal[1] = AI_TOOL_GRANT_VERSION
+    version: Literal[2] = AI_TOOL_GRANT_VERSION
     tenant_id: UUID
     actor_subject: str = Field(
         min_length=1,
         max_length=512,
     )
     tool: AiToolName
+    data_scope: AiDataScope
+    data_scope_fingerprint: str = Field(
+        pattern=SHA256_PATTERN
+    )
     arguments_sha256: str = Field(
         pattern=SHA256_PATTERN
     )
@@ -180,6 +187,10 @@ def build_ai_tool_grant_binding(
         tenant_id=capability.tenant_id,
         actor_subject=capability.actor_subject,
         tool=capability.tool,
+        data_scope=capability.data_scope,
+        data_scope_fingerprint=(
+            capability.data_scope_fingerprint
+        ),
         arguments_sha256=canonical_arguments_sha256(
             arguments
         ),
@@ -346,11 +357,10 @@ class RedisAiToolGrantStore:
     ) -> AiToolGrantBinding:
         """Consume a Core-issued grant without trusting caller identity.
 
-        The tenant, actor and authorization fingerprint are recovered only
-        from the Redis record written during the authenticated issue flow.
-        The Jarvis caller can prove possession of the opaque token and must
-        reproduce the exact reviewed invocation, but cannot choose user
-        identity or permission scope.
+        Tenant, actor, authorization fingerprint and data scope are recovered
+        only from the short-lived Redis record written during the authenticated
+        issue flow. Jarvis can prove possession of the opaque token and must
+        reproduce the exact invocation, but cannot choose authorization data.
         """
 
         if tool not in TOOL_REQUIRED_SCOPES:

@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - platform-core/eay-v2-jarvis-execution-security
+      - platform-core/eay-v2-jarvis-trust-wiring
   pull_request:
     branches:
       - platform-core/eay-v2-jarvis-security
+      - platform-core/eay-v2-jarvis-execution-security
 
 permissions:
   contents: read
@@ -68,6 +70,7 @@ jobs:
           services/core-api/app/core/jarvis_service_identity.py
           services/core-api/app/core/jarvis_service_security.py
           services/core-api/tests/test_ai_tool_routes.py
+          services/core-api/tests/test_jarvis_deployment_wiring.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
           services/core-api/tests/test_jarvis_service_identity.py
@@ -79,6 +82,7 @@ jobs:
           services/core-api/tests/test_ai_tool_authorization.py
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_ai_tool_routes.py
+          services/core-api/tests/test_jarvis_deployment_wiring.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
           services/core-api/tests/test_jarvis_service_identity.py
@@ -99,6 +103,21 @@ jobs:
         run: >-
           pytest -q
           services/core-api/tests/test_dockos_gateway_quarantine.py
+
+      - name: Verify opt-in Jarvis compose merge
+        run: |
+          printf '%s\n' '{"keys":[{"kty":"EC","crv":"P-256","kid":"ci-only","use":"sig","alg":"ES256","x":"AA","y":"AA"}]}' > /tmp/jarvis-public-jwks.json
+          OPEX_JARVIS_SERVICE_JWKS_SOURCE_FILE=/tmp/jarvis-public-jwks.json \
+            docker compose \
+              -f docker-compose.platform.yml \
+              -f docker-compose.jarvis-trust.yml \
+              config > /tmp/jarvis-compose.yml
+          grep -q 'OPEX_JARVIS_SERVICE_ENABLED: "true"' /tmp/jarvis-compose.yml
+          grep -q 'OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: /run/secrets/jarvis_service_jwks' /tmp/jarvis-compose.yml
+          if grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE' /tmp/jarvis-compose.yml; then
+            echo 'private key wiring leaked into Platform Core compose' >&2
+            exit 1
+          fi
 
       - name: Create RLS-bound runtime role
         run: |

@@ -6,7 +6,6 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 
-from app.core.config import Settings, get_settings
 from app.core.internal_identity import (
     InternalAssertionInvalid,
     InternalAssertionUnavailable,
@@ -18,7 +17,9 @@ from app.core.internal_service_replay import (
     RedisInternalServiceReplayGuard,
 )
 from app.core.jarvis_service_identity import (
+    JarvisServiceSettings,
     VerifiedJarvisService,
+    get_jarvis_service_settings,
     verify_jarvis_service_assertion,
 )
 from app.core.resources import redis_client
@@ -74,11 +75,17 @@ def _extract_single_assertion_header(
 async def require_jarvis_service(
     request: Request,
     settings: Annotated[
-        Settings,
-        Depends(get_settings),
+        JarvisServiceSettings,
+        Depends(get_jarvis_service_settings),
     ],
 ) -> VerifiedJarvisService:
-    """Authenticate the cryptographically distinct EAY AI Core caller."""
+    """Authenticate independently signed EAY AI Core calls."""
+
+    if not settings.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not Found",
+        )
 
     token = _extract_single_assertion_header(request)
 
@@ -102,8 +109,8 @@ async def require_jarvis_service(
 async def require_fresh_jarvis_service(
     request: Request,
     settings: Annotated[
-        Settings,
-        Depends(get_settings),
+        JarvisServiceSettings,
+        Depends(get_jarvis_service_settings),
     ],
 ) -> VerifiedJarvisService:
     """Require a valid and single-use Jarvis machine assertion."""
@@ -114,7 +121,7 @@ async def require_fresh_jarvis_service(
     )
 
     ttl_seconds = (
-        settings.internal_assertion_max_lifetime_seconds
+        settings.assertion_max_lifetime_seconds
         + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
     )
 

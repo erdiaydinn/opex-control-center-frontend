@@ -12,7 +12,7 @@ import json
 import math
 import secrets
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -54,7 +54,7 @@ class AiToolGrantBindingMismatch(AiToolGrantError):
 class AiToolGrantBinding(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    version: int = AI_TOOL_GRANT_VERSION
+    version: Literal[1] = AI_TOOL_GRANT_VERSION
     tenant_id: UUID
     actor_subject: str = Field(
         min_length=1,

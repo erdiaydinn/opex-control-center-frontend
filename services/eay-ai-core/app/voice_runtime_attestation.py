@@ -111,6 +111,7 @@ def seal_runtime_directory_manifest(
     Symlinks are rejected at every level, entries are sorted by POSIX relative path,
     and neither mtimes nor machine-local root paths enter the fingerprint. This makes
     the manifest reproducible across hosts while preventing path redirection attacks.
+    Any traversal error fails closed instead of silently producing a partial manifest.
     """
     root = Path(root)
     if root.is_symlink():
@@ -126,9 +127,17 @@ def seal_runtime_directory_manifest(
     if not 1 <= int(max_file_bytes) <= int(max_total_bytes):
         raise ValueError("voice_runtime_directory_per_file_limit_invalid")
 
+    def _walk_error(exc: OSError) -> None:
+        raise ValueError("voice_runtime_directory_walk_failed") from exc
+
     entries: list[VoiceRuntimeDirectoryEntry] = []
     total_size = 0
-    for current_root, dir_names, file_names in os.walk(root, topdown=True, followlinks=False):
+    for current_root, dir_names, file_names in os.walk(
+        root,
+        topdown=True,
+        onerror=_walk_error,
+        followlinks=False,
+    ):
         current = Path(current_root)
         dir_names.sort()
         file_names.sort()

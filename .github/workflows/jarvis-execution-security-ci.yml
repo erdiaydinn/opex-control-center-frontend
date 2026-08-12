@@ -186,13 +186,13 @@ jobs:
 
       - name: Apply migrations through durable Jarvis idempotency
         working-directory: services/core-api
-        run: alembic upgrade 0010_jarvis_execution_idempotency
+        run: alembic upgrade 0010_jarvis_idempotency
 
       - name: Verify migration head
         working-directory: services/core-api
         run: |
           alembic current
-          alembic current | grep -q '0010_jarvis_execution_idempotency'
+          alembic current | grep -q '0010_jarvis_idempotency'
 
       - name: Test runtime-role durable Jarvis idempotency
         env:

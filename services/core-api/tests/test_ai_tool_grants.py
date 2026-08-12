@@ -224,7 +224,7 @@ async def test_internal_consume_recovers_trusted_actor_and_tenant() -> None:
         reason=reason,
     )
 
-    assert binding.tenant_id == str(TENANT_B)
+    assert binding.tenant_id == TENANT_B
     assert binding.actor_subject == "trusted-user"
     assert binding.authorization_fingerprint == "b" * 64
 

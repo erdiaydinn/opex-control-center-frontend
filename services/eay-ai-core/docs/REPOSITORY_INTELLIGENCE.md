@@ -81,6 +81,16 @@ Before any snapshot is committed, the coordinator:
 
 If provenance validation, extraction, chain verification, snapshot creation, or persistence fails, the review is not accepted as repository memory. GitHub credentials/tokens are never accepted by or persisted in this model.
 
+## GitHub object provenance adapter
+
+`app/github_repository_evidence.py` closes the remaining gap between remote GitHub reads and the trusted ingestion coordinator. It accepts already-fetched immutable GitHub object metadata and verifies the complete object chain before project memory is touched:
+
+`registry repository -> resolved ref -> commit SHA -> commit tree SHA -> tree path/blob SHA -> fetched UTF-8 source -> Git blob identity`
+
+The adapter rejects repository substitution, a ref pointing at a different commit, tree evidence from another tree, duplicate paths, non-blob paths, file paths absent from the commit tree, blob-SHA substitution, and source text that does not reproduce the exact Git blob SHA. Git blob identity is recomputed using Git's canonical `blob <byte-length>\0<content>` object format; this protocol SHA-1 is used only to verify Git object identity, while repository-memory manifests continue to use SHA-256 fingerprints.
+
+`ingest_verified_github_repository_review()` then composes this verified object evidence with the registry, safe structural extractor, immutable review snapshot, and append-only local store. The adapter performs no network access, accepts no credentials, and cannot widen repository authority beyond the canonical registry entry.
+
 ## External-source policy
 
 External repositories are reference/adoption inputs, not architecture authority. Each reviewed external source records license status, capability mapping, reviewed ref/SHA, and one of `ADOPT`, `WATCH`, `REFERENCE`, `REJECT`, or `PENDING`.
@@ -91,4 +101,4 @@ The supplied `council-of-high-intelligence-main.zip` archive is bound to verifie
 
 ## Next layer
 
-The next repository-intelligence slice should add a concrete read-only GitHub evidence adapter that verifies remote commit/tree/blob relationships before handing evidence to the coordinator, plus historical registry-revision loading for long-lived snapshot verification. Unresolved archive upstream/license recovery continues in parallel without weakening registry completeness or adoption gates.
+The next repository-intelligence slice should add historical registry-revision loading so a snapshot can be revalidated against the exact registry JSON/fingerprint that existed when the review was created, instead of depending on the current registry. After that, add signed checkpoint/export support for optional stronger evidence durability and continue unresolved archive upstream/license recovery without weakening registry completeness or adoption gates.

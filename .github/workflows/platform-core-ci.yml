@@ -195,14 +195,18 @@ jobs:
         run: |
           python - <<'PY'
           import app.main as main_module
+          from app.ai_data_scope_admin_routes import router as admin_router
           from app.ai_tool_routes import router as ai_tool_router
 
-          expected = {
+          core_expected = {
               "/v1/ai/tool-grants",
               "/internal/ai/tool-executions/authorize",
+          }
+          admin_expected = {
               "/v1/admin/ai-data-scopes",
               "/v1/admin/ai-data-scopes/{role_key}/{permission_key}",
           }
+          expected = core_expected | admin_expected
 
           def collect_paths(route_items):
               paths = set()
@@ -215,12 +219,19 @@ jobs:
                       paths.update(collect_paths(nested))
               return paths
 
-          router_paths = collect_paths(ai_tool_router.routes)
+          core_router_paths = collect_paths(ai_tool_router.routes)
+          admin_router_paths = collect_paths(admin_router.routes)
           openapi_paths = set(main_module.app.openapi().get("paths", {}))
 
-          assert expected <= router_paths, (
-              f"AI router contract is missing paths: {sorted(expected - router_paths)}; "
-              f"router_paths={sorted(router_paths)}"
+          assert core_expected <= core_router_paths, (
+              f"AI core router contract is missing paths: "
+              f"{sorted(core_expected - core_router_paths)}; "
+              f"router_paths={sorted(core_router_paths)}"
+          )
+          assert admin_expected <= admin_router_paths, (
+              f"AI admin router contract is missing paths: "
+              f"{sorted(admin_expected - admin_router_paths)}; "
+              f"router_paths={sorted(admin_router_paths)}"
           )
           assert expected <= openapi_paths, (
               f"Core app did not register Jarvis paths: {sorted(expected - openapi_paths)}; "

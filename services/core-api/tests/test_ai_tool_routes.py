@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from starlette.requests import Request
 
 import app.ai_tool_routes as routes
@@ -68,6 +69,15 @@ def request_for(path: str) -> Request:
     return request
 
 
+def explicit_scope(*stores: str) -> dict[str, object]:
+    return {
+        "ai_data_scope": {
+            "version": 1,
+            "store_names": list(stores),
+        }
+    }
+
+
 def principal_with_ops_permission() -> Principal:
     permission = SCOPE_PERMISSION_KEYS[
         "ops:read"
@@ -82,7 +92,10 @@ def principal_with_ops_permission() -> Principal:
             PermissionAssignment(
                 key=permission,
                 role_key="super_admin",
-                scope={},
+                scope=explicit_scope(
+                    "Fulya",
+                    "Anka",
+                ),
             ),
         ),
         auth_mode="oidc",
@@ -125,6 +138,32 @@ def test_route_dependencies_keep_user_and_machine_auth_separate() -> None:
     assert get_current_principal not in internal_dependencies
 
 
+def test_request_models_reject_caller_authorization_smuggling() -> None:
+    for model, payload in (
+        (
+            routes.AiToolGrantIssueRequest,
+            {
+                "tool": "ops_kpi_query",
+                "arguments": {"metric": "orders"},
+                "reason": "read orders",
+                "data_scope": {"store_names": ["Other"]},
+            },
+        ),
+        (
+            routes.InternalAiToolAuthorizationRequest,
+            {
+                "grant_token": "g" * 43,
+                "tool": "ops_kpi_query",
+                "arguments": {"metric": "orders"},
+                "reason": "read orders",
+                "tenant_id": str(TENANT),
+            },
+        ),
+    ):
+        with pytest.raises(ValidationError):
+            model.model_validate(payload)
+
+
 @pytest.mark.asyncio
 async def test_user_grant_issue_derives_capability_server_side(
     monkeypatch: pytest.MonkeyPatch,
@@ -151,6 +190,7 @@ async def test_user_grant_issue_derives_capability_server_side(
     assert response.tool == "ops_kpi_query"
     assert len(response.grant_token) >= 32
     assert response.expires_in_seconds <= 60
+    assert len(response.data_scope_fingerprint) == 64
 
 
 @pytest.mark.asyncio
@@ -189,7 +229,48 @@ async def test_user_without_permission_cannot_issue_grant(
 
 
 @pytest.mark.asyncio
-async def test_internal_authorization_recovers_identity_and_writes_audit(
+async def test_empty_data_scope_cannot_issue_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        routes,
+        "_ai_tool_grant_store",
+        store,
+    )
+    permission = SCOPE_PERMISSION_KEYS["ops:read"]
+    principal = Principal(
+        subject="user-1",
+        tenant_id=TENANT,
+        roles=("super_admin",),
+        permissions=(permission,),
+        permission_assignments=(
+            PermissionAssignment(
+                key=permission,
+                role_key="super_admin",
+                scope={},
+            ),
+        ),
+        auth_mode="oidc",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.issue_ai_tool_grant(
+            routes.AiToolGrantIssueRequest(
+                tool="ops_kpi_query",
+                arguments={"metric": "orders"},
+                reason="read current orders",
+            ),
+            request_for("/v1/ai/tool-grants"),
+            principal,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "AI tool access denied"
+
+
+@pytest.mark.asyncio
+async def test_internal_authorization_recovers_identity_scope_and_writes_minimal_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
@@ -243,6 +324,13 @@ async def test_internal_authorization_recovers_identity_and_writes_audit(
     assert response.actor_subject == "user-1"
     assert response.granted_scopes == ("ops:read",)
     assert response.tool == "ops_kpi_query"
+    assert response.data_scope.store_names == (
+        "Anka",
+        "Fulya",
+    )
+    assert response.data_scope_fingerprint == (
+        capability.data_scope_fingerprint
+    )
 
     assert len(audit_events) == 1
     event = audit_events[0]
@@ -254,8 +342,14 @@ async def test_internal_authorization_recovers_identity_and_writes_audit(
     assert isinstance(metadata, dict)
     assert metadata["service_subject"] == "eay-ai-core"
     assert metadata["tool"] == "ops_kpi_query"
+    assert metadata["data_scope_store_count"] == 2
+    assert metadata["data_scope_fingerprint"] == (
+        capability.data_scope_fingerprint
+    )
     assert "orders" not in repr(metadata)
     assert reason not in repr(metadata)
+    assert "Fulya" not in repr(metadata)
+    assert "Anka" not in repr(metadata)
 
 
 @pytest.mark.asyncio

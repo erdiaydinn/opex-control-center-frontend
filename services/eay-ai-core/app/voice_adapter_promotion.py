@@ -44,7 +44,11 @@ def adapter_fingerprint(adapter: VoiceAdapterSpec) -> str:
         raise ValueError("voice_adapter_streaming_required")
     if not _is_sha256(adapter.artifact_sha256):
         raise ValueError("voice_adapter_artifact_sha256_required")
-    assert_model_license_allowed(adapter.license_id)
+
+    # Runtime code and downloaded model/voice artifacts are separate licensing
+    # surfaces. A permissive engine must never implicitly bless restrictive weights.
+    assert_model_license_allowed(adapter.resolved_runtime_license_id)
+    assert_model_license_allowed(adapter.resolved_artifact_license_id)
     return _sha256(
         {
             "adapter_id": adapter.adapter_id,
@@ -52,7 +56,9 @@ def adapter_fingerprint(adapter: VoiceAdapterSpec) -> str:
             "implementation": adapter.implementation,
             "local": adapter.local,
             "streaming": adapter.streaming,
-            "license_id": adapter.license_id.strip().lower(),
+            "legacy_license_id": adapter.license_id.strip().lower(),
+            "runtime_license_id": adapter.resolved_runtime_license_id,
+            "artifact_license_id": adapter.resolved_artifact_license_id,
             "languages": sorted(adapter.languages),
             "artifact_sha256": adapter.artifact_sha256,
         }
@@ -63,9 +69,8 @@ class VoiceAdapterPromotionRegistry:
     """Human-gated immutable registry for executable local voice adapters.
 
     Contract-only adapter targets in ``default_jarvis_profile`` are deliberately not
-    executable. A deployment must pin exact model/binary bytes, an allow-listed
-    commercial-use-compatible license and approved language capabilities before an
-    adapter can be promoted.
+    executable. A deployment must pin exact model/binary bytes, allow-listed runtime
+    and artifact licenses, and approved language capabilities before promotion.
     """
 
     def __init__(self, db_path: Path):

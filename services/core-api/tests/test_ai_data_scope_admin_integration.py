@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -19,8 +19,6 @@ from app.core.ai_data_scope_admin import (
 from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS
 from app.core.config import get_settings
 
-TENANT_A = UUID("00000000-0000-0000-0000-0000000000a4")
-TENANT_B = UUID("00000000-0000-0000-0000-0000000000b4")
 OPS_PERMISSION = SCOPE_PERMISSION_KEYS["ops:read"]
 
 
@@ -121,6 +119,15 @@ async def seed_tenant(
 async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Audit events are intentionally append-only and hold a RESTRICT FK to
+    # tenants. Never weaken that production invariant merely to clean test
+    # rows. Use unique tenant identities so repeated runs cannot collide in a
+    # dedicated test database.
+    tenant_a = uuid4()
+    tenant_b = uuid4()
+    slug_a = f"ai-scope-admin-a-{tenant_a.hex}"
+    slug_b = f"ai-scope-admin-b-{tenant_b.hex}"
+
     engine = create_async_engine(
         get_settings().database_url,
         pool_pre_ping=True,
@@ -130,17 +137,17 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
         async with engine.begin() as connection:
             await seed_tenant(
                 connection,
-                tenant_id=TENANT_A,
-                slug="ai-scope-admin-a",
+                tenant_id=tenant_a,
+                slug=slug_a,
             )
             await seed_tenant(
                 connection,
-                tenant_id=TENANT_B,
-                slug="ai-scope-admin-b",
+                tenant_id=tenant_b,
+                slug=slug_b,
             )
 
         records = await list_ai_data_scope_assignments(
-            tenant_id=str(TENANT_A),
+            tenant_id=str(tenant_a),
             permission_keys=(OPS_PERMISSION,),
         )
         assert len(records) == 1
@@ -151,7 +158,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
         assert initial_fingerprint == permission_scope_record_fingerprint({})
 
         updated = await update_ai_data_scope_assignment(
-            tenant_id=str(TENANT_A),
+            tenant_id=str(tenant_a),
             role_key="super_admin",
             permission_key=OPS_PERMISSION,
             expected_record_fingerprint=initial_fingerprint,
@@ -168,7 +175,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
         assert updated.record_fingerprint != initial_fingerprint
 
         async with engine.begin() as connection:
-            await set_tenant_context(connection, TENANT_A)
+            await set_tenant_context(connection, tenant_a)
             scope_a = await connection.scalar(
                 text(
                     """
@@ -183,7 +190,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
                     """
                 ),
                 {
-                    "tenant_id": TENANT_A,
+                    "tenant_id": tenant_a,
                     "permission_key": OPS_PERMISSION,
                 },
             )
@@ -204,12 +211,12 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
                         LIMIT 1
                         """
                     ),
-                    {"tenant_id": TENANT_A},
+                    {"tenant_id": tenant_a},
                 )
             ).mappings().first()
 
         async with engine.begin() as connection:
-            await set_tenant_context(connection, TENANT_B)
+            await set_tenant_context(connection, tenant_b)
             scope_b = await connection.scalar(
                 text(
                     """
@@ -224,7 +231,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
                     """
                 ),
                 {
-                    "tenant_id": TENANT_B,
+                    "tenant_id": tenant_b,
                     "permission_key": OPS_PERMISSION,
                 },
             )
@@ -250,7 +257,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
 
         with pytest.raises(AiDataScopeAssignmentConflict):
             await update_ai_data_scope_assignment(
-                tenant_id=str(TENANT_A),
+                tenant_id=str(tenant_a),
                 role_key="super_admin",
                 permission_key=OPS_PERMISSION,
                 expected_record_fingerprint=initial_fingerprint,
@@ -265,7 +272,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
         # Scope administration cannot create a missing permission assignment.
         with pytest.raises(AiDataScopeAssignmentNotFound):
             await update_ai_data_scope_assignment(
-                tenant_id=str(TENANT_A),
+                tenant_id=str(tenant_a),
                 role_key="viewer",
                 permission_key=OPS_PERMISSION,
                 expected_record_fingerprint=initial_fingerprint,
@@ -278,7 +285,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
             )
 
         current_records = await list_ai_data_scope_assignments(
-            tenant_id=str(TENANT_A),
+            tenant_id=str(tenant_a),
             permission_keys=(OPS_PERMISSION,),
         )
         current = current_records[0]
@@ -295,7 +302,7 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
 
         with pytest.raises(RuntimeError, match="audit write failed"):
             await update_ai_data_scope_assignment(
-                tenant_id=str(TENANT_A),
+                tenant_id=str(tenant_a),
                 role_key="super_admin",
                 permission_key=OPS_PERMISSION,
                 expected_record_fingerprint=current.record_fingerprint,
@@ -310,22 +317,10 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
         # The UPDATE and audit INSERT share engine.begin(); an audit failure
         # must roll the authorization change back.
         after_failure = await list_ai_data_scope_assignments(
-            tenant_id=str(TENANT_A),
+            tenant_id=str(tenant_a),
             permission_keys=(OPS_PERMISSION,),
         )
         assert after_failure[0].raw_scope == scope_a
 
     finally:
-        async with engine.begin() as connection:
-            for tenant_id in (TENANT_A, TENANT_B):
-                await set_tenant_context(connection, tenant_id)
-                await connection.execute(
-                    text(
-                        """
-                        DELETE FROM tenants
-                        WHERE id = :tenant_id
-                        """
-                    ),
-                    {"tenant_id": tenant_id},
-                )
         await engine.dispose()

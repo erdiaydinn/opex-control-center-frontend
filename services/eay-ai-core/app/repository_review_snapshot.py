@@ -139,7 +139,16 @@ def create_repository_review_snapshot(
     )
     fingerprint = _sha256(payload)
     return RepositoryReviewSnapshot(
-        **payload,
+        schema_version=1,
+        registry_fingerprint=registry.fingerprint,
+        registry_entry_id=registry_entry_id,
+        repository=entry["repository"],
+        canonical_upstream=entry["canonical_upstream"],
+        relation=entry["relation"],
+        reviewed_ref=reviewed_ref,
+        commit_sha=commit_sha.lower(),
+        reviewed_at=reviewed_at,
+        previous_snapshot_fingerprint=previous_snapshot_fingerprint,
         files=facts,
         fingerprint=fingerprint,
     )
@@ -163,9 +172,16 @@ def verify_repository_review_snapshot(
         raise RepositorySnapshotError("snapshot upstream relation does not match registry")
     if snapshot.relation != entry["relation"]:
         raise RepositorySnapshotError("snapshot repository relation does not match registry")
+    if not _is_hex(snapshot.commit_sha, 40):
+        raise RepositorySnapshotError("snapshot commit SHA is invalid")
 
+    seen_paths: set[str] = set()
     for fact in snapshot.files:
         _validate_file_fact(fact)
+        normalized = fact.path.replace("\\", "/").strip("/")
+        if normalized in seen_paths:
+            raise RepositorySnapshotError(f"duplicate reviewed file path: {normalized}")
+        seen_paths.add(normalized)
 
     payload = _snapshot_payload(
         registry_fingerprint=snapshot.registry_fingerprint,

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from uuid import UUID
 
 import jwt
@@ -163,11 +164,12 @@ def test_internal_assertion_contract_is_identity_only(
 
 def test_main_module_has_no_token_issuance_route():
     source = (
-        __import__(
-            "pathlib"
-        )
-        .Path(
-            "app/main.py"
+        Path(__file__)
+        .resolve()
+        .parents[1]
+        .joinpath(
+            "app",
+            "main.py",
         )
         .read_text(
             encoding="utf-8"

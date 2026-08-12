@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from app.voice_async_runtime import VoiceAsyncExecutionCoordinator
@@ -161,7 +163,24 @@ def test_tts_requires_current_response_proof_exact_profile_and_language_artifact
     assert tts.tts_phonemizer_data_manifest_fingerprint == _hash("c")
     assert tts.tts_phonemizer_license_id_sha256 == _hash("d")
     assert len(tts.fingerprint) == 64
+    tts.validate()
     assert [event.event_type for event in ledger.verify_session("session-1")] == ["response_proof", "tts_proof"]
+
+
+def test_tts_proof_rejects_hash_preserving_resource_tamper():
+    _, coordinator, _ = _coordinator()
+    response = _response(coordinator)
+    tts = coordinator.seal_tts_generation(
+        response_proof=response,
+        deployment_manifest_fingerprint=MANIFEST,
+        response_text_sha256=_hash("e"),
+        voice_profile_fingerprint=_hash("f"),
+        tts_execution_identity=_tts_identity(),
+        tts_bundle_execution_identity=_tts_bundle_identity(),
+    )
+    tampered = replace(tts, tts_voice_tokens_sha256=_hash("1"))
+    with pytest.raises(ValueError, match="voice_tts_proof_fingerprint_drift"):
+        tampered.validate()
 
 
 def test_tts_rejects_deployment_manifest_mismatch():

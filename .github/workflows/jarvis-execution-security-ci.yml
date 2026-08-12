@@ -8,6 +8,7 @@ on:
       - platform-core/eay-v2-jarvis-key-rotation
       - platform-core/eay-v2-jarvis-execution-broker
       - platform-core/eay-v2-jarvis-request-idempotency
+      - platform-core/eay-v2-jarvis-safety-kernel
   pull_request:
     branches:
       - platform-core/eay-v2-jarvis-security
@@ -15,6 +16,7 @@ on:
       - platform-core/eay-v2-jarvis-trust-wiring
       - platform-core/eay-v2-jarvis-key-rotation
       - platform-core/eay-v2-jarvis-execution-broker
+      - platform-core/eay-v2-jarvis-request-idempotency
 
 permissions:
   contents: read
@@ -76,8 +78,10 @@ jobs:
           services/core-api/app/core/ai_tool_grants.py
           services/core-api/app/core/jarvis_execution_broker.py
           services/core-api/app/core/jarvis_execution_idempotency.py
+          services/core-api/app/core/jarvis_safety_policy.py
           services/core-api/app/core/jarvis_service_identity.py
           services/core-api/app/core/jarvis_service_security.py
+          services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_ai_tool_routes.py
           services/core-api/tests/test_jarvis_broker_deployment.py
           services/core-api/tests/test_jarvis_deployment_wiring.py
@@ -88,6 +92,7 @@ jobs:
           services/core-api/tests/test_jarvis_execution_idempotency_runtime.py
           services/core-api/tests/test_jarvis_idempotency_migration_contract.py
           services/core-api/tests/test_jarvis_jwks_rotation.py
+          services/core-api/tests/test_jarvis_safety_policy.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
 
@@ -105,6 +110,7 @@ jobs:
           services/core-api/tests/test_jarvis_execution_idempotency.py
           services/core-api/tests/test_jarvis_idempotency_migration_contract.py
           services/core-api/tests/test_jarvis_jwks_rotation.py
+          services/core-api/tests/test_jarvis_safety_policy.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
 

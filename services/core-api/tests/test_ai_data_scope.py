@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.ai_data_scope import (
     AiDataScope,
@@ -10,6 +11,7 @@ from app.core.ai_data_scope import (
     intersect_ai_data_scopes,
     parse_ai_data_scope,
     union_ai_data_scopes,
+    validate_ai_data_scope_invocation,
 )
 
 
@@ -32,12 +34,39 @@ def test_scope_normalizes_unicode_whitespace_and_order() -> None:
     )
 
     assert scope == AiDataScope(
+        version=1,
         store_names=(
             "Anka",
             "Fulya",
             "İçerenköy",
-        )
+        ),
     )
+
+
+def test_model_revalidates_stored_scope_and_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        AiDataScope.model_validate(
+            {
+                "version": 1,
+                "store_names": ["*"],
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        AiDataScope.model_validate(
+            {
+                "version": 1,
+                "store_names": ["Fulya"],
+                "all_stores": True,
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        AiDataScope.model_validate(
+            {
+                "store_names": ["Fulya"],
+            }
+        )
 
 
 def test_empty_unversioned_unknown_and_wildcard_scope_fail_closed() -> None:
@@ -134,6 +163,53 @@ def test_nonoverlapping_required_permissions_fail_closed() -> None:
                 ),
             )
         )
+
+
+def test_ops_invocation_requires_explicit_canonical_store_subset() -> None:
+    scope = parse_ai_data_scope(
+        raw_scope("Anka", "Fulya")
+    )
+
+    accepted = validate_ai_data_scope_invocation(
+        tool="ops_kpi_query",
+        arguments={
+            "metric": "orders",
+            "stores": ["Anka", "Fulya"],
+        },
+        data_scope=scope,
+    )
+    assert accepted == ("Anka", "Fulya")
+
+    for arguments in (
+        {"metric": "orders"},
+        {"metric": "orders", "stores": []},
+        {"metric": "orders", "stores": ["Dicle"]},
+        {"metric": "orders", "stores": [" fulya "]},
+        {"metric": "orders", "stores": ["fulya"]},
+    ):
+        with pytest.raises(AiDataScopeInvalid):
+            validate_ai_data_scope_invocation(
+                tool="ops_kpi_query",
+                arguments=arguments,
+                data_scope=scope,
+            )
+
+
+def test_tools_without_reviewed_data_scope_adapter_fail_closed() -> None:
+    scope = parse_ai_data_scope(
+        raw_scope("Fulya")
+    )
+
+    for tool in (
+        "catalog_query",
+        "regulatory_impact_query",
+    ):
+        with pytest.raises(AiDataScopeInvalid):
+            validate_ai_data_scope_invocation(
+                tool=tool,
+                arguments={},
+                data_scope=scope,
+            )
 
 
 def test_data_scope_fingerprint_is_stable_and_scope_sensitive() -> None:

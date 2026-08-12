@@ -7,6 +7,8 @@ actors and tool names are never embedded in Redis keys.
 
 The runtime control mode is deliberately explicit. A missing, malformed or
 unreachable control state fails closed; execution never assumes "enabled".
+Bootstrap starts halted and recovery from an emergency halt must pass through
+read-only before full execution can be enabled again.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import hashlib
 import math
 import secrets
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal
 from uuid import UUID
 
@@ -27,6 +30,14 @@ ADMISSION_KEY_PREFIX = "opex:{ai}:jarvis-admission"
 ADMISSION_LEASE_SAFETY_SECONDS = 15
 JarvisControlMode = Literal["enabled", "read_only", "halted"]
 JarvisSideEffectClass = Literal["none", "read", "write", "irreversible"]
+
+ALLOWED_CONTROL_TRANSITIONS = MappingProxyType(
+    {
+        "enabled": frozenset({"read_only", "halted"}),
+        "read_only": frozenset({"enabled", "halted"}),
+        "halted": frozenset({"read_only"}),
+    }
+)
 
 _ADMIT_SCRIPT = r"""
 local control_key = KEYS[1]
@@ -269,6 +280,18 @@ def _validate_mode(mode: str) -> JarvisControlMode:
     return mode  # type: ignore[return-value]
 
 
+def _validate_control_transition(
+    expected_mode: JarvisControlMode,
+    new_mode: JarvisControlMode,
+) -> None:
+    if expected_mode == new_mode:
+        raise JarvisAdmissionInvalid("Jarvis control transition is a no-op")
+    if new_mode not in ALLOWED_CONTROL_TRANSITIONS[expected_mode]:
+        raise JarvisAdmissionInvalid(
+            "Jarvis control transition violates staged recovery policy"
+        )
+
+
 class RedisJarvisExecutionAdmissionStore:
     """Atomically enforce emergency mode, rate and concurrency budgets."""
 
@@ -327,6 +350,10 @@ class RedisJarvisExecutionAdmissionStore:
 
     async def initialize_control_mode(self, mode: JarvisControlMode) -> JarvisControlMode:
         mode = _validate_mode(mode)
+        if mode != "halted":
+            raise JarvisAdmissionInvalid(
+                "Jarvis control must be initialized in halted mode"
+            )
         try:
             response = await self._redis.eval(
                 _INITIALIZE_CONTROL_SCRIPT,
@@ -348,8 +375,7 @@ class RedisJarvisExecutionAdmissionStore:
     ) -> JarvisControlMode:
         expected_mode = _validate_mode(expected_mode)
         new_mode = _validate_mode(new_mode)
-        if expected_mode == new_mode:
-            raise JarvisAdmissionInvalid("Jarvis control transition is a no-op")
+        _validate_control_transition(expected_mode, new_mode)
         try:
             response = await self._redis.eval(
                 _CHANGE_CONTROL_SCRIPT,

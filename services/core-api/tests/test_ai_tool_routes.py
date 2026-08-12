@@ -116,15 +116,32 @@ def jarvis_service() -> VerifiedJarvisService:
     )
 
 
+def _iter_api_routes(route_items):
+    """Flatten FastAPI 0.141+ included-router nodes for contract inspection."""
+
+    for route in route_items:
+        path = getattr(route, "path", None)
+        if path is not None:
+            yield route
+
+        nested = getattr(route, "routes", None)
+        if nested is not None:
+            yield from _iter_api_routes(nested)
+
+
 def test_route_dependencies_keep_user_and_machine_auth_separate() -> None:
+    api_routes = tuple(
+        _iter_api_routes(routes.router.routes)
+    )
+
     issue_route = next(
         route
-        for route in routes.router.routes
+        for route in api_routes
         if route.path == "/v1/ai/tool-grants"
     )
     internal_route = next(
         route
-        for route in routes.router.routes
+        for route in api_routes
         if route.path
         == "/internal/ai/tool-executions/authorize"
     )

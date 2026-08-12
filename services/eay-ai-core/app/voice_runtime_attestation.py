@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +46,131 @@ def hash_regular_file(path: Path, *, max_bytes: int = 1024 * 1024 * 1024) -> tup
                 raise ValueError("voice_runtime_artifact_size_invalid")
             digest.update(chunk)
     return digest.hexdigest(), total
+
+
+@dataclass(frozen=True)
+class VoiceRuntimeDirectoryEntry:
+    relative_path: str
+    sha256: str
+    size_bytes: int
+
+    def validate(self) -> None:
+        path = self.relative_path.strip()
+        if not path or path.startswith("/") or "\\" in path or any(part in {"", ".", ".."} for part in path.split("/")):
+            raise ValueError("voice_runtime_directory_relative_path_invalid")
+        if not _valid_sha256(self.sha256):
+            raise ValueError("voice_runtime_directory_file_hash_invalid")
+        if self.size_bytes <= 0:
+            raise ValueError("voice_runtime_directory_file_size_invalid")
+
+
+@dataclass(frozen=True)
+class VoiceRuntimeDirectoryManifest:
+    logical_name: str
+    file_count: int
+    total_size_bytes: int
+    entries: tuple[VoiceRuntimeDirectoryEntry, ...]
+    fingerprint: str
+
+    def validate(self) -> None:
+        logical_name = self.logical_name.strip()
+        if len(logical_name) < 2 or "/" in logical_name or "\\" in logical_name:
+            raise ValueError("voice_runtime_directory_logical_name_invalid")
+        if self.file_count < 1 or self.file_count != len(self.entries):
+            raise ValueError("voice_runtime_directory_file_count_invalid")
+        if self.total_size_bytes < 1 or self.total_size_bytes != sum(item.size_bytes for item in self.entries):
+            raise ValueError("voice_runtime_directory_total_size_invalid")
+        for item in self.entries:
+            item.validate()
+        paths = tuple(item.relative_path for item in self.entries)
+        if paths != tuple(sorted(paths)) or len(set(paths)) != len(paths):
+            raise ValueError("voice_runtime_directory_entries_not_canonical")
+        payload = {
+            "logical_name": logical_name,
+            "file_count": self.file_count,
+            "total_size_bytes": self.total_size_bytes,
+            "entries": tuple(
+                {"relative_path": item.relative_path, "sha256": item.sha256, "size_bytes": item.size_bytes}
+                for item in self.entries
+            ),
+        }
+        if not _valid_sha256(self.fingerprint) or _sha256(payload) != self.fingerprint:
+            raise ValueError("voice_runtime_directory_fingerprint_drift")
+
+
+def seal_runtime_directory_manifest(
+    root: Path,
+    *,
+    logical_name: str,
+    max_files: int = 20_000,
+    max_total_bytes: int = 512 * 1024 * 1024,
+    max_file_bytes: int = 64 * 1024 * 1024,
+) -> VoiceRuntimeDirectoryManifest:
+    """Deterministically attest a runtime resource directory without absolute paths.
+
+    Symlinks are rejected at every level, entries are sorted by POSIX relative path,
+    and neither mtimes nor machine-local root paths enter the fingerprint. This makes
+    the manifest reproducible across hosts while preventing path redirection attacks.
+    """
+    root = Path(root)
+    if root.is_symlink():
+        raise ValueError("voice_runtime_directory_symlink_forbidden")
+    if not root.exists():
+        raise ValueError("voice_runtime_directory_missing")
+    if not root.is_dir():
+        raise ValueError("voice_runtime_directory_required")
+    if not 1 <= int(max_files) <= 1_000_000:
+        raise ValueError("voice_runtime_directory_file_limit_invalid")
+    if not 1 <= int(max_total_bytes) <= 16 * 1024 * 1024 * 1024:
+        raise ValueError("voice_runtime_directory_total_limit_invalid")
+    if not 1 <= int(max_file_bytes) <= int(max_total_bytes):
+        raise ValueError("voice_runtime_directory_per_file_limit_invalid")
+
+    entries: list[VoiceRuntimeDirectoryEntry] = []
+    total_size = 0
+    for current_root, dir_names, file_names in os.walk(root, topdown=True, followlinks=False):
+        current = Path(current_root)
+        dir_names.sort()
+        file_names.sort()
+        for name in dir_names:
+            if (current / name).is_symlink():
+                raise ValueError("voice_runtime_directory_symlink_forbidden")
+        for name in file_names:
+            path = current / name
+            if path.is_symlink():
+                raise ValueError("voice_runtime_directory_symlink_forbidden")
+            digest, size = hash_regular_file(path, max_bytes=max_file_bytes)
+            total_size += size
+            if total_size > max_total_bytes:
+                raise ValueError("voice_runtime_directory_total_size_exceeded")
+            relative = path.relative_to(root).as_posix()
+            entry = VoiceRuntimeDirectoryEntry(relative_path=relative, sha256=digest, size_bytes=size)
+            entry.validate()
+            entries.append(entry)
+            if len(entries) > max_files:
+                raise ValueError("voice_runtime_directory_file_count_exceeded")
+
+    entries.sort(key=lambda item: item.relative_path)
+    if not entries:
+        raise ValueError("voice_runtime_directory_empty")
+    payload = {
+        "logical_name": logical_name.strip(),
+        "file_count": len(entries),
+        "total_size_bytes": total_size,
+        "entries": tuple(
+            {"relative_path": item.relative_path, "sha256": item.sha256, "size_bytes": item.size_bytes}
+            for item in entries
+        ),
+    }
+    manifest = VoiceRuntimeDirectoryManifest(
+        logical_name=logical_name.strip(),
+        file_count=len(entries),
+        total_size_bytes=total_size,
+        entries=tuple(entries),
+        fingerprint=_sha256(payload),
+    )
+    manifest.validate()
+    return manifest
 
 
 @dataclass(frozen=True)

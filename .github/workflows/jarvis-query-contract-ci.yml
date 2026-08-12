@@ -40,12 +40,14 @@ jobs:
           services/core-api/app/core/ai_tool_grants.py
           services/core-api/app/ai_tool_routes.py
           services/core-api/tests/test_ai_query_contract_policy.py
+          services/core-api/tests/test_ai_query_contract_routes.py
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_jarvis_execution_contract.py
       - name: Test query-contract and grant binding
         run: >-
           pytest -q
           services/core-api/tests/test_ai_query_contract_policy.py
+          services/core-api/tests/test_ai_query_contract_routes.py
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_ai_tool_routes.py

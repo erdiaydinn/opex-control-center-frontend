@@ -21,7 +21,12 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from app.core.ai_data_scope import AiDataScope
+from app.core.ai_data_scope import (
+    AiDataScope,
+    AiDataScopeError,
+    ai_data_scope_fingerprint,
+    validate_ai_data_scope_invocation,
+)
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolCapability,
@@ -55,9 +60,12 @@ class AiToolGrantBindingMismatch(AiToolGrantError):
 
 
 class AiToolGrantBinding(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
 
-    version: Literal[2] = AI_TOOL_GRANT_VERSION
+    version: Literal[2]
     tenant_id: UUID
     actor_subject: str = Field(
         min_length=1,
@@ -177,13 +185,50 @@ def canonical_reason_sha256(reason: str) -> str:
     ).hexdigest()
 
 
+def _validate_scope_binding(
+    *,
+    tool: str,
+    arguments: Mapping[str, Any],
+    data_scope: AiDataScope,
+    data_scope_fingerprint: str,
+) -> None:
+    expected_fingerprint = (
+        ai_data_scope_fingerprint(data_scope)
+    )
+    if data_scope_fingerprint != expected_fingerprint:
+        raise AiToolGrantInvalid(
+            "AI tool data scope fingerprint does not match"
+        )
+
+    try:
+        validate_ai_data_scope_invocation(
+            tool=tool,
+            arguments=arguments,
+            data_scope=data_scope,
+        )
+    except AiDataScopeError as exc:
+        raise AiToolGrantInvalid(
+            "AI tool invocation exceeds authorized data scope"
+        ) from exc
+
+
 def build_ai_tool_grant_binding(
     capability: AiToolCapability,
     *,
     arguments: Mapping[str, Any],
     reason: str,
 ) -> AiToolGrantBinding:
+    _validate_scope_binding(
+        tool=capability.tool,
+        arguments=arguments,
+        data_scope=capability.data_scope,
+        data_scope_fingerprint=(
+            capability.data_scope_fingerprint
+        ),
+    )
+
     return AiToolGrantBinding(
+        version=AI_TOOL_GRANT_VERSION,
         tenant_id=capability.tenant_id,
         actor_subject=capability.actor_subject,
         tool=capability.tool,
@@ -375,6 +420,18 @@ class RedisAiToolGrantStore:
 
         stored = await self._consume_stored_binding(
             token=token
+        )
+
+        # Revalidate trusted authorization metadata after Redis deserialization
+        # so corruption/tampering cannot turn a stored V2 grant into wider data
+        # access even when the invocation hash itself still matches.
+        _validate_scope_binding(
+            tool=stored.tool,
+            arguments=arguments,
+            data_scope=stored.data_scope,
+            data_scope_fingerprint=(
+                stored.data_scope_fingerprint
+            ),
         )
 
         if (

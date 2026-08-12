@@ -75,6 +75,7 @@ jobs:
           services/core-api/app/core/jarvis_service_identity.py
           services/core-api/app/core/jarvis_service_security.py
           services/core-api/tests/test_ai_tool_routes.py
+          services/core-api/tests/test_jarvis_broker_deployment.py
           services/core-api/tests/test_jarvis_deployment_wiring.py
           services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
@@ -89,6 +90,7 @@ jobs:
           services/core-api/tests/test_ai_tool_authorization.py
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_ai_tool_routes.py
+          services/core-api/tests/test_jarvis_broker_deployment.py
           services/core-api/tests/test_jarvis_deployment_wiring.py
           services/core-api/tests/test_jarvis_execution_broker.py
           services/core-api/tests/test_jarvis_execution_contract.py
@@ -114,7 +116,7 @@ jobs:
           pytest -q
           services/core-api/tests/test_dockos_gateway_quarantine.py
 
-      - name: Verify opt-in Jarvis compose merge
+      - name: Verify opt-in Jarvis trust compose merge
         run: |
           mkdir -p /tmp/jarvis-trust
           printf '%s\n' '{"keys":[{"kty":"EC","crv":"P-256","kid":"ci-only","use":"sig","alg":"ES256","x":"AA","y":"AA"}]}' > /tmp/jarvis-trust/jarvis-service.jwks.json
@@ -122,13 +124,26 @@ jobs:
             docker compose \
               -f docker-compose.platform.yml \
               -f docker-compose.jarvis-trust.yml \
-              config > /tmp/jarvis-compose.yml
-          grep -q 'OPEX_JARVIS_SERVICE_ENABLED: "true"' /tmp/jarvis-compose.yml
-          grep -q 'OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: /run/jarvis-trust/jarvis-service.jwks.json' /tmp/jarvis-compose.yml
-          grep -q 'target: /run/jarvis-trust' /tmp/jarvis-compose.yml
-          grep -q 'read_only: true' /tmp/jarvis-compose.yml
-          if grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE' /tmp/jarvis-compose.yml; then
+              config > /tmp/jarvis-trust-compose.yml
+          grep -q 'OPEX_JARVIS_SERVICE_ENABLED: "true"' /tmp/jarvis-trust-compose.yml
+          grep -q 'OPEX_JARVIS_SERVICE_ASSERTION_JWKS_FILE: /run/jarvis-trust/jarvis-service.jwks.json' /tmp/jarvis-trust-compose.yml
+          grep -q 'target: /run/jarvis-trust' /tmp/jarvis-trust-compose.yml
+          grep -q 'read_only: true' /tmp/jarvis-trust-compose.yml
+          if grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE' /tmp/jarvis-trust-compose.yml; then
             echo 'private key wiring leaked into Platform Core compose' >&2
+            exit 1
+          fi
+
+      - name: Verify opt-in Jarvis broker compose merge
+        run: |
+          docker compose \
+            -f docker-compose.platform.yml \
+            -f docker-compose.jarvis-broker.yml \
+            config > /tmp/jarvis-broker-compose.yml
+          grep -q 'OPEX_JARVIS_BROKER_ENABLED: "true"' /tmp/jarvis-broker-compose.yml
+          grep -q 'OPEX_JARVIS_BROKER_AI_CORE_BASE_URL: http://eay-ai-core:8030' /tmp/jarvis-broker-compose.yml
+          if grep -q 'EAY_JARVIS_SERVICE_PRIVATE_KEY_FILE' /tmp/jarvis-broker-compose.yml; then
+            echo 'private key wiring leaked into broker compose' >&2
             exit 1
           fi
 

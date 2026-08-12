@@ -16,7 +16,6 @@ from app.core.ai_tool_grants import (
     canonical_arguments_sha256,
 )
 
-
 TENANT_A = UUID(
     "11111111-1111-4111-8111-111111111111"
 )
@@ -129,221 +128,193 @@ def test_arguments_reject_ambiguous_or_nonfinite_json() -> None:
         )
 
 
-def test_issue_stores_only_hashed_token_and_hashed_context() -> None:
+@pytest.mark.asyncio
+async def test_issue_stores_only_hashed_token_and_hashed_context() -> None:
     redis = FakeRedis()
     store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
 
-    issued = pytest.run(
-        store.issue(
-            capability(),
-            arguments={
-                "metric": "secret-metric",
-            },
-            reason="need secret reason",
-        )
+    issued = await store.issue(
+        capability(),
+        arguments={
+            "metric": "secret-metric",
+        },
+        reason="need secret reason",
     )
 
     token = issued.token.get_secret_value()
+    stored_payload = next(
+        iter(redis.values.values())
+    )
 
     assert token not in redis.last_key
-    assert "secret-metric" not in next(iter(redis.values.values()))
-    assert "secret reason" not in next(iter(redis.values.values()))
+    assert "secret-metric" not in stored_payload
+    assert "secret reason" not in stored_payload
     assert token not in repr(issued)
 
 
-def test_single_use_grant_consumes_exact_binding() -> None:
-    async def scenario() -> None:
-        redis = FakeRedis()
-        store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
-        cap = capability()
-        arguments = {"metric": "orders"}
-        reason = "authorized KPI lookup"
+@pytest.mark.asyncio
+async def test_single_use_grant_consumes_exact_binding() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability()
+    arguments = {"metric": "orders"}
+    reason = "authorized KPI lookup"
 
-        issued = await store.issue(
-            cap,
-            arguments=arguments,
-            reason=reason,
-        )
-        token = issued.token.get_secret_value()
+    issued = await store.issue(
+        cap,
+        arguments=arguments,
+        reason=reason,
+    )
+    token = issued.token.get_secret_value()
 
-        binding = await store.consume(
+    binding = await store.consume(
+        token=token,
+        capability=cap,
+        arguments=arguments,
+        reason=reason,
+    )
+
+    assert binding == issued.binding
+
+    with pytest.raises(
+        AiToolGrantReplayOrExpired
+    ):
+        await store.consume(
             token=token,
             capability=cap,
             arguments=arguments,
             reason=reason,
         )
 
-        assert binding == issued.binding
 
-        with pytest.raises(
-            AiToolGrantReplayOrExpired
-        ):
-            await store.consume(
-                token=token,
-                capability=cap,
-                arguments=arguments,
-                reason=reason,
-            )
+@pytest.mark.asyncio
+async def test_binding_mismatch_burns_grant() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability()
+    original = {"metric": "orders"}
 
-    import asyncio
+    issued = await store.issue(
+        cap,
+        arguments=original,
+        reason="read orders",
+    )
+    token = issued.token.get_secret_value()
 
-    asyncio.run(scenario())
+    with pytest.raises(
+        AiToolGrantBindingMismatch
+    ):
+        await store.consume(
+            token=token,
+            capability=cap,
+            arguments={"metric": "refunds"},
+            reason="read orders",
+        )
 
-
-def test_binding_mismatch_burns_grant() -> None:
-    async def scenario() -> None:
-        redis = FakeRedis()
-        store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
-        cap = capability()
-        original = {"metric": "orders"}
-
-        issued = await store.issue(
-            cap,
+    with pytest.raises(
+        AiToolGrantReplayOrExpired
+    ):
+        await store.consume(
+            token=token,
+            capability=cap,
             arguments=original,
             reason="read orders",
         )
-        token = issued.token.get_secret_value()
-
-        with pytest.raises(
-            AiToolGrantBindingMismatch
-        ):
-            await store.consume(
-                token=token,
-                capability=cap,
-                arguments={"metric": "refunds"},
-                reason="read orders",
-            )
-
-        with pytest.raises(
-            AiToolGrantReplayOrExpired
-        ):
-            await store.consume(
-                token=token,
-                capability=cap,
-                arguments=original,
-                reason="read orders",
-            )
-
-    import asyncio
-
-    asyncio.run(scenario())
 
 
-def test_grant_is_bound_to_actor_tenant_and_authorization_snapshot() -> None:
-    async def mismatch(
-        changed: AiToolCapability,
-    ) -> None:
-        redis = FakeRedis()
-        store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
-        original = capability()
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed",
+    [
+        capability(actor_subject="user-2"),
+        capability(tenant_id=TENANT_B),
+        capability(fingerprint="b" * 64),
+    ],
+)
+async def test_grant_is_bound_to_actor_tenant_and_authorization_snapshot(
+    changed: AiToolCapability,
+) -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    original = capability()
 
-        issued = await store.issue(
-            original,
+    issued = await store.issue(
+        original,
+        arguments={"metric": "orders"},
+        reason="read KPI",
+    )
+
+    with pytest.raises(
+        AiToolGrantBindingMismatch
+    ):
+        await store.consume(
+            token=issued.token.get_secret_value(),
+            capability=changed,
             arguments={"metric": "orders"},
             reason="read KPI",
         )
 
-        with pytest.raises(
-            AiToolGrantBindingMismatch
-        ):
-            await store.consume(
-                token=issued.token.get_secret_value(),
-                capability=changed,
+
+@pytest.mark.asyncio
+async def test_reason_is_part_of_single_use_binding() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability()
+
+    issued = await store.issue(
+        cap,
+        arguments={"metric": "orders"},
+        reason="reason A",
+    )
+
+    with pytest.raises(
+        AiToolGrantBindingMismatch
+    ):
+        await store.consume(
+            token=issued.token.get_secret_value(),
+            capability=cap,
+            arguments={"metric": "orders"},
+            reason="reason B",
+        )
+
+
+@pytest.mark.asyncio
+async def test_ttl_is_strictly_bounded() -> None:
+    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+
+    for invalid in (
+        True,
+        0,
+        -1,
+        AI_TOOL_GRANT_MAX_TTL_SECONDS + 1,
+    ):
+        with pytest.raises(ValueError):
+            await store.issue(
+                capability(),
                 arguments={"metric": "orders"},
                 reason="read KPI",
+                ttl_seconds=invalid,  # type: ignore[arg-type]
             )
 
-    import asyncio
 
-    asyncio.run(
-        mismatch(
-            capability(actor_subject="user-2")
-        )
-    )
-    asyncio.run(
-        mismatch(
-            capability(tenant_id=TENANT_B)
-        )
-    )
-    asyncio.run(
-        mismatch(
-            capability(fingerprint="b" * 64)
-        )
-    )
+@pytest.mark.asyncio
+async def test_redis_failure_is_fail_closed_for_issue_and_consume() -> None:
+    store = RedisAiToolGrantStore(
+        UnavailableRedis()
+    )  # type: ignore[arg-type]
+    cap = capability()
 
-
-def test_reason_is_part_of_single_use_binding() -> None:
-    async def scenario() -> None:
-        redis = FakeRedis()
-        store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
-        cap = capability()
-
-        issued = await store.issue(
+    with pytest.raises(AiToolGrantUnavailable):
+        await store.issue(
             cap,
             arguments={"metric": "orders"},
-            reason="reason A",
+            reason="read KPI",
         )
 
-        with pytest.raises(
-            AiToolGrantBindingMismatch
-        ):
-            await store.consume(
-                token=issued.token.get_secret_value(),
-                capability=cap,
-                arguments={"metric": "orders"},
-                reason="reason B",
-            )
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_ttl_is_strictly_bounded() -> None:
-    async def scenario() -> None:
-        store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
-
-        for invalid in (
-            True,
-            0,
-            -1,
-            AI_TOOL_GRANT_MAX_TTL_SECONDS + 1,
-        ):
-            with pytest.raises(ValueError):
-                await store.issue(
-                    capability(),
-                    arguments={"metric": "orders"},
-                    reason="read KPI",
-                    ttl_seconds=invalid,  # type: ignore[arg-type]
-                )
-
-    import asyncio
-
-    asyncio.run(scenario())
-
-
-def test_redis_failure_is_fail_closed_for_issue_and_consume() -> None:
-    async def scenario() -> None:
-        store = RedisAiToolGrantStore(
-            UnavailableRedis()
-        )  # type: ignore[arg-type]
-        cap = capability()
-
-        with pytest.raises(AiToolGrantUnavailable):
-            await store.issue(
-                cap,
-                arguments={"metric": "orders"},
-                reason="read KPI",
-            )
-
-        with pytest.raises(AiToolGrantUnavailable):
-            await store.consume(
-                token="x" * 43,
-                capability=cap,
-                arguments={"metric": "orders"},
-                reason="read KPI",
-            )
-
-    import asyncio
-
-    asyncio.run(scenario())
+    with pytest.raises(AiToolGrantUnavailable):
+        await store.consume(
+            token="x" * 43,
+            capability=cap,
+            arguments={"metric": "orders"},
+            reason="read KPI",
+        )

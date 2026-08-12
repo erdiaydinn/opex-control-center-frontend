@@ -71,6 +71,10 @@ def _extract_yaml(source: str) -> ExtractedRepositoryFacts:
     contracts: list[str] = []
     for raw_line in source.splitlines():
         line = raw_line.strip()
+        # GitHub Actions steps are usually YAML sequence items ("- uses:" / "- run:").
+        # Remove only the structural list marker; never persist the run command body.
+        if line.startswith("- "):
+            line = line[2:].lstrip()
         if line.startswith("name:"):
             contracts.append("workflow:name:" + line.split(":", 1)[1].strip().strip("'\""))
         elif line.startswith("uses:"):

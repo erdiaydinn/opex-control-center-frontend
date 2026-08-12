@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .company_knowledge import router as company_knowledge_router
 from .employment_intelligence import router as employment_intelligence_router
+from .employment_temporal_grounding import router as employment_grounding_router
 from .eval_guardrails import router as eval_router
 from .grounded_chat import router as grounded_chat_router
 from .legal_api import router as legal_router
@@ -12,6 +13,7 @@ from .main import app
 from .learning_export_guard import router as learning_export_router
 from .model_registry import router as model_registry_router
 from .observability import router as observability_router
+from .payroll_engine import router as payroll_router
 from .regulatory import router as regulatory_router
 from .tool_execution import router as tool_execution_router
 from .tool_intent import router as tool_intent_router
@@ -38,6 +40,8 @@ app.include_router(legal_verification_router)
 app.include_router(legal_knowledge_router)
 app.include_router(company_knowledge_router)
 app.include_router(employment_intelligence_router)
+app.include_router(employment_grounding_router)
+app.include_router(payroll_router)
 app.include_router(grounded_chat_router)
 app.include_router(tool_router)
 app.include_router(tool_intent_router)

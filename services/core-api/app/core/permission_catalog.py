@@ -71,6 +71,13 @@ FEATURES = MappingProxyType(
 
 ACTIONS = MappingProxyType(
     {
+        "ai_assistant": frozenset(
+            {
+                "executeOpsRead",
+                "executeCatalogRead",
+                "executeLegalRead",
+            }
+        ),
         "dockos": frozenset(
             {
                 "view",

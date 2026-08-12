@@ -69,3 +69,32 @@ def bind_query_context_to_execution(
         entity_ids=query_context.context.entity_ids,
         execution_context_fingerprint=fingerprint,
     )
+
+
+def verify_query_context_binding(
+    *,
+    binding: AiQueryContextBinding,
+    query_context: AiTenantQueryContextRecord | None,
+    execution_scope_fingerprint: str,
+) -> AiQueryContextBinding:
+    """Recompute the binding from current authority and reject stale/tampered state.
+
+    This is intended for the post-GETDEL authorization path: a grant is consumed first,
+    then the current tenant query context is loaded and compared to the exact binding that
+    was issued. Any context rotation therefore burns the outstanding grant instead of
+    allowing it to execute under stale discriminator authority.
+    """
+    if binding.version != 1:
+        raise AiQueryContextBindingError("Unsupported query context binding version")
+    _require_sha256(
+        binding.execution_context_fingerprint,
+        field="execution_context_fingerprint",
+    )
+    current = bind_query_context_to_execution(
+        tenant_id=binding.tenant_id,
+        query_context=query_context,
+        execution_scope_fingerprint=execution_scope_fingerprint,
+    )
+    if current != binding:
+        raise AiQueryContextBindingError("Tenant query context binding changed")
+    return current

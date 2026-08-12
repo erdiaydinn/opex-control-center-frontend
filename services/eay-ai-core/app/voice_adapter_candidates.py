@@ -148,10 +148,10 @@ VOICE_ADAPTER_CANDIDATES: tuple[VoiceAdapterCandidate, ...] = (
         runtime_license_id="apache-2.0",
         bundled_artifact_license_id="cc-by-nc-sa-4.0",
         official_sources=("https://github.com/dscripka/openWakeWord",),
-        languages=CORE_LANGUAGES,
+        languages=("en",),
         status="custom_artifact_required",
         source_verified_on="2026-08-12",
-        notes="openWakeWord code is Apache-2.0, but bundled pretrained models are CC BY-NC-SA 4.0; EAY therefore forbids bundled models for commercial deployment and requires a separately licensed custom artifact.",
+        notes="openWakeWord code is Apache-2.0 and bundled pretrained models are CC BY-NC-SA 4.0. The upstream project currently documents English language support; EAY therefore does not claim TR/DE/AR/FA wakeword coverage from this candidate. Commercial deployment requires a separately licensed custom artifact and explicit multilingual evaluation before any broader language claim.",
     ),
     VoiceAdapterCandidate(
         candidate_id="sherpa-onnx-piper-vits",

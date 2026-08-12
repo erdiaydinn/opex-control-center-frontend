@@ -1,3 +1,7 @@
+import math
+
+import pytest
+
 from app.voice_release_gate import VoiceLanguageEval, evaluate_voice_release
 from app.voice_runtime import CORE_LANGUAGES
 
@@ -66,3 +70,21 @@ def test_any_accepted_approval_replay_blocks_voice_release():
     decision = evaluate_voice_release(cases)
     assert decision.approved is False
     assert "voice_eval_fa:approval_replay_accepted" in decision.violations
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("semantic_consistency_rate", math.nan, "voice_eval_semantic_consistency_invalid"),
+        ("human_naturalness_score", math.inf, "voice_eval_naturalness_invalid"),
+        ("citation_readback_accuracy", -0.1, "voice_eval_citation_accuracy_invalid"),
+        ("p95_first_audio_ms", -1, "voice_eval_first_audio_latency_invalid"),
+        ("p95_barge_in_ms", -1, "voice_eval_barge_in_latency_invalid"),
+        ("approval_replay_accept_count", -1, "voice_eval_approval_replay_count_invalid"),
+    ],
+)
+def test_invalid_or_nonfinite_measurement_values_fail_closed(field, value, code):
+    cases = [_case(language) for language in CORE_LANGUAGES]
+    cases[0] = _case("tr", **{field: value})
+    with pytest.raises(ValueError, match=code):
+        evaluate_voice_release(cases)

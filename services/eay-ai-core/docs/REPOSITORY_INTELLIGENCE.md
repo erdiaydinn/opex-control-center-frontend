@@ -40,8 +40,6 @@ Do not index raw secrets, credentials, tokens, generated dependency trees, or un
 
 The snapshot itself receives a deterministic SHA-256 fingerprint. A sequence of snapshots is hash-chained with `previous_snapshot_fingerprint`, so new reviews append history instead of replacing earlier project truth. Reordering, deletion of an interior review, field mutation, repository identity substitution, upstream substitution, registry-version substitution, duplicate paths, invalid Git/content hashes, unresolved identities, and excluded secret/generated paths fail closed.
 
-Historical snapshots intentionally remain tied to the exact registry fingerprint that existed when they were reviewed. Because the registry is version controlled, historical validation uses that registry revision rather than silently reinterpreting old evidence under a newer source map.
-
 ## Append-only repository memory store
 
 `app/repository_memory_store.py` persists verified snapshots as immutable JSON artifacts under a repository-entry directory and maintains a minimal append-only `index.jsonl` containing only fingerprint, commit SHA, and review timestamp.
@@ -66,30 +64,25 @@ Secret values are never copied into extracted contracts. Excluded paths are reje
 
 `app/repository_review_ingestion.py` composes already-fetched repository evidence into one verified memory transaction. Remote transport remains outside the trusted memory layer: the caller performs read-only GitHub retrieval and supplies the exact repository, ref, commit SHA, file path, blob SHA, and source text returned by that retrieval.
 
-Before any snapshot is committed, the coordinator:
-
-- resolves the target through the canonical registry and refuses unresolved identities,
-- requires an exact 40-character commit SHA,
-- rejects repository, ref, or commit substitution across evidence records,
-- validates every Git blob SHA and rejects duplicate/empty paths,
-- enforces a bounded per-file review size,
-- applies the secret/generated path admission gate,
-- extracts only structural symbols/contracts,
-- stores a SHA-256 of reviewed source content rather than raw source in the snapshot,
-- reloads and verifies the existing append-only chain,
-- binds the new snapshot to the exact current head and commits through the durable store.
-
-If provenance validation, extraction, chain verification, snapshot creation, or persistence fails, the review is not accepted as repository memory. GitHub credentials/tokens are never accepted by or persisted in this model.
+Before any snapshot is committed, the coordinator resolves the target through the canonical registry, rejects repository/ref/commit substitution, enforces exact Git blob identity and bounded file size, applies the secret/generated path gate, extracts only structural facts, stores content SHA-256 rather than raw source, reloads the existing append-only chain, and binds the new snapshot to the exact current head.
 
 ## GitHub object provenance adapter
 
-`app/github_repository_evidence.py` closes the remaining gap between remote GitHub reads and the trusted ingestion coordinator. It accepts already-fetched immutable GitHub object metadata and verifies the complete object chain before project memory is touched:
+`app/github_repository_evidence.py` verifies the remote object chain before project memory is touched:
 
 `registry repository -> resolved ref -> commit SHA -> commit tree SHA -> tree path/blob SHA -> fetched UTF-8 source -> Git blob identity`
 
-The adapter rejects repository substitution, a ref pointing at a different commit, tree evidence from another tree, duplicate paths, non-blob paths, file paths absent from the commit tree, blob-SHA substitution, and source text that does not reproduce the exact Git blob SHA. Git blob identity is recomputed using Git's canonical `blob <byte-length>\0<content>` object format; this protocol SHA-1 is used only to verify Git object identity, while repository-memory manifests continue to use SHA-256 fingerprints.
+Repository/ref/commit/tree/blob substitution, paths absent from the commit tree, duplicate paths, invalid object hashes, and fetched source that does not reproduce the exact Git blob SHA fail closed. Git blob identity is recomputed using Git's canonical `blob <byte-length>\0<content>` object format; protocol SHA-1 is used only for Git object identity while EAY repository-memory manifests remain SHA-256 fingerprinted.
 
-`ingest_verified_github_repository_review()` then composes this verified object evidence with the registry, safe structural extractor, immutable review snapshot, and append-only local store. The adapter performs no network access, accepts no credentials, and cannot widen repository authority beyond the canonical registry entry.
+`ingest_verified_github_repository_review()` composes verified object evidence with the canonical registry, safe extractor, immutable review snapshot, and append-only local store. The adapter performs no network access, accepts no credentials, and cannot widen repository authority beyond the verified registry entry.
+
+## Historical registry revisions
+
+Historical truth is not reinterpreted under today's registry. `load_repository_registry_text()` applies the same schema, seed-preservation, identity, upstream, and license/adoption gates to an already-fetched historical registry JSON payload that the filesystem loader applies to the current registry.
+
+`app/historical_repository_registry.py` then binds an old snapshot to that historical payload by requiring exact `snapshot.registry_fingerprint == historical_registry.fingerprint` before running the normal snapshot verifier. A modified/newer registry revision, a registry missing a canonical seed, or a snapshot invalid under its original source map fails closed. The caller must fetch the registry text from the immutable Git revision; no fallback to the current registry is permitted.
+
+This means repository project memory now preserves both temporal axes: the reviewed repository commit and the exact source-registry revision that governed the review.
 
 ## External-source policy
 
@@ -101,4 +94,4 @@ The supplied `council-of-high-intelligence-main.zip` archive is bound to verifie
 
 ## Next layer
 
-The next repository-intelligence slice should add historical registry-revision loading so a snapshot can be revalidated against the exact registry JSON/fingerprint that existed when the review was created, instead of depending on the current registry. After that, add signed checkpoint/export support for optional stronger evidence durability and continue unresolved archive upstream/license recovery without weakening registry completeness or adoption gates.
+The next repository-intelligence slice should add optional signed checkpoint/export support so a local append-only chain can be independently anchored without claiming filesystem WORM guarantees. In parallel, continue exact upstream/license recovery for unresolved supplied archives and previously selected discovered repositories, never weakening registry completeness or commercial-license gates.

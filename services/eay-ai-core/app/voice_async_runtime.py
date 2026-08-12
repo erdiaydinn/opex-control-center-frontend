@@ -313,7 +313,12 @@ class VoiceAsyncExecutionCoordinator:
                     "tts_language_artifact_fingerprint": proof.tts_language_artifact_fingerprint,
                     "tts_voice_model_sha256": proof.tts_voice_model_sha256,
                     "tts_voice_config_sha256": proof.tts_voice_config_sha256,
+                    "tts_voice_tokens_sha256": proof.tts_voice_tokens_sha256,
                     "tts_voice_model_card_sha256": proof.tts_voice_model_card_sha256,
+                    "tts_voice_license_id_sha256": proof.tts_voice_license_id_sha256,
+                    "tts_phonemizer_data_manifest_fingerprint": proof.tts_phonemizer_data_manifest_fingerprint,
+                    "tts_phonemizer_license_id_sha256": proof.tts_phonemizer_license_id_sha256,
+                    "tts_phonemizer_source_sha256": proof.tts_phonemizer_source_sha256,
                 },
             )
         return proof

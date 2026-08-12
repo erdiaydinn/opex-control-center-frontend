@@ -167,6 +167,8 @@ def test_internal_consume_contract_accepts_no_caller_authorization_data() -> Non
     assert "granted_scopes" not in signature.parameters
     assert "data_scope" not in signature.parameters
     assert "store_names" not in signature.parameters
+    assert "query_policy" not in signature.parameters
+    assert "query_contract_fingerprint" not in signature.parameters
 
 
 @pytest.mark.asyncio
@@ -237,8 +239,12 @@ async def test_single_use_grant_consumes_exact_binding() -> None:
     )
 
     assert binding == issued.binding
-    assert binding.version == 2
+    assert binding.version == 3
     assert binding.data_scope.store_names == ("Fulya",)
+    assert binding.query_contract_id == "ops.kpi.orders.v1"
+    assert binding.query_contract_revision == 1
+    assert len(binding.query_contract_fingerprint) == 64
+    assert len(binding.execution_scope_fingerprint) == 64
 
     with pytest.raises(
         AiToolGrantReplayOrExpired
@@ -287,6 +293,9 @@ async def test_internal_consume_recovers_trusted_actor_tenant_and_data_scope() -
     assert binding.data_scope_fingerprint == (
         cap.data_scope_fingerprint
     )
+    assert binding.query_contract_id == "ops.kpi.orders.v1"
+    assert len(binding.query_contract_fingerprint) == 64
+    assert len(binding.execution_scope_fingerprint) == 64
 
 
 @pytest.mark.asyncio
@@ -310,6 +319,34 @@ async def test_redis_scope_tamper_is_detected_after_atomic_consume() -> None:
     redis.values[key] = json.dumps(payload)
 
     with pytest.raises(AiToolGrantInvalid):
+        await store.consume_authorized_invocation(
+            token=issued.token.get_secret_value(),
+            tool="ops_kpi_query",
+            arguments=arguments,
+            reason="read KPI",
+        )
+
+    assert key not in redis.values
+
+
+@pytest.mark.asyncio
+async def test_query_contract_tamper_is_detected_and_burns_grant() -> None:
+    redis = FakeRedis()
+    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    cap = capability()
+    arguments = ops_arguments()
+    issued = await store.issue(
+        cap,
+        arguments=arguments,
+        reason="read KPI",
+    )
+
+    key = next(iter(redis.values))
+    payload = json.loads(redis.values[key])
+    payload["query_contract_revision"] = 999
+    redis.values[key] = json.dumps(payload)
+
+    with pytest.raises(AiToolGrantBindingMismatch):
         await store.consume_authorized_invocation(
             token=issued.token.get_secret_value(),
             tool="ops_kpi_query",

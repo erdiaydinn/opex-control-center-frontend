@@ -2,6 +2,8 @@
 #
 # This service is internal-only: no host port is published and no gateway route
 # is added. The Jarvis private key is mounted only into the AI Core container.
+# It joins the already-created Platform ai_plane by its deterministic Compose
+# network name instead of importing/copying the Platform compose history.
 services:
   eay-ai-core:
     build:
@@ -45,6 +47,11 @@ services:
     restart: unless-stopped
     networks:
       - ai_plane
+
+networks:
+  ai_plane:
+    external: true
+    name: "${EAY_AI_PLANE_NETWORK:-opex-platform_ai_plane}"
 
 secrets:
   eay_jarvis_service_private_key:

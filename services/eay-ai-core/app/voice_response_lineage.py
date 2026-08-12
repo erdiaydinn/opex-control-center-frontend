@@ -69,6 +69,66 @@ class VoiceTtsGenerationProof:
     tts_phonemizer_source_sha256: str
     fingerprint: str
 
+    def _payload(self) -> dict[str, object]:
+        return {
+            "session_id": self.session_id,
+            "turn_epoch": self.turn_epoch,
+            "language": self.language,
+            "response_proof_fingerprint": self.response_proof_fingerprint,
+            "response_text_sha256": self.response_text_sha256,
+            "voice_profile_fingerprint": self.voice_profile_fingerprint,
+            "deployment_manifest_fingerprint": self.deployment_manifest_fingerprint,
+            "tts_execution_identity_fingerprint": self.tts_execution_identity_fingerprint,
+            "tts_adapter_artifact_sha256": self.tts_adapter_artifact_sha256,
+            "tts_adapter_promotion_fingerprint": self.tts_adapter_promotion_fingerprint,
+            "tts_bundle_execution_identity_fingerprint": self.tts_bundle_execution_identity_fingerprint,
+            "tts_bundle_fingerprint": self.tts_bundle_fingerprint,
+            "tts_bundle_promotion_fingerprint": self.tts_bundle_promotion_fingerprint,
+            "tts_language_artifact_fingerprint": self.tts_language_artifact_fingerprint,
+            "tts_voice_model_sha256": self.tts_voice_model_sha256,
+            "tts_voice_config_sha256": self.tts_voice_config_sha256,
+            "tts_voice_tokens_sha256": self.tts_voice_tokens_sha256,
+            "tts_voice_model_card_sha256": self.tts_voice_model_card_sha256,
+            "tts_voice_license_id_sha256": self.tts_voice_license_id_sha256,
+            "tts_phonemizer_data_manifest_fingerprint": self.tts_phonemizer_data_manifest_fingerprint,
+            "tts_phonemizer_license_id_sha256": self.tts_phonemizer_license_id_sha256,
+            "tts_phonemizer_source_sha256": self.tts_phonemizer_source_sha256,
+        }
+
+    def validate(self) -> None:
+        if len(self.session_id.strip()) < 3:
+            raise ValueError("voice_tts_proof_session_id_required")
+        if self.turn_epoch < 1:
+            raise ValueError("voice_tts_proof_turn_epoch_invalid")
+        if not self.language.strip():
+            raise ValueError("voice_tts_proof_language_required")
+        for value, code in (
+            (self.response_proof_fingerprint, "voice_tts_proof_response_fingerprint_invalid"),
+            (self.response_text_sha256, "voice_tts_proof_response_text_hash_invalid"),
+            (self.voice_profile_fingerprint, "voice_tts_proof_profile_fingerprint_invalid"),
+            (self.deployment_manifest_fingerprint, "voice_tts_proof_deployment_manifest_invalid"),
+            (self.tts_execution_identity_fingerprint, "voice_tts_proof_execution_identity_invalid"),
+            (self.tts_adapter_artifact_sha256, "voice_tts_proof_adapter_artifact_hash_invalid"),
+            (self.tts_adapter_promotion_fingerprint, "voice_tts_proof_adapter_promotion_invalid"),
+            (self.tts_bundle_execution_identity_fingerprint, "voice_tts_proof_bundle_identity_invalid"),
+            (self.tts_bundle_fingerprint, "voice_tts_proof_bundle_fingerprint_invalid"),
+            (self.tts_bundle_promotion_fingerprint, "voice_tts_proof_bundle_promotion_invalid"),
+            (self.tts_language_artifact_fingerprint, "voice_tts_proof_language_artifact_invalid"),
+            (self.tts_voice_model_sha256, "voice_tts_proof_voice_model_hash_invalid"),
+            (self.tts_voice_config_sha256, "voice_tts_proof_voice_config_hash_invalid"),
+            (self.tts_voice_tokens_sha256, "voice_tts_proof_voice_tokens_hash_invalid"),
+            (self.tts_voice_model_card_sha256, "voice_tts_proof_model_card_hash_invalid"),
+            (self.tts_voice_license_id_sha256, "voice_tts_proof_voice_license_hash_invalid"),
+            (self.tts_phonemizer_data_manifest_fingerprint, "voice_tts_proof_phonemizer_manifest_invalid"),
+            (self.tts_phonemizer_license_id_sha256, "voice_tts_proof_phonemizer_license_invalid"),
+            (self.tts_phonemizer_source_sha256, "voice_tts_proof_phonemizer_source_invalid"),
+            (self.fingerprint, "voice_tts_proof_fingerprint_invalid"),
+        ):
+            if not _valid_sha256(value):
+                raise ValueError(code)
+        if _sha256(self._payload()) != self.fingerprint:
+            raise ValueError("voice_tts_proof_fingerprint_drift")
+
 
 def seal_response_generation_proof(
     *,
@@ -197,4 +257,6 @@ def seal_tts_generation_proof(
         "tts_phonemizer_license_id_sha256": tts_bundle_execution_identity.phonemizer_license_id_sha256,
         "tts_phonemizer_source_sha256": tts_bundle_execution_identity.phonemizer_source_sha256,
     }
-    return VoiceTtsGenerationProof(**payload, fingerprint=_sha256(payload))
+    proof = VoiceTtsGenerationProof(**payload, fingerprint=_sha256(payload))
+    proof.validate()
+    return proof

@@ -5,10 +5,12 @@ on:
     branches:
       - platform-core/eay-v2-jarvis-execution-security
       - platform-core/eay-v2-jarvis-trust-wiring
+      - platform-core/eay-v2-jarvis-key-rotation
   pull_request:
     branches:
       - platform-core/eay-v2-jarvis-security
       - platform-core/eay-v2-jarvis-execution-security
+      - platform-core/eay-v2-jarvis-trust-wiring
 
 permissions:
   contents: read
@@ -73,6 +75,7 @@ jobs:
           services/core-api/tests/test_jarvis_deployment_wiring.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
+          services/core-api/tests/test_jarvis_jwks_rotation.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
 
@@ -85,6 +88,7 @@ jobs:
           services/core-api/tests/test_jarvis_deployment_wiring.py
           services/core-api/tests/test_jarvis_execution_contract.py
           services/core-api/tests/test_jarvis_execution_grants.py
+          services/core-api/tests/test_jarvis_jwks_rotation.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
 

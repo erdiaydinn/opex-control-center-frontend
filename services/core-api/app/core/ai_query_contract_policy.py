@@ -69,7 +69,7 @@ class AiQueryContractPolicy(BaseModel):
     blockers: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_readiness(self) -> "AiQueryContractPolicy":
+    def validate_readiness(self) -> AiQueryContractPolicy:
         if self.production_ready:
             missing = [
                 name
@@ -92,11 +92,10 @@ class AiQueryContractPolicy(BaseModel):
                 raise ValueError(
                     "Production-ready AI query contract cannot have blockers"
                 )
-        else:
-            if not self.blockers:
-                raise ValueError(
-                    "Blocked AI query contract must explain its blockers"
-                )
+        elif not self.blockers:
+            raise ValueError(
+                "Blocked AI query contract must explain its blockers"
+            )
 
         if len(set(self.blockers)) != len(self.blockers):
             raise ValueError(
@@ -124,13 +123,55 @@ def _review_fingerprint_payload(
 def expected_query_contract_review_fingerprint(
     policy: AiQueryContractPolicy,
 ) -> str:
-    """Bind review approval to the exact query-contract security fields."""
+    """Bind reviewed readiness to the exact query-contract security fields."""
 
     encoded = json.dumps(
         _review_fingerprint_payload(policy),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def ai_query_contract_policy_fingerprint(
+    policy: AiQueryContractPolicy,
+) -> str:
+    """Fingerprint the full version-controlled policy, including blockers."""
+
+    encoded = json.dumps(
+        policy.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def ai_execution_scope_fingerprint(
+    *,
+    query_contract_fingerprint: str,
+    data_scope_fingerprint: str,
+) -> str:
+    """Bind downstream query semantics and Platform data scope together."""
+
+    for name, value in {
+        "query_contract_fingerprint": query_contract_fingerprint,
+        "data_scope_fingerprint": data_scope_fingerprint,
+    }.items():
+        if (
+            len(value) != 64
+            or any(char not in "0123456789abcdef" for char in value)
+        ):
+            raise ValueError(f"{name} must be lowercase SHA-256")
+
+    encoded = json.dumps(
+        {
+            "query_contract_fingerprint": query_contract_fingerprint,
+            "data_scope_fingerprint": data_scope_fingerprint,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 

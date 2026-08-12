@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable, Protocol
 
 from .voice_execution_identity import VoiceModelExecutionIdentity, VoiceTtsExecutionIdentity
+from .voice_tts_bundle import VoiceTtsBundleExecutionIdentity
 
 
 def _sha256(payload: object) -> str:
@@ -46,6 +47,7 @@ class VoiceResponseGenerationProof:
 class VoiceTtsGenerationProof:
     session_id: str
     turn_epoch: int
+    language: str
     response_proof_fingerprint: str
     response_text_sha256: str
     voice_profile_fingerprint: str
@@ -53,6 +55,14 @@ class VoiceTtsGenerationProof:
     tts_execution_identity_fingerprint: str
     tts_adapter_artifact_sha256: str
     tts_adapter_promotion_fingerprint: str
+    tts_bundle_execution_identity_fingerprint: str
+    tts_bundle_fingerprint: str
+    tts_bundle_promotion_fingerprint: str
+    tts_language_artifact_fingerprint: str
+    tts_voice_model_sha256: str
+    tts_voice_config_sha256: str
+    tts_voice_model_card_sha256: str
+    tts_voice_license_id_sha256: str
     fingerprint: str
 
 
@@ -126,10 +136,12 @@ def seal_tts_generation_proof(
     *,
     response_proof: VoiceResponseGenerationProof,
     current_turn_epoch: int,
+    language: str,
     deployment_manifest_fingerprint: str,
     response_text_sha256: str,
     voice_profile_fingerprint: str,
     tts_execution_identity: VoiceTtsExecutionIdentity,
+    tts_bundle_execution_identity: VoiceTtsBundleExecutionIdentity,
 ) -> VoiceTtsGenerationProof:
     if response_proof.turn_epoch != current_turn_epoch:
         raise ValueError("voice_tts_stale_response_proof_forbidden")
@@ -148,9 +160,19 @@ def seal_tts_generation_proof(
     if tts_execution_identity.profile_fingerprint != voice_profile_fingerprint:
         raise ValueError("voice_tts_execution_profile_mismatch")
 
+    tts_bundle_execution_identity.validate()
+    if tts_bundle_execution_identity.profile_fingerprint != voice_profile_fingerprint:
+        raise ValueError("voice_tts_bundle_profile_mismatch")
+    if tts_bundle_execution_identity.runtime_adapter_id != tts_execution_identity.adapter_id:
+        raise ValueError("voice_tts_bundle_adapter_mismatch")
+    if tts_bundle_execution_identity.runtime_adapter_promotion_fingerprint != tts_execution_identity.promotion_fingerprint:
+        raise ValueError("voice_tts_bundle_runtime_promotion_mismatch")
+    language_artifact = tts_bundle_execution_identity.artifact_for(language)
+
     payload = {
         "session_id": response_proof.session_id,
         "turn_epoch": response_proof.turn_epoch,
+        "language": language_artifact.language,
         "response_proof_fingerprint": response_proof.fingerprint,
         "response_text_sha256": response_text_sha256,
         "voice_profile_fingerprint": voice_profile_fingerprint,
@@ -158,5 +180,13 @@ def seal_tts_generation_proof(
         "tts_execution_identity_fingerprint": tts_execution_identity.fingerprint,
         "tts_adapter_artifact_sha256": tts_execution_identity.artifact_sha256,
         "tts_adapter_promotion_fingerprint": tts_execution_identity.promotion_fingerprint,
+        "tts_bundle_execution_identity_fingerprint": tts_bundle_execution_identity.fingerprint,
+        "tts_bundle_fingerprint": tts_bundle_execution_identity.bundle_fingerprint,
+        "tts_bundle_promotion_fingerprint": tts_bundle_execution_identity.bundle_promotion_fingerprint,
+        "tts_language_artifact_fingerprint": language_artifact.fingerprint,
+        "tts_voice_model_sha256": language_artifact.model_sha256,
+        "tts_voice_config_sha256": language_artifact.config_sha256,
+        "tts_voice_model_card_sha256": language_artifact.model_card_sha256,
+        "tts_voice_license_id_sha256": language_artifact.artifact_license_id_sha256,
     }
     return VoiceTtsGenerationProof(**payload, fingerprint=_sha256(payload))

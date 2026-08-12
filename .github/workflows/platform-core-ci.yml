@@ -162,23 +162,29 @@ jobs:
         run: >-
           ruff check
           services/core-api/app/ai_tool_routes.py
+          services/core-api/app/ai_data_scope_admin_routes.py
           services/core-api/app/core/ai_data_scope.py
+          services/core-api/app/core/ai_data_scope_admin.py
           services/core-api/app/core/ai_tool_authorization.py
           services/core-api/app/core/ai_tool_grants.py
           services/core-api/app/core/jarvis_service_identity.py
           services/core-api/app/core/jarvis_service_security.py
           services/core-api/tests/test_ai_data_scope.py
+          services/core-api/tests/test_ai_data_scope_admin.py
+          services/core-api/tests/test_ai_data_scope_admin_integration.py
           services/core-api/tests/test_ai_tool_authorization.py
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_ai_tool_routes.py
           services/core-api/tests/test_jarvis_service_identity.py
           services/core-api/tests/test_jarvis_service_security.py
           services/core-api/tests/test_jarvis_execution_contract.py
+          services/core-api/tests/test_sql_access_boundary.py
           services/core-api/alembic/versions/0009_ai_tool_permissions.py
-      - name: Test Jarvis security boundaries
+      - name: Test Jarvis unit security boundaries
         run: >-
           pytest -q
           services/core-api/tests/test_ai_data_scope.py
+          services/core-api/tests/test_ai_data_scope_admin.py
           services/core-api/tests/test_ai_tool_authorization.py
           services/core-api/tests/test_ai_tool_grants.py
           services/core-api/tests/test_ai_tool_routes.py
@@ -195,6 +201,8 @@ jobs:
           expected = {
               "/v1/ai/tool-grants",
               "/internal/ai/tool-executions/authorize",
+              "/v1/admin/ai-data-scopes",
+              "/v1/admin/ai-data-scopes/{role_key}/{permission_key}",
           }
           router_paths = {
               route.path
@@ -242,6 +250,11 @@ jobs:
       - name: Apply migrations through Jarvis permission revision
         working-directory: services/core-api
         run: alembic upgrade 0009_ai_tool_permissions
+      - name: Test RLS-bound scope administration and SQL boundary
+        run: >-
+          pytest -q
+          services/core-api/tests/test_ai_data_scope_admin_integration.py
+          services/core-api/tests/test_sql_access_boundary.py
       - name: Verify migration head
         working-directory: services/core-api
         run: alembic current

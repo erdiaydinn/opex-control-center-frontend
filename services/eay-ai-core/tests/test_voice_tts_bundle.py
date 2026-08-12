@@ -62,7 +62,7 @@ def _profile(tts):
     )
 
 
-def _bundle(*, license_id="mit"):
+def _bundle(*, license_id="mit", phonemizer_license_id="mit", phonemizer_manifest=None):
     locales = {"tr": "tr_TR", "en": "en_US", "de": "de_DE", "ar": "ar_JO", "fa": "fa_IR"}
     artifacts = []
     for index, language in enumerate(CORE_LANGUAGES, start=5):
@@ -73,6 +73,7 @@ def _bundle(*, license_id="mit"):
                 voice_id=f"eay-{language}-neutral-v1",
                 model_sha256=_hash(ch),
                 config_sha256=_hash(format(index + 5, "x")[-1]),
+                tokens_sha256=_hash(format(index + 1, "x")[-1]),
                 model_card_sha256=_hash(format(index + 10, "x")[-1]),
                 artifact_license_id=license_id,
                 model_card_source=f"https://models.example.invalid/{language}/MODEL_CARD",
@@ -83,6 +84,9 @@ def _bundle(*, license_id="mit"):
         bundle_version="1",
         runtime_adapter_id="tts-sherpa-prod-v1",
         voice_identity_id="eay-natural-neutral-v1",
+        phonemizer_data_manifest_fingerprint=phonemizer_manifest or _hash("e"),
+        phonemizer_license_id=phonemizer_license_id,
+        phonemizer_source="https://github.com/espeak-ng/espeak-ng",
         artifacts=tuple(artifacts),
     )
 
@@ -93,6 +97,7 @@ def test_tts_bundle_requires_exact_core_language_artifacts_and_selects_by_locale
     assert len(bundle.fingerprint) == 64
     assert bundle.artifact_for("tr-TR").voice_id == "eay-tr-neutral-v1"
     assert bundle.artifact_for("fa_IR").voice_id == "eay-fa-neutral-v1"
+    assert len(bundle.artifact_for("en").tokens_sha256) == 64
 
     broken = replace(bundle, artifacts=bundle.artifacts[:-1])
     with pytest.raises(ValueError, match="voice_tts_bundle_core_language_coverage_required"):
@@ -101,6 +106,12 @@ def test_tts_bundle_requires_exact_core_language_artifacts_and_selects_by_locale
 
 def test_tts_bundle_rejects_nonallowlisted_voice_artifact_license():
     bundle = _bundle(license_id="cc-by-nc-sa-4.0")
+    with pytest.raises(ValueError, match="model_license_not_allowlisted"):
+        bundle.validate()
+
+
+def test_tts_bundle_rejects_nonallowlisted_phonemizer_license_by_default():
+    bundle = _bundle(phonemizer_license_id="gpl-3.0-or-later")
     with pytest.raises(ValueError, match="model_license_not_allowlisted"):
         bundle.validate()
 
@@ -160,3 +171,36 @@ def test_tts_bundle_artifact_drift_cannot_reuse_existing_promotion(tmp_path):
     changed_bundle = replace(bundle, artifacts=(changed_first,) + bundle.artifacts[1:])
     with pytest.raises(KeyError, match="voice_tts_bundle_promotion_not_found"):
         registry.verify(bundle=changed_bundle, runtime_adapter=tts, profile=profile, capabilities=caps)
+
+
+def test_tts_tokens_or_phonemizer_resource_drift_cannot_reuse_promotion(tmp_path):
+    db = tmp_path / "voice.db"
+    tts = _tts_adapter()
+    profile = _profile(tts)
+    caps = _caps()
+    VoiceAdapterPromotionRegistry(db).promote(
+        adapter=tts,
+        profile=profile,
+        capabilities=caps,
+        reviewer="voice-reviewer",
+        approval_reference="TTS-RUNTIME-003",
+    )
+    bundle = _bundle()
+    registry = VoiceTtsBundlePromotionRegistry(db)
+    registry.promote(
+        bundle=bundle,
+        runtime_adapter=tts,
+        profile=profile,
+        capabilities=caps,
+        reviewer="tts-bundle-reviewer",
+        approval_reference="TTS-BUNDLE-003",
+    )
+
+    token_drift = replace(bundle.artifacts[0], tokens_sha256=_hash("f"))
+    changed_tokens = replace(bundle, artifacts=(token_drift,) + bundle.artifacts[1:])
+    with pytest.raises(KeyError, match="voice_tts_bundle_promotion_not_found"):
+        registry.verify(bundle=changed_tokens, runtime_adapter=tts, profile=profile, capabilities=caps)
+
+    changed_resources = replace(bundle, phonemizer_data_manifest_fingerprint=_hash("d"))
+    with pytest.raises(KeyError, match="voice_tts_bundle_promotion_not_found"):
+        registry.verify(bundle=changed_resources, runtime_adapter=tts, profile=profile, capabilities=caps)

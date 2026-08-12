@@ -48,7 +48,7 @@ def _runtime_seal(tmp_path, *, candidate_id: str, adapter_id: str, artifact_hash
     )
 
 
-def test_pinned_vad_executes_only_in_ram_and_returns_hash_lineage(tmp_path):
+def test_pinned_vad_inspects_ram_without_destroying_audio_needed_by_stt(tmp_path):
     manifest = _hash("0")
     seal = _runtime_seal(
         tmp_path,
@@ -78,6 +78,9 @@ def test_pinned_vad_executes_only_in_ram_and_returns_hash_lineage(tmp_path):
     assert result.speech_probability == 0.91
     assert result.runtime_seal_fingerprint == seal.fingerprint
     assert len(result.input_audio_fingerprint) == 64
+    assert plane.snapshot().buffered_frame_count == 1
+    assert any(owned)
+    plane.discard_all()
     assert owned == bytearray(len(owned))
 
 

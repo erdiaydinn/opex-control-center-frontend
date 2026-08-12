@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from pydantic import SecretStr
 from starlette.requests import Request
 
 import app.ai_tool_routes as routes
@@ -12,6 +13,12 @@ from app.core.ai_tool_authorization import (
     derive_ai_tool_capability,
 )
 from app.core.ai_tool_grants import RedisAiToolGrantStore
+from app.core.jarvis_execution_admission import (
+    JarvisAdmissionLease,
+    JarvisAdmissionRateLimited,
+    JarvisAdmissionUnavailable,
+    JarvisEmergencyHalt,
+)
 from app.core.jarvis_execution_broker import (
     BrokerToolExecutionResult,
     JarvisExecutionBrokerIndeterminate,
@@ -200,6 +207,71 @@ class FakeBroker:
         )
 
 
+class FakeAdmissionStore:
+    def __init__(
+        self,
+        *,
+        failure: Exception | None = None,
+        control_failure: Exception | None = None,
+        control_mode: str = "enabled",
+    ) -> None:
+        self.failure = failure
+        self.control_failure = control_failure
+        self.control_mode = control_mode
+        self.acquire_calls: list[dict[str, object]] = []
+        self.release_calls: list[dict[str, object]] = []
+        self.control_checks: list[str] = []
+
+    async def acquire(
+        self,
+        *,
+        tenant_id,
+        actor_subject,
+        tool,
+        side_effect_class,
+        request_timeout_seconds,
+    ) -> JarvisAdmissionLease:
+        self.acquire_calls.append(
+            {
+                "tenant_id": tenant_id,
+                "actor_subject": actor_subject,
+                "tool": tool,
+                "side_effect_class": side_effect_class,
+                "request_timeout_seconds": request_timeout_seconds,
+            }
+        )
+        if self.failure is not None:
+            raise self.failure
+        return JarvisAdmissionLease(
+            token=SecretStr("l" * 43),
+            lease_ttl_seconds=45,
+            control_mode=self.control_mode,  # type: ignore[arg-type]
+        )
+
+    async def release(
+        self,
+        *,
+        tenant_id,
+        actor_subject,
+        tool,
+        lease,
+    ) -> None:
+        self.release_calls.append(
+            {
+                "tenant_id": tenant_id,
+                "actor_subject": actor_subject,
+                "tool": tool,
+                "lease": lease,
+            }
+        )
+
+    async def require_control_allows(self, *, side_effect_class):
+        self.control_checks.append(side_effect_class)
+        if self.control_failure is not None:
+            raise self.control_failure
+        return self.control_mode
+
+
 def request_for(
     path: str,
     *,
@@ -260,10 +332,12 @@ def install_execution_fakes(
     *,
     broker: FakeBroker | None = None,
     idempotency: FakeIdempotencyStore | None = None,
+    admission: FakeAdmissionStore | None = None,
 ):
     redis = FakeRedis()
     broker = broker or FakeBroker()
     idempotency = idempotency or FakeIdempotencyStore()
+    admission = admission or FakeAdmissionStore()
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
@@ -271,6 +345,7 @@ def install_execution_fakes(
     )
     monkeypatch.setattr(routes, "_jarvis_execution_broker", broker)
     monkeypatch.setattr(routes, "_jarvis_idempotency_store", idempotency)
+    monkeypatch.setattr(routes, "_jarvis_admission_store", admission)
     return redis, broker, idempotency
 
 
@@ -377,7 +452,11 @@ async def test_broker_disabled_fails_before_reservation_audit_or_grant(
 async def test_safety_denial_happens_before_reservation_audit_grant_or_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis, broker, idempotency = install_execution_fakes(monkeypatch)
+    admission = FakeAdmissionStore()
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
     audit_calls = 0
 
     def deny_policy(*args, **kwargs):
@@ -402,15 +481,99 @@ async def test_safety_denial_happens_before_reservation_audit_grant_or_network(
     assert exc_info.value.status_code == 403
     assert audit_calls == 0
     assert idempotency.reserve_calls == 0
+    assert admission.acquire_calls == []
     assert redis.values == {}
     assert broker.calls == []
 
 
 @pytest.mark.asyncio
-async def test_request_audit_failure_releases_reservation_before_grant(
+async def test_rate_limit_releases_reservation_before_grant_or_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis, broker, idempotency = install_execution_fakes(monkeypatch)
+    admission = FakeAdmissionStore(
+        failure=JarvisAdmissionRateLimited("limited")
+    )
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.execute_ai_tool(
+            execution_payload(),
+            request_for("/v1/ai/tool-executions"),
+            principal_with_ops_permission(),
+        )
+
+    assert exc_info.value.status_code == 429
+    assert "Retry-After" in exc_info.value.headers
+    assert idempotency.state() is None
+    assert len(admission.acquire_calls) == 1
+    assert admission.release_calls == []
+    assert redis.values == {}
+    assert broker.calls == []
+
+
+@pytest.mark.asyncio
+async def test_emergency_halt_releases_reservation_before_grant_or_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admission = FakeAdmissionStore(
+        failure=JarvisEmergencyHalt("halted")
+    )
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.execute_ai_tool(
+            execution_payload(),
+            request_for("/v1/ai/tool-executions"),
+            principal_with_ops_permission(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert idempotency.state() is None
+    assert len(admission.acquire_calls) == 1
+    assert redis.values == {}
+    assert broker.calls == []
+
+
+@pytest.mark.asyncio
+async def test_admission_outage_fails_closed_before_grant_or_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admission = FakeAdmissionStore(
+        failure=JarvisAdmissionUnavailable("redis unavailable")
+    )
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.execute_ai_tool(
+            execution_payload(),
+            request_for("/v1/ai/tool-executions"),
+            principal_with_ops_permission(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert idempotency.state() is None
+    assert redis.values == {}
+    assert broker.calls == []
+
+
+@pytest.mark.asyncio
+async def test_request_audit_failure_releases_reservation_and_admission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admission = FakeAdmissionStore()
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
 
     async def fail_audit(event):
         del event
@@ -425,15 +588,20 @@ async def test_request_audit_failure_releases_reservation_before_grant(
         )
     assert exc_info.value.status_code == 503
     assert idempotency.state() is None
+    assert len(admission.release_calls) == 1
     assert redis.values == {}
     assert broker.calls == []
 
 
 @pytest.mark.asyncio
-async def test_happy_path_dispatches_once_and_finishes_completed(
+async def test_happy_path_dispatches_once_and_releases_admission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis, broker, idempotency = install_execution_fakes(monkeypatch)
+    admission = FakeAdmissionStore()
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
     audit_events = []
 
     async def capture_audit(event):
@@ -448,6 +616,8 @@ async def test_happy_path_dispatches_once_and_finishes_completed(
     assert response.execution.status == "executed"
     assert "grant_token" not in response.model_dump(mode="json")
     assert len(broker.calls) == 1
+    assert len(admission.acquire_calls) == 1
+    assert len(admission.release_calls) == 1
     assert idempotency.state() == "completed"
     assert len(redis.values) == 1
     assert len(audit_events) == 1
@@ -456,6 +626,8 @@ async def test_happy_path_dispatches_once_and_finishes_completed(
     assert len(metadata["safety_policy_fingerprint"]) == 64
     assert metadata["safety_policy_version"] == 1
     assert metadata["side_effect_class"] == "read"
+    assert metadata["admission_control_mode"] == "enabled"
+    assert metadata["admission_lease_ttl_seconds"] == 45
     assert broker.calls[0]["execution_policy"].safety_policy_fingerprint == metadata[
         "safety_policy_fingerprint"
     ]
@@ -463,10 +635,14 @@ async def test_happy_path_dispatches_once_and_finishes_completed(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_same_key_never_issues_second_grant_or_network_call(
+async def test_duplicate_same_key_does_not_reenter_admission_or_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis, broker, idempotency = install_execution_fakes(monkeypatch)
+    admission = FakeAdmissionStore()
+    redis, broker, idempotency = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
 
     async def accept_audit(event):
         del event
@@ -488,6 +664,7 @@ async def test_duplicate_same_key_never_issues_second_grant_or_network_call(
         )
     assert exc_info.value.status_code == 409
     assert "do not retry automatically" in exc_info.value.detail
+    assert len(admission.acquire_calls) == 1
     assert len(broker.calls) == 1
     assert len(redis.values) == grants_after_first
     assert idempotency.state() == "completed"
@@ -497,7 +674,11 @@ async def test_duplicate_same_key_never_issues_second_grant_or_network_call(
 async def test_same_key_with_changed_request_is_conflict_without_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis, broker, _ = install_execution_fakes(monkeypatch)
+    admission = FakeAdmissionStore()
+    redis, broker, _ = install_execution_fakes(
+        monkeypatch,
+        admission=admission,
+    )
 
     async def accept_audit(event):
         del event
@@ -518,18 +699,21 @@ async def test_same_key_with_changed_request_is_conflict_without_dispatch(
             principal,
         )
     assert exc_info.value.status_code == 409
+    assert len(admission.acquire_calls) == 1
     assert len(broker.calls) == 1
     assert len(redis.values) == grants_after_first
 
 
 @pytest.mark.asyncio
-async def test_dispatch_state_failure_prevents_ai_core_network(
+async def test_dispatch_state_failure_releases_admission_and_prevents_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     idempotency = FakeIdempotencyStore(fail_dispatch=True)
+    admission = FakeAdmissionStore()
     redis, broker, _ = install_execution_fakes(
         monkeypatch,
         idempotency=idempotency,
+        admission=admission,
     )
 
     async def accept_audit(event):
@@ -544,20 +728,23 @@ async def test_dispatch_state_failure_prevents_ai_core_network(
         )
     assert exc_info.value.status_code == 503
     assert broker.calls == []
+    assert len(admission.release_calls) == 1
     assert len(redis.values) == 1
     assert idempotency.state() == "reserved"
 
 
 @pytest.mark.asyncio
-async def test_indeterminate_broker_marks_key_and_never_retries(
+async def test_indeterminate_broker_holds_admission_lease_until_ttl(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     broker = FakeBroker(
         failure=JarvisExecutionBrokerIndeterminate("unknown")
     )
+    admission = FakeAdmissionStore()
     _, broker, idempotency = install_execution_fakes(
         monkeypatch,
         broker=broker,
+        admission=admission,
     )
 
     async def accept_audit(event):
@@ -573,14 +760,17 @@ async def test_indeterminate_broker_marks_key_and_never_retries(
     assert exc_info.value.status_code == 503
     assert len(broker.calls) == 1
     assert idempotency.state() == "indeterminate"
+    assert admission.release_calls == []
 
 
 @pytest.mark.asyncio
-async def test_internal_authorization_recovers_identity_and_writes_audit(
+async def test_internal_authorization_rechecks_control_and_writes_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    admission = FakeAdmissionStore(control_mode="enabled")
     monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
+    monkeypatch.setattr(routes, "_jarvis_admission_store", admission)
     capability = derive_ai_tool_capability(
         principal_with_ops_permission(),
         tool="ops_kpi_query",
@@ -611,7 +801,92 @@ async def test_internal_authorization_recovers_identity_and_writes_audit(
     assert response.tenant_id == str(TENANT)
     assert response.actor_subject == "user-1"
     assert response.granted_scopes == ("ops:read",)
+    assert admission.control_checks == ["read"]
     assert len(audit_events) == 1
+    assert audit_events[0]["metadata"]["admission_control_mode"] == "enabled"
+
+
+@pytest.mark.asyncio
+async def test_internal_emergency_halt_burns_already_issued_grant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    admission = FakeAdmissionStore(
+        control_failure=JarvisEmergencyHalt("halted")
+    )
+    monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
+    monkeypatch.setattr(routes, "_jarvis_admission_store", admission)
+    capability = derive_ai_tool_capability(
+        principal_with_ops_permission(),
+        tool="ops_kpi_query",
+    )
+    arguments = {"metric": "orders"}
+    reason = "read current orders"
+    issued = await store.issue(
+        capability,
+        arguments=arguments,
+        reason=reason,
+    )
+    token = issued.token.get_secret_value()
+    payload = routes.InternalAiToolAuthorizationRequest(
+        grant_token=token,
+        tool="ops_kpi_query",
+        arguments=arguments,
+        reason=reason,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.authorize_internal_ai_tool_execution(
+            payload,
+            request_for("/internal/ai/tool-executions/authorize"),
+            jarvis_service(),
+        )
+    assert exc_info.value.status_code == 503
+
+    admission.control_failure = None
+    with pytest.raises(HTTPException) as replay_info:
+        await routes.authorize_internal_ai_tool_execution(
+            payload,
+            request_for("/internal/ai/tool-executions/authorize"),
+            jarvis_service(),
+        )
+    assert replay_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_internal_control_outage_burns_grant_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    admission = FakeAdmissionStore(
+        control_failure=JarvisAdmissionUnavailable("redis unavailable")
+    )
+    monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
+    monkeypatch.setattr(routes, "_jarvis_admission_store", admission)
+    capability = derive_ai_tool_capability(
+        principal_with_ops_permission(),
+        tool="ops_kpi_query",
+    )
+    arguments = {"metric": "orders"}
+    reason = "read current orders"
+    issued = await store.issue(
+        capability,
+        arguments=arguments,
+        reason=reason,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.authorize_internal_ai_tool_execution(
+            routes.InternalAiToolAuthorizationRequest(
+                grant_token=issued.token.get_secret_value(),
+                tool="ops_kpi_query",
+                arguments=arguments,
+                reason=reason,
+            ),
+            request_for("/internal/ai/tool-executions/authorize"),
+            jarvis_service(),
+        )
+    assert exc_info.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -619,7 +894,9 @@ async def test_internal_audit_failure_burns_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    admission = FakeAdmissionStore()
     monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
+    monkeypatch.setattr(routes, "_jarvis_admission_store", admission)
     capability = derive_ai_tool_capability(
         principal_with_ops_permission(),
         tool="ops_kpi_query",

@@ -70,7 +70,7 @@ jobs:
 
       - name: Lint Jarvis execution slice
         run: >-
-          ruff check
+          ruff check --output-format=github
           services/core-api/alembic/versions/0010_jarvis_execution_idempotency.py
           services/core-api/app/ai_tool_routes.py
           services/core-api/app/core/ai_tool_grants.py

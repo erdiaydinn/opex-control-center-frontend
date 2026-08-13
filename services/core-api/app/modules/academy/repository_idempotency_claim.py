@@ -1,5 +1,4 @@
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,19 +12,30 @@ async def claim_idempotency_key(
     *,
     operation: str,
     idempotency_key: str | None,
+    request_fingerprint: str,
     resource_id: str | None = None,
-) -> tuple[UUID | None, dict[str, Any] | None]:
+) -> dict[str, Any]:
     if not idempotency_key:
-        return None, None
+        return {"claimed": True, "claim_id": None, "resource_id": resource_id}
 
     claim_id = await session.scalar(
         text(
             """
             INSERT INTO academy_idempotency_keys (
-                tenant_id, subject, operation, idempotency_key, resource_id
+                tenant_id,
+                subject,
+                operation,
+                idempotency_key,
+                resource_id,
+                request_fingerprint
             )
             VALUES (
-                :tenant_id, :subject, :operation, :idempotency_key, :resource_id
+                :tenant_id,
+                :subject,
+                :operation,
+                :idempotency_key,
+                :resource_id,
+                :request_fingerprint
             )
             ON CONFLICT (tenant_id, subject, operation, idempotency_key)
             DO NOTHING
@@ -38,16 +48,17 @@ async def claim_idempotency_key(
             "operation": operation,
             "idempotency_key": idempotency_key,
             "resource_id": resource_id,
+            "request_fingerprint": request_fingerprint,
         },
     )
     if claim_id is not None:
-        return claim_id, None
+        return {"claimed": True, "claim_id": claim_id, "resource_id": resource_id}
 
     existing = (
         await session.execute(
             text(
                 """
-                SELECT response
+                SELECT resource_id, request_fingerprint
                 FROM academy_idempotency_keys
                 WHERE tenant_id = :tenant_id
                   AND subject = :subject
@@ -63,5 +74,9 @@ async def claim_idempotency_key(
             },
         )
     ).mappings().one()
-    response = existing["response"]
-    return None, dict(response) if isinstance(response, dict) else response
+    return {
+        "claimed": False,
+        "claim_id": None,
+        "resource_id": existing["resource_id"],
+        "request_fingerprint": existing["request_fingerprint"],
+    }

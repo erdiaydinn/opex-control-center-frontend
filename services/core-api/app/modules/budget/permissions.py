@@ -13,6 +13,7 @@ from app.db.session import TenantSessionFactory, apply_tenant_context
 
 BUDGET_VIEW = "module:budget:view"
 BUDGET_CREATE_PLAN = "action:budget:createPlan"
+BUDGET_ACTIVATE_PLAN = "action:budget:activatePlan"
 BUDGET_MANAGE_PERIODS = "action:budget:managePeriods"
 BUDGET_MANAGE_COST_CENTERS = "action:budget:manageCostCenters"
 BUDGET_MANAGE_LINES = "action:budget:manageBudgetLines"
@@ -25,6 +26,7 @@ BUDGET_IMPORT = "action:budget:import"
 BUDGET_RECONCILE = "action:budget:resolveReconciliation"
 BUDGET_CLOSE_PERIOD = "action:budget:closePeriod"
 BUDGET_EXPORT = "action:budget:export"
+BUDGET_VIEW_AUDIT = "action:budget:viewAudit"
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,6 @@ def _resolve_scope(principal: Principal, permission: str) -> BudgetScope:
         return BudgetScope(True, frozenset())
     if permission not in principal.permissions:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Budget permission required")
-
     all_centers = False
     centers: set[UUID] = set()
     for assignment in principal.permission_assignments:
@@ -70,7 +71,6 @@ def _resolve_scope(principal: Principal, permission: str) -> BudgetScope:
                 centers.add(UUID(str(raw)))
             except (TypeError, ValueError) as exc:
                 raise HTTPException(status_code=403, detail="Invalid Budget cost-center scope") from exc
-
     scope = BudgetScope(all_centers, frozenset(centers))
     if not scope.all_cost_centers and not scope.cost_center_ids:
         raise HTTPException(status_code=403, detail="Budget cost-center scope required")
@@ -78,22 +78,13 @@ def _resolve_scope(principal: Principal, permission: str) -> BudgetScope:
 
 
 def require_budget(permission: str, *, all_cost_centers: bool = False):
-    async def dependency(
-        principal: Annotated[Principal, Depends(get_current_principal)],
-    ):
+    async def dependency(principal: Annotated[Principal, Depends(get_current_principal)]):
         scope = _resolve_scope(principal, permission)
         if all_cost_centers and not scope.all_cost_centers:
             raise HTTPException(status_code=403, detail="All-cost-center Budget scope required")
-
-        encoded_scope = "__all__" if scope.all_cost_centers else ",".join(
-            sorted(str(item) for item in scope.cost_center_ids)
-        )
+        encoded_scope = "__all__" if scope.all_cost_centers else ",".join(sorted(str(item) for item in scope.cost_center_ids))
         async with TenantSessionFactory() as session, session.begin():
             await apply_tenant_context(session, principal)
-            await session.execute(
-                text("SELECT set_config('app.budget_cost_center_ids', :scope, true)"),
-                {"scope": encoded_scope},
-            )
+            await session.execute(text("SELECT set_config('app.budget_cost_center_ids', :scope, true)"), {"scope": encoded_scope})
             yield BudgetUnitOfWork(principal=principal, scope=scope, session=session)
-
     return dependency

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -36,8 +36,6 @@ def test_candidate_is_exact_versioned_and_explicitly_blocked() -> None:
     assert fingerprint == ORDERS_V2_CANDIDATE.template_fingerprint
     assert len(ORDERS_V2_CANDIDATE.security_fingerprint) == 64
 
-    # Candidate creation is not promotion. The active production gate remains
-    # on the blocked v1 contract until later evidence/adapters are reviewed.
     active = AI_QUERY_CONTRACT_POLICIES["ops_kpi_query"]
     assert active.contract_id == "ops.kpi.orders.v1"
     assert active.production_ready is False
@@ -169,6 +167,33 @@ def test_runtime_preflight_requires_nonempty_bounded_authority_arrays() -> None:
         parameters[field] = ["A", "a"]
         with pytest.raises(OrdersV2QueryContractError):
             validate_orders_v2_runtime_parameters(parameters)
+
+
+def test_runtime_preflight_rejects_datetime_and_control_whitespace() -> None:
+    for field in ("start_date", "end_date"):
+        parameters = valid_parameters()
+        parameters[field] = datetime(2026, 8, 1, 12, 30)
+        with pytest.raises(
+            OrdersV2QueryContractError,
+            match="date_parameters_required",
+        ):
+            validate_orders_v2_runtime_parameters(parameters)
+
+    entity_whitespace = valid_parameters()
+    entity_whitespace["entity_ids"] = ["TEST ENTITY"]
+    with pytest.raises(OrdersV2QueryContractError):
+        validate_orders_v2_runtime_parameters(entity_whitespace)
+
+    for unsafe_store in ("Fulya\nInjected", "Fulya\tInjected", "Fulya\rInjected"):
+        store_control = valid_parameters()
+        store_control["stores"] = [unsafe_store]
+        with pytest.raises(OrdersV2QueryContractError):
+            validate_orders_v2_runtime_parameters(store_control)
+
+    spaced_store = valid_parameters()
+    spaced_store["stores"] = ["Kartal Cumhuriyet"]
+    validated = validate_orders_v2_runtime_parameters(spaced_store)
+    assert validated["stores"] == ("Kartal Cumhuriyet",)
 
 
 def test_runtime_preflight_keeps_frozen_window_and_store_bounds() -> None:

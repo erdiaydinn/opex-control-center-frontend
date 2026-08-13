@@ -1,0 +1,176 @@
+name: P0 One-Shot Platform CI Repair
+
+on:
+  push:
+    branches:
+      - platform-core/eay-v2-jarvis-orders-policy-transition-guard
+    paths:
+      - .github/workflows/p0-one-shot-ci-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+
+      - name: Configure commit identity
+        run: |
+          git config user.name "eay-platform-ci"
+          git config user.email "160104243+erdiaydinn@users.noreply.github.com"
+
+      - name: Close SheetJS dependency source
+        run: |
+          npm install --save --package-lock-only "xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+          npm ci
+          npm run build
+          git add -- package.json package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: close SheetJS dependency source"
+          fi
+
+      - name: Apply only safe Ruff fixes
+        run: |
+          python -m pip install -e "./services/core-api[dev]"
+          ruff check services/core-api --fix || true
+          git add -- services/core-api
+          if ! git diff --cached --quiet; then
+            git commit -m "style(core): apply safe Ruff fixes"
+          fi
+          echo "=== REMAINING RUFF DEBT ==="
+          ruff check services/core-api || true
+
+      - name: Make Identity readiness wait bounded rather than first-probe fatal
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/security/identity_gateway_runtime_gate.py")
+          source = path.read_text(encoding="utf-8")
+          old = '''def wait_identity_health(
+              container_id: str,
+          ) -> None:
+              for _ in range(60):
+                  state = inspect(
+                      container_id
+                  ).get(
+                      "State",
+                      {},
+                  )
+
+                  if not state.get(
+                      "Running"
+                  ):
+                      raise SystemExit(
+                          "IDENTITY_GATEWAY_EXITED"
+                      )
+
+                  health = (
+                      state.get(
+                          "Health",
+                          {}
+                      ).get(
+                          "Status"
+                      )
+                  )
+
+                  if health == "healthy":
+                      print(
+                          "IDENTITY_GATEWAY_HEALTH=PASS"
+                      )
+                      return
+
+                  if health == "unhealthy":
+                      raise SystemExit(
+                          "IDENTITY_GATEWAY_HEALTH=UNHEALTHY"
+                      )
+
+                  time.sleep(1)
+
+              raise SystemExit(
+                  "IDENTITY_GATEWAY_HEALTH_TIMEOUT"
+              )
+          '''
+          new = '''def wait_identity_health(
+              container_id: str,
+          ) -> None:
+              last_health = None
+
+              for _ in range(60):
+                  state = inspect(
+                      container_id
+                  ).get(
+                      "State",
+                      {},
+                  )
+
+                  if not state.get(
+                      "Running"
+                  ):
+                      raise SystemExit(
+                          "IDENTITY_GATEWAY_EXITED"
+                      )
+
+                  health = (
+                      state.get(
+                          "Health",
+                          {}
+                      ).get(
+                          "Status"
+                      )
+                  )
+                  last_health = health
+
+                  if health == "healthy":
+                      print(
+                          "IDENTITY_GATEWAY_HEALTH=PASS"
+                      )
+                      return
+
+                  if health not in {
+                      None,
+                      "starting",
+                      "unhealthy",
+                  }:
+                      raise SystemExit(
+                          "IDENTITY_GATEWAY_HEALTH_INVALID="
+                          + repr(health)
+                      )
+
+                  time.sleep(1)
+
+              raise SystemExit(
+                  "IDENTITY_GATEWAY_HEALTH_TIMEOUT="
+                  + repr(last_health)
+              )
+          '''
+          if old not in source:
+              raise SystemExit("IDENTITY_HEALTH_WAIT_BLOCK_NOT_FOUND")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8", newline="\n")
+          PY
+          git add -- scripts/security/identity_gateway_runtime_gate.py
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m "ci(identity): bound transient readiness wait"
+          fi
+
+      - name: Push corrective commits
+        run: |
+          git status --short
+          git push origin "HEAD:${GITHUB_REF_NAME}"

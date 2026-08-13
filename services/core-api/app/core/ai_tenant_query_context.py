@@ -338,44 +338,44 @@ async def put_ai_tenant_query_context(
                     "Tenant query context changed"
                 )
 
-            try:
-                await connection.execute(
-                    text(
-                        """
-                        INSERT INTO ai_tenant_query_contexts (
-                            tenant_id,
-                            context_version,
-                            entity_ids,
-                            source_reference,
-                            updated_by
-                        )
-                        VALUES (
-                            CAST(:tenant_id AS UUID),
-                            :context_version,
-                            CAST(:entity_ids AS JSONB),
-                            :source_reference,
-                            :updated_by
-                        )
-                        """
+            insert_result = await connection.execute(
+                text(
+                    """
+                    INSERT INTO ai_tenant_query_contexts (
+                        tenant_id,
+                        context_version,
+                        entity_ids,
+                        source_reference,
+                        updated_by
+                    )
+                    VALUES (
+                        CAST(:tenant_id AS UUID),
+                        :context_version,
+                        CAST(:entity_ids AS JSONB),
+                        :source_reference,
+                        :updated_by
+                    )
+                    ON CONFLICT (tenant_id) DO NOTHING
+                    RETURNING tenant_id
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "context_version": context.version,
+                    "entity_ids": json.dumps(
+                        list(context.entity_ids),
+                        ensure_ascii=False,
                     ),
-                    {
-                        "tenant_id": tenant_id,
-                        "context_version": context.version,
-                        "entity_ids": json.dumps(
-                            list(context.entity_ids),
-                            ensure_ascii=False,
-                        ),
-                        "source_reference": context.source_reference,
-                        "updated_by": actor_subject,
-                    },
-                )
-            except Exception as exc:
-                # A concurrent first writer can race the absence read. The PK
-                # guarantees only one wins; expose every losing write as a
-                # refreshable optimistic-concurrency conflict.
+                    "source_reference": context.source_reference,
+                    "updated_by": actor_subject,
+                },
+            )
+            if insert_result.scalar_one_or_none() is None:
+                # Only a genuine concurrent first writer maps to a refreshable
+                # CAS conflict. DB, permission and audit failures remain 5xx.
                 raise AiTenantQueryContextConflict(
                     "Tenant query context changed"
-                ) from exc
+                )
 
             old_record_fingerprint = (
                 ABSENT_QUERY_CONTEXT_FINGERPRINT

@@ -13,7 +13,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlglot import exp, parse
@@ -48,6 +48,7 @@ ORDER BY 1 DESC,3 DESC
 
 _PARAMETER_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 _WHITESPACE_RE = re.compile(r"\s+")
+_CONTROL_WHITESPACE = frozenset({"\t", "\r", "\n"})
 
 
 class OrdersV2QueryContractError(ValueError):
@@ -231,6 +232,7 @@ def _canonical_nonempty_string_list(
     *,
     name: str,
     max_items: int,
+    allow_spaces: bool,
 ) -> tuple[str, ...]:
     if (
         not isinstance(value, Sequence)
@@ -245,7 +247,13 @@ def _canonical_nonempty_string_list(
         if not isinstance(raw, str):
             raise OrdersV2QueryContractError(f"{name}_must_contain_text")
         item = raw.strip()
-        if not item or "*" in item or "%" in item:
+        if (
+            not item
+            or "*" in item
+            or "%" in item
+            or any(char in item for char in _CONTROL_WHITESPACE)
+            or (not allow_spaces and any(char.isspace() for char in item))
+        ):
             raise OrdersV2QueryContractError(f"{name}_contains_unsafe_value")
         folded = item.casefold()
         if folded in seen:
@@ -276,7 +284,12 @@ def validate_orders_v2_runtime_parameters(
             end = date.fromisoformat(end)
         except ValueError as exc:
             raise OrdersV2QueryContractError("invalid_end_date") from exc
-    if not isinstance(start, date) or not isinstance(end, date):
+    if (
+        not isinstance(start, date)
+        or isinstance(start, datetime)
+        or not isinstance(end, date)
+        or isinstance(end, datetime)
+    ):
         raise OrdersV2QueryContractError("date_parameters_required")
     if end < start:
         raise OrdersV2QueryContractError("end_date_before_start_date")
@@ -287,11 +300,13 @@ def validate_orders_v2_runtime_parameters(
         parameters["entity_ids"],
         name="entity_ids",
         max_items=16,
+        allow_spaces=False,
     )
     stores = _canonical_nonempty_string_list(
         parameters["stores"],
         name="stores",
         max_items=200,
+        allow_spaces=True,
     )
 
     return {

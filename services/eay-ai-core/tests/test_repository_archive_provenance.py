@@ -72,6 +72,19 @@ def test_archive_provenance_rejects_source_artifact_mismatch():
         validate_archive_provenance_against_registry(registry, ledger)
 
 
+def test_archive_provenance_rejects_commercial_use_widening():
+    registry_payload = load_repository_registry().model_dump(mode="json")
+    for entry in registry_payload["repositories"]:
+        if entry["id"] == "cl4r1t4s":
+            entry["review"]["commercial_use"] = "allowed"
+            break
+    registry = type(load_repository_registry()).model_validate(registry_payload)
+    ledger = load_archive_provenance()
+
+    with pytest.raises(ValueError, match="archive_provenance_commercial_use_mismatch:cl4r1t4s"):
+        validate_archive_provenance_against_registry(registry, ledger)
+
+
 def test_archive_ledger_rejects_duplicate_registry_identity():
     payload = json.loads(DEFAULT_ARCHIVE_PROVENANCE_PATH.read_text(encoding="utf-8"))
     payload["records"].append(dict(payload["records"][0]))

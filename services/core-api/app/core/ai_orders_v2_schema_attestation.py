@@ -39,7 +39,7 @@ SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
 def _collector_observation_payload_from_artifact(
-    artifact: "OrdersV2SchemaAttestationArtifact",
+    artifact: OrdersV2SchemaAttestationArtifact,
 ) -> dict[str, object]:
     """Reconstruct the exact collector observation committed by the artifact."""
 
@@ -95,7 +95,7 @@ class OrdersV2SchemaAttestationArtifact(BaseModel):
     @model_validator(mode="after")
     def validate_embedded_evidence_binding(
         self,
-    ) -> "OrdersV2SchemaAttestationArtifact":
+    ) -> OrdersV2SchemaAttestationArtifact:
         evidence_fingerprint = validate_orders_v2_schema_evidence(
             self.evidence
         )

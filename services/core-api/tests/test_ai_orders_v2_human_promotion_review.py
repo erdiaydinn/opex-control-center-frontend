@@ -66,10 +66,13 @@ def live_evidence(
     return build_orders_v2_live_cross_tenant_evidence_candidate(
         schema_attestation=attestation,
         executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
-        query_job_id="job-example-123",
+        query_job_id="job-candidate-123",
+        foreign_reference_job_id="job-reference-456",
+        scoped_diagnostic_job_id="job-diagnostic-789",
         authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
         foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
         canonical_returned_rowset='[{"date":"2026-08-13","orders":2}]',
+        foreign_sentinel_source_count=7,
         foreign_sentinel_match_count=0,
     )
 

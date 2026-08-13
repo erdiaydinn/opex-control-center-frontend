@@ -42,6 +42,20 @@ imzasını kabul eder; doğrulama 120 saniye içinde kullanılmazsa reddedilir.
 Sunucu vardiya atamasını, tarih penceresini, GPS yarıçapını, accuracy eşiğini,
 tek aktif cihazı ve imzayı tekrar doğrular.
 
+Challenge akışı:
+
+1. Native katman kayıtlı `device_id` ile `POST /api/workforce/devices/challenge`
+   çağrısını yapar.
+2. Dönen `challenge` cihazın attested private key'iyle imzalanır; private key
+   Secure Enclave/Android Keystore dışına çıkmaz.
+3. `challenge_id` ve base64url `signature` check-in/out kanıtına eklenir.
+4. Challenge iki dakika geçerlidir ve başarılı GPS + imza doğrulamasından sonra
+   tek kullanımlık olarak tüketilir; replay reddedilir.
+
+Konum yalnızca kullanıcının başlattığı check-in ve check-out işlemlerinde tek nokta
+kanıtı olarak alınır. Vardiya içinde veya dışında arka planda sürekli rota/konum
+izleme Workforce sözleşmesinin parçası değildir ve sunucuda saklanmaz.
+
 ## APNs, FCM ve Dynamic Island
 
 - Push token cihaz kaydıyla sunucuya verilir.

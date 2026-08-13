@@ -72,6 +72,32 @@ class RecruitmentRuleTests(unittest.TestCase):
         decision = RecruitmentDecision(decision="APPROVED", note="uygun")
         self.assertEqual(decision.note, "uygun")
 
+    def test_approved_vacancy_hire_activates_employee_master_and_workforce(self):
+        request = {
+            "id": "REC-HIRE-1", "status": "APPROVED", "quantity": 1, "hires": [],
+            "warehouse_id": FULYA["id"], "warehouse_name": FULYA["name"],
+            "position_code": "STORE_STAFF", "position_label": "Mağaza Görevlisi",
+            "history": [], "created_at": "2026-08-01T00:00:00+00:00",
+        }
+        payload = {"employee_id": "EMP-HIRED", "roster_ids": ["RST-HIRED"], "full_name": "Yeni Çalışan", "tckn": "12345098765", "email": None, "phone": None, "employment_start": "2026-08-20"}
+        with (
+            patch.object(service, "list_requests", return_value=[request]),
+            patch.object(service, "upsert_people", return_value={"created": 1, "updated": 0, "total": 1, "roster_conflicts": []}) as upsert,
+            patch.object(service, "_save_request") as save,
+            patch.object(service.persistence, "append_audit"),
+        ):
+            result = service.activate_hire(request["id"], payload, "hr@opex.local")
+        self.assertEqual(result["status"], "FILLED")
+        self.assertEqual(result["activation"]["workforce"], "ACTIVE")
+        self.assertEqual(upsert.call_args.args[0][0]["warehouse_id"], FULYA["id"])
+        self.assertEqual(upsert.call_args.args[0][0]["position"], "Mağaza Görevlisi")
+        save.assert_called_once()
+
+    def test_open_position_count_decreases_after_partial_hire(self):
+        requests = [{"id": "REC-PARTIAL", "warehouse_name": FULYA["name"], "position_code": "STORE_STAFF", "quantity": 3, "hires": [{"employee_id": "1"}], "status": "PARTIALLY_FILLED"}]
+        with patch.object(service, "list_requests", return_value=requests):
+            self.assertEqual(service._open_positions(FULYA["name"], "STORE_STAFF"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

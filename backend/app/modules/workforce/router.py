@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from .authorization import is_action_allowed
@@ -10,6 +12,7 @@ from .schemas import (
     BreakActionRequest,
     CheckInRequest,
     CheckOutRequest,
+    DeviceChallengeRequest,
     DeviceRegisterRequest,
     DeviceResetRequest,
     FeatureFlagsUpdateRequest,
@@ -67,6 +70,7 @@ from .service import (
     update_employment_lifecycle,
     import_attendance,
     import_leaves,
+    issue_device_challenge,
     upsert_warehouse,
     bulk_patch_warehouses,
     mark_notification_read,
@@ -125,7 +129,18 @@ def _scoped_person_id(request: Request, requested: str | None, role: str) -> str
 @router.get("/health")
 def health() -> dict:
     from .persistence import ENABLED, ready
-    return {"status": "ok" if ready() else "degraded", "module": "workforce", "postgresql": ENABLED, "manual_correction": "permission-guarded", "audit": "hash-chained", "device_binding": "single-active-device", "push": "durable-outbox"}
+    production = os.getenv("DOCKOS_ENV", "development").lower() == "production"
+    controls = {
+        "oidc": bool(os.getenv("OPEX_OIDC_ISSUER") and os.getenv("OPEX_OIDC_AUDIENCE")),
+        "pii_encryption_key": bool(os.getenv("OPEX_PII_KEY")),
+        "apple_app_attest": bool(os.getenv("APPLE_APP_ATTEST_VERIFY_URL")),
+        "google_play_integrity": bool(os.getenv("GOOGLE_PLAY_INTEGRITY_VERIFY_URL")),
+        "local_user_presence_required": production or os.getenv("WORKFORCE_REQUIRE_LOCAL_AUTH", "false").lower() == "true",
+        "continuous_location_tracking": False,
+        "biometric_template_storage": False,
+    }
+    configured = all(controls[key] for key in ("oidc", "pii_encryption_key", "apple_app_attest", "google_play_integrity", "local_user_presence_required")) if production else True
+    return {"status": "ok" if ready() and configured else "degraded", "module": "workforce", "postgresql": ENABLED, "manual_correction": "permission-guarded", "audit": "hash-chained", "device_binding": "single-active-device", "push": "durable-outbox", "production_controls": controls}
 
 
 @router.get("/warehouses")
@@ -284,6 +299,20 @@ def add_device(
     _enforce_self(request, payload.person_id, x_opex_role)
     try:
         return register_device(payload.model_dump(), x_opex_user)
+    except WorkforceRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/devices/challenge", status_code=status.HTTP_201_CREATED)
+def device_challenge(
+    payload: DeviceChallengeRequest,
+    request: Request,
+    x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+) -> dict:
+    _enforce_self(request, payload.person_id, x_opex_role)
+    try:
+        return issue_device_challenge(payload.person_id, payload.device_id, x_opex_user)
     except WorkforceRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

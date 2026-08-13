@@ -59,7 +59,7 @@ Bu JSON'daki alanları şöyle eşleyin:
 
 JWT içinde en az `sub`, `employee_id`, `roles`, `permissions`, `iat` ve `exp` olmalıdır.
 Kurum farklı claim adı kullanıyorsa `OPEX_OIDC_ROLES_CLAIM` ve
-`OPEX_OIDC_PERMISSIONS_CLAIM` değerlerini değiştirin. `OPEX_ALLOW_LEGACY_HEADERS=false`
+`OPEX_OIDC_PERMISSIONS_CLAIM` ile `OPEX_OIDC_EMPLOYEE_ID_CLAIM` değerlerini değiştirin. `OPEX_ALLOW_LEGACY_HEADERS=false`
 olarak kalmalıdır.
 
 Örnek (gerçek değer değildir):

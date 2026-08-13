@@ -14,7 +14,7 @@ from threading import Lock
 from uuid import uuid4
 
 from app.modules.workforce import persistence
-from app.modules.workforce.service import list_people, list_warehouses
+from app.modules.workforce.service import list_people, list_warehouses, resolve_person_identity, upsert_people
 
 
 _LOCK = Lock()
@@ -225,12 +225,12 @@ def _headcount(warehouse: dict) -> dict:
 
 def _open_positions(warehouse_name: str, position_code: str, exclude_request: str | None = None) -> int:
     return sum(
-        int(row.get("quantity", 0))
+        max(0, int(row.get("quantity", 0)) - len(row.get("hires", [])))
         for row in list_requests()
         if row.get("id") != exclude_request
         and _normalize(row.get("warehouse_name")) == _normalize(warehouse_name)
         and row.get("position_code") == position_code
-        and row.get("status") in {"PENDING_APPROVAL", "APPROVED", "SOURCING"}
+        and row.get("status") in {"PENDING_APPROVAL", "APPROVED", "SOURCING", "PARTIALLY_FILLED"}
     )
 
 
@@ -451,6 +451,53 @@ def decide_request(request_id: str, decision: str, note: str, actor: str, actor_
     delivered = [dispatch_email(item["id"], actor) for item in outbox]
     persistence.append_audit("RECRUITMENT_REQUEST_DECIDED", actor, record_id=request_id, decision=decision, note=note, evaluation=latest)
     return {**record, "email_outbox": delivered}
+
+
+def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
+    """Activate an approved vacancy hire in Employee Master and Workforce."""
+    with _LOCK:
+        record = next((row for row in list_requests() if row["id"] == request_id), None)
+        if not record:
+            raise RecruitmentRuleError("Talep bulunamadı.")
+        if record["status"] not in {"APPROVED", "SOURCING", "PARTIALLY_FILLED"}:
+            raise RecruitmentRuleError("Yalnızca onaylanmış ve açık kontenjanı bulunan talebe işe giriş yapılabilir.")
+        hires = list(record.get("hires", []))
+        if len(hires) >= int(record["quantity"]):
+            raise RecruitmentRuleError("Talebin tüm kontenjanları doldurulmuş.")
+        canonical_person = resolve_person_identity(payload["tckn"], "TC") or resolve_person_identity(payload["employee_id"], "EMPLOYEE_ID")
+        canonical_employee_id = str((canonical_person or {}).get("employee_id") or payload["employee_id"])
+        if any(str(item.get("employee_id")) == canonical_employee_id for item in hires):
+            raise RecruitmentRuleError("Bu çalışan talep üzerinden daha önce aktive edilmiş.")
+        roster_ids = {str(value) for value in payload.get("roster_ids", [])}
+        conflict = next((person for person in list_people(False) if str(person.get("employee_id")) != canonical_employee_id and roster_ids.intersection({str(value) for value in person.get("roster_ids", [])})), None)
+        if conflict:
+            raise RecruitmentRuleError("Roster ID başka bir Employee Master kaydına bağlı; aktivasyon durduruldu.")
+        person = {
+            **payload,
+            "employment_start": str(payload["employment_start"]),
+            "employment_end": None,
+            "position": record["position_label"],
+            "warehouse_id": record["warehouse_id"],
+            "active": True,
+        }
+        result = upsert_people([person], actor)
+        canonical_person = resolve_person_identity(payload["tckn"], "TC") or canonical_person
+        canonical_employee_id = str((canonical_person or {}).get("employee_id") or payload["employee_id"])
+        now = _now().isoformat()
+        activation = {
+            "employee_id": canonical_employee_id, "full_name": payload["full_name"],
+            "employment_start": str(payload["employment_start"]), "activated_at": now,
+            "activated_by": actor, "employee_master": "ACTIVE", "workforce": "ACTIVE",
+        }
+        hires.append(activation)
+        record["hires"] = hires
+        record["filled_quantity"] = len(hires)
+        record["remaining_quantity"] = max(0, int(record["quantity"]) - len(hires))
+        record["status"] = "FILLED" if record["remaining_quantity"] == 0 else "PARTIALLY_FILLED"
+        record["history"].append({"at": now, "action": "HIRE_ACTIVATED", "actor": actor, "employee_id": canonical_employee_id})
+        _save_request(record)
+    persistence.append_audit("RECRUITMENT_HIRE_ACTIVATED", actor, record_id=request_id, employee_id=canonical_employee_id, workforce_status="ACTIVE")
+    return {**record, "employee_master_result": result, "activation": activation}
 
 
 def dashboard() -> dict:

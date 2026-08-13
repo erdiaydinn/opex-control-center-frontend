@@ -23,6 +23,7 @@ export async function approveAttendanceRemote(id, note = "") { return camel(awai
 export async function bulkApproveRemote(ids, note = "") { return camel(await apiPost("/workforce/attendance/bulk-approve", { attendance_ids: ids, note })); }
 export async function correctAttendanceRemote(id, values) { return camel(await apiPost(`/workforce/attendance/${encodeURIComponent(id)}/manual-correction`, values)); }
 export async function resetDeviceRemote(personId, reason) { return camel(await apiPost(`/workforce/devices/${encodeURIComponent(personId)}/reset`, { reason })); }
+export async function createDeviceChallengeRemote(personId, deviceId) { return camel(await apiPost("/workforce/devices/challenge", { person_id: personId, device_id: deviceId })); }
 export async function createRuleRemote(values) { return camel(await apiPost("/workforce/rules", values)); }
 export async function createAnnouncementRemote(values) { return camel(await apiPost("/workforce/announcements", values)); }
 export async function saveNotificationPolicyRemote(values) { return camel(await apiPut("/workforce/notification-policy", values)); }
@@ -80,14 +81,14 @@ export async function importAttendanceRemote(rows, fileName, onProgress) {
     check_out: row.checkOut === "—" ? null : row.checkOut, break_minutes: Number(row.breakMinutes || 0), net_minutes: Number(row.netMinutes || 0),
     expected_minutes: Number(row.expectedMinutes || 0), status: row.status, approval: row.approval, source: row.source,
     source_person_id: String(row.sourcePersonId || ""), identity_method: row.identityMethod || "",
-  })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "updated", "protected"]), onProgress);
+  })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "updated", "protected", "unmatched", "dailyMaxExceptions"]), onProgress);
 }
 export async function importLeavesRemote(rows, fileName, onProgress) {
   return postImportBatches("/workforce/leaves/import", rows, (batch) => ({ file_name: fileName, rows: batch.map((row) => ({
     id: row.id, person_id: String(row.personId), person_name: row.personName || "", warehouse: row.warehouse || "", type_id: row.typeId,
     category: row.category || "", date: row.date, minutes: Number(row.minutes || 0), approval: row.approval || "Onaylandı",
     note: row.note || "", source: row.source || "Time Off Used", source_person_id: String(row.sourcePersonId || ""), identity_method: row.identityMethod || "",
-  })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "skipped"]), onProgress);
+  })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "skipped", "unmatched"]), onProgress);
 }
 export async function postBreak(shiftId, personId, action) {
   return camel(await apiPost(`/workforce/shifts/${encodeURIComponent(shiftId)}/breaks`, { person_id: personId, action: action.toUpperCase() }));

@@ -10,7 +10,8 @@
     "test:access": "node scripts/test-access-config.mjs",
     "test:workforce-imports": "node scripts/test-workforce-imports.mjs",
     "test:workforce-attendance": "node scripts/test-workforce-attendance-proof.mjs",
-    "test:workforce-experience": "node scripts/test-workforce-experience.mjs"
+    "test:workforce-experience": "node scripts/test-workforce-experience.mjs",
+    "test:workforce": "npm run test:workforce-imports && npm run test:workforce-attendance && npm run test:workforce-experience"
   },
   "dependencies": {
     "@splinetool/react-spline": "^4.1.0",

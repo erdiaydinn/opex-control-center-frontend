@@ -1,5 +1,6 @@
 from copy import deepcopy
 from contextlib import closing
+import base64
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import json
@@ -35,6 +36,7 @@ _RULES = [
 ]
 
 _AUDIT_LOCK = Lock()
+_DEVICE_CHALLENGE_LOCK = Lock()
 _AUDIT_DB_PATH = Path(os.getenv("WORKFORCE_AUDIT_DB", str(Path(__file__).resolve().parents[3] / "data" / "workforce_audit.db")))
 
 _DEVICE_BINDINGS = [
@@ -44,6 +46,7 @@ _DEVICE_BINDINGS = [
 ]
 
 _ENROLLMENT_TOKENS: dict[str, dict] = {}
+_DEVICE_CHALLENGES: dict[str, dict] = {}
 
 _CORRECTION_REQUESTS: list[dict] = []
 _LEAVE_REQUESTS: list[dict] = []
@@ -205,10 +208,35 @@ def upsert_people(rows: list[dict], actor: str) -> dict:
     return {"created": created, "updated": updated, "total": len(rows), "roster_conflicts": roster_conflicts}
 
 
+def resolve_person_identity(value: str, method: str = "EMPLOYEE_ID") -> dict | None:
+    """Resolve an external identifier to the canonical Employee Master row.
+
+    TC is compared only through its digest; the clear value is never added to
+    logs or import results. Roster identifiers remain aliases and never replace
+    the canonical employee id.
+    """
+    candidate = str(value or "").strip()
+    normalized = str(method or "EMPLOYEE_ID").strip().upper().replace(" ", "_")
+    if not candidate:
+        return None
+    if normalized in {"TC", "TCKN", "NATIONAL_ID"}:
+        digest = sha256(candidate.encode()).hexdigest()
+        return next((item for item in _PEOPLE if item.get("tckn_hash") == digest), None)
+    if normalized in {"ROSTER", "ROSTER_ID", "PICKER_ID"}:
+        return next((item for item in _PEOPLE if candidate in {str(value) for value in item.get("roster_ids", [])}), None)
+    return next((item for item in _PEOPLE if str(item.get("employee_id")) == candidate), None)
+
+
+def _resolve_import_person(payload: dict) -> dict | None:
+    method = payload.get("identity_method") or "EMPLOYEE_ID"
+    source = payload.get("source_person_id") or payload.get("person_id")
+    return resolve_person_identity(str(source), str(method))
+
+
 def update_employment_lifecycle(rows: list[dict], actor: str, file_name: str = "") -> dict:
     matched = unmatched = 0
     for payload in rows:
-        person = next((item for item in _PEOPLE if item.get("employee_id") == payload["person_id"]), None)
+        person = resolve_person_identity(payload["person_id"], "EMPLOYEE_ID") or resolve_person_identity(payload["person_id"], payload.get("identity_method", "EMPLOYEE_ID"))
         if person is None:
             unmatched += 1
             continue
@@ -243,8 +271,14 @@ def list_leaves() -> list[dict]:
 
 def import_leaves(rows: list[dict], actor: str, file_name: str = "") -> dict:
     existing_keys = {(str(item.get("person_id")), str(item.get("date"))) for item in _LEAVES}
-    inserted = skipped = 0
+    inserted = skipped = unmatched = 0
     for payload in rows:
+        if str(payload.get("person_id")) != "*":
+            person = _resolve_import_person(payload)
+            if person is None:
+                unmatched += 1
+                continue
+            payload = {**payload, "person_id": person["employee_id"], "person_name": payload.get("person_name") or person.get("full_name", "")}
         key = (str(payload["person_id"]), str(payload["date"]))
         if key in existing_keys:
             skipped += 1
@@ -253,8 +287,8 @@ def import_leaves(rows: list[dict], actor: str, file_name: str = "") -> dict:
         _LEAVES.append(record)
         existing_keys.add(key)
         inserted += 1
-    _append_audit("TIME_OFF_IMPORTED", actor, file_name=file_name, inserted=inserted, skipped=skipped)
-    return {"inserted": inserted, "skipped": skipped, "total": len(rows)}
+    _append_audit("TIME_OFF_IMPORTED", actor, file_name=file_name, inserted=inserted, skipped=skipped, unmatched=unmatched)
+    return {"inserted": inserted, "skipped": skipped, "unmatched": unmatched, "total": len(rows)}
 
 
 def _audit_connection() -> sqlite3.Connection:
@@ -402,9 +436,32 @@ def _attendance_iso_date(value: str) -> str:
     return f"{parts[2]}-{parts[1]}-{parts[0]}" if len(parts) == 3 else text
 
 
+def _normalize_import_attendance(record: dict) -> dict:
+    check_in = str(record.get("check_in") or "")[-5:]
+    check_out = str(record.get("check_out") or "")[-5:]
+    if len(check_in) == 5 and len(check_out) == 5 and check_in[2] == ":" and check_out[2] == ":":
+        start = _minutes(check_in)
+        end = _minutes(check_out)
+        if start is not None and end is not None:
+            gross = (end - start) % (24 * 60)
+            record["gross_minutes"] = gross
+            record["net_minutes"] = max(0, gross - int(record.get("break_minutes", 0)))
+    date = _attendance_iso_date(record.get("date"))
+    maximum = _rule_value("dailyMax", date, 660)
+    record["daily_max_minutes"] = maximum
+    record["daily_max_exception"] = int(record.get("net_minutes", 0)) > maximum
+    record.update(_day_context(record["person_id"], date))
+    return record
+
+
 def import_attendance(rows: list[dict], actor: str, file_name: str = "") -> dict:
-    inserted = updated = protected = 0
+    inserted = updated = protected = unmatched = exceptions = 0
     for payload in rows:
+        person = _resolve_import_person(payload)
+        if person is None:
+            unmatched += 1
+            continue
+        payload = {**payload, "person_id": person["employee_id"], "name": payload.get("name") or person.get("full_name", "")}
         existing = next(
             (item for item in _ATTENDANCE if str(item.get("person_id")) == str(payload["person_id"]) and _attendance_iso_date(item.get("date")) == _attendance_iso_date(payload["date"])),
             None,
@@ -412,7 +469,8 @@ def import_attendance(rows: list[dict], actor: str, file_name: str = "") -> dict
         if existing and not str(existing.get("source", "")).startswith("Puantaj Dosyası"):
             protected += 1
             continue
-        record = {**deepcopy(payload), "imported_by": actor, "imported_at": datetime.now(UTC).isoformat(), "audit": deepcopy(existing.get("audit", [])) if existing else []}
+        record = _normalize_import_attendance({**deepcopy(payload), "imported_by": actor, "imported_at": datetime.now(UTC).isoformat(), "audit": deepcopy(existing.get("audit", [])) if existing else []})
+        exceptions += int(record["daily_max_exception"])
         record["audit"].append({"event": "ATTENDANCE_FILE_IMPORTED", "actor": actor, "at": record["imported_at"], "file_name": file_name})
         if existing:
             existing.clear()
@@ -421,8 +479,8 @@ def import_attendance(rows: list[dict], actor: str, file_name: str = "") -> dict
         else:
             _ATTENDANCE.append(record)
             inserted += 1
-    _append_audit("ATTENDANCE_FILE_IMPORTED", actor, file_name=file_name, inserted=inserted, updated=updated, protected=protected)
-    return {"inserted": inserted, "updated": updated, "protected": protected, "total": len(rows)}
+    _append_audit("ATTENDANCE_FILE_IMPORTED", actor, file_name=file_name, inserted=inserted, updated=updated, protected=protected, unmatched=unmatched, daily_max_exceptions=exceptions)
+    return {"inserted": inserted, "updated": updated, "protected": protected, "unmatched": unmatched, "daily_max_exceptions": exceptions, "total": len(rows)}
 
 
 def list_shifts(person_id: str | None = None, date: str | None = None) -> list[dict]:
@@ -436,6 +494,62 @@ def list_shifts(person_id: str | None = None, date: str | None = None) -> list[d
 
 def _gross_shift_minutes(start: str, end: str) -> int:
     return ((_minutes(end) or 0) - (_minutes(start) or 0)) % (24 * 60)
+
+
+def _day_context(person_id: str, date: str) -> dict:
+    rows = [
+        item for item in _LEAVES
+        if str(item.get("date")) == str(date)
+        and str(item.get("person_id")) in {str(person_id), "*"}
+        and str(item.get("approval", "Onaylandı")).upper() not in {"REJECTED", "REDDEDİLDİ"}
+    ]
+    holiday = next((item for item in rows if str(item.get("type_id", "")).lower() in {"public_holiday", "official_holiday", "resmi_tatil"}), None)
+    leave = next((item for item in rows if str(item.get("person_id")) == str(person_id) and item is not holiday), None)
+    return {
+        "is_public_holiday": holiday is not None,
+        "public_holiday_name": (holiday or {}).get("category") or (holiday or {}).get("note"),
+        "on_approved_leave": leave is not None,
+        "leave_type": (leave or {}).get("category") or (leave or {}).get("type_id"),
+    }
+
+
+def _night_minutes(start: datetime, end: datetime) -> int:
+    """Count overlap with the configurable 20:00–06:00 night window."""
+    total = 0
+    cursor = start.astimezone(ZoneInfo("Europe/Istanbul")).date() - timedelta(days=1)
+    local_end = end.astimezone(ZoneInfo("Europe/Istanbul"))
+    local_start = start.astimezone(ZoneInfo("Europe/Istanbul"))
+    while cursor <= local_end.date():
+        window_start = datetime.fromisoformat(f"{cursor.isoformat()}T20:00:00+03:00")
+        window_end = window_start + timedelta(hours=10)
+        overlap = max(0, (min(local_end, window_end) - max(local_start, window_start)).total_seconds())
+        total += round(overlap / 60)
+        cursor += timedelta(days=1)
+    return total
+
+
+def _finalize_attendance(row: dict, ended_at: datetime) -> dict:
+    started_at = datetime.fromisoformat(str(row["check_in"]).replace("Z", "+00:00"))
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    gross_minutes = max(0, round((ended_at.astimezone(UTC) - started_at.astimezone(UTC)).total_seconds() / 60))
+    break_minutes = sum(int(item.get("minutes", 0)) for item in _BREAK_SESSIONS if item.get("attendance_id") == row["id"])
+    break_minutes = max(int(row.get("break_minutes", 0)), break_minutes)
+    net_minutes = max(0, gross_minutes - break_minutes)
+    daily_max = _rule_value("dailyMax", _attendance_iso_date(row["date"]), 660)
+    context = _day_context(row["person_id"], _attendance_iso_date(row["date"]))
+    row.update({
+        "gross_minutes": gross_minutes,
+        "break_minutes": break_minutes,
+        "net_minutes": net_minutes,
+        "missing_minutes": max(0, int(row.get("expected_minutes", 0)) - net_minutes),
+        "overtime_minutes": max(0, net_minutes - int(row.get("expected_minutes", 0))),
+        "night_minutes": _night_minutes(started_at, ended_at),
+        "daily_max_minutes": daily_max,
+        "daily_max_exception": net_minutes > daily_max,
+        **context,
+    })
+    return row
 
 
 def _minimum_break_minutes(start: str, end: str, effective_date: str) -> int:
@@ -466,6 +580,9 @@ def create_shift(payload: dict, actor: str) -> dict:
     )
     if duplicate:
         raise WorkforceRuleError("Personelin bu tarihte aktif bir vardiyası zaten var.")
+    day_context = _day_context(payload["person_id"], payload["date"])
+    if day_context["on_approved_leave"]:
+        raise WorkforceRuleError("Personelin onaylı izni bulunan güne vardiya atanamaz.")
     payload["break_minutes"] = max(payload["break_minutes"], _minimum_break_minutes(payload["start"], payload["end"], payload["date"]))
     expected_minutes = _gross_shift_minutes(payload["start"], payload["end"]) - payload["break_minutes"]
     if expected_minutes > _rule_value("dailyMax", payload["date"], 660):
@@ -486,6 +603,7 @@ def create_shift(payload: dict, actor: str) -> dict:
         "created_by": actor,
         "created_at": datetime.now(UTC).isoformat(),
         "expected_minutes": expected_minutes,
+        **day_context,
     }
     _SHIFTS.append(row)
     _schedule_shift_notifications(row, actor)
@@ -534,17 +652,67 @@ def _validate_device(payload: dict) -> dict:
     if binding.get("signed_challenge_required"):
         if payload.get("device_key_id") != binding.get("device_key_id") or not payload.get("challenge_id") or not payload.get("signature"):
             raise WorkforceRuleError("Cihaz imzası veya tek kullanımlık doğrulama challenge değeri geçersiz.")
+        challenge = _DEVICE_CHALLENGES.get(payload["challenge_id"])
+        if not challenge or challenge.get("used"):
+            raise WorkforceRuleError("Cihaz challenge değeri geçersiz veya daha önce kullanılmış.")
+        if challenge["person_id"] != payload["person_id"] or challenge["device_id"] != payload["device_id"]:
+            raise WorkforceRuleError("Cihaz challenge değeri başka bir kullanıcı veya cihaza ait.")
+        expires_at = datetime.fromisoformat(challenge["expires_at"])
+        if datetime.now(UTC) > expires_at:
+            raise WorkforceRuleError("Cihaz challenge süresi dolmuş; yeni challenge alın.")
+        try:
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
+
+            public_key = serialization.load_pem_public_key(binding["public_key"].encode("utf-8"))
+            encoded = str(payload["signature"]).replace("-", "+").replace("_", "/")
+            signature = base64.b64decode(encoded + "=" * (-len(encoded) % 4), validate=True)
+            message = challenge["challenge"].encode("utf-8")
+            if isinstance(public_key, ec.EllipticCurvePublicKey):
+                public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+            elif isinstance(public_key, rsa.RSAPublicKey):
+                public_key.verify(signature, message, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
+            elif isinstance(public_key, ed25519.Ed25519PublicKey):
+                public_key.verify(signature, message)
+            else:
+                raise WorkforceRuleError("Desteklenmeyen cihaz anahtarı türü.")
+        except (ValueError, TypeError, InvalidSignature) as error:
+            raise WorkforceRuleError("Cihaz challenge imzası doğrulanamadı.") from error
     return binding
 
 
 def _validate_presence(warehouse: dict, payload: dict) -> float:
-    _validate_device(payload)
+    binding = _validate_device(payload)
     if payload["accuracy_meters"] > warehouse["max_accuracy"]:
         raise WorkforceRuleError("GPS doğruluğu depo kuralının dışında.")
     distance = _distance_meters(payload["latitude"], payload["longitude"], warehouse["latitude"], warehouse["longitude"])
     if distance > warehouse["radius"]:
         raise WorkforceRuleError("Depo konumunun dışındasınız; işlem yapılamaz.")
+    if binding.get("signed_challenge_required"):
+        with _DEVICE_CHALLENGE_LOCK:
+            challenge = _DEVICE_CHALLENGES.get(payload["challenge_id"])
+            if not challenge or challenge.get("used"):
+                raise WorkforceRuleError("Cihaz challenge değeri geçersiz veya daha önce kullanılmış.")
+            challenge["used"] = True
+            challenge["used_at"] = datetime.now(UTC).isoformat()
     return distance
+
+
+def issue_device_challenge(person_id: str, device_id: str, actor: str) -> dict:
+    binding = next((item for item in _DEVICE_BINDINGS if item["person_id"] == person_id and item["device_id"] == device_id and item["status"] == "ACTIVE"), None)
+    if binding is None:
+        raise WorkforceRuleError("Challenge yalnızca kayıtlı aktif cihaz için üretilebilir.")
+    now = datetime.now(UTC)
+    challenge_id = f"CHL-{token_urlsafe(18)}"
+    record = {
+        "id": challenge_id, "person_id": person_id, "device_id": device_id,
+        "challenge": token_urlsafe(48), "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=2)).isoformat(), "used": False,
+    }
+    _DEVICE_CHALLENGES[challenge_id] = record
+    _append_audit("DEVICE_CHALLENGE_ISSUED", actor, record_id=challenge_id, person_id=person_id, device_id=device_id, expires_at=record["expires_at"])
+    return deepcopy(record)
 
 
 def _validate_local_authentication(payload: dict) -> None:
@@ -555,7 +723,8 @@ def _validate_local_authentication(payload: dict) -> None:
     """
     method = payload.get("local_auth_method", "NONE")
     if method == "NONE":
-        if os.getenv("WORKFORCE_REQUIRE_LOCAL_AUTH", "false").lower() == "true":
+        production = os.getenv("DOCKOS_ENV", "development").lower() == "production"
+        if production or os.getenv("WORKFORCE_REQUIRE_LOCAL_AUTH", "false").lower() == "true":
             raise WorkforceRuleError("İşlem için cihaz üzerinde Face ID, biyometri veya cihaz parolası doğrulaması gerekir.")
         return
     authenticated_at = payload.get("local_auth_at")
@@ -576,12 +745,18 @@ def check_in(shift_id: str, payload: dict, actor: str) -> dict:
         raise WorkforceRuleError("Atanmış vardiya bulunamadı; check-in yapılamaz.")
     if shift["person_id"] != payload["person_id"]:
         raise WorkforceRuleError("Bu vardiya başka bir personele atanmış.")
+    person = resolve_person_identity(payload["person_id"], "EMPLOYEE_ID")
+    if person is not None and not person.get("active", True):
+        raise WorkforceRuleError("Pasif veya işten ayrılmış personel check-in yapamaz.")
+    day_context = _day_context(payload["person_id"], shift["date"])
+    if day_context["on_approved_leave"]:
+        raise WorkforceRuleError("Onaylı izin bulunan vardiyada check-in yapılamaz.")
     pilot_date_override = bool(payload.get("pilot_simulation")) and os.getenv("DOCKOS_ENV", "development").lower() != "production"
     if shift["date"] != datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat() and not pilot_date_override:
         raise WorkforceRuleError("Yalnızca bugünkü atanmış vardiya için check-in yapılabilir.")
     warehouse = _WAREHOUSES[shift["warehouse_id"]]
-    distance = _validate_presence(warehouse, payload)
     _validate_local_authentication(payload)
+    distance = _validate_presence(warehouse, payload)
     existing = next((row for row in _ATTENDANCE if row.get("shift_id") == shift_id and row.get("check_out") in (None, "—")), None)
     if existing:
         raise WorkforceRuleError("Bu vardiya için açık bir check-in zaten var.")
@@ -606,6 +781,7 @@ def check_in(shift_id: str, payload: dict, actor: str) -> dict:
         "device_id": payload["device_id"],
         "distance_meters": round(distance, 1),
         "local_auth_method": payload.get("local_auth_method", "NONE"),
+        **day_context,
         "audit": [{"event": "CHECK_IN", "actor": actor, "at": now.isoformat()}],
     }
     _ATTENDANCE.append(row)
@@ -624,17 +800,28 @@ def check_out(shift_id: str, payload: dict, actor: str) -> dict:
     if shift is None:
         raise WorkforceRuleError("Atanmış vardiya bulunamadı.")
     warehouse = _WAREHOUSES[shift["warehouse_id"]]
-    distance = _validate_presence(warehouse, payload)
+    if any(item["shift_id"] == shift_id and item.get("finished_at") is None for item in _BREAK_SESSIONS):
+        raise WorkforceRuleError("Check-out öncesinde aktif molayı bitirin.")
     _validate_local_authentication(payload)
+    distance = _validate_presence(warehouse, payload)
     now = datetime.now(UTC)
     row["check_out"] = now.isoformat()
-    row["status"] = "Onay bekliyor"
-    row["approval"] = "Onay bekliyor"
+    _finalize_attendance(row, now)
+    row["status"] = "İstisna incelemesi" if row["daily_max_exception"] else "Onay bekliyor"
+    row["approval"] = "Yönetici incelemesi" if row["daily_max_exception"] else "Onay bekliyor"
     row["check_out_distance_meters"] = round(distance, 1)
     row["check_out_local_auth_method"] = payload.get("local_auth_method", "NONE")
     row["pilot_simulation"] = bool(row.get("pilot_simulation") or payload.get("pilot_simulation"))
     row["audit"].append({"event": "CHECK_OUT", "actor": actor, "at": now.isoformat()})
-    _append_audit("CHECK_OUT", actor, record_id=row["id"], shift_id=shift_id, person_id=row["person_id"], device_id=payload["device_id"], distance_meters=row["check_out_distance_meters"], local_auth_method=row["check_out_local_auth_method"], biometric_data_stored=False, pilot_simulation=row["pilot_simulation"])
+    if row["daily_max_exception"]:
+        _CORRECTION_REQUESTS.append({
+            "id": f"WEX-{row['id']}", "kind": "DAILY_MAX_EXCEPTION", "attendance_id": row["id"],
+            "shift_id": shift_id, "person_id": row["person_id"], "warehouse": row["warehouse"],
+            "title": "11 saat üstü fiili çalışma", "record_count": 1, "target_minutes": row["daily_max_minutes"],
+            "actual_minutes": row["net_minutes"], "status": "Yönetici incelemesinde", "created_at": now.isoformat(),
+        })
+    shift["status"] = "İstisna incelemesi" if row["daily_max_exception"] else "Tamamlandı"
+    _append_audit("CHECK_OUT", actor, record_id=row["id"], shift_id=shift_id, person_id=row["person_id"], device_id=payload["device_id"], distance_meters=row["check_out_distance_meters"], local_auth_method=row["check_out_local_auth_method"], gross_minutes=row["gross_minutes"], break_minutes=row["break_minutes"], net_minutes=row["net_minutes"], night_minutes=row["night_minutes"], daily_max_exception=row["daily_max_exception"], biometric_data_stored=False, continuous_location_stored=False, pilot_simulation=row["pilot_simulation"])
     return deepcopy(row)
 
 
@@ -780,6 +967,9 @@ def register_device(payload: dict, actor: str) -> dict:
     enrollment = _ENROLLMENT_TOKENS.get(payload["enrollment_token"])
     if not enrollment or enrollment["used"] or enrollment["person_id"] != payload["person_id"]:
         raise WorkforceRuleError("Yeni cihaz kayıt bağlantısı geçersiz veya daha önce kullanılmış.")
+    created_at = datetime.fromisoformat(enrollment["created_at"])
+    if datetime.now(UTC) - created_at > timedelta(minutes=15):
+        raise WorkforceRuleError("Yeni cihaz kayıt bağlantısının süresi dolmuş.")
     try:
         attestation_result = verify_attestation(
             payload["attestation_provider"], payload["attestation_token"],

@@ -2,12 +2,15 @@ import unittest
 import base64
 import os
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 from .authorization import is_action_allowed
+from .attestation import AttestationError, verify as verify_attestation
 from .schemas import LeaveRequestCreateRequest, ManagerTaskResolveRequest
 from .service import (
     WorkforceRuleError,
     check_in,
+    check_out,
     correct_attendance,
     create_correction_request,
     create_leave_request,
@@ -26,6 +29,15 @@ from .service import (
     upsert_people,
     import_attendance,
     import_leaves,
+    issue_device_challenge,
+    resolve_person_identity,
+    _ATTENDANCE,
+    _BREAK_SESSIONS,
+    _DEVICE_BINDINGS,
+    _LEAVES,
+    _SHIFTS,
+    _finalize_attendance,
+    _validate_presence,
     _validate_local_authentication,
 )
 
@@ -98,23 +110,62 @@ class WorkforceAuthorizationTests(unittest.TestCase):
             else: os.environ["OPEX_PII_KEY"] = previous
 
     def test_attendance_file_updates_file_rows_but_protects_mobile_rows(self):
-        file_row = {"id": "ATT-FILE-TEST", "shift_id": "", "person_id": "FILE-PERSON", "name": "Dosya Personeli", "role": "Picker", "warehouse": "Fulya", "date": "01.08.2026", "planned": "Dosyadan", "check_in": None, "check_out": None, "break_minutes": 30, "net_minutes": 450, "expected_minutes": 450, "status": "Tamamlandı", "approval": "Onay bekliyor", "source": "Puantaj Dosyası · test.xlsx", "source_person_id": "77", "identity_method": "TC"}
+        previous = os.environ.get("OPEX_PII_KEY")
+        os.environ["OPEX_PII_KEY"] = base64.urlsafe_b64encode(b"i" * 32).decode()
+        upsert_people([{"employee_id": "FILE-PERSON", "full_name": "Dosya Personeli", "tckn": "67890123456", "position": "Picker", "active": True}], "hr")
+        upsert_people([{"employee_id": "100221", "full_name": "Efe Yılmaz", "tckn": "78901234567", "position": "Picker", "active": True}], "hr")
+        file_row = {"id": "ATT-FILE-TEST", "shift_id": "", "person_id": "FILE-PERSON", "name": "Dosya Personeli", "role": "Picker", "warehouse": "Fulya", "date": "01.08.2026", "planned": "Dosyadan", "check_in": None, "check_out": None, "break_minutes": 30, "net_minutes": 450, "expected_minutes": 450, "status": "Tamamlandı", "approval": "Onay bekliyor", "source": "Puantaj Dosyası · test.xlsx", "source_person_id": "FILE-PERSON", "identity_method": "EMPLOYEE_ID"}
         first = import_attendance([file_row], "admin", "test.xlsx")
         second = import_attendance([{**file_row, "net_minutes": 465}], "admin", "test.xlsx")
         mobile = next(row for row in list_attendance() if row["id"] == "ATT-1407-002")
-        protected = import_attendance([{**file_row, "id": mobile["id"], "person_id": mobile["person_id"], "date": mobile["date"]}], "admin", "test.xlsx")
+        protected = import_attendance([{**file_row, "id": mobile["id"], "person_id": mobile["person_id"], "source_person_id": mobile["person_id"], "date": mobile["date"]}], "admin", "test.xlsx")
         self.assertEqual(first["inserted"], 1)
         self.assertEqual(second["updated"], 1)
         self.assertEqual(protected["protected"], 1)
         self.assertEqual(next(row for row in list_attendance() if row["id"] == "ATT-FILE-TEST")["net_minutes"], 465)
+        if previous is None: os.environ.pop("OPEX_PII_KEY", None)
+        else: os.environ["OPEX_PII_KEY"] = previous
 
     def test_time_off_import_deduplicates_person_and_day(self):
-        row = {"id": "LEAVE-FILE-TEST", "person_id": "LEAVE-PERSON", "person_name": "İzin Personeli", "warehouse": "Fulya", "type_id": "annual", "category": "Yıllık İzin", "date": "2026-08-02", "minutes": 450, "approval": "Onaylandı", "note": "", "source": "Time Off Used", "source_person_id": "88", "identity_method": "TC"}
+        previous = os.environ.get("OPEX_PII_KEY")
+        os.environ["OPEX_PII_KEY"] = base64.urlsafe_b64encode(b"l" * 32).decode()
+        upsert_people([{"employee_id": "LEAVE-PERSON", "full_name": "İzin Personeli", "tckn": "89012345678", "position": "Picker", "active": True}], "hr")
+        row = {"id": "LEAVE-FILE-TEST", "person_id": "LEAVE-PERSON", "person_name": "İzin Personeli", "warehouse": "Fulya", "type_id": "annual", "category": "Yıllık İzin", "date": "2026-08-02", "minutes": 450, "approval": "Onaylandı", "note": "", "source": "Time Off Used", "source_person_id": "LEAVE-PERSON", "identity_method": "EMPLOYEE_ID"}
         first = import_leaves([row], "admin", "izin.xlsx")
         second = import_leaves([{**row, "id": "LEAVE-FILE-TEST-2"}], "admin", "izin.xlsx")
         self.assertEqual(first["inserted"], 1)
         self.assertEqual(second["skipped"], 1)
         self.assertEqual(len([item for item in list_leaves() if item["person_id"] == "LEAVE-PERSON" and item["date"] == "2026-08-02"]), 1)
+        if previous is None: os.environ.pop("OPEX_PII_KEY", None)
+        else: os.environ["OPEX_PII_KEY"] = previous
+
+    def test_server_resolves_tc_to_employee_and_roster_alias(self):
+        previous = os.environ.get("OPEX_PII_KEY")
+        os.environ["OPEX_PII_KEY"] = base64.urlsafe_b64encode(b"r" * 32).decode()
+        try:
+            upsert_people([{"employee_id": "EMP-RESOLVE", "roster_ids": ["RST-44"], "full_name": "Kimlik Zinciri", "tckn": "90123456789", "position": "Picker", "active": True}], "hr")
+            self.assertEqual(resolve_person_identity("90123456789", "TC")["employee_id"], "EMP-RESOLVE")
+            self.assertEqual(resolve_person_identity("EMP-RESOLVE", "EMPLOYEE_ID")["roster_ids"], ["RST-44"])
+            self.assertEqual(resolve_person_identity("RST-44", "ROSTER_ID")["employee_id"], "EMP-RESOLVE")
+        finally:
+            if previous is None: os.environ.pop("OPEX_PII_KEY", None)
+            else: os.environ["OPEX_PII_KEY"] = previous
+
+    def test_attendance_import_recalculates_overnight_net_and_flags_over_eleven_hours(self):
+        previous = os.environ.get("OPEX_PII_KEY")
+        os.environ["OPEX_PII_KEY"] = base64.urlsafe_b64encode(b"o" * 32).decode()
+        try:
+            upsert_people([{"employee_id": "IMPORT-NIGHT", "full_name": "Gece İçe Aktarım", "tckn": "10987654321", "position": "Picker", "active": True}], "hr")
+            row = {"id": "ATT-IMPORT-NIGHT", "shift_id": "", "person_id": "IMPORT-NIGHT", "name": "Gece İçe Aktarım", "role": "Picker", "warehouse": "Fulya", "date": "03.08.2026", "planned": "Dosyadan", "check_in": "18:00", "check_out": "06:30", "break_minutes": 30, "net_minutes": 1, "expected_minutes": 450, "status": "Tamamlandı", "approval": "Onay bekliyor", "source": "Puantaj Dosyası · night.xlsx", "source_person_id": "IMPORT-NIGHT", "identity_method": "EMPLOYEE_ID"}
+            result = import_attendance([row], "admin", "night.xlsx")
+            imported = next(item for item in list_attendance() if item["id"] == row["id"])
+            self.assertEqual(imported["gross_minutes"], 750)
+            self.assertEqual(imported["net_minutes"], 720)
+            self.assertTrue(imported["daily_max_exception"])
+            self.assertEqual(result["daily_max_exceptions"], 1)
+        finally:
+            if previous is None: os.environ.pop("OPEX_PII_KEY", None)
+            else: os.environ["OPEX_PII_KEY"] = previous
 
     def test_human_explanations_have_no_minimum_character_limit(self):
         manager = ManagerTaskResolveRequest(decision="APPROVED", manager_note="k")
@@ -189,6 +240,15 @@ class WorkforceAuthorizationTests(unittest.TestCase):
                 "erdi@opex.local",
             )
 
+    def test_check_in_rejects_inaccurate_gps_fix(self):
+        with self.assertRaisesRegex(WorkforceRuleError, "GPS doğruluğu"):
+            check_in("SHIFT-1407-001", {"person_id": "100184", "latitude": 41.060681, "longitude": 29.006064, "accuracy_meters": 500, "device_id": "DEVICE-1", "device_trusted": True}, "picker")
+
+    def test_attestation_adapter_fails_closed_without_vendor_gateway(self):
+        with patch.dict(os.environ, {"OPEX_ATTESTATION_MODE": "production", "DOCKOS_ENV": "production"}, clear=True), patch.dict("sys.modules", {"httpx": MagicMock()}):
+            with self.assertRaisesRegex(AttestationError, "yapılandırılmamış"):
+                verify_attestation("APPLE_APP_ATTEST", "opaque-token", person_id="EMP", device_id="DEV", key_id="KEY")
+
     def test_device_local_biometric_assertion_is_fresh_and_stores_no_template(self):
         _validate_local_authentication({
             "local_auth_method": "DEVICE_BIOMETRIC",
@@ -199,6 +259,11 @@ class WorkforceAuthorizationTests(unittest.TestCase):
                 "local_auth_method": "DEVICE_BIOMETRIC",
                 "local_auth_at": (datetime.now(UTC) - timedelta(minutes=3)).isoformat(),
             })
+
+    def test_production_rejects_attendance_without_local_user_presence(self):
+        with patch.dict(os.environ, {"DOCKOS_ENV": "production"}, clear=False):
+            with self.assertRaisesRegex(WorkforceRuleError, "cihaz üzerinde"):
+                _validate_local_authentication({"local_auth_method": "NONE"})
 
     def test_global_audit_has_integrity_hash(self):
         correct_attendance(
@@ -243,6 +308,61 @@ class WorkforceAuthorizationTests(unittest.TestCase):
                 },
                 "manager@opex.local",
             )
+
+    def test_shift_blocks_approved_leave_but_marks_imported_public_holiday(self):
+        leave = {"id": "LEAVE-SHIFT-BLOCK", "person_id": "LEAVE-SHIFT-PERSON", "date": "2026-09-01", "type_id": "annual", "category": "Yıllık İzin", "approval": "Onaylandı"}
+        holiday = {"id": "HOLIDAY-IMPORTED", "person_id": "*", "date": "2026-09-02", "type_id": "public_holiday", "category": "Pilot Tatil Takvimi", "approval": "Onaylandı"}
+        _LEAVES.extend([leave, holiday])
+        try:
+            with self.assertRaisesRegex(WorkforceRuleError, "onaylı izni"):
+                create_shift({"person_id": "LEAVE-SHIFT-PERSON", "person_name": "İzinli Personel", "warehouse_id": "fulya", "date": "2026-09-01", "start": "08:00", "end": "17:00", "break_minutes": 60, "role": "Picker"}, "manager")
+            shift = create_shift({"person_id": "HOLIDAY-SHIFT-PERSON", "person_name": "Tatil Vardiyası", "warehouse_id": "fulya", "date": "2026-09-02", "start": "08:00", "end": "17:00", "break_minutes": 60, "role": "Picker"}, "manager")
+            self.assertTrue(shift["is_public_holiday"])
+            self.assertEqual(shift["public_holiday_name"], "Pilot Tatil Takvimi")
+        finally:
+            _LEAVES[:] = [item for item in _LEAVES if item.get("id") not in {leave["id"], holiday["id"]}]
+            _SHIFTS[:] = [item for item in _SHIFTS if item.get("person_id") != "HOLIDAY-SHIFT-PERSON"]
+
+    def test_overnight_attendance_calculates_total_minus_break_and_night_minutes(self):
+        row = {"id": "ATT-NIGHT", "person_id": "NIGHT-PERSON", "date": "2026-08-12", "check_in": "2026-08-12T19:00:00+00:00", "break_minutes": 60, "expected_minutes": 420}
+        result = _finalize_attendance(row, datetime.fromisoformat("2026-08-13T03:00:00+00:00"))
+        self.assertEqual(result["gross_minutes"], 480)
+        self.assertEqual(result["net_minutes"], 420)
+        self.assertEqual(result["night_minutes"], 480)
+        self.assertFalse(result["daily_max_exception"])
+
+    def test_checkout_calculates_net_and_creates_eleven_hour_exception(self):
+        now = datetime.now(UTC)
+        shift_id = "SHIFT-FIELD-11H"
+        attendance_id = "ATT-FIELD-11H"
+        _SHIFTS.append({"id": shift_id, "person_id": "100184", "person_name": "Erdi Aydın", "warehouse_id": "fulya", "date": datetime.now().astimezone().date().isoformat(), "start": "00:00", "end": "23:59", "break_minutes": 0, "role": "Picker", "status": "Vardiyada"})
+        _ATTENDANCE.append({"id": attendance_id, "shift_id": shift_id, "person_id": "100184", "name": "Erdi Aydın", "warehouse": "Fulya (İstanbul)", "date": datetime.now().astimezone().date().isoformat(), "planned": "00:00–23:59", "check_in": (now - timedelta(hours=12)).isoformat(), "check_out": None, "break_minutes": 30, "net_minutes": 0, "expected_minutes": 480, "status": "Vardiyada", "approval": "Canlı", "source": "Mobil", "audit": []})
+        try:
+            result = check_out(shift_id, {"person_id": "100184", "latitude": 41.060681, "longitude": 29.006064, "accuracy_meters": 10, "device_id": "DEVICE-1", "device_trusted": True, "local_auth_method": "NONE", "pilot_simulation": True}, "picker")
+            self.assertGreater(result["net_minutes"], 660)
+            self.assertTrue(result["daily_max_exception"])
+            self.assertEqual(result["status"], "İstisna incelemesi")
+        finally:
+            _ATTENDANCE[:] = [item for item in _ATTENDANCE if item.get("id") != attendance_id]
+            _SHIFTS[:] = [item for item in _SHIFTS if item.get("id") != shift_id]
+
+    def test_signed_device_challenge_is_single_use_and_replay_safe(self):
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        public_key = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        binding = {"person_id": "SIGNED-PERSON", "device_id": "SIGNED-DEVICE", "device_key_id": "signed-key-1", "public_key": public_key, "status": "ACTIVE", "signed_challenge_required": True, "attestation_provider": "APPLE_APP_ATTEST"}
+        _DEVICE_BINDINGS.append(binding)
+        try:
+            challenge = issue_device_challenge("SIGNED-PERSON", "SIGNED-DEVICE", "picker")
+            signature = key.sign(challenge["challenge"].encode(), ec.ECDSA(hashes.SHA256()))
+            payload = {"person_id": "SIGNED-PERSON", "device_id": "SIGNED-DEVICE", "device_key_id": "signed-key-1", "device_trusted": True, "challenge_id": challenge["id"], "signature": base64.urlsafe_b64encode(signature).decode().rstrip("="), "latitude": 41.060681, "longitude": 29.006064, "accuracy_meters": 10}
+            _validate_presence(next(row for row in list_warehouses() if row["name"] == "Fulya (İstanbul)"), payload)
+            with self.assertRaisesRegex(WorkforceRuleError, "daha önce kullanılmış"):
+                _validate_presence(next(row for row in list_warehouses() if row["name"] == "Fulya (İstanbul)"), payload)
+        finally:
+            _DEVICE_BINDINGS.remove(binding)
 
     def test_picker_correction_request_reaches_manager_queue(self):
         request = create_correction_request(

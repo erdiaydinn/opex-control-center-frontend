@@ -4,10 +4,11 @@ from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile,
 from fastapi.responses import FileResponse
 
 from app.modules.workforce.authorization import is_action_allowed
-from .schemas import RecruitmentDecision, RecruitmentRequestCreate, RecruitmentSettingsUpdate, StaffingNormPatch
+from .schemas import RecruitmentDecision, RecruitmentHireActivate, RecruitmentRequestCreate, RecruitmentSettingsUpdate, StaffingNormPatch
 from .service import (
     RecruitmentRuleError,
     add_evidence,
+    activate_hire,
     create_request,
     dashboard,
     decide_request,
@@ -135,6 +136,20 @@ def decide(
     actor, actor_name = _identity(request)
     try:
         return decide_request(request_id, payload.decision, payload.note, actor, actor_name)
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/hires", status_code=status.HTTP_201_CREATED)
+def hire_and_activate(
+    request_id: str, payload: RecruitmentHireActivate, request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    actor, _ = _identity(request)
+    try:
+        return activate_hire(request_id, payload.model_dump(mode="json"), actor)
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

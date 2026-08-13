@@ -85,6 +85,11 @@ class DeviceResetRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 
 
+class DeviceChallengeRequest(BaseModel):
+    person_id: str = Field(min_length=1, max_length=50)
+    device_id: str = Field(min_length=3, max_length=150)
+
+
 class DeviceRegisterRequest(BaseModel):
     person_id: str = Field(min_length=1, max_length=50)
     device_id: str = Field(min_length=3, max_length=150)

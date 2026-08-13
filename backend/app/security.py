@@ -87,13 +87,14 @@ def identity_from_request(request: Request) -> Identity:
         claims = _decode_bearer(authorization.split(" ", 1)[1].strip())
         role_claim = os.getenv("OPEX_OIDC_ROLES_CLAIM", "roles")
         permission_claim = os.getenv("OPEX_OIDC_PERMISSIONS_CLAIM", "permissions")
+        employee_id_claim = os.getenv("OPEX_OIDC_EMPLOYEE_ID_CLAIM", "employee_id")
         return Identity(
             subject=str(claims["sub"]),
             email=str(claims.get("email", "")),
             name=str(claims.get("name") or claims.get("preferred_username") or claims["sub"]),
             roles=_items(claims, role_claim),
             permissions=_items(claims, permission_claim),
-            employee_id=str(claims.get("employee_id")) if claims.get("employee_id") else None,
+            employee_id=str(claims.get(employee_id_claim)) if claims.get(employee_id_claim) else None,
             warehouse_scope=_items(claims, os.getenv("OPEX_OIDC_WAREHOUSE_SCOPE_CLAIM", "warehouse_scope")),
             force_password_change=bool(claims.get("force_password_change", False)),
         )

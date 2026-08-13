@@ -41,6 +41,16 @@ class RecruitmentDecision(BaseModel):
         return self
 
 
+class RecruitmentHireActivate(BaseModel):
+    employee_id: str = Field(min_length=1, max_length=50)
+    roster_ids: list[str] = Field(default_factory=list, max_length=20)
+    full_name: str = Field(min_length=2, max_length=180)
+    tckn: str = Field(pattern=r"^\d{11}$")
+    email: str | None = Field(default=None, max_length=254)
+    phone: str | None = Field(default=None, max_length=50)
+    employment_start: date
+
+
 class RecruitmentSettingsUpdate(BaseModel):
     hr_recipients: list[str] = Field(default_factory=list, max_length=50)
     partner_recipients: list[str] = Field(default_factory=list, max_length=50)

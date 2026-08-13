@@ -2,26 +2,33 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from typing import Any
+from uuid import UUID
 
 import pytest
 
+from app.core.ai_data_scope import AiDataScope, ai_data_scope_fingerprint
 from app.core.ai_orders_v2_live_cross_tenant_runner import (
     LIVE_PROOF_MAXIMUM_BYTES_BILLED,
     LIVE_PROOF_TIMEOUT_SECONDS,
     OrdersV2LiveProofError,
-    OrdersV2LiveProofScopes,
+    OrdersV2LiveProofSentinels,
+    OrdersV2LiveProofWindow,
     run_orders_v2_live_cross_tenant_proof,
 )
 from app.core.ai_orders_v2_live_schema_collector import (
     UNATTESTED_COLLECTOR_BLOCKER,
     OrdersV2CollectedSchemaObservation,
 )
-from app.core.ai_orders_v2_schema_attestation import (
-    build_orders_v2_schema_attestation_candidate,
+from app.core.ai_orders_v2_schema_attestation import build_orders_v2_schema_attestation_candidate
+from app.core.ai_orders_v2_schema_evidence import build_orders_v2_information_schema_evidence
+from app.core.ai_tenant_query_context import (
+    AiTenantQueryContext,
+    AiTenantQueryContextRecord,
+    ai_tenant_query_context_fingerprint,
 )
-from app.core.ai_orders_v2_schema_evidence import (
-    build_orders_v2_information_schema_evidence,
-)
+from app.core.ai_tool_authorization import AiToolCapability
+
+TENANT_ID = UUID("00000000-0000-0000-0000-000000000111")
 
 
 class FakeJob:
@@ -47,9 +54,7 @@ class FakeClient:
     def query(self, query: str, *, job_config: Any, location=None):
         job = FakeJob(f"job-{len(self.calls) + 1}", self.rowsets.pop(0))
         self.jobs.append(job)
-        self.calls.append(
-            {"query": query, "job_config": job_config, "location": location}
-        )
+        self.calls.append({"query": query, "job_config": job_config, "location": location})
         return job
 
 
@@ -78,95 +83,109 @@ def _attestation():
     return build_orders_v2_schema_attestation_candidate(observation)
 
 
-def _scopes(**changes):
-    values = {
-        "start_date": date(2026, 8, 12),
-        "end_date": date(2026, 8, 13),
-        "authorized_entity_ids": ("YS_TR",),
-        "authorized_stores": ("Fulya",),
-        "foreign_entity_id": "FOREIGN_REAL",
-        "foreign_store": "Foreign Real Store",
-        "foreign_entity_known_to_exist": True,
-        "foreign_store_known_to_exist": True,
-    }
-    values.update(changes)
-    return OrdersV2LiveProofScopes(**values)
+def _authority():
+    scope = AiDataScope(version=1, store_names=("Fulya",))
+    capability = AiToolCapability(
+        tenant_id=TENANT_ID,
+        actor_subject="employee:test",
+        tool="ops_kpi_query",
+        granted_scopes=("ops:read",),
+        permission_keys=("ai_assistant.executeOpsRead",),
+        authorizing_roles=("ops_manager",),
+        data_scope=scope,
+        data_scope_fingerprint=ai_data_scope_fingerprint(scope),
+        authorization_fingerprint="a" * 64,
+    )
+    context = AiTenantQueryContext(
+        version=1,
+        entity_ids=("YS_TR",),
+        source_reference="approved production tenant mapping",
+    )
+    record = AiTenantQueryContextRecord(
+        tenant_id=str(TENANT_ID),
+        context=context,
+        record_fingerprint=ai_tenant_query_context_fingerprint(context),
+        updated_by="super-admin:test",
+    )
+    return capability, record
 
 
-def test_runner_executes_exact_three_bounded_controls() -> None:
+def _window():
+    return OrdersV2LiveProofWindow(date(2026, 8, 12), date(2026, 8, 13))
+
+
+def _sentinels():
+    return OrdersV2LiveProofSentinels(
+        foreign_entity_id="FOREIGN_REAL",
+        foreign_store="Foreign Real Store",
+        foreign_entity_known_to_exist=True,
+        foreign_store_known_to_exist=True,
+    )
+
+
+def test_live_runner_uses_authoritative_platform_scope() -> None:
+    capability, context = _authority()
     client = FakeClient(
-        [
-            [{"date": date(2026, 8, 13), "vendor_name": "Fulya", "orders": 2}],
-            [],
-            [],
-        ]
+        [[{"date": date(2026, 8, 13), "vendor_name": "Fulya", "orders": 2}], [], []]
     )
     artifact = run_orders_v2_live_cross_tenant_proof(
         client=client,
         schema_attestation=_attestation(),
-        scopes=_scopes(),
+        capability=capability,
+        tenant_query_context=context,
+        window=_window(),
+        sentinels=_sentinels(),
         executed_at=datetime(2026, 8, 13, 21, 0, tzinfo=UTC),
     )
-
     assert len(client.calls) == 3
     assert all(call["location"] == "EU" for call in client.calls)
     assert all(
-        call["job_config"].maximum_bytes_billed
-        == LIVE_PROOF_MAXIMUM_BYTES_BILLED
+        call["job_config"].maximum_bytes_billed == LIVE_PROOF_MAXIMUM_BYTES_BILLED
         for call in client.calls
     )
     assert all(call["job_config"].use_query_cache is False for call in client.calls)
     assert all(job.timeouts == [LIVE_PROOF_TIMEOUT_SECONDS] for job in client.jobs)
     assert artifact.foreign_sentinel_match_count == 0
     assert artifact.promotion_eligible is False
-    rendered = artifact.model_dump_json()
-    assert "YS_TR" not in rendered
-    assert "Fulya" not in rendered
-    assert "FOREIGN_REAL" not in rendered
-    assert "job-1" not in rendered
+    serialized = artifact.model_dump_json()
+    for raw_value in ("YS_TR", "Fulya", "FOREIGN_REAL", "job-1"):
+        assert raw_value not in serialized
 
 
-@pytest.mark.parametrize(
-    "rowsets,match",
-    [
-        ([[], [], []], "positive control is empty"),
-        (
-            [
-                [{"date": date(2026, 8, 13), "vendor_name": "Other", "orders": 1}],
-                [],
-                [],
-            ],
-            "foreign store",
-        ),
-        (
-            [
-                [{"date": date(2026, 8, 13), "vendor_name": "Fulya", "orders": 2}],
-                [{"date": date(2026, 8, 13), "vendor_name": "Foreign", "orders": 1}],
-                [],
-            ],
-            "leakage",
-        ),
-    ],
-)
-def test_runner_fails_closed_on_invalid_controls(rowsets, match) -> None:
-    with pytest.raises(OrdersV2LiveProofError, match=match):
+def test_live_runner_rejects_authority_mismatch() -> None:
+    capability, context = _authority()
+    wrong_context = AiTenantQueryContextRecord(
+        tenant_id=str(UUID("00000000-0000-0000-0000-000000000222")),
+        context=context.context,
+        record_fingerprint=context.record_fingerprint,
+        updated_by=context.updated_by,
+    )
+    with pytest.raises(OrdersV2LiveProofError, match="capability and tenant"):
         run_orders_v2_live_cross_tenant_proof(
-            client=FakeClient(rowsets),
+            client=FakeClient([]),
             schema_attestation=_attestation(),
-            scopes=_scopes(),
+            capability=capability,
+            tenant_query_context=wrong_context,
+            window=_window(),
+            sentinels=_sentinels(),
         )
 
 
-def test_runner_rejects_unverified_or_overlapping_sentinels() -> None:
-    for scopes in (
-        _scopes(foreign_entity_known_to_exist=False),
-        _scopes(foreign_store_known_to_exist=False),
-        _scopes(foreign_entity_id="YS_TR"),
-        _scopes(foreign_store="Fulya"),
-    ):
-        with pytest.raises(OrdersV2LiveProofError):
-            run_orders_v2_live_cross_tenant_proof(
-                client=FakeClient([]),
-                schema_attestation=_attestation(),
-                scopes=scopes,
-            )
+def test_live_runner_fails_on_foreign_result() -> None:
+    capability, context = _authority()
+    client = FakeClient(
+        [
+            [{"date": date(2026, 8, 13), "vendor_name": "Fulya", "orders": 2}],
+            [{"date": date(2026, 8, 13), "vendor_name": "Foreign Real Store", "orders": 1}],
+            [],
+        ]
+    )
+    with pytest.raises(OrdersV2LiveProofError, match="cross-tenant leakage"):
+        run_orders_v2_live_cross_tenant_proof(
+            client=client,
+            schema_attestation=_attestation(),
+            capability=capability,
+            tenant_query_context=context,
+            window=_window(),
+            sentinels=_sentinels(),
+        )

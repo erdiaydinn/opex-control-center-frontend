@@ -16,6 +16,7 @@ from app.core.ai_query_contract_policy import (
 )
 from app.core.ai_tenant_query_context import (
     AiTenantQueryContextInvalid,
+    AiTenantQueryContextRecord,
     get_ai_tenant_query_context,
 )
 from app.core.ai_tool_authorization import (
@@ -99,19 +100,38 @@ class InternalAiToolAuthorizationResponse(BaseModel):
 
 
 def _ai_tool_access_denied() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI tool access denied")
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="AI tool access denied",
+    )
 
 
 def _ai_tool_grant_failed() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AI tool grant authentication failed")
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="AI tool grant authentication failed",
+    )
 
 
 def _query_contract_unavailable() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI tool execution contract is not ready")
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="AI tool execution contract is not ready",
+    )
 
 
 def _query_context_unavailable() -> HTTPException:
-    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI tenant query context is not ready")
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="AI tenant query context is not ready",
+    )
+
+
+async def _load_tenant_query_context(
+    tenant_id: str,
+) -> AiTenantQueryContextRecord | None:
+    """Adapt the keyword-only DB authority to the grant loader contract."""
+    return await get_ai_tenant_query_context(tenant_id=tenant_id)
 
 
 @router.post(
@@ -132,15 +152,23 @@ async def issue_ai_tool_grant(
     except (AiToolAccessDenied, AiToolPermissionScopeUnsupported) as exc:
         raise _ai_tool_access_denied() from exc
     except AiToolAuthorizationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AI tool request is invalid") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI tool request is invalid",
+        ) from exc
 
     try:
-        require_ai_query_contract_ready(tool=payload.tool, environment=get_settings().environment)
+        require_ai_query_contract_ready(
+            tool=payload.tool,
+            environment=get_settings().environment,
+        )
     except AiQueryContractPolicyError as exc:
         raise _query_contract_unavailable() from exc
 
     try:
-        query_context = await get_ai_tenant_query_context(tenant_id=str(principal.tenant_id))
+        query_context = await _load_tenant_query_context(
+            str(principal.tenant_id)
+        )
     except AiTenantQueryContextInvalid as exc:
         raise _query_context_unavailable() from exc
     except Exception as exc:
@@ -156,9 +184,15 @@ async def issue_ai_tool_grant(
             query_context=query_context,
         )
     except AiToolGrantInvalid as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AI tool request is invalid") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI tool request is invalid",
+        ) from exc
     except AiToolGrantUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI tool grant authority is unavailable") from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI tool grant authority is unavailable",
+        ) from exc
 
     binding = issued.binding
     return AiToolGrantIssueResponse(
@@ -171,8 +205,12 @@ async def issue_ai_tool_grant(
         query_contract_revision=binding.query_contract_revision,
         query_contract_fingerprint=binding.query_contract_fingerprint,
         execution_scope_fingerprint=binding.execution_scope_fingerprint,
-        query_context_record_fingerprint=binding.query_context_record_fingerprint,
-        execution_context_fingerprint=binding.execution_context_fingerprint,
+        query_context_record_fingerprint=(
+            binding.query_context_record_fingerprint
+        ),
+        execution_context_fingerprint=(
+            binding.execution_context_fingerprint
+        ),
     )
 
 
@@ -184,7 +222,10 @@ async def issue_ai_tool_grant(
 async def authorize_internal_ai_tool_execution(
     payload: InternalAiToolAuthorizationRequest,
     request: Request,
-    jarvis_service: Annotated[VerifiedJarvisService, Depends(require_fresh_jarvis_service)],
+    jarvis_service: Annotated[
+        VerifiedJarvisService,
+        Depends(require_fresh_jarvis_service),
+    ],
 ) -> InternalAiToolAuthorizationResponse:
     """Consume a user grant and return one trusted execution context."""
 
@@ -194,15 +235,25 @@ async def authorize_internal_ai_tool_execution(
             tool=payload.tool,
             arguments=payload.arguments,
             reason=payload.reason,
-            query_context_loader=get_ai_tenant_query_context,
+            query_context_loader=_load_tenant_query_context,
         )
-    except (AiToolGrantInvalid, AiToolGrantReplayOrExpired, AiToolGrantBindingMismatch) as exc:
+    except (
+        AiToolGrantInvalid,
+        AiToolGrantReplayOrExpired,
+        AiToolGrantBindingMismatch,
+    ) as exc:
         raise _ai_tool_grant_failed() from exc
     except AiToolGrantUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI tool grant authority is unavailable") from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI tool grant authority is unavailable",
+        ) from exc
 
     try:
-        require_ai_query_contract_ready(tool=payload.tool, environment=get_settings().environment)
+        require_ai_query_contract_ready(
+            tool=payload.tool,
+            environment=get_settings().environment,
+        )
     except AiQueryContractPolicyError as exc:
         raise _query_contract_unavailable() from exc
 
@@ -219,15 +270,25 @@ async def authorize_internal_ai_tool_execution(
             "tool": binding.tool,
             "arguments_sha256": binding.arguments_sha256,
             "reason_sha256": binding.reason_sha256,
-            "authorization_fingerprint": binding.authorization_fingerprint,
+            "authorization_fingerprint": (
+                binding.authorization_fingerprint
+            ),
             "data_scope_fingerprint": binding.data_scope_fingerprint,
             "data_scope_store_count": len(binding.data_scope.store_names),
             "query_contract_id": binding.query_contract_id,
             "query_contract_revision": binding.query_contract_revision,
-            "query_contract_fingerprint": binding.query_contract_fingerprint,
-            "execution_scope_fingerprint": binding.execution_scope_fingerprint,
-            "query_context_record_fingerprint": binding.query_context_record_fingerprint,
-            "execution_context_fingerprint": binding.execution_context_fingerprint,
+            "query_contract_fingerprint": (
+                binding.query_contract_fingerprint
+            ),
+            "execution_scope_fingerprint": (
+                binding.execution_scope_fingerprint
+            ),
+            "query_context_record_fingerprint": (
+                binding.query_context_record_fingerprint
+            ),
+            "execution_context_fingerprint": (
+                binding.execution_context_fingerprint
+            ),
             "entity_id_count": len(binding.entity_ids),
         },
     )
@@ -235,7 +296,10 @@ async def authorize_internal_ai_tool_execution(
     try:
         await write_audit_event(audit_event)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AI tool execution audit is unavailable") from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI tool execution audit is unavailable",
+        ) from exc
 
     scopes = TOOL_REQUIRED_SCOPES[binding.tool]
     return InternalAiToolAuthorizationResponse(
@@ -250,8 +314,12 @@ async def authorize_internal_ai_tool_execution(
         query_contract_revision=binding.query_contract_revision,
         query_contract_fingerprint=binding.query_contract_fingerprint,
         execution_scope_fingerprint=binding.execution_scope_fingerprint,
-        query_context_record_fingerprint=binding.query_context_record_fingerprint,
-        execution_context_fingerprint=binding.execution_context_fingerprint,
+        query_context_record_fingerprint=(
+            binding.query_context_record_fingerprint
+        ),
+        execution_context_fingerprint=(
+            binding.execution_context_fingerprint
+        ),
         entity_ids=binding.entity_ids,
         authorization_fingerprint=binding.authorization_fingerprint,
         arguments_sha256=binding.arguments_sha256,

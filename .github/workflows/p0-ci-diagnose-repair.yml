@@ -1,0 +1,154 @@
+name: P0 Temporary CI Diagnose Repair
+
+on:
+  push:
+    branches:
+      - platform-core/eay-v2-jarvis-orders-policy-transition-guard
+    paths:
+      - .github/workflows/p0-ci-diagnose-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+
+      - name: Repair exact remaining Ruff debt
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path("services/core-api/app/core/config.py"): [
+                  (
+                      '        if self.environment in {"staging", "production"} and self.auth_mode not in {"oidc", "internal_assertion"}:\n',
+                      '        if (\n'
+                      '            self.environment in {"staging", "production"}\n'
+                      '            and self.auth_mode not in {"oidc", "internal_assertion"}\n'
+                      '        ):\n',
+                  ),
+              ],
+              Path("services/core-api/tests/test_security_foundation.py"): [
+                  (
+                      'import pytest\nfrom fastapi import HTTPException\n\nfrom app.core.config import Settings\nfrom app.core.security import _decode_development_token\n',
+                      'import pytest\nfrom fastapi import HTTPException, Request\nfrom fastapi.security import HTTPAuthorizationCredentials\n\nimport app.core.security as security\nfrom app.core.config import Settings\nfrom app.core.security import _decode_development_token, get_current_principal\n',
+                  ),
+                  (
+                      '\nfrom fastapi import Request\nfrom fastapi.security import HTTPAuthorizationCredentials\n\nimport app.core.security as security\nfrom app.core.security import get_current_principal\n',
+                      '\n',
+                  ),
+              ],
+              Path("services/core-api/tests/test_sql_access_boundary.py"): [
+                  (
+                      '            if name in EXECUTION_CALLS:\n'
+                      '                if (\n'
+                      '                    location\n'
+                      '                    not in ALLOWED_SQL_EXECUTION_POINTS\n'
+                      '                ):\n'
+                      '                    violations.append(\n'
+                      '                        f"{relative}:{node.lineno} "\n'
+                      '                        f"{function} -> {name}"\n'
+                      '                    )\n',
+                      '            if (\n'
+                      '                name in EXECUTION_CALLS\n'
+                      '                and location not in ALLOWED_SQL_EXECUTION_POINTS\n'
+                      '            ):\n'
+                      '                violations.append(\n'
+                      '                    f"{relative}:{node.lineno} "\n'
+                      '                    f"{function} -> {name}"\n'
+                      '                )\n',
+                  ),
+                  (
+                      '            if name in ENGINE_CALLS:\n'
+                      '                if (\n'
+                      '                    location\n'
+                      '                    not in ALLOWED_ENGINE_CREATION\n'
+                      '                ):\n'
+                      '                    violations.append(\n'
+                      '                        f"{relative}:{node.lineno} "\n'
+                      '                        f"{function} -> {name}"\n'
+                      '                    )\n',
+                      '            if (\n'
+                      '                name in ENGINE_CALLS\n'
+                      '                and location not in ALLOWED_ENGINE_CREATION\n'
+                      '            ):\n'
+                      '                violations.append(\n'
+                      '                    f"{relative}:{node.lineno} "\n'
+                      '                    f"{function} -> {name}"\n'
+                      '                )\n',
+                  ),
+              ],
+          }
+
+          for path, pairs in replacements.items():
+              source = path.read_text(encoding="utf-8")
+              for old, new in pairs:
+                  count = source.count(old)
+                  if count != 1:
+                      raise SystemExit(f"REPLACEMENT_COUNT_INVALID:{path}:{count}")
+                  source = source.replace(old, new, 1)
+              path.write_text(source, encoding="utf-8", newline="\n")
+          PY
+
+          python -m pip install -e "./services/core-api[dev]"
+          ruff check services/core-api --fix
+          ruff check services/core-api
+          git diff --check
+          git add -- \
+            services/core-api/app/core/config.py \
+            services/core-api/tests/test_security_foundation.py \
+            services/core-api/tests/test_sql_access_boundary.py
+          git diff --cached --check
+          git config user.name "eay-platform-ci"
+          git config user.email "160104243+erdiaydinn@users.noreply.github.com"
+          git commit -m "style(core-api): close remaining repo-wide Ruff debt"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Generate ephemeral identity material
+        run: python scripts/security/generate_identity_ci_material.py
+
+      - name: Diagnose Identity Gateway health probe
+        env:
+          OPEX_ENVIRONMENT: test
+          OPEX_AUTH_MODE: development
+          OPEX_INTERNAL_ASSERTION_AUDIENCE: opex-core-api
+          OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE: opex-core-preauth
+        run: |
+          set +e
+          docker compose -p opex-identity-p0-diagnostic -f docker-compose.platform.yml up --build -d identity-gateway
+          container_id="$(docker compose -p opex-identity-p0-diagnostic -f docker-compose.platform.yml ps -q identity-gateway)"
+          echo "IDENTITY_CONTAINER_ID=${container_id}"
+          for i in $(seq 1 25); do
+            echo "--- health sample ${i} ---"
+            docker inspect --format '{{json .State}}' "${container_id}"
+            sleep 1
+          done
+          echo '=== HEALTH LOG ==='
+          docker inspect --format '{{json .State.Health.Log}}' "${container_id}"
+          echo '=== CONTAINER LOG ==='
+          docker logs "${container_id}"
+          echo '=== DIRECT READINESS PROBES ==='
+          docker exec "${container_id}" python - <<'PY'
+          import urllib.request
+          for host in ("127.0.0.1", "localhost"):
+              url = f"http://{host}:8020/health/ready"
+              try:
+                  with urllib.request.urlopen(url, timeout=2) as response:
+                      print(host, response.status, response.read().decode("utf-8"))
+              except Exception as exc:
+                  print(host, "ERROR", repr(exc))
+          PY
+          docker compose -p opex-identity-p0-diagnostic -f docker-compose.platform.yml down -v --remove-orphans
+          exit 0

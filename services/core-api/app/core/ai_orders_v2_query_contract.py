@@ -11,9 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError

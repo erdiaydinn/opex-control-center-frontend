@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
-from typing import Callable
 
 import pytest
 
@@ -73,7 +73,11 @@ def test_candidate_is_exact_versioned_and_explicitly_blocked() -> None:
         lambda sql: sql + "\nUNION ALL SELECT CURRENT_DATE(), 'X', 1",
         lambda sql: sql + "; SELECT 1",
         lambda sql: sql.replace(
-            "DATE(partition_date_local) AS date,\n  vendor_name,\n  COUNT(DISTINCT order_id) AS orders",
+            (
+                "DATE(partition_date_local) AS date,\n"
+                "  vendor_name,\n"
+                "  COUNT(DISTINCT order_id) AS orders"
+            ),
             "*",
         ),
     ],

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-13T22:14:26+03:00",
+  "policy": "Candidate evidence is non-authoritative until supplied-archive tree/blob provenance matches exact upstream history. Registry identity must remain UNRESOLVED/PENDING until then.",
+  "candidates": [
+    {
+      "registry_entry_id": "imported-deep-learning-tutorials",
+      "archive": "Deep-Learning-Tutorials-master.zip",
+      "candidate_repository": "lisa-lab/DeepLearningTutorials",
+      "candidate_default_branch": "master",
+      "candidate_head_sha": "11c465105026cf87573937fc2d35ab7543678698",
+      "candidate_tree_sha": "b81e33450a82945b26ff6c3a93144667f8327ba6",
+      "candidate_license_spdx": "BSD-3-Clause",
+      "candidate_evidence": "name/search similarity plus public repository metadata and license text",
+      "archive_match_status": "NOT_VERIFIED",
+      "promotion_status": "BLOCKED_PENDING_ARCHIVE_MATCH",
+      "decision_if_matched": "REFERENCE"
+    },
+    {
+      "registry_entry_id": "imported-impeccable",
+      "archive": "impeccable-main.zip",
+      "candidate_repository": "pbakaus/impeccable",
+      "candidate_default_branch": "main",
+      "candidate_head_sha": "bd2535974861db28a9f4a18ec78608488cd868dd",
+      "candidate_tree_sha": "1e8d63578b1eb0742df446e2a71a140c83a0c133",
+      "candidate_license_spdx": "Apache-2.0",
+      "candidate_evidence": "exact repository-name candidate plus public repository metadata and license text",
+      "archive_match_status": "NOT_VERIFIED",
+      "promotion_status": "BLOCKED_PENDING_ARCHIVE_MATCH",
+      "decision_if_matched": "REFERENCE"
+    },
+    {
+      "registry_entry_id": "imported-image-understanding-tthau",
+      "archive": "image_understanding-tthau.zip",
+      "candidate_repository": null,
+      "candidate_default_branch": null,
+      "candidate_head_sha": null,
+      "candidate_tree_sha": null,
+      "candidate_license_spdx": null,
+      "candidate_evidence": "GitHub repository search for image_understanding+tthau returned no repository candidate",
+      "archive_match_status": "NO_CANDIDATE_FOUND",
+      "promotion_status": "BLOCKED_PENDING_IDENTITY_RECOVERY",
+      "decision_if_matched": "REFERENCE"
+    }
+  ]
+}

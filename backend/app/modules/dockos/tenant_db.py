@@ -58,8 +58,8 @@ def consume_gateway_replay(timestamp: str, nonce: str, signature: str, ttl_secon
             tid = _tenant_id(conn)
             set_tenant(conn, tid)
             conn.execute(
-                "DELETE FROM dockos.settings WHERE key LIKE 'gateway-replay:%' AND updated_at < now() - (%s * interval '1 second')",
-                (max(60, int(ttl_seconds) * 2),),
+                "DELETE FROM dockos.settings WHERE key LIKE %s AND updated_at < now() - (%s * interval '1 second')",
+                ('gateway-replay:%', max(60, int(ttl_seconds) * 2)),
             )
             row = conn.execute(
                 "INSERT INTO dockos.settings(tenant_id,key,value) VALUES (%s,%s,%s::jsonb) ON CONFLICT (tenant_id,key) DO NOTHING RETURNING key",

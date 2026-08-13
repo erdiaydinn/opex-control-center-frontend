@@ -59,15 +59,18 @@ jobs:
       - name: Lint tenant query context slice
         run: >-
           ruff check
+          services/core-api/app/ai_tool_routes.py
           services/core-api/app/ai_tenant_query_context_routes.py
           services/core-api/app/core/ai_tenant_query_context.py
           services/core-api/tests/test_ai_tenant_query_context.py
+          services/core-api/tests/test_ai_tenant_query_context_fail_closed.py
           services/core-api/tests/test_ai_tenant_query_context_integration.py
           services/core-api/alembic/versions/0010_ai_tenant_query_context.py
       - name: Test unit and route contracts
         run: >-
           pytest -q
           services/core-api/tests/test_ai_tenant_query_context.py
+          services/core-api/tests/test_ai_tenant_query_context_fail_closed.py
           services/core-api/tests/test_ai_query_contract_policy.py
           services/core-api/tests/test_jarvis_execution_contract.py
       - name: Verify tenant query context route is published

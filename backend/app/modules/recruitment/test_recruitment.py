@@ -1,5 +1,14 @@
 import unittest
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from datetime import UTC, datetime
 from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+from app.main import app
+from . import router as recruitment_router
 
 from .schemas import RecruitmentDecision, RecruitmentRequestCreate
 from . import service
@@ -97,6 +106,113 @@ class RecruitmentRuleTests(unittest.TestCase):
         requests = [{"id": "REC-PARTIAL", "warehouse_name": FULYA["name"], "position_code": "STORE_STAFF", "quantity": 3, "hires": [{"employee_id": "1"}], "status": "PARTIALLY_FILLED"}]
         with patch.object(service, "list_requests", return_value=requests):
             self.assertEqual(service._open_positions(FULYA["name"], "STORE_STAFF"), 2)
+
+    def test_candidate_evidence_approval_chain_is_required_before_hire(self):
+        request = {
+            "id": "REC-CANDIDATE-1", "status": "APPROVED", "quantity": 1,
+            "hires": [], "candidates": [], "revision": 1,
+            "warehouse_id": FULYA["id"], "warehouse_name": FULYA["name"],
+            "position_code": "STORE_STAFF", "position_label": "Mağaza Görevlisi",
+            "history": [], "created_at": "2026-08-01T00:00:00+00:00",
+        }
+        with (
+            TemporaryDirectory() as directory,
+            patch.object(service, "list_requests", return_value=[request]),
+            patch.object(service, "_save_request"),
+            patch.object(service, "_EVIDENCE_DIR", Path(directory)),
+        ):
+            candidate = service.register_candidate(
+                request["id"], {"full_name": "Aday Kişi", "source_ref": "ATS-42", "note": None}, "hr"
+            )
+            self.assertEqual(candidate["status"], "EVIDENCE_PENDING")
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "kanıt incelemesi"):
+                service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
+            service.add_candidate_evidence(
+                request["id"], candidate["id"], "cv.pdf", "application/pdf", b"%PDF-candidate", "hr"
+            )
+            approved = service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
+            self.assertEqual(approved["status"], "APPROVED")
+            self.assertIn("retention_until", approved["evidence"][0])
+
+    def test_retention_purge_redacts_candidate_pii_and_deletes_expired_evidence(self):
+        with TemporaryDirectory() as directory:
+            evidence_path = Path(directory) / "expired.pdf"
+            evidence_path.write_bytes(b"expired")
+            request = {
+                "id": "REC-RETENTION", "status": "REJECTED", "warehouse_id": FULYA["id"],
+                "revision": 1, "history": [], "evidence": None,
+                "candidates": [{
+                    "id": "C-OLD", "full_name": "Private Person", "source_ref": "ATS-PRIVATE",
+                    "note": "private", "pii_retention_until": "2025-01-01T00:00:00+00:00",
+                    "evidence": [{
+                        "stored_name": evidence_path.name, "retention_until": "2025-01-01T00:00:00+00:00",
+                    }],
+                }],
+            }
+            with (
+                patch.object(service, "list_requests", return_value=[request]),
+                patch.object(service, "_save_request") as save,
+                patch.object(service, "_EVIDENCE_DIR", Path(directory)),
+            ):
+                result = service.purge_expired_recruitment_data("dpo", datetime(2026, 1, 1, tzinfo=UTC))
+        self.assertEqual(result["redacted_candidates"], 1)
+        self.assertEqual(result["deleted_evidence"], 1)
+        self.assertEqual(request["candidates"][0]["full_name"], "[REDACTED]")
+        self.assertFalse(evidence_path.exists())
+        save.assert_called_once()
+
+
+class RecruitmentScopeApiTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        self.environment = {
+            "DOCKOS_ENV": "production", "OPEX_ALLOW_LEGACY_HEADERS": "false",
+            "OPEX_OIDC_ISSUER": "https://idp.example.test", "OPEX_OIDC_AUDIENCE": "opex",
+        }
+        self.claims = {
+            "sub": "manager-1", "name": "Fulya Manager", "roles": ["warehouse_manager"],
+            "permissions": [], "warehouse_scope": ["fulya"],
+        }
+
+    def test_manager_bootstrap_is_store_scoped_and_hides_admin_configuration(self):
+        rows = [
+            {
+                "id": "REC-F", "warehouse_id": "fulya", "status": "PENDING_APPROVAL",
+                "evidence": {"stored_name": "private.pdf", "sha256": "secret"},
+                "candidates": [{"id": "C-1", "evidence": [{"stored_name": "cv.pdf", "sha256": "secret"}]}],
+            },
+            {"id": "REC-U", "warehouse_id": "uskudar", "status": "PENDING_APPROVAL"},
+        ]
+        with (
+            patch.dict(os.environ, self.environment, clear=False),
+            patch("app.security._decode_bearer", return_value=self.claims),
+            patch.object(recruitment_router, "list_requests", return_value=rows),
+            patch.object(recruitment_router, "list_norms", return_value=[]),
+        ):
+            response = self.client.get("/api/recruitment/bootstrap", headers={"Authorization": "Bearer signed"})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual([row["id"] for row in body["requests"]], ["REC-F"])
+        self.assertNotIn("evidence", body["requests"][0])
+        self.assertEqual(body["requests"][0]["candidates"][0]["evidence"], [])
+        self.assertIsNone(body["settings"])
+        self.assertEqual(body["email_outbox"], [])
+
+    def test_manager_cannot_create_cross_store_vacancy_or_read_evidence(self):
+        payload = {
+            "warehouse_id": "uskudar", "position_code": "STORE_STAFF", "quantity": 1,
+            "employment_type": "FULL_TIME", "reason_code": "NORM_GAP",
+            "needed_by": "2027-01-01", "justification": "Cross-scope attempt",
+        }
+        with patch.dict(os.environ, self.environment, clear=False), patch("app.security._decode_bearer", return_value=self.claims):
+            create_response = self.client.post(
+                "/api/recruitment/requests", json=payload, headers={"Authorization": "Bearer signed"}
+            )
+            evidence_response = self.client.get(
+                "/api/recruitment/requests/REC-F/evidence", headers={"Authorization": "Bearer signed"}
+            )
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(evidence_response.status_code, 403)
 
 
 if __name__ == "__main__":

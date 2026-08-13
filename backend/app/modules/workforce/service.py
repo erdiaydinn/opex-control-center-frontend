@@ -187,7 +187,7 @@ def bulk_patch_warehouses(ids: list[str], patch: dict, actor: str) -> list[dict]
     return deepcopy(changed)
 
 
-def upsert_people(rows: list[dict], actor: str) -> dict:
+def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict:
     created = updated = 0
     roster_conflicts: list[dict] = []
     by_tckn_hash = {item.get("tckn_hash"): item for item in _PEOPLE if item.get("tckn_hash")}
@@ -244,7 +244,8 @@ def upsert_people(rows: list[dict], actor: str) -> dict:
         by_employee_id[str(canonical_employee_id)] = existing
         for roster_id in roster_ids:
             roster_owner[roster_id] = existing
-    _append_audit("PEOPLE_BULK_UPSERTED", actor, created=created, updated=updated, count=len(rows), roster_conflict_count=len(roster_conflicts))
+    if persist:
+        _append_audit("PEOPLE_BULK_UPSERTED", actor, created=created, updated=updated, count=len(rows), roster_conflict_count=len(roster_conflicts))
     return {"created": created, "updated": updated, "total": len(rows), "roster_conflicts": roster_conflicts}
 
 
@@ -274,7 +275,8 @@ def _resolve_import_person(payload: dict) -> dict | None:
 
 
 def update_employment_lifecycle(rows: list[dict], actor: str, file_name: str = "") -> dict:
-    matched = unmatched = 0
+    matched = unmatched = revoked_devices = cancelled_shifts = access_closures = 0
+    closed_person_ids: list[str] = []
     for payload in rows:
         person = resolve_person_identity(payload["person_id"], "EMPLOYEE_ID") or resolve_person_identity(payload["person_id"], payload.get("identity_method", "EMPLOYEE_ID"))
         if person is None:
@@ -285,11 +287,43 @@ def update_employment_lifecycle(rows: list[dict], actor: str, file_name: str = "
         if payload.get("employment_end"):
             person["employment_end"] = payload["employment_end"]
             person["active"] = False
+            access_closures += 1
+            closed_person_ids.append(str(person["employee_id"]))
+            ended_at = datetime.now(UTC).isoformat()
+            for binding in _DEVICE_BINDINGS:
+                if binding.get("person_id") == person["employee_id"] and binding.get("status") == "ACTIVE":
+                    binding.update({"status": "REVOKED", "revoked_at": ended_at, "revoked_by": actor, "revoke_reason": "EMPLOYMENT_ENDED"})
+                    revoked_devices += 1
+            for token in _ENROLLMENT_TOKENS.values():
+                if token.get("person_id") == person["employee_id"] and not token.get("used"):
+                    token.update({"used": True, "invalidated_at": ended_at, "invalidation_reason": "EMPLOYMENT_ENDED"})
+            for challenge in _DEVICE_CHALLENGES.values():
+                if challenge.get("person_id") == person["employee_id"] and not challenge.get("used"):
+                    challenge.update({"used": True, "invalidated_at": ended_at, "invalidation_reason": "EMPLOYMENT_ENDED"})
+            for shift in _SHIFTS:
+                if shift.get("person_id") != person["employee_id"] or shift.get("status") not in {"Atandı", "Yayınlandı"}:
+                    continue
+                shift.update({"status": "İptal", "cancelled_at": ended_at, "cancelled_by": actor, "cancel_reason": "EMPLOYMENT_ENDED"})
+                cancelled_shifts += 1
+            _NOTIFICATIONS[:] = [
+                notification for notification in _NOTIFICATIONS
+                if notification.get("person_id") != person["employee_id"]
+                or not notification.get("shift_id")
+            ]
         person["updated_at"] = datetime.now(UTC).isoformat()
         person["updated_by"] = actor
         matched += 1
-    _append_audit("EMPLOYMENT_LIFECYCLE_IMPORTED", actor, file_name=file_name, matched=matched, unmatched=unmatched)
-    return {"matched": matched, "unmatched": unmatched, "total": len(rows)}
+    _append_audit(
+        "EMPLOYMENT_LIFECYCLE_IMPORTED", actor, file_name=file_name, matched=matched,
+        unmatched=unmatched, access_closures=access_closures,
+        revoked_devices=revoked_devices, cancelled_shifts=cancelled_shifts,
+        _cancel_notification_person_ids=closed_person_ids,
+    )
+    return {
+        "matched": matched, "unmatched": unmatched, "total": len(rows),
+        "access_closures": access_closures, "revoked_devices": revoked_devices,
+        "cancelled_shifts": cancelled_shifts,
+    }
 
 
 def list_people(can_view_sensitive: bool = False) -> list[dict]:
@@ -353,10 +387,17 @@ def _audit_connection() -> sqlite3.Connection:
 
 
 def _append_audit(event: str, actor: str, **details: object) -> dict:
+    related_recruitment_request = details.pop("_related_recruitment_request", None)
+    expected_recruitment_revision = details.pop("_expected_recruitment_revision", None)
+    cancel_notification_person_ids = details.pop("_cancel_notification_person_ids", None)
     if persistence.ENABLED:
         try:
             postgres_record = persistence.persist_snapshot_with_audit(
-                _snapshot_collections(), event, actor, **details
+                _snapshot_collections(), event, actor,
+                related_recruitment_request=related_recruitment_request,
+                expected_recruitment_revision=expected_recruitment_revision,
+                cancel_notification_person_ids=cancel_notification_person_ids,
+                **details,
             )
         except persistence.ConcurrentWriteError as error:
             # The process snapshot is stale. Reload authoritative state before
@@ -692,6 +733,9 @@ def _distance_meters(latitude_1: float, longitude_1: float, latitude_2: float, l
 
 
 def _validate_device(payload: dict) -> dict:
+    person = resolve_person_identity(payload["person_id"], "EMPLOYEE_ID")
+    if person is not None and not person.get("active", True):
+        raise WorkforceRuleError("Pasif veya işten ayrılmış personelin cihaz erişimi kapalıdır.")
     if not payload["device_trusted"]:
         raise WorkforceRuleError("Cihaz kayıtlı veya güvenilir değil.")
     binding = next((row for row in _DEVICE_BINDINGS if row["person_id"] == payload["person_id"] and row["device_id"] == payload["device_id"] and row["status"] == "ACTIVE"), None)
@@ -748,6 +792,9 @@ def _validate_presence(warehouse: dict, payload: dict) -> float:
 
 
 def issue_device_challenge(person_id: str, device_id: str, actor: str) -> dict:
+    person = resolve_person_identity(person_id, "EMPLOYEE_ID")
+    if person is not None and not person.get("active", True):
+        raise WorkforceRuleError("Pasif veya işten ayrılmış personel cihaz challenge alamaz.")
     binding = next((item for item in _DEVICE_BINDINGS if item["person_id"] == person_id and item["device_id"] == device_id and item["status"] == "ACTIVE"), None)
     if binding is None:
         raise WorkforceRuleError("Challenge yalnızca kayıtlı aktif cihaz için üretilebilir.")
@@ -997,6 +1044,9 @@ def list_device_bindings() -> list[dict]:
 
 
 def reset_device_binding(person_id: str, payload: dict, actor: str) -> dict:
+    person = resolve_person_identity(person_id, "EMPLOYEE_ID")
+    if person is not None and not person.get("active", True):
+        raise WorkforceRuleError("Pasif veya işten ayrılmış personel için yeni cihaz kaydı açılamaz.")
     now = datetime.now(UTC)
     revoked = []
     for binding in _DEVICE_BINDINGS:
@@ -1012,6 +1062,9 @@ def reset_device_binding(person_id: str, payload: dict, actor: str) -> dict:
 
 
 def register_device(payload: dict, actor: str) -> dict:
+    person = resolve_person_identity(payload["person_id"], "EMPLOYEE_ID")
+    if person is not None and not person.get("active", True):
+        raise WorkforceRuleError("Pasif veya işten ayrılmış personel cihaz kaydı yapamaz.")
     enrollment = _ENROLLMENT_TOKENS.get(payload["enrollment_token"])
     if not enrollment or enrollment["used"] or enrollment["person_id"] != payload["person_id"]:
         raise WorkforceRuleError("Yeni cihaz kayıt bağlantısı geçersiz veya daha önce kullanılmış.")

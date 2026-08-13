@@ -1,8 +1,12 @@
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from . import persistence, service
+from app.modules.recruitment import service as recruitment
 
 
 @unittest.skipUnless(persistence.ENABLED, "DATABASE_URL is required for PostgreSQL acceptance tests")
@@ -11,6 +15,7 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
     def setUpClass(cls):
         persistence.initialize()
         service.initialize_workforce()
+        recruitment.initialize()
 
     def unique_kind(self, prefix: str) -> str:
         return f"ci_{prefix}_{uuid4().hex}"
@@ -125,6 +130,76 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
         self.assertIsNotNone(restored)
         self.assertEqual(restored["challenge"], challenge["challenge"])
         self.assertFalse(restored["used"])
+
+    def test_norm_vacancy_candidate_hire_employee_master_and_first_shift_chain(self):
+        suffix = uuid4().hex[:8]
+        employee_id = f"EMP-CI-{suffix}"
+        tckn = str(int(uuid4().hex[:12], 16)).zfill(11)[-11:]
+        request = recruitment.create_request(
+            {
+                "warehouse_id": "fulya", "position_code": "STORE_STAFF", "quantity": 1,
+                "employment_type": "FULL_TIME", "reason_code": "NORM_GAP",
+                "needed_by": "2027-01-01", "justification": "PostgreSQL transactional acceptance",
+                "planned_departure": None,
+            },
+            "ci-manager", "CI Manager",
+        )
+        approved = recruitment.decide_request(request["id"], "APPROVED", "CI approval", "ci-hr", "CI HR")
+        self.assertEqual(approved["status"], "APPROVED")
+        with TemporaryDirectory() as evidence_dir, patch.object(recruitment, "_EVIDENCE_DIR", Path(evidence_dir)):
+            candidate = recruitment.register_candidate(
+                request["id"], {"full_name": "CI Candidate", "source_ref": f"ATS-{suffix}", "note": None}, "ci-hr"
+            )
+            recruitment.add_candidate_evidence(
+                request["id"], candidate["id"], "candidate.pdf", "application/pdf", b"%PDF-ci", "ci-hr"
+            )
+            recruitment.decide_candidate(request["id"], candidate["id"], "APPROVED", "Evidence accepted", "ci-hr")
+            hired = recruitment.activate_hire(
+                request["id"],
+                {
+                    "candidate_id": candidate["id"], "employee_id": employee_id,
+                    "roster_ids": [f"ROSTER-{suffix}"], "full_name": "CI Candidate",
+                    "tckn": tckn, "email": None, "phone": None, "employment_start": "2027-01-01",
+                },
+                "ci-hr",
+            )
+        self.assertEqual(hired["activation"]["employee_master"], "ACTIVE")
+        shift = service.create_shift(
+            {
+                "person_id": employee_id, "warehouse_id": "fulya", "date": "2027-01-02",
+                "start": "09:00", "end": "18:00", "break_minutes": 60,
+            },
+            "ci-manager",
+        )
+        self.assertEqual(shift["person_id"], employee_id)
+        exit_result = service.update_employment_lifecycle(
+            [{"person_id": employee_id, "employment_end": "2027-01-03"}], "ci-hr", "exit.csv"
+        )
+        self.assertEqual(exit_result["access_closures"], 1)
+        with persistence.connection() as database, database.cursor() as cursor:
+            persistence._set_tenant(cursor)
+            cursor.execute(
+                "SELECT status,payload->>'revision' FROM recruitment_requests WHERE tenant_id=%s AND id=%s",
+                (persistence.TENANT_ID, request["id"]),
+            )
+            status, revision = cursor.fetchone()
+            self.assertEqual(status, "FILLED")
+            self.assertGreaterEqual(int(revision), 6)
+            cursor.execute(
+                """SELECT count(*) FROM workforce_audit
+                   WHERE tenant_id=%s AND event IN (
+                     'RECRUITMENT_REQUEST_CREATED','RECRUITMENT_REQUEST_DECIDED',
+                     'RECRUITMENT_CANDIDATE_APPROVED','RECRUITMENT_HIRE_ACTIVATED','SHIFT_CREATED'
+                   )""",
+                (persistence.TENANT_ID,),
+            )
+            self.assertGreaterEqual(int(cursor.fetchone()[0]), 5)
+            cursor.execute(
+                """SELECT count(*) FROM workforce_notification_outbox
+                   WHERE tenant_id=%s AND person_id=%s AND status IN ('PENDING','SENDING')""",
+                (persistence.TENANT_ID, employee_id),
+            )
+            self.assertEqual(int(cursor.fetchone()[0]), 0)
 
 
 if __name__ == "__main__":

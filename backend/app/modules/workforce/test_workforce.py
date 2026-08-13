@@ -26,6 +26,7 @@ from .service import (
     resolve_leave_request,
     update_feature_flags,
     update_notification_policy,
+    update_employment_lifecycle,
     upsert_people,
     import_attendance,
     import_leaves,
@@ -34,7 +35,9 @@ from .service import (
     _ATTENDANCE,
     _BREAK_SESSIONS,
     _DEVICE_BINDINGS,
+    _DEVICE_CHALLENGES,
     _LEAVES,
+    _PEOPLE,
     _SHIFTS,
     _finalize_attendance,
     _initial_snapshot,
@@ -85,6 +88,53 @@ class WorkforceAuthorizationTests(unittest.TestCase):
             self.assertEqual(matches[0]["employee_id"], "OLD-EMP")
             self.assertEqual(matches[0]["source_employee_id"], "NEW-EMP")
         finally:
+            if previous is None: os.environ.pop("OPEX_PII_KEY", None)
+            else: os.environ["OPEX_PII_KEY"] = previous
+
+    def test_employee_exit_closes_availability_device_and_challenge_access(self):
+        previous = os.environ.get("OPEX_PII_KEY")
+        os.environ["OPEX_PII_KEY"] = base64.urlsafe_b64encode(b"z" * 32).decode()
+        person_id = "EXIT-EMPLOYEE"
+        device_id = "EXIT-DEVICE"
+        shift_id = "SHIFT-EXIT-FUTURE"
+        challenge_id = "CHL-EXIT-PENDING"
+        try:
+            upsert_people([{
+                "employee_id": person_id, "full_name": "Ayrılan Çalışan",
+                "tckn": "34567890123", "position": "Picker",
+                "warehouse_id": "fulya", "active": True,
+            }], "hr@opex.local")
+            _DEVICE_BINDINGS.append({
+                "person_id": person_id, "device_id": device_id,
+                "status": "ACTIVE", "signed_challenge_required": False,
+            })
+            _DEVICE_CHALLENGES[challenge_id] = {
+                "id": challenge_id, "person_id": person_id, "device_id": device_id,
+                "used": False, "expires_at": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
+            }
+            _SHIFTS.append({
+                "id": shift_id, "person_id": person_id, "person_name": "Ayrılan Çalışan",
+                "warehouse_id": "fulya", "date": "2026-12-01", "start": "08:00",
+                "end": "17:00", "break_minutes": 60, "role": "Picker", "status": "Atandı",
+            })
+            result = update_employment_lifecycle([{
+                "person_id": person_id, "employment_end": "2026-08-13",
+                "identity_method": "EMPLOYEE_ID",
+            }], "hr@opex.local", "exit.csv")
+            self.assertEqual(result["access_closures"], 1)
+            self.assertEqual(result["revoked_devices"], 1)
+            self.assertEqual(result["cancelled_shifts"], 1)
+            self.assertFalse(resolve_person_identity(person_id)["active"])
+            self.assertEqual(next(row for row in _DEVICE_BINDINGS if row.get("device_id") == device_id)["status"], "REVOKED")
+            self.assertEqual(next(row for row in _SHIFTS if row.get("id") == shift_id)["status"], "İptal")
+            self.assertTrue(_DEVICE_CHALLENGES[challenge_id]["used"])
+            with self.assertRaisesRegex(WorkforceRuleError, "işten ayrılmış"):
+                issue_device_challenge(person_id, device_id, "former.employee")
+        finally:
+            _PEOPLE[:] = [row for row in _PEOPLE if row.get("employee_id") != person_id]
+            _DEVICE_BINDINGS[:] = [row for row in _DEVICE_BINDINGS if row.get("device_id") != device_id]
+            _DEVICE_CHALLENGES.pop(challenge_id, None)
+            _SHIFTS[:] = [row for row in _SHIFTS if row.get("id") != shift_id]
             if previous is None: os.environ.pop("OPEX_PII_KEY", None)
             else: os.environ["OPEX_PII_KEY"] = previous
 

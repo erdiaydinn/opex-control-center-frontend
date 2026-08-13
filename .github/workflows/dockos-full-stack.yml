@@ -68,6 +68,7 @@ jobs:
       WORKFORCE_TENANT_ID: eay-ci
       WORKFORCE_AUTO_MIGRATE: "false"
       DOCKOS_ENV: test
+      PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -78,3 +79,12 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python scripts/setup_workforce_postgres_ci.py
       - run: python -m unittest app.modules.workforce.test_workforce_persistence
+      - run: python scripts/workforce_postgres_load_ci.py
+      - name: Backup and isolated restore rehearsal
+        run: |
+          pg_dump -h localhost -U postgres -Fc -f /tmp/workforce_ci.dump workforce_ci
+          dropdb -h localhost -U postgres --if-exists workforce_restore_ci
+          createdb -h localhost -U postgres workforce_restore_ci
+          pg_restore -h localhost -U postgres -d workforce_restore_ci /tmp/workforce_ci.dump
+          WORKFORCE_RESTORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/workforce_restore_ci \
+            python scripts/verify_workforce_restore_ci.py

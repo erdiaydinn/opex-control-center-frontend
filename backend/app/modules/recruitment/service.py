@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from hashlib import sha256
 import json
@@ -74,55 +74,22 @@ def initialize() -> None:
         return
     _EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     with persistence.connection() as database, database.cursor() as cursor:
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS recruitment_requests (
-              id text PRIMARY KEY,
-              status text NOT NULL,
-              warehouse_id text NOT NULL,
-              created_at timestamptz NOT NULL,
-              payload jsonb NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS recruitment_request_status_idx
-              ON recruitment_requests(status, created_at DESC);
-            CREATE TABLE IF NOT EXISTS recruitment_settings (
-              id text PRIMARY KEY,
-              payload jsonb NOT NULL,
-              updated_at timestamptz NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS recruitment_norms (
-              id text PRIMARY KEY,
-              warehouse text NOT NULL,
-              payload jsonb NOT NULL,
-              updated_at timestamptz NOT NULL
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS recruitment_norm_warehouse_idx
-              ON recruitment_norms(lower(warehouse));
-            CREATE TABLE IF NOT EXISTS recruitment_email_outbox (
-              id text PRIMARY KEY,
-              request_id text NOT NULL,
-              recipient_group text NOT NULL,
-              status text NOT NULL DEFAULT 'PENDING',
-              attempts integer NOT NULL DEFAULT 0,
-              last_error text,
-              created_at timestamptz NOT NULL,
-              delivered_at timestamptz,
-              payload jsonb NOT NULL
-            );
-            """
-        )
-        cursor.execute("SELECT count(*) FROM recruitment_norms")
+        persistence._set_tenant(cursor)
+        tenant_id = persistence.tenant_id()
+        cursor.execute("SELECT count(*) FROM recruitment_norms WHERE tenant_id=%s", (tenant_id,))
         if cursor.fetchone()[0] == 0:
             for row in _default_norms():
                 cursor.execute(
-                    "INSERT INTO recruitment_norms(id,warehouse,payload,updated_at) VALUES (%s,%s,%s::jsonb,%s)",
-                    (row["id"], row["warehouse"], json.dumps(row, ensure_ascii=False), _now()),
+                    """INSERT INTO recruitment_norms(tenant_id,id,warehouse,payload,updated_at)
+                       VALUES (%s,%s,%s,%s::jsonb,%s)""",
+                    (tenant_id, row["id"], row["warehouse"], json.dumps(row, ensure_ascii=False), _now()),
                 )
-        cursor.execute("SELECT 1 FROM recruitment_settings WHERE id='default'")
+        cursor.execute("SELECT 1 FROM recruitment_settings WHERE tenant_id=%s AND id='default'", (tenant_id,))
         if cursor.fetchone() is None:
             cursor.execute(
-                "INSERT INTO recruitment_settings(id,payload,updated_at) VALUES ('default',%s::jsonb,%s)",
-                (json.dumps(_DEFAULT_SETTINGS, ensure_ascii=False), _now()),
+                """INSERT INTO recruitment_settings(tenant_id,id,payload,updated_at)
+                   VALUES (%s,'default',%s::jsonb,%s)""",
+                (tenant_id, json.dumps(_DEFAULT_SETTINGS, ensure_ascii=False), _now()),
             )
         database.commit()
 
@@ -147,23 +114,28 @@ def _rows(query: str, params: tuple = ()) -> list[dict]:
     if not persistence.ENABLED:
         return []
     with persistence.connection() as database, database.cursor() as cursor:
+        persistence._set_tenant(cursor)
         cursor.execute(query, params)
         return [row[0] for row in cursor.fetchall()]
 
 
 def get_settings() -> dict:
-    rows = _rows("SELECT payload FROM recruitment_settings WHERE id='default'")
+    rows = _rows(
+        "SELECT payload FROM recruitment_settings WHERE tenant_id=%s AND id='default'",
+        (persistence.tenant_id(),),
+    )
     return deepcopy(rows[0] if rows else _DEFAULT_SETTINGS)
 
 
 def update_settings(payload: dict, actor: str) -> dict:
     settings = {**_DEFAULT_SETTINGS, **payload}
     with persistence.connection() as database, database.cursor() as cursor:
+        persistence._set_tenant(cursor)
         cursor.execute(
-            """INSERT INTO recruitment_settings(id,payload,updated_at)
-               VALUES ('default',%s::jsonb,%s)
-               ON CONFLICT (id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at""",
-            (json.dumps(settings, ensure_ascii=False), _now()),
+            """INSERT INTO recruitment_settings(tenant_id,id,payload,updated_at)
+               VALUES (%s,'default',%s::jsonb,%s)
+               ON CONFLICT (tenant_id,id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at""",
+            (persistence.tenant_id(), json.dumps(settings, ensure_ascii=False), _now()),
         )
         database.commit()
     persistence.append_audit("RECRUITMENT_SETTINGS_UPDATED", actor, recipients={"hr": len(settings["hr_recipients"]), "partner": len(settings["partner_recipients"])})
@@ -171,17 +143,23 @@ def update_settings(payload: dict, actor: str) -> dict:
 
 
 def list_norms() -> list[dict]:
-    return _rows("SELECT payload FROM recruitment_norms ORDER BY warehouse")
+    return _rows(
+        "SELECT payload FROM recruitment_norms WHERE tenant_id=%s ORDER BY warehouse",
+        (persistence.tenant_id(),),
+    )
 
 
 def upsert_norm(payload: dict, actor: str) -> dict:
     existing = next((row for row in list_norms() if _normalize(row["warehouse"]) == _normalize(payload["warehouse"])), None)
     record = {**(existing or {}), **payload, "id": (existing or {}).get("id") or f"NORM-{uuid4().hex[:12]}", "updated_at": _now().isoformat(), "updated_by": actor}
     with persistence.connection() as database, database.cursor() as cursor:
+        persistence._set_tenant(cursor)
         cursor.execute(
-            """INSERT INTO recruitment_norms(id,warehouse,payload,updated_at) VALUES (%s,%s,%s::jsonb,%s)
-               ON CONFLICT (id) DO UPDATE SET warehouse=excluded.warehouse,payload=excluded.payload,updated_at=excluded.updated_at""",
-            (record["id"], record["warehouse"], json.dumps(record, ensure_ascii=False), _now()),
+            """INSERT INTO recruitment_norms(tenant_id,id,warehouse,payload,updated_at)
+               VALUES (%s,%s,%s,%s::jsonb,%s)
+               ON CONFLICT (tenant_id,id) DO UPDATE
+               SET warehouse=excluded.warehouse,payload=excluded.payload,updated_at=excluded.updated_at""",
+            (persistence.tenant_id(), record["id"], record["warehouse"], json.dumps(record, ensure_ascii=False), _now()),
         )
         database.commit()
     persistence.append_audit("RECRUITMENT_NORM_UPDATED", actor, record_id=record["id"], warehouse=record["warehouse"], norm=record["norm"])
@@ -189,7 +167,11 @@ def upsert_norm(payload: dict, actor: str) -> dict:
 
 
 def list_requests() -> list[dict]:
-    return _rows("SELECT payload FROM recruitment_requests ORDER BY created_at DESC")
+    return _rows(
+        """SELECT payload || jsonb_build_object('revision', revision)
+           FROM recruitment_requests WHERE tenant_id=%s ORDER BY created_at DESC""",
+        (persistence.tenant_id(),),
+    )
 
 
 def _find_warehouse(warehouse_id: str) -> dict:
@@ -275,14 +257,48 @@ def evaluate(warehouse_id: str, position_code: str, quantity: int, planned_depar
     }
 
 
-def _save_request(record: dict) -> None:
+def _save_request(
+    record: dict, expected_revision: int | None = None, *,
+    audit_event: str | None = None, actor: str = "system", audit_details: dict | None = None,
+) -> None:
     with persistence.connection() as database, database.cursor() as cursor:
-        cursor.execute(
-            """INSERT INTO recruitment_requests(id,status,warehouse_id,created_at,payload)
-               VALUES (%s,%s,%s,%s,%s::jsonb)
-               ON CONFLICT (id) DO UPDATE SET status=excluded.status,warehouse_id=excluded.warehouse_id,payload=excluded.payload""",
-            (record["id"], record["status"], record["warehouse_id"], record["created_at"], json.dumps(record, ensure_ascii=False, default=str)),
-        )
+        persistence._set_tenant(cursor)
+        tenant_id = persistence.tenant_id()
+        if audit_event:
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"workforce:{tenant_id}",))
+        if expected_revision is None:
+            record["revision"] = 1
+            cursor.execute(
+                """INSERT INTO recruitment_requests
+                   (tenant_id,id,status,warehouse_id,revision,created_at,payload)
+                   VALUES (%s,%s,%s,%s,1,%s,%s::jsonb)""",
+                (
+                    tenant_id, record["id"], record["status"], record["warehouse_id"],
+                    record["created_at"], json.dumps(record, ensure_ascii=False, default=str),
+                ),
+            )
+        else:
+            next_revision = expected_revision + 1
+            payload = {**record, "revision": next_revision}
+            cursor.execute(
+                """UPDATE recruitment_requests
+                   SET status=%s,warehouse_id=%s,revision=%s,payload=%s::jsonb
+                   WHERE tenant_id=%s AND id=%s AND revision=%s
+                   RETURNING revision""",
+                (
+                    record["status"], record["warehouse_id"], next_revision,
+                    json.dumps(payload, ensure_ascii=False, default=str), tenant_id,
+                    record["id"], expected_revision,
+                ),
+            )
+            if cursor.fetchone() is None:
+                database.rollback()
+                raise RecruitmentRuleError(
+                    "İşe alım kaydı başka bir yönetici tarafından güncellendi; ekranı yenileyip tekrar deneyin."
+                )
+            record["revision"] = next_revision
+        if audit_event:
+            persistence._build_audit_record(cursor, audit_event, actor, audit_details or {})
         database.commit()
 
 
@@ -302,8 +318,10 @@ def create_request(payload: dict, actor: str, actor_name: str) -> dict:
         "created_at": now.isoformat(),
         "history": [{"at": now.isoformat(), "action": "CREATED", "actor": actor}],
     }
-    _save_request(record)
-    persistence.append_audit("RECRUITMENT_REQUEST_CREATED", actor, record_id=record["id"], warehouse=record["warehouse_name"], evaluation=evaluation)
+    _save_request(
+        record, audit_event="RECRUITMENT_REQUEST_CREATED", actor=actor,
+        audit_details={"record_id": record["id"], "warehouse": record["warehouse_name"], "evaluation": evaluation},
+    )
     return record
 
 
@@ -316,17 +334,33 @@ def add_evidence(request_id: str, filename: str, content_type: str, content: byt
     record = next((row for row in list_requests() if row["id"] == request_id), None)
     if not record:
         raise RecruitmentRuleError("Talep bulunamadı.")
+    expected_revision = int(record.get("revision", 1))
     digest = sha256(content).hexdigest()
     suffix = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[content_type]
     _EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     path = _EVIDENCE_DIR / f"{request_id}-{digest[:16]}{suffix}"
+    created_file = not path.exists()
     path.write_bytes(content)
-    record["evidence"] = {"original_name": Path(filename).name[:240], "content_type": content_type, "size": len(content), "sha256": digest, "stored_name": path.name, "uploaded_at": _now().isoformat(), "uploaded_by": actor}
+    uploaded_at = _now()
+    retention_days = max(1, int(os.getenv("RECRUITMENT_EVIDENCE_RETENTION_DAYS", "365")))
+    record["evidence"] = {
+        "original_name": Path(filename).name[:240], "content_type": content_type,
+        "size": len(content), "sha256": digest, "stored_name": path.name,
+        "uploaded_at": uploaded_at.isoformat(), "uploaded_by": actor,
+        "retention_until": (uploaded_at + timedelta(days=retention_days)).isoformat(),
+    }
     if record["status"] == "EVIDENCE_REQUIRED":
         record["status"] = "PENDING_APPROVAL"
     record["history"].append({"at": _now().isoformat(), "action": "EVIDENCE_UPLOADED", "actor": actor, "sha256": digest})
-    _save_request(record)
-    persistence.append_audit("RECRUITMENT_EVIDENCE_UPLOADED", actor, record_id=request_id, sha256=digest, content_type=content_type, size=len(content))
+    try:
+        _save_request(
+            record, expected_revision, audit_event="RECRUITMENT_EVIDENCE_UPLOADED", actor=actor,
+            audit_details={"record_id": request_id, "sha256": digest, "content_type": content_type, "size": len(content)},
+        )
+    except Exception:
+        if created_file:
+            path.unlink(missing_ok=True)
+        raise
     return record
 
 
@@ -338,6 +372,152 @@ def evidence_path(request_id: str) -> tuple[Path, dict]:
     if not path.exists():
         raise RecruitmentRuleError("Belge dosyası arşivde bulunamadı.")
     return path, record["evidence"]
+
+
+def register_candidate(request_id: str, payload: dict, actor: str) -> dict:
+    """Attach a PII-minimized ATS candidate reference to an approved vacancy."""
+    with _LOCK:
+        record = next((row for row in list_requests() if row["id"] == request_id), None)
+        if not record or record["status"] not in {"APPROVED", "SOURCING", "PARTIALLY_FILLED"}:
+            raise RecruitmentRuleError("Aday yalnızca onaylı ve açık bir vacancy kaydına eklenebilir.")
+        expected_revision = int(record.get("revision", 1))
+        candidates = list(record.get("candidates", []))
+        if any(item.get("source_ref") == payload["source_ref"] for item in candidates):
+            raise RecruitmentRuleError("Bu aday kaynak referansı vacancy üzerinde zaten kayıtlı.")
+        now = _now().isoformat()
+        pii_retention_days = max(1, int(os.getenv("RECRUITMENT_CANDIDATE_PII_RETENTION_DAYS", "730")))
+        candidate = {
+            "id": f"CAND-{uuid4().hex[:12]}", "full_name": payload["full_name"],
+            "source_ref": payload["source_ref"], "note": payload.get("note"),
+            "status": "EVIDENCE_PENDING", "evidence": [], "created_at": now, "created_by": actor,
+            "pii_retention_until": (_now() + timedelta(days=pii_retention_days)).isoformat(),
+        }
+        candidates.append(candidate)
+        record["candidates"] = candidates
+        if record["status"] == "APPROVED":
+            record["status"] = "SOURCING"
+        record["history"].append({"at": now, "action": "CANDIDATE_REGISTERED", "actor": actor, "candidate_id": candidate["id"]})
+        _save_request(
+            record, expected_revision, audit_event="RECRUITMENT_CANDIDATE_REGISTERED", actor=actor,
+            audit_details={"record_id": request_id, "candidate_id": candidate["id"], "source_ref": candidate["source_ref"]},
+        )
+        return candidate
+
+
+def add_candidate_evidence(
+    request_id: str, candidate_id: str, filename: str, content_type: str, content: bytes, actor: str,
+) -> dict:
+    if len(content) > 10 * 1024 * 1024 or content_type not in {"application/pdf", "image/jpeg", "image/png"}:
+        raise RecruitmentRuleError("Aday kanıtı PDF/JPG/PNG ve en fazla 10 MB olmalıdır.")
+    with _LOCK:
+        record = next((row for row in list_requests() if row["id"] == request_id), None)
+        candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+        if candidate is None or candidate["status"] not in {"EVIDENCE_PENDING", "REVIEW_PENDING"}:
+            raise RecruitmentRuleError("Aday bulunamadı veya kanıt kabul eden aşamada değil.")
+        expected_revision = int(record.get("revision", 1))
+        digest = sha256(content).hexdigest()
+        suffix = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[content_type]
+        _EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _EVIDENCE_DIR / f"{request_id}-{candidate_id}-{digest[:16]}{suffix}"
+        created_file = not path.exists()
+        path.write_bytes(content)
+        uploaded_at = _now()
+        retention_days = max(1, int(os.getenv("RECRUITMENT_EVIDENCE_RETENTION_DAYS", "365")))
+        evidence = {
+            "original_name": Path(filename).name[:240], "content_type": content_type,
+            "size": len(content), "sha256": digest, "stored_name": path.name,
+            "uploaded_at": uploaded_at.isoformat(), "uploaded_by": actor,
+            "retention_until": (uploaded_at + timedelta(days=retention_days)).isoformat(),
+        }
+        candidate["evidence"].append(evidence)
+        candidate["status"] = "REVIEW_PENDING"
+        record["history"].append({"at": uploaded_at.isoformat(), "action": "CANDIDATE_EVIDENCE_UPLOADED", "actor": actor, "candidate_id": candidate_id, "sha256": digest})
+        try:
+            _save_request(
+                record, expected_revision, audit_event="RECRUITMENT_CANDIDATE_EVIDENCE_UPLOADED", actor=actor,
+                audit_details={"record_id": request_id, "candidate_id": candidate_id, "sha256": digest, "size": len(content)},
+            )
+        except Exception:
+            if created_file:
+                path.unlink(missing_ok=True)
+            raise
+        return candidate
+
+
+def decide_candidate(request_id: str, candidate_id: str, decision: str, note: str, actor: str) -> dict:
+    with _LOCK:
+        record = next((row for row in list_requests() if row["id"] == request_id), None)
+        candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+        if candidate is None or candidate["status"] != "REVIEW_PENDING" or not candidate.get("evidence"):
+            raise RecruitmentRuleError("Aday, kanıt incelemesi tamamlanmadan sonuçlandırılamaz.")
+        expected_revision = int(record.get("revision", 1))
+        now = _now().isoformat()
+        candidate.update({"status": decision, "decision_note": note, "decided_at": now, "decided_by": actor})
+        record["history"].append({"at": now, "action": f"CANDIDATE_{decision}", "actor": actor, "candidate_id": candidate_id, "note": note})
+        _save_request(
+            record, expected_revision, audit_event=f"RECRUITMENT_CANDIDATE_{decision}", actor=actor,
+            audit_details={"record_id": request_id, "candidate_id": candidate_id, "note": note},
+        )
+        return candidate
+
+
+def candidate_evidence_path(request_id: str, candidate_id: str, digest: str) -> tuple[Path, dict]:
+    record = next((row for row in list_requests() if row["id"] == request_id), None)
+    candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+    evidence = next((item for item in (candidate or {}).get("evidence", []) if item["sha256"] == digest), None)
+    if evidence is None:
+        raise RecruitmentRuleError("Aday kanıtı bulunamadı.")
+    path = _EVIDENCE_DIR / evidence["stored_name"]
+    if not path.exists():
+        raise RecruitmentRuleError("Aday kanıt dosyası arşivde bulunamadı.")
+    return path, evidence
+
+
+def purge_expired_recruitment_data(actor: str, now: datetime | None = None) -> dict:
+    """Apply configured candidate-PII and evidence retention, with audit."""
+    cutoff = now or _now()
+    redacted_candidates = deleted_evidence = 0
+    changed_requests = 0
+    for record in list_requests():
+        expected_revision = int(record.get("revision", 1))
+        changed = False
+        evidence_groups = []
+        if record.get("evidence"):
+            evidence_groups.append((record, "evidence", [record["evidence"]]))
+        for candidate in record.get("candidates", []):
+            retention_until = candidate.get("pii_retention_until")
+            if retention_until and datetime.fromisoformat(retention_until) <= cutoff and candidate.get("full_name") != "[REDACTED]":
+                candidate["full_name"] = "[REDACTED]"
+                candidate["note"] = None
+                candidate["source_ref"] = f"sha256:{sha256(str(candidate.get('source_ref', '')).encode()).hexdigest()}"
+                candidate["pii_redacted_at"] = cutoff.isoformat()
+                redacted_candidates += 1
+                changed = True
+            evidence_groups.append((candidate, "evidence", list(candidate.get("evidence", []))))
+        for owner, key, items in evidence_groups:
+            retained = []
+            for evidence in items:
+                retention_until = evidence.get("retention_until")
+                if retention_until and datetime.fromisoformat(retention_until) <= cutoff:
+                    (_EVIDENCE_DIR / Path(evidence["stored_name"]).name).unlink(missing_ok=True)
+                    deleted_evidence += 1
+                    changed = True
+                else:
+                    retained.append(evidence)
+            owner[key] = retained if isinstance(owner.get(key), list) else (retained[0] if retained else None)
+        if changed:
+            record.setdefault("history", []).append({"at": cutoff.isoformat(), "action": "RETENTION_PURGE", "actor": actor})
+            _save_request(
+                record, expected_revision, audit_event="RECRUITMENT_RETENTION_PURGED", actor=actor,
+                audit_details={"record_id": record["id"]},
+            )
+            changed_requests += 1
+    return {
+        "changed_requests": changed_requests,
+        "redacted_candidates": redacted_candidates,
+        "deleted_evidence": deleted_evidence,
+        "cutoff": cutoff.isoformat(),
+    }
 
 
 def _mail_payload(record: dict, group: str, recipients: list[str]) -> dict:
@@ -354,19 +534,60 @@ def _mail_payload(record: dict, group: str, recipients: list[str]) -> dict:
     return {"subject": subject, "body": body, "recipients": recipients, "group": group, "request_id": record["id"]}
 
 
-def _queue_emails(record: dict) -> list[dict]:
+def _email_rows(record: dict) -> list[dict]:
     settings = get_settings()
-    queued: list[dict] = []
+    rows: list[dict] = []
+    for group, recipients in (("HR", settings["hr_recipients"]), ("PARTNER", settings["partner_recipients"])):
+        payload = _mail_payload(record, group, recipients)
+        rows.append({
+            "id": f"MAIL-{uuid4().hex[:16]}", "request_id": record["id"],
+            "recipient_group": group, "status": "PENDING" if recipients else "RECIPIENT_REQUIRED",
+            "attempts": 0, "created_at": _now().isoformat(), "payload": payload,
+        })
+    return rows
+
+
+def _save_decision_and_queue(record: dict, expected_revision: int, actor: str, evaluation: dict) -> list[dict]:
+    """CAS the human decision and create its outbox in one transaction."""
+    queued = _email_rows(record) if record["status"] == "APPROVED" else []
     with persistence.connection() as database, database.cursor() as cursor:
-        for group, recipients in (("HR", settings["hr_recipients"]), ("PARTNER", settings["partner_recipients"])):
-            payload = _mail_payload(record, group, recipients)
-            row = {"id": f"MAIL-{uuid4().hex[:16]}", "request_id": record["id"], "recipient_group": group, "status": "PENDING" if recipients else "RECIPIENT_REQUIRED", "attempts": 0, "created_at": _now().isoformat(), "payload": payload}
-            cursor.execute(
-                "INSERT INTO recruitment_email_outbox(id,request_id,recipient_group,status,created_at,payload) VALUES (%s,%s,%s,%s,%s,%s::jsonb)",
-                (row["id"], row["request_id"], group, row["status"], row["created_at"], json.dumps(payload, ensure_ascii=False)),
+        persistence._set_tenant(cursor)
+        tenant_id = persistence.tenant_id()
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"workforce:{tenant_id}",))
+        next_revision = expected_revision + 1
+        payload = {**record, "revision": next_revision}
+        cursor.execute(
+            """UPDATE recruitment_requests
+               SET status=%s,warehouse_id=%s,revision=%s,payload=%s::jsonb
+               WHERE tenant_id=%s AND id=%s AND revision=%s RETURNING revision""",
+            (
+                record["status"], record["warehouse_id"], next_revision,
+                json.dumps(payload, ensure_ascii=False, default=str), tenant_id,
+                record["id"], expected_revision,
+            ),
+        )
+        if cursor.fetchone() is None:
+            database.rollback()
+            raise RecruitmentRuleError(
+                "İşe alım kaydı başka bir yönetici tarafından güncellendi; ekranı yenileyip tekrar deneyin."
             )
-            queued.append(row)
+        for row in queued:
+            cursor.execute(
+                """INSERT INTO recruitment_email_outbox
+                   (tenant_id,id,request_id,recipient_group,status,created_at,payload)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb)""",
+                (
+                    tenant_id, row["id"], row["request_id"], row["recipient_group"],
+                    row["status"], row["created_at"],
+                    json.dumps(row["payload"], ensure_ascii=False),
+                ),
+            )
+        persistence._build_audit_record(
+            cursor, "RECRUITMENT_REQUEST_DECIDED", actor,
+            {"record_id": record["id"], "decision": record["status"], "note": record["decision_note"], "evaluation": evaluation},
+        )
         database.commit()
+    record["revision"] = next_revision
     return queued
 
 
@@ -374,7 +595,12 @@ def list_outbox() -> list[dict]:
     if not persistence.ENABLED:
         return []
     with persistence.connection() as database, database.cursor() as cursor:
-        cursor.execute("SELECT id,request_id,recipient_group,status,attempts,last_error,created_at,delivered_at,payload FROM recruitment_email_outbox ORDER BY created_at DESC")
+        persistence._set_tenant(cursor)
+        cursor.execute(
+            """SELECT id,request_id,recipient_group,status,attempts,last_error,created_at,delivered_at,payload
+               FROM recruitment_email_outbox WHERE tenant_id=%s ORDER BY created_at DESC""",
+            (persistence.tenant_id(),),
+        )
         return [
             {"id": row[0], "request_id": row[1], "recipient_group": row[2], "status": row[3], "attempts": row[4], "last_error": row[5], "created_at": row[6].isoformat(), "delivered_at": row[7].isoformat() if row[7] else None, "payload": row[8]}
             for row in cursor.fetchall()
@@ -393,9 +619,37 @@ def _smtp_config() -> dict:
 
 
 def dispatch_email(outbox_id: str, actor: str) -> dict:
-    row = next((item for item in list_outbox() if item["id"] == outbox_id), None)
-    if not row:
-        raise RecruitmentRuleError("E-posta kuyruğu kaydı bulunamadı.")
+    tenant_id = persistence.tenant_id()
+    with persistence.connection() as database, database.cursor() as cursor:
+        persistence._set_tenant(cursor)
+        cursor.execute(
+            """SELECT id,request_id,recipient_group,status,attempts,payload
+               FROM recruitment_email_outbox
+               WHERE tenant_id=%s AND id=%s FOR UPDATE""",
+            (tenant_id, outbox_id),
+        )
+        claimed = cursor.fetchone()
+        if claimed is None:
+            raise RecruitmentRuleError("E-posta kuyruğu kaydı bulunamadı.")
+        row = {
+            "id": claimed[0], "request_id": claimed[1], "recipient_group": claimed[2],
+            "status": claimed[3], "attempts": int(claimed[4]), "payload": claimed[5],
+        }
+        if row["status"] == "DELIVERED":
+            database.commit()
+            return next(item for item in list_outbox() if item["id"] == outbox_id)
+        maximum_attempts = max(1, int(os.getenv("RECRUITMENT_EMAIL_MAX_ATTEMPTS", "8")))
+        if row["status"] == "DEAD_LETTER" or (row["status"] == "FAILED" and row["attempts"] >= maximum_attempts):
+            database.commit()
+            raise RecruitmentRuleError("E-posta kaydı azami deneme sayısına ulaştı.")
+        cursor.execute(
+            """UPDATE recruitment_email_outbox
+               SET status='SENDING',attempts=attempts+1,locked_at=now(),last_error=NULL
+               WHERE tenant_id=%s AND id=%s""",
+            (tenant_id, outbox_id),
+        )
+        database.commit()
+    attempt = row["attempts"] + 1
     config = _smtp_config()
     recipients = row["payload"].get("recipients", [])
     status, error = "DELIVERED", None
@@ -409,6 +663,8 @@ def dispatch_email(outbox_id: str, actor: str) -> dict:
             message["Subject"] = row["payload"]["subject"]
             message["From"] = config["sender"]
             message["To"] = ", ".join(recipients)
+            message["Message-ID"] = f"<{outbox_id}@eay-workforce>"
+            message["X-OPEX-Idempotency-Key"] = outbox_id
             message.set_content(row["payload"]["body"])
             with smtplib.SMTP(config["host"], config["port"], timeout=20) as smtp:
                 if config["tls"]:
@@ -419,13 +675,24 @@ def dispatch_email(outbox_id: str, actor: str) -> dict:
         except Exception as exc:
             status, error = "FAILED", str(exc)[:1000]
     with persistence.connection() as database, database.cursor() as cursor:
+        persistence._set_tenant(cursor)
+        maximum_attempts = max(1, int(os.getenv("RECRUITMENT_EMAIL_MAX_ATTEMPTS", "8")))
+        dead_letter = status == "FAILED" and attempt >= maximum_attempts
+        final_status = "DEAD_LETTER" if dead_letter else status
+        retry_seconds = min(3600, 30 * (2 ** max(0, attempt - 1)))
         cursor.execute(
-            """UPDATE recruitment_email_outbox SET status=%s,attempts=attempts+1,last_error=%s,
-               delivered_at=CASE WHEN %s='DELIVERED' THEN %s ELSE delivered_at END WHERE id=%s""",
-            (status, error, status, _now(), outbox_id),
+            """UPDATE recruitment_email_outbox SET status=%s,last_error=%s,locked_at=NULL,
+               delivered_at=CASE WHEN %s='DELIVERED' THEN %s ELSE delivered_at END,
+               next_attempt_at=CASE WHEN %s='FAILED' THEN now() + make_interval(secs => %s) ELSE NULL END,
+               dead_lettered_at=CASE WHEN %s THEN now() ELSE dead_lettered_at END
+               WHERE tenant_id=%s AND id=%s""",
+            (
+                final_status, error, final_status, _now(), final_status, retry_seconds,
+                dead_letter, tenant_id, outbox_id,
+            ),
         )
         database.commit()
-    persistence.append_audit("RECRUITMENT_EMAIL_DISPATCHED", actor, record_id=outbox_id, request_id=row["request_id"], status=status, recipient_group=row["recipient_group"])
+    persistence.append_audit("RECRUITMENT_EMAIL_DISPATCHED", actor, record_id=outbox_id, request_id=row["request_id"], status=final_status, recipient_group=row["recipient_group"], attempt=attempt)
     return next(item for item in list_outbox() if item["id"] == outbox_id)
 
 
@@ -439,6 +706,7 @@ def decide_request(request_id: str, decision: str, note: str, actor: str, actor_
         if record.get("evidence_required") and not record.get("evidence"):
             raise RecruitmentRuleError("Planlı ayrılış talebi istifa belgesi olmadan onaylanamaz.")
         latest = evaluate(record["warehouse_id"], record["position_code"], record["quantity"], record.get("planned_departure"), request_id)
+        expected_revision = int(record.get("revision", 1))
         record.update(latest)
         record["status"] = decision
         record["decision_note"] = note
@@ -446,10 +714,8 @@ def decide_request(request_id: str, decision: str, note: str, actor: str, actor_
         record["decided_by"] = actor
         record["decided_by_name"] = actor_name
         record["history"].append({"at": record["decided_at"], "action": decision, "actor": actor, "note": note})
-        _save_request(record)
-        outbox = _queue_emails(record) if decision == "APPROVED" else []
+        outbox = _save_decision_and_queue(record, expected_revision, actor, latest)
     delivered = [dispatch_email(item["id"], actor) for item in outbox]
-    persistence.append_audit("RECRUITMENT_REQUEST_DECIDED", actor, record_id=request_id, decision=decision, note=note, evaluation=latest)
     return {**record, "email_outbox": delivered}
 
 
@@ -461,9 +727,15 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
             raise RecruitmentRuleError("Talep bulunamadı.")
         if record["status"] not in {"APPROVED", "SOURCING", "PARTIALLY_FILLED"}:
             raise RecruitmentRuleError("Yalnızca onaylanmış ve açık kontenjanı bulunan talebe işe giriş yapılabilir.")
+        expected_revision = int(record.get("revision", 1))
         hires = list(record.get("hires", []))
         if len(hires) >= int(record["quantity"]):
             raise RecruitmentRuleError("Talebin tüm kontenjanları doldurulmuş.")
+        candidates = list(record.get("candidates", []))
+        candidate_id = payload.get("candidate_id")
+        candidate = next((item for item in candidates if item.get("id") == candidate_id), None)
+        if candidates and (candidate is None or candidate.get("status") != "APPROVED"):
+            raise RecruitmentRuleError("İşe giriş için kanıtları onaylanmış bir candidate_id zorunludur.")
         canonical_person = resolve_person_identity(payload["tckn"], "TC") or resolve_person_identity(payload["employee_id"], "EMPLOYEE_ID")
         canonical_employee_id = str((canonical_person or {}).get("employee_id") or payload["employee_id"])
         if any(str(item.get("employee_id")) == canonical_employee_id for item in hires):
@@ -480,23 +752,47 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
             "warehouse_id": record["warehouse_id"],
             "active": True,
         }
-        result = upsert_people([person], actor)
-        canonical_person = resolve_person_identity(payload["tckn"], "TC") or canonical_person
-        canonical_employee_id = str((canonical_person or {}).get("employee_id") or payload["employee_id"])
-        now = _now().isoformat()
-        activation = {
-            "employee_id": canonical_employee_id, "full_name": payload["full_name"],
-            "employment_start": str(payload["employment_start"]), "activated_at": now,
-            "activated_by": actor, "employee_master": "ACTIVE", "workforce": "ACTIVE",
-        }
-        hires.append(activation)
-        record["hires"] = hires
-        record["filled_quantity"] = len(hires)
-        record["remaining_quantity"] = max(0, int(record["quantity"]) - len(hires))
-        record["status"] = "FILLED" if record["remaining_quantity"] == 0 else "PARTIALLY_FILLED"
-        record["history"].append({"at": now, "action": "HIRE_ACTIVATED", "actor": actor, "employee_id": canonical_employee_id})
-        _save_request(record)
-    persistence.append_audit("RECRUITMENT_HIRE_ACTIVATED", actor, record_id=request_id, employee_id=canonical_employee_id, workforce_status="ACTIVE")
+        try:
+            result = upsert_people([person], actor, persist=False)
+            canonical_person = resolve_person_identity(payload["tckn"], "TC") or canonical_person
+            canonical_employee_id = str((canonical_person or {}).get("employee_id") or payload["employee_id"])
+            now = _now().isoformat()
+            activation = {
+                "employee_id": canonical_employee_id, "full_name": payload["full_name"],
+                "employment_start": str(payload["employment_start"]), "activated_at": now,
+                "activated_by": actor, "employee_master": "ACTIVE", "workforce": "ACTIVE",
+            }
+            if candidate is not None:
+                candidate.update({"status": "HIRED", "employee_id": canonical_employee_id, "hired_at": now})
+            hires.append(activation)
+            record["hires"] = hires
+            record["filled_quantity"] = len(hires)
+            record["remaining_quantity"] = max(0, int(record["quantity"]) - len(hires))
+            record["status"] = "FILLED" if record["remaining_quantity"] == 0 else "PARTIALLY_FILLED"
+            record["history"].append({"at": now, "action": "HIRE_ACTIVATED", "actor": actor, "employee_id": canonical_employee_id})
+            if persistence.ENABLED:
+                from app.modules.workforce import service as workforce_service
+
+                workforce_service._append_audit(
+                    "RECRUITMENT_HIRE_ACTIVATED", actor, record_id=request_id,
+                    employee_id=canonical_employee_id, workforce_status="ACTIVE",
+                    _related_recruitment_request=record,
+                    _expected_recruitment_revision=expected_revision,
+                )
+            else:
+                _save_request(record)
+                persistence.append_audit(
+                    "RECRUITMENT_HIRE_ACTIVATED", actor, record_id=request_id,
+                    employee_id=canonical_employee_id, workforce_status="ACTIVE",
+                )
+        except Exception:
+            if persistence.ENABLED:
+                from app.modules.workforce import service as workforce_service
+
+                workforce_service._hydrate_snapshot(
+                    persistence.load_snapshot(workforce_service._snapshot_kinds())
+                )
+            raise
     return {**record, "employee_master_result": result, "activation": activation}
 
 

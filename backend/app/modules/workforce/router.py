@@ -173,6 +173,11 @@ def _require_rows_in_scope(request: Request, role: str, rows: list[dict]) -> Non
 
 
 def _enforce_self(request: Request, person_id: str, role: str) -> None:
+    from .service import resolve_person_identity
+
+    person = resolve_person_identity(person_id, "EMPLOYEE_ID")
+    if person is not None and not person.get("active", True):
+        raise HTTPException(status_code=403, detail="İşten ayrılmış veya pasif personelin Workforce erişimi kapalıdır.")
     if role.strip().lower().replace("-", "_").replace(" ", "_") in {"admin", "administrator", "super_admin", "superadmin", "manager", "warehouse_manager", "hr"}:
         return
     identity = getattr(request.state, "identity", None)

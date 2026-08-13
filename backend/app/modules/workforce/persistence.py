@@ -24,8 +24,11 @@ MIGRATION_DATABASE_URL = os.getenv("WORKFORCE_MIGRATION_DATABASE_URL", "").strip
 ENVIRONMENT = os.getenv("DOCKOS_ENV", "development").strip().lower()
 TENANT_ID = os.getenv("WORKFORCE_TENANT_ID", "eay" if ENVIRONMENT != "production" else "").strip()
 ENABLED = bool(DATABASE_URL)
-SCHEMA_VERSION = 29
-_MIGRATION_PATH = Path(__file__).resolve().parents[3] / "migrations" / "002_workforce_v29.sql"
+SCHEMA_VERSION = 30
+_MIGRATION_PATHS = (
+    Path(__file__).resolve().parents[3] / "migrations" / "002_workforce_v29.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "003_workforce_v30_acceptance.sql",
+)
 _LOCK = Lock()
 _MEMORY: dict[str, list[dict]] = {}
 _EXPECTED_REVISIONS: dict[str, int] = {}
@@ -39,6 +42,11 @@ def _tenant_id() -> str:
     if not TENANT_ID:
         raise RuntimeError("WORKFORCE_TENANT_ID production ortamında zorunludur")
     return TENANT_ID
+
+
+def tenant_id() -> str:
+    """Return the configured tenant without exposing role-binding internals."""
+    return _tenant_id()
 
 
 def _connect(database_url: str | None = None):
@@ -74,12 +82,20 @@ def initialize() -> None:
     with connection(migration_url if auto_migrate else DATABASE_URL) as database, database.cursor() as cursor:
         _set_tenant(cursor)
         if auto_migrate:
-            cursor.execute(_MIGRATION_PATH.read_text(encoding="utf-8"))
+            for migration_path in _MIGRATION_PATHS:
+                cursor.execute(migration_path.read_text(encoding="utf-8"))
             database.commit()
-        elif not _schema_exists(cursor):
-            raise RuntimeError(
-                "Workforce V29 şeması eksik; uygulamadan önce backend/migrations/002_workforce_v29.sql uygulanmalı"
-            )
+        else:
+            if not _schema_exists(cursor):
+                raise RuntimeError(
+                    "Workforce V30 şeması eksik; uygulamadan önce versioned migrations uygulanmalı"
+                )
+            cursor.execute("SELECT max(version) FROM workforce_schema_migrations")
+            version = cursor.fetchone()[0]
+            if version is None or int(version) < SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Workforce şema sürümü {version or 0}; uygulama V{SCHEMA_VERSION} gerektiriyor"
+                )
 
 
 def schema_version() -> int | None:
@@ -194,7 +210,11 @@ def _build_audit_record(cursor, event: str, actor: str, details: dict) -> dict:
 
 
 def persist_snapshot_with_audit(
-    collections: dict[str, list[dict]], event: str, actor: str, **details: object
+    collections: dict[str, list[dict]], event: str, actor: str,
+    related_recruitment_request: dict | None = None,
+    expected_recruitment_revision: int | None = None,
+    cancel_notification_person_ids: list[str] | None = None,
+    **details: object,
 ) -> dict | None:
     """Atomically persist state and audit, rejecting stale process snapshots."""
     serializable = {kind: _serializable(rows) for kind, rows in collections.items()}
@@ -266,8 +286,39 @@ def persist_snapshot_with_audit(
                         json.dumps(notification, ensure_ascii=False, default=str),
                     ),
                 )
+            if cancel_notification_person_ids:
+                cursor.execute(
+                    """UPDATE workforce_notification_outbox
+                       SET status='CANCELLED',locked_at=NULL,last_error='EMPLOYMENT_ENDED'
+                       WHERE tenant_id=%s AND person_id=ANY(%s) AND status IN ('PENDING','SENDING')""",
+                    (tenant_id, list(dict.fromkeys(cancel_notification_person_ids))),
+                )
+            if related_recruitment_request is not None:
+                if expected_recruitment_revision is None:
+                    raise ValueError("expected_recruitment_revision is required for atomic hire activation")
+                request_record = _serializable([related_recruitment_request])[0]
+                next_revision = expected_recruitment_revision + 1
+                request_record["revision"] = next_revision
+                cursor.execute(
+                    """UPDATE recruitment_requests
+                       SET status=%s, warehouse_id=%s, revision=%s, payload=%s::jsonb
+                       WHERE tenant_id=%s AND id=%s AND revision=%s
+                       RETURNING revision""",
+                    (
+                        request_record["status"], request_record["warehouse_id"], next_revision,
+                        json.dumps(request_record, ensure_ascii=False, default=str), tenant_id,
+                        request_record["id"], expected_recruitment_revision,
+                    ),
+                )
+                if cursor.fetchone() is None:
+                    database.rollback()
+                    raise ConcurrentWriteError(
+                        f"Recruitment request stale: id={request_record['id']} expected={expected_recruitment_revision}"
+                    )
             record = _build_audit_record(cursor, event, actor, dict(details))
             database.commit()
+            if related_recruitment_request is not None:
+                related_recruitment_request["revision"] = expected_recruitment_revision + 1
         _EXPECTED_REVISIONS.update(actual)
     return record
 
@@ -331,14 +382,17 @@ def claim_due_notifications(batch_size: int = 50) -> list[dict]:
         cursor.execute(
             """WITH due AS (
                  SELECT tenant_id,id FROM workforce_notification_outbox
-                 WHERE tenant_id=%s AND status='PENDING' AND scheduled_at <= now()
+                 WHERE tenant_id=%s AND (
+                   (status='PENDING' AND scheduled_at <= now()) OR
+                   (status='SENDING' AND locked_at < now() - make_interval(secs => %s))
+                 )
                  ORDER BY scheduled_at FOR UPDATE SKIP LOCKED LIMIT %s
                )
                UPDATE workforce_notification_outbox o
                SET status='SENDING', locked_at=now(), attempts=attempts+1
                FROM due WHERE o.tenant_id=due.tenant_id AND o.id=due.id
                RETURNING o.id,o.person_id,o.platform,o.push_token,o.notification_type,o.payload,o.attempts""",
-            (_tenant_id(), batch_size),
+            (_tenant_id(), max(30, int(os.getenv("WORKFORCE_PUSH_VISIBILITY_TIMEOUT_SECONDS", "300"))), batch_size),
         )
         rows = cursor.fetchall()
         database.commit()
@@ -351,14 +405,31 @@ def claim_due_notifications(batch_size: int = 50) -> list[dict]:
 def finish_notification(notification_id: str, error: str | None = None) -> None:
     if not ENABLED:
         return
-    status = "DELIVERED" if error is None else "PENDING"
     with connection() as database, database.cursor() as cursor:
         _set_tenant(cursor)
         cursor.execute(
+            "SELECT attempts FROM workforce_notification_outbox WHERE tenant_id=%s AND id=%s FOR UPDATE",
+            (_tenant_id(), notification_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return
+        attempts = int(row[0])
+        maximum_attempts = max(1, int(os.getenv("WORKFORCE_PUSH_MAX_ATTEMPTS", "8")))
+        if error is None:
+            status, retry_delay = "DELIVERED", 0
+        elif attempts >= maximum_attempts:
+            status, retry_delay = "DEAD_LETTER", 0
+        else:
+            status = "PENDING"
+            retry_delay = min(3600, max(5, int(os.getenv("WORKFORCE_PUSH_RETRY_BASE_SECONDS", "30"))) * (2 ** max(0, attempts - 1)))
+        cursor.execute(
             """UPDATE workforce_notification_outbox SET status=%s,
                delivered_at=CASE WHEN %s IS NULL THEN now() ELSE delivered_at END,
+               dead_lettered_at=CASE WHEN %s='DEAD_LETTER' THEN now() ELSE dead_lettered_at END,
+               scheduled_at=CASE WHEN %s='PENDING' THEN now() + make_interval(secs => %s) ELSE scheduled_at END,
                last_error=%s, locked_at=NULL WHERE tenant_id=%s AND id=%s""",
-            (status, error, error[:2000] if error else None, _tenant_id(), notification_id),
+            (status, error, status, status, retry_delay, error[:2000] if error else None, _tenant_id(), notification_id),
         )
         database.commit()
 

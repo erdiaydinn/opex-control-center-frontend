@@ -4,14 +4,21 @@ from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile,
 from fastapi.responses import FileResponse
 
 from app.modules.workforce.authorization import is_action_allowed
-from .schemas import RecruitmentDecision, RecruitmentHireActivate, RecruitmentRequestCreate, RecruitmentSettingsUpdate, StaffingNormPatch
+from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
+from .schemas import (
+    RecruitmentCandidateCreate, RecruitmentCandidateDecision, RecruitmentDecision,
+    RecruitmentHireActivate, RecruitmentRequestCreate, RecruitmentSettingsUpdate, StaffingNormPatch,
+)
 from .service import (
     RecruitmentRuleError,
+    add_candidate_evidence,
     add_evidence,
     activate_hire,
+    candidate_evidence_path,
     create_request,
     dashboard,
     decide_request,
+    decide_candidate,
     dispatch_email,
     evidence_path,
     evaluate,
@@ -19,6 +26,8 @@ from .service import (
     list_norms,
     list_outbox,
     list_requests,
+    purge_expired_recruitment_data,
+    register_candidate,
     update_settings,
     upsert_norm,
 )
@@ -52,6 +61,33 @@ def _identity(request: Request) -> tuple[str, str]:
     return (getattr(identity, "subject", "unknown"), getattr(identity, "name", "Unknown User"))
 
 
+def _is_recruitment_admin(role: str) -> bool:
+    return role.strip().lower().replace("-", "_").replace(" ", "_") in {
+        "super_admin", "superadmin", "admin", "administrator", "hr",
+    }
+
+
+def _request_row(request_id: str) -> dict:
+    row = next((item for item in list_requests() if item.get("id") == request_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Talep bulunamadı.")
+    return row
+
+
+def _without_evidence_metadata(row: dict) -> dict:
+    sanitized = {**row, "evidence_present": bool(row.get("evidence"))}
+    sanitized.pop("evidence", None)
+    sanitized["candidates"] = [
+        {
+            **candidate,
+            "evidence_count": len(candidate.get("evidence", [])),
+            "evidence": [],
+        }
+        for candidate in row.get("candidates", [])
+    ]
+    return sanitized
+
+
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok", "module": "recruitment", "norm_engine": True, "evidence": True, "email_outbox": True}
@@ -59,25 +95,43 @@ def health() -> dict:
 
 @router.get("/bootstrap")
 def bootstrap(
+    request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "viewRecruitment")
     from app.modules.workforce.service import list_warehouses, list_people
+    requests = _scoped_rows(request, x_opex_role, list_requests())
+    if not _is_recruitment_admin(x_opex_role):
+        requests = [_without_evidence_metadata(row) for row in requests]
+    norms = _scoped_rows(
+        request, x_opex_role,
+        [{**row, "warehouse_id": row.get("warehouse")} for row in list_norms()],
+    )
+    warehouses = _scoped_rows(request, x_opex_role, list_warehouses())
+    people = _scoped_rows(request, x_opex_role, list_people(False))
+    summary = {
+        "pending": sum(row["status"] == "PENDING_APPROVAL" for row in requests),
+        "approved": sum(row["status"] == "APPROVED" for row in requests),
+        "rejected": sum(row["status"] == "REJECTED" for row in requests),
+        "evidence_required": sum(row["status"] == "EVIDENCE_REQUIRED" for row in requests),
+    }
     return {
-        "dashboard": dashboard(), "requests": list_requests(), "norms": list_norms(),
-        "settings": get_settings(), "email_outbox": list_outbox(),
-        "warehouses": list_warehouses(), "people": list_people(False),
+        "dashboard": summary, "requests": requests, "norms": norms,
+        "settings": get_settings() if _is_recruitment_admin(x_opex_role) else None,
+        "email_outbox": list_outbox() if _is_recruitment_admin(x_opex_role) else [],
+        "warehouses": warehouses, "people": people,
     }
 
 
 @router.get("/evaluate")
 def evaluate_request(
-    warehouse_id: str, position_code: str, quantity: int = 1,
+    warehouse_id: str, position_code: str, request: Request, quantity: int = 1,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "createRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": warehouse_id}])
     try:
         return evaluate(warehouse_id, position_code, quantity)
     except RecruitmentRuleError as error:
@@ -91,6 +145,7 @@ def add_request(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "createRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": payload.warehouse_id}])
     actor, actor_name = _identity(request)
     try:
         return create_request(payload.model_dump(mode="json"), actor, actor_name)
@@ -105,6 +160,7 @@ async def upload_evidence(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "createRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     actor, _ = _identity(request)
     try:
         return add_evidence(request_id, file.filename or "document", file.content_type or "application/octet-stream", await file.read(), actor)
@@ -114,11 +170,12 @@ async def upload_evidence(
 
 @router.get("/requests/{request_id}/evidence")
 def download_evidence(
-    request_id: str,
+    request_id: str, request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ):
     _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     try:
         path, metadata = evidence_path(request_id)
         return FileResponse(path, media_type=metadata["content_type"], filename=metadata["original_name"])
@@ -133,6 +190,7 @@ def decide(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     actor, actor_name = _identity(request)
     try:
         return decide_request(request_id, payload.decision, payload.note, actor, actor_name)
@@ -147,11 +205,75 @@ def hire_and_activate(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     actor, _ = _identity(request)
     try:
         return activate_hire(request_id, payload.model_dump(mode="json"), actor)
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates", status_code=status.HTTP_201_CREATED)
+def add_candidate(
+    request_id: str, payload: RecruitmentCandidateCreate, request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return register_candidate(request_id, payload.model_dump(), actor)
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/evidence")
+async def upload_candidate_evidence(
+    request_id: str, candidate_id: str, request: Request, file: UploadFile = File(...),
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return add_candidate_evidence(
+            request_id, candidate_id, file.filename or "document",
+            file.content_type or "application/octet-stream", await file.read(), actor,
+        )
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/decision")
+def candidate_decision(
+    request_id: str, candidate_id: str, payload: RecruitmentCandidateDecision, request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return decide_candidate(request_id, candidate_id, payload.decision, payload.note, actor)
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/requests/{request_id}/candidates/{candidate_id}/evidence/{digest}")
+def download_candidate_evidence(
+    request_id: str, candidate_id: str, digest: str, request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+):
+    _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    try:
+        path, metadata = candidate_evidence_path(request_id, candidate_id, digest)
+        return FileResponse(path, media_type=metadata["content_type"], filename=metadata["original_name"])
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.put("/settings")
@@ -172,6 +294,7 @@ def save_norm(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageRecruitmentNorms")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": payload.warehouse}])
     actor, _ = _identity(request)
     return upsert_norm(payload.model_dump(), actor)
 
@@ -188,3 +311,14 @@ def retry_email(
         return dispatch_email(outbox_id, actor)
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/retention/purge")
+def purge_retention(
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageRecruitmentSettings")
+    actor, _ = _identity(request)
+    return purge_expired_recruitment_data(actor)

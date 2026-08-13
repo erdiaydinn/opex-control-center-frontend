@@ -42,6 +42,7 @@ class RecruitmentDecision(BaseModel):
 
 
 class RecruitmentHireActivate(BaseModel):
+    candidate_id: str | None = Field(default=None, min_length=1, max_length=80)
     employee_id: str = Field(min_length=1, max_length=50)
     roster_ids: list[str] = Field(default_factory=list, max_length=20)
     full_name: str = Field(min_length=2, max_length=180)
@@ -49,6 +50,17 @@ class RecruitmentHireActivate(BaseModel):
     email: str | None = Field(default=None, max_length=254)
     phone: str | None = Field(default=None, max_length=50)
     employment_start: date
+
+
+class RecruitmentCandidateCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=180)
+    source_ref: str = Field(min_length=1, max_length=180)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class RecruitmentCandidateDecision(BaseModel):
+    decision: str = Field(pattern=r"^(APPROVED|REJECTED)$")
+    note: str = Field(min_length=1, max_length=2000)
 
 
 class RecruitmentSettingsUpdate(BaseModel):

@@ -1,10 +1,10 @@
 """Non-promoting evidence contract for live BigQuery cross-tenant verification.
 
-This module deliberately does not execute BigQuery and does not turn a claimed
-live run into production authority. It defines the exact evidence shape that a
-later human promotion review must consume. The contract binds live-run metadata
-to the reviewed orders-v2 query, parameter adapter, SDK adapter and schema
-attestation artifact while minimizing raw tenant/store disclosure.
+This module deliberately does not promote a query policy. Version 2 strengthens
+the evidence shape by requiring proof that the foreign sentinel actually exists
+in the authoritative source while still requiring zero sentinel matches inside
+the authorized candidate scope. Raw tenant/store identifiers remain excluded
+from the artifact.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from app.core.ai_orders_v2_schema_attestation import (
     OrdersV2SchemaAttestationArtifact,
 )
 
-LIVE_CROSS_TENANT_EVIDENCE_VERSION = 1
+LIVE_CROSS_TENANT_EVIDENCE_VERSION = 2
 LIVE_CROSS_TENANT_REVIEW_BLOCKER = (
     "orders_v2_live_cross_tenant_evidence_human_review_required"
 )
@@ -39,7 +39,7 @@ class OrdersV2LiveCrossTenantEvidence(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: Literal[1]
+    version: Literal[2]
     kind: Literal["live_bigquery_cross_tenant_evidence_candidate"]
     project: str = Field(min_length=1, max_length=256)
     location: str | None = Field(default=None, max_length=128)
@@ -48,6 +48,7 @@ class OrdersV2LiveCrossTenantEvidence(BaseModel):
     authorized_scope_sha256: str = Field(pattern=SHA256_PATTERN)
     foreign_sentinel_scope_sha256: str = Field(pattern=SHA256_PATTERN)
     returned_rowset_sha256: str = Field(pattern=SHA256_PATTERN)
+    foreign_sentinel_source_count: int = Field(ge=1)
     foreign_sentinel_match_count: Literal[0]
     candidate_template_fingerprint: str = Field(pattern=SHA256_PATTERN)
     parameter_contract_fingerprint: str = Field(pattern=SHA256_PATTERN)
@@ -63,6 +64,8 @@ class OrdersV2LiveCrossTenantEvidence(BaseModel):
 
     @model_validator(mode="after")
     def validate_review_contract(self) -> OrdersV2LiveCrossTenantEvidence:
+        if self.executed_at.tzinfo is None or self.executed_at.utcoffset() is None:
+            raise ValueError("live evidence timestamp must be timezone-aware")
         if (
             self.candidate_template_fingerprint
             != ORDERS_V2_CANDIDATE.template_fingerprint
@@ -107,14 +110,21 @@ def build_orders_v2_live_cross_tenant_evidence_candidate(
     authorized_scope_descriptor: str,
     foreign_sentinel_scope_descriptor: str,
     canonical_returned_rowset: str,
+    foreign_sentinel_source_count: int,
     foreign_sentinel_match_count: int,
 ) -> OrdersV2LiveCrossTenantEvidence:
-    """Bind a claimed live run to exact reviewed contracts without promoting it."""
+    """Bind one real live run to reviewed contracts without promoting it."""
 
     if schema_attestation.promotion_eligible is not False:
         raise ValueError("schema attestation promotion state is invalid")
     if schema_attestation.human_review_required is not True:
         raise ValueError("schema attestation review state is invalid")
+    if executed_at.tzinfo is None or executed_at.utcoffset() is None:
+        raise ValueError("live evidence timestamp must be timezone-aware")
+    if not isinstance(foreign_sentinel_source_count, int) or isinstance(
+        foreign_sentinel_source_count, bool
+    ) or foreign_sentinel_source_count < 1:
+        raise ValueError("foreign sentinel is not proven to exist")
     if foreign_sentinel_match_count != 0:
         raise ValueError("foreign sentinel leakage detected")
 
@@ -130,6 +140,7 @@ def build_orders_v2_live_cross_tenant_evidence_candidate(
             foreign_sentinel_scope_descriptor
         ),
         returned_rowset_sha256=sha256_text(canonical_returned_rowset),
+        foreign_sentinel_source_count=foreign_sentinel_source_count,
         foreign_sentinel_match_count=0,
         candidate_template_fingerprint=(
             schema_attestation.candidate_template_fingerprint

@@ -17,9 +17,9 @@ async def _insert_version(session: AsyncSession, principal: Principal, content_i
         ) VALUES (
             :tenant_id, :content_id, :version_label, :version_number, :locale, :mime_type,
             :source_sha256, :storage_key, :delivery_key, :size_bytes, :duration_ms,
-            CAST(:accessibility_metadata AS jsonb), :status,
-            CASE WHEN :status='published' THEN CURRENT_TIMESTAMP END,
-            CASE WHEN :status='published' THEN CURRENT_TIMESTAMP END, :created_by
+            CAST(:accessibility_metadata AS jsonb), CAST(:status AS varchar(20)),
+            CASE WHEN CAST(:status AS varchar(20))='published' THEN CURRENT_TIMESTAMP END,
+            CASE WHEN CAST(:status AS varchar(20))='published' THEN CURRENT_TIMESTAMP END, :created_by
         ) RETURNING id, content_id, version_label, version_number, locale, mime_type,
                     source_sha256, size_bytes, duration_ms, accessibility_metadata,
                     status, published_at, effective_at

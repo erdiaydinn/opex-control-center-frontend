@@ -17,6 +17,7 @@ android {
         targetSdk = 35
         versionCode = 300001
         versionName = "30.0.1-p0"
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.eay.inventory"
         buildConfigField("String", "API_BASE_URL", quoted(env("EAY_API_BASE_URL", "https://invalid.eay.example")))
         buildConfigField("String", "OIDC_ISSUER", quoted(env("EAY_OIDC_ISSUER", "https://invalid.eay.example")))
         buildConfigField("String", "OIDC_CLIENT_ID", quoted(env("EAY_OIDC_CLIENT_ID", "unset")))

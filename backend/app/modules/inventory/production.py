@@ -419,7 +419,11 @@ def record_event(
 
     with connect() as db:
         try:
-            db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            # Event identity is serialized by the transaction advisory lock.
+            # READ COMMITTED is intentional: a waiter must see the winner's
+            # committed response after acquiring that lock. SERIALIZABLE would
+            # retain the pre-wait snapshot and incorrectly retry the nonce/event.
+            db.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             _assert_runtime_tenant(db, principal)
             db.execute("SELECT pg_advisory_xact_lock(%s)", (_advisory_key(f"event:{principal.tenant_id}:{event_id}"),))
             existing = db.execute(

@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
-from typing import Any, Literal, Mapping
+from datetime import date, datetime
+from typing import Any, Literal
 
 from app.core.ai_orders_v2_query_contract import (
     ORDERS_V2_CANDIDATE,
@@ -44,7 +45,11 @@ class PlannedBigQueryParameter:
         """Return the canonical BigQuery REST query-parameter shape."""
 
         if self.mode == "SCALAR":
-            if self.value_type != "DATE" or not isinstance(self.value, date):
+            if (
+                self.value_type != "DATE"
+                or not isinstance(self.value, date)
+                or isinstance(self.value, datetime)
+            ):
                 raise ValueError("invalid_scalar_parameter_plan")
             return {
                 "name": self.name,
@@ -131,9 +136,10 @@ def plan_orders_v2_bigquery_parameters(
     validate_orders_v2_query_candidate()
     validated = validate_orders_v2_runtime_parameters(parameters)
 
-    if tuple(entry.name for entry in ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT) != (
-        ORDERS_V2_PARAMETER_NAMES
-    ):
+    if tuple(
+        entry.name
+        for entry in ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT
+    ) != ORDERS_V2_PARAMETER_NAMES:
         raise RuntimeError("orders_v2_parameter_contract_drift")
 
     start_date = validated["start_date"]
@@ -141,7 +147,12 @@ def plan_orders_v2_bigquery_parameters(
     entity_ids = validated["entity_ids"]
     stores = validated["stores"]
 
-    if not isinstance(start_date, date) or not isinstance(end_date, date):
+    if (
+        not isinstance(start_date, date)
+        or isinstance(start_date, datetime)
+        or not isinstance(end_date, date)
+        or isinstance(end_date, datetime)
+    ):
         raise RuntimeError("orders_v2_date_plan_drift")
     if not isinstance(entity_ids, tuple) or not isinstance(stores, tuple):
         raise RuntimeError("orders_v2_array_plan_drift")

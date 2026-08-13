@@ -43,6 +43,7 @@ jobs:
           ruff check
           services/core-api/app/core/ai_orders_v2_schema_attestation.py
           services/core-api/app/core/ai_orders_v2_live_cross_tenant_evidence.py
+          services/core-api/app/core/ai_orders_v2_live_cross_tenant_runner.py
           services/core-api/app/core/ai_orders_v2_human_promotion_review.py
           services/core-api/app/core/ai_orders_v2_deployment_authorization.py
           services/core-api/app/core/ai_orders_v2_manual_policy_promotion.py
@@ -55,6 +56,7 @@ jobs:
           services/core-api/app/cli/attest_orders_v2_schema.py
           services/core-api/tests/test_ai_orders_v2_schema_attestation.py
           services/core-api/tests/test_ai_orders_v2_live_cross_tenant_evidence.py
+          services/core-api/tests/test_ai_orders_v2_live_cross_tenant_runner.py
           services/core-api/tests/test_ai_orders_v2_human_promotion_review.py
           services/core-api/tests/test_ai_orders_v2_approval_separation.py
           services/core-api/tests/test_ai_orders_v2_manual_policy_promotion.py

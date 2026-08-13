@@ -808,6 +808,7 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
             first_shift = workforce_service.create_shift({
                 "person_id": canonical_employee_id,
                 "person_name": payload["full_name"],
+                "roster_id": first_shift_input["roster_id"],
                 "warehouse_id": record["warehouse_id"],
                 "date": str(first_shift_input["date"]),
                 "start": first_shift_input["start"],

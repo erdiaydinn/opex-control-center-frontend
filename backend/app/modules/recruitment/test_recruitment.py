@@ -89,7 +89,7 @@ class RecruitmentRuleTests(unittest.TestCase):
             "history": [], "candidates": [{"id": "CAND-HIRED", "status": "APPROVED"}],
             "created_at": "2026-08-01T00:00:00+00:00",
         }
-        payload = {"candidate_id": "CAND-HIRED", "employee_id": "EMP-HIRED", "roster_ids": ["RST-HIRED"], "full_name": "Yeni Çalışan", "tckn": "12345098765", "email": None, "phone": None, "employment_start": "2026-08-20", "first_shift": {"date": "2026-08-20", "start": "09:00", "end": "18:00", "break_minutes": 60}}
+        payload = {"candidate_id": "CAND-HIRED", "employee_id": "EMP-HIRED", "roster_ids": ["RST-HIRED"], "full_name": "Yeni Çalışan", "tckn": "12345098765", "email": None, "phone": None, "employment_start": "2026-08-20", "first_shift": {"roster_id": "RST-HIRED", "date": "2026-08-20", "start": "09:00", "end": "18:00", "break_minutes": 60}}
         with (
             patch.object(service, "list_requests", return_value=[request]),
             patch.object(service, "upsert_people", return_value={"created": 1, "updated": 0, "total": 1, "roster_conflicts": []}) as upsert,

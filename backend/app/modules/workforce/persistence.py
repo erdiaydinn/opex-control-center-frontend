@@ -24,11 +24,12 @@ MIGRATION_DATABASE_URL = os.getenv("WORKFORCE_MIGRATION_DATABASE_URL", "").strip
 ENVIRONMENT = os.getenv("DOCKOS_ENV", "development").strip().lower()
 TENANT_ID = os.getenv("WORKFORCE_TENANT_ID", "eay" if ENVIRONMENT != "production" else "").strip()
 ENABLED = bool(DATABASE_URL)
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 _MIGRATION_PATHS = (
     Path(__file__).resolve().parents[3] / "migrations" / "002_workforce_v29.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "003_workforce_v30_acceptance.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "005_workforce_v32_identity_revocation.sql",
 )
 _LOCK = Lock()
 _MEMORY: dict[str, list[dict]] = {}
@@ -89,7 +90,7 @@ def initialize() -> None:
         else:
             if not _schema_exists(cursor):
                 raise RuntimeError(
-                    "Workforce V31 şeması eksik; uygulamadan önce versioned migrations uygulanmalı"
+                    "Workforce V32 şeması eksik; uygulamadan önce versioned migrations uygulanmalı"
                 )
             cursor.execute("SELECT max(version) FROM workforce_schema_migrations")
             version = cursor.fetchone()[0]
@@ -215,6 +216,8 @@ def persist_snapshot_with_audit(
     related_recruitment_request: dict | None = None,
     expected_recruitment_revision: int | None = None,
     cancel_notification_person_ids: list[str] | None = None,
+    cancel_notification_ids: list[str] | None = None,
+    identity_revocations: list[dict] | None = None,
     **details: object,
 ) -> dict | None:
     """Atomically persist state and audit, rejecting stale process snapshots."""
@@ -293,6 +296,25 @@ def persist_snapshot_with_audit(
                        SET status='CANCELLED',locked_at=NULL,last_error='EMPLOYMENT_ENDED'
                        WHERE tenant_id=%s AND person_id=ANY(%s) AND status IN ('PENDING','SENDING')""",
                     (tenant_id, list(dict.fromkeys(cancel_notification_person_ids))),
+                )
+            if cancel_notification_ids:
+                cursor.execute(
+                    """UPDATE workforce_notification_outbox
+                       SET status='CANCELLED',locked_at=NULL,last_error='SHIFT_CANCELLED_BY_EMPLOYMENT_END'
+                       WHERE tenant_id=%s AND id=ANY(%s) AND status IN ('PENDING','SENDING')""",
+                    (tenant_id, list(dict.fromkeys(cancel_notification_ids))),
+                )
+            for revocation in identity_revocations or []:
+                cursor.execute(
+                    """INSERT INTO workforce_identity_revocation_outbox
+                       (tenant_id,id,employee_id,provider,status,created_at,payload)
+                       VALUES (%s,%s,%s,%s,'PENDING',now(),%s::jsonb)
+                       ON CONFLICT (tenant_id,id) DO NOTHING""",
+                    (
+                        tenant_id, revocation["id"], revocation["employee_id"],
+                        revocation.get("provider", "CORPORATE_OIDC"),
+                        json.dumps(revocation, ensure_ascii=False, default=str),
+                    ),
                 )
             if related_recruitment_request is not None:
                 if expected_recruitment_revision is None:
@@ -431,6 +453,66 @@ def finish_notification(notification_id: str, error: str | None = None) -> None:
                scheduled_at=CASE WHEN %s='PENDING' THEN now() + make_interval(secs => %s) ELSE scheduled_at END,
                last_error=%s, locked_at=NULL WHERE tenant_id=%s AND id=%s""",
             (status, error, status, status, retry_delay, error[:2000] if error else None, _tenant_id(), notification_id),
+        )
+        database.commit()
+
+
+def claim_identity_revocations(batch_size: int = 50) -> list[dict]:
+    if not ENABLED:
+        return []
+    with connection() as database, database.cursor() as cursor:
+        _set_tenant(cursor)
+        cursor.execute(
+            """WITH due AS (
+                 SELECT tenant_id,id FROM workforce_identity_revocation_outbox
+                 WHERE tenant_id=%s AND (
+                   (status='PENDING' AND (next_attempt_at IS NULL OR next_attempt_at <= now())) OR
+                   (status='SENDING' AND next_attempt_at < now())
+                 )
+                 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
+               )
+               UPDATE workforce_identity_revocation_outbox o
+               SET status='SENDING',attempts=attempts+1,
+                   next_attempt_at=now() + interval '5 minutes'
+               FROM due WHERE o.tenant_id=due.tenant_id AND o.id=due.id
+               RETURNING o.id,o.employee_id,o.provider,o.payload,o.attempts""",
+            (_tenant_id(), batch_size),
+        )
+        rows = cursor.fetchall()
+        database.commit()
+    return [
+        {"id": row[0], "employee_id": row[1], "provider": row[2], "payload": row[3], "attempts": row[4]}
+        for row in rows
+    ]
+
+
+def finish_identity_revocation(revocation_id: str, error: str | None = None) -> None:
+    if not ENABLED:
+        return
+    with connection() as database, database.cursor() as cursor:
+        _set_tenant(cursor)
+        cursor.execute(
+            "SELECT attempts FROM workforce_identity_revocation_outbox WHERE tenant_id=%s AND id=%s FOR UPDATE",
+            (_tenant_id(), revocation_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return
+        attempts = int(row[0])
+        maximum_attempts = max(1, int(os.getenv("WORKFORCE_IDENTITY_REVOKE_MAX_ATTEMPTS", "8")))
+        if error is None:
+            status, retry_delay = "DELIVERED", 0
+        elif attempts >= maximum_attempts:
+            status, retry_delay = "DEAD_LETTER", 0
+        else:
+            status = "PENDING"
+            retry_delay = min(3600, 30 * (2 ** max(0, attempts - 1)))
+        cursor.execute(
+            """UPDATE workforce_identity_revocation_outbox SET status=%s,last_error=%s,
+               delivered_at=CASE WHEN %s IS NULL THEN now() ELSE delivered_at END,
+               next_attempt_at=CASE WHEN %s='PENDING' THEN now() + make_interval(secs => %s) ELSE NULL END
+               WHERE tenant_id=%s AND id=%s""",
+            (status, error[:2000] if error else None, error, status, retry_delay, _tenant_id(), revocation_id),
         )
         database.commit()
 

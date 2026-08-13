@@ -11,6 +11,7 @@ tenant_id = os.environ["WORKFORCE_TENANT_ID"]
 v29_migration = Path(__file__).resolve().parents[1] / "migrations" / "002_workforce_v29.sql"
 v30_migration = Path(__file__).resolve().parents[1] / "migrations" / "003_workforce_v30_acceptance.sql"
 v31_migration = Path(__file__).resolve().parents[1] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql"
+v32_migration = Path(__file__).resolve().parents[1] / "migrations" / "005_workforce_v32_identity_revocation.sql"
 
 with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", (tenant_id,))
@@ -49,6 +50,7 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
         (tenant_id,),
     )
     cursor.execute(v31_migration.read_text(encoding="utf-8"))
+    cursor.execute(v32_migration.read_text(encoding="utf-8"))
     cursor.execute(
         """SELECT tenant_id FROM recruitment_settings
            WHERE id='v29-upgrade-fixture'"""
@@ -85,7 +87,8 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("GRANT USAGE ON SCHEMA public TO workforce_runtime")
     cursor.execute(
         """GRANT SELECT, INSERT, UPDATE, DELETE
-           ON workforce_entities, workforce_collection_versions, workforce_notification_outbox
+           ON workforce_entities, workforce_collection_versions, workforce_notification_outbox,
+              workforce_identity_revocation_outbox
            TO workforce_runtime"""
     )
     cursor.execute(

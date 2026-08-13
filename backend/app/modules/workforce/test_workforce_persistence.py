@@ -1,9 +1,11 @@
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from . import persistence, service
 from app.modules.recruitment import service as recruitment
@@ -38,8 +40,8 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
             )
             return int(cursor.fetchone()[0])
 
-    def test_v29_schema_and_row_level_tenant_isolation(self):
-        self.assertGreaterEqual(persistence.schema_version(), 29)
+    def test_v32_schema_and_row_level_tenant_isolation(self):
+        self.assertGreaterEqual(persistence.schema_version(), 32)
         kind = self.unique_kind("rls")
         persistence.load_snapshot([kind])
         persistence.persist_snapshot_with_audit(
@@ -138,11 +140,15 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
         warehouse_id = next(
             row["id"] for row in service.list_warehouses() if row["name"] == "Fulya (İstanbul)"
         )
+        today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+        hire_date = (today - timedelta(days=2)).isoformat()
+        first_shift_date = (today - timedelta(days=1)).isoformat()
+        exit_date = today.isoformat()
         request = recruitment.create_request(
             {
                 "warehouse_id": warehouse_id, "position_code": "STORE_STAFF", "quantity": 1,
                 "employment_type": "FULL_TIME", "reason_code": "NORM_GAP",
-                "needed_by": "2027-01-01", "justification": "PostgreSQL transactional acceptance",
+                "needed_by": hire_date, "justification": "PostgreSQL transactional acceptance",
                 "planned_departure": None,
             },
             "ci-manager", "CI Manager",
@@ -162,8 +168,8 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
                 {
                     "candidate_id": candidate["id"], "employee_id": employee_id,
                     "roster_ids": [f"ROSTER-{suffix}"], "full_name": "CI Candidate",
-                    "tckn": tckn, "email": None, "phone": None, "employment_start": "2027-01-01",
-                    "first_shift": {"date": "2027-01-02", "start": "09:00", "end": "18:00", "break_minutes": 60},
+                    "tckn": tckn, "email": None, "phone": None, "employment_start": hire_date,
+                    "first_shift": {"roster_id": f"ROSTER-{suffix}", "date": first_shift_date, "start": "09:00", "end": "18:00", "break_minutes": 60},
                 },
                 "ci-hr",
             )
@@ -171,7 +177,7 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
         shift = hired["first_shift"]
         self.assertEqual(shift["person_id"], employee_id)
         exit_result = service.update_employment_lifecycle(
-            [{"person_id": employee_id, "employment_end": "2027-01-03"}], "ci-hr", "exit.csv"
+            [{"person_id": employee_id, "employment_end": exit_date}], "ci-hr", "exit.csv"
         )
         self.assertEqual(exit_result["access_closures"], 1)
         with persistence.connection() as database, database.cursor() as cursor:
@@ -198,6 +204,12 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
                 (persistence.TENANT_ID, employee_id),
             )
             self.assertEqual(int(cursor.fetchone()[0]), 0)
+            cursor.execute(
+                """SELECT status,payload->>'reason' FROM workforce_identity_revocation_outbox
+                   WHERE tenant_id=%s AND employee_id=%s""",
+                (persistence.TENANT_ID, employee_id),
+            )
+            self.assertEqual(cursor.fetchone(), ("PENDING", "EMPLOYMENT_ENDED"))
 
 
 if __name__ == "__main__":

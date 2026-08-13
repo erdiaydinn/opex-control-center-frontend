@@ -42,9 +42,9 @@ class RecruitmentDecision(BaseModel):
 
 
 class RecruitmentHireActivate(BaseModel):
-    candidate_id: str | None = Field(default=None, min_length=1, max_length=80)
+    candidate_id: str = Field(min_length=1, max_length=80)
     employee_id: str = Field(min_length=1, max_length=50)
-    roster_ids: list[str] = Field(default_factory=list, max_length=20)
+    roster_ids: list[str] = Field(min_length=1, max_length=20)
     full_name: str = Field(min_length=2, max_length=180)
     tckn: str = Field(pattern=r"^\d{11}$")
     email: str | None = Field(default=None, max_length=254)
@@ -52,8 +52,17 @@ class RecruitmentHireActivate(BaseModel):
     employment_start: date
     first_shift: "RecruitmentFirstShift"
 
+    @model_validator(mode="after")
+    def bind_first_shift_to_roster(self):
+        if self.first_shift.roster_id is None:
+            self.first_shift.roster_id = self.roster_ids[0]
+        if self.first_shift.roster_id not in self.roster_ids:
+            raise ValueError("İlk vardiya roster_id değeri işe giriş roster kimliklerinden biri olmalıdır.")
+        return self
+
 
 class RecruitmentFirstShift(BaseModel):
+    roster_id: str | None = Field(default=None, min_length=1, max_length=80)
     date: date
     start: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     end: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")

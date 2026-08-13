@@ -3,11 +3,20 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 
+import app.core.ai_orders_v2_policy_transition_guard as transition_guard
 from app.core.ai_orders_v2_manual_policy_promotion import (
     ORDERS_V2_MANUAL_CODE_CHANGE_BLOCKER,
     OrdersV2ManualPolicyPromotionProposal,
     _target_policy_review_fingerprint,
+)
+from app.core.ai_orders_v2_policy_consumption_ledger import (
+    LEDGER_GENESIS_FINGERPRINT,
+    OrdersV2PolicyConsumptionEntry,
+    OrdersV2PolicyConsumptionLedger,
+    build_next_orders_v2_policy_consumption_entry,
+    get_orders_v2_policy_consumption_ledger,
 )
 from app.core.ai_orders_v2_policy_transition_guard import (
     ORDERS_V2_POLICY_TRANSITION_BLOCKER,
@@ -65,6 +74,9 @@ def test_transition_guard_passes_only_as_non_mutating_evidence() -> None:
     assert artifact.expired is False
     assert artifact.proposal_age_seconds == 3600
     assert artifact.proposal_max_age_seconds == 21600
+    assert artifact.consumption_ledger_fingerprint == (
+        get_orders_v2_policy_consumption_ledger().ledger_fingerprint
+    )
     assert artifact.policy_mutation_permitted is False
     assert artifact.execution_enable_permitted is False
     assert artifact.promotion_eligible is False
@@ -87,14 +99,63 @@ def test_transition_guard_rejects_expired_proposal() -> None:
         )
 
 
-def test_transition_guard_rejects_replayed_proposal() -> None:
+def test_transition_guard_rejects_replay_from_canonical_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     proposal = _proposal()
+    canonical = get_orders_v2_policy_consumption_ledger()
+    entry = build_next_orders_v2_policy_consumption_entry(
+        ledger=canonical,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+        guard_fingerprint="f" * 64,
+        consumed_at=proposal.proposed_at + timedelta(hours=1),
+    )
+    consumed = OrdersV2PolicyConsumptionLedger(
+        version=1,
+        kind="orders_v2_policy_consumption_ledger",
+        entries=(entry,),
+    )
+    monkeypatch.setattr(
+        transition_guard,
+        "get_orders_v2_policy_consumption_ledger",
+        lambda: consumed,
+    )
 
     with pytest.raises(ValueError, match="replay"):
         build_orders_v2_policy_transition_guard(
             proposal=proposal,
-            evaluated_at=proposal.proposed_at + timedelta(hours=1),
-            consumed_proposal_fingerprints=(proposal.proposal_fingerprint,),
+            evaluated_at=proposal.proposed_at + timedelta(hours=2),
+        )
+
+
+def test_consumption_ledger_is_hash_chained_and_rejects_tamper() -> None:
+    proposal = _proposal()
+    canonical = get_orders_v2_policy_consumption_ledger()
+    assert canonical.entries == ()
+    assert len(canonical.ledger_fingerprint) == 64
+
+    first = build_next_orders_v2_policy_consumption_entry(
+        ledger=canonical,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+        guard_fingerprint="1" * 64,
+        consumed_at=proposal.proposed_at + timedelta(hours=1),
+    )
+    assert first.sequence == 1
+    assert first.previous_entry_fingerprint == LEDGER_GENESIS_FINGERPRINT
+
+    with pytest.raises(ValidationError, match="hash chain"):
+        OrdersV2PolicyConsumptionLedger(
+            version=1,
+            kind="orders_v2_policy_consumption_ledger",
+            entries=(
+                OrdersV2PolicyConsumptionEntry(
+                    sequence=1,
+                    consumed_at=first.consumed_at,
+                    proposal_fingerprint=first.proposal_fingerprint,
+                    guard_fingerprint=first.guard_fingerprint,
+                    previous_entry_fingerprint="0" * 64,
+                ),
+            ),
         )
 
 
@@ -118,15 +179,4 @@ def test_transition_guard_rejects_future_proposal() -> None:
         build_orders_v2_policy_transition_guard(
             proposal=proposal,
             evaluated_at=proposal.proposed_at - timedelta(seconds=1),
-        )
-
-
-def test_transition_guard_rejects_malformed_consumed_registry_entry() -> None:
-    proposal = _proposal()
-
-    with pytest.raises(ValueError, match="must be sha256"):
-        build_orders_v2_policy_transition_guard(
-            proposal=proposal,
-            evaluated_at=proposal.proposed_at + timedelta(hours=1),
-            consumed_proposal_fingerprints=("not-a-sha",),
         )

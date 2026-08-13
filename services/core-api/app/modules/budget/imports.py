@@ -6,8 +6,8 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 from .domain import batch_hash, normalize_import_row, row_fingerprint
-from .integration_contracts import validate_external_identity
 from .evidence import emit_financial_event
+from .integration_contracts import validate_external_identity
 from .permissions import BudgetUnitOfWork
 from .schemas import ImportStage
 

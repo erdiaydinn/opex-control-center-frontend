@@ -21,9 +21,7 @@ jobs:
           node - <<'NODE'
           const fs=require('fs');
           const s=fs.readFileSync('src/modules/DockOS/DockOSUiContext.jsx','utf8');
-          for (const locale of ['tr','en','de','ar']) {
-            if (!s.includes(`${locale}: {`)) throw new Error(`missing ${locale} translations`);
-          }
+          for (const locale of ['tr','en','de','ar']) if (!s.includes(`${locale}: {`)) throw new Error(`missing ${locale}`);
           if (!s.includes('dir: locale === "ar" ? "rtl" : "ltr"')) throw new Error('Arabic RTL contract missing');
           if (!s.includes('["tr", "en", "de", "ar"]')) throw new Error('locale allow-list missing');
           console.log('DOCKOS_I18N_RTL=PASS');
@@ -48,6 +46,7 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app
       - run: python -m app.modules.dockos.test_rc2
+      - run: python -m app.modules.dockos.test_notifications
 
   postgres-concurrency:
     runs-on: ubuntu-latest
@@ -102,3 +101,10 @@ jobs:
           restored=$(psql -h 127.0.0.1 -U dockos -d dockos_restore -Atc "SELECT count(*) FROM dockos.schema_migrations WHERE version IN ('001_dockos_postgres','002_runtime_hardening');")
           test "$restored" = "2"
           echo "POSTGRES_BACKUP_RESTORE=PASS migrations=$restored"
+
+  container-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config
+      - run: docker build -f backend/Dockerfile -t dockos-backend:ci .

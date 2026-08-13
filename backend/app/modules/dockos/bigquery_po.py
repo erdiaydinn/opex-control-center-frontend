@@ -1,17 +1,22 @@
 import os
+from .po_identity import persist_bigquery_rows, source_identity
+
+
+def _error(message):
+    if os.getenv('DOCKOS_ENV','development').lower() == 'production':
+        raise RuntimeError(f'BigQuery production PO doğrulaması başarısız: {message}')
+    return {'source':'ERROR','message':str(message),'rows':[]}
 
 
 def fetch_live_purchase_orders(supplier_name=None, warehouse_name=None):
-    """Optional BigQuery adapter; returns a stable DockOS PO contract."""
     try:
         from google.cloud import bigquery
     except Exception as error:
-        return {"source": "ERROR", "message": f"BigQuery paketi yüklenemedi: {error}", "rows": []}
-
-    project = os.getenv("DOCKOS_BQ_PROJECT", "fulfillment-dwh-production")
+        return _error(error)
+    project=os.getenv('DOCKOS_BQ_PROJECT','fulfillment-dwh-production')
     try:
-        client = bigquery.Client(project=project)
-        sql = """
+        client=bigquery.Client(project=project)
+        sql="""
         SELECT
           REGEXP_REPLACE(warehouse.warehouse_name, r'^Yemeksepeti Market\\s*[,;]?\\s*', '') AS warehouse_name,
           CAST(po_order_id AS STRING) AS po_number,
@@ -36,28 +41,26 @@ def fetch_live_purchase_orders(supplier_name=None, warehouse_name=None):
         ORDER BY promised_date ASC, created_date DESC
         LIMIT 2000
         """
-        config = bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("supplier_name", "STRING", supplier_name),
-            bigquery.ScalarQueryParameter("warehouse_name", "STRING", warehouse_name),
+        config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter('supplier_name','STRING',supplier_name),
+            bigquery.ScalarQueryParameter('warehouse_name','STRING',warehouse_name),
         ])
-        result = []
-        for row in client.query(sql, job_config=config).result(timeout=120):
+        result=[]
+        for row in client.query(sql,job_config=config).result(timeout=120):
+            number=str(row.po_number)
             result.append({
-                "po_number": row.po_number,
-                "po_order_id": row.po_number,
-                "supplier_id": row.supplier_id,
-                "supplier_name": row.supplier_name,
-                "warehouse_name": row.warehouse_name,
-                "created_date": str(row.created_date) if row.created_date else None,
-                "delivery_date": str(row.promised_date) if row.promised_date else None,
-                "promised_date": str(row.promised_date) if row.promised_date else None,
-                "order_status": row.order_status,
-                "status": "OPEN",
-                "sku_count": int(row.total_sku or 0),
-                "total_sku": int(row.total_sku or 0),
-                "pallet_count": 0,
-                "source": "BIGQUERY",
+                'po_number':number,'po_order_id':number,'supplier_id':str(row.supplier_id or ''),
+                'supplier_name':row.supplier_name,'warehouse_name':row.warehouse_name,
+                'created_date':str(row.created_date) if row.created_date else None,
+                'delivery_date':str(row.promised_date) if row.promised_date else None,
+                'promised_date':str(row.promised_date) if row.promised_date else None,
+                'order_status':row.order_status,'status':'OPEN','sku_count':int(row.total_sku or 0),
+                'total_sku':int(row.total_sku or 0),'pallet_count':0,'source':'BIGQUERY',
+                'source_identity':source_identity(number),
             })
-        return {"source": "BIGQUERY", "message": "Canlı BigQuery PO verisi kullanılıyor.", "rows": result}
+        persist_bigquery_rows(result)
+        return {'source':'BIGQUERY','message':'Canlı BigQuery PO verisi kullanılıyor.','rows':result}
+    except RuntimeError:
+        raise
     except Exception as error:
-        return {"source": "ERROR", "message": str(error), "rows": []}
+        return _error(error)

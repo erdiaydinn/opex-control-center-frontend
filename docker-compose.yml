@@ -1,40 +1,42 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dockos
+      POSTGRES_USER: dockos
+      POSTGRES_PASSWORD: ${DOCKOS_POSTGRES_PASSWORD:-dockos_local_only}
+    volumes:
+      - dockos-postgres:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dockos -d dockos"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - .env
+    env_file: [.env]
     environment:
-      DOCKOS_STATE_FILE: /var/lib/dockos/dockos_state.json
-      DOCKOS_BACKUP_DIR: /var/backups/dockos
-      DOCKOS_SINGLE_WORKER: "true"
-    volumes:
-      - dockos-state:/var/lib/dockos
-      - dockos-backups:/var/backups/dockos
-    ports:
-      - "8000:8000"
+      DOCKOS_PERSISTENCE: postgres
+      DATABASE_URL: postgresql://dockos:${DOCKOS_POSTGRES_PASSWORD:-dockos_local_only}@postgres:5432/dockos
+      DOCKOS_TENANT_KEY: ${DOCKOS_TENANT_KEY:-ys_tr}
+      DOCKOS_DC_NAMES: ${DOCKOS_DC_NAMES:-Ankara DC,İstanbul Avrupa DC,İstanbul Anadolu DC,İzmir DC}
+      DOCKOS_SINGLE_WORKER: "false"
+      DOCKOS_WORKERS: ${DOCKOS_WORKERS:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: ["8000:8000"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/dockos/health', timeout=5)"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-
   frontend:
     build:
       context: .
       args:
         VITE_API_BASE: /api
-    environment:
-      DOCKOS_GATEWAY_SECRET: ${DOCKOS_GATEWAY_SECRET}
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "8080:80"
+    depends_on: [backend]
+    ports: ["8080:80"]
     restart: unless-stopped
-
 volumes:
-  dockos-state:
-  dockos-backups:
+  dockos-postgres:

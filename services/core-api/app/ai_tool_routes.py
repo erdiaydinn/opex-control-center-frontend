@@ -26,6 +26,7 @@ from app.core.ai_tool_grants import (
     AiToolGrantBindingMismatch,
     AiToolGrantInvalid,
     AiToolGrantReplayOrExpired,
+    AiToolGrantTenantContextUnavailable,
     AiToolGrantUnavailable,
     RedisAiToolGrantStore,
 )
@@ -62,6 +63,7 @@ class AiToolGrantIssueResponse(BaseModel):
     expires_in_seconds: int
     tool: AiToolName
     data_scope_fingerprint: str
+    tenant_query_context_fingerprint: str
     query_contract_id: str
     query_contract_revision: int
     query_contract_fingerprint: str
@@ -91,6 +93,8 @@ class InternalAiToolAuthorizationResponse(BaseModel):
     granted_scopes: tuple[str, ...]
     data_scope: AiDataScope
     data_scope_fingerprint: str
+    tenant_entity_ids: tuple[str, ...]
+    tenant_query_context_fingerprint: str
     query_contract_id: str
     query_contract_revision: int
     query_contract_fingerprint: str
@@ -118,6 +122,13 @@ def _query_contract_unavailable() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="AI tool execution contract is not ready",
+    )
+
+
+def _tenant_query_context_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="AI tenant query context is unavailable",
     )
 
 
@@ -172,6 +183,8 @@ async def issue_ai_tool_grant(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="AI tool request is invalid",
         ) from exc
+    except AiToolGrantTenantContextUnavailable as exc:
+        raise _tenant_query_context_unavailable() from exc
     except AiToolGrantUnavailable as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -186,6 +199,9 @@ async def issue_ai_tool_grant(
         tool=capability.tool,
         data_scope_fingerprint=(
             capability.data_scope_fingerprint
+        ),
+        tenant_query_context_fingerprint=(
+            binding.tenant_query_context_fingerprint
         ),
         query_contract_id=binding.query_contract_id,
         query_contract_revision=(
@@ -216,7 +232,7 @@ async def authorize_internal_ai_tool_execution(
     """Consume a user grant and return one trusted execution context."""
 
     try:
-        binding = await (
+        authorization = await (
             _ai_tool_grant_store.consume_authorized_invocation(
                 token=payload.grant_token,
                 tool=payload.tool,
@@ -230,11 +246,15 @@ async def authorize_internal_ai_tool_execution(
         AiToolGrantBindingMismatch,
     ) as exc:
         raise _ai_tool_grant_failed() from exc
+    except AiToolGrantTenantContextUnavailable as exc:
+        raise _tenant_query_context_unavailable() from exc
     except AiToolGrantUnavailable as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI tool grant authority is unavailable",
         ) from exc
+
+    binding = authorization.binding
 
     # Deliberately after atomic grant consumption: if downstream readiness is
     # withdrawn while a grant is outstanding, the stale grant is burned.
@@ -272,6 +292,12 @@ async def authorize_internal_ai_tool_execution(
             "data_scope_store_count": len(
                 binding.data_scope.store_names
             ),
+            "tenant_query_context_fingerprint": (
+                binding.tenant_query_context_fingerprint
+            ),
+            "tenant_entity_count": len(
+                authorization.tenant_entity_ids
+            ),
             "query_contract_id": (
                 binding.query_contract_id
             ),
@@ -306,6 +332,12 @@ async def authorize_internal_ai_tool_execution(
         data_scope=binding.data_scope,
         data_scope_fingerprint=(
             binding.data_scope_fingerprint
+        ),
+        tenant_entity_ids=(
+            authorization.tenant_entity_ids
+        ),
+        tenant_query_context_fingerprint=(
+            binding.tenant_query_context_fingerprint
         ),
         query_contract_id=binding.query_contract_id,
         query_contract_revision=(

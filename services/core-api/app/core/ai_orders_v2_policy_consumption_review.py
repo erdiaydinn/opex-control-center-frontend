@@ -15,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.ai_orders_v2_live_cross_tenant_evidence import sha256_text
 from app.core.ai_orders_v2_manual_policy_promotion import (
     OrdersV2ManualPolicyPromotionProposal,
 )
@@ -25,7 +26,6 @@ from app.core.ai_orders_v2_policy_consumption_ledger import (
 from app.core.ai_orders_v2_policy_transition_guard import (
     OrdersV2PolicyTransitionGuardArtifact,
 )
-from app.core.ai_orders_v2_live_cross_tenant_evidence import sha256_text
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 CONSUMPTION_REVIEW_VERSION = 1
@@ -57,7 +57,7 @@ class OrdersV2PolicyConsumptionReviewProposal(BaseModel):
     production_blocker: Literal["orders_v2_consumption_ledger_append_required"]
 
     @model_validator(mode="after")
-    def validate_snapshot(self) -> OrdersV2PolicyConsumptionReviewProposal:
+    def validate_snapshot(self) -> "OrdersV2PolicyConsumptionReviewProposal":
         if self.reviewed_at.tzinfo is None or self.reviewed_at.utcoffset() is None:
             raise ValueError("consumption review timestamp must be timezone-aware")
         return self
@@ -93,7 +93,7 @@ def build_orders_v2_policy_consumption_review_proposal(
         raise ValueError("transition guard execution state is invalid")
     if guard.proposal_fingerprint != proposal.proposal_fingerprint:
         raise ValueError("transition guard is not bound to proposal")
-    if guard.consumed_registry_fingerprint != ledger.ledger_fingerprint:
+    if guard.consumption_ledger_fingerprint != ledger.ledger_fingerprint:
         raise ValueError("consumption ledger drift detected")
     if proposal.proposal_fingerprint in ledger.consumed_proposal_fingerprints:
         raise ValueError("policy proposal already consumed")

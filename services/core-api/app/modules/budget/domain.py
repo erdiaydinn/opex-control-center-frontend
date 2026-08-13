@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
+from contextlib import suppress
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Iterable, Mapping
 
 MONEY = Decimal("0.01")
 
@@ -62,10 +63,8 @@ def normalize_import_row(row: Mapping[str, object]) -> dict[str, str]:
         if not value:
             continue
         if key in numeric:
-            try:
+            with suppress(Exception):
                 value = str(money(value))
-            except Exception:
-                pass
         elif key in identifiers:
             value = value.upper()
         out[key] = value

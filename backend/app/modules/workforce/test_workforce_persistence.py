@@ -163,17 +163,12 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
                     "candidate_id": candidate["id"], "employee_id": employee_id,
                     "roster_ids": [f"ROSTER-{suffix}"], "full_name": "CI Candidate",
                     "tckn": tckn, "email": None, "phone": None, "employment_start": "2027-01-01",
+                    "first_shift": {"date": "2027-01-02", "start": "09:00", "end": "18:00", "break_minutes": 60},
                 },
                 "ci-hr",
             )
         self.assertEqual(hired["activation"]["employee_master"], "ACTIVE")
-        shift = service.create_shift(
-            {
-                "person_id": employee_id, "warehouse_id": warehouse_id, "date": "2027-01-02",
-                "start": "09:00", "end": "18:00", "break_minutes": 60,
-            },
-            "ci-manager",
-        )
+        shift = hired["first_shift"]
         self.assertEqual(shift["person_id"], employee_id)
         exit_result = service.update_employment_lifecycle(
             [{"person_id": employee_id, "employment_end": "2027-01-03"}], "ci-hr", "exit.csv"
@@ -192,11 +187,11 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
                 """SELECT count(*) FROM workforce_audit
                    WHERE tenant_id=%s AND event IN (
                      'RECRUITMENT_REQUEST_CREATED','RECRUITMENT_REQUEST_DECIDED',
-                     'RECRUITMENT_CANDIDATE_APPROVED','RECRUITMENT_HIRE_ACTIVATED','SHIFT_CREATED'
+                     'RECRUITMENT_CANDIDATE_APPROVED','RECRUITMENT_HIRE_ACTIVATED'
                    )""",
                 (persistence.TENANT_ID,),
             )
-            self.assertGreaterEqual(int(cursor.fetchone()[0]), 5)
+            self.assertGreaterEqual(int(cursor.fetchone()[0]), 4)
             cursor.execute(
                 """SELECT count(*) FROM workforce_notification_outbox
                    WHERE tenant_id=%s AND person_id=%s AND status IN ('PENDING','SENDING')""",

@@ -86,21 +86,34 @@ class RecruitmentRuleTests(unittest.TestCase):
             "id": "REC-HIRE-1", "status": "APPROVED", "quantity": 1, "hires": [],
             "warehouse_id": FULYA["id"], "warehouse_name": FULYA["name"],
             "position_code": "STORE_STAFF", "position_label": "Mağaza Görevlisi",
-            "history": [], "created_at": "2026-08-01T00:00:00+00:00",
+            "history": [], "candidates": [{"id": "CAND-HIRED", "status": "APPROVED"}],
+            "created_at": "2026-08-01T00:00:00+00:00",
         }
-        payload = {"employee_id": "EMP-HIRED", "roster_ids": ["RST-HIRED"], "full_name": "Yeni Çalışan", "tckn": "12345098765", "email": None, "phone": None, "employment_start": "2026-08-20"}
+        payload = {"candidate_id": "CAND-HIRED", "employee_id": "EMP-HIRED", "roster_ids": ["RST-HIRED"], "full_name": "Yeni Çalışan", "tckn": "12345098765", "email": None, "phone": None, "employment_start": "2026-08-20", "first_shift": {"date": "2026-08-20", "start": "09:00", "end": "18:00", "break_minutes": 60}}
         with (
             patch.object(service, "list_requests", return_value=[request]),
             patch.object(service, "upsert_people", return_value={"created": 1, "updated": 0, "total": 1, "roster_conflicts": []}) as upsert,
             patch.object(service, "_save_request") as save,
             patch.object(service.persistence, "append_audit"),
+            patch("app.modules.workforce.service.create_shift", return_value={"id": "SHIFT-FIRST", "person_id": "EMP-HIRED"}) as create_shift,
         ):
             result = service.activate_hire(request["id"], payload, "hr@opex.local")
         self.assertEqual(result["status"], "FILLED")
         self.assertEqual(result["activation"]["workforce"], "ACTIVE")
+        self.assertEqual(result["activation"]["first_shift_id"], "SHIFT-FIRST")
         self.assertEqual(upsert.call_args.args[0][0]["warehouse_id"], FULYA["id"])
         self.assertEqual(upsert.call_args.args[0][0]["position"], "Mağaza Görevlisi")
         save.assert_called_once()
+        create_shift.assert_called_once()
+
+    def test_temporary_plus_one_norm_reverts_after_september_with_review_flag(self):
+        norm = {
+            "norm": 12, "base_norm": 11, "temporary_adjustment": 1,
+            "temporary_effective_from": "2026-07-01", "temporary_effective_until": "2026-09-30",
+            "reversion_mode": "AUTOMATIC_REVIEW",
+        }
+        self.assertEqual(service._effective_norm(norm, "2026-09-30"), (12, "TEMPORARY_ACTIVE"))
+        self.assertEqual(service._effective_norm(norm, "2026-10-01"), (11, "REVERTED_REVIEW_REQUIRED"))
 
     def test_open_position_count_decreases_after_partial_hire(self):
         requests = [{"id": "REC-PARTIAL", "warehouse_name": FULYA["name"], "position_code": "STORE_STAFF", "quantity": 3, "hires": [{"employee_id": "1"}], "status": "PARTIALLY_FILLED"}]

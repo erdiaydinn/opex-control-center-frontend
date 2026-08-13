@@ -24,10 +24,11 @@ MIGRATION_DATABASE_URL = os.getenv("WORKFORCE_MIGRATION_DATABASE_URL", "").strip
 ENVIRONMENT = os.getenv("DOCKOS_ENV", "development").strip().lower()
 TENANT_ID = os.getenv("WORKFORCE_TENANT_ID", "eay" if ENVIRONMENT != "production" else "").strip()
 ENABLED = bool(DATABASE_URL)
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 _MIGRATION_PATHS = (
     Path(__file__).resolve().parents[3] / "migrations" / "002_workforce_v29.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "003_workforce_v30_acceptance.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql",
 )
 _LOCK = Lock()
 _MEMORY: dict[str, list[dict]] = {}
@@ -88,7 +89,7 @@ def initialize() -> None:
         else:
             if not _schema_exists(cursor):
                 raise RuntimeError(
-                    "Workforce V30 şeması eksik; uygulamadan önce versioned migrations uygulanmalı"
+                    "Workforce V31 şeması eksik; uygulamadan önce versioned migrations uygulanmalı"
                 )
             cursor.execute("SELECT max(version) FROM workforce_schema_migrations")
             version = cursor.fetchone()[0]

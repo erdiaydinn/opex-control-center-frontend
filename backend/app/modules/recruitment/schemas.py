@@ -50,6 +50,17 @@ class RecruitmentHireActivate(BaseModel):
     email: str | None = Field(default=None, max_length=254)
     phone: str | None = Field(default=None, max_length=50)
     employment_start: date
+    first_shift: "RecruitmentFirstShift"
+
+
+class RecruitmentFirstShift(BaseModel):
+    date: date
+    start: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    break_minutes: int = Field(default=60, ge=0, le=180)
+
+
+RecruitmentHireActivate.model_rebuild()
 
 
 class RecruitmentCandidateCreate(BaseModel):
@@ -91,3 +102,19 @@ class StaffingNormPatch(BaseModel):
     regional_manager: str = Field(default="", max_length=180)
     regional_executive: str = Field(default="", max_length=180)
     active: bool = True
+    base_norm: int | None = Field(default=None, ge=0, le=500)
+    temporary_adjustment: int = Field(default=0, ge=-20, le=20)
+    temporary_effective_from: date | None = None
+    temporary_effective_until: date | None = None
+    reversion_mode: str = Field(default="AUTOMATIC_REVIEW", pattern=r"^(AUTOMATIC|AUTOMATIC_REVIEW)$")
+
+    @model_validator(mode="after")
+    def validate_temporary_norm(self):
+        if self.temporary_adjustment:
+            if not self.temporary_effective_from or not self.temporary_effective_until:
+                raise ValueError("Geçici norm değişikliğinde başlangıç ve bitiş tarihi zorunludur.")
+            if self.temporary_effective_until < self.temporary_effective_from:
+                raise ValueError("Geçici norm bitiş tarihi başlangıçtan önce olamaz.")
+            if self.base_norm is None:
+                self.base_norm = self.norm - self.temporary_adjustment
+        return self

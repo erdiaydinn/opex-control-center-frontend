@@ -33,6 +33,13 @@ _POSITION_LABELS = {
     "STORE_MANAGER": "Mağaza Müdürü",
 }
 
+_TEMPORARY_PLUS_ONE_WAREHOUSES = {
+    "Dicle", "Yenikent", "Muratpaşa", "Lara", "Yıldırım", "Çorlu", "Mimaroba",
+    "Konyaaltı", "Tuzla", "Kartal Cumhuriyet", "Fatih", "Anka", "Çekmeköy",
+    "Bayrampaşa", "İsmetpaşa", "Bahçeşehir 2. Kısım", "Çiğli", "Tuğba",
+    "Anadolu Hisarı",
+}
+
 
 class RecruitmentRuleError(ValueError):
     pass
@@ -57,12 +64,19 @@ def _default_norms() -> list[dict]:
     rows: list[dict] = []
     for index, line in enumerate(match.group("body").strip().splitlines(), start=1):
         regional_manager, regional_executive, warehouse, norm = line.split("|")
+        warehouse_stem = _normalize(warehouse).split(" (")[0]
+        temporary_plus_one = warehouse_stem in {_normalize(name) for name in _TEMPORARY_PLUS_ONE_WAREHOUSES}
         rows.append({
             "id": f"NORM-{index:03d}",
             "regional_manager": regional_manager,
             "regional_executive": regional_executive,
             "warehouse": warehouse,
-            "norm": int(norm),
+            "norm": int(norm) + int(temporary_plus_one),
+            "base_norm": int(norm),
+            "temporary_adjustment": 1 if temporary_plus_one else 0,
+            "temporary_effective_from": "2026-07-01" if temporary_plus_one else None,
+            "temporary_effective_until": "2026-09-30" if temporary_plus_one else None,
+            "reversion_mode": "AUTOMATIC_REVIEW",
             "active": True,
         })
     return rows
@@ -96,6 +110,19 @@ def initialize() -> None:
 
 def _normalize(value: str | None) -> str:
     return str(value or "").strip().casefold().replace("i̇", "i")
+
+
+def _effective_norm(record: dict, on_date: str | None = None) -> tuple[int, str]:
+    day = on_date or datetime.now(UTC).date().isoformat()
+    base = int(record.get("base_norm", record.get("norm", 0)))
+    adjustment = int(record.get("temporary_adjustment", 0))
+    starts = str(record.get("temporary_effective_from") or "")
+    ends = str(record.get("temporary_effective_until") or "")
+    if adjustment and starts and ends and starts <= day <= ends:
+        return base + adjustment, "TEMPORARY_ACTIVE"
+    if adjustment and ends and day > ends:
+        return base, "REVERTED_REVIEW_REQUIRED" if record.get("reversion_mode") == "AUTOMATIC_REVIEW" else "REVERTED"
+    return int(record.get("norm", base)), "PERMANENT"
 
 
 def _position_code(person: dict) -> str:
@@ -222,7 +249,8 @@ def evaluate(warehouse_id: str, position_code: str, quantity: int, planned_depar
     headcount = _headcount(warehouse)
     settings = get_settings()
     is_manager = position_code == "STORE_MANAGER"
-    capacity = int(settings["warehouse_manager_capacity"].get(warehouse["name"], settings["default_manager_capacity"])) if is_manager else int((norm_row or {}).get("norm", 0))
+    effective_norm, norm_status = _effective_norm(norm_row or {})
+    capacity = int(settings["warehouse_manager_capacity"].get(warehouse["name"], settings["default_manager_capacity"])) if is_manager else effective_norm
     active = headcount["active_managers"] if is_manager else headcount["active_staff"]
     open_positions = _open_positions(warehouse["name"], position_code, exclude_request)
     departure_credit = 0
@@ -253,7 +281,7 @@ def evaluate(warehouse_id: str, position_code: str, quantity: int, planned_depar
         "active_managers": headcount["active_managers"], "open_positions": open_positions,
         "planned_departures": departure_credit, "projected": projected, "available": available,
         "recommendation": recommendation, "recommendation_reason": reason,
-        "norm_record": norm_row, "departure_employee_valid": departure_valid,
+        "norm_record": norm_row, "norm_status": norm_status, "departure_employee_valid": departure_valid,
     }
 
 
@@ -734,7 +762,7 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
         candidates = list(record.get("candidates", []))
         candidate_id = payload.get("candidate_id")
         candidate = next((item for item in candidates if item.get("id") == candidate_id), None)
-        if candidates and (candidate is None or candidate.get("status") != "APPROVED"):
+        if candidate is None or candidate.get("status") != "APPROVED":
             raise RecruitmentRuleError("İşe giriş için kanıtları onaylanmış bir candidate_id zorunludur.")
         canonical_person = resolve_person_identity(payload["tckn"], "TC") or resolve_person_identity(payload["employee_id"], "EMPLOYEE_ID")
         canonical_employee_id = str((canonical_person or {}).get("employee_id") or payload["employee_id"])
@@ -744,6 +772,8 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
         conflict = next((person for person in list_people(False) if str(person.get("employee_id")) != canonical_employee_id and roster_ids.intersection({str(value) for value in person.get("roster_ids", [])})), None)
         if conflict:
             raise RecruitmentRuleError("Roster ID başka bir Employee Master kaydına bağlı; aktivasyon durduruldu.")
+        from app.modules.workforce import service as workforce_service
+        rollback_snapshot = workforce_service._snapshot_collections()
         person = {
             **payload,
             "employment_start": str(payload["employment_start"]),
@@ -770,12 +800,28 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
             record["remaining_quantity"] = max(0, int(record["quantity"]) - len(hires))
             record["status"] = "FILLED" if record["remaining_quantity"] == 0 else "PARTIALLY_FILLED"
             record["history"].append({"at": now, "action": "HIRE_ACTIVATED", "actor": actor, "employee_id": canonical_employee_id})
+            first_shift_input = payload["first_shift"]
+            if hasattr(first_shift_input, "model_dump"):
+                first_shift_input = first_shift_input.model_dump(mode="json")
+            if str(first_shift_input["date"]) < str(payload["employment_start"]):
+                raise RecruitmentRuleError("İlk vardiya işe giriş tarihinden önce olamaz.")
+            first_shift = workforce_service.create_shift({
+                "person_id": canonical_employee_id,
+                "person_name": payload["full_name"],
+                "warehouse_id": record["warehouse_id"],
+                "date": str(first_shift_input["date"]),
+                "start": first_shift_input["start"],
+                "end": first_shift_input["end"],
+                "break_minutes": int(first_shift_input.get("break_minutes", 60)),
+                "role": record["position_label"],
+            }, actor, persist=False)
+            activation["first_shift_id"] = first_shift["id"]
+            record["history"].append({"at": now, "action": "FIRST_SHIFT_ASSIGNED", "actor": actor, "shift_id": first_shift["id"]})
             if persistence.ENABLED:
-                from app.modules.workforce import service as workforce_service
-
                 workforce_service._append_audit(
                     "RECRUITMENT_HIRE_ACTIVATED", actor, record_id=request_id,
                     employee_id=canonical_employee_id, workforce_status="ACTIVE",
+                    first_shift_id=first_shift["id"],
                     _related_recruitment_request=record,
                     _expected_recruitment_revision=expected_revision,
                 )
@@ -787,13 +833,13 @@ def activate_hire(request_id: str, payload: dict, actor: str) -> dict:
                 )
         except Exception:
             if persistence.ENABLED:
-                from app.modules.workforce import service as workforce_service
-
                 workforce_service._hydrate_snapshot(
                     persistence.load_snapshot(workforce_service._snapshot_kinds())
                 )
+            else:
+                workforce_service._hydrate_snapshot(rollback_snapshot)
             raise
-    return {**record, "employee_master_result": result, "activation": activation}
+    return {**record, "employee_master_result": result, "activation": activation, "first_shift": first_shift}
 
 
 def dashboard() -> dict:

@@ -660,7 +660,7 @@ def _shift_interval(row: dict) -> tuple[datetime, datetime]:
     return start, end
 
 
-def create_shift(payload: dict, actor: str) -> dict:
+def create_shift(payload: dict, actor: str, *, persist: bool = True) -> dict:
     warehouse = _WAREHOUSES.get(payload["warehouse_id"])
     if warehouse is None:
         raise WorkforceRuleError("Depo konumu bulunamadı.")
@@ -697,7 +697,8 @@ def create_shift(payload: dict, actor: str) -> dict:
     }
     _SHIFTS.append(row)
     _schedule_shift_notifications(row, actor)
-    _append_audit("SHIFT_CREATED", actor, record_id=row["id"], person_id=row["person_id"], warehouse_id=row["warehouse_id"])
+    if persist:
+        _append_audit("SHIFT_CREATED", actor, record_id=row["id"], person_id=row["person_id"], warehouse_id=row["warehouse_id"])
     return deepcopy(row)
 
 

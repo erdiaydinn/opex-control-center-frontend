@@ -1,4 +1,4 @@
-"""Fail CI unless a restored PostgreSQL copy retains V30 and audit truth."""
+"""Fail CI unless a restored PostgreSQL copy retains V31 and audit truth."""
 
 import os
 
@@ -22,6 +22,6 @@ def facts(database_url: str) -> tuple[int, int, int]:
 
 source = facts(source_url)
 restored = facts(restore_url)
-if source[0] < 30 or restored != source:
+if source[0] < 31 or restored != source:
     raise SystemExit(f"restore verification failed: source={source} restored={restored}")
 print(f"restore verified: schema=V{restored[0]} audit={restored[1]} collections={restored[2]}")

@@ -22,7 +22,7 @@ def upgrade() -> None:
         """
         CREATE TABLE ai_tenant_query_contexts (
             tenant_id UUID PRIMARY KEY
-                REFERENCES tenants(id) ON DELETE CASCADE,
+                REFERENCES tenants(id) ON DELETE RESTRICT,
             context_version INTEGER NOT NULL DEFAULT 1,
             entity_ids JSONB NOT NULL,
             source_reference TEXT NOT NULL,

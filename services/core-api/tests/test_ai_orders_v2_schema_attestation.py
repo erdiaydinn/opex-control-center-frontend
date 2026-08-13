@@ -99,6 +99,20 @@ def test_attestation_rejects_promotion_and_embedded_evidence_tamper() -> None:
     with pytest.raises(ValidationError):
         OrdersV2SchemaAttestationArtifact.model_validate(payload)
 
+    payload = artifact.model_dump(mode="python")
+    payload["collector_observation_fingerprint"] = "f" * 64
+    with pytest.raises(ValidationError):
+        OrdersV2SchemaAttestationArtifact.model_validate(payload)
+
+
+def test_attestation_builder_rejects_noncanonical_observation_row_count() -> None:
+    payload = observation().model_dump(mode="python")
+    payload["metadata_row_count"] = 2
+    tampered = OrdersV2CollectedSchemaObservation.model_validate(payload)
+
+    with pytest.raises(ValueError, match="row count"):
+        build_orders_v2_schema_attestation_candidate(tampered)
+
 
 def test_cli_requires_explicit_live_network_opt_in(
     monkeypatch: pytest.MonkeyPatch,

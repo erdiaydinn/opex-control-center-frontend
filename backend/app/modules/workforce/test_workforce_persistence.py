@@ -135,9 +135,12 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
         suffix = uuid4().hex[:8]
         employee_id = f"EMP-CI-{suffix}"
         tckn = str(int(uuid4().hex[:12], 16)).zfill(11)[-11:]
+        warehouse_id = next(
+            row["id"] for row in service.list_warehouses() if row["name"] == "Fulya (İstanbul)"
+        )
         request = recruitment.create_request(
             {
-                "warehouse_id": "fulya", "position_code": "STORE_STAFF", "quantity": 1,
+                "warehouse_id": warehouse_id, "position_code": "STORE_STAFF", "quantity": 1,
                 "employment_type": "FULL_TIME", "reason_code": "NORM_GAP",
                 "needed_by": "2027-01-01", "justification": "PostgreSQL transactional acceptance",
                 "planned_departure": None,
@@ -166,7 +169,7 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
         self.assertEqual(hired["activation"]["employee_master"], "ACTIVE")
         shift = service.create_shift(
             {
-                "person_id": employee_id, "warehouse_id": "fulya", "date": "2027-01-02",
+                "person_id": employee_id, "warehouse_id": warehouse_id, "date": "2027-01-02",
                 "start": "09:00", "end": "18:00", "break_minutes": 60,
             },
             "ci-manager",

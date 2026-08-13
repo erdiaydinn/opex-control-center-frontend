@@ -8,7 +8,6 @@ import pytest
 from google.cloud import bigquery
 from pydantic import ValidationError
 
-import app.core.ai_orders_v2_live_schema_collector as collector
 from app.core.ai_orders_v2_live_schema_collector import (
     EAY_BQ_LOCATION_ENV,
     EAY_BQ_PROJECT_ENV,
@@ -50,7 +49,12 @@ class FakeClient:
     ) -> None:
         self.project = project
         self.location = location
-        self.job = FakeJob(rows or [metadata_row(project=project)])
+        actual_rows = (
+            [metadata_row(project=project)]
+            if rows is None
+            else rows
+        )
+        self.job = FakeJob(actual_rows)
         self.calls: list[dict[str, Any]] = []
         self.error: Exception | None = None
 
@@ -159,7 +163,10 @@ def test_collector_submits_one_exact_read_only_metadata_query() -> None:
         isinstance(parameter, bigquery.ScalarQueryParameter)
         for parameter in job_config.query_parameters
     )
-    assert [parameter.to_api_repr() for parameter in job_config.query_parameters] == [
+    assert [
+        parameter.to_api_repr()
+        for parameter in job_config.query_parameters
+    ] == [
         {
             "name": "table_name",
             "parameterType": {"type": "STRING"},

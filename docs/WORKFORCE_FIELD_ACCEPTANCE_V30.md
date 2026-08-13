@@ -2,6 +2,8 @@
 
 Bu matris PR #55 → #58 → #61 hattında `field-production-ready >=95%` kararının kanıt kapısıdır. Otomatik fixture veya mock sonucu gerçek cihaz, gerçek IdP, müşteri dosyası ya da fiziksel saha kanıtı yerine geçmez.
 
+CI kanıt dosyaları yalnız runner'ın geçici `RECRUITMENT_EVIDENCE_DIR` alanında üretilir; kalıcı müşteri kanıt deposu ve retention policy staging/pilot kabulünde ayrıca doğrulanır.
+
 | Acceptance senaryosu | Otomatik kanıt | Dış kanıt / geçiş koşulu | Durum |
 |---|---|---|---|
 | Vardiyasız check-in, duplicate istek | Backend/API testleri | Pilot cihaz tekrar denemesi | Otomatik geçti; saha bekliyor |

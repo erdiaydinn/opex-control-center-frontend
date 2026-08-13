@@ -91,6 +91,19 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_dockos_postgres.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_runtime_hardening.sql
           psql "$DATABASE_URL" -Atc "SELECT version FROM dockos.schema_migrations ORDER BY version;"
+      - name: Gateway replay SQL regression
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          os.environ['DOCKOS_PERSISTENCE']='postgres'
+          os.environ['DOCKOS_TENANT_KEY']='ys_tr'
+          from app.modules.dockos.tenant_db import consume_gateway_replay
+          timestamp=str(int(time.time()))
+          assert consume_gateway_replay(timestamp,'ci-sql-regression-nonce','ci-sql-regression-signature',60) is True
+          assert consume_gateway_replay(timestamp,'ci-sql-regression-nonce','ci-sql-regression-signature',60) is False
+          print('GATEWAY_REPLAY_SQL_REGRESSION=PASS')
+          PY
       - name: Gateway replay and rotation acceptance
         run: python -m app.modules.dockos.test_gateway_replay
       - run: python -m app.modules.dockos.test_postgres_concurrency

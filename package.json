@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:access": "node scripts/test-access-config.mjs",
-    "test:workforce-imports": "node scripts/test-workforce-imports.mjs"
+    "test:workforce-imports": "node scripts/test-workforce-imports.mjs",
+    "test:workforce-attendance": "node scripts/test-workforce-attendance-proof.mjs",
+    "test:workforce-experience": "node scripts/test-workforce-experience.mjs"
   },
   "dependencies": {
     "@splinetool/react-spline": "^4.1.0",

@@ -15,6 +15,7 @@ import {
   Clock3,
   Coffee,
   FileClock,
+  Fingerprint,
   Home,
   Languages,
   MapPin,
@@ -33,12 +34,14 @@ import { formatMinutes, loadWorkforceState, pickerShifts } from "./workforceData
 import { useWorkforceUi } from "./WorkforceUiContext.jsx";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { dismissAnnouncementRemote, loadMobileWorkforce, markNotificationRead, postAttendance, postBreak, postCorrection, postLeave, removeAllNotifications, removeNotification, requestNativeAttendanceProof, resolveLeave, resolveManagerTask } from "./workforceApi.js";
+import { WorkforceExperienceCenter } from "./WorkforceExperienceCenter.jsx";
 import "./workforce.css";
 
 const DEFAULT_FEATURES = {
   breaks: true, leaveRequests: true, appeals: true, announcements: true,
   notifications: true, archive: true, managerTasks: true, qrCheckIn: false,
   liveBreakActivity: true,
+  employeeExperience: true,
 };
 const LOCAL_PILOT_MODE = String(import.meta.env.VITE_LOCAL_PILOT_MODE || "false").toLowerCase() === "true";
 
@@ -209,6 +212,16 @@ function MobileNav({ view, setView, notificationCount, taskCount, features }) {
   </nav>;
 }
 
+function AttendanceTrustRail({ phase = "idle", active = false }) {
+  const steps = [
+    { id: "device", icon: Smartphone, label: "Kayıtlı cihaz" },
+    { id: "presence", icon: Fingerprint, label: "Face ID / cihaz kilidi" },
+    { id: "location", icon: MapPin, label: "Depo konumu" },
+  ];
+  const working = ["authenticating", "verifying"].includes(phase);
+  return <div className={`wfx-attendance-trust ${working ? "is-working" : ""}`}>{steps.map((step, index) => { const Icon = step.icon; const done = active || phase === "success" || (phase === "verifying" && index < 2); return <span key={step.id} className={done ? "done" : working && index === 0 ? "current" : ""}><i>{done ? <CheckCircle2 size={14} /> : <Icon size={14} />}</i>{step.label}</span>; })}</div>;
+}
+
 export default function WorkforcePickerApp() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -233,7 +246,8 @@ export default function WorkforcePickerApp() {
   const dismissedAnnouncements = announcementReceipts[currentPersonId] || {};
   const announcements = (workforceState.announcements || []).filter((item) => !dismissedAnnouncements[item.id]?.dismissed && item.active !== false && (!item.targetType || item.targetType === "all" || (item.targetType === "warehouse" && item.targetValue === currentPerson?.warehouse) || (item.targetType === "person" && String(item.targetValue) === String(currentPersonId))));
   const assignedShift = useMemo(
-    () => workforceState.shifts.find((shift) => String(shift.personId) === String(currentPersonId) && shift.date === todayKey && shift.status !== "İptal"),
+    () => workforceState.shifts.find((shift) => String(shift.personId) === String(currentPersonId) && shift.date === todayKey && shift.status !== "İptal")
+      || (LOCAL_PILOT_MODE ? workforceState.shifts.find((shift) => String(shift.personId) === String(currentPersonId) && shift.status !== "İptal") : null),
     [workforceState, currentPersonId, todayKey],
   );
   const ownShifts = useMemo(() => {
@@ -267,7 +281,7 @@ export default function WorkforcePickerApp() {
     const ids = new Set(fromPlan.map((shift) => shift.id));
     return [...fromPlan, ...pickerShifts.filter((shift) => !ids.has(shift.id))];
   }, [workforceState, localeCode, currentPersonId]);
-  const [view, setView] = useState("shifts");
+  const [view, setView] = useState("home");
   const [selectedShift, setSelectedShift] = useState(pickerShifts[0]);
   const [filter, setFilter] = useState("Tümü");
   const [editingTask, setEditingTask] = useState(null);
@@ -275,6 +289,7 @@ export default function WorkforcePickerApp() {
   const [leaveForm, setLeaveForm] = useState({ typeId: "annual", startDate: "2026-07-15", endDate: "2026-07-15", note: "" });
   const [leaveMessage, setLeaveMessage] = useState("");
   const [checkInState, setCheckInState] = useState(() => workforceState.attendance.some((row) => String(row.personId) === String(currentPersonId) && row.status === "Vardiyada") ? "active" : "idle");
+  const [attendanceFlow, setAttendanceFlow] = useState({ phase: "idle", message: "" });
   const activeBreakEntry = Object.entries(workforceState.shiftBreakStates || {}).find(([shiftId, item]) => item.status === "break" && ownShifts.some((shift) => shift.id === shiftId));
   const activeBreak = activeBreakEntry ? { shift: ownShifts.find((item) => item.id === activeBreakEntry[0]), state: activeBreakEntry[1] } : null;
 
@@ -349,19 +364,25 @@ export default function WorkforcePickerApp() {
 
   async function endShift(shift) {
     try {
+      setAttendanceFlow({ phase: "authenticating", message: "Cihaz üzerinde kimliğini doğrula…" });
       const proof = await requestNativeAttendanceProof("check-out", shift.id, currentPersonId);
+      setAttendanceFlow({ phase: "verifying", message: "Cihaz imzası ve depo konumu doğrulanıyor…" });
       await postAttendance(shift.id, "check-out", { ...proof, person_id: currentPersonId });
       if (features.liveBreakActivity) syncBreakLiveActivity("finish", { shiftId: shift.id, warehouse: shift.warehouse, personId: currentPersonId });
       await refreshBackend();
-    } catch (error) { setLeaveMessage(error.message); }
+      setAttendanceFlow({ phase: "success", message: "Çıkışın güvenle kaydedildi." });
+    } catch (error) { setAttendanceFlow({ phase: "error", message: error.message }); setLeaveMessage(error.message); }
   }
 
   async function startShift(shift) {
     try {
+      setAttendanceFlow({ phase: "authenticating", message: "Face ID veya cihaz kilidi bekleniyor…" });
       const proof = await requestNativeAttendanceProof("check-in", shift.id, currentPersonId);
+      setAttendanceFlow({ phase: "verifying", message: "Cihaz imzası ve depo konumu doğrulanıyor…" });
       await postAttendance(shift.id, "check-in", { ...proof, person_id: currentPersonId });
       await refreshBackend();
-    } catch (error) { setLeaveMessage(error.message); }
+      setAttendanceFlow({ phase: "success", message: "Girişin güvenle kaydedildi. İyi vardiyalar!" });
+    } catch (error) { setAttendanceFlow({ phase: "error", message: error.message }); setLeaveMessage(error.message); }
   }
 
   async function submitLeaveRequest(event) {
@@ -399,6 +420,7 @@ export default function WorkforcePickerApp() {
 
   if (view === "detail") return shell(<ShiftDetail shift={selectedShift} features={features} breakState={(workforceState.shiftBreakStates || {})[selectedShift.id]} onBreakAction={(action) => changeBreak(selectedShift, action)} onEndShift={() => endShift(selectedShift)} onBack={() => setView("shifts")} existingAppeal={ownAppeals.find((item) => item.shiftId === selectedShift.id && item.status !== "Reddedildi")} onSubmitAppeal={(values) => submitAppeal(selectedShift, values)} />);
   if (view === "archive") return shell(<ArchiveView shifts={ownShifts} onBack={() => setView("shifts")} onOpenShift={openShift} />);
+  if (view === "experience") return shell(<WorkforceExperienceCenter onBack={() => setView("home")} />);
 
   if (["home", "notifications", "tasks", "profile"].includes(view)) return shell(<section className="wfx-mobile-screen wfx-mobile-info-screen">
     <header className={`wfx-mobile-header ${view === "home" ? "wfx-home-header" : ""}`}>{view === "home" ? <><div className="wfx-home-appmark">W</div><div className="wfx-home-app-title"><small>OPEX Control Center</small><strong>Workforce</strong></div><span /></> : <><button type="button" onClick={() => navigate("/workforce")}><ArrowLeft size={22} /></button><strong>{view === "notifications" ? "Bildirimler" : view === "tasks" ? "Yönetici Görevleri" : "Profil"}</strong><span /></>}</header>
@@ -407,7 +429,8 @@ export default function WorkforcePickerApp() {
       <section className={`wfx-home-shift-hero ${activeBreak ? "on-break" : ""}`}>
         <div className="wfx-home-shift-top"><span><i />Bugünkü vardiya</span><b>{homeShiftState}</b></div>
         <div className="wfx-home-shift-location"><div><MapPin size={20} /></div><span><small>Görev yeri</small><strong>{assignedShift?.warehouse || currentPerson?.warehouse || "Atanmış vardiya yok"}</strong><p>{assignedShift ? `${assignedShift.role} · ${assignedShift.start}–${assignedShift.end}` : "Vardiya yayınlandığında burada görünecek."}</p></span></div>
-        {activeBreak?.state?.startedAt ? <BreakTimer compact startedAt={activeBreak.state.startedAt} /> : <div className="wfx-home-shift-trust"><span><ShieldCheck size={15} />Kayıtlı cihaz</span><span><Clock3 size={15} />{assignedShift ? `${assignedShift.start} başlangıç` : "Plan bekleniyor"}</span></div>}
+        {activeBreak?.state?.startedAt ? <BreakTimer compact startedAt={activeBreak.state.startedAt} /> : <AttendanceTrustRail phase={attendanceFlow.phase} active={checkInState === "active"} />}
+        {attendanceFlow.message ? <p className={`wfx-attendance-flow-message ${attendanceFlow.phase}`}>{attendanceFlow.message}</p> : null}
         <button type="button" disabled={!assignedShift && !ownShifts.length} onClick={() => activeBreak?.shift ? openShift(activeBreak.shift) : setView("shifts")}><span>{activeBreak ? "Molayı yönet" : checkInState === "active" ? "Vardiyayı yönet" : "Vardiyaya git"}</span><ChevronRight size={19} /></button>
       </section>
       <section className="wfx-home-kpis">
@@ -417,6 +440,7 @@ export default function WorkforcePickerApp() {
       </section>
       {features.announcements && announcements.length ? <section className="wfx-home-block"><div className="wfx-home-block-title"><span>Güncel duyurular</span><small>{announcements.length} yeni</small></div>{announcements.map((item) => <article className="wfx-mobile-announcement" key={item.id}><Megaphone size={22} /><div><small>Duyuru</small><strong>{item.title}</strong><p>{item.message}</p><button type="button" onClick={() => dismissAnnouncement(item.id)}><CheckCircle2 size={15} />Okudum, kapat</button></div></article>)}</section> : null}
       <section className="wfx-home-block"><div className="wfx-home-block-title"><span>Hızlı işlemler</span><small>Tek dokunuşla</small></div><div className="wfx-home-actions">
+        {features.employeeExperience ? <button type="button" className="featured" onClick={() => setView("experience")}><div className="purple"><Fingerprint size={20} /></div><span><strong>Çalışan merkezi</strong><small>Belge · eğitim · anket · zimmet</small></span><ChevronRight size={17} /></button> : null}
         {features.archive ? <button type="button" onClick={() => setView("archive")}><div className="blue"><FileClock size={20} /></div><span><strong>Vardiya arşivi</strong><small>{ownShifts.length} kayıt</small></span><ChevronRight size={17} /></button> : null}
         {features.leaveRequests ? <button type="button" onClick={() => setLeaveFormOpen((open) => !open)}><div className="pink"><CalendarCheck size={20} /></div><span><strong>İzin talebi</strong><small>Haftalık veya yıllık</small></span><ChevronRight size={17} /></button> : null}
         {features.notifications ? <button type="button" onClick={() => setView("notifications")}><div className="amber"><Bell size={20} /></div><span><strong>Bildirimler</strong><small>{unreadNotificationCount ? `${unreadNotificationCount} okunmamış` : "Tümü okundu"}</small></span><ChevronRight size={17} /></button> : null}
@@ -436,16 +460,18 @@ export default function WorkforcePickerApp() {
         <header className="wfx-mobile-header"><button type="button" onClick={() => navigate("/workforce")}><ArrowLeft size={22} /></button><strong>Vardiyalarım</strong>{features.notifications ? <button type="button" onClick={() => setView("notifications")}><Bell size={21} /></button> : <span />}</header>
 
         <section className="wfx-mobile-welcome">
-          <div><small>{new Date("2026-07-14T12:00:00").toLocaleDateString(localeCode, { day: "2-digit", month: "long", year: "numeric", weekday: "long" })}</small><h1>İyi günler, Erdi</h1><p>Bugünkü vardiyan ve puantaj durumun burada.</p></div>
-          <div className="avatar">EA</div>
+          <div><small>{new Date().toLocaleDateString(localeCode, { timeZone: "Europe/Istanbul", day: "2-digit", month: "long", year: "numeric", weekday: "long" })}</small><h1>İyi günler, {currentPerson?.name?.split(" ")[0]}</h1><p>Bugünkü vardiyan ve puantaj durumun burada.</p></div>
+          <div className="avatar">{currentPerson?.name?.split(" ").map((item) => item[0]).slice(0, 2).join("")}</div>
         </section>
 
         <section className="wfx-today-card">
           <div className="head"><span><span className="pulse" /> {!assignedShift ? "Atanmış vardiya yok" : checkInState === "idle" ? "Check-in bekliyor" : "Şu anda vardiyadasın"}</span><Smartphone size={19} /></div>
           <h2>{assignedShift?.warehouse || "Vardiya bulunamadı"}</h2><p>{assignedShift ? `${assignedShift.role} · ${assignedShift.start}–${assignedShift.end}` : "Müdürünün vardiya ataması gerekir"}</p>
           <div className="timer"><Clock3 size={19} /><strong>{!assignedShift ? "—" : checkInState === "idle" ? assignedShift.start : "04:04"}</strong><span>{checkInState === "idle" ? "planlanan başlangıç" : "net çalışma"}</span></div>
-          <div className="verified">{assignedShift ? <ShieldCheck size={17} /> : <AlertCircle size={17} />} {!assignedShift ? "Vardiya olmadan check-in yapılamaz" : LOCAL_PILOT_MODE ? "Yerel pilot: depo konumu ve kayıtlı test cihazı simüle edilir" : checkInState === "idle" ? "Konum ve cihaz check-in sırasında doğrulanacak" : "Konum ve kayıtlı cihaz doğrulandı"}</div>
-          {checkInState === "idle" ? <button type="button" disabled={!assignedShift} onClick={() => assignedShift && startShift(assignedShift)}>{assignedShift ? "Vardiyaya Başla" : "Check-in kapalı"}</button> : <button type="button" className="active" onClick={() => openShift(ownShifts.find((shift) => shift.id === assignedShift?.id) || ownShifts[0])}>Vardiyayı Yönet <ChevronRight size={18} /></button>}
+          <AttendanceTrustRail phase={attendanceFlow.phase} active={checkInState === "active"} />
+          <div className="verified">{assignedShift ? <ShieldCheck size={17} /> : <AlertCircle size={17} />} {!assignedShift ? "Vardiya olmadan check-in yapılamaz" : "Face ID verisi telefondan çıkmaz; yalnız doğrulama sonucu gönderilir"}</div>
+          {attendanceFlow.message ? <div className={`wfx-attendance-flow-message ${attendanceFlow.phase}`}>{attendanceFlow.message}</div> : null}
+          {checkInState === "idle" ? <button type="button" disabled={!assignedShift || ["authenticating", "verifying"].includes(attendanceFlow.phase)} onClick={() => assignedShift && startShift(assignedShift)}><Fingerprint size={18} />{attendanceFlow.phase === "authenticating" ? "Cihazda doğrula" : attendanceFlow.phase === "verifying" ? "Doğrulanıyor…" : assignedShift ? "Doğrula ve Vardiyaya Başla" : "Check-in kapalı"}</button> : <button type="button" className="active" onClick={() => openShift(ownShifts.find((shift) => shift.id === assignedShift?.id) || ownShifts[0])}>Vardiyayı Yönet <ChevronRight size={18} /></button>}
         </section>
 
         <section className="wfx-my-shifts-head">

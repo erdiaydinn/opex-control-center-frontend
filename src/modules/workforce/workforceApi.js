@@ -1,4 +1,7 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../api/client.js";
+import { normalizeAttendanceProof } from "./workforceAttendanceProof.js";
+
+export { normalizeAttendanceProof } from "./workforceAttendanceProof.js";
 
 const LOCAL_PILOT_MODE = String(import.meta.env.VITE_LOCAL_PILOT_MODE || "false").toLowerCase() === "true";
 const PILOT_DEVICE_IDS = { "100184": "DEVICE-1", "100221": "DEV-4418", "100287": "DEV-7781" };
@@ -133,19 +136,25 @@ async function requestLocalPilotProof(shiftId, personId) {
     accuracy_meters: Math.min(5, Number(warehouse.max_accuracy || 50)),
     device_id: deviceId,
     device_trusted: true,
+    local_auth_method: "DEVICE_BIOMETRIC",
+    local_auth_at: new Date().toISOString(),
     pilot_simulation: true,
   };
 }
 
 export function requestNativeAttendanceProof(action, shiftId, personId) {
-  if (LOCAL_PILOT_MODE) return requestLocalPilotProof(shiftId, personId);
+  if (LOCAL_PILOT_MODE) return requestLocalPilotProof(shiftId, personId).then((proof) => normalizeAttendanceProof(proof));
   return new Promise((resolve, reject) => {
     const requestId = crypto.randomUUID();
     const timeout = window.setTimeout(() => { window.removeEventListener("opex-native-attendance-proof", receive); reject(new Error("Native cihaz doğrulama yanıtı alınamadı.")); }, 15000);
     function receive(event) {
       if (event.detail?.requestId !== requestId) return;
       window.clearTimeout(timeout); window.removeEventListener("opex-native-attendance-proof", receive);
-      if (event.detail.error) reject(new Error(event.detail.error)); else resolve(event.detail.proof);
+      if (event.detail.error) reject(new Error(event.detail.error));
+      else {
+        try { resolve(normalizeAttendanceProof(event.detail.proof)); }
+        catch (error) { reject(error); }
+      }
     }
     window.addEventListener("opex-native-attendance-proof", receive);
     const message = { requestId, action, shiftId, personId };

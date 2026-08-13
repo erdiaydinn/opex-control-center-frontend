@@ -1,6 +1,7 @@
 import unittest
 import base64
 import os
+from datetime import UTC, datetime, timedelta
 
 from .authorization import is_action_allowed
 from .schemas import LeaveRequestCreateRequest, ManagerTaskResolveRequest
@@ -25,6 +26,7 @@ from .service import (
     upsert_people,
     import_attendance,
     import_leaves,
+    _validate_local_authentication,
 )
 
 
@@ -186,6 +188,17 @@ class WorkforceAuthorizationTests(unittest.TestCase):
                 },
                 "erdi@opex.local",
             )
+
+    def test_device_local_biometric_assertion_is_fresh_and_stores_no_template(self):
+        _validate_local_authentication({
+            "local_auth_method": "DEVICE_BIOMETRIC",
+            "local_auth_at": datetime.now(UTC).isoformat(),
+        })
+        with self.assertRaisesRegex(WorkforceRuleError, "doğrulaması eskimiş"):
+            _validate_local_authentication({
+                "local_auth_method": "DEVICE_BIOMETRIC",
+                "local_auth_at": (datetime.now(UTC) - timedelta(minutes=3)).isoformat(),
+            })
 
     def test_global_audit_has_integrity_hash(self):
         correct_attendance(

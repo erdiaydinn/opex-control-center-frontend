@@ -53,6 +53,7 @@ _FEATURE_FLAGS: dict = {
     "breaks": True, "leave_requests": True, "appeals": True,
     "announcements": True, "notifications": True, "archive": True,
     "manager_tasks": True, "qr_check_in": False, "live_break_activity": True,
+    "employee_experience": True,
 }
 _NOTIFICATION_POLICY: dict = {
     "shift_published": True,
@@ -575,7 +576,8 @@ def check_in(shift_id: str, payload: dict, actor: str) -> dict:
         raise WorkforceRuleError("Atanmış vardiya bulunamadı; check-in yapılamaz.")
     if shift["person_id"] != payload["person_id"]:
         raise WorkforceRuleError("Bu vardiya başka bir personele atanmış.")
-    if shift["date"] != datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat():
+    pilot_date_override = bool(payload.get("pilot_simulation")) and os.getenv("DOCKOS_ENV", "development").lower() != "production"
+    if shift["date"] != datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat() and not pilot_date_override:
         raise WorkforceRuleError("Yalnızca bugünkü atanmış vardiya için check-in yapılabilir.")
     warehouse = _WAREHOUSES[shift["warehouse_id"]]
     distance = _validate_presence(warehouse, payload)

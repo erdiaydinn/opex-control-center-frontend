@@ -97,6 +97,7 @@ export const DEFAULT_WORKFORCE_STATE = {
     managerTasks: true,
     qrCheckIn: false,
     liveBreakActivity: true,
+    employeeExperience: true,
   },
   people,
   warehouses,

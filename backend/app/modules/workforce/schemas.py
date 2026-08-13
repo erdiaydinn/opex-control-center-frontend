@@ -168,6 +168,7 @@ class FeatureFlagsUpdateRequest(BaseModel):
     manager_tasks: bool = True
     qr_check_in: bool = False
     live_break_activity: bool = True
+    employee_experience: bool = True
 
 
 class PersonUpsertRequest(BaseModel):

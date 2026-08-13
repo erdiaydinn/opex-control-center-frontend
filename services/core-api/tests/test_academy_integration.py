@@ -37,7 +37,7 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(tmp_path:
     monkeypatch.setenv('OPEX_ACADEMY_MEDIA_CDN_BASE_URL', 'https://academy-cdn.example.test')
     monkeypatch.setenv('OPEX_ACADEMY_MEDIA_SIGNING_SECRET_FILE', str(key))
     monkeypatch.setenv('OPEX_ACADEMY_MEDIA_TOKEN_TTL_SECONDS', '90')
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as c:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost') as c:
         video = (await c.post('/v1/academy/admin/content', json={
             'content_type':'video','slug':'safety-video','title_i18n':{'tr':'Güvenlik','en':'Safety','ar':'سلامة'},
             'version_label':'2026.1','locale':'tr','source_sha256':'1'*64,'duration_ms':10000,
@@ -112,5 +112,5 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(tmp_path:
 
 
 def test_production_composition_contains_academy_routes():
-    paths = {r.path for r in app.routes}
+    paths = set(app.openapi()['paths'])
     assert '/v1/academy/me' in paths and '/v1/academy/knowledge/answer' in paths

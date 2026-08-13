@@ -82,8 +82,11 @@ Bu JSON'daki alanları şöyle eşleyin:
 | `VITE_OIDC_REDIRECT_URI` | IAM'de izin verilen kesin callback URL |
 
 JWT içinde en az `sub`, `employee_id`, `roles`, `permissions`, `iat` ve `exp` olmalıdır.
+Depo/bölge yöneticilerinde ayrıca yetkili canonical depo ID'lerini içeren
+`warehouse_scope` claim'i zorunludur; claim eksikse Workforce production istekleri reddedilir.
 Kurum farklı claim adı kullanıyorsa `OPEX_OIDC_ROLES_CLAIM` ve
-`OPEX_OIDC_PERMISSIONS_CLAIM` ile `OPEX_OIDC_EMPLOYEE_ID_CLAIM` değerlerini değiştirin. `OPEX_ALLOW_LEGACY_HEADERS=false`
+`OPEX_OIDC_PERMISSIONS_CLAIM`, `OPEX_OIDC_EMPLOYEE_ID_CLAIM` ve
+`OPEX_OIDC_WAREHOUSE_SCOPE_CLAIM` değerlerini değiştirin. `OPEX_ALLOW_LEGACY_HEADERS=false`
 olarak kalmalıdır.
 
 Örnek (gerçek değer değildir):

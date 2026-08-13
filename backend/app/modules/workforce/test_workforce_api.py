@@ -141,6 +141,46 @@ class WorkforceFieldPilotApiTests(unittest.TestCase):
         self.assertEqual(own.status_code, 200, own.text)
         self.assertEqual(other.status_code, 403)
 
+    def test_production_manager_scope_filters_reads_and_blocks_cross_warehouse_writes(self):
+        claims = {
+            "sub": "fulya-manager", "name": "Fulya Saha Yöneticisi",
+            "roles": ["warehouse_manager"],
+            "permissions": ["viewWorkforce", "viewPeople", "createShift", "viewAuditLog"],
+            "warehouse_scope": ["fulya"],
+        }
+        headers = {"Authorization": "Bearer signed.manager.jwt"}
+        cross_warehouse = {
+            "person_id": "100287", "person_name": "Kerim Atayolu", "warehouse_id": "uskudar",
+            "date": "2026-10-01", "start": "08:00", "end": "17:00", "break_minutes": 60,
+            "role": "Picker",
+        }
+        own_warehouse = {
+            "person_id": "100184", "person_name": "Erdi Aydın", "warehouse_id": "fulya",
+            "date": "2026-10-01", "start": "08:00", "end": "17:00", "break_minutes": 60,
+            "role": "Picker",
+        }
+        environment = {"DOCKOS_ENV": "production", "OPEX_ALLOW_LEGACY_HEADERS": "false"}
+        with patch.dict(os.environ, environment, clear=False), patch("app.security._decode_bearer", return_value=claims):
+            bootstrap = self.client.get("/api/workforce/admin/bootstrap", headers=headers)
+            shifts = self.client.get("/api/workforce/shifts", headers=headers)
+            blocked = self.client.post("/api/workforce/shifts", json=cross_warehouse, headers=headers)
+            allowed = self.client.post("/api/workforce/shifts", json=own_warehouse, headers=headers)
+            audit = self.client.get("/api/workforce/audit-log", headers=headers)
+        self.assertEqual(bootstrap.status_code, 200, bootstrap.text)
+        self.assertTrue(bootstrap.json()["warehouses"])
+        self.assertTrue(all("fulya" in row["id"].lower() for row in bootstrap.json()["warehouses"]))
+        self.assertTrue(all(row.get("warehouse_id") == "fulya" for row in bootstrap.json()["people"]))
+        self.assertTrue(all("fulya" in row.get("warehouse", "").lower() for row in bootstrap.json()["attendance"]))
+        self.assertTrue(all(row.get("warehouse_id") == "fulya" for row in shifts.json()["rows"]))
+        self.assertEqual(blocked.status_code, 403, blocked.text)
+        self.assertEqual(allowed.status_code, 201, allowed.text)
+        self.assertEqual(audit.status_code, 403, audit.text)
+
+        missing_scope = {**claims, "warehouse_scope": []}
+        with patch.dict(os.environ, environment, clear=False), patch("app.security._decode_bearer", return_value=missing_scope):
+            denied = self.client.get("/api/workforce/admin/bootstrap", headers=headers)
+        self.assertEqual(denied.status_code, 403, denied.text)
+
     def test_gps_accuracy_distance_and_stale_user_presence_fail_closed(self):
         inaccurate = {**self.proof(), "accuracy_meters": 500}
         outside = {**self.proof(), "latitude": 40.0, "longitude": 29.0}

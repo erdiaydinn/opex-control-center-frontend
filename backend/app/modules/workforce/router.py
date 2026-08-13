@@ -96,6 +96,82 @@ def _require_any(role: str, permissions: str, *actions: str) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Bu işlem için şu yetkilerden biri gerekir: {', '.join(actions)}.")
 
 
+def _normalized_role(role: str) -> str:
+    return role.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _warehouse_key(value: object) -> str:
+    return str(value or "").strip().casefold().translate(str.maketrans("üıöşçğ", "uioscg"))
+
+
+def _canonical_warehouse_id(value: object) -> str | None:
+    key = _warehouse_key(value)
+    if not key:
+        return None
+    warehouses = list_warehouses()
+    exact = next((row for row in warehouses if key in {_warehouse_key(row.get("id")), _warehouse_key(row.get("name"))}), None)
+    if exact:
+        return _warehouse_key(exact["id"])
+    aliases = [row for row in warehouses if _warehouse_key(row.get("name")).startswith(f"{key} (")]
+    return _warehouse_key(aliases[0]["id"]) if len(aliases) == 1 else None
+
+
+def _warehouse_scope(request: Request, role: str) -> set[str] | None:
+    """Return the verified warehouse scope for non-global admin identities.
+
+    Production warehouse/regional managers fail closed when their signed JWT
+    has no scope. Local legacy headers remain tenant-wide for demo/test use.
+    """
+    if _normalized_role(role) in {"super_admin", "superadmin", "admin", "administrator", "hr"}:
+        return None
+    identity = getattr(request.state, "identity", None)
+    scope = {
+        canonical
+        for value in getattr(identity, "warehouse_scope", ())
+        if (canonical := _canonical_warehouse_id(value)) is not None
+    }
+    if scope:
+        return scope
+    if _normalized_role(role) in {"picker", "employee", "worker"}:
+        return None
+    if os.getenv("DOCKOS_ENV", "development").lower() == "production":
+        raise HTTPException(status_code=403, detail="JWT warehouse_scope claim'i gerekli.")
+    return None
+
+
+def _row_warehouse_id(row: dict) -> str | None:
+    direct = row.get("warehouse_id")
+    if direct:
+        return _canonical_warehouse_id(direct)
+    if row.get("id") and row.get("latitude") is not None and row.get("longitude") is not None:
+        return _canonical_warehouse_id(row["id"])
+    shift_id = row.get("shift_id")
+    if shift_id:
+        shift = next((item for item in list_shifts() if item.get("id") == shift_id), None)
+        if shift and shift.get("warehouse_id"):
+            return _canonical_warehouse_id(shift["warehouse_id"])
+    person_id = row.get("person_id") or row.get("employee_id")
+    if person_id and person_id != "*":
+        person = next((item for item in list_people(False) if item.get("id") == person_id or item.get("employee_id") == person_id), None)
+        if person and person.get("warehouse_id"):
+            return _canonical_warehouse_id(person["warehouse_id"])
+    warehouse = str(row.get("warehouse") or "").strip().lower()
+    if warehouse:
+        return _canonical_warehouse_id(warehouse)
+    return None
+
+
+def _scoped_rows(request: Request, role: str, rows: list[dict]) -> list[dict]:
+    scope = _warehouse_scope(request, role)
+    return rows if scope is None else [row for row in rows if _row_warehouse_id(row) in scope]
+
+
+def _require_rows_in_scope(request: Request, role: str, rows: list[dict]) -> None:
+    scope = _warehouse_scope(request, role)
+    if scope is not None and any(_row_warehouse_id(row) not in scope for row in rows):
+        raise HTTPException(status_code=403, detail="Kayıt yetkili depo kapsamınızın dışında.")
+
+
 def _enforce_self(request: Request, person_id: str, role: str) -> None:
     if role.strip().lower().replace("-", "_").replace(" ", "_") in {"admin", "administrator", "super_admin", "superadmin", "manager", "warehouse_manager", "hr"}:
         return
@@ -164,19 +240,21 @@ def health() -> dict:
 
 
 @router.get("/warehouses")
-def warehouses() -> dict:
-    return {"rows": list_warehouses()}
+def warehouses(request: Request, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
+    return {"rows": _scoped_rows(request, x_opex_role, list_warehouses())}
 
 
 @router.post("/warehouses")
-def save_warehouse(payload: WarehouseUpsertRequest, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
+def save_warehouse(payload: WarehouseUpsertRequest, request: Request, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageWarehouses")
+    _require_rows_in_scope(request, x_opex_role, [payload.model_dump()])
     return upsert_warehouse(payload.model_dump(), x_opex_user)
 
 
 @router.patch("/warehouses")
-def patch_warehouses(payload: WarehouseBulkPatchRequest, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
+def patch_warehouses(payload: WarehouseBulkPatchRequest, request: Request, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageWarehouses")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": warehouse_id} for warehouse_id in payload.warehouse_ids])
     rows = bulk_patch_warehouses(payload.warehouse_ids, payload.model_dump(exclude={"warehouse_ids"}), x_opex_user)
     return {"updated": len(rows), "rows": rows}
 
@@ -208,67 +286,77 @@ def mobile_bootstrap(
 
 @router.get("/admin/bootstrap")
 def admin_bootstrap(
+    request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "viewWorkforce")
     sensitive = is_action_allowed(x_opex_role, x_opex_permissions, "viewSensitiveIdentity") or is_action_allowed(x_opex_role, x_opex_permissions, "viewFullNationalId")
+    scope = _warehouse_scope(request, x_opex_role)
     return {
-        "people": list_people(sensitive),
-        "warehouses": list_warehouses(),
+        "people": _scoped_rows(request, x_opex_role, list_people(sensitive)),
+        "warehouses": _scoped_rows(request, x_opex_role, list_warehouses()),
         "rules": list_rules(),
-        "shifts": list_shifts(),
-        "attendance": list_attendance(),
-        "leaves": list_leaves(),
-        "devices": list_device_bindings(),
-        "leave_requests": list_leave_requests(),
-        "manager_tasks": list_manager_tasks(),
+        "shifts": _scoped_rows(request, x_opex_role, list_shifts()),
+        "attendance": _scoped_rows(request, x_opex_role, list_attendance()),
+        "leaves": _scoped_rows(request, x_opex_role, list_leaves()),
+        "devices": _scoped_rows(request, x_opex_role, list_device_bindings()),
+        "leave_requests": _scoped_rows(request, x_opex_role, list_leave_requests()),
+        "manager_tasks": _scoped_rows(request, x_opex_role, list_manager_tasks()),
         "announcements": list_announcements(),
         "features": get_feature_flags(),
         "notification_policy": get_notification_policy(),
-        "audit": list_audit(1000) if is_action_allowed(x_opex_role, x_opex_permissions, "viewAuditLog") else [],
+        "audit": list_audit(1000) if scope is None and is_action_allowed(x_opex_role, x_opex_permissions, "viewAuditLog") else [],
     }
 
 
 @router.get("/people")
 def people(
+    request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "viewPeople")
     sensitive = is_action_allowed(x_opex_role, x_opex_permissions, "viewSensitiveIdentity") or is_action_allowed(x_opex_role, x_opex_permissions, "viewFullNationalId")
-    return {"rows": list_people(sensitive)}
+    return {"rows": _scoped_rows(request, x_opex_role, list_people(sensitive))}
 
 
 @router.post("/people/bulk-upsert")
 def people_bulk_upsert(
     payload: PeopleBulkUpsertRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require_any(x_opex_role, x_opex_permissions, "managePeople", "manageEmployees")
+    _require_rows_in_scope(request, x_opex_role, [row.model_dump() for row in payload.rows])
     return upsert_people([row.model_dump() for row in payload.rows], x_opex_user)
 
 
 @router.post("/people/employment-lifecycle/import")
 def employment_lifecycle_import(
     payload: EmploymentLifecycleImportRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require_any(x_opex_role, x_opex_permissions, "managePeople", "manageEmployees")
+    _require_rows_in_scope(request, x_opex_role, [row.model_dump() for row in payload.rows])
     return update_employment_lifecycle([row.model_dump() for row in payload.rows], x_opex_user, payload.file_name)
 
 
 @router.get("/audit-log")
 def audit_log(
+    request: Request,
     limit: int = 500,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "viewAuditLog")
+    if _warehouse_scope(request, x_opex_role) is not None:
+        raise HTTPException(status_code=403, detail="Depo kapsamlı rollere tenant geneli denetim kaydı açılamaz.")
     return {"rows": list_audit(limit)}
 
 
@@ -290,22 +378,25 @@ def add_rule_version(
 
 @router.get("/devices")
 def devices(
+    request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageDevices")
-    return {"rows": list_device_bindings()}
+    return {"rows": _scoped_rows(request, x_opex_role, list_device_bindings())}
 
 
 @router.post("/devices/{person_id}/reset")
 def reset_device(
     person_id: str,
     payload: DeviceResetRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageDevices")
+    _require_rows_in_scope(request, x_opex_role, [{"person_id": person_id}])
     return reset_device_binding(person_id, payload.model_dump(), x_opex_user)
 
 
@@ -341,44 +432,52 @@ def device_challenge(
 def attendance(request: Request, person_id: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
     scoped = _scoped_person_id(request, person_id, x_opex_role)
     rows = list_attendance()
-    return {"rows": rows if scoped is None else [item for item in rows if item.get("person_id") == scoped]}
+    rows = rows if scoped is None else [item for item in rows if item.get("person_id") == scoped]
+    return {"rows": _scoped_rows(request, x_opex_role, rows)}
 
 
 @router.post("/attendance/import")
 def attendance_import(
     payload: AttendanceImportRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require_any(x_opex_role, x_opex_permissions, "manualCorrection", "importRoster")
+    _require_rows_in_scope(request, x_opex_role, [row.model_dump() for row in payload.rows])
     return import_attendance([row.model_dump() for row in payload.rows], x_opex_user, payload.file_name)
 
 
 @router.post("/leaves/import")
 def leaves_import(
     payload: LeaveImportRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "importTimeOff")
+    _require_rows_in_scope(request, x_opex_role, [row.model_dump() for row in payload.rows])
     return import_leaves([row.model_dump() for row in payload.rows], x_opex_user, payload.file_name)
 
 
 @router.get("/shifts")
 def shifts(request: Request, person_id: str | None = None, date: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
-    return {"rows": list_shifts(_scoped_person_id(request, person_id, x_opex_role), date)}
+    rows = list_shifts(_scoped_person_id(request, person_id, x_opex_role), date)
+    return {"rows": _scoped_rows(request, x_opex_role, rows)}
 
 
 @router.post("/shifts", status_code=status.HTTP_201_CREATED)
 def add_shift(
     payload: ShiftCreateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "createShift")
+    _require_rows_in_scope(request, x_opex_role, [payload.model_dump()])
     try:
         return create_shift(payload.model_dump(), x_opex_user)
     except WorkforceRuleError as error:
@@ -439,11 +538,15 @@ def break_action(
 def manual_correction(
     attendance_id: str,
     payload: ManualCorrectionRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manualCorrection")
+    rows = [row for row in list_attendance() if row.get("id") == attendance_id]
+    if rows:
+        _require_rows_in_scope(request, x_opex_role, rows)
     result = correct_attendance(attendance_id, payload.model_dump(), x_opex_user)
     if result is None:
         raise HTTPException(status_code=404, detail="Puantaj kaydı bulunamadı.")
@@ -454,11 +557,15 @@ def manual_correction(
 def approve(
     attendance_id: str,
     payload: ApprovalRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "approveAttendance")
+    rows = [row for row in list_attendance() if row.get("id") == attendance_id]
+    if rows:
+        _require_rows_in_scope(request, x_opex_role, rows)
     result = approve_attendance(attendance_id, x_opex_user, payload.note)
     if result is None:
         raise HTTPException(status_code=404, detail="Puantaj kaydı bulunamadı.")
@@ -468,22 +575,28 @@ def approve(
 @router.post("/attendance/bulk-approve")
 def bulk_approve(
     payload: BulkApprovalRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "bulkApprove")
+    rows = [row for row in list_attendance() if row.get("id") in payload.attendance_ids]
+    if len(rows) != len(set(payload.attendance_ids)):
+        raise HTTPException(status_code=404, detail="Puantaj kayıtlarından biri bulunamadı.")
+    _require_rows_in_scope(request, x_opex_role, rows)
     rows = bulk_approve_attendance(payload.attendance_ids, x_opex_user, payload.note)
     return {"approved": len(rows), "rows": rows}
 
 
 @router.get("/manager-tasks")
 def manager_tasks(
+    request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "resolveManagerTasks")
-    return {"rows": list_manager_tasks()}
+    return {"rows": _scoped_rows(request, x_opex_role, list_manager_tasks())}
 
 
 @router.post("/correction-requests", status_code=status.HTTP_201_CREATED)
@@ -504,11 +617,15 @@ def add_correction_request(
 def resolve_task(
     task_id: str,
     payload: ManagerTaskResolveRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "resolveManagerTasks")
+    rows = [row for row in list_manager_tasks() if row.get("id") == task_id]
+    if rows:
+        _require_rows_in_scope(request, x_opex_role, rows)
     result = resolve_manager_task(task_id, payload.model_dump(), x_opex_user)
     if result is None:
         raise HTTPException(status_code=404, detail="Yönetici görevi bulunamadı.")
@@ -581,7 +698,8 @@ def remove_all_notifications(person_id: str, request: Request, x_opex_user: str 
 
 @router.get("/leave-requests")
 def leave_requests(request: Request, person_id: str | None = None, warehouse: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
-    return {"rows": list_leave_requests(_scoped_person_id(request, person_id, x_opex_role), warehouse)}
+    rows = list_leave_requests(_scoped_person_id(request, person_id, x_opex_role), warehouse)
+    return {"rows": _scoped_rows(request, x_opex_role, rows)}
 
 
 @router.post("/leave-requests", status_code=status.HTTP_201_CREATED)
@@ -594,8 +712,11 @@ def add_leave_request(payload: LeaveRequestCreateRequest, request: Request, x_op
 
 
 @router.post("/leave-requests/{request_id}/resolve")
-def resolve_leave(request_id: str, payload: LeaveRequestResolveRequest, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
+def resolve_leave(request_id: str, payload: LeaveRequestResolveRequest, request: Request, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
     _require(x_opex_role, x_opex_permissions, "resolveManagerTasks")
+    rows = [row for row in list_leave_requests() if row.get("id") == request_id]
+    if rows:
+        _require_rows_in_scope(request, x_opex_role, rows)
     result = resolve_leave_request(request_id, payload.model_dump(), x_opex_user)
     if result is None:
         raise HTTPException(status_code=404, detail="İzin talebi bulunamadı.")

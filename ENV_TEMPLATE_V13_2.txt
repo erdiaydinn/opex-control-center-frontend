@@ -34,6 +34,7 @@ OPEX_OIDC_ALGORITHMS=RS256
 OPEX_OIDC_ROLES_CLAIM=roles
 OPEX_OIDC_PERMISSIONS_CLAIM=permissions
 OPEX_OIDC_EMPLOYEE_ID_CLAIM=employee_id
+OPEX_OIDC_WAREHOUSE_SCOPE_CLAIM=warehouse_scope
 VITE_OIDC_CLIENT_ID=opex-control-center-web
 VITE_OIDC_AUTHORIZE_URL=https://login.company.example/authorize
 VITE_OIDC_TOKEN_URL=https://login.company.example/oauth/token

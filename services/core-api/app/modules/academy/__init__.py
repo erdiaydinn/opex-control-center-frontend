@@ -1,0 +1,1 @@
+"""EAY Academy production domain."""

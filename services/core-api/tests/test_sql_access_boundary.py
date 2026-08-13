@@ -163,25 +163,23 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
                 function,
             )
 
-            if name in EXECUTION_CALLS:
-                if (
-                    location
-                    not in ALLOWED_SQL_EXECUTION_POINTS
-                ):
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        f"{function} -> {name}"
-                    )
+            if (
+                name in EXECUTION_CALLS
+                and location not in ALLOWED_SQL_EXECUTION_POINTS
+            ):
+                violations.append(
+                    f"{relative}:{node.lineno} "
+                    f"{function} -> {name}"
+                )
 
-            if name in ENGINE_CALLS:
-                if (
-                    location
-                    not in ALLOWED_ENGINE_CREATION
-                ):
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        f"{function} -> {name}"
-                    )
+            if (
+                name in ENGINE_CALLS
+                and location not in ALLOWED_ENGINE_CREATION
+            ):
+                violations.append(
+                    f"{relative}:{node.lineno} "
+                    f"{function} -> {name}"
+                )
 
         # Direct DB drivers may only exist behind the approved
         # SQLAlchemy/session boundary. This intentionally blocks

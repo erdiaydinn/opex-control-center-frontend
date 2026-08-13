@@ -1,10 +1,12 @@
 from uuid import UUID
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials
 
+import app.core.security as security
 from app.core.config import Settings
-from app.core.security import _decode_development_token
+from app.core.security import _decode_development_token, get_current_principal
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -55,11 +57,6 @@ def test_development_token_rejects_non_uuid_tenant() -> None:
     with pytest.raises(HTTPException):
         _decode_development_token("dev.user-1.tenant-a.viewer")
 
-from fastapi import Request
-from fastapi.security import HTTPAuthorizationCredentials
-
-import app.core.security as security
-from app.core.security import get_current_principal
 
 
 def make_request() -> Request:

@@ -24,6 +24,27 @@ MODULE_ADMIN = frozenset(
 
 FEATURES = MappingProxyType(
     {
+        "budget": frozenset(
+            {
+                "summary",
+                "plans",
+                "periods",
+                "costCenters",
+                "budgetLines",
+                "purchaseRequests",
+                "approvals",
+                "purchaseOrders",
+                "invoices",
+                "commitments",
+                "actuals",
+                "forecasts",
+                "variance",
+                "reconciliation",
+                "imports",
+                "audit",
+                "exports",
+            }
+        ),
         "dockos": frozenset(
             {
                 "dashboard",
@@ -71,6 +92,25 @@ FEATURES = MappingProxyType(
 
 ACTIONS = MappingProxyType(
     {
+        "budget": frozenset(
+            {
+                "createPlan",
+                "activatePlan",
+                "managePeriods",
+                "manageCostCenters",
+                "manageBudgetLines",
+                "createRequest",
+                "approveRequest",
+                "createPO",
+                "postInvoice",
+                "createForecast",
+                "import",
+                "resolveReconciliation",
+                "closePeriod",
+                "export",
+                "viewAudit",
+            }
+        ),
         "dockos": frozenset(
             {
                 "view",
@@ -141,43 +181,21 @@ def action_permission(module: str, action: str) -> str:
     return f"action:{module}:{action}"
 
 
-_permission_keys = {
-    module_permission(module)
-    for module in ROUTE_MODULES
-}
-
-_permission_keys.update(
-    module_permission(module, "admin")
-    for module in MODULE_ADMIN
-)
-
+_permission_keys = {module_permission(module) for module in ROUTE_MODULES}
+_permission_keys.update(module_permission(module, "admin") for module in MODULE_ADMIN)
 for module, features in FEATURES.items():
-    _permission_keys.update(
-        feature_permission(module, feature)
-        for feature in features
-    )
-
+    _permission_keys.update(feature_permission(module, feature) for feature in features)
 for module, actions in ACTIONS.items():
-    _permission_keys.update(
-        action_permission(module, action)
-        for action in actions
-    )
+    _permission_keys.update(action_permission(module, action) for action in actions)
 
 
 ALL_PERMISSION_KEYS = frozenset(_permission_keys)
 
 
-# Fail-closed initial system-role policy.
-# Only the bootstrap super admin receives the complete application
-# permission catalog automatically. Other roles require explicit DB grants.
 SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
     {
         "super_admin": ALL_PERMISSION_KEYS,
-        "platform_admin": frozenset(
-            {
-                module_permission("admin_access", "view"),
-            }
-        ),
+        "platform_admin": frozenset({module_permission("admin_access", "view")}),
         "operator": frozenset(),
         "viewer": frozenset(),
     }

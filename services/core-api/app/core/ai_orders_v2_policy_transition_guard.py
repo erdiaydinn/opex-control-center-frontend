@@ -1,18 +1,17 @@
 """Fail-closed transition guard for the blocked orders-v2 policy proposal.
 
-This module evaluates whether one manual policy-promotion proposal is still
-fresh, still bound to the exact active blocked policy, and has not already been
-consumed. It deliberately does not mutate the policy registry or enable query
-execution; a successful guard result is only reviewable evidence for a later
-manual version-controlled change.
+Replay state is loaded from a version-controlled append-only ledger colocated
+with this module. Callers cannot supply or clear consumed proposal state. The
+guard remains non-mutating: passing it only yields reviewable evidence for a
+later manual version-controlled policy change.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -25,10 +24,87 @@ from app.core.ai_query_contract_policy import (
     ai_query_contract_policy_fingerprint,
 )
 
-ORDERS_V2_POLICY_TRANSITION_GUARD_VERSION = 1
+ORDERS_V2_POLICY_TRANSITION_GUARD_VERSION = 2
 ORDERS_V2_POLICY_PROPOSAL_MAX_AGE = timedelta(hours=6)
 ORDERS_V2_POLICY_TRANSITION_BLOCKER = "orders_v2_manual_policy_patch_required"
+CONSUMPTION_LEDGER_PATH = Path(__file__).with_name(
+    "orders_v2_policy_consumption_ledger.json"
+)
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
+
+
+class OrdersV2PolicyConsumptionEntry(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    proposal_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    consumed_at: datetime
+    previous_entry_fingerprint: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
+
+    @model_validator(mode="after")
+    def validate_timestamp(self) -> OrdersV2PolicyConsumptionEntry:
+        if self.consumed_at.tzinfo is None or self.consumed_at.utcoffset() is None:
+            raise ValueError("consumption timestamp must be timezone-aware")
+        return self
+
+    @property
+    def entry_fingerprint(self) -> str:
+        encoded = json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+
+class OrdersV2PolicyConsumptionLedger(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: Literal[1]
+    ledger_kind: Literal["orders_v2_policy_proposal_consumption_ledger"]
+    previous_ledger_fingerprint: str | None = Field(
+        default=None,
+        pattern=SHA256_PATTERN,
+    )
+    entries: tuple[OrdersV2PolicyConsumptionEntry, ...]
+
+    @model_validator(mode="after")
+    def validate_append_only_chain(self) -> OrdersV2PolicyConsumptionLedger:
+        seen: set[str] = set()
+        previous: str | None = None
+        for entry in self.entries:
+            if entry.proposal_fingerprint in seen:
+                raise ValueError("consumption ledger contains duplicate proposal")
+            if entry.previous_entry_fingerprint != previous:
+                raise ValueError("consumption ledger fingerprint chain broken")
+            seen.add(entry.proposal_fingerprint)
+            previous = entry.entry_fingerprint
+        return self
+
+    @property
+    def ledger_fingerprint(self) -> str:
+        encoded = json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    @property
+    def consumed_proposal_fingerprints(self) -> frozenset[str]:
+        return frozenset(entry.proposal_fingerprint for entry in self.entries)
+
+
+def load_orders_v2_policy_consumption_ledger() -> OrdersV2PolicyConsumptionLedger:
+    try:
+        payload = json.loads(CONSUMPTION_LEDGER_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("canonical consumption ledger unavailable or invalid") from exc
+    return OrdersV2PolicyConsumptionLedger.model_validate(payload)
 
 
 class OrdersV2PolicyTransitionGuardArtifact(BaseModel):
@@ -36,7 +112,7 @@ class OrdersV2PolicyTransitionGuardArtifact(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: Literal[1]
+    version: Literal[2]
     kind: Literal["orders_v2_policy_transition_guard"]
     environment: Literal["production"]
     evaluated_at: datetime
@@ -45,7 +121,7 @@ class OrdersV2PolicyTransitionGuardArtifact(BaseModel):
     proposal_current_policy_fingerprint: str = Field(pattern=SHA256_PATTERN)
     observed_current_policy_fingerprint: str = Field(pattern=SHA256_PATTERN)
     target_review_fingerprint: str = Field(pattern=SHA256_PATTERN)
-    consumed_registry_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    consumption_ledger_fingerprint: str = Field(pattern=SHA256_PATTERN)
     proposal_age_seconds: int = Field(ge=0)
     proposal_max_age_seconds: Literal[21600]
     drift_detected: Literal[False]
@@ -63,7 +139,10 @@ class OrdersV2PolicyTransitionGuardArtifact(BaseModel):
     def validate_guard_snapshot(self) -> OrdersV2PolicyTransitionGuardArtifact:
         if self.evaluated_at.tzinfo is None or self.evaluated_at.utcoffset() is None:
             raise ValueError("transition evaluation timestamp must be timezone-aware")
-        if self.proposal_current_policy_fingerprint != self.observed_current_policy_fingerprint:
+        if (
+            self.proposal_current_policy_fingerprint
+            != self.observed_current_policy_fingerprint
+        ):
             raise ValueError("policy drift detected")
         if self.proposal_age_seconds > self.proposal_max_age_seconds:
             raise ValueError("policy proposal expired")
@@ -80,33 +159,10 @@ class OrdersV2PolicyTransitionGuardArtifact(BaseModel):
         return hashlib.sha256(encoded).hexdigest()
 
 
-def _fingerprint_consumed_registry(fingerprints: tuple[str, ...]) -> str:
-    encoded = json.dumps(
-        fingerprints,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _normalized_consumed_fingerprints(values: Iterable[str]) -> tuple[str, ...]:
-    normalized: set[str] = set()
-    for value in values:
-        if not isinstance(value, str) or len(value) != 64:
-            raise ValueError("consumed proposal fingerprint must be sha256")
-        try:
-            int(value, 16)
-        except ValueError as exc:
-            raise ValueError("consumed proposal fingerprint must be sha256") from exc
-        normalized.add(value.lower())
-    return tuple(sorted(normalized))
-
-
 def build_orders_v2_policy_transition_guard(
     *,
     proposal: OrdersV2ManualPolicyPromotionProposal,
     evaluated_at: datetime,
-    consumed_proposal_fingerprints: Iterable[str] = (),
 ) -> OrdersV2PolicyTransitionGuardArtifact:
     """Reject stale, replayed, or drifted proposals without mutating policy."""
 
@@ -128,8 +184,8 @@ def build_orders_v2_policy_transition_guard(
         raise ValueError("proposal promotion state is invalid")
 
     proposal_fingerprint = proposal.proposal_fingerprint
-    consumed = _normalized_consumed_fingerprints(consumed_proposal_fingerprints)
-    if proposal_fingerprint in consumed:
+    ledger = load_orders_v2_policy_consumption_ledger()
+    if proposal_fingerprint in ledger.consumed_proposal_fingerprints:
         raise ValueError("policy proposal replay detected")
 
     current = AI_QUERY_CONTRACT_POLICIES["ops_kpi_query"]
@@ -141,7 +197,6 @@ def build_orders_v2_policy_transition_guard(
     if age > ORDERS_V2_POLICY_PROPOSAL_MAX_AGE:
         raise ValueError("policy proposal expired")
 
-    age_seconds = int(age.total_seconds())
     return OrdersV2PolicyTransitionGuardArtifact(
         version=ORDERS_V2_POLICY_TRANSITION_GUARD_VERSION,
         kind="orders_v2_policy_transition_guard",
@@ -152,8 +207,8 @@ def build_orders_v2_policy_transition_guard(
         proposal_current_policy_fingerprint=proposal.current_policy_fingerprint,
         observed_current_policy_fingerprint=observed_current_policy_fingerprint,
         target_review_fingerprint=proposal.target_review_fingerprint,
-        consumed_registry_fingerprint=_fingerprint_consumed_registry(consumed),
-        proposal_age_seconds=age_seconds,
+        consumption_ledger_fingerprint=ledger.ledger_fingerprint,
+        proposal_age_seconds=int(age.total_seconds()),
         proposal_max_age_seconds=21600,
         drift_detected=False,
         replay_detected=False,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
 from dataclasses import replace
 from datetime import date, datetime
 
@@ -55,10 +57,6 @@ def test_parameter_contract_is_exact_and_bound_to_candidate() -> None:
 
     fingerprint = orders_v2_bigquery_parameter_contract_fingerprint()
     assert len(fingerprint) == 64
-
-    # The contract fingerprint is derived from the candidate template
-    # fingerprint, so a future SQL template change cannot silently reuse this
-    # reviewed parameter-planning evidence.
     assert len(ORDERS_V2_CANDIDATE.template_fingerprint) == 64
 
 
@@ -209,11 +207,6 @@ def test_parameter_contract_fingerprint_changes_when_schema_changes() -> None:
         *ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT[:-1],
         changed,
     )
-
-    # Recompute with the same documented algorithm inside the test rather than
-    # mutating the module-level reviewed contract.
-    import hashlib
-    import json
 
     encoded = json.dumps(
         {

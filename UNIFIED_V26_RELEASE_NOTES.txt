@@ -1,0 +1,140 @@
+OPEX CONTROL CENTER — UNIFIED V26
+
+V26.1 WINDOWS POWERSHELL UYUMLULUK DÜZELTMESİ (04.08.2026)
+- Docker Compose etiketleri Go template yerine JSON üzerinden okunur.
+- Windows PowerShell 5'te oluşan "function com not defined" hatası giderildi.
+- Etiket sonucu boş olduğunda null değer üzerinde Trim çağrısı yapılmaz.
+- Mevcut Compose projesi veya .env bulunamazsa yeni/boş proje oluşturulmaz.
+- Downloads klasörü ve eski bozuk .venv klasörleri taranmaz.
+- Docker volume silme komutu yoktur; mevcut proje adı ve veriler korunur.
+
+Bu sürüm, kaybolan platform kartlarını V25 birleşik kaynak üzerinden geri getirir:
+- Workforce Control / Vardiya otomasyonu
+- Hiring Control / İşe alım talebi
+- Inventory / Sayım ve envanter
+
+Access Control düzeltmeleri:
+- Dokuz platformun tamamı yetki tablosunda görünür.
+- Inventory, Academy, AI Insight ve Access Control için eksik detay yetkileri eklendi.
+- View, Admin, ekran, aksiyon ve veri kapsamı alanları korunur.
+- V4 yetki kayıtları V5 kataloğuna kayıpsız taşınır.
+- "Modülleri Yenile" yalnız eksik platform/alanları ekler; mevcut seçimleri silmez.
+- Kullanıcıdan kaldırılan bir grup kaydetme sırasında kendiliğinden geri eklenmez.
+- 125% tarayıcı yakınlaştırmasında üç kolonun çakışmaması için grid daraltıldı.
+- Daha dar ekranlarda detay paneli alt satıra geçer; alanlar kaybolmaz.
+
+Kurulum / güncelleme:
+1. ZIP'i klasöre çıkartın.
+2. Docker Desktop açıkken PowerShell'de klasöre geçin.
+3. Set-ExecutionPolicy -Scope Process Bypass -Force
+4. .\UPDATE_OPEX_UNIFIED_V26.ps1
+
+Script mevcut Compose proje adını ve .env ayarını bulmaya çalışır, aynı Docker
+volume'larını kullanır ve volume silmez. Sağlık kontrolü tamamlanmadan başarı
+mesajı göstermez.
+
+Doğrulama:
+- npm run test:access
+- npm run build
+- Workforce, Recruitment ve Inventory backend testleri
+OPEX CONTROL CENTER UNIFIED V26.2
+================================
+
+- V13 kurulumunda .env dosyasi kayip olsa bile mevcut PostgreSQL ayarlari
+  calisan Docker container'larindan otomatik ve sessizce geri alinir.
+- Onceki kurtarma denemesinden kalan tek tirnakli veya eksik .env dosyalari
+  okunur; yarim dosya zaman damgali yedeklenmeden degistirilmez.
+- Eski surumde bulunmayan REDIS_PASSWORD, REDIS_URL ve
+  OPEX_LOCAL_JWT_SECRET guvenli ve URL-safe degerlerle bir kez tamamlanir.
+- PostgreSQL parolasi degistirilmez; Docker volume'lari silinmez.
+- Notification worker da ayni birlesik image ile yenilenir.
+
+OPEX CONTROL CENTER UNIFIED V26.3
+================================
+
+- Kanonik calisma adresi localhost:8080 olarak sabitlendi; 5173 eski gelistirme
+  kabugudur ve Workforce/Hiring kaynaklarini icermedigi icin ana sistem degildir.
+- Access Control kullanici ekranina guvenli "Sifre sifirla" aksiyonu eklendi.
+- Gecici parola yalnizca bir kez gosterilir; parola veya sifre ozeti audit log'a
+  yazilmaz.
+- Parola sifirlaninca basarisiz giris kilidi temizlenir, eski erisim/yenileme
+  oturumlari iptal edilir ve token surumu degistirilir.
+- Kullanici gecici parolayi degistirmeden korumali API'lere veya modullere
+  erisemez. Degisimden sonra yeni oturum otomatik verilir.
+- Local pilot gecisinde yalniz acikca tanimli "demo" parolasi demo hesabi icin
+  kullanilir; diger tum parolalar sunucu kimlik servisinde dogrulanir.
+- Inventory saglik kontrolunun "ready" cevabi da basarili kabul edilir; onceki
+  yanlis negatif kurulum hatasi giderildi.
+- Mevcut Docker proje adi, .env ve tum volume'lar korunur; veri silme komutu yoktur.
+
+OPEX CONTROL CENTER UNIFIED V26.4
+================================
+
+- Workforce personel, roster, izin ve puantaj dosyalarinda TC basligi buyuk/kucuk
+  harf, nokta, alt cizgi, Turkce karakter ve bosluk farkindan bagimsiz taninir.
+- TC, T.C., TCK, TCKN, TC Kimlik No, Kimlik Numarasi, National ID ve benzeri
+  yaygin kolon adlari ayni 11 haneli kimlik alanina normalize edilir.
+- Eslesme sirasi TC > Employee ID/Employee Number > daha once dogrulanmis Roster ID'dir.
+- Bir TC birden fazla personel kaydinda bulunursa yanlis kisiye sessiz eslesme yapilmaz;
+  kayit belirsiz olarak raporlanir.
+- Time Off Used dosyalari TC uzerinden personel ana verisine baglanir; ayni kisi ve
+  ayni gun icin mudur/sistem izni varsa ikinci izin olusturulmaz.
+- Donem Kapanisi ekranina CSV/XLSX kisi giris-cikis ve puantaj yukleme alani eklendi.
+  Mevcut mobil/sistem kayitlari dosyayla ezilmez; onceki dosya kayitlari guvenli upsert edilir.
+- Personel Ana Veri ekranina ayri ise giris/isten cikis tarihi sablonu ve toplu yukleme
+  alani eklendi. Tarihler TC oncelikli olarak mevcut personel kaydina islenir.
+- Gunluk Toplam, Gunluk Mola ve Gunluk Mesai sureleri saat formatindan dakikaya
+  cevrilir; fiili, eksik ve fazla mesai hesaplarina hazirlanir.
+- Mevcut Docker proje adi, .env, kullanicilar, yetkiler ve volume'lar korunur;
+  veri silme veya sifirlama komutu yoktur.
+
+OPEX CONTROL CENTER UNIFIED V26.5
+================================
+
+- Workforce Personel Ana Veri ekraninda Employee ID ve Roster ID birbirinden
+  ayrildi; ikisi artik ayni kimlik alani gibi kullanilmaz.
+- Tek CSV/XLSX dosyasindan Employee ID, Roster ID, TC, Ad Soyad, ise giris,
+  isten cikis, depo, unvan, e-posta ve telefon toplu eklenebilir/guncellenebilir.
+- Roster ID, Rooster ID, rider_id ve picker_id gibi yaygin kolon adlari otomatik
+  taninir; kolon adlarinda buyuk/kucuk harf ve noktalama farki onemsizdir.
+- Eslesme sirasi TC > Employee ID > Roster ID olarak uygulanir. Ad soyad tek
+  basina otomatik eslestirme anahtari olarak kullanilmaz.
+- Roster ID zamanla degisirse onceki ID'ler gecmis puantaj kayitlari icin
+  korunur. Ayni Roster ID iki farkli personele atanamaz; cakisma raporlanir.
+- Puantaj ve roster dosyalari personel ana verisindeki Roster ID ile dogrudan
+  Employee ID'ye baglanir. Ise giristen onceki ve isten cikistan sonraki gunler
+  donem mesai hesabina alinmaz.
+- TC sunucuda sifreli saklanir ve hassas veri yetkisi olmayan kullanicilara
+  maskeli gosterilir.
+- Mevcut Docker proje adi, .env, personel verileri, yetkiler ve volume'lar
+  korunur; veri silme veya sifirlama komutu yoktur.
+
+OPEX CONTROL CENTER UNIFIED V26.6
+================================
+
+- Yaklasik 28 bin satirlik Personel Ana Veri yuklemesinde gorulen HTTP 413
+  hatasi giderildi. NGINX API govde siniri acik ve kontrollu olarak 20 MB yapildi.
+- Personel, ise giris/cikis, puantaj ve izin kayitlari 3.000 satirlik paketlere
+  ayrilarak yuklenir; backend satir limitleri asilmaz ve tek dev istek olusmaz.
+- Personel yukleme sirasinda ekranda islenen/toplam kayit ilerlemesi gosterilir.
+- Backend personel eslestirmesi TC, Employee ID ve Roster ID indeksleriyle
+  hizlandirildi; buyuk personel dosyalarinda tekrar tekrar tum liste taranmaz.
+- HTTP 413 tekrar olusursa teknik kod yerine kullaniciya uygulanabilir Turkce
+  aciklama gosterilir.
+- Mevcut Docker proje adi, .env, personel/puantaj verileri, yetkiler ve tum
+  volume'lar korunur; veri silme veya sifirlama komutu yoktur.
+
+OPEX CONTROL CENTER UNIFIED V26.7
+================================
+
+- Roster Lab artik eski saniye kolonlarinin yaninda Gunluk Toplam, Gunluk Mola
+  ve Gunluk Mesai sure kolonlarini da CSV/XLSX dosyalarindan okur.
+- Excel'de 24 saati asan [h]:mm:ss sureleri (ornegin 26:00:00) 02:00 olarak
+  kirpilmaz; tam sure korunur.
+- 11 saat kontrolu net calisma = Gunluk Toplam - Gunluk Mola uzerinden ve
+  660 dakikadan buyuk kayitlar icin calisir.
+- Gunluk Mesai alani fazla mesai farki olarak ayrica saklanir; ham net sureyi
+  veya 11 saat kontrolunu ezmez.
+- Gecici roster yukleme alani CSV'nin yaninda XLSX/XLS dosyalarini da kabul eder.
+- Mevcut Docker proje adi, .env, personel/puantaj verileri, yetkiler ve tum
+  volume'lar korunur; veri silme veya sifirlama komutu yoktur.

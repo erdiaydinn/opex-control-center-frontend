@@ -1,0 +1,23 @@
+OPEX INVENTORY V22 — MULTI-WAREHOUSE ANDROID FOUNDATION
+29.07.2026
+
+Scope
+- Target architecture: 500 warehouses and up to 10,000 concurrent field users.
+- One shared Inventory API for web control center and Android terminals.
+- Warehouse scope is derived from verified SSO claims; client warehouse values are not authorization.
+- Existing blind count, recount, approval, append-only audit, location lock and idempotency remain.
+
+Android delivery
+- Real Android source project under android-inventory/.
+- Zebra DataWedge profile creation and broadcast scanning.
+- Configurable HTTPS Inventory API and bearer token.
+- Stable Android device identity and unique client_event_id per scan.
+- Offline queue with idempotent replay to the V22 Inventory API.
+- Barcode symbology, success/error feedback, and terminal diagnostics baseline.
+- GitHub Actions produces OPEX-Inventory-V22.apk as a downloadable artifact.
+
+Production boundary
+- The Actions artifact is a test APK. Production requires managed signing, MDM distribution,
+  company SSO/OIDC, certificate-pinned HTTPS, encrypted Room storage, PostgreSQL, Redis,
+  load testing and device acceptance on each Zebra/Honeywell/Sunmi model.
+- SQLite remains a local pilot database and is not the 10,000-user production datastore.

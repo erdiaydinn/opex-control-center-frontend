@@ -1,0 +1,17 @@
+OPEX CONTROL CENTER — INVENTORY V23
+===================================
+
+Single-package production hardening release:
+- Admin user/account creation and warehouse/server-group assignment
+- Secure local login plus optional company OIDC
+- Strong password hashing, lockout, short access token and rotating refresh session
+- Token revocation on password/status changes
+- Redis atomic location locking
+- PostgreSQL RLS/partition migration
+- Encrypted Android token/offline queue
+- HTTPS-only terminal traffic
+- Container network isolation and secret-required configuration
+- 10,000-user staged k6 load test
+- Security and scale go-live gate
+
+No real password, token, signing key or service credential is included.

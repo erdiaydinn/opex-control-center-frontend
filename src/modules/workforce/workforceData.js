@@ -112,6 +112,8 @@ export const DEFAULT_WORKFORCE_STATE = {
   rosterIdentityMap: {},
   rosterIdentityImport: null,
   employeeImport: null,
+  employmentLifecycleImport: null,
+  attendanceImport: null,
   userAccounts: [],
   rosterOverrides: {},
   rosterTasks: [],

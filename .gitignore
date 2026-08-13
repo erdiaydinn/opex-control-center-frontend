@@ -13,6 +13,23 @@ pnpm-debug.log*
 # Local runtime data
 runtime/
 
+# Personal/workforce imports, runtime databases and key material.
+backend/data/
+data/
+secrets/
+*.db
+*.sqlite
+*.sqlite3
+*.p8
+*.pem
+*.key
+*.p12
+*.xlsx
+*.xls
+*.csv
+backups/
+release/
+
 # Python cache
 __pycache__/
 *.py[cod]

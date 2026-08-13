@@ -1,5 +1,7 @@
-﻿const ACCESS_STORAGE_KEY = "opex_access_config_v3";
+﻿const ACCESS_STORAGE_KEY = "opex_access_config_v5";
 const LEGACY_ACCESS_STORAGE_KEYS = [
+  "opex_access_config_v4",
+  "opex_access_config_v3",
   "opex_access_config_v2",
   "opex_access_config_v1",
 ];
@@ -9,13 +11,131 @@ export const ACCESS_MODULES = [
   { key: "planogram", title: "Planogram Studio", description: "Raf, fixture, facing ve planogram operasyonu" },
   { key: "dockos", title: "DockOS", description: "Sevkiyat, randevu, PO ve depo kabul kontrolü" },
   { key: "budget", title: "Budget Control", description: "PR, PO, fatura ve bütçe görünürlüğü" },
+  { key: "workforce", title: "Workforce Control", description: "Picker vardiyası, puantaj, konum ve bordro akışı" },
+  { key: "recruitment", title: "Hiring Control", description: "Norm bazlı işe alım talebi, onay ve partner bildirimi" },
   { key: "academy", title: "OPEX Academy", description: "SOP, eğitim ve bilgi merkezi" },
   { key: "insight", title: "AI Insight Base", description: "Operasyon içgörüsü ve aksiyon önerileri" },
-  { key: "inventory", title: "Inventory", description: "Kör sayım, fark mutabakatı ve tutanak yönetimi" },
+  { key: "inventory", title: "Inventory", description: "Kör sayım, fark mutabakatı, yeniden sayım ve tutanak yönetimi" },
   { key: "admin_access", title: "Access Control", description: "Kullanıcı, grup ve modül erişim yönetimi" },
 ];
 
 export const MODULE_DETAIL_CONFIG = {
+  inventory: {
+    title: "Inventory Detay Yetkileri",
+    features: [
+      { key: "dashboard", label: "Sayım Dashboard", description: "Atanan, devam eden ve tamamlanan sayımları görür" },
+      { key: "documents", label: "Sayım Belgeleri", description: "Sayım belgesi oluşturma ve belge durumları" },
+      { key: "masterData", label: "Ana Veri", description: "Lokasyon ve SKU ana verisi yönetimi" },
+      { key: "blindCount", label: "Kör Sayım", description: "Terminal ve web kör sayım ekranları" },
+      { key: "reconciliation", label: "Fark Mutabakatı", description: "Lokasyon ve SKU fark inceleme ekranı" },
+      { key: "recount", label: "Yeniden Sayım", description: "Müdür yeniden sayım görevi ve sonucu" },
+      { key: "approvals", label: "Onay ve Kilitleme", description: "Belge onayı, kapatma ve kilitleme" },
+      { key: "deviceManagement", label: "Terminal Yönetimi", description: "Zebra/Pelican cihaz bağlantıları ve durumları" },
+      { key: "audit", label: "Audit Log", description: "Sayım değişikliklerinin denetim izi" },
+    ],
+    actions: [
+      { key: "view", label: "Görüntüle" },
+      { key: "createCount", label: "Sayım Oluştur" },
+      { key: "importMasterData", label: "Ana Veri Yükle" },
+      { key: "submitCount", label: "Sayım Gönder" },
+      { key: "reconcile", label: "Farkı Sonuçlandır" },
+      { key: "requestRecount", label: "Yeniden Sayım İste" },
+      { key: "approveCount", label: "Sayımı Onayla" },
+      { key: "lockCount", label: "Sayımı Kilitle" },
+      { key: "export", label: "Tutanak / Excel Aktar" },
+      { key: "manageDevices", label: "Terminalleri Yönet" },
+    ],
+    scope: {
+      types: [
+        { key: "all", label: "Tüm Türkiye" },
+        { key: "region", label: "Bölge bazlı" },
+        { key: "warehouse", label: "Depo bazlı" },
+      ],
+    },
+  },
+  recruitment: {
+    title: "İşe Alım Talebi Yetkileri",
+    features: [
+      { key: "dashboard", label: "Norm ve Talep Dashboard", description: "Aktif çalışan, açık pozisyon ve norm açığı görünümü" },
+      { key: "requests", label: "İşe Alım Talepleri", description: "Depo işe alım talep ve karar akışı" },
+      { key: "evidence", label: "İstifa Belgeleri", description: "Önden talep için yüklenen istifa belgeleri" },
+      { key: "notifications", label: "İK / Partner Bildirimleri", description: "Onay sonrası e-posta teslim kuyruğu" },
+      { key: "settings", label: "Norm ve Bildirim Ayarları", description: "Depo normları, müdür kapasitesi ve alıcılar" },
+    ],
+    actions: [
+      { key: "view", label: "Görüntüle" },
+      { key: "viewRecruitment", label: "Talepleri Görüntüle" },
+      { key: "createRecruitmentRequest", label: "İşe Alım Talebi Oluştur" },
+      { key: "approveRecruitmentRequest", label: "Talebi Onayla / Reddet" },
+      { key: "viewRecruitmentEvidence", label: "İstifa Belgesini Görüntüle" },
+      { key: "manageRecruitmentNorms", label: "Depo Normlarını Yönet" },
+      { key: "manageRecruitmentSettings", label: "İşe Alım Ayarlarını Yönet" },
+      { key: "manageRecruitmentNotifications", label: "E-posta Kuyruğunu Yönet" },
+    ],
+    scope: {
+      types: [
+        { key: "all", label: "Tüm Türkiye" },
+        { key: "region", label: "Bölge bazlı" },
+        { key: "warehouse", label: "Depo bazlı" },
+      ],
+    },
+  },
+  workforce: {
+    title: "Workforce Detay Yetkileri",
+    features: [
+      { key: "dashboard", label: "Canlı Operasyon", description: "Anlık vardiya ve istisna görünümü" },
+      { key: "attendance", label: "Puantaj", description: "Kişisel ve depo bazlı puantaj raporları" },
+      { key: "timesheet", label: "Puantaj Çıktısı", description: "Kişi/depo bazlı imzalı puantaj çıktısı" },
+      { key: "periodClose", label: "Dönem Kapanışı", description: "Kesim tarihli kümülatif bordro, personel ve izin yükleme" },
+      { key: "opexLab", label: "Geçici OPEX Roster Lab", description: "Uygulama geçişine kadar roster, 11 saat istisnası ve norm analizi" },
+      { key: "shifts", label: "Vardiya Planı", description: "Vardiya atama ve planlama ekranı" },
+      { key: "approvals", label: "Onay Akışı", description: "Eksik/fazla mesai ve düzeltme onayları" },
+      { key: "managerTasks", label: "Yönetici Görevleri", description: "11 saat istisnası ve picker düzeltme talepleri" },
+      { key: "communications", label: "Duyuru ve Bildirimler", description: "Vardiya hatırlatmaları ve hedefli mobil duyurular" },
+      { key: "systemConfig", label: "Sistem Konfigürasyonu", description: "Şirket bazlı özellik açma ve kapatma" },
+      { key: "warehouses", label: "Depo ve Konum", description: "Geofence ve doğrulama yöntemi ayarları" },
+      { key: "rules", label: "Kural Setleri", description: "Mola, çalışma ve yasal limit kuralları" },
+      { key: "leaves", label: "İzin Yönetimi", description: "İzin türleri ve çalışan izin girişleri" },
+      { key: "devices", label: "Cihaz Yönetimi", description: "Picker cihaz eşleştirme ve risk görünümü" },
+      { key: "audit", label: "Audit Log", description: "Workforce işlemlerinin değiştirilemez denetim izi" },
+      { key: "pickerApp", label: "Picker Uygulaması", description: "Mobil vardiya ve arşiv deneyimi" },
+    ],
+    actions: [
+      { key: "view", label: "Görüntüle" },
+      { key: "createShift", label: "Vardiya Oluştur" },
+      { key: "bulkShiftUpload", label: "Toplu Vardiya Yükle" },
+      { key: "approveAttendance", label: "Puantaj Onayla" },
+      { key: "bulkApprove", label: "Toplu Puantaj Onayla" },
+      { key: "manualCorrection", label: "Puantajı Manuel Düzelt" },
+      { key: "export", label: "Bordro / Excel Aktar" },
+      { key: "printAttendance", label: "Puantaj Yazdır" },
+      { key: "manageWarehouses", label: "Depo ve Konum Yönet" },
+      { key: "manageRules", label: "Kuralları Yönet" },
+      { key: "manageHolidays", label: "Resmî Tatilleri Yönet" },
+      { key: "manageLeaves", label: "İzinleri Yönet" },
+      { key: "manageDevices", label: "Cihazları Yönet" },
+      { key: "viewAuditLog", label: "Audit Log Görüntüle" },
+      { key: "viewFullNationalId", label: "TC Kimlik Numarasını Tam Gör" },
+      { key: "manageEmployees", label: "Personel Ana Verisini Yönet" },
+      { key: "importTimeOff", label: "Toplu İzin Yükle" },
+      { key: "runPayrollClose", label: "Dönem Kapanışı Oluştur" },
+      { key: "importRoster", label: "OPEX Roster Yükle" },
+      { key: "overrideRoster", label: "Roster Simülasyonu Uygula" },
+      { key: "assignRosterTask", label: "Roster Düzeltme Görevi Ata" },
+      { key: "manageStaffingNorms", label: "BY ve Norm Eşlemesini Yönet" },
+      { key: "resolveManagerTasks", label: "Yönetici Görevini Düzelt / Sonuçlandır" },
+      { key: "manageAnnouncements", label: "Duyuru Yayınla" },
+      { key: "manageNotifications", label: "Bildirim Politikalarını Yönet" },
+      { key: "manageSystemConfig", label: "Sistem Özelliklerini Aç / Kapat" },
+    ],
+    scope: {
+      types: [
+        { key: "all", label: "Tüm Türkiye" },
+        { key: "region", label: "Bölge bazlı" },
+        { key: "warehouse", label: "Depo bazlı" },
+      ],
+    },
+  },
   dockos: {
     title: "DockOS Detay Yetkileri",
     features: [
@@ -94,6 +214,82 @@ export const MODULE_DETAIL_CONFIG = {
         { key: "warehouse", label: "Depo bazlı" },
         { key: "cost_center", label: "Cost Center bazlı" },
       ],
+    },
+  },
+  academy: {
+    title: "Academy Detay Yetkileri",
+    features: [
+      { key: "dashboard", label: "Eğitim Dashboard", description: "Atama, tamamlama ve başarı görünümü" },
+      { key: "catalog", label: "Eğitim Kataloğu", description: "SOP, video ve eğitim içerikleri" },
+      { key: "content", label: "İçerik Yönetimi", description: "İçerik oluşturma ve sürüm yönetimi" },
+      { key: "assessments", label: "Sınav ve Sorular", description: "Video içi soru ve değerlendirmeler" },
+      { key: "assignments", label: "Eğitim Atamaları", description: "Rol, bölge ve depo bazlı eğitim atama" },
+      { key: "reports", label: "Eğitim Raporları", description: "Tamamlama ve başarı raporları" },
+    ],
+    actions: [
+      { key: "view", label: "Görüntüle" },
+      { key: "create", label: "İçerik Oluştur" },
+      { key: "edit", label: "Düzenle" },
+      { key: "publish", label: "Yayınla" },
+      { key: "assign", label: "Eğitim Ata" },
+      { key: "export", label: "Rapor Aktar" },
+      { key: "delete", label: "Sil" },
+    ],
+    scope: {
+      types: [
+        { key: "all", label: "Tüm Türkiye" },
+        { key: "region", label: "Bölge bazlı" },
+        { key: "warehouse", label: "Depo bazlı" },
+      ],
+    },
+  },
+  insight: {
+    title: "AI Insight Detay Yetkileri",
+    features: [
+      { key: "dashboard", label: "İçgörü Dashboard", description: "KPI ve risk özetlerini görür" },
+      { key: "kpiExplorer", label: "KPI Explorer", description: "Metrik detay ve kırılımlarını inceler" },
+      { key: "alerts", label: "Uyarılar", description: "Operasyon uyarıları ve eşik yönetimi" },
+      { key: "recommendations", label: "Aksiyon Önerileri", description: "Önerileri inceleme ve karar akışı" },
+      { key: "reports", label: "Raporlar", description: "Kaydedilmiş analiz ve raporlar" },
+    ],
+    actions: [
+      { key: "view", label: "Görüntüle" },
+      { key: "create", label: "Analiz Oluştur" },
+      { key: "edit", label: "Düzenle" },
+      { key: "approve", label: "Aksiyonu Onayla" },
+      { key: "export", label: "Rapor Aktar" },
+      { key: "delete", label: "Sil" },
+    ],
+    scope: {
+      types: [
+        { key: "all", label: "Tüm Türkiye" },
+        { key: "region", label: "Bölge bazlı" },
+        { key: "warehouse", label: "Depo bazlı" },
+      ],
+    },
+  },
+  admin_access: {
+    title: "Access Control Detay Yetkileri",
+    features: [
+      { key: "users", label: "Kullanıcılar", description: "Kullanıcı hesapları ve durumları" },
+      { key: "groups", label: "Gruplar", description: "Yetki grupları ve üyelikleri" },
+      { key: "modulePermissions", label: "Modül Yetkileri", description: "View, admin ve detay yetkileri" },
+      { key: "scopeManagement", label: "Veri Kapsamı", description: "Bölge, depo, tedarikçi ve cost center kapsamı" },
+      { key: "audit", label: "Yetki Audit Log", description: "Yetki değişikliklerinin denetim izi" },
+    ],
+    actions: [
+      { key: "view", label: "Görüntüle" },
+      { key: "createUser", label: "Kullanıcı Oluştur" },
+      { key: "editUser", label: "Kullanıcı Düzenle" },
+      { key: "disableUser", label: "Kullanıcı Pasifleştir" },
+      { key: "createGroup", label: "Grup Oluştur" },
+      { key: "editGroup", label: "Grup Düzenle" },
+      { key: "assignPermissions", label: "Yetki Ata" },
+      { key: "refreshModules", label: "Modülleri Yenile" },
+      { key: "exportAudit", label: "Audit Aktar" },
+    ],
+    scope: {
+      types: [{ key: "all", label: "Tüm Platform" }],
     },
   },
 };
@@ -185,6 +381,49 @@ function createModulesForLevel(levelByModule = {}) {
   }, {});
 }
 
+function createWorkforceManagerModules() {
+  const modules = createModulesForLevel({ workforce: "view" });
+  const allowedActions = [
+    "view",
+    "createShift",
+    "bulkShiftUpload",
+    "approveAttendance",
+    "bulkApprove",
+    "export",
+    "printAttendance",
+    "manageLeaves",
+    "importTimeOff",
+    "resolveManagerTasks",
+  ];
+  Object.keys(modules.workforce.details.actions).forEach((action) => {
+    modules.workforce.details.actions[action] = allowedActions.includes(action);
+  });
+  modules.workforce.admin = false;
+  modules.workforce.details.features.periodClose = false;
+  modules.workforce.details.features.opexLab = false;
+  return modules;
+}
+
+function createWorkforceHrModules() {
+  const modules = createModulesForLevel({ workforce: "view" });
+  const allowedFeatures = ["dashboard", "attendance", "timesheet", "periodClose", "leaves"];
+  const allowedActions = ["view", "export", "printAttendance", "viewFullNationalId", "manageEmployees", "importTimeOff", "runPayrollClose"];
+  Object.keys(modules.workforce.details.features).forEach((feature) => { modules.workforce.details.features[feature] = allowedFeatures.includes(feature); });
+  Object.keys(modules.workforce.details.actions).forEach((action) => { modules.workforce.details.actions[action] = allowedActions.includes(action); });
+  modules.workforce.admin = false;
+  return modules;
+}
+
+function createRecruitmentManagerModules() {
+  const modules = createModulesForLevel({ recruitment: "view" });
+  const allowed = ["view", "viewRecruitment", "createRecruitmentRequest"];
+  Object.keys(modules.recruitment.details.actions).forEach((action) => {
+    modules.recruitment.details.actions[action] = allowed.includes(action);
+  });
+  modules.recruitment.admin = false;
+  return modules;
+}
+
 export const DEFAULT_ACCESS_CONFIG = {
   groups: {
     super_admins: {
@@ -196,6 +435,8 @@ export const DEFAULT_ACCESS_CONFIG = {
         planogram: "super",
         dockos: "super",
         budget: "super",
+        workforce: "super",
+        recruitment: "super",
         academy: "super",
         insight: "super",
         inventory: "super",
@@ -210,6 +451,43 @@ export const DEFAULT_ACCESS_CONFIG = {
       modules: createModulesForLevel({
         dockos: "admin",
       }),
+    },
+    workforce_admins: {
+      id: "workforce_admins",
+      name: "Workforce Admins",
+      description: "Vardiya, puantaj, manuel düzeltme, onay ve bordro yönetimi",
+      status: "active",
+      modules: createModulesForLevel({
+        workforce: "admin",
+      }),
+    },
+    workforce_managers: {
+      id: "workforce_managers",
+      name: "Workforce Depo Müdürleri",
+      description: "Vardiya, toplu yükleme, izin ve puantaj onayı; manuel düzeltme ve kural yönetimi hariç",
+      status: "active",
+      modules: createWorkforceManagerModules(),
+    },
+    workforce_hr: {
+      id: "workforce_hr",
+      name: "Workforce İK ve Bordro",
+      description: "Tam TC, personel ana verisi, toplu izin ve dönem kapanışı; manuel puantaj düzeltme hariç",
+      status: "active",
+      modules: createWorkforceHrModules(),
+    },
+    recruitment_managers: {
+      id: "recruitment_managers",
+      name: "İşe Alım Talebi Oluşturan Müdürler",
+      description: "Kendi kapsamındaki depo için norm kontrollü işe alım talebi oluşturur",
+      status: "active",
+      modules: createRecruitmentManagerModules(),
+    },
+    recruitment_hr: {
+      id: "recruitment_hr",
+      name: "İşe Alım İK Onay Ekibi",
+      description: "Talepleri, istifa belgelerini, normları ve partner bildirimlerini yönetir",
+      status: "active",
+      modules: createModulesForLevel({ recruitment: "admin" }),
     },
     construction_team: {
       id: "construction_team",
@@ -241,6 +519,8 @@ export const DEFAULT_ACCESS_CONFIG = {
         dockos: "view",
         budget: "view",
         inventory: "view",
+        workforce: "view",
+        recruitment: "view",
       }),
     },
     viewers: {
@@ -268,10 +548,12 @@ export const DEFAULT_ACCESS_CONFIG = {
       name: "Admin User",
       role: "admin",
       status: "active",
-      groups: ["dockos_admins"],
+      groups: ["dockos_admins", "workforce_admins", "recruitment_hr"],
       modules: createModulesForLevel({
         planogram: "admin",
         budget: "admin",
+        workforce: "admin",
+        recruitment: "admin",
       }),
     },
     "viewer@yemeksepeti.com": {
@@ -321,11 +603,20 @@ function normalizeModuleAccess(moduleKey, access = {}) {
 }
 
 function normalizeModules(modules = {}, role = "viewer") {
+  const normalized = clone(modules || {});
+
   return ACCESS_MODULES.reduce((acc, module) => {
     if (role === "super_admin") acc[module.key] = createModuleAccess(module.key, "super");
-    else acc[module.key] = normalizeModuleAccess(module.key, modules[module.key] || (module.key === "inventory" ? modules.cycle_count : {}) || {});
+    else {
+      const legacyAccess =
+        module.key === "inventory" ? modules.cycle_count : undefined;
+      acc[module.key] = normalizeModuleAccess(
+        module.key,
+        modules[module.key] || legacyAccess || {}
+      );
+    }
     return acc;
-  }, {});
+  }, normalized);
 }
 
 function normalizeUser(email, user = {}) {
@@ -339,7 +630,9 @@ function normalizeUser(email, user = {}) {
     name: user.name || existingDefault?.name || cleanEmail,
     role,
     status: user.status || existingDefault?.status || "active",
-    groups: unique([...(existingDefault?.groups || []), ...(user.groups || [])]),
+    groups: Array.isArray(user.groups)
+      ? unique(user.groups)
+      : unique(existingDefault?.groups || []),
     modules: normalizeModules(user.modules || existingDefault?.modules || {}, role),
   };
 }
@@ -361,36 +654,65 @@ function loadStoredConfig() {
   if (typeof window === "undefined") return null;
 
   const current = window.localStorage.getItem(ACCESS_STORAGE_KEY);
-  if (current) return safeJsonParse(current, null);
+  if (current) {
+    return {
+      config: safeJsonParse(current, null),
+      storageKey: ACCESS_STORAGE_KEY,
+    };
+  }
 
   for (const key of LEGACY_ACCESS_STORAGE_KEYS) {
     const value = window.localStorage.getItem(key);
-    if (value) return safeJsonParse(value, null);
+    if (value) {
+      return {
+        config: safeJsonParse(value, null),
+        storageKey: key,
+      };
+    }
   }
 
   return null;
 }
 
+export function refreshAccessConfig(config, { includeDefaultEntities = false } = {}) {
+  const source = config && typeof config === "object" ? config : {};
+  const sourceGroups = source.groups && typeof source.groups === "object" ? source.groups : {};
+  const sourceUsers = source.users && typeof source.users === "object" ? source.users : {};
+
+  const groupEntries = includeDefaultEntities
+    ? { ...DEFAULT_ACCESS_CONFIG.groups, ...sourceGroups }
+    : sourceGroups;
+  const userEntries = includeDefaultEntities
+    ? { ...DEFAULT_ACCESS_CONFIG.users, ...sourceUsers }
+    : sourceUsers;
+
+  return {
+    groups: Object.entries(groupEntries).reduce((acc, [id, group]) => {
+      const groupId = String(id || group?.id || "").trim();
+      if (groupId) acc[groupId] = normalizeGroup(groupId, group);
+      return acc;
+    }, {}),
+    users: Object.entries(userEntries).reduce((acc, [email, accessUser]) => {
+      const cleanEmail = normalizeEmail(email || accessUser?.email);
+      if (cleanEmail) acc[cleanEmail] = normalizeUser(cleanEmail, accessUser);
+      return acc;
+    }, {}),
+  };
+}
+
 export function getAccessConfig() {
   if (typeof window === "undefined") return clone(DEFAULT_ACCESS_CONFIG);
 
-  const parsed = loadStoredConfig();
+  const stored = loadStoredConfig();
+  const parsed = stored?.config;
 
   if (!parsed || !parsed.users) {
     window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(DEFAULT_ACCESS_CONFIG));
     return clone(DEFAULT_ACCESS_CONFIG);
   }
 
-  const merged = clone(DEFAULT_ACCESS_CONFIG);
-
-  Object.entries(parsed.groups || {}).forEach(([id, group]) => {
-    const groupId = String(id || group.id || "").trim();
-    if (groupId) merged.groups[groupId] = normalizeGroup(groupId, group);
-  });
-
-  Object.entries(parsed.users || {}).forEach(([email, accessUser]) => {
-    const cleanEmail = normalizeEmail(email);
-    merged.users[cleanEmail] = normalizeUser(cleanEmail, accessUser);
+  const merged = refreshAccessConfig(parsed, {
+    includeDefaultEntities: stored.storageKey !== ACCESS_STORAGE_KEY,
   });
 
   window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(merged));
@@ -400,18 +722,7 @@ export function getAccessConfig() {
 export function saveAccessConfig(config) {
   if (typeof window === "undefined") return;
 
-  const normalized = {
-    groups: Object.entries(config.groups || {}).reduce((acc, [id, group]) => {
-      const groupId = String(id || group.id || "").trim();
-      if (groupId) acc[groupId] = normalizeGroup(groupId, group);
-      return acc;
-    }, {}),
-    users: Object.entries(config.users || {}).reduce((acc, [email, accessUser]) => {
-      const cleanEmail = normalizeEmail(email);
-      acc[cleanEmail] = normalizeUser(cleanEmail, accessUser);
-      return acc;
-    }, {}),
-  };
+  const normalized = refreshAccessConfig(config);
 
   window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(normalized));
   window.dispatchEvent(new CustomEvent("opex-access-config-updated", { detail: normalized }));

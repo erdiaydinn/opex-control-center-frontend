@@ -5,8 +5,10 @@ import {
   Check,
   ChevronRight,
   Copy,
+  KeyRound,
   Lock,
   Plus,
+  RefreshCw,
   RotateCcw,
   Save,
   Search,
@@ -17,10 +19,12 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { apiPost } from "../../api/client.js";
 import {
   ACCESS_MODULES,
   DEFAULT_ACCESS_CONFIG,
   MODULE_DETAIL_CONFIG,
+  refreshAccessConfig,
   SCOPE_OPTIONS,
 } from "../../auth/accessConfig.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
@@ -130,6 +134,9 @@ export default function AccessControl() {
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState("");
+  const [passwordReset, setPasswordReset] = useState({ busy: false, error: "", result: null });
+  const [passwordCopied, setPasswordCopied] = useState(false);
 
   const users = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -441,6 +448,57 @@ export default function AccessControl() {
     window.setTimeout(() => setSaved(false), 1800);
   }
 
+  function refreshModules() {
+    const next = refreshAccessConfig(draft);
+    const changed = JSON.stringify(next) !== JSON.stringify(draft);
+
+    setDraft(next);
+    updateAccessConfig(next);
+    setRefreshNotice(
+      changed
+        ? "Eksik platform ve yetki alanları eklendi; mevcut seçimler korundu."
+        : "Platform ve yetki kataloğu zaten güncel."
+    );
+    window.setTimeout(() => setRefreshNotice(""), 3200);
+  }
+
+  async function resetSelectedPassword() {
+    if (!selectedUser?.email || passwordReset.busy) return;
+    const confirmed = window.confirm(
+      `${selectedUser.email} için geçici parola üretilecek. Kullanıcının açık oturumları kapatılacak. Devam edilsin mi?`
+    );
+    if (!confirmed) return;
+
+    setPasswordReset({ busy: true, error: "", result: null });
+    setPasswordCopied(false);
+    try {
+      const result = await apiPost("/identity/admin/users/password-reset", {
+        username: selectedUser.email,
+      });
+      setPasswordReset({ busy: false, error: "", result });
+    } catch (error) {
+      setPasswordReset({
+        busy: false,
+        error: error.message || "Parola sıfırlanamadı.",
+        result: null,
+      });
+    }
+  }
+
+  async function copyTemporaryPassword() {
+    const value = passwordReset.result?.temporary_password;
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    setPasswordCopied(true);
+    window.setTimeout(() => setPasswordCopied(false), 1800);
+  }
+
+  function selectUser(email) {
+    setSelectedEmail(email);
+    setPasswordReset({ busy: false, error: "", result: null });
+    setPasswordCopied(false);
+  }
+
   function resetToDefault() {
     const ok = window.confirm("Tüm kullanıcı ve grup yetkileri varsayılan yapıya dönsün mü?");
     if (!ok) return;
@@ -519,15 +577,25 @@ export default function AccessControl() {
           </motion.div>
         </section>
 
-        <div className="access-mode-tabs">
-          <button className={mode === "users" ? "active" : ""} onClick={() => setMode("users")}>
-            <UserRound size={17} />
-            Kullanıcılar
-          </button>
-          <button className={mode === "groups" ? "active" : ""} onClick={() => setMode("groups")}>
-            <UsersRound size={17} />
-            Gruplar
-          </button>
+        <div className="access-control-toolbar">
+          <div className="access-mode-tabs">
+            <button className={mode === "users" ? "active" : ""} onClick={() => setMode("users")}>
+              <UserRound size={17} />
+              Kullanıcılar
+            </button>
+            <button className={mode === "groups" ? "active" : ""} onClick={() => setMode("groups")}>
+              <UsersRound size={17} />
+              Gruplar
+            </button>
+          </div>
+
+          <div className="access-refresh-area">
+            <span className="access-refresh-notice" aria-live="polite">{refreshNotice}</span>
+            <button type="button" className="access-refresh-btn" onClick={refreshModules}>
+              <RefreshCw size={16} />
+              Modülleri Yenile
+            </button>
+          </div>
         </div>
 
         <section className="access-grid access-grid-v2">
@@ -582,7 +650,7 @@ export default function AccessControl() {
                     <button
                       key={item.email}
                       className={item.email === selectedUser?.email ? "active" : ""}
-                      onClick={() => setSelectedEmail(item.email)}
+                      onClick={() => selectUser(item.email)}
                     >
                       <UserRound size={17} />
                       <div>
@@ -624,6 +692,13 @@ export default function AccessControl() {
                   </div>
 
                   <div className="access-editor-actions">
+                    {mode === "users" ? (
+                      <button onClick={resetSelectedPassword} disabled={passwordReset.busy}>
+                        <KeyRound size={16} />
+                        {passwordReset.busy ? "Sıfırlanıyor" : "Şifre sıfırla"}
+                      </button>
+                    ) : null}
+
                     <button onClick={duplicateEntity}>
                       <Copy size={16} />
                       Kopyala
@@ -688,6 +763,39 @@ export default function AccessControl() {
                         ))}
                       </div>
                     </div>
+
+                    <section className="access-password-reset" aria-live="polite">
+                      <div>
+                        <KeyRound size={19} />
+                        <span>
+                          <strong>Güvenli parola sıfırlama</strong>
+                          <small>
+                            Geçici parola yalnızca bir kez gösterilir. Eski oturumlar iptal edilir ve kullanıcı ilk girişte yeni parola belirler.
+                          </small>
+                        </span>
+                      </div>
+
+                      {passwordReset.error ? (
+                        <p className="access-password-error">{passwordReset.error}</p>
+                      ) : null}
+
+                      {passwordReset.result ? (
+                        <div className="access-temporary-password">
+                          <label>
+                            Tek kullanımlık geçici parola
+                            <input
+                              readOnly
+                              value={passwordReset.result.temporary_password || ""}
+                              onFocus={(event) => event.currentTarget.select()}
+                            />
+                          </label>
+                          <button type="button" onClick={copyTemporaryPassword}>
+                            {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
+                            {passwordCopied ? "Kopyalandı" : "Kopyala"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </section>
                   </>
                 ) : (
                   <div className="access-profile access-profile-group">

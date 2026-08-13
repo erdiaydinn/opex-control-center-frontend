@@ -21,6 +21,10 @@ export default function ProtectedRoute({ children, moduleKey, action = "view" })
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
+  if (user.force_password_change && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
+
   const superAdmin =
     typeof isSuperAdmin === "function" ? isSuperAdmin() : Boolean(isSuperAdmin);
 

@@ -7,8 +7,64 @@ function safeNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function normalizeHeader(value = "") {
+  return String(value)
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .replaceAll("ı", "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/^t c k n(?= |$)/, "tckn")
+    .replace(/^t c(?= |$)/, "tc");
+}
+
+export function normalizeNationalId(value = "") {
+  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  const text = String(value ?? "").trim();
+  if (/^\d+(?:[.,]\d+)?e\+?\d+$/i.test(text)) {
+    const numeric = Number(text.replace(",", "."));
+    if (Number.isSafeInteger(numeric)) return String(numeric);
+  }
+  return text.replace(/\D/g, "");
+}
+
+function cell(row, ...aliases) {
+  const accepted = new Set(aliases.map(normalizeHeader));
+  const wantsNationalId = [...accepted].some((name) => ["tc", "tck", "tckn", "national id", "national identity number"].includes(name) || name.includes("kimlik"));
+  const found = Object.keys(row || {}).find((key) => {
+    const normalized = normalizeHeader(key);
+    if (accepted.has(normalized)) return true;
+    return wantsNationalId && (
+      /^(tc|tck|tckn)$/.test(normalized) ||
+      (normalized.includes("kimlik") && /(^| )(no|numara|number)( |$)/.test(normalized)) ||
+      normalized.includes("national identity") ||
+      normalized.includes("citizen id")
+    );
+  });
+  return found == null ? "" : row[found];
+}
+
+async function readTabularFile(file, preferredSheet = "") {
+  if (/\.xlsx?$/i.test(file.name)) {
+    const bytes = await file.arrayBuffer();
+    const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
+    const sheet = (preferredSheet && workbook.Sheets[preferredSheet]) || workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+  }
+  return parseDelimited(await file.text());
+}
+
 function timeText(value) {
-  return String(value || "").slice(0, 5);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value < 2) {
+    const minutes = Math.round(value * 1440) % 1440;
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  }
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${String(Number(match[1])).padStart(2, "0")}:${match[2]}` : "";
 }
 
 function dateToIso(value) {
@@ -67,39 +123,46 @@ export function parseDelimited(text, delimiter = null) {
 }
 
 export async function parseRosterFile(file) {
-  const text = await file.text();
-  const sourceRows = parseDelimited(text);
+  const sourceRows = await readTabularFile(file);
   const rows = sourceRows.map((row, index) => {
-    const grossMinutes = Math.round(safeNumber(row.toplam_calisma) / 60);
-    const breakMinutes = Math.round(safeNumber(row.mola_sn) / 60);
+    const grossSeconds = cell(row, "toplam_calisma", "toplam çalışma saniye", "total work seconds");
+    const breakSeconds = cell(row, "mola_sn", "mola sn", "break seconds");
+    const grossMinutes = grossSeconds !== ""
+      ? Math.round(safeNumber(grossSeconds) / 60)
+      : durationMinutes(cell(row, "günlük toplam", "gunluk toplam", "daily total", "total work", "toplam çalışma", "toplam sure", "toplam süre"));
+    const breakMinutes = breakSeconds !== ""
+      ? Math.round(safeNumber(breakSeconds) / 60)
+      : durationMinutes(cell(row, "günlük mola", "gunluk mola", "break", "break duration", "mola", "mola süresi"));
+    const varianceMinutes = durationMinutes(cell(row, "günlük mesai", "gunluk mesai", "overtime", "mesai", "fazla mesai", "fark"), true);
     const netMinutes = Math.max(0, grossMinutes - breakMinutes);
-    const holidayMinutes = Math.round(safeNumber(row.bayram_mesai_net_sn) / 60);
-    const personId = String(row.picker_id || row.rider_id || row.employee_id || "").trim();
-    const nationalId = String(row.tck || row.tc || row.tckn || row["tc kimlik no"] || "").replace(/\D/g, "");
-    const date = dateToIso(row.shift_date);
+    const holidayMinutes = Math.round(safeNumber(cell(row, "bayram_mesai_net_sn", "bayram mesai net sn")) / 60);
+    const personId = String(cell(row, "picker_id", "picker id", "rider_id", "rider id", "employee_id", "employee id", "employee number") || "").trim();
+    const nationalId = normalizeNationalId(cell(row, "tck", "tc", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası", "national id", "national identity number"));
+    const date = dateToIso(cell(row, "shift_date", "shift date", "vardiya tarihi", "tarih", "date"));
     return {
       id: `ROSTER-${personId}-${date}-${index}`,
       sourceKey: `${personId}|${date}|${timeText(row.baslangic)}|${timeText(row.bitis)}`,
-      warehouse: normalizeWarehouseName(row.vendor_name),
+      warehouse: normalizeWarehouseName(cell(row, "vendor_name", "vendor name", "warehouse", "warehouse name", "depo", "depo adı")),
       date,
       personId,
-      personName: String(row.rider_name || row.picker_name || row.name || "").trim(),
+      personName: String(cell(row, "rider_name", "rider name", "picker_name", "picker name", "name", "ad soyad") || "").trim(),
       nationalId,
-      email: String(row.email || "").trim(),
-      title: String(row.title || "").trim(),
-      start: timeText(row.baslangic),
-      end: timeText(row.bitis),
+      email: String(cell(row, "email", "e posta", "eposta") || "").trim(),
+      title: String(cell(row, "title", "unvan", "role", "job title") || "").trim(),
+      start: timeText(cell(row, "baslangic", "başlangıç", "start", "check in", "giriş saati")),
+      end: timeText(cell(row, "bitis", "bitiş", "end", "check out", "çıkış saati")),
       grossMinutes,
       breakMinutes,
       netMinutes,
+      varianceMinutes,
       holidayMinutes,
       normalMinutes: Math.max(0, netMinutes - holidayMinutes),
       overtimeMinutes: Math.max(0, netMinutes - holidayMinutes - 450),
-      isActive: String(row.isactive) === "1",
-      shiftState: row.shift_state_tr,
-      contract: row.contract_name,
-      holidayDetail: row.bayram_mesai_detay,
-      anomaly: grossMinutes > 660 ? "11 saat üstü roster" : "",
+      isActive: String(cell(row, "isactive", "is active", "aktif")) === "1",
+      shiftState: cell(row, "shift_state_tr", "shift state tr", "vardiya durumu"),
+      contract: cell(row, "contract_name", "contract name", "contract"),
+      holidayDetail: cell(row, "bayram_mesai_detay", "bayram mesai detay"),
+      anomaly: netMinutes > 660 ? "11 saat üstü roster" : "",
       source: "Roster CSV",
     };
   }).filter((row) => row.personId && row.date);
@@ -139,31 +202,32 @@ const CATEGORY_TO_TYPE = {
 };
 
 export async function parseTimeOffFile(file) {
-  const bytes = await file.arrayBuffer();
-  const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
-  const sheet = workbook.Sheets["Time Off Used"] || workbook.Sheets[workbook.SheetNames[0]];
-  const sourceRows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+  const sourceRows = await readTabularFile(file, "Time Off Used");
   const rows = [];
   sourceRows.forEach((source, index) => {
-    const personId = String(source["Employee Number"] || "").trim();
-    const personName = String(source.Name || "").split(",").reverse().join(" ").trim();
-    const category = String(source.Category || "").trim();
-    const start = dateToIso(source.From);
-    const end = dateToIso(source.To) || start;
-    if (!personId || !start) return;
+    const personId = String(cell(source, "employee number", "employee no", "employee id", "personel id", "sicil no", "sicil numarası", "sap id") || "").trim();
+    const nationalId = normalizeNationalId(cell(source, "tc", "tck", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası", "national id", "national identity number"));
+    const rawName = String(cell(source, "name", "employee name", "ad soyad", "personel adı", "personel adi") || "").trim();
+    const personName = rawName.includes(",") ? rawName.split(",").reverse().join(" ").trim() : rawName;
+    const category = String(cell(source, "category", "leave category", "izin türü", "izin tipi", "time off type") || "").trim();
+    const start = dateToIso(cell(source, "from", "start", "start date", "başlangıç", "başlangıç tarihi", "izin başlangıç"));
+    const end = dateToIso(cell(source, "to", "end", "end date", "bitiş", "bitiş tarihi", "izin bitiş")) || start;
+    if ((!personId && nationalId.length !== 11) || !start) return;
     enumerateDates(start, end).forEach((date) => {
       rows.push({
         id: `TO-${personId}-${date}-${index}`,
         personId,
+        sourcePersonId: personId,
+        nationalId,
         personName,
         category,
         typeId: CATEGORY_TO_TYPE[category.toLocaleLowerCase("tr-TR")] || `custom_${category.toLocaleLowerCase("tr-TR").replaceAll(/[^a-z0-9çğıöşü]+/g, "_")}`,
         date,
         minutes: 450,
         approval: "Onaylandı",
-        note: source.Notes || category,
-        requestedAt: dateToIso(source.Requested),
-        approvedAt: dateToIso(source.Approved),
+        note: cell(source, "notes", "note", "not", "açıklama") || category,
+        requestedAt: dateToIso(cell(source, "requested", "request date", "talep tarihi")),
+        approvedAt: dateToIso(cell(source, "approved", "approval date", "onay tarihi")),
         source: "Time Off Used",
         sourceKey: `${personId}|${date}`,
       });
@@ -173,70 +237,110 @@ export async function parseTimeOffFile(file) {
 }
 
 export async function parseEmployeeFile(file) {
-  let sourceRows;
-  if (/\.xlsx?$/i.test(file.name)) {
-    const bytes = await file.arrayBuffer();
-    const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
-    sourceRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "", raw: true });
-  } else sourceRows = parseDelimited(await file.text());
-  const normalizeHeader = (value) => String(value || "").toLocaleLowerCase("tr-TR").replaceAll("ı", "i").trim().replaceAll(/[_\s]+/g, " ");
-  const get = (row, ...names) => {
-    const keys = Object.keys(row);
-    const normalizedNames = names.map(normalizeHeader);
-    const found = keys.find((key) => normalizedNames.includes(normalizeHeader(key)));
-    return found ? row[found] : "";
-  };
+  const sourceRows = await readTabularFile(file);
   return sourceRows.map((row) => {
-    const id = String(get(row, "employee id", "employee number", "personel id", "sicil no", "employee id sap") || "").trim();
-    const name = String(get(row, "name", "employee name", "ad soyad", "personel adı", "personel adi") || "").trim();
-    const nationalId = String(get(row, "national id", "tc", "tc kimlik no", "tc kimlik numarası", "tckn") || "").replace(/\D/g, "");
-    const actualWarehouse = get(row, "actual warehouse", "actual warehouse name", "warehouse", "warehouse name", "depo", "depo adı", "depo adi", "vendor name", "dmart name used in hr");
-    const explicitWarehouseCode = get(row, "hr warehouse code", "ik depo kodu", "ik kodu", "warehouse code", "depo kodu");
+    const id = String(cell(row, "employee id", "employee number", "employee no", "personel id", "sicil no", "sicil numarası", "employee id sap", "sap id") || "").trim();
+    const rosterIds = String(cell(row, "roster id", "rooster id", "roster employee id", "rooster employee id", "rider id", "rider_id", "picker id", "picker_id") || "")
+      .split(/[,;|\n]+/).map((value) => value.trim()).filter(Boolean);
+    const name = String(cell(row, "name", "employee name", "ad soyad", "personel adı", "personel adi") || "").trim();
+    const nationalId = normalizeNationalId(cell(row, "national id", "national identity number", "tc", "tck", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası"));
+    const actualWarehouse = cell(row, "actual warehouse", "actual warehouse name", "warehouse", "warehouse name", "depo", "depo adı", "depo adi", "vendor name", "dmart name used in hr");
+    const explicitWarehouseCode = cell(row, "hr warehouse code", "ik depo kodu", "ik kodu", "warehouse code", "depo kodu");
     const { warehouse, warehouseCode } = resolveHrWarehouse(actualWarehouse, explicitWarehouseCode);
-    const role = String(get(row, "title", "unvan", "role", "job title") || "").trim();
-    const hireDate = dateToIso(get(row, "hire date", "start date", "işe giriş tarihi", "ise giris tarihi", "giriş tarihi", "giris tarihi"));
-    const terminationDate = dateToIso(get(row, "termination date", "exit date", "end date", "işten çıkış tarihi", "isten cikis tarihi", "çıkış tarihi", "cikis tarihi"));
-    const email = String(get(row, "email", "e-posta", "eposta") || "").trim();
-    const phone = String(get(row, "phone", "telefon", "telefon numarası", "telefon numarasi") || "").trim();
-    const accountValue = String(get(row, "kullanıcı hesabı", "kullanici hesabi", "uygulama kullanıcısı", "uygulama kullanicisi", "create user", "app user") || "").trim().toLocaleLowerCase("tr-TR");
+    const role = String(cell(row, "title", "unvan", "role", "job title") || "").trim();
+    const hireDate = dateToIso(cell(row, "hire date", "employment start date", "start date", "işe giriş tarihi", "ise giris tarihi", "giriş tarihi", "giris tarihi"));
+    const terminationDate = dateToIso(cell(row, "termination date", "employment end date", "exit date", "leaving date", "end date", "işten çıkış tarihi", "isten cikis tarihi", "çıkış tarihi", "cikis tarihi", "ayrılış tarihi"));
+    const email = String(cell(row, "email", "e-posta", "eposta") || "").trim();
+    const phone = String(cell(row, "phone", "telefon", "telefon numarası", "telefon numarasi") || "").trim();
+    const accountValue = String(cell(row, "kullanıcı hesabı", "kullanici hesabi", "uygulama kullanıcısı", "uygulama kullanicisi", "create user", "app user") || "").trim().toLocaleLowerCase("tr-TR");
     const createUser = ["evet", "yes", "ja", "نعم", "true", "1", "x"].includes(accountValue);
     return {
-      id, name, ...(nationalId ? { nationalId } : {}), ...(warehouse ? { warehouse } : {}), ...(warehouseCode ? { warehouseCode } : {}),
+      id, name, ...(rosterIds.length ? { rosterIds: [...new Set(rosterIds)] } : {}), ...(nationalId ? { nationalId } : {}), ...(warehouse ? { warehouse } : {}), ...(warehouseCode ? { warehouseCode } : {}),
       ...(role ? { role } : {}), ...(hireDate ? { hireDate } : {}), ...(terminationDate ? { terminationDate, active: false } : {}),
       ...(email ? { email } : {}), ...(phone ? { phone } : {}), ...(createUser ? { createUser: true } : {}), sourceWarehouse: String(actualWarehouse || "").trim(),
     };
-  }).filter((row) => row.id && row.name);
+  }).filter((row) => (row.id || row.nationalId?.length === 11) && row.name);
+}
+
+export async function parseEmploymentLifecycleFile(file) {
+  const sourceRows = await readTabularFile(file);
+  return sourceRows.map((row, index) => ({
+    sourceRow: index + 2,
+    personId: String(cell(row, "employee id", "employee number", "employee no", "personel id", "sicil no", "sicil numarası", "sap id") || "").trim(),
+    nationalId: normalizeNationalId(cell(row, "tc", "tck", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası", "national id", "national identity number")),
+    personName: String(cell(row, "name", "employee name", "ad soyad", "personel adı", "personel adi") || "").trim(),
+    hireDate: dateToIso(cell(row, "hire date", "employment start date", "start date", "işe giriş tarihi", "ise giris tarihi", "giriş tarihi", "giris tarihi")),
+    terminationDate: dateToIso(cell(row, "termination date", "employment end date", "exit date", "leaving date", "end date", "işten çıkış tarihi", "isten cikis tarihi", "çıkış tarihi", "cikis tarihi", "ayrılış tarihi")),
+  })).filter((row) => (row.personId || row.nationalId.length === 11) && (row.hireDate || row.terminationDate));
 }
 
 export async function parseRosterIdentityFile(file) {
-  let sourceRows;
-  if (/\.xlsx?$/i.test(file.name)) {
-    const bytes = await file.arrayBuffer();
-    const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
-    sourceRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "", raw: true });
-  } else sourceRows = parseDelimited(await file.text());
-  const normalizeHeader = (value) => String(value || "").toLocaleLowerCase("tr-TR").replaceAll("ı", "i").trim().replaceAll(/[_\s]+/g, " ");
-  const get = (row, ...names) => {
-    const keys = Object.keys(row);
-    const normalizedNames = names.map(normalizeHeader);
-    const found = keys.find((key) => normalizedNames.includes(normalizeHeader(key)));
-    return found ? row[found] : "";
-  };
+  const sourceRows = await readTabularFile(file);
   return sourceRows.map((row) => {
-    const rosterPersonId = String(get(row, "roster employee id", "roster id", "picker id", "rider id", "rider_id", "picker_id") || "").trim();
-    const hrPersonId = String(get(row, "hr employee id", "ik employee id", "ik personel id", "sap employee id") || "").trim();
-    const nationalId = String(get(row, "tck", "tc", "tckn", "national id", "tc kimlik no", "tc kimlik numarası") || "").replace(/\D/g, "");
-    const rosterPersonName = String(get(row, "rider name", "rider_name", "picker name", "roster name", "ad soyad", "name") || "").trim();
-    const email = String(get(row, "email", "e-posta", "eposta") || "").trim();
-    const phone = String(get(row, "phone num", "phone_num", "phone", "telefon", "telefon numarası", "telefon numarasi") || "").trim();
-    const contract = String(get(row, "contract name", "contract_name", "contract") || "").trim();
-    const activeText = String(get(row, "isactive", "is active", "active", "aktif") || "").trim().toLocaleLowerCase("tr-TR");
+    const rosterPersonId = String(cell(row, "roster employee id", "roster id", "picker id", "rider id", "rider_id", "picker_id") || "").trim();
+    const hrPersonId = String(cell(row, "hr employee id", "ik employee id", "ik personel id", "sap employee id", "employee number") || "").trim();
+    const nationalId = normalizeNationalId(cell(row, "tck", "tc", "tckn", "national id", "national identity number", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası"));
+    const rosterPersonName = String(cell(row, "rider name", "rider_name", "picker name", "roster name", "ad soyad", "name") || "").trim();
+    const email = String(cell(row, "email", "e-posta", "eposta") || "").trim();
+    const phone = String(cell(row, "phone num", "phone_num", "phone", "telefon", "telefon numarası", "telefon numarasi") || "").trim();
+    const contract = String(cell(row, "contract name", "contract_name", "contract") || "").trim();
+    const activeText = String(cell(row, "isactive", "is active", "active", "aktif") || "").trim().toLocaleLowerCase("tr-TR");
     return { rosterPersonId, hrPersonId, nationalId, rosterPersonName, email, phone, contract, active: ["1", "true", "evet", "yes", "aktif"].includes(activeText) };
   }).filter((row) => row.rosterPersonId && (row.nationalId || row.hrPersonId || row.email));
 }
 
+function durationMinutes(value, allowSigned = false) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    // SheetJS may materialize an Excel duration as a date near its epoch.
+    // The full serial-day distance preserves values above 24 hours (26:00, etc.).
+    if (value.getUTCFullYear() < 1910) {
+      const excelEpoch = Date.UTC(1899, 11, 30);
+      const localDateAtUtc = Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
+      const dayMinutes = Math.round((localDateAtUtc - excelEpoch) / 60000);
+      return dayMinutes + value.getHours() * 60 + value.getMinutes() + Math.round(value.getSeconds() / 60);
+    }
+    return value.getHours() * 60 + value.getMinutes();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (Math.abs(value) < 2) return Math.round(value * 1440);
+    return Math.round(value);
+  }
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+  const sign = allowSigned && text.startsWith("-") ? -1 : 1;
+  const cleaned = text.replace(/^[+-]/, "");
+  const match = cleaned.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+  if (match) return sign * (Number(match[1]) * 60 + Number(match[2]) + Math.round(Number(match[3] || 0) / 60));
+  return sign * Math.round(safeNumber(cleaned) * 60);
+}
+
+export async function parseAttendanceFile(file) {
+  const sourceRows = await readTabularFile(file);
+  const rows = sourceRows.map((source, index) => {
+    const sourcePersonId = String(cell(source, "employee number", "employee id", "employee no", "personel id", "sicil no", "picker id", "picker_id", "rider id", "rider_id") || "").trim();
+    const nationalId = normalizeNationalId(cell(source, "tc", "tck", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası", "national id", "national identity number"));
+    const date = dateToIso(cell(source, "shift date", "shift_date", "date", "tarih", "vardiya tarihi", "çalışma tarihi"));
+    const checkIn = timeText(cell(source, "check in", "check_in", "giriş", "giriş saati", "ilk giriş", "başlangıç", "baslangic"));
+    const checkOut = timeText(cell(source, "check out", "check_out", "çıkış", "çıkış saati", "son çıkış", "bitiş", "bitis"));
+    const grossMinutes = durationMinutes(cell(source, "günlük toplam", "gunluk toplam", "daily total", "total work", "toplam çalışma", "toplam sure", "toplam süre"));
+    const breakMinutes = durationMinutes(cell(source, "günlük mola", "gunluk mola", "break", "break duration", "mola", "mola süresi"));
+    const varianceMinutes = durationMinutes(cell(source, "günlük mesai", "gunluk mesai", "overtime", "mesai", "fazla mesai", "fark"), true);
+    const netMinutes = Math.max(0, grossMinutes - breakMinutes);
+    const expectedMinutes = Math.max(0, netMinutes - varianceMinutes);
+    return {
+      sourceRow: index + 2, sourcePersonId, nationalId, date, checkIn, checkOut, grossMinutes, breakMinutes, netMinutes,
+      expectedMinutes, varianceMinutes,
+      personName: String(cell(source, "name", "employee name", "ad soyad", "rider name", "rider_name", "picker name") || "").trim(),
+      warehouse: normalizeWarehouseName(cell(source, "vendor name", "vendor_name", "warehouse", "warehouse name", "depo", "depo adı")),
+      title: String(cell(source, "title", "unvan", "role", "job title") || "").trim(),
+      errorStatus: String(cell(source, "hata durumu", "error status", "error", "hata") || "").trim(),
+    };
+  }).filter((row) => (row.sourcePersonId || row.nationalId.length === 11) && row.date && ((row.checkIn && row.checkOut) || row.grossMinutes > 0));
+  return { rows, sourceCount: sourceRows.length };
+}
+
 export function maskNationalId(value) {
-  const id = String(value || "").replace(/\D/g, "");
+  const id = normalizeNationalId(value);
   if (!id) return "—";
   if (id.length <= 4) return id;
   return `${id.slice(0, 2)}${"*".repeat(Math.max(1, id.length - 4))}${id.slice(-2)}`;

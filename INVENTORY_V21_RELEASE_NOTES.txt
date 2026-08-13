@@ -1,0 +1,19 @@
+OPEX INVENTORY V21 — PELICAN-REFERENCED FIELD TERMINAL
+28.07.2026
+
+V21 additions
+1. Zebra DataWedge native bridge contract and automatic profile configuration hook.
+2. Keyboard-wedge fallback remains active for Honeywell and generic scanners.
+3. Normalized scan event with barcode symbology and event timestamp.
+4. Sound and vibration success/error feedback.
+5. Terminal acceptance/self-test screen.
+6. DataWedge, offline queue, secure context, camera and feedback diagnostics.
+7. Device acceptance matrix for Zebra/Honeywell/Sunmi production certification.
+8. Existing V20 API, blind count, location lock, idempotency, recount, approval,
+   official report, variance report, RBAC, audit and four-language UI retained.
+
+Accuracy boundary
+- Pelican's proven field behavior is used as an architectural reference; its
+  code and visual identity are not copied.
+- V21 is device-ready, not automatically certified for every model. Each model
+  must pass docs/INVENTORY_V21_DEVICE_ACCEPTANCE.md before production.

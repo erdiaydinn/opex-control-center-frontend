@@ -58,8 +58,9 @@ import WorkforceAnalyticsDashboard from "./WorkforceAnalyticsDashboard.jsx";
 import { loadRosterRows } from "./workforceRosterStore.js";
 import { generateTurkeyHolidays } from "./turkeyHolidays.js";
 import { parseTimeOffFile } from "./workforceImporters.js";
+import { resolveWorkforcePerson } from "./workforceIdentity.js";
 import { useWorkforceUi } from "./WorkforceUiContext.jsx";
-import { approveAttendanceRemote, bulkApproveRemote, bulkPatchWarehousesRemote, correctAttendanceRemote, createAnnouncementRemote, createRuleRemote, createShiftRemote, loadAdminWorkforce, resetDeviceRemote, resolveLeave, resolveManagerTask, saveNotificationPolicyRemote, saveWarehouseRemote } from "./workforceApi.js";
+import { approveAttendanceRemote, bulkApproveRemote, bulkPatchWarehousesRemote, correctAttendanceRemote, createAnnouncementRemote, createRuleRemote, createShiftRemote, importLeavesRemote, loadAdminWorkforce, resetDeviceRemote, resolveLeave, resolveManagerTask, saveNotificationPolicyRemote, saveWarehouseRemote, upsertPeopleRemote } from "./workforceApi.js";
 import "./workforce.css";
 
 const tabs = [
@@ -277,10 +278,10 @@ export default function WorkforceControl() {
       const data = await loadAdminWorkforce();
       setState((current) => ({
         ...current,
-        people: (data.people || []).length ? data.people.map((item) => ({ ...item, id: item.employeeId, name: item.fullName, role: item.position, nationalId: item.tckn })) : current.people,
+        people: (data.people || []).length ? data.people.map((item) => ({ ...item, id: item.employeeId, rosterIds: item.rosterIds || [], name: item.fullName, role: item.position, nationalId: item.tckn, warehouse: item.warehouse || item.warehouseId || "", warehouseCode: item.warehouseId || "", hireDate: item.employmentStart || "", terminationDate: item.employmentEnd || "" })) : current.people,
         warehouses: (data.warehouses || []).map((item) => ({ ...item, code: item.code || item.id, accuracy: item.maxAccuracy, status: item.active === false ? "Pasif" : "Aktif", method: "Konum + cihaz", qrEnabled: false })),
         rules: data.rules || current.rules,
-        shifts: data.shifts || [], attendance: data.attendance || [], devices: data.devices || [],
+        shifts: data.shifts || [], attendance: data.attendance || [], leaves: data.leaves || current.leaves, devices: data.devices || [],
         leaveRequests: data.leaveRequests || [], correctionRequests: data.managerTasks || [],
         announcements: data.announcements || [], featureFlags: data.features || current.featureFlags,
         notificationSettings: data.notificationPolicy || current.notificationSettings,
@@ -447,15 +448,29 @@ export default function WorkforceControl() {
     const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
     try {
       const imported = await parseTimeOffFile(file);
+      const bootstrap = [...new Map(imported.rows.filter((row) => row.sourcePersonId && row.nationalId?.length === 11 && row.personName && !resolveWorkforcePerson(row, state.people, state.rosterIdentityMap || {}).person).map((row) => [row.nationalId, { id: String(row.sourcePersonId), name: row.personName, nationalId: row.nationalId, role: "Çalışan", warehouse: "", hireDate: "", terminationDate: "", active: true }])).values()];
+      if (bootstrap.length) await upsertPeopleRemote(bootstrap);
+      const peopleForResolution = [...state.people, ...bootstrap];
+      if (bootstrap.length) updateState("people", (current) => {
+        const byId = new Map(current.map((person) => [String(person.id), person]));
+        bootstrap.forEach((person) => { if (!byId.has(String(person.id))) byId.set(String(person.id), person); });
+        return [...byId.values()];
+      }, { event: "PEOPLE_BOOTSTRAPPED_FROM_TIME_OFF", file: file.name, count: bootstrap.length });
       const existingKeys = new Set(state.leaves.map((leave) => `${leave.personId}|${leave.date}`));
-      const accepted = imported.rows.filter((leave) => {
-        if (existingKeys.has(leave.sourceKey)) return false;
-        existingKeys.add(leave.sourceKey); return true;
-      }).map((leave) => ({ ...leave, warehouse: state.people.find((person) => person.id === leave.personId)?.warehouse || "Eşleşmeyen personel", enteredBy: user?.email, enteredAt: new Date().toISOString() }));
+      const unmatched = [];
+      const accepted = imported.rows.flatMap((leave) => {
+        const resolved = resolveWorkforcePerson(leave, peopleForResolution, state.rosterIdentityMap || {});
+        if (!resolved.person) { unmatched.push(leave); return []; }
+        const sourceKey = `${resolved.person.id}|${leave.date}`;
+        if (existingKeys.has(sourceKey)) return [];
+        existingKeys.add(sourceKey);
+        return [{ ...leave, personId: String(resolved.person.id), sourceKey, identityMethod: resolved.method, personName: resolved.person.name, warehouse: resolved.person.warehouse || "Eşleşmeyen personel", enteredBy: user?.email, enteredAt: new Date().toISOString() }];
+      });
       const customTypes = [...new Map(accepted.filter((leave) => !state.leaveTypes.some((type) => type.id === leave.typeId)).map((leave) => [leave.typeId, { id: leave.typeId, code: leave.typeId.toLocaleUpperCase("tr-TR"), name: leave.category, paid: false, creditsPayroll: false, excusesMissing: true, countsWeekly: false, deductsBalance: false, requiresDocument: false, active: true }])).values()];
+      if (accepted.length) await importLeavesRemote(accepted, file.name);
       if (customTypes.length) updateState("leaveTypes", (rows) => [...rows, ...customTypes], { event: "LEAVE_TYPES_AUTO_CREATED", count: customTypes.length });
       if (accepted.length) updateState("leaves", (rows) => [...rows, ...accepted], { event: "TIME_OFF_MANAGER_IMPORTED", count: accepted.length, sourceRows: imported.sourceCount, file: file.name });
-      setNotice(`${accepted.length} izin günü yüklendi; ${imported.rows.length - accepted.length} mükerrer gün atlandı.`);
+      setNotice(`${accepted.length} izin günü TC öncelikli yüklendi; ${imported.rows.length - accepted.length - unmatched.length} mükerrer gün atlandı; ${unmatched.length} kayıt eşleşmedi.`);
     } catch (error) { setNotice(`Time Off dosyası okunamadı: ${error.message}`); }
   }
 

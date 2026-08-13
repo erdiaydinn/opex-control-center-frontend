@@ -25,11 +25,12 @@ import {
   X,
 } from "lucide-react";
 
-import { buildCumulativePayroll, summarizeCumulativePayroll } from "./workforceEngine.js";
+import { buildCumulativePayroll, summarizeCumulativePayroll, toIsoDate, toTrDate } from "./workforceEngine.js";
 import { formatMinutes } from "./workforceData.js";
-import { maskNationalId, parseEmployeeFile, parseRosterFile, parseRosterIdentityFile, parseTimeOffFile } from "./workforceImporters.js";
-import { buildRosterIdentityMappings, reconcileRosterRows } from "./workforceIdentity.js";
+import { maskNationalId, parseAttendanceFile, parseEmployeeFile, parseEmploymentLifecycleFile, parseRosterFile, parseRosterIdentityFile, parseTimeOffFile } from "./workforceImporters.js";
+import { buildRosterIdentityMappings, reconcileRosterRows, resolveWorkforcePerson } from "./workforceIdentity.js";
 import { clearRosterRows, loadRosterRows, saveRosterRows } from "./workforceRosterStore.js";
+import { importAttendanceRemote, importEmploymentLifecycleRemote, importLeavesRemote, upsertPeopleRemote } from "./workforceApi.js";
 
 function csvEscape(value) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
 function downloadCsv(filename, headers, rows) {
@@ -82,8 +83,10 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [editingPerson, setEditingPerson] = useState(null);
   const employeeRef = useRef(null);
+  const employmentRef = useRef(null);
   const employeeRosterIdentityRef = useRef(null);
   const timeOffRef = useRef(null);
+  const attendanceRef = useRef(null);
   const rows = useMemo(() => buildCumulativePayroll(state, period), [state, period]);
   const totals = useMemo(() => summarizeCumulativePayroll(rows), [rows]);
   const accountsByPerson = useMemo(() => new Map((state.userAccounts || []).map((account) => [String(account.personId), account])), [state.userAccounts]);
@@ -96,7 +99,7 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
     });
     return mapped;
   }, [state.rosterIdentityMap]);
-  const visiblePeople = useMemo(() => state.people.filter((person) => [person.id, person.name, person.email, person.warehouse].join(" ").toLocaleLowerCase("tr-TR").includes(employeeQuery.toLocaleLowerCase("tr-TR"))), [state.people, employeeQuery]);
+  const visiblePeople = useMemo(() => state.people.filter((person) => [person.id, ...(person.rosterIds || []), person.name, person.email, person.warehouse].join(" ").toLocaleLowerCase("tr-TR").includes(employeeQuery.toLocaleLowerCase("tr-TR"))), [state.people, employeeQuery]);
 
   function displayNationalId(value) { return permissions.fullNationalId ? (value || "—") : maskNationalId(value); }
 
@@ -105,27 +108,46 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
     try {
       const imported = await parseEmployeeFile(file);
       const existingById = new Map(state.people.map((person) => [String(person.id), person]));
-      const summary = imported.reduce((result, person) => {
+      const existingByTc = new Map();
+      state.people.forEach((person) => {
+        const tc = String(person.nationalId || "").replace(/\D/g, "");
+        if (!tc || existingByTc.has(tc)) existingByTc.set(tc, null); else existingByTc.set(tc, person);
+      });
+      const prepared = imported.map((person) => {
+        const tcMatch = person.nationalId?.length === 11 ? existingByTc.get(person.nationalId) : null;
+        const existing = tcMatch || existingById.get(String(person.id));
+        return {
+          ...person,
+          id: String(existing?.id || person.id || ""),
+          rosterIds: [...new Set([...(existing?.rosterIds || []), ...(person.rosterIds || [])])],
+          sourceEmployeeId: person.id && existing && String(person.id) !== String(existing.id) ? String(person.id) : existing?.sourceEmployeeId,
+        };
+      }).filter((person) => person.id);
+      const summary = prepared.reduce((result, person) => {
         const existing = existingById.get(String(person.id));
         if (existing) result.updated += 1; else result.created += 1;
         if (person.terminationDate && !existing?.terminationDate) result.terminated += 1;
         if (person.warehouse && !state.warehouses.some((warehouse) => warehouse.name === person.warehouse)) result.unmatchedWarehouses.add(person.warehouse);
         return result;
       }, { created: 0, updated: 0, terminated: 0, unmatchedWarehouses: new Set() });
+      const persistable = prepared.filter((person) => person.nationalId?.length === 11);
+      const remoteSummary = persistable.length ? await upsertPeopleRemote(persistable, ({ processed, total }) => {
+        setNotice(`Personel ana verisi yükleniyor: ${processed.toLocaleString("tr-TR")} / ${total.toLocaleString("tr-TR")}`);
+      }) : { rosterConflicts: [] };
       updateState("people", (current) => {
         const byId = new Map(current.map((person) => [person.id, person]));
-        imported.forEach((person) => {
+        prepared.forEach((person) => {
           const existing = byId.get(person.id);
           const next = { active: true, role: "Picker", ...(existing || {}), ...person, updatedAt: new Date().toISOString(), updatedBy: user?.email || "employee-import" };
           if (next.terminationDate) next.active = false;
           byId.set(person.id, next);
         });
         return [...byId.values()];
-      }, { event: "EMPLOYEE_MASTER_UPSERTED", count: imported.length, created: summary.created, updated: summary.updated, terminated: summary.terminated, unmatchedWarehouses: [...summary.unmatchedWarehouses], file: file.name });
-      updateState("employeeImport", { file: file.name, importedAt: new Date().toISOString(), importedBy: user?.email, total: imported.length, created: summary.created, updated: summary.updated, terminated: summary.terminated, unmatchedWarehouses: [...summary.unmatchedWarehouses] }, { event: "EMPLOYEE_IMPORT_SUMMARY_SAVED", file: file.name });
+      }, { event: "EMPLOYEE_MASTER_UPSERTED", count: prepared.length, created: summary.created, updated: summary.updated, terminated: summary.terminated, unmatchedWarehouses: [...summary.unmatchedWarehouses], file: file.name, identityPriority: "TC > Employee ID" });
+      updateState("employeeImport", { file: file.name, importedAt: new Date().toISOString(), importedBy: user?.email, total: prepared.length, created: summary.created, updated: summary.updated, terminated: summary.terminated, unmatchedWarehouses: [...summary.unmatchedWarehouses] }, { event: "EMPLOYEE_IMPORT_SUMMARY_SAVED", file: file.name });
       updateState("userAccounts", (current = []) => {
         const byPerson = new Map(current.map((account) => [String(account.personId), account]));
-        imported.forEach((person) => {
+        prepared.forEach((person) => {
           const existing = byPerson.get(String(person.id));
           if (!existing && !person.createUser) return;
           byPerson.set(String(person.id), {
@@ -135,13 +157,46 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
           });
         });
         return [...byPerson.values()];
-      }, { event: "USER_ACCOUNTS_SYNCED_FROM_EMPLOYEE_IMPORT", count: imported.filter((person) => person.createUser || person.terminationDate).length });
-      setNotice(`${imported.length} kişi işlendi: ${summary.created} yeni, ${summary.updated} güncelleme, ${summary.terminated} yeni çıkış kaydı.`);
+      }, { event: "USER_ACCOUNTS_SYNCED_FROM_EMPLOYEE_IMPORT", count: prepared.filter((person) => person.createUser || person.terminationDate).length });
+      const conflictCount = remoteSummary.rosterConflicts?.length || 0;
+      setNotice(`${prepared.length} kişi TC öncelikli işlendi: ${summary.created} yeni, ${summary.updated} güncelleme, ${summary.terminated} yeni çıkış kaydı${conflictCount ? `; ${conflictCount} çakışan Roster ID bağlanmadı` : ""}.`);
     } catch (error) { setNotice(`Personel dosyası okunamadı: ${error.message}`); }
   }
 
   function downloadEmployeeTemplate() {
-    downloadXlsx("workforce_personel_ve_kullanici_sablonu.xlsx", "Personel ve Kullanıcı", ["Employee ID", "TC", "Ad Soyad", "İşe Giriş Tarihi", "İşten Çıkış Tarihi", "Actual Warehouse", "İK Depo Kodu", "Unvan", "E-posta", "Telefon", "Kullanıcı Hesabı"], [["100184", "11111111111", "Ad Soyad", "2026-07-13", "", "287-Fulya", "287", "Picker", "picker@company.com", "", "Evet"]]);
+    downloadXlsx("workforce_personel_ana_veri_sablonu.xlsx", "Personel Ana Veri", ["Employee ID", "Roster ID", "TC", "Ad Soyad", "İşe Giriş Tarihi", "İşten Çıkış Tarihi", "Actual Warehouse", "İK Depo Kodu", "Unvan", "E-posta", "Telefon", "Kullanıcı Hesabı"], [["27057", "32137", "10009717724", "Murat Işılı", "2025-04-01", "", "Fulya (İstanbul)", "287", "Picker", "picker@company.com", "", "Evet"]]);
+  }
+
+  function downloadEmploymentTemplate() {
+    downloadXlsx("workforce_ise_giris_cikis_sablonu.xlsx", "İşe Giriş Çıkış", ["Employee Number", "TC Kimlik Numarası", "Ad Soyad", "İşe Giriş Tarihi", "İşten Çıkış Tarihi"], [["27057", "10009717724", "Murat Işılı", "2025-04-01", ""]]);
+  }
+
+  async function importEmploymentLifecycle(event) {
+    const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+    try {
+      const imported = await parseEmploymentLifecycleFile(file);
+      const bootstrap = [...new Map(imported.filter((row) => row.personId && row.nationalId?.length === 11 && row.personName && !resolveWorkforcePerson({ sourcePersonId: row.personId, nationalId: row.nationalId }, state.people, state.rosterIdentityMap || {}).person).map((row) => [row.nationalId, { id: String(row.personId), name: row.personName, nationalId: row.nationalId, role: "Çalışan", warehouse: "", hireDate: row.hireDate, terminationDate: row.terminationDate, active: !row.terminationDate }])).values()];
+      if (bootstrap.length) await upsertPeopleRemote(bootstrap);
+      const peopleForResolution = [...state.people, ...bootstrap];
+      const resolved = imported.map((row) => ({ row, result: resolveWorkforcePerson({ sourcePersonId: row.personId, nationalId: row.nationalId }, peopleForResolution, state.rosterIdentityMap || {}) }));
+      const matched = resolved.filter((item) => item.result.person);
+      const unmatched = resolved.filter((item) => !item.result.person);
+      if (matched.length) await importEmploymentLifecycleRemote(matched.map((item) => ({ personId: item.result.person.id, hireDate: item.row.hireDate, terminationDate: item.row.terminationDate, identityMethod: item.result.method })), file.name);
+      updateState("people", (current) => {
+        const byId = new Map(current.map((person) => [String(person.id), person]));
+        bootstrap.forEach((person) => { if (!byId.has(String(person.id))) byId.set(String(person.id), person); });
+        return [...byId.values()].map((person) => {
+        const match = matched.find((item) => String(item.result.person.id) === String(person.id));
+        if (!match) return person;
+        const next = { ...person, ...(match.row.hireDate ? { hireDate: match.row.hireDate } : {}), ...(match.row.terminationDate ? { terminationDate: match.row.terminationDate, active: false } : {}), updatedAt: new Date().toISOString(), updatedBy: user?.email || "employment-import" };
+        return next;
+        });
+      }, { event: "EMPLOYMENT_LIFECYCLE_IMPORTED", file: file.name, matched: matched.length, unmatched: unmatched.length, bootstrapped: bootstrap.length, identityPriority: "TC > Employee ID" });
+      const terminatedIds = new Set(matched.filter((item) => item.row.terminationDate).map((item) => String(item.result.person.id)));
+      if (terminatedIds.size) updateState("userAccounts", (current = []) => current.map((account) => terminatedIds.has(String(account.personId)) ? { ...account, status: "Erişim kapalı", updatedAt: new Date().toISOString() } : account), { event: "EMPLOYEE_ACCESS_CLOSED_FROM_LIFECYCLE_IMPORT", personIds: [...terminatedIds] });
+      updateState("employmentLifecycleImport", { file: file.name, importedAt: new Date().toISOString(), importedBy: user?.email, total: imported.length, matched: matched.length, unmatched: unmatched.length }, { event: "EMPLOYMENT_LIFECYCLE_IMPORT_SUMMARY_SAVED", file: file.name });
+      setNotice(`${matched.length} kişinin işe giriş/çıkış tarihi TC öncelikli güncellendi; ${unmatched.length} kayıt eşleşmedi.`);
+    } catch (error) { setNotice(`İşe giriş/çıkış dosyası okunamadı: ${error.message}`); }
   }
 
   function downloadEmployeeRosterIdentityTemplate() {
@@ -202,23 +257,73 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
     const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
     try {
       const imported = await parseTimeOffFile(file);
+      const bootstrap = [...new Map(imported.rows.filter((row) => row.sourcePersonId && row.nationalId?.length === 11 && row.personName && !resolveWorkforcePerson(row, state.people, state.rosterIdentityMap || {}).person).map((row) => [row.nationalId, { id: String(row.sourcePersonId), name: row.personName, nationalId: row.nationalId, role: "Çalışan", warehouse: "", hireDate: "", terminationDate: "", active: true }])).values()];
+      if (bootstrap.length) await upsertPeopleRemote(bootstrap);
+      const peopleForResolution = [...state.people, ...bootstrap];
+      if (bootstrap.length) updateState("people", (current) => {
+        const byId = new Map(current.map((person) => [String(person.id), person]));
+        bootstrap.forEach((person) => { if (!byId.has(String(person.id))) byId.set(String(person.id), person); });
+        return [...byId.values()];
+      }, { event: "PEOPLE_BOOTSTRAPPED_FROM_TIME_OFF", file: file.name, count: bootstrap.length });
       const existingKeys = new Set(state.leaves.map((leave) => `${leave.personId}|${leave.date}`));
       const accepted = [];
       const skipped = [];
+      const unmatched = [];
       imported.rows.forEach((leave) => {
-        if (existingKeys.has(leave.sourceKey)) { skipped.push(leave); return; }
-        existingKeys.add(leave.sourceKey);
-        const person = state.people.find((item) => item.id === leave.personId);
-        accepted.push({ ...leave, warehouse: person?.warehouse || "Eşleşmeyen personel", enteredBy: user?.email || "time-off-import", enteredAt: new Date().toISOString() });
+        const resolved = resolveWorkforcePerson(leave, peopleForResolution, state.rosterIdentityMap || {});
+        if (!resolved.person) { unmatched.push({ ...leave, reason: resolved.reason }); return; }
+        const sourceKey = `${resolved.person.id}|${leave.date}`;
+        if (existingKeys.has(sourceKey)) { skipped.push(leave); return; }
+        existingKeys.add(sourceKey);
+        accepted.push({ ...leave, personId: String(resolved.person.id), sourcePersonId: leave.sourcePersonId, sourceKey, identityMethod: resolved.method, personName: resolved.person.name, warehouse: resolved.person.warehouse || "Eşleşmeyen personel", enteredBy: user?.email || "time-off-import", enteredAt: new Date().toISOString() });
       });
       const customTypes = [...new Map(accepted.filter((leave) => !state.leaveTypes.some((type) => type.id === leave.typeId)).map((leave) => [leave.typeId, {
         id: leave.typeId, code: leave.typeId.toLocaleUpperCase("tr-TR"), name: leave.category, paid: false, creditsPayroll: false,
         excusesMissing: true, countsWeekly: false, deductsBalance: false, requiresDocument: false, active: true,
       }])).values()];
+      if (accepted.length) await importLeavesRemote(accepted, file.name);
       if (customTypes.length) updateState("leaveTypes", (current) => [...current, ...customTypes], { event: "LEAVE_TYPES_AUTO_CREATED", count: customTypes.length });
-      if (accepted.length) updateState("leaves", (current) => [...current, ...accepted], { event: "TIME_OFF_IMPORTED", file: file.name, sourceRows: imported.sourceCount, accepted: accepted.length, skipped: skipped.length });
-      setNotice(`${accepted.length} izin günü eklendi; ${skipped.length} gün müdür/sistem kaydı bulunduğu için çiftlenmedi.`);
+      if (accepted.length) updateState("leaves", (current) => [...current, ...accepted], { event: "TIME_OFF_IMPORTED", file: file.name, sourceRows: imported.sourceCount, accepted: accepted.length, skipped: skipped.length, unmatched: unmatched.length, identityPriority: "TC > Employee ID > Roster ID" });
+      setNotice(`${accepted.length} izin günü TC öncelikli eklendi; ${bootstrap.length} kişi Time Off kimliğiyle oluşturuldu; ${skipped.length} kişi/gün mükerrer olduğu için atlandı; ${unmatched.length} kayıt eşleşmedi.`);
     } catch (error) { setNotice(`Time Off dosyası okunamadı: ${error.message}`); }
+  }
+
+  async function importAttendance(event) {
+    const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+    try {
+      const imported = await parseAttendanceFile(file);
+      const existingByKey = new Map(state.attendance.map((row) => [`${row.personId}|${toIsoDate(row.date)}`, row]));
+      const inserts = [];
+      const replacements = new Map();
+      let unmatched = 0;
+      let protectedRows = 0;
+      imported.rows.forEach((row) => {
+        const resolved = resolveWorkforcePerson(row, state.people, state.rosterIdentityMap || {});
+        if (!resolved.person) { unmatched += 1; return; }
+        const key = `${resolved.person.id}|${row.date}`;
+        const existing = existingByKey.get(key);
+        if (existing && !String(existing.source || "").includes("Dosya")) { protectedRows += 1; return; }
+        const shift = state.shifts.find((item) => String(item.personId) === String(resolved.person.id) && item.date === row.date && item.status !== "İptal");
+        const record = {
+          id: existing?.id || `ATT-FILE-${resolved.person.id}-${row.date}`,
+          shiftId: shift?.id || "",
+          personId: String(resolved.person.id), name: resolved.person.name, role: resolved.person.role || row.title || "Picker",
+          warehouse: resolved.person.warehouse || row.warehouse, date: toTrDate(row.date),
+          planned: shift ? `${shift.start}–${shift.end}` : "Dosyadan",
+          checkIn: row.checkIn || "—", checkOut: row.checkOut || "—", breaks: [], breakMinutes: row.breakMinutes,
+          netMinutes: row.netMinutes, expectedMinutes: shift?.expectedMinutes ?? row.expectedMinutes,
+          status: row.errorStatus || (row.varianceMinutes > 0 ? "Fazla mesai" : row.varianceMinutes < 0 ? "Eksik çalışma" : "Tamamlandı"),
+          approval: "Onay bekliyor", location: "Dosya kaydı", device: "—", source: `Puantaj Dosyası · ${file.name}`,
+          nationalId: row.nationalId, sourcePersonId: row.sourcePersonId, identityMethod: resolved.method, importedAt: new Date().toISOString(), importedBy: user?.email,
+        };
+        if (existing) replacements.set(existing.id, record); else inserts.push(record);
+      });
+      const changedRows = [...replacements.values(), ...inserts];
+      if (changedRows.length) await importAttendanceRemote(changedRows, file.name);
+      if (changedRows.length) updateState("attendance", (current) => [...current.map((row) => replacements.get(row.id) || row), ...inserts], { event: "ATTENDANCE_FILE_IMPORTED", file: file.name, inserted: inserts.length, updated: replacements.size, protectedRows, unmatched, identityPriority: "TC > Employee ID > Roster ID" });
+      updateState("attendanceImport", { file: file.name, importedAt: new Date().toISOString(), importedBy: user?.email, sourceRows: imported.sourceCount, inserted: inserts.length, updated: replacements.size, protectedRows, unmatched }, { event: "ATTENDANCE_IMPORT_SUMMARY_SAVED", file: file.name });
+      setNotice(`${inserts.length} giriş/çıkış kaydı eklendi, ${replacements.size} önceki dosya kaydı güncellendi; ${protectedRows} mobil/sistem kaydı korundu; ${unmatched} kayıt eşleşmedi.`);
+    } catch (error) { setNotice(`Giriş/çıkış dosyası okunamadı: ${error.message}`); }
   }
 
   function exportPayroll() {
@@ -236,6 +341,8 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
     {!standalone ? <div className="wfx-subtabs">{SECTION_TABS.map((item) => <button type="button" key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}>{item.label}</button>)}</div> : null}
 
     {section === "close" ? <>
+      <div className="wfx-action-strip no-print"><div><FileSpreadsheet size={22} /><span><strong>Kişi giriş–çıkış / puantaj yükleme</strong><small>TC başlığı farklı yazılsa da tanınır; eşleştirme sırası TC → Employee ID → Roster ID’dir. Mobil ve sistem kayıtları dosyayla ezilmez.</small></span></div><div className="wfx-toolbar">{permissions.manualCorrection || permissions.importRoster ? <button type="button" onClick={() => attendanceRef.current?.click()}><Upload size={16} />Giriş–çıkış dosyası yükle</button> : null}<input ref={attendanceRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importAttendance} /></div></div>
+      {state.attendanceImport ? <div className="wfx-print-summary wfx-close-summary no-print"><span>Son puantaj dosyası<strong>{state.attendanceImport.file}</strong></span><span>Eklenen<strong>{state.attendanceImport.inserted}</strong></span><span>Güncellenen<strong>{state.attendanceImport.updated}</strong></span><span>Korunan sistem kaydı<strong>{state.attendanceImport.protectedRows}</strong></span><span>Eşleşmeyen<strong>{state.attendanceImport.unmatched}</strong></span></div> : null}
       <div className="wfx-close-filter no-print"><label>Başlangıç<input type="date" value={period.startDate} onChange={(event) => setPeriod({ ...period, startDate: event.target.value })} /></label><label>Kesim tarihi<input type="date" value={period.endDate} onChange={(event) => setPeriod({ ...period, endDate: event.target.value })} /></label><label>Depo<select value={period.warehouse} onChange={(event) => setPeriod({ ...period, warehouse: event.target.value })}><option value="">Tüm depolar</option>{[...new Set(state.people.map((person) => person.warehouse).filter(Boolean))].sort().map((warehouse) => <option key={warehouse}>{warehouse}</option>)}</select></label><label>Personel<select value={period.personId} onChange={(event) => setPeriod({ ...period, personId: event.target.value })}><option value="">Tüm kişiler</option>{state.people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><div className="wfx-toolbar">{permissions.export ? <button type="button" className="secondary compact" onClick={exportPayroll}><Download size={16} />İK CSV</button> : null}{permissions.print ? <button type="button" className="secondary compact" onClick={() => window.print()}><Printer size={16} />Yazdır / PDF</button> : null}{permissions.closePeriod ? <button type="button" onClick={saveCloseRun}><Save size={16} />Kapanış taslağı</button> : null}</div></div>
       <div className="wfx-print-document wfx-close-document"><div className="wfx-print-title"><div><strong>OPEX WORKFORCE</strong><h1>KÜMÜLATİF DÖNEM PUANTAJI</h1></div><div><span>{period.personId ? rows[0]?.name : period.warehouse || "Tüm Türkiye"}</span><small>{period.startDate} – {period.endDate}</small></div></div>
       <div className="wfx-print-summary wfx-close-summary"><span>Planlanan<strong>{formatMinutes(totals.expectedMinutes)}</strong></span><span>Fiili Çalışma<strong>{formatMinutes(totals.workedMinutes)}</strong></span><span>Normal<strong>{formatMinutes(totals.normalMinutes)}</strong></span><span>Resmî Tatil<strong>{formatMinutes(totals.holidayMinutes)}</strong></span><span>Fazla Mesai<strong>{formatMinutes(totals.overtimeMinutes)}</strong></span><span>İzin<strong>{formatMinutes(totals.leaveMinutes)}</strong></span></div>
@@ -245,25 +352,29 @@ export function WorkforcePeriodClose({ state, updateState, permissions, user, se
     </> : null}
 
     {section === "employees" ? <>
-      <div className="wfx-action-strip"><div><UserRoundCog size={22} /><span><strong>Personel ana verisi ve uygulama erişimi</strong><small>Employee ID tekil anahtardır. Tekrar yüklenen kişi çoğalmaz; TC, e-posta, Actual Warehouse, İK kodu, işe giriş/çıkış ve kullanıcı erişimi güncellenir.</small></span></div><span className="wfx-status live">{selectedEmployees.length} seçili · {rosterIdsByPerson.size} Roster ID</span></div>
+      <div className="wfx-action-strip"><div><UserRoundCog size={22} /><span><strong>Personel ana verisi ve uygulama erişimi</strong><small>Employee ID ve Roster ID ayrı tutulur; TC güvenli eşleştirme anahtarıdır. Aynı Excel ile ad soyad, işe giriş/çıkış, depo ve erişim bilgileri toplu güncellenir.</small></span></div><span className="wfx-status live">{selectedEmployees.length} seçili · {state.people.reduce((total, person) => total + (person.rosterIds?.length || 0), 0) + rosterIdsByPerson.size} Roster ID</span></div>
       <div className="wfx-professional-actions">
-        <button type="button" className="wfx-pro-action secondary" onClick={downloadEmployeeTemplate}><span className="icon"><FileSpreadsheet size={20} /></span><span><strong>Excel şablonunu indir</strong><small>Personel ve kullanıcı alanlarını doğru formatta hazırla</small></span><Download size={17} /></button>
-        {permissions.manageEmployees ? <button type="button" className="wfx-pro-action primary" onClick={() => employeeRef.current?.click()}><span className="icon"><Upload size={20} /></span><span><strong>Toplu kişi ekle / güncelle</strong><small>CSV veya XLSX · Employee ID’ye göre upsert</small></span><Upload size={17} /></button> : null}
+        <button type="button" className="wfx-pro-action secondary" onClick={downloadEmployeeTemplate}><span className="icon"><FileSpreadsheet size={20} /></span><span><strong>Personel ana veri şablonunu indir</strong><small>Employee ID, Roster ID, TC, ad soyad ve giriş–çıkış tek dosyada</small></span><Download size={17} /></button>
+        {permissions.manageEmployees ? <button type="button" className="wfx-pro-action primary" onClick={() => employeeRef.current?.click()}><span className="icon"><Upload size={20} /></span><span><strong>Toplu personel ana veri yükle</strong><small>CSV/XLSX · TC → Employee ID → Roster ID doğrulaması</small></span><Upload size={17} /></button> : null}
+        <button type="button" className="wfx-pro-action secondary" onClick={downloadEmploymentTemplate}><span className="icon"><FileSpreadsheet size={20} /></span><span><strong>İşe giriş/çıkış şablonu</strong><small>TC, işe giriş ve işten çıkış tarihleri</small></span><Download size={17} /></button>
+        {permissions.manageEmployees ? <button type="button" className="wfx-pro-action primary" onClick={() => employmentRef.current?.click()}><span className="icon"><Upload size={20} /></span><span><strong>İşe giriş/çıkış yükle</strong><small>Farklı kolon adlarını tanır; TC ile mevcut kişiyi bulur</small></span><Upload size={17} /></button> : null}
         {permissions.manageEmployees ? <button type="button" className="wfx-pro-action secondary" disabled={!selectedEmployees.length} onClick={() => createUserAccounts(selectedEmployees)}><span className="icon"><UserPlus size={20} /></span><span><strong>Uygulama kullanıcısı oluştur</strong><small>Seçilen aktif kişilere davet ve erişim tanımla</small></span><Mail size={17} /></button> : null}
         {permissions.manageEmployees ? <button type="button" className="wfx-pro-action secondary" disabled={!selectedEmployees.length} onClick={() => createPasswordResetLinks(selectedEmployees)}><span className="icon"><KeyRound size={20} /></span><span><strong>Şifre sıfırlama bağlantısı</strong><small>Tek kişide panoya, toplu seçimde güvenli CSV’ye aktar</small></span><Link2 size={17} /></button> : null}
         <button type="button" className="wfx-pro-action secondary" onClick={downloadEmployeeRosterIdentityTemplate}><span className="icon"><Fingerprint size={20} /></span><span><strong>Roster ID şablonunu indir</strong><small>rider_id + TCK formatı; gönderdiğiniz kolonlarla aynı</small></span><Download size={17} /></button>
         {permissions.manageEmployees || permissions.importRoster ? <button type="button" className="wfx-pro-action primary" onClick={() => employeeRosterIdentityRef.current?.click()}><span className="icon"><Fingerprint size={20} /></span><span><strong>Toplu Roster ID eşleştir</strong><small>CSV/XLSX · rider_id, rider_name, TCK, contract_name, IsActive, phone_num, email</small></span><Upload size={17} /></button> : null}
         <input ref={employeeRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importEmployees} />
+        <input ref={employmentRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importEmploymentLifecycle} />
         <input ref={employeeRosterIdentityRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importEmployeeRosterIdentities} />
       </div>
       {state.employeeImport ? <div className="wfx-print-summary wfx-close-summary"><span>Son dosya<strong>{state.employeeImport.file}</strong></span><span>Toplam<strong>{state.employeeImport.total}</strong></span><span>Yeni kişi<strong>{state.employeeImport.created}</strong></span><span>Güncellenen<strong>{state.employeeImport.updated}</strong></span><span>Yeni çıkış<strong>{state.employeeImport.terminated}</strong></span><span>Eşleşmeyen depo<strong>{state.employeeImport.unmatchedWarehouses?.length || 0}</strong></span></div> : null}
-      <div className="wfx-employee-toolbar"><label className="wfx-search"><UsersRound size={16} /><input value={employeeQuery} onChange={(event) => setEmployeeQuery(event.target.value)} placeholder="Employee ID, ad, e-posta veya depo ara…" /></label><small>TC yetkisi olmayan kullanıcılar yalnız ilk 2 ve son 2 haneyi görür.</small></div>
-      <div className="wfx-table-wrap"><table className="wfx-table"><thead><tr><th className="wfx-check-cell"><input aria-label="Tüm kişileri seç" type="checkbox" checked={Boolean(visiblePeople.length && visiblePeople.every((person) => selectedEmployees.includes(String(person.id))))} onChange={() => setSelectedEmployees(visiblePeople.every((person) => selectedEmployees.includes(String(person.id))) ? selectedEmployees.filter((id) => !visiblePeople.some((person) => String(person.id) === id)) : [...new Set([...selectedEmployees, ...visiblePeople.map((person) => String(person.id))])])} /></th><th>Employee ID</th><th>Ad Soyad</th><th>TC</th><th>E-posta / Uygulama</th><th>Actual Warehouse</th><th>İK Kodu / Unvan</th><th>İşe Giriş / Çıkış</th><th>Erişim</th><th>İşlem</th></tr></thead><tbody>{visiblePeople.map((person) => { const account = accountsByPerson.get(String(person.id)); const selected = selectedEmployees.includes(String(person.id)); return <tr key={person.id} className={selected ? "is-selected" : ""}><td className="wfx-check-cell"><input aria-label={`${person.name} seç`} type="checkbox" checked={selected} onChange={() => setSelectedEmployees((current) => current.includes(String(person.id)) ? current.filter((id) => id !== String(person.id)) : [...current, String(person.id)])} /></td><td><strong>{person.id}</strong></td><td><strong>{person.name}</strong><small>{person.phone || "Telefon yok"}</small></td><td><span className="wfx-sensitive"><LockKeyhole size={12} />{displayNationalId(person.nationalId)}</span></td><td><strong>{person.email || "E-posta yok"}</strong><small>{account?.resetRequestedAt ? `Son sıfırlama: ${account.resetRequestedAt.slice(0, 16).replace("T", " ")}` : "Sıfırlama bağlantısı yok"}</small></td><td><strong>{person.warehouse || "—"}</strong><small>{person.sourceWarehouse && person.sourceWarehouse !== person.warehouse ? `Kaynak: ${person.sourceWarehouse}` : ""}</small></td><td><strong>{person.warehouseCode || "—"}</strong><small>{person.role}</small></td><td><strong>{person.hireDate || "—"}</strong><small>{person.terminationDate ? `Çıkış: ${person.terminationDate}` : "Aktif çalışan"}</small></td><td><span className={`wfx-status ${person.terminationDate ? "danger" : account ? account.status === "Aktif" ? "success" : "warning" : "neutral"}`}>{person.terminationDate ? "Erişim kapalı" : account?.status || "Oluşturulmadı"}</span></td><td><div className="wfx-row-actions">{permissions.manageEmployees ? <button type="button" onClick={() => setEditingPerson({ ...person })}><PencilLine size={15} />Düzenle</button> : null}{permissions.manageEmployees && !person.terminationDate ? <button type="button" className="secondary compact" disabled={!person.email} onClick={() => createUserAccounts([String(person.id)])}>{account ? "Erişimi güncelle" : "Kullanıcı oluştur"}</button> : null}{permissions.manageEmployees && account && !person.terminationDate ? <button type="button" className="secondary compact" onClick={() => createPasswordResetLinks([String(person.id)])}><KeyRound size={15} />Şifre linki</button> : null}</div></td></tr>; })}</tbody></table></div>
+      {state.employmentLifecycleImport ? <div className="wfx-print-summary wfx-close-summary"><span>Giriş/çıkış dosyası<strong>{state.employmentLifecycleImport.file}</strong></span><span>Toplam<strong>{state.employmentLifecycleImport.total}</strong></span><span>Eşleşen<strong>{state.employmentLifecycleImport.matched}</strong></span><span>Eşleşmeyen<strong>{state.employmentLifecycleImport.unmatched}</strong></span></div> : null}
+      <div className="wfx-employee-toolbar"><label className="wfx-search"><UsersRound size={16} /><input value={employeeQuery} onChange={(event) => setEmployeeQuery(event.target.value)} placeholder="Employee ID, Roster ID, ad, e-posta veya depo ara…" /></label><small>TC yetkisi olmayan kullanıcılar yalnız ilk 2 ve son 2 haneyi görür.</small></div>
+      <div className="wfx-table-wrap"><table className="wfx-table"><thead><tr><th className="wfx-check-cell"><input aria-label="Tüm kişileri seç" type="checkbox" checked={Boolean(visiblePeople.length && visiblePeople.every((person) => selectedEmployees.includes(String(person.id))))} onChange={() => setSelectedEmployees(visiblePeople.every((person) => selectedEmployees.includes(String(person.id))) ? selectedEmployees.filter((id) => !visiblePeople.some((person) => String(person.id) === id)) : [...new Set([...selectedEmployees, ...visiblePeople.map((person) => String(person.id))])])} /></th><th>Employee ID</th><th>Roster ID</th><th>Ad Soyad</th><th>TC</th><th>E-posta / Uygulama</th><th>Actual Warehouse</th><th>İK Kodu / Unvan</th><th>İşe Giriş / Çıkış</th><th>Erişim</th><th>İşlem</th></tr></thead><tbody>{visiblePeople.map((person) => { const account = accountsByPerson.get(String(person.id)); const selected = selectedEmployees.includes(String(person.id)); return <tr key={person.id} className={selected ? "is-selected" : ""}><td className="wfx-check-cell"><input aria-label={`${person.name} seç`} type="checkbox" checked={selected} onChange={() => setSelectedEmployees((current) => current.includes(String(person.id)) ? current.filter((id) => id !== String(person.id)) : [...current, String(person.id)])} /></td><td><strong>{person.id}</strong></td><td><strong>{person.rosterIds?.join(", ") || "—"}</strong><small>{person.rosterIds?.length > 1 ? "Geçmiş ID'ler korunuyor" : "Operasyon kimliği"}</small></td><td><strong>{person.name}</strong><small>{person.phone || "Telefon yok"}</small></td><td><span className="wfx-sensitive"><LockKeyhole size={12} />{displayNationalId(person.nationalId)}</span></td><td><strong>{person.email || "E-posta yok"}</strong><small>{account?.resetRequestedAt ? `Son sıfırlama: ${account.resetRequestedAt.slice(0, 16).replace("T", " ")}` : "Sıfırlama bağlantısı yok"}</small></td><td><strong>{person.warehouse || "—"}</strong><small>{person.sourceWarehouse && person.sourceWarehouse !== person.warehouse ? `Kaynak: ${person.sourceWarehouse}` : ""}</small></td><td><strong>{person.warehouseCode || "—"}</strong><small>{person.role}</small></td><td><strong>{person.hireDate || "—"}</strong><small>{person.terminationDate ? `Çıkış: ${person.terminationDate}` : "Aktif çalışan"}</small></td><td><span className={`wfx-status ${person.terminationDate ? "danger" : account ? account.status === "Aktif" ? "success" : "warning" : "neutral"}`}>{person.terminationDate ? "Erişim kapalı" : account?.status || "Oluşturulmadı"}</span></td><td><div className="wfx-row-actions">{permissions.manageEmployees ? <button type="button" onClick={() => setEditingPerson({ ...person })}><PencilLine size={15} />Düzenle</button> : null}{permissions.manageEmployees && !person.terminationDate ? <button type="button" className="secondary compact" disabled={!person.email} onClick={() => createUserAccounts([String(person.id)])}>{account ? "Erişimi güncelle" : "Kullanıcı oluştur"}</button> : null}{permissions.manageEmployees && account && !person.terminationDate ? <button type="button" className="secondary compact" onClick={() => createPasswordResetLinks([String(person.id)])}><KeyRound size={15} />Şifre linki</button> : null}</div></td></tr>; })}</tbody></table></div>
       {editingPerson ? <div className="wfx-modal-backdrop" role="presentation" onMouseDown={() => setEditingPerson(null)}><section className="wfx-modal wide" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><header><div><span>Personel ana verisi</span><h2>{editingPerson.name} kaydını düzenle</h2></div><button type="button" className="icon" onClick={() => setEditingPerson(null)}><X size={18} /></button></header><div className="wfx-form-grid"><label>Employee ID<input value={editingPerson.id} disabled /></label><label>Ad Soyad<input value={editingPerson.name || ""} onChange={(event) => setEditingPerson({ ...editingPerson, name: event.target.value })} /></label><label>TC Kimlik<input value={editingPerson.nationalId || ""} disabled={!permissions.fullNationalId} onChange={(event) => setEditingPerson({ ...editingPerson, nationalId: event.target.value.replace(/\D/g, "").slice(0, 11) })} /></label><label>E-posta<input type="email" value={editingPerson.email || ""} onChange={(event) => setEditingPerson({ ...editingPerson, email: event.target.value })} /></label><label>Telefon<input value={editingPerson.phone || ""} onChange={(event) => setEditingPerson({ ...editingPerson, phone: event.target.value })} /></label><label>Actual Warehouse<select value={editingPerson.warehouse || ""} onChange={(event) => setEditingPerson({ ...editingPerson, warehouse: event.target.value })}><option value="">Depo seç</option>{state.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.name}>{warehouse.name}</option>)}</select></label><label>İK Depo Kodu<input value={editingPerson.warehouseCode || ""} onChange={(event) => setEditingPerson({ ...editingPerson, warehouseCode: event.target.value })} /></label><label>Unvan<input value={editingPerson.role || ""} onChange={(event) => setEditingPerson({ ...editingPerson, role: event.target.value })} placeholder="Mağaza Görevlisi, Mağaza Müdürü…" /></label><label>İşe Giriş<input type="date" value={editingPerson.hireDate || ""} onChange={(event) => setEditingPerson({ ...editingPerson, hireDate: event.target.value })} /></label><label>İşten Ayrılış<input type="date" value={editingPerson.terminationDate || ""} onChange={(event) => setEditingPerson({ ...editingPerson, terminationDate: event.target.value })} /></label></div><footer><button type="button" className="secondary" onClick={() => setEditingPerson(null)}>Vazgeç</button><button type="button" onClick={savePerson}><Save size={16} />Personeli güncelle</button></footer></section></div> : null}
     </> : null}
 
     {section === "timeoff" ? <>
-      <div className="wfx-action-strip"><div><FileSpreadsheet size={22} /><span><strong>Time Off Used toplu yükleme</strong><small>Employee Number + tarih üzerinden eşleşir; müdürün girdiği aynı kişi/gün ikinci kez eklenmez.</small></span></div><div className="wfx-toolbar">{permissions.importTimeOff ? <button type="button" onClick={() => timeOffRef.current?.click()}><Upload size={16} />Time Off Excel yükle</button> : null}<input ref={timeOffRef} hidden type="file" accept=".xlsx,.xls" onChange={importTimeOff} /></div></div>
+      <div className="wfx-action-strip"><div><FileSpreadsheet size={22} /><span><strong>Time Off Used toplu yükleme</strong><small>TC → Employee Number → Roster ID sırasıyla eşleşir; kolon adı ve büyük/küçük harf farkı önemsenmez. Müdürün girdiği aynı kişi/gün ikinci kez eklenmez.</small></span></div><div className="wfx-toolbar">{permissions.importTimeOff ? <button type="button" onClick={() => timeOffRef.current?.click()}><Upload size={16} />Time Off Excel yükle</button> : null}<input ref={timeOffRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importTimeOff} /></div></div>
       <div className="wfx-table-wrap"><table className="wfx-table"><thead><tr><th>Personel</th><th>Tarih</th><th>Depo</th><th>İzin</th><th>Süre</th><th>Kaynak</th><th>Onay</th></tr></thead><tbody>{[...state.leaves].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 300).map((leave) => { const person = state.people.find((item) => item.id === leave.personId); const type = state.leaveTypes.find((item) => item.id === leave.typeId); return <tr key={leave.id}><td><strong>{person?.name || leave.personName || "Eşleşmeyen"}</strong><small>{leave.personId}</small></td><td>{leave.date}</td><td>{leave.warehouse}</td><td>{type?.name || leave.category || leave.typeId}</td><td>{formatMinutes(leave.minutes)}</td><td>{leave.source || "Müdür girişi"}</td><td><span className="wfx-status success">{leave.approval}</span></td></tr>; })}</tbody></table></div>
     </> : null}
   </section>;
@@ -531,7 +642,7 @@ export function WorkforceOpexLab({ state, updateState, permissions, user, setNot
   function updateNorm(id, patch) { updateState("staffingNorms", (rows) => rows.map((row) => row.id === id ? { ...row, ...patch } : row), { event: "STAFFING_NORM_UPDATED", recordId: id, patch }); }
 
   return <section className="wfx-panel wfx-opex-lab">
-    <header className="wfx-panel-head responsive"><div><span>OPEX geçiş alanı</span><h2>Geçici Roster Lab, dönem mesaisi ve norm analizi</h2><p>Ana ürün check-in/check-out puantajıdır. Bu laboratuvar yalnız mobil uygulamaya geçiş tamamlanana kadar roster ile deneme ve karşılaştırma yapmak içindir.</p></div><div className="wfx-toolbar">{permissions.importRoster ? <button type="button" className="secondary compact" onClick={() => rosterRef.current?.click()}><Upload size={16} />Geçici roster yükle</button> : null}<input ref={rosterRef} hidden type="file" accept=".csv,text/csv" onChange={importRoster} />{section === "identity" ? <><button type="button" className="secondary compact" onClick={downloadIdentityTemplate}><Download size={16} />TC ile otomatik eşleştirme şablonu</button>{permissions.importRoster ? <button type="button" onClick={() => identityRef.current?.click()}><Fingerprint size={16} />Roster TC yükle</button> : null}<input ref={identityRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importRosterIdentities} /></> : null}{section === "lab" && anomalies.length && permissions.export ? <button type="button" className="secondary compact" onClick={exportElevenHourRecords}><Download size={16} />11 Saat Kayıtları Excel</button> : null}{section === "lab" && periodRows.length ? <button type="button" className="secondary compact" onClick={exportSimulation}><Download size={16} />Simülasyon CSV</button> : null}{section !== "identity" && payrollRows.length && permissions.export ? <button type="button" onClick={exportPersonPayroll}><FileSpreadsheet size={16} />Tüm Dönem Mesai Excel</button> : null}</div></header>
+    <header className="wfx-panel-head responsive"><div><span>OPEX geçiş alanı</span><h2>Geçici Roster Lab, dönem mesaisi ve norm analizi</h2><p>Ana ürün check-in/check-out puantajıdır. Bu laboratuvar yalnız mobil uygulamaya geçiş tamamlanana kadar roster ile deneme ve karşılaştırma yapmak içindir.</p></div><div className="wfx-toolbar">{permissions.importRoster ? <button type="button" className="secondary compact" onClick={() => rosterRef.current?.click()}><Upload size={16} />Geçici roster yükle</button> : null}<input ref={rosterRef} hidden type="file" accept=".csv,.xlsx,.xls,text/csv" onChange={importRoster} />{section === "identity" ? <><button type="button" className="secondary compact" onClick={downloadIdentityTemplate}><Download size={16} />TC ile otomatik eşleştirme şablonu</button>{permissions.importRoster ? <button type="button" onClick={() => identityRef.current?.click()}><Fingerprint size={16} />Roster TC yükle</button> : null}<input ref={identityRef} hidden type="file" accept=".csv,.xlsx,.xls" onChange={importRosterIdentities} /></> : null}{section === "lab" && anomalies.length && permissions.export ? <button type="button" className="secondary compact" onClick={exportElevenHourRecords}><Download size={16} />11 Saat Kayıtları Excel</button> : null}{section === "lab" && periodRows.length ? <button type="button" className="secondary compact" onClick={exportSimulation}><Download size={16} />Simülasyon CSV</button> : null}{section !== "identity" && payrollRows.length && permissions.export ? <button type="button" onClick={exportPersonPayroll}><FileSpreadsheet size={16} />Tüm Dönem Mesai Excel</button> : null}</div></header>
     <div className={`wfx-action-strip responsive wfx-roster-source ${rosterIsTemporarySource ? "is-temporary" : "is-live"}`}><div><CheckCircle2 size={22} /><span><strong>{rosterIsTemporarySource ? "Geçici analiz kaynağı: Roster" : "Ana analiz kaynağı: Check-in / Check-out"}</strong><small>{rosterIsTemporarySource ? "Workforce Analytics geçiş süresince roster + izin + norm kullanıyor. Gerçek puantaj kayıtları korunuyor." : "Dashboard ve ana puantaj gerçek giriş/çıkış kayıtlarını kullanır. Roster Lab bağımsız test alanıdır."}</small></span></div><div className="wfx-toolbar"><span className={`wfx-status ${rosterIsTemporarySource ? "warning" : "live"}`}>{rosterIsTemporarySource ? "Geçici aktif" : "Ana sistem"}</span>{rosterRows.length ? <button type="button" className="secondary compact" onClick={toggleTemporaryRosterSource}>{rosterIsTemporarySource ? "Check-in/out’a dön" : "Roster’ı geçici kaynak yap"}</button> : null}{hasTemporaryRosterData && (permissions.importRoster || permissions.overrideRoster) ? <button type="button" className="secondary compact danger-outline" onClick={deleteTemporaryRosterData}><Trash2 size={16} />Geçici verileri sil</button> : null}</div></div>
     <div className="wfx-subtabs"><button type="button" className={section === "lab" ? "active" : ""} onClick={() => setSection("lab")}>11 Saat Kontrolü</button><button type="button" className={section === "payroll" ? "active" : ""} onClick={() => setSection("payroll")}>Dönem Mesai Hesabı</button><button type="button" className={section === "norms" ? "active" : ""} onClick={() => setSection("norms")}>BY / Norm Raporu</button><button type="button" className={section === "identity" ? "active" : ""} onClick={() => setSection("identity")}><Fingerprint size={15} />Kimlik Eşleştirme</button></div>
     {section !== "identity" ? <div className="wfx-close-filter"><label>Başlangıç<input type="date" value={period.startDate} onChange={(event) => setPeriod({ ...period, startDate: event.target.value })} /></label><label>Kesim tarihi<input type="date" value={period.endDate} onChange={(event) => setPeriod({ ...period, endDate: event.target.value })} /></label>{section === "norms" ? <><label>Regional Manager<select value={period.regionalManager} onChange={(event) => setPeriod({ ...period, regionalManager: event.target.value })}><option value="">Tümü</option>{[...new Set(state.staffingNorms.map((row) => row.regionalManager))].map((value) => <option key={value}>{value}</option>)}</select></label><label>BY / Regional Executive<select value={period.regionalExecutive} onChange={(event) => setPeriod({ ...period, regionalExecutive: event.target.value })}><option value="">Tümü</option>{[...new Set(state.staffingNorms.map((row) => row.regionalExecutive))].map((value) => <option key={value}>{value}</option>)}</select></label></> : null}{section === "payroll" ? <><label>Depo<select value={period.warehouse} onChange={(event) => setPeriod({ ...period, warehouse: event.target.value })}><option value="">Tüm depolar</option>{[...new Set(periodRows.map((row) => row.warehouse).filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr")).map((value) => <option key={value}>{value}</option>)}</select></label><label>Personel<select value={period.personId} onChange={(event) => setPeriod({ ...period, personId: event.target.value })}><option value="">Tüm kişiler</option>{[...new Map(periodRows.map((row) => [row.personId, row])).values()].sort((a, b) => a.personName.localeCompare(b.personName, "tr")).map((row) => <option key={row.personId} value={row.personId}>{row.personName} · {row.personId}</option>)}</select></label><label>Unvan<select value={period.title} onChange={(event) => setPeriod({ ...period, title: event.target.value })}><option value="">Tüm unvanlar</option>{[...new Set(periodRows.map((row) => row.title).filter(Boolean))].sort().map((value) => <option key={value}>{value}</option>)}</select></label></> : null}</div> : null}
@@ -547,7 +658,7 @@ export function WorkforceOpexLab({ state, updateState, permissions, user, setNot
     {!loading && !rosterRows.length ? <div className="wfx-empty-state"><FlaskConical size={30} /><h3>Roster laboratuvarı boş</h3><p>Aylık Puantaj CSV’sini yüklediğinde ham kayıtlar tarayıcı veritabanında tutulur ve 11 saat kontrolleri burada açılır.</p></div> : null}
     {section === "lab" && rosterRows.length ? <>
       <div className="wfx-print-summary wfx-close-summary"><span>Satır<strong>{periodRows.length.toLocaleString("tr-TR")}</strong></span><span>Çalışan<strong>{new Set(periodRows.map((row) => row.personId)).size.toLocaleString("tr-TR")}</strong></span><span>Depo<strong>{new Set(periodRows.map((row) => row.warehouse)).size}</strong></span><span>11 Saat Üstü<strong>{anomalies.length}</strong></span><span>İzin Çakışması<strong>{periodRows.filter((row) => leaveKeys.has(`${row.personId}|${row.date}`)).length}</strong></span><span>Simülasyon Düzeltmesi<strong>{anomalies.filter((row) => overrides[row.sourceKey]).length}</strong></span></div>
-      <div className="wfx-security-note"><AlertTriangle size={18} />20 saat gibi şüpheli kayıtlar otomatik olarak bordrodan silinmez. Aşağıdaki 7,5 saat işlemi yalnız test/simülasyondur ve audit kaydı üretir.</div>
+      <div className="wfx-security-note"><AlertTriangle size={18} />11 saat kontrolü net çalışma üzerinden hesaplanır: Günlük Toplam − Günlük Mola. 20 saat gibi şüpheli kayıtlar otomatik olarak bordrodan silinmez. Aşağıdaki 7,5 saat işlemi yalnız test/simülasyondur ve audit kaydı üretir.</div>
       <div className="wfx-action-strip responsive"><div><FlaskConical size={22} /><span><strong>11 saat üstü kayıtlar</strong><small>{anomalies.length} kayıt manuel karar bekliyor · {selectedAnomalyRows.length} seçili</small></span></div><div className="wfx-toolbar"><button type="button" className="secondary compact" onClick={toggleAllAnomalies}>{anomalies.length && anomalies.every((row) => selectedAnomalies.includes(row.sourceKey)) ? "Seçimi temizle" : "Tümünü seç"}</button>{selectedAnomalyRows.length && permissions.assignRosterTask ? <button type="button" className="secondary compact" onClick={() => assignTasks(selectedAnomalyRows)}><ClipboardCheck size={16} />Yöneticisine görev ata</button> : null}{selectedAnomalyRows.length && permissions.overrideRoster ? <button type="button" onClick={() => { normalizeRows(selectedAnomalyRows); setSelectedAnomalies([]); }}>Seçilenleri 7,5 saate çek</button> : null}</div></div>
       <div className="wfx-table-wrap"><table className="wfx-table"><thead><tr><th className="wfx-check-cell"><input aria-label="Tümünü seç" type="checkbox" checked={Boolean(anomalies.length && anomalies.every((row) => selectedAnomalies.includes(row.sourceKey)))} onChange={toggleAllAnomalies} /></th><th>Personel</th><th>Depo / Tarih</th><th>Roster</th><th>Ham Net</th><th>Resmî</th><th>İzin</th><th>Simülasyon</th><th>İşlem</th></tr></thead><tbody>{anomalies.slice(0, 500).map((row) => { const overridden = overrides[row.sourceKey]; const hasLeave = leaveKeys.has(`${row.personId}|${row.date}`); const checked = selectedAnomalies.includes(row.sourceKey); return <tr key={row.id} className={checked ? "is-selected" : ""}><td className="wfx-check-cell"><input aria-label={`${row.personName} kaydını seç`} type="checkbox" checked={checked} onChange={() => setSelectedAnomalies((current) => current.includes(row.sourceKey) ? current.filter((key) => key !== row.sourceKey) : [...current, row.sourceKey])} /></td><td><strong>{row.personName}</strong><small>{row.personId} · {row.title}</small></td><td><strong>{row.warehouse}</strong><small>{row.date}</small></td><td>{row.start}–{row.end}</td><td className="wfx-red">{formatMinutes(row.netMinutes)}</td><td>{formatMinutes(row.holidayMinutes)}</td><td>{hasLeave ? <span className="wfx-status warning">İzin çakışması</span> : "—"}</td><td><strong>{formatMinutes(effectiveMinutes(row))}</strong><small>{overridden ? "7,5 saat önerisi" : "Ham değer"}</small></td><td>{permissions.overrideRoster ? <button type="button" className="secondary compact" onClick={() => normalizeRows([row])}>{overridden ? "Yeniden uygula" : "7,5 sa test et"}</button> : null}</td></tr>; })}</tbody></table></div>
       <div className="wfx-action-strip"><div><ClipboardCheck size={22} /><span><strong>Yönetici düzeltme görevleri</strong><small>Açık görevler ilgili depo yöneticisi veya BY’ye atanır; ham roster değişmez.</small></span></div><span className="wfx-status warning">{rosterTasks.filter((task) => task.status === "Açık").length} açık</span></div>

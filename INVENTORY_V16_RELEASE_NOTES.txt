@@ -1,0 +1,21 @@
+OPEX CONTROL CENTER - INVENTORY V16
+Tarih: 28.07.2026
+
+- Sayım başlamadan önce kapsam dosyası yüklemek zorunlu hale getirildi.
+- CSV ve Excel yükleme desteği eklendi.
+- Zorunlu alanlar: warehouse, location, sku, barcode, name, expected, cost.
+- Eksik alan ve mükerrer lokasyon + SKU doğrulaması eklendi.
+- Adım adım süreç göstergesi eklendi.
+- PC düzeltmeleri taslak + zorunlu gerekçe + tek işlemle kaydet akışına alındı.
+- İlk sayımı ezmeyen satır revizyon geçmişi oluşturuldu.
+- Audit log kayıtlarına kullanıcı, kaynak, detay ve zaman eklendi.
+- Terminal sayımı ve manuel PC düzeltmesi ekranda ayrı gösteriliyor.
+- Onayla ve bitir sonrası belge kilitleniyor.
+- Resmi A4 fiziksel stok sayım tutanağı eklendi.
+- Tutanakta lokasyon, SKU, sayılan ürün adedi, artı, eksi, net ve mutlak fark,
+  parasal etki, fark detayları ve imza alanları yer alıyor.
+- Fark detay CSV çıktısı resmi tutanaktan ayrıldı.
+- Açık tema metin kontrastı güçlendirildi.
+- Workforce ve Hiring modülleri korunmuştur.
+
+Doğrulama: npm run build başarıyla tamamlandı.

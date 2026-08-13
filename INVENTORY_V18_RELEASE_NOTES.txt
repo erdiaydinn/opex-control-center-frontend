@@ -1,0 +1,23 @@
+OPEX CONTROL CENTER — INVENTORY V18
+Release date: 28.07.2026
+
+VISUAL SYSTEM
+- Inventory is aligned with the OPEX Control Center visual language.
+- Reduced oversized hero typography and excessive vertical whitespace.
+- Rebuilt surface, border, text, input, table and state contrast.
+- Added responsive theme and language controls to the module header.
+
+THEME
+- Complete light and dark theme support.
+- Uses the shared opex_theme preference so the selection follows the user.
+- Terminal remains high contrast in both themes.
+
+LANGUAGE
+- Turkish, English, German and Arabic selectors.
+- Language selection persists between sessions.
+- Arabic enables real RTL flow for navigation, tables, forms and controls.
+
+SAFETY
+- Workforce, Hiring and Inventory routes remain intact.
+- Inventory business workflow, terminal safeguards and audit behavior are preserved.
+- Production build completed successfully.

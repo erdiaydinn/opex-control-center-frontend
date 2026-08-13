@@ -2,6 +2,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../../api/client.j
 
 const LOCAL_PILOT_MODE = String(import.meta.env.VITE_LOCAL_PILOT_MODE || "false").toLowerCase() === "true";
 const PILOT_DEVICE_IDS = { "100184": "DEVICE-1", "100221": "DEV-4418", "100287": "DEV-7781" };
+const IMPORT_BATCH_SIZE = 3000;
 
 function camelKey(key) { return key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()); }
 function camel(value) {
@@ -24,6 +25,67 @@ export async function createAnnouncementRemote(values) { return camel(await apiP
 export async function saveNotificationPolicyRemote(values) { return camel(await apiPut("/workforce/notification-policy", values)); }
 export async function saveWarehouseRemote(values) { return camel(await apiPost("/workforce/warehouses", values)); }
 export async function bulkPatchWarehousesRemote(values) { return camel(await apiPatch("/workforce/warehouses", values)); }
+
+async function postImportBatches(path, rows, makePayload, mergeResult, onProgress) {
+  const source = Array.isArray(rows) ? rows : [];
+  if (!source.length) return mergeResult(null, null, 0);
+  let combined = null;
+  const batchCount = Math.ceil(source.length / IMPORT_BATCH_SIZE);
+  for (let offset = 0, batchIndex = 0; offset < source.length; offset += IMPORT_BATCH_SIZE, batchIndex += 1) {
+    const batch = source.slice(offset, offset + IMPORT_BATCH_SIZE);
+    const result = camel(await apiPost(path, makePayload(batch, batchIndex, batchCount)));
+    combined = mergeResult(combined, result, source.length);
+    onProgress?.({ processed: Math.min(offset + batch.length, source.length), total: source.length, batch: batchIndex + 1, batchCount });
+  }
+  return combined;
+}
+
+function sumResult(previous, current, total, numericKeys, arrayKeys = []) {
+  const next = previous || { total };
+  numericKeys.forEach((key) => { next[key] = Number(next[key] || 0) + Number(current?.[key] || 0); });
+  arrayKeys.forEach((key) => { next[key] = [...(next[key] || []), ...(current?.[key] || [])]; });
+  next.total = total;
+  return next;
+}
+
+export async function upsertPeopleRemote(rows, onProgress) {
+  return postImportBatches(
+    "/workforce/people/bulk-upsert",
+    rows,
+    (batch) => ({ rows: batch.map((row) => ({
+      employee_id: String(row.id), roster_ids: (row.rosterIds || []).map(String), full_name: row.name, tckn: row.nationalId, email: row.email || null, phone: row.phone || null,
+      position: row.role || "Picker", warehouse_id: row.warehouse || row.warehouseCode || null,
+      employment_start: row.hireDate || null, employment_end: row.terminationDate || null, active: !row.terminationDate,
+    })) }),
+    (previous, current, total) => sumResult(previous, current, total, ["created", "updated"], ["rosterConflicts"]),
+    onProgress,
+  );
+}
+export async function importEmploymentLifecycleRemote(rows, fileName, onProgress) {
+  return postImportBatches(
+    "/workforce/people/employment-lifecycle/import",
+    rows,
+    (batch) => ({ file_name: fileName, rows: batch.map((row) => ({ person_id: String(row.personId), employment_start: row.hireDate || null, employment_end: row.terminationDate || null, identity_method: row.identityMethod || "TC" })) }),
+    (previous, current, total) => sumResult(previous, current, total, ["matched", "unmatched"]),
+    onProgress,
+  );
+}
+export async function importAttendanceRemote(rows, fileName, onProgress) {
+  return postImportBatches("/workforce/attendance/import", rows, (batch) => ({ file_name: fileName, rows: batch.map((row) => ({
+    id: row.id, shift_id: row.shiftId || "", person_id: String(row.personId), name: row.name, role: row.role || "Picker",
+    warehouse: row.warehouse || "", date: row.date, planned: row.planned || "Dosyadan", check_in: row.checkIn === "—" ? null : row.checkIn,
+    check_out: row.checkOut === "—" ? null : row.checkOut, break_minutes: Number(row.breakMinutes || 0), net_minutes: Number(row.netMinutes || 0),
+    expected_minutes: Number(row.expectedMinutes || 0), status: row.status, approval: row.approval, source: row.source,
+    source_person_id: String(row.sourcePersonId || ""), identity_method: row.identityMethod || "",
+  })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "updated", "protected"]), onProgress);
+}
+export async function importLeavesRemote(rows, fileName, onProgress) {
+  return postImportBatches("/workforce/leaves/import", rows, (batch) => ({ file_name: fileName, rows: batch.map((row) => ({
+    id: row.id, person_id: String(row.personId), person_name: row.personName || "", warehouse: row.warehouse || "", type_id: row.typeId,
+    category: row.category || "", date: row.date, minutes: Number(row.minutes || 0), approval: row.approval || "Onaylandı",
+    note: row.note || "", source: row.source || "Time Off Used", source_person_id: String(row.sourcePersonId || ""), identity_method: row.identityMethod || "",
+  })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "skipped"]), onProgress);
+}
 export async function postBreak(shiftId, personId, action) {
   return camel(await apiPost(`/workforce/shifts/${encodeURIComponent(shiftId)}/breaks`, { person_id: personId, action: action.toUpperCase() }));
 }

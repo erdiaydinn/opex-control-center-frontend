@@ -1,0 +1,34 @@
+OPEX CONTROL CENTER - INVENTORY V15
+Tarih: 28.07.2026
+
+Bu paket V14.1.1 tabanı üzerine hazırlanmıştır.
+
+KORUNAN MODÜLLER
+- Workforce Control
+- Hiring Control
+- DockOS
+- Planogram Studio
+- Budget Control
+- Access Control
+
+DEĞİŞİKLİKLER
+- Cycle Count Risk kartı tamamen kaldırıldı.
+- Aynı konuma aktif Inventory kartı eklendi.
+- /inventory rotası ve inventory yetkisi eklendi.
+- Eski cycle_count yetkileri inventory yetkisine otomatik taşınır.
+- Kör terminal sayımı eklendi.
+- CSV ürün, barkod, lokasyon ve sistem stok yüklemesi eklendi.
+- PC kontrol sayımı ve revizyon geçmişi eklendi.
+- SKU/lokasyon fark mutabakatı ve TL etkisi eklendi.
+- Onay, kilitleme ve CSV sayım tutanağı eklendi.
+
+KURULUM
+PowerShell'i bu klasörde açın:
+
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\INSTALL_OPEX_WORKFORCE_V11.ps1
+.\START_OPEX_WORKFORCE.ps1
+
+Alternatif frontend çalıştırma:
+npm install
+npm run dev

@@ -1,0 +1,45 @@
+OPEX CONTROL CENTER - HIRING + WORKFORCE V14.1.1
+Release date: 2026-07-17
+
+NEW MODULE
+- Hiring Control desktop/responsive module at /recruitment
+- PostgreSQL recruitment requests, settings, norms and email outbox
+- Norm + active employee + open request + planned departure decision engine
+- Store manager separated from general staffing norm
+- Default manager capacity 1; Fulya (Istanbul) capacity 2
+- Mandatory PDF/JPG/PNG resignation evidence for planned departure
+- HR and third-party recipient routing with SMTP retry queue
+- Hash-chained audit events for request, evidence, decision, norm and email
+- Admin/HR/warehouse manager/regional manager/BY access model
+- Dark mode and responsive manager form
+
+INSTALLATION FIXES
+- Windows PowerShell-compatible random key generation
+- Missing .env.example fallback to ENV_TEMPLATE_V13_2.txt
+- URL-safe PostgreSQL password and encoded DATABASE_URL repair
+- Frontend Docker build no longer labels the public OIDC exchange URL as a secret
+- Installer forces a no-cache backend/frontend rebuild and verifies the Hiring
+  Control text inside the running frontend container before reporting success
+- Access configuration storage migrates to v4 so older browser authorization
+  records cannot hide the new recruitment module
+- Repair command now creates/repairs .env and DATABASE_URL automatically when
+  the ZIP is extracted into a fresh directory
+
+VALIDATION
+- Frontend Vite production build: PASS
+- Recruitment rule tests: 5 PASS
+- Existing Workforce regression tests: 15 PASS
+- Python compile validation: PASS
+
+LOCAL PILOT COMMAND
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\INSTALL_OPEX_HIRING_LOCAL_PILOT_V14.ps1
+
+URLS
+Control Center: http://localhost:8080
+Hiring Control: http://localhost:8080/recruitment
+Workforce: http://localhost:8080/workforce
+
+PRODUCTION NOTE
+SMTP, OIDC/JWT, native device attestation, APNs/FCM and WORM credentials remain
+server-side configuration. Local pilot mode must not be exposed to the internet.

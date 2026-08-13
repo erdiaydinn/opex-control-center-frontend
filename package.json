@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:access": "node scripts/test-access-config.mjs",
+    "test:workforce-imports": "node scripts/test-workforce-imports.mjs"
   },
   "dependencies": {
     "@splinetool/react-spline": "^4.1.0",
@@ -14,6 +16,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "clsx": "^2.1.1",
     "date-holidays": "^3.34.1",
+    "date-holidays-parser": "^3.4.7",
     "framer-motion": "^12.38.0",
     "gsap": "^3.15.0",
     "lucide-react": "^0.469.0",

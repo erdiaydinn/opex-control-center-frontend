@@ -1,0 +1,19 @@
+OPEX Inventory V17 - Terminal Pilot
+Tarih: 28.07.2026
+
+- El terminali için yüksek kontrastlı kör sayım ekranı eklendi.
+- Lokasyon -> barkod/SKU -> miktar -> kayıt adımları ayrıştırıldı.
+- Fiziksel barkod okuyucuların Enter ve Tab sonlandırma davranışı desteklendi.
+- Başarılı lokasyon okutmasından sonra odak otomatik barkod alanına geçer.
+- Başarılı barkod okutmasından sonra odak otomatik miktar alanına geçer.
+- Kayıttan sonra barkod alanı temizlenir ve sıradaki ürün için odak geri gelir.
+- 900 ms içinde gelen aynı lokasyon+barkod+miktar sinyali çift kayıt olarak engellenir.
+- Bilinmeyen barkod stok dosyasında doğrulanmadan kaydedilmez.
+- Terminalde sistem stoku, fark ve parasal etki gösterilmez.
+- Son başarılı kayıt lokasyon, ürün, barkod ve miktar ile görünür.
+- Masaüstü, tablet ve dar el terminali ekranları için responsive düzen eklendi.
+
+Not:
+Bu paket terminal deneyimini görünür ve test edilebilir hale getiren frontend
+pilotudur. Çoklu terminal eşzamanlı kullanımı, gerçek cihaz kimliği, offline
+kuyruk ve merkezi değiştirilemez audit için backend bağlantısı zorunludur.

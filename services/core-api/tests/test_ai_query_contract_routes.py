@@ -8,6 +8,11 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 import app.ai_tool_routes as routes
+from app.core.ai_tenant_query_context import (
+    AiTenantQueryContext,
+    AiTenantQueryContextRecord,
+    ai_tenant_query_context_fingerprint,
+)
 from app.core.ai_tool_authorization import (
     SCOPE_PERMISSION_KEYS,
     derive_ai_tool_capability,
@@ -43,6 +48,32 @@ class FakeRedis:
 
     async def getdel(self, key: str) -> str | None:
         return self.values.pop(key, None)
+
+
+async def load_query_context(
+    tenant_id: str,
+) -> AiTenantQueryContextRecord | None:
+    assert tenant_id == str(TENANT)
+    context = AiTenantQueryContext(
+        version=1,
+        entity_ids=("TEST_ENTITY_TR",),
+        source_reference="data-catalog:query-contract-test",
+    )
+    return AiTenantQueryContextRecord(
+        tenant_id=tenant_id,
+        context=context,
+        record_fingerprint=(
+            ai_tenant_query_context_fingerprint(context)
+        ),
+        updated_by="security-admin",
+    )
+
+
+def grant_store(redis: FakeRedis) -> RedisAiToolGrantStore:
+    return RedisAiToolGrantStore(
+        redis,  # type: ignore[arg-type]
+        tenant_query_context_loader=load_query_context,
+    )
 
 
 def request_for(path: str) -> Request:
@@ -101,11 +132,11 @@ def jarvis_service() -> VerifiedJarvisService:
 
 
 @pytest.mark.asyncio
-async def test_production_not_ready_contract_blocks_before_grant_write(
+async def test_production_not_ready_contract_blocks_before_any_authority_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     redis = FakeRedis()
-    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    store = grant_store(redis)
     monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
     monkeypatch.setattr(
         routes,
@@ -133,11 +164,11 @@ async def test_production_not_ready_contract_blocks_before_grant_write(
 
 
 @pytest.mark.asyncio
-async def test_readiness_withdrawal_burns_outstanding_grant(
+async def test_readiness_withdrawal_burns_outstanding_v4_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     redis = FakeRedis()
-    store = RedisAiToolGrantStore(redis)  # type: ignore[arg-type]
+    store = grant_store(redis)
     monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
 
     capability = derive_ai_tool_capability(
@@ -188,8 +219,6 @@ async def test_readiness_withdrawal_burns_outstanding_grant(
     )
     assert redis.values == {}
 
-    # Even if readiness later returns in a test environment, the stale grant
-    # cannot be revived because authorization consumed it atomically first.
     monkeypatch.setattr(
         routes,
         "get_settings",

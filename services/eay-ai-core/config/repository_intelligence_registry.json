@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated_at": "2026-08-12",
+  "version": 2,
+  "updated_at": "2026-08-13",
   "canonical_source": {
     "repository": "erdiaydinn/Adaronya",
     "path": "governance/repository-intelligence-registry.yaml",
@@ -21,15 +21,17 @@
       "classification": "OWN",
       "identity": "erdiaydinn/opex-control-center-frontend",
       "canonical_upstream": null,
+      "relation": "canonical-eay-repository",
       "decision": "canonical",
-      "capabilities": ["platform", "frontend", "eay-ai-core"],
-      "review": {"ref": "feature/eay-ai-core-v0.1", "commit": "c5128748c819c56f708f4a62ccfed14402812fd3", "license": "project-owned", "commercial_use": "internal-owner-controlled"}
+      "capabilities": ["platform", "frontend", "eay-ai-core", "jarvis-security", "planogram", "workforce", "inventory"],
+      "review": {"ref": "feature/eay-ai-core-v0.1", "commit": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15", "license": "project-owned", "commercial_use": "internal-owner-controlled"}
     },
     {
       "id": "eay-planai-audit",
       "classification": "OWN",
       "identity": "erdiaydinn/planai-audit",
       "canonical_upstream": null,
+      "relation": "eay-owned-reference",
       "decision": "canonical",
       "capabilities": ["planogram", "visual-audit", "audit"],
       "review": {"ref": "main", "commit": null, "license": "project-owned", "commercial_use": "internal-owner-controlled"}
@@ -39,6 +41,7 @@
       "classification": "OWN",
       "identity": "erdiaydinn/Adaronya",
       "canonical_upstream": null,
+      "relation": "eay-owned-governance-reference",
       "decision": "canonical",
       "capabilities": ["eay-core", "governance", "repository-intelligence"],
       "review": {"ref": "main", "commit": "bf03a2f48f6960d13ed11c884477ed4506360b97", "license": "project-owned", "commercial_use": "internal-owner-controlled"}
@@ -49,29 +52,32 @@
       "identity": "0xNyk/council-of-high-intelligence",
       "source_artifact": "council-of-high-intelligence-main.zip",
       "canonical_upstream": "0xNyk/council-of-high-intelligence",
+      "relation": "supplied-archive-to-canonical-upstream",
       "decision": "watch",
       "capabilities": ["multi-agent", "council", "orchestration", "critique", "reasoning"],
-      "review": {"ref": "main", "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+      "review": {"ref": "main", "commit": "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72", "license": "MIT", "commercial_use": "permissive-with-notice"}
     },
     {
       "id": "cl4r1t4s",
       "classification": "IMPORTED",
-      "identity": null,
-      "source_artifact": "CL4R1T4S-main.zip",
-      "canonical_upstream": null,
-      "decision": "pending",
-      "capabilities": [],
-      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+      "identity": "elder-plinius/CL4R1T4S",
+      "source_artifact": "CL4R1T4S-main.zip; CL4R1T4S-main (1).zip",
+      "canonical_upstream": "elder-plinius/CL4R1T4S",
+      "relation": "supplied-archive-exact-tree-match-reference-only",
+      "decision": "reference",
+      "capabilities": ["prompt-research", "red-team-reference", "system-behavior-reference"],
+      "review": {"ref": "main", "commit": "1a55b8a36d47c86e8d774acef83306d56fb0b302", "license": "AGPL-3.0", "commercial_use": "reference-only-for-proprietary-eay"}
     },
     {
       "id": "computer-lab-automation",
       "classification": "IMPORTED",
-      "identity": null,
+      "identity": "mustafadalga/computer-lab-automation",
       "source_artifact": "computer-lab-automation-master.zip",
-      "canonical_upstream": null,
-      "decision": "pending",
-      "capabilities": ["workflow-automation"],
-      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+      "canonical_upstream": "mustafadalga/computer-lab-automation",
+      "relation": "supplied-archive-exact-tree-match-reference-only",
+      "decision": "reference",
+      "capabilities": ["workflow-automation", "application-architecture-reference"],
+      "review": {"ref": "master", "commit": "0f6fa81448062488f01144c67032764af25ee5fe", "license": "GPL-3.0", "commercial_use": "reference-only-unless-separately-cleared"}
     },
     {
       "id": "deep-learning-tutorials",
@@ -79,6 +85,7 @@
       "identity": null,
       "source_artifact": "Deep-Learning-Tutorials-master.zip",
       "canonical_upstream": null,
+      "relation": "supplied-archive-upstream-unresolved",
       "decision": "pending",
       "capabilities": ["deep-learning", "training-reference"],
       "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
@@ -89,6 +96,7 @@
       "identity": null,
       "source_artifact": "impeccable-main.zip",
       "canonical_upstream": null,
+      "relation": "supplied-archive-upstream-unresolved",
       "decision": "pending",
       "capabilities": ["ui", "ux", "quality"],
       "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
@@ -97,8 +105,9 @@
       "id": "image-understanding",
       "classification": "IMPORTED",
       "identity": null,
-      "source_artifact": "image_understanding / image_understanding-tthau",
+      "source_artifact": "image_understanding / image_understanding-tthau; image_understanding-tthau.zip",
       "canonical_upstream": null,
+      "relation": "supplied-archive-upstream-unresolved",
       "decision": "pending",
       "capabilities": ["vision", "image-understanding", "visual-audit"],
       "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
@@ -107,10 +116,55 @@
       "id": "jarvis-archives",
       "classification": "IMPORTED",
       "identity": null,
-      "source_artifact": "all previously supplied JARVIS archives",
+      "source_artifact": "historical aggregate marker for all previously supplied JARVIS archives",
       "canonical_upstream": null,
+      "relation": "supplied-archive-family-aggregate-unresolved",
       "decision": "pending",
       "capabilities": ["assistant", "orchestration", "tool-use", "execution-security"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "jarvis-erdi-full-start",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "JARVIS-ERDI-full-start.zip",
+      "canonical_upstream": null,
+      "relation": "supplied-jarvis-archive-upstream-unresolved",
+      "decision": "pending",
+      "capabilities": ["jarvis", "agent-runtime"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "jarvis-erdi-starter-patch",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "JARVIS-ERDI-starter-patch.zip",
+      "canonical_upstream": null,
+      "relation": "supplied-jarvis-archive-upstream-unresolved",
+      "decision": "pending",
+      "capabilities": ["jarvis", "agent-runtime"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "jarvis-main-family",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "jarvis-main.zip; jarvis-main (1).zip; JARVIS-main (2).zip; JARVIS-main (3).zip",
+      "canonical_upstream": null,
+      "relation": "supplied-jarvis-archive-family-upstream-unresolved",
+      "decision": "pending",
+      "capabilities": ["jarvis", "agent-runtime"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "jarvis-master",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "Jarvis-master.zip",
+      "canonical_upstream": null,
+      "relation": "supplied-jarvis-archive-upstream-unresolved",
+      "decision": "pending",
+      "capabilities": ["jarvis", "agent-runtime"],
       "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
     },
     {
@@ -118,6 +172,7 @@
       "classification": "DISCOVERED",
       "identity": "apache/superset",
       "canonical_upstream": "apache/superset",
+      "relation": "canonical-analytics-upstream",
       "decision": "canonical",
       "capabilities": ["analytics", "bi", "audit-reporting", "embedding", "semantic-layer"],
       "review": {"ref": "master", "commit": "cc35056bc96df40e0b0d565c09c665d74a8e74ea", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
@@ -127,9 +182,54 @@
       "classification": "DISCOVERED",
       "identity": "Patika-Global-Technology/superset-tr",
       "canonical_upstream": "apache/superset",
+      "relation": "localization-vendor-derivative-not-canonical-upstream",
       "decision": "localization-reference",
       "capabilities": ["analytics", "localization", "turkish"],
-      "review": {"ref": null, "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+      "review": {"ref": "main", "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+    },
+    {
+      "id": "discovered-pending-local-llm-serving-routing",
+      "classification": "DISCOVERED",
+      "identity": null,
+      "source_artifact": "prior-selection-category:local-llm-serving-routing",
+      "canonical_upstream": null,
+      "relation": "prior-selection-identities-pending-recovery",
+      "decision": "pending",
+      "capabilities": ["local-llm", "serving", "routing"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "discovered-pending-agent-rag-eval-observability",
+      "classification": "DISCOVERED",
+      "identity": null,
+      "source_artifact": "prior-selection-category:agent-rag-eval-observability",
+      "canonical_upstream": null,
+      "relation": "prior-selection-identities-pending-recovery",
+      "decision": "pending",
+      "capabilities": ["agent-orchestration", "rag", "evaluation", "observability"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "discovered-pending-vision-doc-ml-lifecycle",
+      "classification": "DISCOVERED",
+      "identity": null,
+      "source_artifact": "prior-selection-category:vision-document-model-lifecycle",
+      "canonical_upstream": null,
+      "relation": "prior-selection-identities-pending-recovery",
+      "decision": "pending",
+      "capabilities": ["vision", "document-understanding", "model-registry", "ml-lifecycle"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "discovered-pending-workflow-security-finetuning",
+      "classification": "DISCOVERED",
+      "identity": null,
+      "source_artifact": "prior-selection-category:workflow-security-finetuning",
+      "canonical_upstream": null,
+      "relation": "prior-selection-identities-pending-recovery",
+      "decision": "pending",
+      "capabilities": ["workflow-automation", "security", "guardrails", "lora", "qlora"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
     }
   ],
   "required_discovery_domains": [

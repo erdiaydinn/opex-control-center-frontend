@@ -4,11 +4,13 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, Mapping
 
 ALLOWED_CLASSIFICATIONS = frozenset({"OWN", "IMPORTED", "DISCOVERED"})
 ALLOWED_DECISIONS = frozenset({"ADOPT", "WATCH", "REFERENCE", "REJECT", "PENDING"})
 ALLOWED_IDENTITY_STATUS = frozenset({"VERIFIED", "UNRESOLVED"})
+
+DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "repository_intelligence_registry.json"
 
 REQUIRED_SEED_IDS = frozenset(
     {
@@ -65,18 +67,93 @@ class RepositoryRegistryError(ValueError):
     pass
 
 
+class RegistryFingerprint(str):
+    """String fingerprint that remains callable for the frozen v0.1 API contract."""
+
+    def __call__(self) -> str:
+        return str(self)
+
+
+@dataclass(frozen=True)
+class RepositoryReviewView:
+    ref: str | None
+    commit: str | None
+    license: str
+    commercial_use: str
+
+
+class RepositoryEntryView(Mapping[str, Any]):
+    """Read-only adapter exposing both v0.1 attribute and v0.2 mapping contracts."""
+
+    def __init__(self, payload: dict[str, Any]):
+        self._payload = payload
+
+    def __getitem__(self, key: str) -> Any:
+        return self._payload[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._payload)
+
+    def __len__(self) -> int:
+        return len(self._payload)
+
+    @property
+    def id(self) -> str:
+        return self._payload["id"]
+
+    @property
+    def identity(self) -> str | None:
+        return self._payload["repository"]
+
+    @property
+    def canonical_upstream(self) -> str | None:
+        return self._payload["canonical_upstream"]
+
+    @property
+    def classification(self) -> str:
+        return self._payload["classification"]
+
+    @property
+    def decision(self) -> str:
+        return self._payload["decision"]
+
+    @property
+    def review(self) -> RepositoryReviewView:
+        license_info = self._payload["license"]
+        license_name = license_info.get("spdx") or "unresolved"
+        commercial_use = (
+            "blocked"
+            if self._payload["identity_status"] == "UNRESOLVED"
+            or self._payload["decision"] in {"REJECT", "PENDING"}
+            else "reviewed"
+        )
+        return RepositoryReviewView(
+            ref=self._payload["last_reviewed_ref"],
+            commit=self._payload["last_reviewed_sha"],
+            license=license_name,
+            commercial_use=commercial_use,
+        )
+
+
 @dataclass(frozen=True)
 class RepositoryRegistry:
     schema_version: int
     updated_at: str
     entries: tuple[dict[str, Any], ...]
-    fingerprint: str
+    fingerprint: RegistryFingerprint
 
-    def by_id(self, entry_id: str) -> dict[str, Any]:
-        for entry in self.entries:
-            if entry["id"] == entry_id:
-                return entry
-        raise KeyError(entry_id)
+    def by_id(self, entry_id: str | None = None) -> RepositoryEntryView | dict[str, RepositoryEntryView]:
+        views = {entry["id"]: RepositoryEntryView(entry) for entry in self.entries}
+        if entry_id is None:
+            return views
+        try:
+            return views[entry_id]
+        except KeyError:
+            raise KeyError(entry_id) from None
+
+    @property
+    def repositories(self) -> tuple[RepositoryEntryView, ...]:
+        return tuple(RepositoryEntryView(entry) for entry in self.entries)
 
     @property
     def unresolved(self) -> tuple[dict[str, Any], ...]:
@@ -175,16 +252,12 @@ def _parse_repository_registry_payload(payload: Any) -> RepositoryRegistry:
         schema_version=payload["schema_version"],
         updated_at=payload["updated_at"],
         entries=tuple(entries),
-        fingerprint=registry_fingerprint(payload),
+        fingerprint=RegistryFingerprint(registry_fingerprint(payload)),
     )
 
 
 def load_repository_registry_text(source_text: str) -> RepositoryRegistry:
-    """Load a registry from already-verified UTF-8 text without weakening validation.
-
-    This entry point exists for immutable historical Git/GitHub evidence. It intentionally applies
-    the exact same schema, seed-preservation, identity and license gates as the filesystem loader.
-    """
+    """Load a registry from already-verified UTF-8 text without weakening validation."""
     try:
         payload = json.loads(source_text)
     except json.JSONDecodeError as exc:
@@ -192,7 +265,7 @@ def load_repository_registry_text(source_text: str) -> RepositoryRegistry:
     return _parse_repository_registry_payload(payload)
 
 
-def load_repository_registry(path: str | Path) -> RepositoryRegistry:
+def load_repository_registry(path: str | Path = DEFAULT_REGISTRY_PATH) -> RepositoryRegistry:
     registry_path = Path(path)
     return load_repository_registry_text(registry_path.read_text(encoding="utf-8"))
 

@@ -70,6 +70,7 @@ jobs:
       DOCKOS_ENV: test
       PGPASSWORD: postgres
       RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-evidence
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

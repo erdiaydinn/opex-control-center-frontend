@@ -5,12 +5,12 @@ import os
 import tempfile
 from pathlib import Path
 
-from .repository_intelligence import RepositoryRegistry
-from .repository_provenance import (
-    RepositorySnapshot,
-    verify_repository_snapshot,
-    verify_repository_snapshot_chain,
+from .historical_repository_registry import (
+    HistoricalRepositoryRegistryArchive,
+    HistoricalRepositoryRegistryError,
 )
+from .repository_intelligence import RepositoryRegistry
+from .repository_provenance import RepositorySnapshot, verify_repository_snapshot
 
 
 class RepositoryMemoryStoreError(RuntimeError):
@@ -20,14 +20,22 @@ class RepositoryMemoryStoreError(RuntimeError):
 class AppendOnlyRepositoryMemoryStore:
     """Local-first append-only repository snapshot store.
 
-    The store detects accidental/casual tampering through deterministic snapshot fingerprints and
-    hash-chain validation. It is intentionally not described as WORM storage because an operating
-    system or disk administrator can still alter local files.
+    Persisted history is replayed against the exact registry revision fingerprint carried by each
+    snapshot. The current registry is authoritative for new appends only; historical snapshots are
+    never reinterpreted under a newer registry revision. The store detects accidental/casual
+    tampering through deterministic snapshot fingerprints and hash-chain validation. It is not WORM
+    storage because an operating-system or disk administrator can still alter local files.
     """
 
-    def __init__(self, root: str | Path, registry: RepositoryRegistry) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        registry: RepositoryRegistry,
+        historical_registries: HistoricalRepositoryRegistryArchive | None = None,
+    ) -> None:
         self.root = Path(root)
         self.registry = registry
+        self.historical_registries = historical_registries
         self.snapshot_dir = self.root / "snapshots"
         self.index_path = self.root / "index.jsonl"
 
@@ -43,22 +51,37 @@ class AppendOnlyRepositoryMemoryStore:
             ensure_ascii=False,
         ) + "\n"
 
+    def _registry_for_snapshot(self, snapshot: RepositorySnapshot) -> RepositoryRegistry:
+        current_fingerprint = self.registry.fingerprint()
+        if snapshot.registry_fingerprint == current_fingerprint:
+            return self.registry
+        if self.historical_registries is None:
+            raise RepositoryMemoryStoreError("repository_memory_historical_registry_unavailable")
+        try:
+            return self.historical_registries.resolve(snapshot.registry_fingerprint)
+        except HistoricalRepositoryRegistryError as exc:
+            raise RepositoryMemoryStoreError("repository_memory_historical_registry_unavailable") from exc
+
     def list_snapshots(self) -> tuple[RepositorySnapshot, ...]:
         if not self.index_path.exists():
             return ()
 
         snapshots: list[RepositorySnapshot] = []
         seen: set[str] = set()
+        previous_fingerprint: str | None = None
         for raw_line in self.index_path.read_text(encoding="utf-8").splitlines():
             if not raw_line.strip():
                 continue
             try:
                 record = json.loads(raw_line)
                 fingerprint = record["fingerprint"]
+                indexed_registry_fingerprint = record["registry_fingerprint"]
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                 raise RepositoryMemoryStoreError("repository_memory_index_corrupt") from exc
             if not isinstance(fingerprint, str) or len(fingerprint) != 64:
                 raise RepositoryMemoryStoreError("repository_memory_index_fingerprint_invalid")
+            if not isinstance(indexed_registry_fingerprint, str) or len(indexed_registry_fingerprint) != 64:
+                raise RepositoryMemoryStoreError("repository_memory_index_registry_fingerprint_invalid")
             if fingerprint in seen:
                 raise RepositoryMemoryStoreError("repository_memory_index_duplicate_fingerprint")
             seen.add(fingerprint)
@@ -73,15 +96,26 @@ class AppendOnlyRepositoryMemoryStore:
                 raise RepositoryMemoryStoreError("repository_memory_snapshot_invalid") from exc
             if snapshot.fingerprint() != fingerprint:
                 raise RepositoryMemoryStoreError("repository_memory_snapshot_fingerprint_mismatch")
-            snapshots.append(snapshot)
+            if snapshot.registry_fingerprint != indexed_registry_fingerprint:
+                raise RepositoryMemoryStoreError("repository_memory_index_registry_fingerprint_mismatch")
+            if snapshot.previous_snapshot_fingerprint != previous_fingerprint:
+                raise RepositoryMemoryStoreError("repository_memory_chain_verification_failed")
 
-        try:
-            verify_repository_snapshot_chain(registry=self.registry, snapshots=snapshots)
-        except ValueError as exc:
-            raise RepositoryMemoryStoreError("repository_memory_chain_verification_failed") from exc
+            registry = self._registry_for_snapshot(snapshot)
+            try:
+                verify_repository_snapshot(registry=registry, snapshot=snapshot)
+            except ValueError as exc:
+                raise RepositoryMemoryStoreError("repository_memory_chain_verification_failed") from exc
+
+            snapshots.append(snapshot)
+            previous_fingerprint = fingerprint
+
         return tuple(snapshots)
 
     def append(self, snapshot: RepositorySnapshot) -> Path:
+        # New truth may only be appended under the current canonical registry revision. Historical
+        # registry resolution is a replay compatibility mechanism, never an authority to backdate
+        # new writes.
         try:
             verify_repository_snapshot(registry=self.registry, snapshot=snapshot)
         except ValueError as exc:

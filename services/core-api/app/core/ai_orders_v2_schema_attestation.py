@@ -12,7 +12,7 @@ import hashlib
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.ai_orders_v2_bigquery_parameters import (
     orders_v2_bigquery_parameter_contract_fingerprint,
@@ -27,6 +27,7 @@ from app.core.ai_orders_v2_live_schema_collector import (
 from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
 from app.core.ai_orders_v2_schema_evidence import (
     ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256,
+    OrdersV2InformationSchemaEvidence,
     validate_orders_v2_schema_evidence,
 )
 
@@ -48,6 +49,7 @@ class OrdersV2SchemaAttestationArtifact(BaseModel):
     project: str = Field(min_length=1, max_length=256)
     location: str | None = Field(default=None, max_length=128)
     observed_at: str
+    evidence: OrdersV2InformationSchemaEvidence
     schema_evidence_fingerprint: str = Field(pattern=SHA256_PATTERN)
     collector_query_sha256: str = Field(pattern=SHA256_PATTERN)
     candidate_template_fingerprint: str = Field(pattern=SHA256_PATTERN)
@@ -61,6 +63,28 @@ class OrdersV2SchemaAttestationArtifact(BaseModel):
     production_blocker: Literal[
         "orders_v2_human_promotion_review_required"
     ]
+
+    @model_validator(mode="after")
+    def validate_embedded_evidence_binding(self) -> OrdersV2SchemaAttestationArtifact:
+        evidence_fingerprint = validate_orders_v2_schema_evidence(self.evidence)
+        if self.project != self.evidence.table_catalog:
+            raise ValueError("attestation project does not match embedded evidence")
+        if self.observed_at != self.evidence.observed_at.isoformat():
+            raise ValueError("attestation timestamp does not match embedded evidence")
+        if self.schema_evidence_fingerprint != evidence_fingerprint:
+            raise ValueError("schema evidence fingerprint mismatch")
+        if self.collector_query_sha256 != ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256:
+            raise ValueError("collector query fingerprint mismatch")
+        if self.candidate_template_fingerprint != ORDERS_V2_CANDIDATE.template_fingerprint:
+            raise ValueError("candidate template fingerprint mismatch")
+        if (
+            self.parameter_contract_fingerprint
+            != orders_v2_bigquery_parameter_contract_fingerprint()
+        ):
+            raise ValueError("parameter contract fingerprint mismatch")
+        if self.sdk_adapter_fingerprint != orders_v2_bigquery_sdk_adapter_fingerprint():
+            raise ValueError("SDK adapter fingerprint mismatch")
+        return self
 
     @property
     def artifact_fingerprint(self) -> str:
@@ -107,6 +131,7 @@ def build_orders_v2_schema_attestation_candidate(
         project=observation.client_project,
         location=observation.client_location,
         observed_at=observation.evidence.observed_at.isoformat(),
+        evidence=observation.evidence,
         schema_evidence_fingerprint=evidence_fingerprint,
         collector_query_sha256=(
             ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256

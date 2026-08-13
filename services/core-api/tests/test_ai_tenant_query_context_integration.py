@@ -80,13 +80,20 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
     source_a = f"data-catalog:review:{tenant_a.hex}"
     source_b = f"data-catalog:review:{tenant_b.hex}"
 
-    engine = create_async_engine(
-        get_settings().database_url,
+    settings = get_settings()
+    runtime_engine = create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+    )
+    migration_engine = create_async_engine(
+        settings.migration_database_url,
         pool_pre_ping=True,
     )
 
     try:
-        async with engine.begin() as connection:
+        # Test-fixture setup is privileged on purpose. Runtime query-context
+        # behavior below always uses the RLS-bound opex_runtime identity.
+        async with migration_engine.begin() as connection:
             await seed_tenant(
                 connection,
                 tenant_id=tenant_a,
@@ -153,7 +160,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         assert record_a.context.entity_ids == (entity_a,)
         assert record_b.context.entity_ids == (entity_b,)
 
-        async with engine.begin() as connection:
+        async with runtime_engine.begin() as connection:
             await set_tenant_context(connection, tenant_a)
             visible = (
                 await connection.execute(
@@ -223,7 +230,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         )
         assert no_op.changed is False
 
-        async with engine.begin() as connection:
+        async with runtime_engine.begin() as connection:
             await set_tenant_context(connection, tenant_a)
             no_op_audit_count = await connection.scalar(
                 text(
@@ -273,18 +280,23 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         assert after_failure.context == record_a.context
 
         # The runtime role intentionally has no DELETE on the authority table.
-        async with engine.begin() as connection:
-            await set_tenant_context(connection, tenant_a)
-            with pytest.raises(DBAPIError):
-                await connection.execute(
-                    text(
-                        """
-                        DELETE FROM ai_tenant_query_contexts
-                        WHERE tenant_id = :tenant_id
-                        """
-                    ),
-                    {"tenant_id": tenant_a},
-                )
+        async with runtime_engine.connect() as connection:
+            transaction = await connection.begin()
+            try:
+                await set_tenant_context(connection, tenant_a)
+                with pytest.raises(DBAPIError):
+                    await connection.execute(
+                        text(
+                            """
+                            DELETE FROM ai_tenant_query_contexts
+                            WHERE tenant_id = :tenant_id
+                            """
+                        ),
+                        {"tenant_id": tenant_a},
+                    )
+            finally:
+                await transaction.rollback()
 
     finally:
-        await engine.dispose()
+        await runtime_engine.dispose()
+        await migration_engine.dispose()

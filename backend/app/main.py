@@ -40,7 +40,7 @@ def _pool_stats():
 
 
 app=FastAPI(title='EAY Platform API',version='8.0.0-production-candidate',docs_url=None if PROD else '/api/docs',redoc_url=None,openapi_url=None if PROD else '/api/openapi.json')
-app.add_middleware(CORSMiddleware,allow_origins=_cors_origins(),allow_credentials=True,allow_methods=['GET','POST','PUT','DELETE','OPTIONS'],allow_headers=['Accept','Content-Type','Authorization','X-OPEX-User','X-OPEX-Role','X-DockOS-Gateway','X-DockOS-Gateway-Timestamp','X-DockOS-Gateway-Signature'])
+app.add_middleware(CORSMiddleware,allow_origins=_cors_origins(),allow_credentials=True,allow_methods=['GET','POST','PUT','DELETE','OPTIONS'],allow_headers=['Accept','Content-Type','Authorization','X-OPEX-User','X-OPEX-Role','X-DockOS-Gateway','X-DockOS-Gateway-Timestamp','X-DockOS-Gateway-Nonce','X-DockOS-Gateway-Signature'])
 
 
 @app.middleware('http')

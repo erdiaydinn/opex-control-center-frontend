@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager
 from psycopg.rows import dict_row
@@ -41,3 +42,26 @@ def write_conn():
             set_tenant(conn, tid)
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'dockos:{tid}',))
             yield conn
+
+
+def load_kv(conn, prefixes=('state:','config:')):
+    rows = conn.execute('SELECT key,value FROM dockos.settings').fetchall()
+    return {row['key']: row['value'] for row in rows if any(row['key'].startswith(prefix) for prefix in prefixes)}
+
+
+def save_kv(conn, values):
+    tid = _tenant_id(conn)
+    for key, value in values.items():
+        conn.execute(
+            'INSERT INTO dockos.settings(tenant_id,key,value) VALUES (%s,%s,%s::jsonb) ON CONFLICT (tenant_id,key) DO UPDATE SET value=excluded.value,updated_at=now()',
+            (tid, key, json.dumps(value, ensure_ascii=False, default=str)),
+        )
+
+
+def db_status():
+    try:
+        with read_conn() as conn:
+            versions=[row['version'] for row in conn.execute('SELECT version FROM dockos.schema_migrations ORDER BY version').fetchall()]
+            return {'ok':'001_dockos_postgres' in versions,'migrations':versions,'tenant':tenant_key()}
+    except Exception as error:
+        return {'ok':False,'migrations':[],'tenant':tenant_key(),'error':str(error)[:300]}

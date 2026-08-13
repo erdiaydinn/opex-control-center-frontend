@@ -80,8 +80,24 @@ jobs:
       - name: Unit finance contracts
         run: pytest -q services/core-api/tests/test_budget_domain.py
       - name: Apply migrations
+        id: migrations
+        continue-on-error: true
         working-directory: services/core-api
-        run: alembic upgrade head
+        run: alembic upgrade head > budget-migration.log 2>&1
+      - name: Upload migration diagnostics
+        if: steps.migrations.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: budget-migration-log
+          path: services/core-api/budget-migration.log
+          if-no-files-found: error
+          retention-days: 3
+      - name: Enforce migration gate
+        if: steps.migrations.outcome == 'failure'
+        working-directory: services/core-api
+        run: |
+          cat budget-migration.log
+          exit 1
       - name: Assert Budget migration head and FORCE RLS
         run: |
           python - <<'PY'

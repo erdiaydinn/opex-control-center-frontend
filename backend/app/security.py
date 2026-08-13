@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 @dataclass(frozen=True)
 class Identity:
     subject: str
+    tenant_id: str
     email: str
     name: str
     roles: tuple[str, ...]
@@ -90,6 +91,7 @@ def identity_from_request(request: Request) -> Identity:
         employee_id_claim = os.getenv("OPEX_OIDC_EMPLOYEE_ID_CLAIM", "employee_id")
         return Identity(
             subject=str(claims["sub"]),
+            tenant_id=str(claims.get(os.getenv("OPEX_OIDC_TENANT_ID_CLAIM", "tenant_id"), "")),
             email=str(claims.get("email", "")),
             name=str(claims.get("name") or claims.get("preferred_username") or claims["sub"]),
             roles=_items(claims, role_claim),
@@ -104,7 +106,14 @@ def identity_from_request(request: Request) -> Identity:
     if allow_legacy:
         permissions = tuple(filter(None, request.headers.get("x-opex-permissions", "").split(",")))
         user = request.headers.get("x-opex-user", "development-user")
-        return Identity(user, user, user, (request.headers.get("x-opex-role", "super_admin"),), permissions)
+        return Identity(
+            user,
+            os.getenv("OPEX_DEVELOPMENT_TENANT_ID", "eay-development"),
+            user,
+            user,
+            (request.headers.get("x-opex-role", "super_admin"),),
+            permissions,
+        )
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Kurumsal SSO oturumu gerekli.")
 
 

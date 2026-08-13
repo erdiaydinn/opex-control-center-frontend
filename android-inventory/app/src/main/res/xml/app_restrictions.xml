@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+    <restriction
+        android:key="eay_device_id"
+        android:title="@string/managed_device_uuid"
+        android:restrictionType="string" />
+    <restriction
+        android:key="eay_enrollment_code"
+        android:title="@string/managed_enrollment_code"
+        android:restrictionType="string" />
+</restrictions>

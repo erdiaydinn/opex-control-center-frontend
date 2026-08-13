@@ -33,3 +33,26 @@ class DecisionCreate(BaseModel):
 class LocationLockCreate(BaseModel):
     device_id: str = Field(min_length=2, max_length=120)
     ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
+
+class TerminalEventCreate(BaseModel):
+    event_id: str
+    document_id: str
+    device_sequence: int = Field(gt=0)
+    location_id: str = Field(min_length=1, max_length=120)
+    barcode: str = Field(min_length=1, max_length=120)
+    quantity: float = Field(ge=0, le=1_000_000)
+    symbology: str = Field(min_length=1, max_length=80)
+    occurred_at: str = Field(min_length=20, max_length=50)
+    payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
+
+
+class DocumentTransitionCreate(BaseModel):
+    expected_revision: int = Field(gt=0)
+    target_state: str = Field(pattern="^(SUBMITTED|RECONCILING|APPROVED|LOCKED|REJECTED)$")
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class DeviceEnrollCreate(BaseModel):
+    activation_code: str = Field(min_length=32, max_length=256)
+    public_key_pem: str = Field(min_length=100, max_length=2000)

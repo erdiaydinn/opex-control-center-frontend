@@ -40,6 +40,20 @@ services:
     ports: []
     security_opt: [no-new-privileges:true]
 
+  inventory-migrate:
+    image: postgres:17-alpine
+    environment:
+      INVENTORY_MIGRATION_DATABASE_URL: ${INVENTORY_MIGRATION_DATABASE_URL:?Dedicated Inventory migration DSN is required}
+    volumes:
+      - ./backend/migrations/003_inventory_production.sql:/migrations/003_inventory_production.sql:ro
+    command: ["sh", "-ec", "psql \"$$INVENTORY_MIGRATION_DATABASE_URL\" -v ON_ERROR_STOP=1 -f /migrations/003_inventory_production.sql"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+
   backend:
     build:
       context: .
@@ -48,6 +62,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL .env içinde zorunludur}
       REDIS_URL: ${REDIS_URL:?REDIS_URL .env içinde zorunludur}
+      EAY_INVENTORY_MODE: ${EAY_INVENTORY_MODE:?Set EAY_INVENTORY_MODE=production for managed terminal deployments}
+      INVENTORY_DATABASE_URL: ${INVENTORY_DATABASE_URL:?Dedicated non-owner Inventory runtime DSN is required}
+      INVENTORY_REDIS_URL: ${INVENTORY_REDIS_URL:?Inventory Redis DSN is required}
+      INVENTORY_MDM_ACTIVATION_PEPPER: ${INVENTORY_MDM_ACTIVATION_PEPPER:?Inventory activation pepper is required}
       OPEX_LOCAL_JWT_SECRET: ${OPEX_LOCAL_JWT_SECRET:?OPEX_LOCAL_JWT_SECRET en az 48 karakter olmalıdır}
       OPEX_LOCAL_AUTH_ENABLED: ${OPEX_LOCAL_AUTH_ENABLED:-true}
       IDENTITY_DB: /var/lib/dockos/identity_v23.db
@@ -66,6 +84,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      inventory-migrate:
+        condition: service_completed_successfully
     ports: ["8000:8000"]
     restart: unless-stopped
     networks: [edge, data]

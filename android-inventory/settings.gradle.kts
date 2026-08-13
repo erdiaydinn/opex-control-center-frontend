@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpexInventory"
+rootProject.name = "EayInventory"
 include(":app")

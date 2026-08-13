@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "ledger_kind": "orders_v2_policy_proposal_consumption_ledger",
+  "previous_ledger_fingerprint": null,
+  "entries": []
+}

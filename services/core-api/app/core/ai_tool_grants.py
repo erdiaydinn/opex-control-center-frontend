@@ -1,8 +1,8 @@
 """Single-use execution grants for authorized Jarvis tool calls.
 
-A capability answers *what* an actor may do and *which data* it may touch. A
-tool grant binds that capability and the current version-controlled downstream
-query contract to exactly one concrete invocation and can be consumed once.
+A capability answers what an actor may do and which data it may touch. A tool
+grant binds that capability, the reviewed downstream query contract and the
+current authoritative tenant query context to exactly one concrete invocation.
 """
 
 from __future__ import annotations
@@ -25,147 +25,98 @@ from app.core.ai_data_scope import (
     ai_data_scope_fingerprint,
     validate_ai_data_scope_invocation,
 )
+from app.core.ai_query_context_binding import (
+    AiQueryContextBinding,
+    bind_query_context_to_execution,
+    verify_query_context_binding,
+)
 from app.core.ai_query_contract_policy import (
     AiQueryContractPolicy,
     ai_execution_scope_fingerprint,
     ai_query_contract_policy_fingerprint,
     get_ai_query_contract_policy,
 )
-from app.core.ai_tool_authorization import (
-    TOOL_REQUIRED_SCOPES,
-    AiToolCapability,
-    AiToolName,
-)
+from app.core.ai_tenant_query_context import AiTenantQueryContextRecord
+from app.core.ai_tool_authorization import TOOL_REQUIRED_SCOPES, AiToolCapability, AiToolName
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
-AI_TOOL_GRANT_VERSION = 3
+AI_TOOL_GRANT_VERSION = 4
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
 class AiToolGrantError(PermissionError):
-    """Base denial for Jarvis single-use execution grants."""
+    pass
 
 
 class AiToolGrantInvalid(AiToolGrantError):
-    """The invocation cannot be represented by the grant contract."""
+    pass
 
 
 class AiToolGrantUnavailable(AiToolGrantError):
-    """The distributed grant authority is unavailable."""
+    pass
 
 
 class AiToolGrantReplayOrExpired(AiToolGrantError):
-    """The opaque grant has already been consumed or has expired."""
+    pass
 
 
 class AiToolGrantBindingMismatch(AiToolGrantError):
-    """The grant was issued for a different invocation or security contract."""
+    pass
 
 
 class AiToolGrantBinding(BaseModel):
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-    )
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: Literal[3]
+    version: Literal[4]
     tenant_id: UUID
-    actor_subject: str = Field(
-        min_length=1,
-        max_length=512,
-    )
+    actor_subject: str = Field(min_length=1, max_length=512)
     tool: AiToolName
     data_scope: AiDataScope
-    data_scope_fingerprint: str = Field(
-        pattern=SHA256_PATTERN
-    )
-    query_contract_id: str = Field(
-        min_length=1,
-        max_length=160,
-    )
+    data_scope_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    query_contract_id: str = Field(min_length=1, max_length=160)
     query_contract_revision: int = Field(ge=1)
-    query_contract_fingerprint: str = Field(
-        pattern=SHA256_PATTERN
-    )
-    execution_scope_fingerprint: str = Field(
-        pattern=SHA256_PATTERN
-    )
-    arguments_sha256: str = Field(
-        pattern=SHA256_PATTERN
-    )
-    reason_sha256: str = Field(
-        pattern=SHA256_PATTERN
-    )
-    authorization_fingerprint: str = Field(
-        pattern=SHA256_PATTERN
-    )
+    query_contract_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    execution_scope_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    query_context_record_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    execution_context_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    entity_ids: tuple[str, ...] = Field(min_length=1, max_length=16)
+    arguments_sha256: str = Field(pattern=SHA256_PATTERN)
+    reason_sha256: str = Field(pattern=SHA256_PATTERN)
+    authorization_fingerprint: str = Field(pattern=SHA256_PATTERN)
 
 
 class IssuedAiToolGrant(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     token: SecretStr
     expires_in_seconds: int
     binding: AiToolGrantBinding
 
 
-def _validate_json_value(
-    value: Any,
-    *,
-    path: str,
-) -> None:
+def _validate_json_value(value: Any, *, path: str) -> None:
     if value is None or isinstance(value, (str, bool, int)):
         return
-
     if isinstance(value, float):
         if not math.isfinite(value):
-            raise AiToolGrantInvalid(
-                f"Non-finite number at {path}"
-            )
+            raise AiToolGrantInvalid(f"Non-finite number at {path}")
         return
-
     if isinstance(value, Mapping):
         for key, child in value.items():
             if not isinstance(key, str):
-                raise AiToolGrantInvalid(
-                    f"Non-string object key at {path}"
-                )
-            _validate_json_value(
-                child,
-                path=f"{path}.{key}",
-            )
+                raise AiToolGrantInvalid(f"Non-string object key at {path}")
+            _validate_json_value(child, path=f"{path}.{key}")
         return
-
-    if isinstance(value, Sequence) and not isinstance(
-        value,
-        (str, bytes, bytearray),
-    ):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         for index, child in enumerate(value):
-            _validate_json_value(
-                child,
-                path=f"{path}[{index}]",
-            )
+            _validate_json_value(child, path=f"{path}[{index}]")
         return
-
-    raise AiToolGrantInvalid(
-        f"Unsupported JSON value at {path}"
-    )
+    raise AiToolGrantInvalid(f"Unsupported JSON value at {path}")
 
 
-def canonical_arguments_sha256(
-    arguments: Mapping[str, Any],
-) -> str:
+def canonical_arguments_sha256(arguments: Mapping[str, Any]) -> str:
     if not isinstance(arguments, Mapping):
-        raise AiToolGrantInvalid(
-            "Tool arguments must be an object"
-        )
-
-    _validate_json_value(
-        arguments,
-        path="$",
-    )
-
+        raise AiToolGrantInvalid("Tool arguments must be an object")
+    _validate_json_value(arguments, path="$")
     try:
         encoded = json.dumps(
             arguments,
@@ -175,66 +126,30 @@ def canonical_arguments_sha256(
             allow_nan=False,
         ).encode("utf-8")
     except (TypeError, ValueError) as exc:
-        raise AiToolGrantInvalid(
-            "Tool arguments are not canonical JSON"
-        ) from exc
-
+        raise AiToolGrantInvalid("Tool arguments are not canonical JSON") from exc
     return hashlib.sha256(encoded).hexdigest()
 
 
 def canonical_reason_sha256(reason: str) -> str:
     if not isinstance(reason, str):
-        raise AiToolGrantInvalid(
-            "Tool execution reason must be text"
-        )
-
+        raise AiToolGrantInvalid("Tool execution reason must be text")
     normalized = " ".join(reason.split())
-
     if not normalized or len(normalized) > 1000:
-        raise AiToolGrantInvalid(
-            "Tool execution reason is invalid"
-        )
-
-    return hashlib.sha256(
-        normalized.encode("utf-8")
-    ).hexdigest()
+        raise AiToolGrantInvalid("Tool execution reason is invalid")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def _validate_scope_binding(
-    *,
-    tool: str,
-    arguments: Mapping[str, Any],
-    data_scope: AiDataScope,
-    data_scope_fingerprint: str,
-) -> None:
-    expected_fingerprint = (
-        ai_data_scope_fingerprint(data_scope)
-    )
-    if data_scope_fingerprint != expected_fingerprint:
-        raise AiToolGrantInvalid(
-            "AI tool data scope fingerprint does not match"
-        )
-
+def _validate_scope_binding(*, tool: str, arguments: Mapping[str, Any], data_scope: AiDataScope, data_scope_fingerprint: str) -> None:
+    if data_scope_fingerprint != ai_data_scope_fingerprint(data_scope):
+        raise AiToolGrantInvalid("AI tool data scope fingerprint does not match")
     try:
-        validate_ai_data_scope_invocation(
-            tool=tool,
-            arguments=arguments,
-            data_scope=data_scope,
-        )
+        validate_ai_data_scope_invocation(tool=tool, arguments=arguments, data_scope=data_scope)
     except AiDataScopeError as exc:
-        raise AiToolGrantInvalid(
-            "AI tool invocation exceeds authorized data scope"
-        ) from exc
+        raise AiToolGrantInvalid("AI tool invocation exceeds authorized data scope") from exc
 
 
-def _query_contract_binding(
-    *,
-    policy: AiQueryContractPolicy,
-    data_scope_fingerprint: str,
-) -> tuple[str, str]:
-    policy_fingerprint = (
-        ai_query_contract_policy_fingerprint(policy)
-    )
+def _query_contract_binding(*, policy: AiQueryContractPolicy, data_scope_fingerprint: str) -> tuple[str, str]:
+    policy_fingerprint = ai_query_contract_policy_fingerprint(policy)
     execution_fingerprint = ai_execution_scope_fingerprint(
         query_contract_fingerprint=policy_fingerprint,
         data_scope_fingerprint=data_scope_fingerprint,
@@ -247,126 +162,80 @@ def build_ai_tool_grant_binding(
     *,
     arguments: Mapping[str, Any],
     reason: str,
+    query_context: AiTenantQueryContextRecord | None,
 ) -> AiToolGrantBinding:
-    query_policy = get_ai_query_contract_policy(
-        capability.tool
-    )
-
+    query_policy = get_ai_query_contract_policy(capability.tool)
     _validate_scope_binding(
         tool=capability.tool,
         arguments=arguments,
         data_scope=capability.data_scope,
-        data_scope_fingerprint=(
-            capability.data_scope_fingerprint
-        ),
+        data_scope_fingerprint=capability.data_scope_fingerprint,
     )
-
-    (
-        query_contract_fingerprint,
-        execution_scope_fingerprint,
-    ) = _query_contract_binding(
+    query_contract_fingerprint, execution_scope_fingerprint = _query_contract_binding(
         policy=query_policy,
-        data_scope_fingerprint=(
-            capability.data_scope_fingerprint
-        ),
+        data_scope_fingerprint=capability.data_scope_fingerprint,
     )
-
+    context_binding = bind_query_context_to_execution(
+        tenant_id=str(capability.tenant_id),
+        query_context=query_context,
+        execution_scope_fingerprint=execution_scope_fingerprint,
+    )
     return AiToolGrantBinding(
         version=AI_TOOL_GRANT_VERSION,
         tenant_id=capability.tenant_id,
         actor_subject=capability.actor_subject,
         tool=capability.tool,
         data_scope=capability.data_scope,
-        data_scope_fingerprint=(
-            capability.data_scope_fingerprint
-        ),
+        data_scope_fingerprint=capability.data_scope_fingerprint,
         query_contract_id=query_policy.contract_id,
-        query_contract_revision=(
-            query_policy.contract_revision
-        ),
-        query_contract_fingerprint=(
-            query_contract_fingerprint
-        ),
-        execution_scope_fingerprint=(
-            execution_scope_fingerprint
-        ),
-        arguments_sha256=canonical_arguments_sha256(
-            arguments
-        ),
+        query_contract_revision=query_policy.contract_revision,
+        query_contract_fingerprint=query_contract_fingerprint,
+        execution_scope_fingerprint=execution_scope_fingerprint,
+        query_context_record_fingerprint=context_binding.context_record_fingerprint,
+        execution_context_fingerprint=context_binding.execution_context_fingerprint,
+        entity_ids=context_binding.entity_ids,
+        arguments_sha256=canonical_arguments_sha256(arguments),
         reason_sha256=canonical_reason_sha256(reason),
-        authorization_fingerprint=(
-            capability.authorization_fingerprint
-        ),
+        authorization_fingerprint=capability.authorization_fingerprint,
+    )
+
+
+def _stored_context_binding(stored: AiToolGrantBinding) -> AiQueryContextBinding:
+    return AiQueryContextBinding(
+        version=1,
+        tenant_id=str(stored.tenant_id),
+        context_record_fingerprint=stored.query_context_record_fingerprint,
+        entity_ids=stored.entity_ids,
+        execution_context_fingerprint=stored.execution_context_fingerprint,
     )
 
 
 class RedisAiToolGrantStore:
-    """Issue and atomically consume opaque Jarvis execution grants."""
-
-    def __init__(
-        self,
-        redis_client: Redis,
-        *,
-        key_prefix: str = "opex:{ai}:tool-grant",
-    ) -> None:
-        if (
-            not isinstance(key_prefix, str)
-            or not key_prefix
-            or len(key_prefix) > 128
-        ):
-            raise ValueError(
-                "AI tool grant key prefix is invalid"
-            )
-
+    def __init__(self, redis_client: Redis, *, key_prefix: str = "opex:{ai}:tool-grant") -> None:
+        if not isinstance(key_prefix, str) or not key_prefix or len(key_prefix) > 128:
+            raise ValueError("AI tool grant key prefix is invalid")
         self._redis = redis_client
         self._key_prefix = key_prefix
 
     def _key(self, token: str) -> str:
-        if (
-            not isinstance(token, str)
-            or len(token) < 32
-            or len(token) > 256
-        ):
-            raise AiToolGrantInvalid(
-                "AI tool grant token is invalid"
-            )
+        if not isinstance(token, str) or len(token) < 32 or len(token) > 256:
+            raise AiToolGrantInvalid("AI tool grant token is invalid")
+        return f"{self._key_prefix}:{hashlib.sha256(token.encode('utf-8')).hexdigest()}"
 
-        digest = hashlib.sha256(
-            token.encode("utf-8")
-        ).hexdigest()
-
-        return f"{self._key_prefix}:{digest}"
-
-    async def _consume_stored_binding(
-        self,
-        *,
-        token: str,
-    ) -> AiToolGrantBinding:
+    async def _consume_stored_binding(self, *, token: str) -> AiToolGrantBinding:
         key = self._key(token)
-
         try:
             payload = await self._redis.getdel(key)
         except RedisError as exc:
-            raise AiToolGrantUnavailable(
-                "AI tool grant authority is unavailable"
-            ) from exc
-
+            raise AiToolGrantUnavailable("AI tool grant authority is unavailable") from exc
         if payload is None:
-            raise AiToolGrantReplayOrExpired(
-                "AI tool grant is unavailable"
-            )
-
+            raise AiToolGrantReplayOrExpired("AI tool grant is unavailable")
         if isinstance(payload, bytes):
             payload = payload.decode("utf-8")
-
         try:
-            return AiToolGrantBinding.model_validate_json(
-                payload
-            )
+            return AiToolGrantBinding.model_validate_json(payload)
         except (ValueError, TypeError) as exc:
-            raise AiToolGrantInvalid(
-                "Stored AI tool grant is invalid"
-            ) from exc
+            raise AiToolGrantInvalid("Stored AI tool grant is invalid") from exc
 
     async def issue(
         self,
@@ -374,75 +243,26 @@ class RedisAiToolGrantStore:
         *,
         arguments: Mapping[str, Any],
         reason: str,
-        ttl_seconds: int = (
-            AI_TOOL_GRANT_DEFAULT_TTL_SECONDS
-        ),
+        query_context: AiTenantQueryContextRecord | None,
+        ttl_seconds: int = AI_TOOL_GRANT_DEFAULT_TTL_SECONDS,
     ) -> IssuedAiToolGrant:
-        if (
-            isinstance(ttl_seconds, bool)
-            or not isinstance(ttl_seconds, int)
-            or not 1 <= ttl_seconds <= AI_TOOL_GRANT_MAX_TTL_SECONDS
-        ):
-            raise ValueError(
-                "AI tool grant TTL is invalid"
-            )
-
+        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or not 1 <= ttl_seconds <= AI_TOOL_GRANT_MAX_TTL_SECONDS:
+            raise ValueError("AI tool grant TTL is invalid")
         binding = build_ai_tool_grant_binding(
             capability,
             arguments=arguments,
             reason=reason,
+            query_context=query_context,
         )
-
         token = secrets.token_urlsafe(32)
         key = self._key(token)
-        payload = binding.model_dump_json()
-
         try:
-            created = await self._redis.set(
-                key,
-                payload,
-                ex=ttl_seconds,
-                nx=True,
-            )
+            created = await self._redis.set(key, binding.model_dump_json(), ex=ttl_seconds, nx=True)
         except RedisError as exc:
-            raise AiToolGrantUnavailable(
-                "AI tool grant authority is unavailable"
-            ) from exc
-
+            raise AiToolGrantUnavailable("AI tool grant authority is unavailable") from exc
         if created is not True:
-            raise AiToolGrantUnavailable(
-                "AI tool grant could not be issued safely"
-            )
-
-        return IssuedAiToolGrant(
-            token=SecretStr(token),
-            expires_in_seconds=ttl_seconds,
-            binding=binding,
-        )
-
-    async def consume(
-        self,
-        *,
-        token: str,
-        capability: AiToolCapability,
-        arguments: Mapping[str, Any],
-        reason: str,
-    ) -> AiToolGrantBinding:
-        expected = build_ai_tool_grant_binding(
-            capability,
-            arguments=arguments,
-            reason=reason,
-        )
-        stored = await self._consume_stored_binding(
-            token=token
-        )
-
-        if stored != expected:
-            raise AiToolGrantBindingMismatch(
-                "AI tool grant binding does not match"
-            )
-
-        return stored
+            raise AiToolGrantUnavailable("AI tool grant could not be issued safely")
+        return IssuedAiToolGrant(token=SecretStr(token), expires_in_seconds=ttl_seconds, binding=binding)
 
     async def consume_authorized_invocation(
         self,
@@ -451,57 +271,40 @@ class RedisAiToolGrantStore:
         tool: str,
         arguments: Mapping[str, Any],
         reason: str,
+        query_context: AiTenantQueryContextRecord | None,
     ) -> AiToolGrantBinding:
-        """Consume without trusting caller identity or query-contract claims."""
-
         if tool not in TOOL_REQUIRED_SCOPES:
-            raise AiToolGrantInvalid(
-                "AI tool is not supported"
-            )
-
+            raise AiToolGrantInvalid("AI tool is not supported")
         query_policy = get_ai_query_contract_policy(tool)  # type: ignore[arg-type]
-        arguments_sha256 = canonical_arguments_sha256(
-            arguments
-        )
+        arguments_sha256 = canonical_arguments_sha256(arguments)
         reason_sha256 = canonical_reason_sha256(reason)
-
-        stored = await self._consume_stored_binding(
-            token=token
-        )
-
+        stored = await self._consume_stored_binding(token=token)
         _validate_scope_binding(
             tool=stored.tool,
             arguments=arguments,
             data_scope=stored.data_scope,
-            data_scope_fingerprint=(
-                stored.data_scope_fingerprint
-            ),
+            data_scope_fingerprint=stored.data_scope_fingerprint,
         )
-
-        (
-            current_query_contract_fingerprint,
-            current_execution_scope_fingerprint,
-        ) = _query_contract_binding(
+        current_query_contract_fingerprint, current_execution_scope_fingerprint = _query_contract_binding(
             policy=query_policy,
-            data_scope_fingerprint=(
-                stored.data_scope_fingerprint
-            ),
+            data_scope_fingerprint=stored.data_scope_fingerprint,
         )
-
+        try:
+            verify_query_context_binding(
+                binding=_stored_context_binding(stored),
+                query_context=query_context,
+                execution_scope_fingerprint=current_execution_scope_fingerprint,
+            )
+        except PermissionError as exc:
+            raise AiToolGrantBindingMismatch("AI tool grant query context changed") from exc
         if (
             stored.tool != tool
             or stored.arguments_sha256 != arguments_sha256
             or stored.reason_sha256 != reason_sha256
             or stored.query_contract_id != query_policy.contract_id
-            or stored.query_contract_revision
-            != query_policy.contract_revision
-            or stored.query_contract_fingerprint
-            != current_query_contract_fingerprint
-            or stored.execution_scope_fingerprint
-            != current_execution_scope_fingerprint
+            or stored.query_contract_revision != query_policy.contract_revision
+            or stored.query_contract_fingerprint != current_query_contract_fingerprint
+            or stored.execution_scope_fingerprint != current_execution_scope_fingerprint
         ):
-            raise AiToolGrantBindingMismatch(
-                "AI tool grant binding does not match"
-            )
-
+            raise AiToolGrantBindingMismatch("AI tool grant binding does not match")
         return stored

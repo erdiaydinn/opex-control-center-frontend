@@ -101,7 +101,7 @@ class OrdersV2SourceFieldObservation(BaseModel):
     present: bool
 
     @model_validator(mode="after")
-    def validate_presence(self) -> "OrdersV2SourceFieldObservation":
+    def validate_presence(self) -> OrdersV2SourceFieldObservation:
         if self.present != (self.data_type is not None):
             raise ValueError("field presence and data type disagree")
         return self
@@ -138,7 +138,7 @@ class OrdersV2SourceComparisonObservation(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_matrix(self) -> "OrdersV2SourceComparisonObservation":
+    def validate_matrix(self) -> OrdersV2SourceComparisonObservation:
         expected = {
             (source, field)
             for source in (CANDIDATE_SOURCE, DIRECTIVE_SOURCE)

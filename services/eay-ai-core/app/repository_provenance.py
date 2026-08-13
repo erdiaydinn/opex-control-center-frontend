@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Iterable, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -73,6 +73,7 @@ class RepositorySnapshot(BaseModel):
     registry_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     created_at: datetime
     facts: list[RepositoryFact]
+    previous_snapshot_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def immutable_lineage_is_well_formed(self):
@@ -143,18 +144,58 @@ def make_repository_fact(
     )
 
 
-def build_repository_snapshot(*, registry: RepositoryRegistry, facts: list[RepositoryFact]) -> RepositorySnapshot:
-    valid_ids = set(registry.by_id())
-    for fact in facts:
-        if fact.coordinate.repository_id not in valid_ids:
+def verify_repository_snapshot(*, registry: RepositoryRegistry, snapshot: RepositorySnapshot) -> None:
+    if snapshot.registry_fingerprint != registry.fingerprint():
+        raise ValueError("repository_snapshot_registry_fingerprint_mismatch")
+
+    entries = registry.by_id()
+    for fact in snapshot.facts:
+        entry = entries.get(fact.coordinate.repository_id)
+        if entry is None:
             raise ValueError("repository_snapshot_unknown_registry_entry")
-        entry = registry.by_id()[fact.coordinate.repository_id]
+        if entry.identity is None:
+            raise ValueError("repository_snapshot_unverified_identity")
         if entry.identity != fact.coordinate.repository:
             raise ValueError("repository_snapshot_identity_drift")
         if entry.canonical_upstream != fact.coordinate.canonical_upstream:
             raise ValueError("repository_snapshot_upstream_drift")
-    return RepositorySnapshot(
+        if entry.review.ref is not None and entry.review.ref != fact.coordinate.ref:
+            raise ValueError("repository_snapshot_ref_drift")
+        if entry.review.commit is not None and entry.review.commit != fact.coordinate.commit_sha:
+            raise ValueError("repository_snapshot_commit_drift")
+
+
+def verify_repository_snapshot_chain(
+    *,
+    registry: RepositoryRegistry,
+    snapshots: Iterable[RepositorySnapshot],
+) -> None:
+    previous: RepositorySnapshot | None = None
+    seen: set[str] = set()
+    for snapshot in snapshots:
+        verify_repository_snapshot(registry=registry, snapshot=snapshot)
+        fingerprint = snapshot.fingerprint()
+        if fingerprint in seen:
+            raise ValueError("duplicate_repository_snapshot")
+        seen.add(fingerprint)
+        expected_previous = previous.fingerprint() if previous is not None else None
+        if snapshot.previous_snapshot_fingerprint != expected_previous:
+            raise ValueError("repository_snapshot_chain_broken")
+        previous = snapshot
+
+
+def build_repository_snapshot(
+    *,
+    registry: RepositoryRegistry,
+    facts: list[RepositoryFact],
+    previous_snapshot_fingerprint: str | None = None,
+    created_at: datetime | None = None,
+) -> RepositorySnapshot:
+    snapshot = RepositorySnapshot(
         registry_fingerprint=registry.fingerprint(),
-        created_at=datetime.now(timezone.utc),
+        created_at=created_at or datetime.now(timezone.utc),
         facts=facts,
+        previous_snapshot_fingerprint=previous_snapshot_fingerprint,
     )
+    verify_repository_snapshot(registry=registry, snapshot=snapshot)
+    return snapshot

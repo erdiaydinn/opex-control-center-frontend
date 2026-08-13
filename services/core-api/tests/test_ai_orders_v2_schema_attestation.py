@@ -105,13 +105,12 @@ def test_attestation_rejects_promotion_and_embedded_evidence_tamper() -> None:
         OrdersV2SchemaAttestationArtifact.model_validate(payload)
 
 
-def test_attestation_builder_rejects_noncanonical_observation_row_count() -> None:
+def test_observation_rejects_noncanonical_row_count_at_typed_boundary() -> None:
     payload = observation().model_dump(mode="python")
     payload["metadata_row_count"] = 2
-    tampered = OrdersV2CollectedSchemaObservation.model_validate(payload)
 
-    with pytest.raises(ValueError, match="row count"):
-        build_orders_v2_schema_attestation_candidate(tampered)
+    with pytest.raises(ValidationError, match="metadata_row_count"):
+        OrdersV2CollectedSchemaObservation.model_validate(payload)
 
 
 def test_cli_requires_explicit_live_network_opt_in(

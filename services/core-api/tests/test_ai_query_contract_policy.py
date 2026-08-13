@@ -74,7 +74,7 @@ def test_production_ready_policy_requires_all_security_evidence() -> None:
         )
 
 
-def test_review_and_execution_fingerprints_bind_security_fields() -> None:
+def test_review_and_execution_fingerprints_bind_all_security_fields() -> None:
     review_candidate = AiQueryContractPolicy(
         tool="ops_kpi_query",
         contract_id="ops.kpi.orders.v2",
@@ -108,18 +108,26 @@ def test_review_and_execution_fingerprints_bind_security_fields() -> None:
     first = ai_execution_scope_fingerprint(
         query_contract_fingerprint=policy_fingerprint,
         data_scope_fingerprint="c" * 64,
+        tenant_query_context_fingerprint="e" * 64,
     )
     changed_scope = ai_execution_scope_fingerprint(
         query_contract_fingerprint=policy_fingerprint,
         data_scope_fingerprint="d" * 64,
+        tenant_query_context_fingerprint="e" * 64,
+    )
+    changed_tenant_context = ai_execution_scope_fingerprint(
+        query_contract_fingerprint=policy_fingerprint,
+        data_scope_fingerprint="c" * 64,
+        tenant_query_context_fingerprint="f" * 64,
     )
 
     assert len(policy_fingerprint) == 64
     assert len(first) == 64
     assert first != changed_scope
+    assert first != changed_tenant_context
 
 
-def test_grant_store_accepts_no_caller_selected_query_policy() -> None:
+def test_grant_store_accepts_no_caller_selected_query_or_tenant_authority() -> None:
     for method_name in (
         "issue",
         "consume",
@@ -132,3 +140,6 @@ def test_grant_store_accepts_no_caller_selected_query_policy() -> None:
         assert "query_contract_fingerprint" not in parameters
         assert "query_template_sha256" not in parameters
         assert "tenant_discriminator_parameter" not in parameters
+        assert "tenant_query_context" not in parameters
+        assert "tenant_query_context_fingerprint" not in parameters
+        assert "entity_ids" not in parameters

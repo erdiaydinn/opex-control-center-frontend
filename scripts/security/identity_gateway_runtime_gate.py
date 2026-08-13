@@ -540,6 +540,8 @@ def static_gate() -> None:
 def wait_identity_health(
     container_id: str,
 ) -> None:
+    last_health = None
+
     for _ in range(60):
         state = inspect(
             container_id
@@ -563,6 +565,7 @@ def wait_identity_health(
                 "Status"
             )
         )
+        last_health = health
 
         if health == "healthy":
             print(
@@ -570,15 +573,21 @@ def wait_identity_health(
             )
             return
 
-        if health == "unhealthy":
+        if health not in {
+            None,
+            "starting",
+            "unhealthy",
+        }:
             raise SystemExit(
-                "IDENTITY_GATEWAY_HEALTH=UNHEALTHY"
+                "IDENTITY_GATEWAY_HEALTH_INVALID="
+                + repr(health)
             )
 
         time.sleep(1)
 
     raise SystemExit(
-        "IDENTITY_GATEWAY_HEALTH_TIMEOUT"
+        "IDENTITY_GATEWAY_HEALTH_TIMEOUT="
+        + repr(last_health)
     )
 
 

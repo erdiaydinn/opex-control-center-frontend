@@ -5,6 +5,11 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from app.core.ai_orders_v2_deployment_authorization import (
+    ORDERS_V2_MANUAL_POLICY_PROMOTION_BLOCKER,
+    OrdersV2DeploymentAuthorizationArtifact,
+    build_orders_v2_deployment_authorization,
+)
 from app.core.ai_orders_v2_human_promotion_review import (
     HUMAN_PROMOTION_RELEASE_BLOCKER,
     ORDERS_V2_DEPLOYMENT_BLOCKER,
@@ -80,12 +85,29 @@ def human_review() -> OrdersV2HumanPromotionReviewArtifact:
     )
 
 
-def release_gate() -> OrdersV2ReleaseGateArtifact:
+def release_gate(
+    review: OrdersV2HumanPromotionReviewArtifact | None = None,
+) -> OrdersV2ReleaseGateArtifact:
+    resolved_review = human_review() if review is None else review
     return build_orders_v2_release_gate_artifact(
-        human_review=human_review(),
+        human_review=resolved_review,
         release_manifest="orders-v2 release manifest revision 1",
         release_approver_identity="release-approver@example.invalid",
         released_at=datetime(2026, 8, 13, 9, 0, tzinfo=UTC),
+    )
+
+
+def deployment_authorization(
+    environment: str = "production",
+) -> OrdersV2DeploymentAuthorizationArtifact:
+    review = human_review()
+    return build_orders_v2_deployment_authorization(
+        human_review=review,
+        release_gate=release_gate(review),
+        environment=environment,
+        deployment_manifest="orders-v2 deployment manifest revision 1",
+        deployment_approver_identity="deployment-approver@example.invalid",
+        authorized_at=datetime(2026, 8, 13, 10, 0, tzinfo=UTC),
     )
 
 
@@ -259,4 +281,139 @@ def test_release_gate_does_not_store_raw_manifest_or_approver() -> None:
     rendered = artifact.model_dump_json()
 
     assert "orders-v2 release manifest revision 1" not in rendered
+    assert "release-approver@example.invalid" not in rendered
+
+
+def test_deployment_authorization_is_environment_bound_and_non_executing() -> None:
+    artifact = deployment_authorization()
+
+    assert artifact.environment == "production"
+    assert artifact.authorization_decision == "APPROVE_FOR_MANUAL_POLICY_PROMOTION"
+    assert artifact.deployment_authorization_completed is True
+    assert artifact.manual_policy_promotion_required is True
+    assert artifact.policy_mutation_permitted is False
+    assert artifact.execution_enable_permitted is False
+    assert artifact.promotion_eligible is False
+    assert artifact.production_ready is False
+    assert artifact.production_blocker == ORDERS_V2_MANUAL_POLICY_PROMOTION_BLOCKER
+    assert len(artifact.release_gate_fingerprint) == 64
+    assert len(artifact.human_review_fingerprint) == 64
+    assert len(artifact.deployment_authorization_fingerprint) == 64
+
+    active = AI_QUERY_CONTRACT_POLICIES["ops_kpi_query"]
+    assert active.contract_id == "ops.kpi.orders.v1"
+    assert active.production_ready is False
+
+
+def test_deployment_authorization_rejects_non_release_environments() -> None:
+    for environment in ("development", "test", "prod", ""):
+        review = human_review()
+        with pytest.raises(ValueError, match="environment"):
+            build_orders_v2_deployment_authorization(
+                human_review=review,
+                release_gate=release_gate(review),
+                environment=environment,
+                deployment_manifest="orders-v2 deployment manifest revision 1",
+                deployment_approver_identity="deployment-approver@example.invalid",
+                authorized_at=datetime(2026, 8, 13, 10, 0, tzinfo=UTC),
+            )
+
+    assert deployment_authorization("staging").environment == "staging"
+
+
+def test_deployment_authorization_requires_separation_of_duties() -> None:
+    review = human_review()
+    gate = release_gate(review)
+
+    for approver, expected in (
+        ("reviewer@example.invalid", "human reviewer"),
+        ("release-approver@example.invalid", "release approver"),
+    ):
+        with pytest.raises(ValueError, match=expected):
+            build_orders_v2_deployment_authorization(
+                human_review=review,
+                release_gate=gate,
+                environment="production",
+                deployment_manifest="orders-v2 deployment manifest revision 1",
+                deployment_approver_identity=approver,
+                authorized_at=datetime(2026, 8, 13, 10, 0, tzinfo=UTC),
+            )
+
+
+def test_deployment_authorization_rejects_release_review_substitution() -> None:
+    review = human_review()
+    gate = release_gate(review)
+    payload = gate.model_dump(mode="python")
+    payload["human_review_fingerprint"] = "f" * 64
+    foreign_gate = OrdersV2ReleaseGateArtifact.model_construct(**payload)
+
+    with pytest.raises(ValueError, match="not bound"):
+        build_orders_v2_deployment_authorization(
+            human_review=review,
+            release_gate=foreign_gate,
+            environment="production",
+            deployment_manifest="orders-v2 deployment manifest revision 1",
+            deployment_approver_identity="deployment-approver@example.invalid",
+            authorized_at=datetime(2026, 8, 13, 10, 0, tzinfo=UTC),
+        )
+
+
+def test_deployment_authorization_rejects_timestamp_and_empty_inputs() -> None:
+    review = human_review()
+    gate = release_gate(review)
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_orders_v2_deployment_authorization(
+            human_review=review,
+            release_gate=gate,
+            environment="production",
+            deployment_manifest="orders-v2 deployment manifest revision 1",
+            deployment_approver_identity="deployment-approver@example.invalid",
+            authorized_at=datetime(2026, 8, 13, 10, 0),
+        )
+
+    for manifest, approver in (
+        ("", "deployment-approver@example.invalid"),
+        ("orders-v2 deployment manifest revision 1", ""),
+    ):
+        with pytest.raises(ValueError, match="non-empty"):
+            build_orders_v2_deployment_authorization(
+                human_review=review,
+                release_gate=gate,
+                environment="production",
+                deployment_manifest=manifest,
+                deployment_approver_identity=approver,
+                authorized_at=datetime(2026, 8, 13, 10, 0, tzinfo=UTC),
+            )
+
+
+def test_deployment_authorization_rejects_policy_and_execution_tamper() -> None:
+    artifact = deployment_authorization()
+
+    for field, value in (
+        ("candidate_template_fingerprint", "f" * 64),
+        ("parameter_contract_fingerprint", "f" * 64),
+        ("sdk_adapter_fingerprint", "f" * 64),
+        ("environment", "development"),
+        ("authorization_decision", "DEPLOY_NOW"),
+        ("deployment_authorization_completed", False),
+        ("manual_policy_promotion_required", False),
+        ("policy_mutation_permitted", True),
+        ("execution_enable_permitted", True),
+        ("promotion_eligible", True),
+        ("production_ready", True),
+    ):
+        payload = artifact.model_dump(mode="python")
+        payload[field] = value
+        with pytest.raises(ValidationError):
+            OrdersV2DeploymentAuthorizationArtifact.model_validate(payload)
+
+
+def test_deployment_authorization_hides_raw_manifest_and_approver() -> None:
+    artifact = deployment_authorization()
+    rendered = artifact.model_dump_json()
+
+    assert "orders-v2 deployment manifest revision 1" not in rendered
+    assert "deployment-approver@example.invalid" not in rendered
+    assert "reviewer@example.invalid" not in rendered
     assert "release-approver@example.invalid" not in rendered

@@ -2,18 +2,18 @@
 
 ## P0 rule
 
-AI/Jarvis feature and security-abstraction work is frozen until the release stop condition is met. Work in this phase is limited to CI productionization, authoritative live evidence, integration, and release convergence.
+AI/Jarvis is in LIVE PRODUCTION TRUTH phase. New security abstractions, approval layers, fingerprint layers, and synthetic-proof PRs are frozen. Work is limited to authoritative live evidence, integration, staging acceptance, production acceptance, and release convergence.
 
-Frozen foundations remain unchanged:
+Frozen foundations:
 
-- PR #15 — EAY AI Core foundation — frozen.
-- PR #16 — Security Phase 1 foundation — frozen.
+- PR #15 — EAY AI Core foundation — `9e1422df2a584b71593c2f6188d26c8ab4ab4c15`
+- PR #16 — Security Phase 1 foundation — `6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d`
 
 No force push, direct `main` merge, risky auto-merge, or foundation rewrite is authorized by this plan.
 
-## Verified Platform Core CI evidence
+## Verified exact-head CI
 
-Platform Core CI run #547 on commit `5b34bd3fd843308dc98edb9c0db09cf231eb371d` completed GREEN.
+Platform Core CI run #549 on PR #59 head `3702c3c8503b680ee6d82d7910bfaf1b3eeb62a0` completed GREEN.
 
 All repo-wide jobs passed:
 
@@ -23,89 +23,117 @@ All repo-wide jobs passed:
 - Platform configuration
 - Identity Gateway adversarial boundary
 
-The P0 CI work closed the previously observed xlsx dependency, repo-wide Ruff, Identity Gateway CI file-secret/runtime, and full Core API BigQuery test-dependency closure failures.
+CI cleanup P0 is therefore closed. Future work must not reopen feature/security-abstraction expansion under the CI-cleanup label.
 
-## Development-history graph
+## Canonical Orders-v2 release composition
 
-The cumulative development history is preserved. The current Orders-v2 line is:
+The release-candidate evidence topology is:
+
+| Layer | PR | Exact reviewed head SHA | Release status |
+|---|---:|---|---|
+| Orders-v2 deterministic query candidate | #46 | `d4e7d32afba646953bc624aa5ce6afd3e14151fe` | CANONICAL |
+| Typed BigQuery parameter contract | #47 | `1c001f41e63c329e60fe800eba413502a0fbcddd` | CANONICAL |
+| BigQuery SDK parameter adapter | #48 | `04196b3fe3488e21db7653869756a52e8e4ad32e` | CANONICAL |
+| Read-only live schema collector | #51 | `72a7667a1a90c5c27378b72c9908463c611c5374` | CANONICAL |
+| Opt-in schema-attestation CLI | #52 | `087ca502784be0ac4889af50288843ca1953ed47` | CANONICAL |
+| Live cross-tenant evidence contract | #53 | `e13a6736c7069e369ef0531c7fe3397143050dbe` | CANONICAL |
+| Human promotion review / release evidence | #54 | `868039bb76b57db0ae84e1bc61315934c5ef1c93` | CANONICAL |
+| Deployment authorization | #56 | `06b6e2bd60121112eed21c7eaa1001b98ec7f365` | CANONICAL |
+| Manual policy-promotion proposal | #57 | `20563fb2fe3fcedc99dbce805ed5c2efb801e0d9` | CANONICAL |
+| Policy transition guard / convergence head | #59 | `3702c3c8503b680ee6d82d7910bfaf1b3eeb62a0` | CANONICAL CURRENT HEAD |
+
+The cumulative development ancestry is preserved:
 
 `#16 -> #17 -> #37 -> #40 -> #41 -> #42 -> #43 -> #45 -> #46 -> #47 -> #48 -> #49 -> #50 -> #51 -> #52 -> #53 -> #54 -> #56 -> #57 -> #59`
 
-This graph is development history, not a statement that every ancestor is an independent release-candidate gate.
+Development ancestry is not the same as release evidence authority.
 
-Special cases:
+## Historical / superseded / parked topology
 
-- PR #38 is PARKED: historical AI-Core/Platform-Core execution-bridge sibling, not an Orders-v2 release candidate.
-- PR #44 is historical/superseded for release convergence: later canonical Grant V4 PR #45 is based directly on #43 and the later canonical stack omits #44.
-- PR #39 is Repository Intelligence work and is outside the Orders-v2 release graph.
-- PR #58 is Workforce work and is outside the Jarvis release graph.
+- PR #38 — PARKED historical AI-Core/Platform-Core execution-bridge sibling; not an Orders-v2 release candidate.
+- PR #44 — HISTORICAL/SUPERSEDED for release convergence; canonical Grant V4 continues through #45 from #43.
+- PR #39 — Repository Intelligence; outside Orders-v2 release topology.
+- PR #58 — Workforce; outside Jarvis release topology.
+- PR #49 — schema-evidence contract history; useful contract history but not live observation by itself.
+- PR #50 — synthetic cross-tenant proof history; MUST NOT satisfy any live-evidence gate.
 
-## Release-candidate evidence chain
+Branch-only historical/parked heads are not release-candidate heads:
 
-The release candidate must converge on real evidence, not synthetic proof or additional abstractions.
+- `platform-core/orders-v2-live-evidence`
+- `platform-core/eay-v2-jarvis-orders-deployment-authorization`
+- `platform-core/eay-v2-jarvis-orders-human-promotion-review-copy`
+- `platform-core/eay-v2-jarvis-orders-consumption-ledger`
+- `platform-core/eay-v2-jarvis-orders-consumption-ledger-v2`
+- `platform-core/eay-v2-jarvis-orders-provenance-readiness`
 
-Existing implementation slices are reused as follows:
+Do not merge these branches into the release graph merely because they contain later experimental/history commits.
 
-1. PR #46 — frozen Orders-v2 candidate query contract.
-2. PR #47 — typed BigQuery parameter contract.
-3. PR #48 — reviewed BigQuery SDK parameter adapter.
-4. PR #51 / #52 — live INFORMATION_SCHEMA collector and schema-attestation mechanism.
-5. PR #53 — live cross-tenant evidence mechanism.
-6. PR #54 — human promotion review plus release-gate artifact.
-7. PR #56 — deployment authorization.
-8. PR #57 — manual policy-promotion proposal.
-9. PR #59 — transition guard and current convergence head.
+## Canonical live-truth sequence
 
-PR #49 schema-evidence contract and PR #50 synthetic proof remain useful development history, but synthetic evidence MUST NOT satisfy the live-evidence release gate.
+No synthetic artifact can substitute for this sequence:
 
-The promotion sequence is therefore:
+`authorized read-only BigQuery identity/environment`
+`-> real INFORMATION_SCHEMA observation`
+`-> exact tenant discriminator verification`
+`-> controlled live cross-tenant proof`
+`-> schema attestation`
+`-> #54 human/release evidence`
+`-> #56 deployment authorization`
+`-> #57 manual policy promotion`
+`-> #59 transition guard`
+`-> active ops.kpi.orders.v2`
+`-> governed staging execution`
+`-> production acceptance`
 
-`live schema attestation -> live cross-tenant proof -> human review -> release approval -> deployment authorization -> manual policy promotion -> transition guard`
-
-Every stage must bind the exact reviewed fingerprints produced by the preceding real-evidence stage. No stage may infer readiness from a synthetic fixture.
+Every evidence handoff must use the exact canonical implementation lineage above.
 
 ## Current policy state
 
-The active version-controlled `ops_kpi_query` policy remains:
+Active version-controlled `ops_kpi_query` policy remains:
 
 - contract: `ops.kpi.orders.v1`
 - revision: `1`
 - `production_ready=false`
 
-Orders-v2 remains a blocked candidate. Production execution, promotion eligibility, and policy mutation remain disabled until authoritative live schema and cross-tenant evidence are executed and the existing review chain is filled with matching fingerprints.
+Orders-v2 is still a blocked candidate. No current PR/test result is authority to report v2 as active.
 
-## Parked / superseded side branches
+## Live evidence state
 
-The following branches are not release-candidate heads:
+As of this release convergence update:
 
-- `platform-core/orders-v2-live-evidence` — PARKED scratch/live-evidence experiment; do not merge blindly into the release graph.
-- `platform-core/eay-v2-jarvis-orders-deployment-authorization` — superseded branch-only ancestor; PR #56 uses `...deployment-authorization-v2`.
-- `platform-core/eay-v2-jarvis-orders-human-promotion-review-copy` — superseded branch-only ancestor of the canonical human-review branch.
-- `platform-core/eay-v2-jarvis-orders-consumption-ledger`
-- `platform-core/eay-v2-jarvis-orders-consumption-ledger-v2`
-- `platform-core/eay-v2-jarvis-orders-provenance-readiness`
+- authoritative live BigQuery schema evidence: **NO / NOT RUN**
+- exact production tenant discriminator observation: **NO / NOT RUN**
+- controlled live cross-tenant proof: **NO / NOT RUN**
+- staging governed execution: **NOT RUN**
+- active policy: **v1**
 
-The last three are retained as historical/post-guard development branches and are not promoted as independent release gates under the P0 freeze.
+`Jarvis Orders Live Schema Collector CI` is contract/test CI only and does not authenticate to production BigQuery or submit the live production observation.
 
-## Live-truth blocker
+## External P0 blocker
 
-The repository contains a fixed read-only INFORMATION_SCHEMA collector and an explicit schema-attestation CLI, but the current GitHub CI workflow named `Jarvis Orders Live Schema Collector CI` is contract/test CI only; it does not authenticate to production BigQuery and does not submit the live metadata query.
+The one P0 external dependency is an authorized read-only production BigQuery execution identity/environment.
 
-Therefore, as of this convergence record:
+At the time of this review the repository exposes no configured GitHub Environment for that production-readonly execution path, and the available integration cannot inspect repository secrets. No credential is invented or inferred.
 
-- authoritative live BigQuery schema evidence: NOT RUN
-- controlled live cross-tenant proof: NOT RUN
-- active policy: v1
-- production readiness: false
+When the external identity/environment is supplied, follow `docs/JARVIS_ORDERS_V2_PRODUCTION_ACCEPTANCE_RUNBOOK.md` and collect real evidence. Until then:
 
-## Single next P0 dependency
+- do not fabricate evidence;
+- do not promote v2;
+- do not claim staging PASS;
+- do not replace live evidence with synthetic proof;
+- do not open another AI/Jarvis security abstraction PR.
 
-Provide an authorized, read-only BigQuery execution identity/environment for the existing collector and controlled cross-tenant verifier. The live run must:
+## >=95% acceptance gate
 
-1. execute the fixed INFORMATION_SCHEMA metadata query against the authoritative Orders table;
-2. prove the actual tenant discriminator field from production metadata;
-3. execute a controlled cross-tenant verification with zero foreign tenant/store sentinel leakage;
-4. persist only privacy-minimized metadata/fingerprints, never unnecessary raw production rows;
-5. feed those exact live fingerprints into the existing #54 -> #56 -> #57 -> #59 promotion chain.
+The target is not reached until all are true on one reviewable release candidate:
 
-Until that dependency is satisfied, no new AI/Jarvis security abstraction PR should be opened and `production_ready` must remain false.
+- repo-wide CI GREEN;
+- active tenant-safe reviewed policy;
+- live BigQuery proof;
+- cross-tenant leak count = 0;
+- staging execution PASS;
+- failure/retry/idempotency acceptance PASS;
+- observability/audit PASS;
+- documented and reviewed rollback/runbook.
+
+After Orders-v2 production acceptance, apply the same production-evidence standard in order: NSFR/PFR/Refund -> Prep/Picking -> OTP -> Putaway. Model-authored SQL remains disabled.

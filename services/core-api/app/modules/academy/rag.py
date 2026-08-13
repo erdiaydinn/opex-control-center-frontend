@@ -45,24 +45,40 @@ async def grounded_document_answer(
                           (ae.principal_type = 'subject' AND ae.principal_key = :subject)
                           OR ar.role_key IS NOT NULL
                       )
+                ), question_terms AS (
+                    SELECT tsvector_to_array(to_tsvector('simple', :question)) AS terms
                 ), ranked AS (
                     SELECT dc.id AS chunk_id, dc.content_version_id, dc.chunk_ordinal,
                            dc.locale, dc.heading, dc.text_content, dc.source_page,
                            dc.source_anchor, cv.version_label, cv.version_number,
                            cv.source_sha256, ci.id AS content_id, ci.slug,
                            ci.title_i18n,
-                           ts_rank_cd(dc.search_vector, websearch_to_tsquery('simple', :question)) AS rank
+                           ts_rank_cd(
+                               dc.search_vector,
+                               to_tsquery('simple', array_to_string(q.terms, ' | '))
+                           ) AS rank
                     FROM academy_document_chunks AS dc
                     JOIN academy_content_versions AS cv
                       ON cv.tenant_id = dc.tenant_id AND cv.id = dc.content_version_id
                     JOIN academy_content_items AS ci
                       ON ci.tenant_id = cv.tenant_id AND ci.id = cv.content_id
+                    CROSS JOIN question_terms AS q
                     WHERE dc.tenant_id = :tenant_id
                       AND dc.locale = :locale
                       AND cv.status = 'published'
                       AND ci.status = 'published'
                       AND dc.content_version_id IN (SELECT content_version_id FROM allowed_versions)
-                      AND dc.search_vector @@ websearch_to_tsquery('simple', :question)
+                      AND cardinality(q.terms) > 0
+                      AND dc.search_vector @@ to_tsquery(
+                          'simple', array_to_string(q.terms, ' | ')
+                      )
+                      AND cardinality(
+                          ARRAY(
+                              SELECT unnest(q.terms)
+                              INTERSECT
+                              SELECT unnest(tsvector_to_array(dc.search_vector))
+                          )
+                      ) >= LEAST(2, cardinality(q.terms))
                 )
                 SELECT * FROM ranked
                 ORDER BY rank DESC, content_id, chunk_ordinal

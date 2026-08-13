@@ -7,7 +7,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-
 FUNCTION = "public.resolve_preauth_oidc_providers(text)"
 OWNER_ROLE = "opex_preauth_resolver_owner"
 RUNTIME_ROLE = "opex_runtime"

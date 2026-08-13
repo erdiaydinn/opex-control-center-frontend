@@ -12,7 +12,6 @@ from app.core.permission_catalog import (
     module_permission,
 )
 
-
 FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "src"
 
 

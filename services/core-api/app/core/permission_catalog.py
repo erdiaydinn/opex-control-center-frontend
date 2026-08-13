@@ -1,6 +1,5 @@
 from types import MappingProxyType
 
-
 ROUTE_MODULES = frozenset(
     {
         "admin_access",

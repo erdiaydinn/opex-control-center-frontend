@@ -4,7 +4,6 @@ from starlette.requests import Request
 
 import app.core.client_ip as client_ip
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import get_settings
 from app.core.resources import update_tenant_member_access
 
-
 TENANT_ID = UUID("00000000-0000-0000-0000-0000000000a1")
 
 

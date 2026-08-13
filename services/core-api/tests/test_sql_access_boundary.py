@@ -10,7 +10,6 @@ ad-hoc query services, or direct DB access fail CI by default.
 import ast
 from pathlib import Path
 
-
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 RUNTIME_SQL_EXECUTION_POINTS = {

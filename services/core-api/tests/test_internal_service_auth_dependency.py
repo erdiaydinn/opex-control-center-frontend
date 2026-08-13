@@ -10,21 +10,20 @@ from fastapi import HTTPException
 from jwt.algorithms import ECAlgorithm
 from starlette.requests import Request
 
+import app.core.security as security_module
 from app.core.config import Settings
+from app.core.internal_identity import (
+    INTERNAL_SERVICE_ASSERTION_TYP,
+)
 from app.core.internal_service_replay import (
     InternalServiceReplayDetected,
     InternalServiceReplayUnavailable,
-)
-import app.core.security as security_module
-from app.core.internal_identity import (
-    INTERNAL_SERVICE_ASSERTION_TYP,
 )
 from app.core.security import (
     INTERNAL_SERVICE_ASSERTION_HEADER,
     require_fresh_internal_service,
     require_internal_service,
 )
-
 
 ISSUER = "opex-identity-gateway"
 USER_AUDIENCE = "opex-core-api"

@@ -21,7 +21,6 @@ from app.core.internal_service_replay import (
     INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
 )
 
-
 APP_ROOT = (
     Path(__file__).parents[1]
     / "app"

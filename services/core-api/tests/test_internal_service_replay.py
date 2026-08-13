@@ -13,7 +13,6 @@ from app.core.internal_service_replay import (
     RedisInternalServiceReplayGuard,
 )
 
-
 ASSERTION_ID = (
     "service-assertion-replay-test-0001"
 )

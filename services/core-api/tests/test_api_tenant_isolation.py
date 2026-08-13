@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import get_settings
 from app.main import app
 
-
 TENANT_A = UUID("00000000-0000-0000-0000-0000000000b1")
 TENANT_B = UUID("00000000-0000-0000-0000-0000000000b2")
 

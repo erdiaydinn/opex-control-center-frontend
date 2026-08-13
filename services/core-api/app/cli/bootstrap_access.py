@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import get_settings
 from app.core.permission_catalog import SYSTEM_ROLE_PERMISSIONS
 
-
 SYSTEM_ROLE_NAMES = {
     "super_admin": "Super Admin",
     "platform_admin": "Platform Admin",

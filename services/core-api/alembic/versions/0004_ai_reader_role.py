@@ -4,9 +4,9 @@ Revision ID: 0004_ai_reader_role
 Revises: 0003_backup_role_grants
 """
 
-from alembic import op
 from sqlalchemy import text
 
+from alembic import op
 
 revision = "0004_ai_reader_role"
 down_revision = "0003_backup_role_grants"

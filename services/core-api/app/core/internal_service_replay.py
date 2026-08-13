@@ -5,8 +5,6 @@ import hashlib
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-
-
 INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS = 120
 INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS = 10
 

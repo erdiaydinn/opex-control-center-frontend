@@ -1,59 +1,95 @@
-# EAY Budget Intelligence — Production Finance Foundation
+# EAY Budget Intelligence — Canonical Finance Foundation
 
-## Canonical architecture
+## Architecture
 
-Budget Intelligence is a bounded context inside Platform Core. It reuses the platform identity gateway, OIDC/JWKS verification, active tenant membership, permission assignments, trusted proxy boundary, runtime PostgreSQL role, Redis/platform health and backup controls. It does not create a second authentication or database trust root.
+Budget Intelligence is a bounded context inside Platform Core. It reuses the existing OIDC/JWKS principal, active tenant membership, DB-backed permission assignments, transaction-local tenant context, runtime PostgreSQL role, platform audit, trusted gateway boundary and backup controls. It does not introduce a second authentication, tenant or database trust root.
 
-Canonical finance chain:
+Canonical domain:
 
 `Budget Plan → Fiscal Period → Cost Center → Budget Line → Purchase Request → Approval → PO → Invoice → Actual → Commitment → Forecast → Variance`
 
-Excel/CSV/XLSX is ingestion only. The authoritative state is PostgreSQL.
+PostgreSQL is authoritative. External finance systems and files are ingestion sources, never the ledger.
 
-## Financial invariants
+## Persistence
 
-- Every Budget row is bound to a real Platform Core tenant.
-- Cost-center-bearing aggregates are protected by FORCE RLS using tenant + authorized cost-center scope.
-- Budget Plan starts as `DRAFT`. A second actor must activate it before Purchase Requests can be submitted.
-- Fiscal periods in the same plan cannot overlap; a PostgreSQL advisory-lock + overlap trigger makes this race-safe without introducing an extra database extension dependency.
-- Budget Line definition is created while the plan is DRAFT; Purchase Request requires an ACTIVE plan and an OPEN period.
-- Purchase Request creation locks the Budget Line and fails closed if Actual + open Commitment + uncommitted submitted/approved requests + the new request exceeds the line budget.
-- PR maker cannot approve their own request.
-- PR approver cannot create the PO for the same request.
-- PO creator cannot post the invoice for the same PO.
-- PO/invoice supplier identity mismatches fail closed.
-- Amount mismatch creates a reconciliation HOLD; it is never silently overwritten.
-- Reconciliation acceptance is independently authorized and cannot push the Budget Line over budget.
-- Positive/negative accounting adjustments are append-only, four-eyes approved Actual events; original Actual and approval evidence are immutable.
-- Open commitments, pending requests, held invoices, pending adjustments and open reconciliation issues block fiscal-period close.
-- Open POs and requests have explicit audited cancellation paths so period close cannot become permanently stuck.
-- All state-changing commands require a durable `Idempotency-Key` bound to tenant + actor + operation + request payload.
-- Financial events are append-only hash chains partitioned by tenant + cost center; scoped auditors can verify the exact chain they are authorized to see.
-- Export requires an explicit Budget export permission and emits scoped export evidence.
+Migration chain on this branch:
 
-## Permissions
+`0008_preauth_provider_resolver`
+→ `0009_budget_finance_foundation`
+→ `0010_budget_procurement_foundation`
+→ `0011_budget_ledger_foundation`
+→ `0012_budget_import_foundation`
+→ `0013_budget_evidence_foundation`
+→ `0014_budget_rls_controls`
 
-The module does not introduce a parallel finance-role system. Existing Platform Core permission assignments remain authoritative. Budget permissions may be assigned with either:
+The model persists Budget Plan, Fiscal Period, Cost Center, Budget Line, Purchase Request, Approval, Purchase Order, Invoice, Commitment, Actual, Forecast, Reconciliation Issue, Import Batch/Row, Financial Event and durable Budget Command state.
+
+## Tenant and cost-center security
+
+Every Budget table is tenant-bound. `0014_budget_rls_controls` enables and forces PostgreSQL RLS. Tenant-only tables use the existing Platform Core `app.tenant_id` transaction context. Finance aggregates with a cost center additionally require server-derived `app.budget_cost_center_ids` scope.
+
+Budget action permissions are registered in the canonical Platform Core permission catalog. Non-superadmin users require explicit DB assignments. Assignment scope is either:
 
 - `{"all_cost_centers": true}`
 - `{"cost_center_ids": ["<uuid>", ...]}`
 
-Master-data, fiscal-close and ingestion permissions require all-cost-center authority in this foundation. Operational read/write permissions can remain cost-center scoped.
+Empty, malformed or missing cost-center scope fails closed. Master-data, import, period close and export require all-cost-center authority.
 
-## Controlled ingestion
+## Workflow invariants
 
-Supported upload formats: UTF-8 CSV/TSV/TXT and XLSX.
+The service applies row locks and one database transaction per command.
 
-Controls include bounded file/row/column sizes, formula rejection, deterministic normalization/fingerprinting, explicit external source identity, preview-before-commit, duplicate detection, staging before materialization, and savepoint-scoped row materialization.
+- Budget Plan creator cannot activate their own plan.
+- Plan activation requires at least one Fiscal Period and Budget Line.
+- Fiscal Period creation is serialized by a PostgreSQL advisory transaction lock and rejects overlapping ranges.
+- Budget Lines are defined only while the plan is DRAFT and must reference a period from the same plan.
+- Purchase Request requires ACTIVE plan + OPEN period.
+- Purchase Request creation locks the Budget Line and rejects exposure above budget.
+- PR maker cannot approve their own request.
+- PR approver cannot create the resulting PO.
+- PO creator cannot post an invoice against that PO.
+- PO/request amount or supplier mismatch becomes `RECONCILIATION_HOLD`; no Commitment is opened until independently resolved.
+- Invoice/PO supplier mismatch or invoice amount above remaining Commitment becomes `HOLD`; no Actual is posted.
+- Duplicate invoice identity is unique by tenant + supplier + invoice number and returns conflict without creating a second Actual.
+- Accepted PO reconciliation re-checks Budget Line exposure while holding the line lock.
+- Held invoices cannot be silently accepted; they must be corrected or rejected.
+- Fiscal Period close rejects unresolved requests, reconciliation holds, open commitments, held invoices and open reconciliation issues.
 
-## External system boundary
+Approval, Actual and Financial Event rows are append-only for the runtime DB role because UPDATE is revoked; DELETE is revoked across Budget tables.
 
-Corporate identity, gateway trust and backup trust are inherited from Platform Security Phase 1. ARIBA/SAP/BigQuery are represented by controlled source contracts and canonical external identities. Production endpoint URLs, service-account material and corporate IdP secrets are deployment inputs and must be supplied through the existing secret-management boundary; the application fails closed rather than embedding or inventing credentials.
+## Durable evidence and idempotency
 
-## Canonical repository line
+Every state-changing HTTP command requires `Idempotency-Key`. Durable `budget_command` state binds the key to tenant + actor + operation + canonical payload hash. A completed identical replay returns the recorded response; key reuse for a different command returns conflict.
+
+Finance mutations emit `financial_event` evidence in the same PostgreSQL transaction as the domain mutation. Events form a SHA-256 chain partitioned by tenant + cost center (or the tenant-global chain). Chain assignment is serialized with PostgreSQL advisory transaction locks. Export also emits financial evidence.
+
+Platform Core request audit remains active around the same composed ASGI application, so finance-domain evidence complements rather than replaces platform audit.
+
+## Import and authoritative-source boundary
+
+Source contracts explicitly distinguish `ARIBA`, `SAP`, `BIGQUERY` and `MANUAL`. Non-manual procurement identities must carry reviewed canonical external identifiers before materialization.
+
+Import staging normalizes values, fingerprints rows with the source-system/entity namespace and stores them in PostgreSQL. Batch and row hashes are unique within tenant/source/entity scope, making repeated ingestion idempotent. Spreadsheet parsing is an adapter concern; spreadsheets never become authoritative runtime state.
+
+Real ARIBA/SAP/BigQuery endpoint URLs, service identities, schemas and credentials are not invented in this foundation. They remain deployment/integration inputs behind the explicit adapter boundary.
+
+## Backend truth
+
+The variance read model is calculated from the same PostgreSQL finance state and returns Budget, Actual, open Commitment, latest Forecast and Variance with cost-center/category/supplier/store dimensions. It does not read browser-local state or spreadsheet state.
+
+## UI policy
+
+The existing Budget UI is intentionally untouched in this foundation. The backend contract, database migrations and acceptance gates are established first. A minimal UI can consume these routes only after the backend foundation is accepted.
+
+## Repository topology
 
 - Base: `feature/phase-1-security-hardening` @ `6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d`
-- Product branch: `product/budget-intelligence-v1`
-- Budget migrations: `0009_budget_finance_foundation` → `0010_budget_workflow_controls`
+- Canonical branch: `product/budget-intelligence-v1`
+- `product/budget-intelligence-foundation`: historical/superseded; not finance authority
+- `product/budget-intelligence-production`: historical/superseded; not finance authority
 
-`product/budget-intelligence-foundation` and `product/budget-intelligence-production` are historical/superseded pointers only.
+No direct merge to `main`. The first PR targets the stable Platform Security Phase 1 branch and remains draft until exact-head PostgreSQL CI is green.
+
+## Production-readiness gaps beyond this foundation
+
+This foundation is not equivalent to production acceptance. Remaining gates include real authoritative finance dataset mapping, corporate source credentials, staging reconciliation against real finance records, backup/restore acceptance, load/concurrency acceptance and controlled finance pilot sign-off. Direct-SQL hardening of workflow invariants beyond the current RLS/least-privilege boundary is also a follow-up defense-in-depth gate before high-trust production use.

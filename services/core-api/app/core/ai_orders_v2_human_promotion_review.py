@@ -113,7 +113,10 @@ def build_orders_v2_human_promotion_review(
         raise ValueError("live evidence review state is invalid")
     if live_evidence.foreign_sentinel_match_count != 0:
         raise ValueError("live evidence contains foreign sentinel leakage")
-    if live_evidence.schema_attestation_fingerprint != schema_attestation.artifact_fingerprint:
+    if (
+        live_evidence.schema_attestation_fingerprint
+        != schema_attestation.artifact_fingerprint
+    ):
         raise ValueError("live evidence is not bound to schema attestation")
     if live_evidence.project != schema_attestation.project:
         raise ValueError("project binding mismatch")

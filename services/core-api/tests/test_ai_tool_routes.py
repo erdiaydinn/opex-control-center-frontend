@@ -8,6 +8,11 @@ from pydantic import ValidationError
 from starlette.requests import Request
 
 import app.ai_tool_routes as routes
+from app.core.ai_tenant_query_context import (
+    AiTenantQueryContext,
+    AiTenantQueryContextRecord,
+    ai_tenant_query_context_fingerprint,
+)
 from app.core.ai_tool_authorization import (
     SCOPE_PERMISSION_KEYS,
     derive_ai_tool_capability,
@@ -20,6 +25,7 @@ from app.core.security import PermissionAssignment, Principal, get_current_princ
 TENANT = UUID(
     "11111111-1111-4111-8111-111111111111"
 )
+ENTITY_ID = "TEST_ENTITY_TR"
 
 
 class FakeRedis:
@@ -48,6 +54,38 @@ class FakeRedis:
         key: str,
     ) -> str | None:
         return self.values.pop(key, None)
+
+
+def query_context_record() -> AiTenantQueryContextRecord:
+    context = AiTenantQueryContext(
+        version=1,
+        entity_ids=(ENTITY_ID,),
+        source_reference="data-catalog:test-route",
+    )
+    return AiTenantQueryContextRecord(
+        tenant_id=str(TENANT),
+        context=context,
+        record_fingerprint=(
+            ai_tenant_query_context_fingerprint(context)
+        ),
+        updated_by="security-admin",
+    )
+
+
+async def load_query_context(
+    tenant_id: str,
+) -> AiTenantQueryContextRecord | None:
+    assert tenant_id == str(TENANT)
+    return query_context_record()
+
+
+def grant_store(
+    redis: FakeRedis | None = None,
+) -> RedisAiToolGrantStore:
+    return RedisAiToolGrantStore(
+        redis or FakeRedis(),  # type: ignore[arg-type]
+        tenant_query_context_loader=load_query_context,
+    )
 
 
 def request_for(path: str) -> Request:
@@ -163,7 +201,7 @@ def test_route_dependencies_keep_user_and_machine_auth_separate() -> None:
 
 
 def test_request_models_reject_caller_authorization_smuggling() -> None:
-    for model, payload in (
+    payloads = (
         (
             routes.AiToolGrantIssueRequest,
             {
@@ -171,6 +209,15 @@ def test_request_models_reject_caller_authorization_smuggling() -> None:
                 "arguments": ops_arguments(),
                 "reason": "read orders",
                 "data_scope": {"store_names": ["Other"]},
+            },
+        ),
+        (
+            routes.AiToolGrantIssueRequest,
+            {
+                "tool": "ops_kpi_query",
+                "arguments": ops_arguments(),
+                "reason": "read orders",
+                "entity_ids": ["OTHER_ENTITY"],
             },
         ),
         (
@@ -183,30 +230,42 @@ def test_request_models_reject_caller_authorization_smuggling() -> None:
                 "tenant_id": str(TENANT),
             },
         ),
-    ):
+        (
+            routes.InternalAiToolAuthorizationRequest,
+            {
+                "grant_token": "g" * 43,
+                "tool": "ops_kpi_query",
+                "arguments": ops_arguments(),
+                "reason": "read orders",
+                "tenant_query_context": {
+                    "entity_ids": ["OTHER_ENTITY"]
+                },
+            },
+        ),
+    )
+
+    for model, payload in payloads:
         with pytest.raises(ValidationError):
             model.model_validate(payload)
 
 
 @pytest.mark.asyncio
-async def test_user_grant_issue_derives_capability_server_side(
+async def test_user_grant_issue_derives_all_authority_server_side(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    store = grant_store()
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
         store,
     )
 
-    payload = routes.AiToolGrantIssueRequest(
-        tool="ops_kpi_query",
-        arguments=ops_arguments("Fulya"),
-        reason="read current orders",
-    )
-
     response = await routes.issue_ai_tool_grant(
-        payload,
+        routes.AiToolGrantIssueRequest(
+            tool="ops_kpi_query",
+            arguments=ops_arguments("Fulya"),
+            reason="read current orders",
+        ),
         request_for("/v1/ai/tool-grants"),
         principal_with_ops_permission(),
     )
@@ -215,6 +274,7 @@ async def test_user_grant_issue_derives_capability_server_side(
     assert len(response.grant_token) >= 32
     assert response.expires_in_seconds <= 60
     assert len(response.data_scope_fingerprint) == 64
+    assert len(response.tenant_query_context_fingerprint) == 64
     assert response.query_contract_id == "ops.kpi.orders.v1"
     assert response.query_contract_revision == 1
     assert len(response.query_contract_fingerprint) == 64
@@ -222,14 +282,49 @@ async def test_user_grant_issue_derives_capability_server_side(
 
 
 @pytest.mark.asyncio
+async def test_missing_tenant_context_is_503_and_no_grant_is_written(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+
+    async def missing_context(
+        tenant_id: str,
+    ) -> AiTenantQueryContextRecord | None:
+        assert tenant_id == str(TENANT)
+        return None
+
+    store = RedisAiToolGrantStore(
+        redis,  # type: ignore[arg-type]
+        tenant_query_context_loader=missing_context,
+    )
+    monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.issue_ai_tool_grant(
+            routes.AiToolGrantIssueRequest(
+                tool="ops_kpi_query",
+                arguments=ops_arguments(),
+                reason="read current orders",
+            ),
+            request_for("/v1/ai/tool-grants"),
+            principal_with_ops_permission(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == (
+        "AI tenant query context is unavailable"
+    )
+    assert redis.values == {}
+
+
+@pytest.mark.asyncio
 async def test_user_without_permission_cannot_issue_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
-        store,
+        grant_store(),
     )
 
     principal = Principal(
@@ -260,11 +355,10 @@ async def test_user_without_permission_cannot_issue_grant(
 async def test_empty_data_scope_cannot_issue_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
-        store,
+        grant_store(),
     )
     permission = SCOPE_PERMISSION_KEYS["ops:read"]
     principal = Principal(
@@ -301,11 +395,10 @@ async def test_empty_data_scope_cannot_issue_grant(
 async def test_scope_exceeding_arguments_cannot_issue_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
-        store,
+        grant_store(),
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -324,10 +417,10 @@ async def test_scope_exceeding_arguments_cannot_issue_grant(
 
 
 @pytest.mark.asyncio
-async def test_internal_authorization_recovers_identity_scope_and_writes_minimal_audit(
+async def test_internal_authorization_recovers_fresh_scope_and_minimal_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    store = grant_store()
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
@@ -385,6 +478,10 @@ async def test_internal_authorization_recovers_identity_scope_and_writes_minimal
     assert response.data_scope_fingerprint == (
         capability.data_scope_fingerprint
     )
+    assert response.tenant_entity_ids == (ENTITY_ID,)
+    assert response.tenant_query_context_fingerprint == (
+        issued.binding.tenant_query_context_fingerprint
+    )
     assert response.query_contract_id == "ops.kpi.orders.v1"
     assert response.query_contract_revision == 1
     assert len(response.query_contract_fingerprint) == 64
@@ -401,40 +498,105 @@ async def test_internal_authorization_recovers_identity_scope_and_writes_minimal
     assert metadata["service_subject"] == "eay-ai-core"
     assert metadata["tool"] == "ops_kpi_query"
     assert metadata["data_scope_store_count"] == 2
-    assert metadata["data_scope_fingerprint"] == (
-        capability.data_scope_fingerprint
+    assert metadata["tenant_entity_count"] == 1
+    assert metadata["tenant_query_context_fingerprint"] == (
+        issued.binding.tenant_query_context_fingerprint
     )
     assert metadata["query_contract_id"] == "ops.kpi.orders.v1"
     assert metadata["query_contract_revision"] == 1
-    assert len(metadata["query_contract_fingerprint"]) == 64
-    assert len(metadata["execution_scope_fingerprint"]) == 64
 
-    # Query contract identifiers are approved metadata and may contain words
-    # also used by tool arguments. Verify raw invocation content by field and
-    # value, not by substring-matching the whole metadata representation.
     assert "arguments" not in metadata
     assert "reason" not in metadata
     assert "stores" not in metadata
+    assert "entity_ids" not in metadata
     assert "metric" not in repr(metadata)
     assert reason not in repr(metadata)
     assert "Fulya" not in repr(metadata)
     assert "Anka" not in repr(metadata)
+    assert ENTITY_ID not in repr(metadata)
+    assert "data-catalog:test-route" not in repr(metadata)
+
+
+@pytest.mark.asyncio
+async def test_tenant_context_outage_after_issue_burns_grant_and_maps_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    available = True
+
+    async def mutable_loader(
+        tenant_id: str,
+    ) -> AiTenantQueryContextRecord | None:
+        assert tenant_id == str(TENANT)
+        if not available:
+            raise RuntimeError("database unavailable")
+        return query_context_record()
+
+    store = RedisAiToolGrantStore(
+        redis,  # type: ignore[arg-type]
+        tenant_query_context_loader=mutable_loader,
+    )
+    monkeypatch.setattr(routes, "_ai_tool_grant_store", store)
+
+    capability = derive_ai_tool_capability(
+        principal_with_ops_permission(),
+        tool="ops_kpi_query",
+    )
+    arguments = ops_arguments("Fulya")
+    reason = "read current orders"
+    issued = await store.issue(
+        capability,
+        arguments=arguments,
+        reason=reason,
+    )
+    token = issued.token.get_secret_value()
+    available = False
+
+    payload = routes.InternalAiToolAuthorizationRequest(
+        grant_token=token,
+        tool="ops_kpi_query",
+        arguments=arguments,
+        reason=reason,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await routes.authorize_internal_ai_tool_execution(
+            payload,
+            request_for(
+                "/internal/ai/tool-executions/authorize"
+            ),
+            jarvis_service(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == (
+        "AI tenant query context is unavailable"
+    )
+
+    available = True
+    with pytest.raises(HTTPException) as replay_info:
+        await routes.authorize_internal_ai_tool_execution(
+            payload,
+            request_for(
+                "/internal/ai/tool-executions/authorize"
+            ),
+            jarvis_service(),
+        )
+    assert replay_info.value.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_audit_failure_denies_execution_after_burning_grant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = RedisAiToolGrantStore(FakeRedis())  # type: ignore[arg-type]
+    store = grant_store()
     monkeypatch.setattr(
         routes,
         "_ai_tool_grant_store",
         store,
     )
 
-    principal = principal_with_ops_permission()
     capability = derive_ai_tool_capability(
-        principal,
+        principal_with_ops_permission(),
         tool="ops_kpi_query",
     )
     arguments = ops_arguments("Fulya")

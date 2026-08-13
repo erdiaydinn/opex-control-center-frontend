@@ -69,6 +69,7 @@ jobs:
       WORKFORCE_AUTO_MIGRATE: "false"
       DOCKOS_ENV: test
       PGPASSWORD: postgres
+      RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-evidence
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

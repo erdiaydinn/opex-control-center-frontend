@@ -78,7 +78,7 @@ def test_mutating_internal_ai_routes_require_fresh_jarvis_identity() -> None:
 
 def valid_binding_fields() -> dict[str, object]:
     return {
-        "version": 3,
+        "version": 4,
         "tenant_id": "11111111-1111-4111-8111-111111111111",
         "actor_subject": "user-1",
         "tool": "ops_kpi_query",
@@ -87,6 +87,7 @@ def valid_binding_fields() -> dict[str, object]:
             "store_names": ["Fulya"],
         },
         "data_scope_fingerprint": "d" * 64,
+        "tenant_query_context_fingerprint": "9" * 64,
         "query_contract_id": "ops.kpi.orders.v1",
         "query_contract_revision": 1,
         "query_contract_fingerprint": "e" * 64,
@@ -99,14 +100,14 @@ def valid_binding_fields() -> dict[str, object]:
 
 def test_grant_binding_schema_rejects_unknown_version() -> None:
     fields = valid_binding_fields()
-    fields["version"] = 4
+    fields["version"] = 5
 
     with pytest.raises(ValidationError):
         AiToolGrantBinding.model_validate(fields)
 
 
 def test_grant_binding_schema_rejects_old_versions() -> None:
-    for old_version in (1, 2):
+    for old_version in (1, 2, 3):
         fields = valid_binding_fields()
         fields["version"] = old_version
 
@@ -114,10 +115,11 @@ def test_grant_binding_schema_rejects_old_versions() -> None:
             AiToolGrantBinding.model_validate(fields)
 
 
-def test_grant_binding_requires_trusted_data_and_query_contract() -> None:
+def test_grant_binding_requires_trusted_data_tenant_and_query_contract() -> None:
     for field in (
         "data_scope",
         "data_scope_fingerprint",
+        "tenant_query_context_fingerprint",
         "query_contract_id",
         "query_contract_revision",
         "query_contract_fingerprint",

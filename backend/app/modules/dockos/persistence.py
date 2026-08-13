@@ -49,6 +49,29 @@ def _merge_list(name, baseline, local_rows, remote_rows):
     return list(remote.values())
 
 
+def _apply_rows_preserving_identity(name, target, incoming):
+    """Refresh rows without invalidating references already held by service functions.
+
+    Several canonical RC7.5 mutation paths resolve a reservation/PO before taking
+    STATE_LOCK. PostgreSQL mode refreshes state when the lock is entered. Replacing
+    every dict object would leave those local references stale and make a successful
+    edit/cancel disappear after commit. Preserve the existing dict object for the
+    same natural key and refresh its contents in place.
+    """
+    existing = {_row_key(name, row): row for row in target if isinstance(row, dict)}
+    refreshed = []
+    for source in incoming:
+        key = _row_key(name, source)
+        current = existing.get(key)
+        if isinstance(current, dict) and isinstance(source, dict):
+            current.clear()
+            current.update(copy.deepcopy(source))
+            refreshed.append(current)
+        else:
+            refreshed.append(copy.deepcopy(source))
+    target[:] = refreshed
+
+
 class CrossProcessStateLock:
     def __init__(self):
         self._lock = RLock()
@@ -67,7 +90,7 @@ class CrossProcessStateLock:
         for name, target in self.collections.items():
             key = f'state:{name}'
             if key in values and isinstance(values[key], list):
-                target[:] = copy.deepcopy(values[key])
+                _apply_rows_preserving_identity(name, target, values[key])
         if self.settings is not None:
             for key, value in values.items():
                 if key.startswith('config:'):

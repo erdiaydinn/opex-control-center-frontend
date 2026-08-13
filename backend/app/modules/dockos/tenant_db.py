@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -46,6 +47,25 @@ def write_conn():
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'dockos:{tid}',))
             record_lock_wait((time.perf_counter() - started) * 1000.0)
             yield conn
+
+
+def consume_gateway_replay(timestamp: str, nonce: str, signature: str, ttl_seconds: int) -> bool:
+    token = hashlib.sha256(f'{timestamp}|{nonce}|{signature}'.encode('utf-8')).hexdigest()
+    key = f'gateway-replay:{token}'
+    with pool().connection() as conn:
+        conn.row_factory = dict_row
+        with conn.transaction():
+            tid = _tenant_id(conn)
+            set_tenant(conn, tid)
+            conn.execute(
+                "DELETE FROM dockos.settings WHERE key LIKE 'gateway-replay:%' AND updated_at < now() - (%s * interval '1 second')",
+                (max(60, int(ttl_seconds) * 2),),
+            )
+            row = conn.execute(
+                "INSERT INTO dockos.settings(tenant_id,key,value) VALUES (%s,%s,%s::jsonb) ON CONFLICT (tenant_id,key) DO NOTHING RETURNING key",
+                (tid, key, json.dumps({'timestamp': timestamp, 'nonce': nonce})),
+            ).fetchone()
+            return bool(row)
 
 
 def load_kv(conn, prefixes=('state:','config:')):

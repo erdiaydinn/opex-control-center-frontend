@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import contextmanager
 from psycopg.rows import dict_row
 from .runtime_db import pool
+from .observability import record_lock_wait
 
 
 def tenant_key():
@@ -40,7 +42,9 @@ def write_conn():
         with conn.transaction():
             tid = _tenant_id(conn)
             set_tenant(conn, tid)
+            started = time.perf_counter()
             conn.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'dockos:{tid}',))
+            record_lock_wait((time.perf_counter() - started) * 1000.0)
             yield conn
 
 

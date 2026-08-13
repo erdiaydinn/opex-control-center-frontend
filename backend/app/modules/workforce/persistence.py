@@ -155,7 +155,10 @@ def _entity_id(row: dict, index: int) -> str:
 def _build_audit_record(cursor, event: str, actor: str, details: dict) -> dict:
     tenant_id = _tenant_id()
     cursor.execute(
-        "SELECT hash FROM workforce_audit WHERE tenant_id=%s ORDER BY sequence DESC LIMIT 1 FOR UPDATE",
+        # Callers already hold the tenant-wide advisory transaction lock. A
+        # row lock here would additionally require UPDATE privilege on the
+        # append-only audit table, widening the runtime role for no benefit.
+        "SELECT hash FROM workforce_audit WHERE tenant_id=%s ORDER BY sequence DESC LIMIT 1",
         (tenant_id,),
     )
     previous = cursor.fetchone()

@@ -1,7 +1,7 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -28,11 +28,21 @@ def run_migrations_offline() -> None:
         compare_type=True,
     )
 
+    context.execute(
+        "ALTER TABLE IF EXISTS alembic_version "
+        "ALTER COLUMN version_num TYPE VARCHAR(128)"
+    )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
+    connection.execute(
+        text(
+            "ALTER TABLE IF EXISTS alembic_version "
+            "ALTER COLUMN version_num TYPE VARCHAR(128)"
+        )
+    )
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

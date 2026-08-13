@@ -89,24 +89,22 @@ jobs:
           PY
       - name: Academy lifecycle gates
         run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py
-      - name: Full Platform Core regression on clean database
-        env:
-          OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_regression
-          OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_regression
+      - name: Reset Academy test state before full Core regression
         run: |
           python - <<'PY'
           import asyncio, asyncpg
           async def main():
-              c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/postgres')
+              c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
               try:
-                  if not await c.fetchval("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname='opex_regression')"):
-                      await c.execute('CREATE DATABASE opex_regression')
+                  tables=await c.fetch("SELECT quote_ident(tablename) AS name FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'academy_%'")
+                  if tables:
+                      await c.execute('TRUNCATE TABLE ' + ', '.join(row['name'] for row in tables) + ' CASCADE')
               finally:
                   await c.close()
           asyncio.run(main())
           PY
-          (cd services/core-api && alembic upgrade head)
-          pytest -q services/core-api/tests
+      - name: Full Platform Core regression
+        run: pytest -q services/core-api/tests
 
   academy-build:
     name: Academy composition / frontend build

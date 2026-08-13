@@ -1,7 +1,8 @@
 """Single-use execution grants for authorized Jarvis tool calls.
 
-A capability answers *what* an actor may do and *which data* it may touch. A
-tool grant binds that capability and the current version-controlled downstream
+A capability answers *what* an actor may do and *which role-scoped data* it
+may touch. A tool grant binds that capability, the tenant's authoritative
+query discriminator context, and the current version-controlled downstream
 query contract to exactly one concrete invocation and can be consumed once.
 """
 
@@ -11,7 +12,7 @@ import hashlib
 import json
 import math
 import secrets
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal
 from uuid import UUID
 
@@ -31,6 +32,12 @@ from app.core.ai_query_contract_policy import (
     ai_query_contract_policy_fingerprint,
     get_ai_query_contract_policy,
 )
+from app.core.ai_tenant_query_context import (
+    AiTenantQueryContextInvalid,
+    AiTenantQueryContextRecord,
+    ai_tenant_query_context_fingerprint,
+    get_ai_tenant_query_context,
+)
 from app.core.ai_tool_authorization import (
     TOOL_REQUIRED_SCOPES,
     AiToolCapability,
@@ -39,8 +46,12 @@ from app.core.ai_tool_authorization import (
 
 AI_TOOL_GRANT_DEFAULT_TTL_SECONDS = 30
 AI_TOOL_GRANT_MAX_TTL_SECONDS = 60
-AI_TOOL_GRANT_VERSION = 3
+AI_TOOL_GRANT_VERSION = 4
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
+TenantQueryContextLoader = Callable[
+    [str],
+    Awaitable[AiTenantQueryContextRecord | None],
+]
 
 
 class AiToolGrantError(PermissionError):
@@ -53,6 +64,10 @@ class AiToolGrantInvalid(AiToolGrantError):
 
 class AiToolGrantUnavailable(AiToolGrantError):
     """The distributed grant authority is unavailable."""
+
+
+class AiToolGrantTenantContextUnavailable(AiToolGrantError):
+    """The authoritative tenant query context cannot be used safely."""
 
 
 class AiToolGrantReplayOrExpired(AiToolGrantError):
@@ -69,7 +84,7 @@ class AiToolGrantBinding(BaseModel):
         extra="forbid",
     )
 
-    version: Literal[3]
+    version: Literal[4]
     tenant_id: UUID
     actor_subject: str = Field(
         min_length=1,
@@ -78,6 +93,9 @@ class AiToolGrantBinding(BaseModel):
     tool: AiToolName
     data_scope: AiDataScope
     data_scope_fingerprint: str = Field(
+        pattern=SHA256_PATTERN
+    )
+    tenant_query_context_fingerprint: str = Field(
         pattern=SHA256_PATTERN
     )
     query_contract_id: str = Field(
@@ -108,6 +126,29 @@ class IssuedAiToolGrant(BaseModel):
     token: SecretStr
     expires_in_seconds: int
     binding: AiToolGrantBinding
+
+
+class AuthorizedAiToolInvocation(BaseModel):
+    """Trusted execution context recovered after atomic grant consumption."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    binding: AiToolGrantBinding
+    tenant_entity_ids: tuple[str, ...] = Field(
+        min_length=1,
+        max_length=16,
+    )
+
+
+async def _default_tenant_query_context_loader(
+    tenant_id: str,
+) -> AiTenantQueryContextRecord | None:
+    return await get_ai_tenant_query_context(
+        tenant_id=tenant_id
+    )
 
 
 def _validate_json_value(
@@ -231,6 +272,7 @@ def _query_contract_binding(
     *,
     policy: AiQueryContractPolicy,
     data_scope_fingerprint: str,
+    tenant_query_context_fingerprint: str,
 ) -> tuple[str, str]:
     policy_fingerprint = (
         ai_query_contract_policy_fingerprint(policy)
@@ -238,6 +280,9 @@ def _query_contract_binding(
     execution_fingerprint = ai_execution_scope_fingerprint(
         query_contract_fingerprint=policy_fingerprint,
         data_scope_fingerprint=data_scope_fingerprint,
+        tenant_query_context_fingerprint=(
+            tenant_query_context_fingerprint
+        ),
     )
     return policy_fingerprint, execution_fingerprint
 
@@ -245,6 +290,7 @@ def _query_contract_binding(
 def build_ai_tool_grant_binding(
     capability: AiToolCapability,
     *,
+    tenant_query_context_fingerprint: str,
     arguments: Mapping[str, Any],
     reason: str,
 ) -> AiToolGrantBinding:
@@ -269,6 +315,9 @@ def build_ai_tool_grant_binding(
         data_scope_fingerprint=(
             capability.data_scope_fingerprint
         ),
+        tenant_query_context_fingerprint=(
+            tenant_query_context_fingerprint
+        ),
     )
 
     return AiToolGrantBinding(
@@ -279,6 +328,9 @@ def build_ai_tool_grant_binding(
         data_scope=capability.data_scope,
         data_scope_fingerprint=(
             capability.data_scope_fingerprint
+        ),
+        tenant_query_context_fingerprint=(
+            tenant_query_context_fingerprint
         ),
         query_contract_id=query_policy.contract_id,
         query_contract_revision=(
@@ -308,6 +360,9 @@ class RedisAiToolGrantStore:
         redis_client: Redis,
         *,
         key_prefix: str = "opex:{ai}:tool-grant",
+        tenant_query_context_loader: (
+            TenantQueryContextLoader | None
+        ) = None,
     ) -> None:
         if (
             not isinstance(key_prefix, str)
@@ -320,6 +375,10 @@ class RedisAiToolGrantStore:
 
         self._redis = redis_client
         self._key_prefix = key_prefix
+        self._tenant_query_context_loader = (
+            tenant_query_context_loader
+            or _default_tenant_query_context_loader
+        )
 
     def _key(self, token: str) -> str:
         if (
@@ -336,6 +395,46 @@ class RedisAiToolGrantStore:
         ).hexdigest()
 
         return f"{self._key_prefix}:{digest}"
+
+    async def _load_tenant_query_context(
+        self,
+        *,
+        tenant_id: UUID,
+    ) -> AiTenantQueryContextRecord:
+        expected_tenant_id = str(tenant_id)
+        try:
+            record = await self._tenant_query_context_loader(
+                expected_tenant_id
+            )
+        except AiTenantQueryContextInvalid as exc:
+            raise AiToolGrantTenantContextUnavailable(
+                "Tenant query context is invalid"
+            ) from exc
+        except Exception as exc:
+            raise AiToolGrantTenantContextUnavailable(
+                "Tenant query context authority is unavailable"
+            ) from exc
+
+        if record is None:
+            raise AiToolGrantTenantContextUnavailable(
+                "Tenant query context is not configured"
+            )
+
+        expected_fingerprint = (
+            ai_tenant_query_context_fingerprint(
+                record.context
+            )
+        )
+        if (
+            record.tenant_id != expected_tenant_id
+            or record.record_fingerprint
+            != expected_fingerprint
+        ):
+            raise AiToolGrantTenantContextUnavailable(
+                "Tenant query context authority is inconsistent"
+            )
+
+        return record
 
     async def _consume_stored_binding(
         self,
@@ -387,8 +486,14 @@ class RedisAiToolGrantStore:
                 "AI tool grant TTL is invalid"
             )
 
+        tenant_query_context = await self._load_tenant_query_context(
+            tenant_id=capability.tenant_id
+        )
         binding = build_ai_tool_grant_binding(
             capability,
+            tenant_query_context_fingerprint=(
+                tenant_query_context.record_fingerprint
+            ),
             arguments=arguments,
             reason=reason,
         )
@@ -428,13 +533,19 @@ class RedisAiToolGrantStore:
         arguments: Mapping[str, Any],
         reason: str,
     ) -> AiToolGrantBinding:
-        expected = build_ai_tool_grant_binding(
-            capability,
-            arguments=arguments,
-            reason=reason,
-        )
         stored = await self._consume_stored_binding(
             token=token
+        )
+        tenant_query_context = await self._load_tenant_query_context(
+            tenant_id=capability.tenant_id
+        )
+        expected = build_ai_tool_grant_binding(
+            capability,
+            tenant_query_context_fingerprint=(
+                tenant_query_context.record_fingerprint
+            ),
+            arguments=arguments,
+            reason=reason,
         )
 
         if stored != expected:
@@ -451,8 +562,8 @@ class RedisAiToolGrantStore:
         tool: str,
         arguments: Mapping[str, Any],
         reason: str,
-    ) -> AiToolGrantBinding:
-        """Consume without trusting caller identity or query-contract claims."""
+    ) -> AuthorizedAiToolInvocation:
+        """Consume without trusting caller identity or authority context claims."""
 
         if tool not in TOOL_REQUIRED_SCOPES:
             raise AiToolGrantInvalid(
@@ -478,6 +589,13 @@ class RedisAiToolGrantStore:
             ),
         )
 
+        # Deliberately after Redis GETDEL. If the tenant authority disappears,
+        # changes, or becomes unavailable while a grant is outstanding, that
+        # stale grant is burned and cannot be replayed after recovery.
+        tenant_query_context = await self._load_tenant_query_context(
+            tenant_id=stored.tenant_id
+        )
+
         (
             current_query_contract_fingerprint,
             current_execution_scope_fingerprint,
@@ -486,12 +604,17 @@ class RedisAiToolGrantStore:
             data_scope_fingerprint=(
                 stored.data_scope_fingerprint
             ),
+            tenant_query_context_fingerprint=(
+                tenant_query_context.record_fingerprint
+            ),
         )
 
         if (
             stored.tool != tool
             or stored.arguments_sha256 != arguments_sha256
             or stored.reason_sha256 != reason_sha256
+            or stored.tenant_query_context_fingerprint
+            != tenant_query_context.record_fingerprint
             or stored.query_contract_id != query_policy.contract_id
             or stored.query_contract_revision
             != query_policy.contract_revision
@@ -504,4 +627,9 @@ class RedisAiToolGrantStore:
                 "AI tool grant binding does not match"
             )
 
-        return stored
+        return AuthorizedAiToolInvocation(
+            binding=stored,
+            tenant_entity_ids=(
+                tenant_query_context.context.entity_ids
+            ),
+        )

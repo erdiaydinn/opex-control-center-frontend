@@ -1,7 +1,7 @@
 """Human-reviewed proposal for one append-only orders-v2 consumption entry.
 
 This module binds a successful transition-guard artifact to the exact current
-version-controlled consumption ledger and one explicit reviewer. It only
+version-controlled consumption ledger and one independent reviewer. It only
 produces a reviewable proposal for a later code-reviewed ledger append; it never
 mutates canonical ledger state, query policy, or execution readiness.
 """
@@ -57,7 +57,7 @@ class OrdersV2PolicyConsumptionReviewProposal(BaseModel):
     production_blocker: Literal["orders_v2_consumption_ledger_append_required"]
 
     @model_validator(mode="after")
-    def validate_snapshot(self) -> "OrdersV2PolicyConsumptionReviewProposal":
+    def validate_snapshot(self) -> OrdersV2PolicyConsumptionReviewProposal:
         if self.reviewed_at.tzinfo is None or self.reviewed_at.utcoffset() is None:
             raise ValueError("consumption review timestamp must be timezone-aware")
         return self
@@ -81,10 +81,14 @@ def build_orders_v2_policy_consumption_review_proposal(
     reviewer_identity: str,
     reviewed_at: datetime,
 ) -> OrdersV2PolicyConsumptionReviewProposal:
-    """Bind one human review to exact guard/proposal/ledger state."""
+    """Bind one independent human review to exact guard/proposal/ledger state."""
 
     if reviewed_at.tzinfo is None or reviewed_at.utcoffset() is None:
         raise ValueError("consumption review timestamp must be timezone-aware")
+    if reviewed_at < proposal.proposed_at:
+        raise ValueError("consumption review cannot precede policy proposal")
+    if reviewed_at < guard.evaluated_at:
+        raise ValueError("consumption review cannot precede transition guard")
     if guard.transition_guard_passed is not True:
         raise ValueError("transition guard did not pass")
     if guard.policy_mutation_permitted is not False:
@@ -98,6 +102,10 @@ def build_orders_v2_policy_consumption_review_proposal(
     if proposal.proposal_fingerprint in ledger.consumed_proposal_fingerprints:
         raise ValueError("policy proposal already consumed")
 
+    reviewer_sha256 = sha256_text(reviewer_identity)
+    if reviewer_sha256 == proposal.policy_promoter_identity_sha256:
+        raise ValueError("consumption reviewer must be independent of policy promoter")
+
     proposed_entry = build_next_orders_v2_policy_consumption_entry(
         ledger=ledger,
         proposal_fingerprint=proposal.proposal_fingerprint,
@@ -108,7 +116,7 @@ def build_orders_v2_policy_consumption_review_proposal(
         version=CONSUMPTION_REVIEW_VERSION,
         kind="orders_v2_policy_consumption_review_proposal",
         reviewed_at=reviewed_at,
-        reviewer_identity_sha256=sha256_text(reviewer_identity),
+        reviewer_identity_sha256=reviewer_sha256,
         current_ledger_fingerprint=ledger.ledger_fingerprint,
         proposal_fingerprint=proposal.proposal_fingerprint,
         guard_fingerprint=guard.guard_fingerprint,

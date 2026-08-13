@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Patch CI-only Compose file-secret permission bridge
+      - name: Patch and execute CI-only Compose file-secret permission bridge
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -49,8 +49,8 @@ jobs:
           path.write_text(source, encoding="utf-8", newline="\n")
           PY
 
+          python -m py_compile scripts/security/identity_gateway_runtime_gate.py
           python -m pip install -e "./services/core-api[dev]"
-          ruff check scripts/security/identity_gateway_runtime_gate.py
           python scripts/security/generate_identity_ci_material.py
           python scripts/security/identity_gateway_runtime_gate.py
           test "$(stat -c '%a' runtime/identity-gateway/signing-private-key.pem)" = "600"

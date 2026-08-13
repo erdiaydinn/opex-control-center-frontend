@@ -55,6 +55,7 @@ def live_candidate() -> OrdersV2LiveCrossTenantEvidence:
         authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
         foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
         canonical_returned_rowset='[{"date":"2026-08-13","orders":2}]',
+        foreign_sentinel_source_count=7,
         foreign_sentinel_match_count=0,
     )
 
@@ -62,16 +63,32 @@ def live_candidate() -> OrdersV2LiveCrossTenantEvidence:
 def test_live_evidence_is_bound_but_non_promoting() -> None:
     artifact = live_candidate()
 
+    assert artifact.version == 2
     assert artifact.project == "example-project"
     assert artifact.location == "EU"
     assert artifact.live_bigquery_run_claimed is True
     assert artifact.cryptographically_attested is False
     assert artifact.promotion_eligible is False
     assert artifact.human_review_required is True
+    assert artifact.foreign_sentinel_source_count == 7
     assert artifact.foreign_sentinel_match_count == 0
     assert artifact.production_blocker == LIVE_CROSS_TENANT_REVIEW_BLOCKER
     assert len(artifact.schema_attestation_fingerprint) == 64
     assert len(artifact.evidence_fingerprint) == 64
+
+
+def test_live_evidence_rejects_nonexistent_foreign_sentinel() -> None:
+    with pytest.raises(ValueError, match="not proven"):
+        build_orders_v2_live_cross_tenant_evidence_candidate(
+            schema_attestation=schema_attestation(),
+            executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
+            query_job_id="job-example-123",
+            authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
+            foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
+            canonical_returned_rowset="[]",
+            foreign_sentinel_source_count=0,
+            foreign_sentinel_match_count=0,
+        )
 
 
 def test_live_evidence_rejects_foreign_sentinel_leakage() -> None:
@@ -83,6 +100,7 @@ def test_live_evidence_rejects_foreign_sentinel_leakage() -> None:
             authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
             foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
             canonical_returned_rowset="[]",
+            foreign_sentinel_source_count=7,
             foreign_sentinel_match_count=1,
         )
 
@@ -96,6 +114,7 @@ def test_live_evidence_rejects_same_authorized_and_foreign_scope() -> None:
             authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
             foreign_sentinel_scope_descriptor="entity=TENANT_A;store=Fulya",
             canonical_returned_rowset="[]",
+            foreign_sentinel_source_count=7,
             foreign_sentinel_match_count=0,
         )
 
@@ -110,6 +129,7 @@ def test_live_evidence_rejects_contract_and_promotion_tamper() -> None:
         ("promotion_eligible", True),
         ("cryptographically_attested", True),
         ("human_review_required", False),
+        ("foreign_sentinel_source_count", 0),
         ("foreign_sentinel_match_count", 1),
     ):
         payload = artifact.model_dump(mode="python")

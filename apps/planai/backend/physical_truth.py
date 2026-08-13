@@ -196,26 +196,14 @@ def parse_pack_metrics(product: Dict[str, Any]) -> Dict[str, Any]:
 
 def is_beverage(product: Dict[str, Any]) -> bool:
     raw = _product_text(product)
-    return any(
-        token in raw
-        for token in (
-            " beverage ",
-            " icecek ",
-            " drink ",
-            " water ",
-            " maden suyu ",
-            " mineral ",
-            " soda ",
-            " gazoz ",
-            " cola ",
-            " kola ",
-            " fanta ",
-            " sprite ",
-            " ayran ",
-            " juice ",
-            " meyve suyu ",
+    if any(phrase in raw for phrase in ("maden suyu", "meyve suyu", "mineral water", "sparkling water")):
+        return True
+    return bool(
+        re.search(
+            r"(?:^|[^a-z0-9])(?:beverage|icecek|drink|water|mineral|soda|gazoz|cola|kola|fanta|sprite|ayran|juice|su)(?:[^a-z0-9]|$)",
+            raw,
         )
-    ) or bool(re.search(r"(?:^|\s)su(?:\s|$)", raw))
+    )
 
 
 def is_detergent_or_cleaning(product: Dict[str, Any]) -> bool:

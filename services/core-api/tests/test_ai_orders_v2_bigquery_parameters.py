@@ -32,7 +32,7 @@ def valid_parameters() -> dict[str, object]:
 
 
 def test_parameter_contract_is_exact_and_bound_to_candidate() -> None:
-    assert ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT == (
+    assert (
         BigQueryParameterContractEntry(
             name="start_date",
             mode="SCALAR",
@@ -53,7 +53,7 @@ def test_parameter_contract_is_exact_and_bound_to_candidate() -> None:
             mode="ARRAY",
             value_type="STRING",
         ),
-    )
+    ) == ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT
 
     fingerprint = orders_v2_bigquery_parameter_contract_fingerprint()
     assert len(fingerprint) == 64

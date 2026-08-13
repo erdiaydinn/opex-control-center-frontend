@@ -11,7 +11,7 @@ import hashlib
 import json
 import math
 import secrets
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal
 from uuid import UUID
 
@@ -91,6 +91,12 @@ class IssuedAiToolGrant(BaseModel):
     token: SecretStr
     expires_in_seconds: int
     binding: AiToolGrantBinding
+
+
+QueryContextLoader = Callable[
+    [str],
+    Awaitable[AiTenantQueryContextRecord | None],
+]
 
 
 def _validate_json_value(value: Any, *, path: str) -> None:
@@ -271,7 +277,7 @@ class RedisAiToolGrantStore:
         tool: str,
         arguments: Mapping[str, Any],
         reason: str,
-        query_context: AiTenantQueryContextRecord | None,
+        query_context_loader: QueryContextLoader,
     ) -> AiToolGrantBinding:
         if tool not in TOOL_REQUIRED_SCOPES:
             raise AiToolGrantInvalid("AI tool is not supported")
@@ -279,6 +285,15 @@ class RedisAiToolGrantStore:
         arguments_sha256 = canonical_arguments_sha256(arguments)
         reason_sha256 = canonical_reason_sha256(reason)
         stored = await self._consume_stored_binding(token=token)
+
+        # The tenant comes only from the already-consumed, authenticated grant.
+        # Re-read current DB authority after GETDEL so context rotation burns the
+        # outstanding grant instead of allowing execution with stale entity IDs.
+        try:
+            query_context = await query_context_loader(str(stored.tenant_id))
+        except Exception as exc:
+            raise AiToolGrantUnavailable("AI tenant query context authority is unavailable") from exc
+
         _validate_scope_binding(
             tool=stored.tool,
             arguments=arguments,

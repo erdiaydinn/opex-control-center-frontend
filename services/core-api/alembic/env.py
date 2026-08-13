@@ -43,6 +43,8 @@ def do_run_migrations(connection: Connection) -> None:
             "ALTER COLUMN version_num TYPE VARCHAR(128)"
         )
     )
+    connection.commit()
+
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

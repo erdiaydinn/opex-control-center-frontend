@@ -13,6 +13,10 @@ ALTER TABLE dockos.notification_outbox FORCE ROW LEVEL SECURITY;
 ALTER TABLE dockos.audit_events FORCE ROW LEVEL SECURITY;
 ALTER TABLE dockos.settings FORCE ROW LEVEL SECURITY;
 
+CREATE UNIQUE INDEX IF NOT EXISTS audit_request_id_uk
+  ON dockos.audit_events (tenant_id, request_id)
+  WHERE request_id IS NOT NULL;
+
 CREATE OR REPLACE FUNCTION dockos.audit_append_only_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN

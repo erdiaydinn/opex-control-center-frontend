@@ -27,4 +27,6 @@ def main():
  d=str(date.today()+timedelta(days=8)); prepare(d,3); out=run([(f'PO-LIM-{i:03d}',d,i) for i in range(8)]); assert out.count('APPROVED')==3,out; assert out.count('FAILED')==5,out
  prepare(d,None); out=run([('PO-LIM-000',d,i) for i in range(8)]); assert out.count('APPROVED')==1,out; assert out.count('FAILED')==7,out
  print('POSTGRES_PARALLEL_LIMITS=PASS')
+ from .test_postgres_contracts import main as contract_main
+ contract_main()
 if __name__=='__main__': main()

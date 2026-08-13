@@ -35,6 +35,25 @@ CREATE TABLE IF NOT EXISTS workforce_collection_versions (
   PRIMARY KEY (tenant_id, kind)
 );
 
+CREATE TABLE IF NOT EXISTS workforce_tenant_bindings (
+  role_name name PRIMARY KEY,
+  tenant_id text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+REVOKE ALL ON workforce_tenant_bindings FROM PUBLIC;
+
+CREATE OR REPLACE FUNCTION workforce_current_tenant()
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT binding.tenant_id
+  FROM public.workforce_tenant_bindings AS binding
+  WHERE binding.role_name = session_user
+$$;
+
 CREATE TABLE IF NOT EXISTS workforce_audit (
   sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tenant_id text NOT NULL,
@@ -95,29 +114,29 @@ ALTER TABLE workforce_entities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workforce_entities FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS workforce_entities_tenant ON workforce_entities;
 CREATE POLICY workforce_entities_tenant ON workforce_entities
-  USING (tenant_id = current_setting('app.workforce_tenant', true))
-  WITH CHECK (tenant_id = current_setting('app.workforce_tenant', true));
+  USING (tenant_id = workforce_current_tenant())
+  WITH CHECK (tenant_id = workforce_current_tenant());
 
 ALTER TABLE workforce_collection_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workforce_collection_versions FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS workforce_versions_tenant ON workforce_collection_versions;
 CREATE POLICY workforce_versions_tenant ON workforce_collection_versions
-  USING (tenant_id = current_setting('app.workforce_tenant', true))
-  WITH CHECK (tenant_id = current_setting('app.workforce_tenant', true));
+  USING (tenant_id = workforce_current_tenant())
+  WITH CHECK (tenant_id = workforce_current_tenant());
 
 ALTER TABLE workforce_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workforce_audit FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS workforce_audit_tenant ON workforce_audit;
 CREATE POLICY workforce_audit_tenant ON workforce_audit
-  USING (tenant_id = current_setting('app.workforce_tenant', true))
-  WITH CHECK (tenant_id = current_setting('app.workforce_tenant', true));
+  USING (tenant_id = workforce_current_tenant())
+  WITH CHECK (tenant_id = workforce_current_tenant());
 
 ALTER TABLE workforce_notification_outbox ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workforce_notification_outbox FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS workforce_outbox_tenant ON workforce_notification_outbox;
 CREATE POLICY workforce_outbox_tenant ON workforce_notification_outbox
-  USING (tenant_id = current_setting('app.workforce_tenant', true))
-  WITH CHECK (tenant_id = current_setting('app.workforce_tenant', true));
+  USING (tenant_id = workforce_current_tenant())
+  WITH CHECK (tenant_id = workforce_current_tenant());
 
 INSERT INTO workforce_schema_migrations(version, name)
 VALUES (29, 'workforce tenant atomic snapshot')

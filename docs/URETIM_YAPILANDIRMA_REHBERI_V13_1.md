@@ -49,6 +49,13 @@ commit'i ve tenant-scoped notification outbox oluşturur. `WORKFORCE_TENANT_ID` 
 zorunludur. `/api/workforce/health` içinde `schema_version=29`,
 `atomic_snapshot_audit=true` ve `postgresql=true` görülmeden gerçek personele trafik açmayın.
 
+Runtime PostgreSQL rolü süper kullanıcı veya tablo sahibi olmamalıdır. Migration rolü bir kez
+`workforce_tenant_bindings` tablosuna runtime rolü ile tenant kimliğini bağlamalı ve runtime
+rolüne yalnız entity/version/outbox DML, audit için SELECT+INSERT, migration tablosu için SELECT
+ve gerekli sequence kullanım haklarını vermelidir. RLS tenant seçimini istemcinin değiştirebildiği
+bir session değişkeninden değil bu role→tenant bağından yapar. Aynı runtime rolünü birden fazla
+tenant için kullanmayın.
+
 ## 2. Kurumsal OIDC, JWT ve JWKS
 
 Kurumun IAM/SSO ekibinden OPEX için **public client + Authorization Code + PKCE** kaydı

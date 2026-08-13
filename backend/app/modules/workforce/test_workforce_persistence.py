@@ -42,16 +42,28 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
             "CI_RLS_WRITE",
             "ci",
         )
+        with persistence.connection(persistence.MIGRATION_DATABASE_URL) as database, database.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO workforce_entities(tenant_id,kind,entity_id,payload)
+                   VALUES ('another-tenant',%s,'ROW-OTHER','{"id":"ROW-OTHER"}'::jsonb)""",
+                (kind,),
+            )
+            database.commit()
         with persistence.connection() as database, database.cursor() as cursor:
             persistence._set_tenant(cursor)
             cursor.execute(
-                "SELECT count(*) FROM workforce_entities WHERE tenant_id=%s AND kind=%s",
-                (persistence.TENANT_ID, kind),
+                "SELECT count(*), min(tenant_id), workforce_current_tenant() FROM workforce_entities WHERE kind=%s",
+                (kind,),
             )
-            self.assertEqual(cursor.fetchone()[0], 1)
+            count, visible_tenant, bound_tenant = cursor.fetchone()
+            self.assertEqual(count, 1)
+            self.assertEqual(visible_tenant, persistence.TENANT_ID)
+            self.assertEqual(bound_tenant, persistence.TENANT_ID)
             cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", ("another-tenant",))
-            cursor.execute("SELECT count(*) FROM workforce_entities WHERE kind=%s", (kind,))
-            self.assertEqual(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*), workforce_current_tenant() FROM workforce_entities WHERE kind=%s", (kind,))
+            spoofed_count, still_bound_tenant = cursor.fetchone()
+            self.assertEqual(spoofed_count, 1)
+            self.assertEqual(still_bound_tenant, persistence.TENANT_ID)
 
     def test_stale_snapshot_is_rejected_without_state_or_audit_overwrite(self):
         kind = self.unique_kind("stale")

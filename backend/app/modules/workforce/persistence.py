@@ -20,6 +20,7 @@ from typing import Iterator
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+MIGRATION_DATABASE_URL = os.getenv("WORKFORCE_MIGRATION_DATABASE_URL", "").strip()
 ENVIRONMENT = os.getenv("DOCKOS_ENV", "development").strip().lower()
 TENANT_ID = os.getenv("WORKFORCE_TENANT_ID", "eay" if ENVIRONMENT != "production" else "").strip()
 ENABLED = bool(DATABASE_URL)
@@ -40,17 +41,17 @@ def _tenant_id() -> str:
     return TENANT_ID
 
 
-def _connect():
+def _connect(database_url: str | None = None):
     import psycopg
 
-    return psycopg.connect(DATABASE_URL, autocommit=False)
+    return psycopg.connect(database_url or DATABASE_URL, autocommit=False)
 
 
 @contextmanager
-def connection() -> Iterator[object]:
+def connection(database_url: str | None = None) -> Iterator[object]:
     if not ENABLED:
         raise RuntimeError("PostgreSQL persistence is not configured")
-    with _connect() as database:
+    with _connect(database_url) as database:
         yield database
 
 
@@ -69,7 +70,8 @@ def initialize() -> None:
     auto_migrate = os.getenv(
         "WORKFORCE_AUTO_MIGRATE", "false" if ENVIRONMENT == "production" else "true"
     ).lower() == "true"
-    with connection() as database, database.cursor() as cursor:
+    migration_url = MIGRATION_DATABASE_URL or DATABASE_URL
+    with connection(migration_url if auto_migrate else DATABASE_URL) as database, database.cursor() as cursor:
         _set_tenant(cursor)
         if auto_migrate:
             cursor.execute(_MIGRATION_PATH.read_text(encoding="utf-8"))
@@ -366,8 +368,9 @@ def ready() -> bool:
     try:
         with connection() as database, database.cursor() as cursor:
             _set_tenant(cursor)
-            cursor.execute("SELECT 1")
-            database_ok = cursor.fetchone()[0] == 1
+            cursor.execute("SELECT 1, workforce_current_tenant()")
+            one, mapped_tenant = cursor.fetchone()
+            database_ok = one == 1 and mapped_tenant == TENANT_ID
         return database_ok and schema_version() >= SCHEMA_VERSION
     except Exception:
         return False

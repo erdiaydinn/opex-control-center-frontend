@@ -63,9 +63,10 @@ jobs:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      DATABASE_URL: postgresql://workforce_runtime:workforce_runtime_ci@localhost:5432/workforce_ci
+      WORKFORCE_MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
       WORKFORCE_TENANT_ID: eay-ci
-      WORKFORCE_AUTO_MIGRATE: "true"
+      WORKFORCE_AUTO_MIGRATE: "false"
       DOCKOS_ENV: test
     steps:
       - uses: actions/checkout@v5
@@ -75,4 +76,5 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
+      - run: python scripts/setup_workforce_postgres_ci.py
       - run: python -m unittest app.modules.workforce.test_workforce_persistence

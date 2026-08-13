@@ -17,6 +17,11 @@ from app.core.ai_orders_v2_policy_consumption_ledger import (
     OrdersV2PolicyConsumptionLedger,
     get_orders_v2_policy_consumption_ledger,
 )
+from app.core.ai_orders_v2_policy_consumption_patch import (
+    CONSUMPTION_PATCH_BLOCKER,
+    OrdersV2PolicyConsumptionPatchArtifact,
+    build_orders_v2_policy_consumption_patch_candidate,
+)
 from app.core.ai_orders_v2_policy_consumption_review import (
     CONSUMPTION_REVIEW_BLOCKER,
     OrdersV2PolicyConsumptionReviewProposal,
@@ -68,7 +73,7 @@ def _guard(proposal: OrdersV2ManualPolicyPromotionProposal):
     )
 
 
-def test_consumption_review_binds_exact_ledger_proposal_and_guard() -> None:
+def _review():
     ledger = get_orders_v2_policy_consumption_ledger()
     proposal = _proposal()
     guard = _guard(proposal)
@@ -79,6 +84,11 @@ def test_consumption_review_binds_exact_ledger_proposal_and_guard() -> None:
         reviewer_identity="reviewer@example.invalid",
         reviewed_at=proposal.proposed_at + timedelta(hours=1, minutes=5),
     )
+    return ledger, proposal, guard, review
+
+
+def test_consumption_review_binds_exact_ledger_proposal_and_guard() -> None:
+    ledger, proposal, guard, review = _review()
 
     assert review.current_ledger_fingerprint == ledger.ledger_fingerprint
     assert review.proposal_fingerprint == proposal.proposal_fingerprint
@@ -202,3 +212,54 @@ def test_consumption_review_rejects_tamper_and_hides_raw_identity() -> None:
         OrdersV2PolicyConsumptionReviewProposal.model_validate(payload)
 
     assert raw_identity not in review.model_dump_json()
+
+
+def test_consumption_patch_binds_review_to_exact_next_ledger_state() -> None:
+    ledger, _, _, review = _review()
+    patch = build_orders_v2_policy_consumption_patch_candidate(
+        ledger=ledger,
+        review=review,
+    )
+
+    assert patch.review_fingerprint == review.review_fingerprint
+    assert patch.current_ledger_fingerprint == ledger.ledger_fingerprint
+    assert patch.proposed_entry_fingerprint == review.proposed_entry_fingerprint
+    assert patch.expected_next_sequence == 1
+    assert patch.resulting_ledger_fingerprint != ledger.ledger_fingerprint
+    assert patch.append_validation_passed is True
+    assert patch.manual_version_control_commit_required is True
+    assert patch.ledger_mutation_permitted is False
+    assert patch.policy_mutation_permitted is False
+    assert patch.execution_enable_permitted is False
+    assert patch.promotion_eligible is False
+    assert patch.production_ready is False
+    assert patch.production_blocker == CONSUMPTION_PATCH_BLOCKER
+    assert len(patch.patch_fingerprint) == 64
+    assert ledger.entries == ()
+
+
+def test_consumption_patch_rejects_entry_sequence_and_mutation_tamper() -> None:
+    ledger, _, _, review = _review()
+
+    with pytest.raises(ValueError, match="entry fingerprint"):
+        build_orders_v2_policy_consumption_patch_candidate(
+            ledger=ledger,
+            review=review.model_copy(
+                update={"proposed_entry_fingerprint": "f" * 64}
+            ),
+        )
+
+    with pytest.raises(ValueError, match="sequence mismatch"):
+        build_orders_v2_policy_consumption_patch_candidate(
+            ledger=ledger,
+            review=review.model_copy(update={"proposed_entry_sequence": 2}),
+        )
+
+    patch = build_orders_v2_policy_consumption_patch_candidate(
+        ledger=ledger,
+        review=review,
+    )
+    payload = patch.model_dump(mode="python")
+    payload["ledger_mutation_permitted"] = True
+    with pytest.raises(ValidationError):
+        OrdersV2PolicyConsumptionPatchArtifact.model_validate(payload)

@@ -7,8 +7,11 @@ from pydantic import ValidationError
 
 from app.core.ai_orders_v2_human_promotion_review import (
     HUMAN_PROMOTION_RELEASE_BLOCKER,
+    ORDERS_V2_DEPLOYMENT_BLOCKER,
     OrdersV2HumanPromotionReviewArtifact,
+    OrdersV2ReleaseGateArtifact,
     build_orders_v2_human_promotion_review,
+    build_orders_v2_release_gate_artifact,
 )
 from app.core.ai_orders_v2_live_cross_tenant_evidence import (
     OrdersV2LiveCrossTenantEvidence,
@@ -74,6 +77,15 @@ def human_review() -> OrdersV2HumanPromotionReviewArtifact:
         reviewer_identity="reviewer@example.invalid",
         review_context="ticket=EAY-ORDERS-V2-REVIEW-001",
         reviewed_at=datetime(2026, 8, 13, 8, 0, tzinfo=UTC),
+    )
+
+
+def release_gate() -> OrdersV2ReleaseGateArtifact:
+    return build_orders_v2_release_gate_artifact(
+        human_review=human_review(),
+        release_manifest="orders-v2 release manifest revision 1",
+        release_approver_identity="release-approver@example.invalid",
+        released_at=datetime(2026, 8, 13, 9, 0, tzinfo=UTC),
     )
 
 
@@ -172,3 +184,79 @@ def test_human_review_does_not_store_raw_reviewer_or_review_context() -> None:
 
     assert "reviewer@example.invalid" not in rendered
     assert "EAY-ORDERS-V2-REVIEW-001" not in rendered
+
+
+def test_release_gate_is_deployment_candidate_but_never_deploys() -> None:
+    artifact = release_gate()
+
+    assert artifact.release_decision == "APPROVE_FOR_DEPLOYMENT_GATE"
+    assert artifact.release_gate_completed is True
+    assert artifact.deployment_gate_candidate is True
+    assert artifact.deployment_gate_required is True
+    assert artifact.policy_mutation_permitted is False
+    assert artifact.execution_enable_permitted is False
+    assert artifact.promotion_eligible is False
+    assert artifact.production_ready is False
+    assert artifact.production_blocker == ORDERS_V2_DEPLOYMENT_BLOCKER
+    assert len(artifact.release_manifest_sha256) == 64
+    assert len(artifact.release_approver_identity_sha256) == 64
+    assert len(artifact.human_review_fingerprint) == 64
+    assert len(artifact.release_gate_fingerprint) == 64
+
+    active = AI_QUERY_CONTRACT_POLICIES["ops_kpi_query"]
+    assert active.contract_id == "ops.kpi.orders.v1"
+    assert active.production_ready is False
+
+
+def test_release_gate_rejects_naive_timestamp_and_empty_review_inputs() -> None:
+    review = human_review()
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_orders_v2_release_gate_artifact(
+            human_review=review,
+            release_manifest="orders-v2 release manifest revision 1",
+            release_approver_identity="release-approver@example.invalid",
+            released_at=datetime(2026, 8, 13, 9, 0),
+        )
+
+    for manifest, approver in (
+        ("", "release-approver@example.invalid"),
+        ("orders-v2 release manifest revision 1", ""),
+    ):
+        with pytest.raises(ValueError, match="non-empty"):
+            build_orders_v2_release_gate_artifact(
+                human_review=review,
+                release_manifest=manifest,
+                release_approver_identity=approver,
+                released_at=datetime(2026, 8, 13, 9, 0, tzinfo=UTC),
+            )
+
+
+def test_release_gate_rejects_contract_and_deployment_tamper() -> None:
+    artifact = release_gate()
+
+    for field, value in (
+        ("candidate_template_fingerprint", "f" * 64),
+        ("parameter_contract_fingerprint", "f" * 64),
+        ("sdk_adapter_fingerprint", "f" * 64),
+        ("release_decision", "REJECT"),
+        ("release_gate_completed", False),
+        ("deployment_gate_candidate", False),
+        ("deployment_gate_required", False),
+        ("policy_mutation_permitted", True),
+        ("execution_enable_permitted", True),
+        ("promotion_eligible", True),
+        ("production_ready", True),
+    ):
+        payload = artifact.model_dump(mode="python")
+        payload[field] = value
+        with pytest.raises(ValidationError):
+            OrdersV2ReleaseGateArtifact.model_validate(payload)
+
+
+def test_release_gate_does_not_store_raw_manifest_or_approver() -> None:
+    artifact = release_gate()
+    rendered = artifact.model_dump_json()
+
+    assert "orders-v2 release manifest revision 1" not in rendered
+    assert "release-approver@example.invalid" not in rendered

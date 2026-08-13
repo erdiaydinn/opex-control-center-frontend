@@ -50,6 +50,8 @@ jobs:
           services/core-api/app/core/ai_orders_v2_policy_transition_guard.py
           services/core-api/app/core/ai_orders_v2_policy_consumption_proposal.py
           services/core-api/app/core/ai_orders_v2_policy_consumption_review.py
+          services/core-api/app/core/ai_orders_v2_policy_consumption_patch.py
+          services/core-api/app/core/ai_orders_v2_policy_consumption_commit_attestation.py
           services/core-api/app/cli/attest_orders_v2_schema.py
           services/core-api/tests/test_ai_orders_v2_schema_attestation.py
           services/core-api/tests/test_ai_orders_v2_live_cross_tenant_evidence.py
@@ -59,6 +61,8 @@ jobs:
           services/core-api/tests/test_ai_orders_v2_policy_transition_guard.py
           services/core-api/tests/test_ai_orders_v2_policy_consumption_proposal.py
           services/core-api/tests/test_ai_orders_v2_policy_consumption_review.py
+          services/core-api/tests/test_ai_orders_v2_policy_consumption_patch.py
+          services/core-api/tests/test_ai_orders_v2_policy_consumption_commit_attestation.py
       - name: Test evidence and approvals remain fail-closed and non-promoting
         run: >-
           pytest -q
@@ -70,6 +74,8 @@ jobs:
           services/core-api/tests/test_ai_orders_v2_policy_transition_guard.py
           services/core-api/tests/test_ai_orders_v2_policy_consumption_proposal.py
           services/core-api/tests/test_ai_orders_v2_policy_consumption_review.py
+          services/core-api/tests/test_ai_orders_v2_policy_consumption_patch.py
+          services/core-api/tests/test_ai_orders_v2_policy_consumption_commit_attestation.py
           services/core-api/tests/test_ai_orders_v2_live_schema_collector.py
           services/core-api/tests/test_ai_orders_v2_schema_evidence.py
           services/core-api/tests/test_ai_orders_v2_synthetic_proof.py

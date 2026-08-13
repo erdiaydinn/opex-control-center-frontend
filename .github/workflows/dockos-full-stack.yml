@@ -91,8 +91,52 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_dockos_postgres.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_runtime_hardening.sql
           psql "$DATABASE_URL" -Atc "SELECT version FROM dockos.schema_migrations ORDER BY version;"
+      - name: Gateway replay and rotation acceptance
+        run: python -m app.modules.dockos.test_gateway_replay
       - run: python -m app.modules.dockos.test_postgres_concurrency
       - run: python -m app.modules.dockos.test_postgres_limits
+      - name: Multi-worker HTTP load and DB resilience acceptance
+        run: |
+          python -m app.modules.dockos.test_http_multiworker_load prepare
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8090 --workers 4 >/tmp/dockos-uvicorn.log 2>&1 &
+          API_PID=$!
+          trap 'kill $API_PID >/dev/null 2>&1 || true; cat /tmp/dockos-uvicorn.log || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8090/health
+          python -m app.modules.dockos.test_http_multiworker_load run
+          curl -fsS http://127.0.0.1:8090/api/dockos/ops/metrics >/tmp/dockos.metrics
+          grep -q 'dockos_reservation_latency_p95_ms' /tmp/dockos.metrics
+          grep -q 'dockos_lock_wait_p95_ms' /tmp/dockos.metrics
+          grep -q 'dockos_outbox_oldest_age_seconds' /tmp/dockos.metrics
+          grep -q 'dockos_db_pool_saturation_ratio' /tmp/dockos.metrics
+
+          PG_ID=$(docker ps --filter ancestor=postgres:16-alpine -q | head -1)
+          test -n "$PG_ID"
+          docker pause "$PG_ID"
+          if curl -fsS --max-time 2 -H 'X-OPEX-User: erdi.aydin@yemeksepeti.com' -H 'X-OPEX-Role: admin' http://127.0.0.1:8090/api/dockos/reservations >/dev/null; then
+            echo 'DB_NETWORK_INTERRUPTION=FAIL request unexpectedly succeeded'
+            docker unpause "$PG_ID"
+            exit 1
+          fi
+          echo 'DB_NETWORK_INTERRUPTION=PASS fail-closed while database paused'
+          docker unpause "$PG_ID"
+          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U dockos -d dockos && break || sleep 1; done
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 -H 'X-OPEX-User: erdi.aydin@yemeksepeti.com' -H 'X-OPEX-Role: admin' http://127.0.0.1:8090/api/dockos/reservations >/dev/null; then echo 'DB_NETWORK_RECOVERY=PASS'; break; fi
+            sleep 1
+            test "$i" != "30"
+          done
+
+          docker restart "$PG_ID" >/dev/null
+          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U dockos -d dockos && break || sleep 1; done
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 -H 'X-OPEX-User: erdi.aydin@yemeksepeti.com' -H 'X-OPEX-Role: admin' http://127.0.0.1:8090/api/dockos/reservations >/dev/null; then echo 'DB_RESTART_RECOVERY=PASS'; break; fi
+            sleep 1
+            test "$i" != "30"
+          done
       - name: PostgreSQL backup and restore acceptance
         run: |
           pg_dump "$DATABASE_URL" --format=custom --file=/tmp/dockos.dump

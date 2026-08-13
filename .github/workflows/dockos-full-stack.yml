@@ -2,8 +2,11 @@ name: DockOS full-stack validation
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - product/workforce-**
 
 jobs:
   frontend:
@@ -37,4 +40,4 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app
-      - run: python -m unittest app.modules.workforce.test_workforce app.modules.recruitment.test_recruitment app.test_security app.modules.dockos.test_rc2 app.modules.inventory.test_inventory app.modules.inventory.test_inventory_scope
+      - run: python -m unittest app.modules.workforce.test_workforce app.modules.workforce.test_workforce_api app.modules.recruitment.test_recruitment app.test_security app.modules.dockos.test_rc2 app.modules.inventory.test_inventory app.modules.inventory.test_inventory_scope

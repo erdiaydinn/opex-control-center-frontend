@@ -16,6 +16,8 @@ runtime/
 # Personal/workforce imports, runtime databases and key material.
 backend/data/
 data/
+!backend/app/modules/workforce/data/
+!backend/app/modules/workforce/data/warehouses.json
 secrets/
 *.db
 *.sqlite

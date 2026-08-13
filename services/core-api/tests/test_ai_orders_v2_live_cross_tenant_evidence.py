@@ -51,12 +51,35 @@ def live_candidate() -> OrdersV2LiveCrossTenantEvidence:
     return build_orders_v2_live_cross_tenant_evidence_candidate(
         schema_attestation=schema_attestation(),
         executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
-        query_job_id="job-example-123",
+        query_job_id="job-candidate-123",
+        foreign_reference_job_id="job-reference-456",
+        scoped_diagnostic_job_id="job-diagnostic-789",
         authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
         foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
         canonical_returned_rowset='[{"date":"2026-08-13","orders":2}]',
         foreign_sentinel_source_count=7,
         foreign_sentinel_match_count=0,
+    )
+
+
+def _build_with_counts(
+    *,
+    foreign_source_count: int = 7,
+    foreign_match_count: int = 0,
+    authorized_scope: str = "entity=TENANT_A;store=Fulya",
+    foreign_scope: str = "entity=TENANT_B;store=Fulya",
+) -> OrdersV2LiveCrossTenantEvidence:
+    return build_orders_v2_live_cross_tenant_evidence_candidate(
+        schema_attestation=schema_attestation(),
+        executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
+        query_job_id="job-candidate-123",
+        foreign_reference_job_id="job-reference-456",
+        scoped_diagnostic_job_id="job-diagnostic-789",
+        authorized_scope_descriptor=authorized_scope,
+        foreign_sentinel_scope_descriptor=foreign_scope,
+        canonical_returned_rowset="[]",
+        foreign_sentinel_source_count=foreign_source_count,
+        foreign_sentinel_match_count=foreign_match_count,
     )
 
 
@@ -73,49 +96,28 @@ def test_live_evidence_is_bound_but_non_promoting() -> None:
     assert artifact.foreign_sentinel_source_count == 7
     assert artifact.foreign_sentinel_match_count == 0
     assert artifact.production_blocker == LIVE_CROSS_TENANT_REVIEW_BLOCKER
+    assert len(artifact.query_job_id_sha256) == 64
+    assert len(artifact.foreign_reference_job_id_sha256) == 64
+    assert len(artifact.scoped_diagnostic_job_id_sha256) == 64
     assert len(artifact.schema_attestation_fingerprint) == 64
     assert len(artifact.evidence_fingerprint) == 64
 
 
 def test_live_evidence_rejects_nonexistent_foreign_sentinel() -> None:
     with pytest.raises(ValueError, match="not proven"):
-        build_orders_v2_live_cross_tenant_evidence_candidate(
-            schema_attestation=schema_attestation(),
-            executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
-            query_job_id="job-example-123",
-            authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
-            foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
-            canonical_returned_rowset="[]",
-            foreign_sentinel_source_count=0,
-            foreign_sentinel_match_count=0,
-        )
+        _build_with_counts(foreign_source_count=0)
 
 
 def test_live_evidence_rejects_foreign_sentinel_leakage() -> None:
     with pytest.raises(ValueError, match="leakage"):
-        build_orders_v2_live_cross_tenant_evidence_candidate(
-            schema_attestation=schema_attestation(),
-            executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
-            query_job_id="job-example-123",
-            authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
-            foreign_sentinel_scope_descriptor="entity=TENANT_B;store=Fulya",
-            canonical_returned_rowset="[]",
-            foreign_sentinel_source_count=7,
-            foreign_sentinel_match_count=1,
-        )
+        _build_with_counts(foreign_match_count=1)
 
 
 def test_live_evidence_rejects_same_authorized_and_foreign_scope() -> None:
     with pytest.raises(ValidationError, match="distinct"):
-        build_orders_v2_live_cross_tenant_evidence_candidate(
-            schema_attestation=schema_attestation(),
-            executed_at=datetime(2026, 8, 13, 7, 0, tzinfo=UTC),
-            query_job_id="job-example-123",
-            authorized_scope_descriptor="entity=TENANT_A;store=Fulya",
-            foreign_sentinel_scope_descriptor="entity=TENANT_A;store=Fulya",
-            canonical_returned_rowset="[]",
-            foreign_sentinel_source_count=7,
-            foreign_sentinel_match_count=0,
+        _build_with_counts(
+            authorized_scope="entity=TENANT_A;store=Fulya",
+            foreign_scope="entity=TENANT_A;store=Fulya",
         )
 
 
@@ -145,4 +147,6 @@ def test_live_evidence_does_not_store_raw_scope_or_job_id() -> None:
     assert "TENANT_A" not in rendered
     assert "TENANT_B" not in rendered
     assert "Fulya" not in rendered
-    assert "job-example-123" not in rendered
+    assert "job-candidate-123" not in rendered
+    assert "job-reference-456" not in rendered
+    assert "job-diagnostic-789" not in rendered

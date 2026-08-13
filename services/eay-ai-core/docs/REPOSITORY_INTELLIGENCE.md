@@ -48,7 +48,7 @@ Before every append, existing history is fully reloaded and hash-chain verified.
 
 Writes use a temporary file + `fsync` + atomic replacement for the snapshot artifact, followed by a separately `fsync`'d index append. If the index commit fails, the just-written unindexed snapshot is removed so partial history does not appear committed. JSON reload normalizes symbol/contract arrays back to immutable tuples before chain validation.
 
-This filesystem store is local-first durable project memory. It is not WORM/tamper-proof storage against an operating-system or disk administrator; cryptographically signed external checkpoints are a future control if stronger evidentiary guarantees are required.
+This filesystem store is local-first durable project memory. It is not WORM/tamper-proof storage against an operating-system or disk administrator.
 
 ## Safe contract extraction
 
@@ -84,6 +84,31 @@ Historical truth is not reinterpreted under today's registry. `load_repository_r
 
 This means repository project memory now preserves both temporal axes: the reviewed repository commit and the exact source-registry revision that governed the review.
 
+## Signed external checkpoints
+
+`app/repository_memory_checkpoint.py` adds an optional independent anchor above the local append-only store. It does **not** convert the filesystem into WORM storage. Instead, an operator can periodically sign the verified head of one or more repository-memory chains and copy the resulting JSON artifact to a separately administered location.
+
+Checkpoint provenance is intentionally minimal:
+
+`registry fingerprint -> registry entry/repository -> snapshot count -> head snapshot fingerprint -> reviewed commit SHA -> review timestamp`
+
+Security properties:
+
+- every requested repository chain is fully reloaded and verified before signing,
+- checkpoint payloads are SHA-256 fingerprinted,
+- signatures use a **dedicated Ed25519 key** loaded from a file; raw private-key material is never accepted as an API argument and never exported,
+- the signer public key is bound by SHA-256 fingerprint plus explicit key ID,
+- checkpoint signatures are deterministic for the same key and payload,
+- checkpoint artifacts can themselves form a `previous_checkpoint_fingerprint` chain,
+- key rotation is supported by resolving each checkpoint's explicit signer key ID during chain verification,
+- cross-registry checkpoint history is verified by resolving each exact historical registry fingerprint rather than silently using the newest registry,
+- a checkpoint remains valid after later repository snapshots are appended because it anchors a specific historical position; callers may additionally require that it still represents the current head,
+- truncation, reordered/broken checkpoint history, wrong public key, payload/signature tamper, registry substitution, or missing historical registry revision fail closed,
+- exported checkpoint JSON contains signatures, public-key fingerprints, repository identities and hashes only; no raw source, tokens, credentials, private keys, or model data are included,
+- checkpoint export is atomic and refuses overwrite of an existing target path.
+
+Checkpoint signing keys are a separate trust domain from Jarvis machine identity, Identity Gateway, model signing, or any application JWT key. Do not reuse those private keys. Provision the checkpoint key through an external secret/host mount, publish only its public key to verifiers, and place exported checkpoints in a separately controlled system if independent evidence durability is required.
+
 ## External-source policy
 
 External repositories are reference/adoption inputs, not architecture authority. Each reviewed external source records license status, capability mapping, reviewed ref/SHA, and one of `ADOPT`, `WATCH`, `REFERENCE`, `REJECT`, or `PENDING`.
@@ -94,4 +119,4 @@ The supplied `council-of-high-intelligence-main.zip` archive is bound to verifie
 
 ## Next layer
 
-The next repository-intelligence slice should add optional signed checkpoint/export support so a local append-only chain can be independently anchored without claiming filesystem WORM guarantees. In parallel, continue exact upstream/license recovery for unresolved supplied archives and previously selected discovered repositories, never weakening registry completeness or commercial-license gates.
+Continue exact upstream/license recovery for unresolved supplied archives and previously selected discovered repositories without weakening registry completeness or commercial-license gates. After source identities are recovered, add provenance-bound read-only reviews for the highest-value verified repositories and keep checkpoint/public-key operational guidance separate from application execution authority.

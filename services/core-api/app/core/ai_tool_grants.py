@@ -145,16 +145,32 @@ def canonical_reason_sha256(reason: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def _validate_scope_binding(*, tool: str, arguments: Mapping[str, Any], data_scope: AiDataScope, data_scope_fingerprint: str) -> None:
+def _validate_scope_binding(
+    *,
+    tool: str,
+    arguments: Mapping[str, Any],
+    data_scope: AiDataScope,
+    data_scope_fingerprint: str,
+) -> None:
     if data_scope_fingerprint != ai_data_scope_fingerprint(data_scope):
         raise AiToolGrantInvalid("AI tool data scope fingerprint does not match")
     try:
-        validate_ai_data_scope_invocation(tool=tool, arguments=arguments, data_scope=data_scope)
+        validate_ai_data_scope_invocation(
+            tool=tool,
+            arguments=arguments,
+            data_scope=data_scope,
+        )
     except AiDataScopeError as exc:
-        raise AiToolGrantInvalid("AI tool invocation exceeds authorized data scope") from exc
+        raise AiToolGrantInvalid(
+            "AI tool invocation exceeds authorized data scope"
+        ) from exc
 
 
-def _query_contract_binding(*, policy: AiQueryContractPolicy, data_scope_fingerprint: str) -> tuple[str, str]:
+def _query_contract_binding(
+    *,
+    policy: AiQueryContractPolicy,
+    data_scope_fingerprint: str,
+) -> tuple[str, str]:
     policy_fingerprint = ai_query_contract_policy_fingerprint(policy)
     execution_fingerprint = ai_execution_scope_fingerprint(
         query_contract_fingerprint=policy_fingerprint,
@@ -217,7 +233,12 @@ def _stored_context_binding(stored: AiToolGrantBinding) -> AiQueryContextBinding
 
 
 class RedisAiToolGrantStore:
-    def __init__(self, redis_client: Redis, *, key_prefix: str = "opex:{ai}:tool-grant") -> None:
+    def __init__(
+        self,
+        redis_client: Redis,
+        *,
+        key_prefix: str = "opex:{ai}:tool-grant",
+    ) -> None:
         if not isinstance(key_prefix, str) or not key_prefix or len(key_prefix) > 128:
             raise ValueError("AI tool grant key prefix is invalid")
         self._redis = redis_client
@@ -233,7 +254,9 @@ class RedisAiToolGrantStore:
         try:
             payload = await self._redis.getdel(key)
         except RedisError as exc:
-            raise AiToolGrantUnavailable("AI tool grant authority is unavailable") from exc
+            raise AiToolGrantUnavailable(
+                "AI tool grant authority is unavailable"
+            ) from exc
         if payload is None:
             raise AiToolGrantReplayOrExpired("AI tool grant is unavailable")
         if isinstance(payload, bytes):
@@ -252,7 +275,11 @@ class RedisAiToolGrantStore:
         query_context: AiTenantQueryContextRecord | None,
         ttl_seconds: int = AI_TOOL_GRANT_DEFAULT_TTL_SECONDS,
     ) -> IssuedAiToolGrant:
-        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or not 1 <= ttl_seconds <= AI_TOOL_GRANT_MAX_TTL_SECONDS:
+        if (
+            isinstance(ttl_seconds, bool)
+            or not isinstance(ttl_seconds, int)
+            or not 1 <= ttl_seconds <= AI_TOOL_GRANT_MAX_TTL_SECONDS
+        ):
             raise ValueError("AI tool grant TTL is invalid")
         binding = build_ai_tool_grant_binding(
             capability,
@@ -263,12 +290,23 @@ class RedisAiToolGrantStore:
         token = secrets.token_urlsafe(32)
         key = self._key(token)
         try:
-            created = await self._redis.set(key, binding.model_dump_json(), ex=ttl_seconds, nx=True)
+            created = await self._redis.set(
+                key,
+                binding.model_dump_json(),
+                ex=ttl_seconds,
+                nx=True,
+            )
         except RedisError as exc:
-            raise AiToolGrantUnavailable("AI tool grant authority is unavailable") from exc
+            raise AiToolGrantUnavailable(
+                "AI tool grant authority is unavailable"
+            ) from exc
         if created is not True:
             raise AiToolGrantUnavailable("AI tool grant could not be issued safely")
-        return IssuedAiToolGrant(token=SecretStr(token), expires_in_seconds=ttl_seconds, binding=binding)
+        return IssuedAiToolGrant(
+            token=SecretStr(token),
+            expires_in_seconds=ttl_seconds,
+            binding=binding,
+        )
 
     async def consume_authorized_invocation(
         self,
@@ -292,7 +330,9 @@ class RedisAiToolGrantStore:
         try:
             query_context = await query_context_loader(str(stored.tenant_id))
         except Exception as exc:
-            raise AiToolGrantUnavailable("AI tenant query context authority is unavailable") from exc
+            raise AiToolGrantUnavailable(
+                "AI tenant query context authority is unavailable"
+            ) from exc
 
         _validate_scope_binding(
             tool=stored.tool,
@@ -300,7 +340,10 @@ class RedisAiToolGrantStore:
             data_scope=stored.data_scope,
             data_scope_fingerprint=stored.data_scope_fingerprint,
         )
-        current_query_contract_fingerprint, current_execution_scope_fingerprint = _query_contract_binding(
+        (
+            current_query_contract_fingerprint,
+            current_execution_scope_fingerprint,
+        ) = _query_contract_binding(
             policy=query_policy,
             data_scope_fingerprint=stored.data_scope_fingerprint,
         )
@@ -311,7 +354,9 @@ class RedisAiToolGrantStore:
                 execution_scope_fingerprint=current_execution_scope_fingerprint,
             )
         except PermissionError as exc:
-            raise AiToolGrantBindingMismatch("AI tool grant query context changed") from exc
+            raise AiToolGrantBindingMismatch(
+                "AI tool grant query context changed"
+            ) from exc
         if (
             stored.tool != tool
             or stored.arguments_sha256 != arguments_sha256

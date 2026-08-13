@@ -65,6 +65,7 @@ jobs:
           services/core-api/tests/test_ai_tenant_query_context.py
           services/core-api/tests/test_ai_tenant_query_context_fail_closed.py
           services/core-api/tests/test_ai_tenant_query_context_integration.py
+          services/core-api/tests/test_ai_tenant_query_context_migration_security.py
           services/core-api/alembic/versions/0010_ai_tenant_query_context.py
       - name: Test unit and route contracts
         run: >-
@@ -129,6 +130,7 @@ jobs:
       - name: Test RLS atomic audit and SQL boundary
         run: >-
           pytest -q
+          services/core-api/tests/test_ai_tenant_query_context_migration_security.py
           services/core-api/tests/test_ai_tenant_query_context_integration.py
           services/core-api/tests/test_sql_access_boundary.py
       - name: Verify migration head

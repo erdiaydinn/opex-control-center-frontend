@@ -32,6 +32,23 @@ OIDC'ye ait `VITE_...` değerleri frontend derleme zamanında alındığı için
 değişikliğinden sonra `--build frontend` zorunludur. Backend/push/WORM değişikliklerinde
 ilgili container'ı yeniden oluşturmak gerekir.
 
+### Workforce V29 PostgreSQL migration kapısı
+
+Production backend kendi kendine DDL çalıştırmaz. Uygulamayı başlatmadan önce migration
+rolüyle `backend/migrations/002_workforce_v29.sql` uygulanmalıdır. Runtime rolünün tablo
+sahibi veya migration rolü olması gerekmez.
+
+```dotenv
+DATABASE_URL=postgresql://opex_runtime:...@postgres:5432/opex
+WORKFORCE_TENANT_ID=eay-tr
+WORKFORCE_AUTO_MIGRATE=false
+```
+
+Migration; tenant bazlı row-level security, koleksiyon revision kaydı, atomik state+audit
+commit'i ve tenant-scoped notification outbox oluşturur. `WORKFORCE_TENANT_ID` production'da
+zorunludur. `/api/workforce/health` içinde `schema_version=29`,
+`atomic_snapshot_audit=true` ve `postgresql=true` görülmeden gerçek personele trafik açmayın.
+
 ## 2. Kurumsal OIDC, JWT ve JWKS
 
 Kurumun IAM/SSO ekibinden OPEX için **public client + Authorization Code + PKCE** kaydı

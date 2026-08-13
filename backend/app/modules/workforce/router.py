@@ -128,9 +128,13 @@ def _scoped_person_id(request: Request, requested: str | None, role: str) -> str
 
 @router.get("/health")
 def health() -> dict:
-    from .persistence import ENABLED, ready
+    from .persistence import ENABLED, SCHEMA_VERSION, TENANT_ID, ready, schema_version
     production = os.getenv("DOCKOS_ENV", "development").lower() == "production"
+    current_schema_version = schema_version() or 0
     controls = {
+        "postgresql": ENABLED and ready(),
+        "tenant_id": bool(TENANT_ID),
+        "atomic_snapshot_audit": ENABLED and current_schema_version >= SCHEMA_VERSION,
         "oidc": bool(os.getenv("OPEX_OIDC_ISSUER") and os.getenv("OPEX_OIDC_AUDIENCE")),
         "pii_encryption_key": bool(os.getenv("OPEX_PII_KEY")),
         "apple_app_attest": bool(os.getenv("APPLE_APP_ATTEST_VERIFY_URL")),
@@ -139,8 +143,24 @@ def health() -> dict:
         "continuous_location_tracking": False,
         "biometric_template_storage": False,
     }
-    configured = all(controls[key] for key in ("oidc", "pii_encryption_key", "apple_app_attest", "google_play_integrity", "local_user_presence_required")) if production else True
-    return {"status": "ok" if ready() and configured else "degraded", "module": "workforce", "postgresql": ENABLED, "manual_correction": "permission-guarded", "audit": "hash-chained", "device_binding": "single-active-device", "push": "durable-outbox", "production_controls": controls}
+    required = (
+        "postgresql", "tenant_id", "atomic_snapshot_audit", "oidc", "pii_encryption_key",
+        "apple_app_attest", "google_play_integrity", "local_user_presence_required",
+    )
+    configured = all(controls[key] for key in required) if production else True
+    return {
+        "status": "ok" if ready() and configured else "degraded",
+        "module": "workforce",
+        "postgresql": ENABLED,
+        "schema_version": current_schema_version,
+        "required_schema_version": SCHEMA_VERSION,
+        "manual_correction": "permission-guarded",
+        "audit": "hash-chained-atomic",
+        "persistence": "tenant-scoped-optimistic",
+        "device_binding": "single-active-device",
+        "push": "durable-outbox",
+        "production_controls": controls,
+    }
 
 
 @router.get("/warehouses")

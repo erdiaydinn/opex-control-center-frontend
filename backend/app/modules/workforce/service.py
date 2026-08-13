@@ -85,38 +85,78 @@ _STATE_COLLECTIONS = {
 }
 
 
-def _persist_state() -> None:
-    if not persistence.ENABLED:
-        return
-    for kind, rows in _STATE_COLLECTIONS.items():
-        persistence.replace_collection(kind, rows)
-    persistence.replace_collection("shifts", _SHIFTS)
-    persistence.replace_collection("attendance", _ATTENDANCE)
-    persistence.replace_collection("warehouses", _WAREHOUSE_SEED)
-    persistence.save_document("feature_flags", _FEATURE_FLAGS)
-    persistence.save_document("notification_policy", _NOTIFICATION_POLICY)
-    persistence.save_document("enrollment_tokens", _ENROLLMENT_TOKENS)
+def _snapshot_collections() -> dict[str, list[dict]]:
+    """Return one coherent process snapshot for an atomic PostgreSQL commit."""
+    collections = {kind: deepcopy(rows) for kind, rows in _STATE_COLLECTIONS.items()}
+    collections.update(
+        {
+            "shifts": deepcopy(_SHIFTS),
+            "attendance": deepcopy(_ATTENDANCE),
+            "warehouses": deepcopy(_WAREHOUSE_SEED),
+            "feature_flags": [{"id": "feature_flags", **deepcopy(_FEATURE_FLAGS)}],
+            "notification_policy": [{"id": "notification_policy", **deepcopy(_NOTIFICATION_POLICY)}],
+            "enrollment_tokens": [{"id": "enrollment_tokens", **deepcopy(_ENROLLMENT_TOKENS)}],
+            "device_challenges": [{"id": "device_challenges", **deepcopy(_DEVICE_CHALLENGES)}],
+        }
+    )
+    return collections
+
+
+def _snapshot_kinds() -> list[str]:
+    return list(_snapshot_collections())
+
+
+def _initial_snapshot(production: bool | None = None) -> dict[str, list[dict]]:
+    snapshot = _snapshot_collections()
+    production = persistence.ENVIRONMENT == "production" if production is None else production
+    if production:
+        keep = {"rules", "warehouses", "feature_flags", "notification_policy"}
+        for kind in snapshot:
+            if kind not in keep:
+                snapshot[kind] = []
+    return snapshot
+
+
+def _hydrate_snapshot(snapshot: dict[str, list[dict]]) -> None:
+    for kind, target in _STATE_COLLECTIONS.items():
+        target[:] = deepcopy(snapshot.get(kind, []))
+    _SHIFTS[:] = deepcopy(snapshot.get("shifts", []))
+    _ATTENDANCE[:] = deepcopy(snapshot.get("attendance", []))
+    stored_warehouses = snapshot.get("warehouses", [])
+    if stored_warehouses:
+        _WAREHOUSE_SEED[:] = deepcopy(stored_warehouses)
+        _WAREHOUSES.clear()
+        _WAREHOUSES.update({row["id"]: row for row in _WAREHOUSE_SEED})
+        for alias, name in (("fulya", "Fulya (İstanbul)"), ("uskudar", "Üsküdar (İstanbul)")):
+            match = next((row for row in _WAREHOUSE_SEED if row["name"] == name), None)
+            if match:
+                _WAREHOUSES[alias] = match
+    _FEATURE_FLAGS.clear()
+    _FEATURE_FLAGS.update({key: value for key, value in (snapshot.get("feature_flags") or [{}])[0].items() if key != "id"})
+    _NOTIFICATION_POLICY.clear()
+    _NOTIFICATION_POLICY.update({key: value for key, value in (snapshot.get("notification_policy") or [{}])[0].items() if key != "id"})
+    _ENROLLMENT_TOKENS.clear()
+    _ENROLLMENT_TOKENS.update({key: value for key, value in (snapshot.get("enrollment_tokens") or [{}])[0].items() if key != "id"})
+    _DEVICE_CHALLENGES.clear()
+    _DEVICE_CHALLENGES.update({key: value for key, value in (snapshot.get("device_challenges") or [{}])[0].items() if key != "id"})
 
 
 def initialize_workforce() -> None:
-    """Create schema and hydrate process state from PostgreSQL once."""
+    """Validate schema and hydrate one repeatable-read PostgreSQL snapshot."""
     persistence.initialize()
     if not persistence.ENABLED:
         return
-    stored_shifts = persistence.load_collection("shifts")
-    if not stored_shifts:
-        _persist_state()
+    initialized = persistence.has_snapshot()
+    snapshot = persistence.load_snapshot(_snapshot_kinds())
+    if not initialized:
+        snapshot = _initial_snapshot()
+        _hydrate_snapshot(snapshot)
+        persistence.persist_snapshot_with_audit(
+            snapshot, "WORKFORCE_STATE_SEEDED", "system", schema_version=persistence.SCHEMA_VERSION,
+            demo_data=persistence.ENVIRONMENT != "production",
+        )
         return
-    for kind, target in _STATE_COLLECTIONS.items():
-        target[:] = persistence.load_collection(kind)
-    _SHIFTS[:] = stored_shifts
-    _ATTENDANCE[:] = persistence.load_collection("attendance")
-    _FEATURE_FLAGS.clear()
-    _FEATURE_FLAGS.update({key: value for key, value in persistence.load_document("feature_flags", _FEATURE_FLAGS).items() if key != "id"})
-    _NOTIFICATION_POLICY.clear()
-    _NOTIFICATION_POLICY.update({key: value for key, value in persistence.load_document("notification_policy", _NOTIFICATION_POLICY).items() if key != "id"})
-    _ENROLLMENT_TOKENS.clear()
-    _ENROLLMENT_TOKENS.update({key: value for key, value in persistence.load_document("enrollment_tokens", {}).items() if key != "id"})
+    _hydrate_snapshot(snapshot)
 
 
 def list_warehouses() -> list[dict]:
@@ -313,9 +353,18 @@ def _audit_connection() -> sqlite3.Connection:
 
 
 def _append_audit(event: str, actor: str, **details: object) -> dict:
-    postgres_record = persistence.append_audit(event, actor, **details)
-    if postgres_record is not None:
-        _persist_state()
+    if persistence.ENABLED:
+        try:
+            postgres_record = persistence.persist_snapshot_with_audit(
+                _snapshot_collections(), event, actor, **details
+            )
+        except persistence.ConcurrentWriteError as error:
+            # The process snapshot is stale. Reload authoritative state before
+            # returning a retryable conflict; never continue with divergent RAM.
+            _hydrate_snapshot(persistence.load_snapshot(_snapshot_kinds()))
+            raise WorkforceRuleError(
+                "Workforce verisi başka bir işlem tarafından güncellendi; işlem güvenli biçimde durduruldu, tekrar deneyin."
+            ) from error
         return deepcopy(postgres_record)
     with _AUDIT_LOCK, closing(_audit_connection()) as connection:
         previous = connection.execute("SELECT hash FROM workforce_audit ORDER BY sequence DESC LIMIT 1").fetchone()
@@ -624,7 +673,6 @@ def _schedule_shift_notifications(shift: dict, actor: str) -> list[dict]:
     for index, notification in enumerate(rows):
         binding = next((item for item in _DEVICE_BINDINGS if item["person_id"] == shift["person_id"] and item["status"] == "ACTIVE"), {})
         notification.update({"id": f"NTF-{shift['id']}-{index}", "person_id": shift["person_id"], "shift_id": shift["id"], "message": f"{shift['warehouse']} · {shift['date']} · {shift['start']}–{shift['end']}", "created_at": now.isoformat(), "created_by": actor, "read": False, "platform": binding.get("platform"), "push_token": binding.get("push_token")})
-        persistence.enqueue_notification(notification)
     _NOTIFICATIONS[0:0] = rows
     return deepcopy(rows)
 
@@ -1160,7 +1208,6 @@ def resolve_leave_request(request_id: str, payload: dict, actor: str) -> dict | 
     binding = next((item for item in _DEVICE_BINDINGS if item["person_id"] == row["person_id"] and item["status"] == "ACTIVE"), {})
     notification = {"id": f"NTF-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}", "person_id": row["person_id"], "type": "MANAGER_DECISION", "title": f"İzin talebiniz {payload['decision']}", "message": payload["manager_note"], "created_at": datetime.now(UTC).isoformat(), "scheduled_at": datetime.now(UTC).isoformat(), "read": False, "platform": binding.get("platform"), "push_token": binding.get("push_token")}
     _NOTIFICATIONS.insert(0, notification)
-    persistence.enqueue_notification(notification)
     _append_audit("LEAVE_REQUEST_RESOLVED", actor, record_id=request_id, before=before, after=deepcopy(row))
     return deepcopy(row)
 

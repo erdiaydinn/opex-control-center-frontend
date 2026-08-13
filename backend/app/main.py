@@ -4,13 +4,14 @@ from contextlib import asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, make_asgi_app
 
 from app.modules.dockos.router import router as dockos_router
 from app.modules.workforce.router import router as workforce_router
-from app.modules.workforce.service import initialize_workforce
+from app.modules.workforce.service import WorkforceRuleError, initialize_workforce
 from app.modules.recruitment.router import router as recruitment_router
 from app.modules.recruitment.service import initialize as initialize_recruitment
 from app.modules.inventory.router import router as inventory_router
@@ -64,6 +65,11 @@ app = FastAPI(
 )
 
 app.add_middleware(WorkforceIdentityMiddleware)
+
+
+@app.exception_handler(WorkforceRuleError)
+async def workforce_conflict_handler(_: Request, error: WorkforceRuleError):
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
 app.add_middleware(
     CORSMiddleware,

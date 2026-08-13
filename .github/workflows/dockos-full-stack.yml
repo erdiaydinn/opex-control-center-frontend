@@ -12,7 +12,7 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -32,8 +32,8 @@ jobs:
       DOCKOS_STATE_FILE: /tmp/dockos_ci_state.json
       DOCKOS_NOTIFICATION_AUTOMATION: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -41,3 +41,38 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app
       - run: python -m unittest app.modules.workforce.test_workforce app.modules.workforce.test_workforce_api app.modules.recruitment.test_recruitment app.test_security app.modules.dockos.test_rc2 app.modules.inventory.test_inventory app.modules.inventory.test_inventory_scope
+
+  workforce-postgres:
+    name: Workforce PostgreSQL acceptance
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workforce_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d workforce_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      WORKFORCE_TENANT_ID: eay-ci
+      WORKFORCE_AUTO_MIGRATE: "true"
+      DOCKOS_ENV: test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest app.modules.workforce.test_workforce_persistence

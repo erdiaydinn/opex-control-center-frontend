@@ -20,6 +20,8 @@ katmanıdır. PR #55 ve PR #58'deki canonical Workforce davranışlarını korur
 | Local user presence | Production'da cihaz biyometrisi veya cihaz parolası sonucu zorunlu | local-auth testleri |
 | Production SSO | İmzalı OIDC JWT ve yapılandırılabilir Employee ID claim'i | security testleri |
 | Recruitment activation | Employee Master → Norm → Vacancy → Approval → Hire → Workforce active | recruitment activation testleri |
+| PostgreSQL doğruluğu | Tenant RLS + atomik state/audit + optimistic revision; stale write fail-closed | gerçek PostgreSQL acceptance job |
+| Restart dayanımı | Enrollment ve tek kullanımlık cihaz challenge durumları snapshot içinde kalıcıdır | process-state reload testi |
 
 ## Veri minimizasyonu
 
@@ -33,8 +35,8 @@ katmanıdır. PR #55 ve PR #58'deki canonical Workforce davranışlarını korur
 ## Production pilot kapıları
 
 Pilot açılmadan önce `/api/workforce/health` içindeki production kontrolleri yeşil
-olmalıdır: OIDC issuer/audience, `OPEX_PII_KEY`, Apple App Attest gateway, Google
-Play Integrity gateway ve local user-presence zorunluluğu. Ayrıca gerçek iOS/Android
+olmalıdır: Workforce V29 PostgreSQL migration/tenant kimliği, OIDC issuer/audience,
+`OPEX_PII_KEY`, Apple App Attest gateway, Google Play Integrity gateway ve local user-presence zorunluluğu. Ayrıca gerçek iOS/Android
 buildleri, kurumsal IdP claim eşlemesi, depo koordinat onayı ve pilot import örnekleriyle
 cihaz üstü UAT tamamlanmalıdır.
 

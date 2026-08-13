@@ -37,12 +37,23 @@ from .service import (
     _LEAVES,
     _SHIFTS,
     _finalize_attendance,
+    _initial_snapshot,
     _validate_presence,
     _validate_local_authentication,
 )
 
 
 class WorkforceAuthorizationTests(unittest.TestCase):
+    def test_production_cold_start_never_seeds_demo_people_shifts_or_devices(self):
+        snapshot = _initial_snapshot(production=True)
+        self.assertEqual(snapshot["people"], [])
+        self.assertEqual(snapshot["shifts"], [])
+        self.assertEqual(snapshot["attendance"], [])
+        self.assertEqual(snapshot["devices"], [])
+        self.assertEqual(snapshot["device_challenges"], [])
+        self.assertGreater(len(snapshot["rules"]), 0)
+        self.assertEqual(len(snapshot["warehouses"]), 127)
+
     def test_corporate_warehouse_coordinates_are_normalized(self):
         rows = list_warehouses()
         self.assertEqual(len(rows), 127)

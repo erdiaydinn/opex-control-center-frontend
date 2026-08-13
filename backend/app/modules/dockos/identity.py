@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import jwt
 from fastapi import HTTPException, Request
+from .tenant_db import consume_gateway_replay
 
 
 @dataclass(frozen=True)
@@ -107,17 +108,25 @@ def authenticate_request(request: Request) -> Identity:
     return _verify_oidc_token(authorization[7:].strip())
 
 
+def _gateway_secrets():
+    values = [os.getenv("DOCKOS_GATEWAY_SECRET", ""), os.getenv("DOCKOS_GATEWAY_PREVIOUS_SECRET", "")]
+    return [value for value in values if len(value) >= 32 and not value.startswith("CHANGE_ME")]
+
+
 def verify_gateway(request: Request) -> None:
     if not _production() or request.url.path.endswith("/health") or request.url.path.endswith("/readiness"):
         return
-    secret = os.getenv("DOCKOS_GATEWAY_SECRET", "")
-    if len(secret) < 32 or secret.startswith("CHANGE_ME"):
+    secrets = _gateway_secrets()
+    if not secrets:
         raise HTTPException(503, "DockOS gateway secret production için geçersiz.")
     mode = os.getenv("DOCKOS_GATEWAY_TRUST_MODE", "hmac").lower()
     if mode != "hmac":
         raise HTTPException(503, "Production gateway trust mode hmac olmalıdır.")
     timestamp = request.headers.get("X-DockOS-Gateway-Timestamp", "")
+    nonce = request.headers.get("X-DockOS-Gateway-Nonce", "").strip()
     signature = request.headers.get("X-DockOS-Gateway-Signature", "")
+    if len(nonce) < 16:
+        raise HTTPException(401, "Gateway nonce eksik veya geçersiz.")
     try:
         ts = int(timestamp)
     except ValueError as error:
@@ -126,7 +135,13 @@ def verify_gateway(request: Request) -> None:
     if abs(int(time.time()) - ts) > max_skew:
         raise HTTPException(401, "Gateway isteği zaman penceresi dışında.")
     auth_hash = hashlib.sha256(request.headers.get("Authorization", "").encode("utf-8")).hexdigest()
-    canonical = f"{timestamp}\n{request.method.upper()}\n{request.url.path}\n{auth_hash}".encode("utf-8")
-    expected = hmac.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, signature):
+    canonical = f"{timestamp}\n{nonce}\n{request.method.upper()}\n{request.url.path}\n{auth_hash}".encode("utf-8")
+    valid = any(hmac.compare_digest(hmac.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest(), signature) for secret in secrets)
+    if not valid:
         raise HTTPException(401, "DockOS production gateway imzası doğrulanamadı.")
+    try:
+        consumed = consume_gateway_replay(timestamp, nonce, signature, max_skew)
+    except Exception as error:
+        raise HTTPException(503, "Gateway replay doğrulama deposuna ulaşılamadı.") from error
+    if not consumed:
+        raise HTTPException(401, "Gateway replay isteği reddedildi.")

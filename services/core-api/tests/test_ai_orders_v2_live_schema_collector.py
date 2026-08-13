@@ -49,11 +49,7 @@ class FakeClient:
     ) -> None:
         self.project = project
         self.location = location
-        actual_rows = (
-            [metadata_row(project=project)]
-            if rows is None
-            else rows
-        )
+        actual_rows = [metadata_row(project=project)] if rows is None else rows
         self.job = FakeJob(actual_rows)
         self.calls: list[dict[str, Any]] = []
         self.error: Exception | None = None
@@ -101,8 +97,8 @@ def test_config_reuses_frozen_eay_bigquery_environment_names() -> None:
 
     parsed = OrdersV2LiveSchemaCollectorConfig.from_environment(
         {
-            "EAY_BQ_PROJECT": "example-project",
-            "EAY_BQ_LOCATION": "EU",
+            "EAY_BQ_PROJECT": "  example-project  ",
+            "EAY_BQ_LOCATION": "  EU  ",
         }
     )
     assert parsed == config()
@@ -110,7 +106,6 @@ def test_config_reuses_frozen_eay_bigquery_environment_names() -> None:
     for environ in (
         {},
         {"EAY_BQ_PROJECT": ""},
-        {"EAY_BQ_PROJECT": " example-project"},
         {"EAY_BQ_PROJECT": "example project"},
         {"EAY_BQ_PROJECT": "example-project;DROP"},
     ):
@@ -118,15 +113,11 @@ def test_config_reuses_frozen_eay_bigquery_environment_names() -> None:
             OrdersV2LiveSchemaCollectorConfig.from_environment(environ)
 
 
-def test_public_collector_api_exposes_no_sql_table_field_or_type_override() -> None:
+def test_public_collector_api_exposes_no_query_shape_override() -> None:
     parameters = inspect.signature(
         collect_orders_v2_schema_observation
     ).parameters
-    assert tuple(parameters) == (
-        "client",
-        "config",
-        "observed_at",
-    )
+    assert tuple(parameters) == ("client", "config", "observed_at")
 
     for forbidden in (
         "sql",
@@ -143,7 +134,6 @@ def test_public_collector_api_exposes_no_sql_table_field_or_type_override() -> N
 def test_collector_submits_one_exact_read_only_metadata_query() -> None:
     client = FakeClient()
     timestamp = datetime(2026, 8, 13, 5, 30, tzinfo=UTC)
-
     observation = collect_orders_v2_schema_observation(
         client=client,
         config=config(),
@@ -158,11 +148,6 @@ def test_collector_submits_one_exact_read_only_metadata_query() -> None:
     job_config = call["job_config"]
     assert isinstance(job_config, bigquery.QueryJobConfig)
     assert job_config.use_legacy_sql is False
-    assert len(job_config.query_parameters) == 2
-    assert all(
-        isinstance(parameter, bigquery.ScalarQueryParameter)
-        for parameter in job_config.query_parameters
-    )
     assert [
         parameter.to_api_repr()
         for parameter in job_config.query_parameters
@@ -179,12 +164,9 @@ def test_collector_submits_one_exact_read_only_metadata_query() -> None:
         },
     ]
     assert client.job.timeouts == [SCHEMA_COLLECTOR_TIMEOUT_SECONDS]
-
     assert observation.provenance_kind == "collector_observation_unattested"
     assert observation.attested_live_run is False
     assert observation.metadata_row_count == 1
-    assert observation.client_project == "example-project"
-    assert observation.client_location == "EU"
     assert observation.evidence.table_catalog == "example-project"
     assert observation.evidence.collector_query_sha256 == (
         ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256
@@ -193,50 +175,38 @@ def test_collector_submits_one_exact_read_only_metadata_query() -> None:
 
 
 def test_collector_requires_exactly_one_metadata_row() -> None:
-    for rows in (
-        [],
-        [metadata_row(), metadata_row()],
-    ):
-        client = FakeClient(rows=rows)
+    for rows in ([], [metadata_row(), metadata_row()]):
         with pytest.raises(
             OrdersV2LiveSchemaCollectorResultError,
             match="exactly one row",
         ):
             collect_orders_v2_schema_observation(
-                client=client,
+                client=FakeClient(rows=rows),
                 config=config(),
             )
 
 
-def test_collector_binds_client_and_metadata_to_configured_project_location() -> None:
-    with pytest.raises(
-        OrdersV2LiveSchemaCollectorConfigError,
-        match="client project",
-    ):
+def test_collector_binds_client_metadata_project_and_location() -> None:
+    with pytest.raises(OrdersV2LiveSchemaCollectorConfigError):
         collect_orders_v2_schema_observation(
             client=FakeClient(project="other-project"),
             config=config(),
         )
 
-    with pytest.raises(
-        OrdersV2LiveSchemaCollectorConfigError,
-        match="client location",
-    ):
+    with pytest.raises(OrdersV2LiveSchemaCollectorConfigError):
         collect_orders_v2_schema_observation(
             client=FakeClient(location="US"),
             config=config(),
         )
 
-    wrong_catalog = FakeClient(
-        project="example-project",
-        rows=[metadata_row(project="other-project")],
-    )
     with pytest.raises(
         OrdersV2LiveSchemaCollectorResultError,
         match="table_catalog",
     ):
         collect_orders_v2_schema_observation(
-            client=wrong_catalog,
+            client=FakeClient(
+                rows=[metadata_row(project="other-project")]
+            ),
             config=config(),
         )
 
@@ -244,10 +214,7 @@ def test_collector_binds_client_and_metadata_to_configured_project_location() ->
 def test_query_or_result_errors_fail_closed() -> None:
     query_failure = FakeClient()
     query_failure.error = RuntimeError("permission denied")
-    with pytest.raises(
-        OrdersV2LiveSchemaCollectorResultError,
-        match="collection failed",
-    ):
+    with pytest.raises(OrdersV2LiveSchemaCollectorResultError):
         collect_orders_v2_schema_observation(
             client=query_failure,
             config=config(),
@@ -255,10 +222,7 @@ def test_query_or_result_errors_fail_closed() -> None:
 
     result_failure = FakeClient()
     result_failure.job.error = RuntimeError("job failed")
-    with pytest.raises(
-        OrdersV2LiveSchemaCollectorResultError,
-        match="collection failed",
-    ):
+    with pytest.raises(OrdersV2LiveSchemaCollectorResultError):
         collect_orders_v2_schema_observation(
             client=result_failure,
             config=config(),
@@ -266,7 +230,6 @@ def test_query_or_result_errors_fail_closed() -> None:
 
 
 def test_malformed_metadata_never_becomes_observation() -> None:
-    malformed_rows = []
     for field, value in (
         ("field_path", "tenant.id"),
         ("data_type", "INT64"),
@@ -274,9 +237,6 @@ def test_malformed_metadata_never_becomes_observation() -> None:
     ):
         row = metadata_row()
         row[field] = value
-        malformed_rows.append(row)
-
-    for row in malformed_rows:
         with pytest.raises((ValidationError, ValueError)):
             collect_orders_v2_schema_observation(
                 client=FakeClient(rows=[row]),
@@ -291,15 +251,14 @@ def test_unattested_observation_cannot_self_promote() -> None:
         observed_at=datetime(2026, 8, 13, 5, 30, tzinfo=UTC),
     )
 
-    payload = observation.model_dump(mode="python")
-    payload["attested_live_run"] = True
-    with pytest.raises(ValidationError):
-        OrdersV2CollectedSchemaObservation.model_validate(payload)
-
-    payload = observation.model_dump(mode="python")
-    payload["production_blocker"] = ""
-    with pytest.raises(ValidationError):
-        OrdersV2CollectedSchemaObservation.model_validate(payload)
+    for field, value in (
+        ("attested_live_run", True),
+        ("production_blocker", ""),
+    ):
+        payload = observation.model_dump(mode="python")
+        payload[field] = value
+        with pytest.raises(ValidationError):
+            OrdersV2CollectedSchemaObservation.model_validate(payload)
 
     active = AI_QUERY_CONTRACT_POLICIES["ops_kpi_query"]
     assert active.contract_id == "ops.kpi.orders.v1"

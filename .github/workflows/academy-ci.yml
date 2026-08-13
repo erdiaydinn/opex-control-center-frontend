@@ -1,0 +1,188 @@
+name: EAY Academy CI
+
+on:
+  push:
+    branches:
+      - product/academy-canonical-v1
+      - product/academy-canonical-**
+  pull_request:
+    branches:
+      - feature/phase-1-security-hardening
+    paths:
+      - 'services/core-api/app/modules/academy/**'
+      - 'services/core-api/app/main_academy.py'
+      - 'services/core-api/alembic/versions/0009_academy_foundation.py'
+      - 'services/core-api/alembic/versions/0010_academy_audit_idempotency.py'
+      - 'services/core-api/tests/test_academy_*.py'
+      - 'services/core-api/Dockerfile'
+      - '.github/workflows/academy-ci.yml'
+      - 'docs/ACADEMY_*.md'
+      - 'ops/load/k6-academy-*.js'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: academy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  academy-postgres:
+    name: Academy PostgreSQL / RLS / lifecycle
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Academy/Core API test dependencies
+        run: python -m pip install -e './services/core-api[dev]'
+      - name: Create RLS-bound runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main():
+              conn = await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  exists = await conn.fetchval("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')")
+                  if not exists:
+                      await conn.execute("CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS")
+              finally:
+                  await conn.close()
+
+          asyncio.run(main())
+          PY
+      - name: Compile Academy production code
+        run: python -m compileall -q services/core-api/app/modules/academy services/core-api/app/main_academy.py services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py
+      - name: Apply migrations 0001 through Academy head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Assert Academy migration head and FORCE RLS
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main():
+              conn = await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  version = await conn.fetchval('SELECT version_num FROM alembic_version')
+                  assert version == '0010_academy_audit_idempotency', version
+                  rows = await conn.fetch("SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'")
+                  assert rows
+                  assert all(row['relrowsecurity'] and row['relforcerowsecurity'] for row in rows), rows
+                  role = await conn.fetchrow("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname='opex_runtime'")
+                  assert role and not role['rolsuper'] and not role['rolbypassrls']
+              finally:
+                  await conn.close()
+
+          asyncio.run(main())
+          PY
+      - name: Academy contracts, API, idempotency, concurrency, quiz, completion, media and tenant isolation
+        run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py
+      - name: Full Platform Core regression suite
+        run: pytest -q services/core-api/tests
+
+  academy-build:
+    name: Academy composition and frontend build gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout4v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Frontend install
+        run: npm ci
+      - name: Frontend production build
+        run: npm run build
+      - name: Build Core API + Academy container
+        run: docker build -f services/core-api/Dockerfile services/core-api
+      - name: Ensure deployment composition uses Academy app
+        run: grep -F 'app.main_academy:app' services/core-api/Dockerfile
+
+  academy-dr-contract:
+    name: Academy database backup / restore rehearsal
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+      PGPASSWORD: opex_migrator
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PostgreSQL client and Core API
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          python -m pip install -e './services/core-api[dev]'
+      - name: Create runtime role and migrate
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"
+          (cd services/core-api && alembic upgrade head)
+      - name: Seed Academy evidence row
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
+          INSERT INTO tenants(id,slug,display_name) VALUES('00000000-0000-0000-0000-00000000d001','dr-tenant','DR Tenant');
+          INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by)
+          VALUES('00000000-0000-0000-0000-00000000d001','sop','dr-evidence','{"en":"DR evidence"}','published','ci');
+          SQL
+      - name: Dump and restore into fresh database
+        run: |
+          pg_dump -h localhost -U opex_migrator -d opex_test --format=custom --no-owner --no-privileges -f /tmp/academy.dump
+          createdb -h localhost -U opex_migrator opex_restore
+          pg_restore -h localhost -U opex_migrator -d opex_restore --no-owner --no-privileges /tmp/academy.dump
+          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT 1 FROM academy_content_items WHERE slug='dr-evidence';"
+          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0010_academy_audit_idempotency';"

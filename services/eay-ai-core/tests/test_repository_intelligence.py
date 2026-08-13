@@ -29,7 +29,23 @@ def test_required_repository_relationships_are_pinned() -> None:
     council = registry.by_id("imported-council-of-high-intelligence")
     assert council["repository"] == "0xNyk/council-of-high-intelligence"
     assert council["canonical_upstream"] == "0xNyk/council-of-high-intelligence"
+    assert council["last_reviewed_sha"] == "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72"
     assert council["license"] == {"spdx": "MIT", "status": "VERIFIED"}
+    assert council["decision"] == "WATCH"
+
+    cl4 = registry.by_id("imported-cl4r1t4s")
+    assert cl4["repository"] == "elder-plinius/CL4R1T4S"
+    assert cl4["canonical_upstream"] == "elder-plinius/CL4R1T4S"
+    assert cl4["last_reviewed_sha"] == "1a55b8a36d47c86e8d774acef83306d56fb0b302"
+    assert cl4["license"] == {"spdx": "AGPL-3.0", "status": "VERIFIED"}
+    assert cl4["decision"] == "REFERENCE"
+
+    computer_lab = registry.by_id("imported-computer-lab-automation")
+    assert computer_lab["repository"] == "mustafadalga/computer-lab-automation"
+    assert computer_lab["canonical_upstream"] == "mustafadalga/computer-lab-automation"
+    assert computer_lab["last_reviewed_sha"] == "0f6fa81448062488f01144c67032764af25ee5fe"
+    assert computer_lab["license"] == {"spdx": "GPL-3.0", "status": "VERIFIED"}
+    assert computer_lab["decision"] == "REFERENCE"
 
     superset = registry.by_id("discovered-apache-superset")
     assert superset["repository"] == "apache/superset"
@@ -44,7 +60,7 @@ def test_required_repository_relationships_are_pinned() -> None:
 def test_unresolved_archive_identity_is_explicit_not_invented() -> None:
     registry = load_repository_registry(REGISTRY_PATH)
 
-    unresolved = registry.by_id("imported-cl4r1t4s")
+    unresolved = registry.by_id("imported-deep-learning-tutorials")
     assert unresolved["identity_status"] == "UNRESOLVED"
     assert unresolved["repository"] is None
     assert unresolved["decision"] == "PENDING"
@@ -64,13 +80,27 @@ def test_registry_rejects_silent_seed_deletion(tmp_path: Path) -> None:
 
 def test_registry_rejects_invented_owner_repo_for_unresolved_identity(tmp_path: Path) -> None:
     payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    entry = next(item for item in payload["entries"] if item["id"] == "imported-cl4r1t4s")
-    entry["repository"] = "guessed/CL4R1T4S"
+    entry = next(
+        item for item in payload["entries"] if item["id"] == "imported-deep-learning-tutorials"
+    )
+    entry["repository"] = "guessed/Deep-Learning-Tutorials"
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(RepositoryRegistryError, match="rather than inventing owner/repo"):
         load_repository_registry(path)
+
+
+def test_copyleft_archives_remain_reference_only_for_proprietary_eay() -> None:
+    registry = load_repository_registry(REGISTRY_PATH)
+
+    for entry_id, spdx in (
+        ("imported-cl4r1t4s", "AGPL-3.0"),
+        ("imported-computer-lab-automation", "GPL-3.0"),
+    ):
+        entry = registry.by_id(entry_id)
+        assert entry["license"] == {"spdx": spdx, "status": "VERIFIED"}
+        assert entry["decision"] == "REFERENCE"
 
 
 def test_external_adoption_requires_verified_license(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
+from typing import Callable
 
 import pytest
 
@@ -43,90 +44,50 @@ def test_candidate_is_exact_versioned_and_explicitly_blocked() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "mutate_sql"),
+    "mutate_sql",
     [
-        (
-            "missing_tenant_predicate",
-            lambda sql: sql.replace(
-                "  AND entity.id IN UNNEST(@entity_ids)\n",
-                "",
-            ),
+        lambda sql: sql.replace(
+            "  AND entity.id IN UNNEST(@entity_ids)\n",
+            "",
         ),
-        (
-            "or_bypass",
-            lambda sql: sql.replace(
-                "  AND vendor_name IN UNNEST(@stores)",
-                "  AND (vendor_name IN UNNEST(@stores) OR TRUE)",
-            ),
+        lambda sql: sql.replace(
+            "  AND vendor_name IN UNNEST(@stores)",
+            "  AND (vendor_name IN UNNEST(@stores) OR TRUE)",
         ),
-        (
-            "hardcoded_tenant",
-            lambda sql: sql.replace(
-                "entity.id IN UNNEST(@entity_ids)",
-                "entity.id = 'YS_TR'",
-            ),
+        lambda sql: sql.replace(
+            "entity.id IN UNNEST(@entity_ids)",
+            "entity.id = 'YS_TR'",
         ),
-        (
-            "stores_empty_bypass",
-            lambda sql: sql.replace(
-                "vendor_name IN UNNEST(@stores)",
-                "(@stores_empty OR vendor_name IN UNNEST(@stores))",
-            ),
+        lambda sql: sql.replace(
+            "vendor_name IN UNNEST(@stores)",
+            "(@stores_empty OR vendor_name IN UNNEST(@stores))",
         ),
-        (
-            "wrong_table",
-            lambda sql: sql.replace(
-                ORDERS_SOURCE_TABLE,
-                "curated_data_shared.orders",
-            ),
+        lambda sql: sql.replace(
+            ORDERS_SOURCE_TABLE,
+            "curated_data_shared.orders",
         ),
-        (
-            "extra_parameter",
-            lambda sql: sql.replace(
-                "GROUP BY 1,2",
-                "  AND @debug_flag\nGROUP BY 1,2",
-            ),
+        lambda sql: sql.replace(
+            "GROUP BY 1,2",
+            "  AND @debug_flag\nGROUP BY 1,2",
         ),
-        (
-            "union",
-            lambda sql: sql + "\nUNION ALL SELECT CURRENT_DATE(), 'X', 1",
-        ),
-        (
-            "multi_statement",
-            lambda sql: sql + "; SELECT 1",
-        ),
-        (
-            "select_star",
-            lambda sql: sql.replace(
-                "DATE(partition_date_local) AS date,\n  vendor_name,\n  COUNT(DISTINCT order_id) AS orders",
-                "*",
-            ),
+        lambda sql: sql + "\nUNION ALL SELECT CURRENT_DATE(), 'X', 1",
+        lambda sql: sql + "; SELECT 1",
+        lambda sql: sql.replace(
+            "DATE(partition_date_local) AS date,\n  vendor_name,\n  COUNT(DISTINCT order_id) AS orders",
+            "*",
         ),
     ],
 )
 def test_candidate_rejects_structural_bypasses(
-    name: str,
-    mutate_sql,
+    mutate_sql: Callable[[str], str],
 ) -> None:
     candidate = replace(
         ORDERS_V2_CANDIDATE,
         sql=mutate_sql(ORDERS_V2_CANDIDATE.sql),
     )
 
-    with pytest.raises(OrdersV2QueryContractError), pytest.raises(
-        Exception
-    ) if False else _no_op_context():
-        del name
+    with pytest.raises(OrdersV2QueryContractError):
         validate_orders_v2_query_candidate(candidate)
-
-
-class _no_op_context:
-    def __enter__(self):
-        return None
-
-    def __exit__(self, exc_type, exc, traceback):
-        del exc_type, exc, traceback
-        return False
 
 
 def test_candidate_requires_exact_parameter_contract_and_blockers() -> None:

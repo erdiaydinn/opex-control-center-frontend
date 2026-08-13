@@ -1,6 +1,5 @@
 package com.eay.inventory
 
-import org.json.JSONObject
 import java.math.BigDecimal
 import java.security.MessageDigest
 
@@ -18,15 +17,32 @@ data class TerminalEventInput(
 object TerminalEventCanonical {
     fun body(input: TerminalEventInput): String = buildString {
         append('{')
-        append("\"barcode\":").append(JSONObject.quote(input.barcode.trim())).append(',')
+        append("\"barcode\":").append(jsonString(input.barcode.trim())).append(',')
         append("\"device_sequence\":").append(input.deviceSequence).append(',')
-        append("\"document_id\":").append(JSONObject.quote(input.documentId.lowercase())).append(',')
-        append("\"event_id\":").append(JSONObject.quote(input.eventId.lowercase())).append(',')
-        append("\"location_id\":").append(JSONObject.quote(input.locationId.trim().uppercase())).append(',')
-        append("\"occurred_at\":").append(JSONObject.quote(input.occurredAt)).append(',')
-        append("\"quantity\":").append(JSONObject.quote(input.quantity.stripTrailingZeros().toPlainString())).append(',')
-        append("\"symbology\":").append(JSONObject.quote(input.symbology.trim()))
+        append("\"document_id\":").append(jsonString(input.documentId.lowercase())).append(',')
+        append("\"event_id\":").append(jsonString(input.eventId.lowercase())).append(',')
+        append("\"location_id\":").append(jsonString(input.locationId.trim().uppercase())).append(',')
+        append("\"occurred_at\":").append(jsonString(input.occurredAt)).append(',')
+        append("\"quantity\":").append(jsonString(input.quantity.stripTrailingZeros().toPlainString())).append(',')
+        append("\"symbology\":").append(jsonString(input.symbology.trim()))
         append('}')
+    }
+
+    private fun jsonString(value: String): String = buildString {
+        append('"')
+        value.forEach { character ->
+            when (character) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if (character.code < 0x20) append("\\u%04x".format(character.code)) else append(character)
+            }
+        }
+        append('"')
     }
 
     fun hash(canonicalBody: String): String = MessageDigest.getInstance("SHA-256")

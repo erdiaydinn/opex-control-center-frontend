@@ -72,14 +72,13 @@ jobs:
           for attempt in {1..30}; do pg_isready -d "$INVENTORY_DATABASE_URL" && break; sleep 1; done
           psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_schema_migrations WHERE version=3"
       - name: Backup and isolated restore acceptance
-        env:
-          PGPASSWORD: postgres
         run: |
-          pg_dump -h 127.0.0.1 -U postgres -d eay_inventory_test -Fc -f /tmp/eay-inventory.dump
-          createdb -h 127.0.0.1 -U postgres eay_inventory_restore
-          pg_restore -h 127.0.0.1 -U postgres -d eay_inventory_restore --no-owner /tmp/eay-inventory.dump
-          psql -h 127.0.0.1 -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_events"
-          psql -h 127.0.0.1 -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_audit"
+          PG_CONTAINER="${{ job.services.postgres.id }}"
+          docker exec "$PG_CONTAINER" pg_dump -U postgres -d eay_inventory_test -Fc > /tmp/eay-inventory.dump
+          docker exec "$PG_CONTAINER" createdb -U postgres eay_inventory_restore
+          docker exec -i "$PG_CONTAINER" pg_restore -U postgres -d eay_inventory_restore --no-owner < /tmp/eay-inventory.dump
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_events"
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_audit"
       - name: Migration replay
         env:
           PGPASSWORD: postgres

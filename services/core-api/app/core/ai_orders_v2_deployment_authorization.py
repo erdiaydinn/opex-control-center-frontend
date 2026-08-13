@@ -103,7 +103,7 @@ def build_orders_v2_deployment_authorization(
     deployment_approver_identity: str,
     authorized_at: datetime,
 ) -> OrdersV2DeploymentAuthorizationArtifact:
-    """Bind one independent deploy approval without changing runtime policy."""
+    """Bind three independent approvals without changing runtime policy."""
 
     if environment not in {"staging", "production"}:
         raise ValueError("deployment environment is invalid")
@@ -129,6 +129,11 @@ def build_orders_v2_deployment_authorization(
         raise ValueError("release gate production state is invalid")
     if release_gate.human_review_fingerprint != human_review.review_fingerprint:
         raise ValueError("release gate is not bound to human review")
+    if (
+        release_gate.release_approver_identity_sha256
+        == human_review.reviewer_identity_sha256
+    ):
+        raise ValueError("release approver must differ from human reviewer")
 
     expected_template = ORDERS_V2_CANDIDATE.template_fingerprint
     expected_parameters = orders_v2_bigquery_parameter_contract_fingerprint()

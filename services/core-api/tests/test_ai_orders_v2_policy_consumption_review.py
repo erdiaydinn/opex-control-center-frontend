@@ -5,12 +5,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
+from app.core.ai_orders_v2_live_cross_tenant_evidence import sha256_text
 from app.core.ai_orders_v2_manual_policy_promotion import (
     ORDERS_V2_MANUAL_CODE_CHANGE_BLOCKER,
     OrdersV2ManualPolicyPromotionProposal,
     _target_policy_review_fingerprint,
 )
 from app.core.ai_orders_v2_policy_consumption_ledger import (
+    LEDGER_GENESIS_FINGERPRINT,
     OrdersV2PolicyConsumptionEntry,
     OrdersV2PolicyConsumptionLedger,
     get_orders_v2_policy_consumption_ledger,
@@ -59,13 +61,17 @@ def _proposal() -> OrdersV2ManualPolicyPromotionProposal:
     )
 
 
-def test_consumption_review_binds_exact_ledger_proposal_and_guard() -> None:
-    ledger = get_orders_v2_policy_consumption_ledger()
-    proposal = _proposal()
-    guard = build_orders_v2_policy_transition_guard(
+def _guard(proposal: OrdersV2ManualPolicyPromotionProposal):
+    return build_orders_v2_policy_transition_guard(
         proposal=proposal,
         evaluated_at=proposal.proposed_at + timedelta(hours=1),
     )
+
+
+def test_consumption_review_binds_exact_ledger_proposal_and_guard() -> None:
+    ledger = get_orders_v2_policy_consumption_ledger()
+    proposal = _proposal()
+    guard = _guard(proposal)
     review = build_orders_v2_policy_consumption_review_proposal(
         ledger=ledger,
         proposal=proposal,
@@ -93,10 +99,7 @@ def test_consumption_review_binds_exact_ledger_proposal_and_guard() -> None:
 def test_consumption_review_rejects_ledger_drift() -> None:
     ledger = get_orders_v2_policy_consumption_ledger()
     proposal = _proposal()
-    guard = build_orders_v2_policy_transition_guard(
-        proposal=proposal,
-        evaluated_at=proposal.proposed_at + timedelta(hours=1),
-    )
+    guard = _guard(proposal)
     drifted = OrdersV2PolicyConsumptionLedger(
         version=1,
         kind="orders_v2_policy_consumption_ledger",
@@ -106,12 +109,7 @@ def test_consumption_review_rejects_ledger_drift() -> None:
                 consumed_at=proposal.proposed_at,
                 proposal_fingerprint="1" * 64,
                 guard_fingerprint="2" * 64,
-                previous_entry_fingerprint=(
-                    __import__(
-                        "app.core.ai_orders_v2_policy_consumption_ledger",
-                        fromlist=["LEDGER_GENESIS_FINGERPRINT"],
-                    ).LEDGER_GENESIS_FINGERPRINT
-                ),
+                previous_entry_fingerprint=LEDGER_GENESIS_FINGERPRINT,
             ),
         ),
     )
@@ -130,10 +128,7 @@ def test_consumption_review_rejects_ledger_drift() -> None:
 def test_consumption_review_rejects_guard_substitution() -> None:
     ledger = get_orders_v2_policy_consumption_ledger()
     proposal = _proposal()
-    guard = build_orders_v2_policy_transition_guard(
-        proposal=proposal,
-        evaluated_at=proposal.proposed_at + timedelta(hours=1),
-    )
+    guard = _guard(proposal)
     substituted = guard.model_copy(update={"proposal_fingerprint": "f" * 64})
 
     with pytest.raises(ValueError, match="not bound"):
@@ -146,13 +141,10 @@ def test_consumption_review_rejects_guard_substitution() -> None:
         )
 
 
-def test_consumption_review_rejects_naive_timestamp_and_tamper() -> None:
+def test_consumption_review_rejects_naive_or_early_timestamp() -> None:
     ledger = get_orders_v2_policy_consumption_ledger()
     proposal = _proposal()
-    guard = build_orders_v2_policy_transition_guard(
-        proposal=proposal,
-        evaluated_at=proposal.proposed_at + timedelta(hours=1),
-    )
+    guard = _guard(proposal)
 
     with pytest.raises(ValueError, match="timezone-aware"):
         build_orders_v2_policy_consumption_review_proposal(
@@ -163,26 +155,38 @@ def test_consumption_review_rejects_naive_timestamp_and_tamper() -> None:
             reviewed_at=datetime(2026, 8, 13, 13, 5),
         )
 
-    review = build_orders_v2_policy_consumption_review_proposal(
-        ledger=ledger,
-        proposal=proposal,
-        guard=guard,
-        reviewer_identity="reviewer@example.invalid",
-        reviewed_at=proposal.proposed_at + timedelta(hours=1, minutes=5),
+    with pytest.raises(ValueError, match="transition guard"):
+        build_orders_v2_policy_consumption_review_proposal(
+            ledger=ledger,
+            proposal=proposal,
+            guard=guard,
+            reviewer_identity="reviewer@example.invalid",
+            reviewed_at=guard.evaluated_at - timedelta(seconds=1),
+        )
+
+
+def test_consumption_review_rejects_policy_promoter_as_reviewer() -> None:
+    ledger = get_orders_v2_policy_consumption_ledger()
+    raw_identity = "same-person@example.invalid"
+    proposal = _proposal().model_copy(
+        update={"policy_promoter_identity_sha256": sha256_text(raw_identity)}
     )
-    payload = review.model_dump(mode="python")
-    payload["ledger_mutation_permitted"] = True
-    with pytest.raises(ValidationError):
-        OrdersV2PolicyConsumptionReviewProposal.model_validate(payload)
+    guard = _guard(proposal)
+
+    with pytest.raises(ValueError, match="independent"):
+        build_orders_v2_policy_consumption_review_proposal(
+            ledger=ledger,
+            proposal=proposal,
+            guard=guard,
+            reviewer_identity=raw_identity,
+            reviewed_at=guard.evaluated_at + timedelta(minutes=5),
+        )
 
 
-def test_consumption_review_does_not_store_raw_reviewer_identity() -> None:
+def test_consumption_review_rejects_tamper_and_hides_raw_identity() -> None:
     ledger = get_orders_v2_policy_consumption_ledger()
     proposal = _proposal()
-    guard = build_orders_v2_policy_transition_guard(
-        proposal=proposal,
-        evaluated_at=proposal.proposed_at + timedelta(hours=1),
-    )
+    guard = _guard(proposal)
     raw_identity = "security-reviewer@example.invalid"
     review = build_orders_v2_policy_consumption_review_proposal(
         ledger=ledger,
@@ -191,5 +195,10 @@ def test_consumption_review_does_not_store_raw_reviewer_identity() -> None:
         reviewer_identity=raw_identity,
         reviewed_at=proposal.proposed_at + timedelta(hours=1, minutes=5),
     )
+
+    payload = review.model_dump(mode="python")
+    payload["ledger_mutation_permitted"] = True
+    with pytest.raises(ValidationError):
+        OrdersV2PolicyConsumptionReviewProposal.model_validate(payload)
 
     assert raw_identity not in review.model_dump_json()

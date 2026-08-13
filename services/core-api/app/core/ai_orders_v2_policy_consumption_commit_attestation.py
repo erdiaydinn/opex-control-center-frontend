@@ -13,8 +13,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.ai_orders_v2_policy_consumption_ledger import OrdersV2PolicyConsumptionLedger
-from app.core.ai_orders_v2_policy_consumption_patch import OrdersV2PolicyConsumptionPatchArtifact
+from app.core.ai_orders_v2_policy_consumption_ledger import (
+    OrdersV2PolicyConsumptionLedger,
+)
+from app.core.ai_orders_v2_policy_consumption_patch import (
+    OrdersV2PolicyConsumptionPatchArtifact,
+)
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 COMMIT_ATTESTATION_VERSION = 1
@@ -43,7 +47,10 @@ class OrdersV2PolicyConsumptionCommitAttestation(BaseModel):
     @property
     def attestation_fingerprint(self) -> str:
         encoded = json.dumps(
-            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
@@ -54,13 +61,16 @@ def attest_orders_v2_policy_consumption_commit_candidate(
     candidate_ledger: OrdersV2PolicyConsumptionLedger,
     patch: OrdersV2PolicyConsumptionPatchArtifact,
 ) -> OrdersV2PolicyConsumptionCommitAttestation:
-    """Fail closed unless candidate ledger is the exact single append authorized by patch."""
+    """Require the exact single ledger append authorized by the reviewed patch."""
 
     if patch.append_validation_passed is not True:
         raise ValueError("consumption patch validation did not pass")
     if patch.manual_version_control_commit_required is not True:
         raise ValueError("consumption patch commit state is invalid")
-    if patch.ledger_mutation_permitted is not False or patch.policy_mutation_permitted is not False:
+    if (
+        patch.ledger_mutation_permitted is not False
+        or patch.policy_mutation_permitted is not False
+    ):
         raise ValueError("consumption patch mutation state is invalid")
     if patch.execution_enable_permitted is not False:
         raise ValueError("consumption patch execution state is invalid")

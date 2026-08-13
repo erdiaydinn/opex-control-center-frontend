@@ -17,14 +17,28 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file: [.env]
     environment:
+      DOCKOS_ENV: ${DOCKOS_ENV:-development}
       DOCKOS_PERSISTENCE: postgres
       DATABASE_URL: postgresql://dockos:${DOCKOS_POSTGRES_PASSWORD:-dockos_local_only}@postgres:5432/dockos
       DOCKOS_TENANT_KEY: ${DOCKOS_TENANT_KEY:-ys_tr}
       DOCKOS_DC_NAMES: ${DOCKOS_DC_NAMES:-Ankara DC,İstanbul Avrupa DC,İstanbul Anadolu DC,İzmir DC}
       DOCKOS_SINGLE_WORKER: "false"
       DOCKOS_WORKERS: ${DOCKOS_WORKERS:-2}
+      DOCKOS_PO_SOURCE: ${DOCKOS_PO_SOURCE:-LOCAL}
+      DOCKOS_BQ_PROJECT: ${DOCKOS_BQ_PROJECT:-fulfillment-dwh-production}
+      DOCKOS_GATEWAY_SECRET: ${DOCKOS_GATEWAY_SECRET:-}
+      DOCKOS_GATEWAY_TRUST_MODE: ${DOCKOS_GATEWAY_TRUST_MODE:-hmac}
+      DOCKOS_OIDC_ISSUER: ${DOCKOS_OIDC_ISSUER:-}
+      DOCKOS_OIDC_AUDIENCE: ${DOCKOS_OIDC_AUDIENCE:-}
+      DOCKOS_OIDC_JWKS_URL: ${DOCKOS_OIDC_JWKS_URL:-}
+      DOCKOS_SMTP_HOST: ${DOCKOS_SMTP_HOST:-}
+      DOCKOS_SMTP_PORT: ${DOCKOS_SMTP_PORT:-587}
+      DOCKOS_SMTP_TLS: ${DOCKOS_SMTP_TLS:-true}
+      DOCKOS_SMTP_USER: ${DOCKOS_SMTP_USER:-}
+      DOCKOS_SMTP_PASSWORD: ${DOCKOS_SMTP_PASSWORD:-}
+      DOCKOS_SMTP_FROM: ${DOCKOS_SMTP_FROM:-}
+      DOCKOS_DC_EMAILS: ${DOCKOS_DC_EMAILS:-}
     depends_on:
       postgres:
         condition: service_healthy

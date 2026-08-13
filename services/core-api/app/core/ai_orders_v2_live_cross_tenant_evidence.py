@@ -1,10 +1,9 @@
 """Non-promoting evidence contract for live BigQuery cross-tenant verification.
 
-This module deliberately does not promote a query policy. Version 2 strengthens
-the evidence shape by requiring proof that the foreign sentinel actually exists
-in the authoritative source while still requiring zero sentinel matches inside
-the authorized candidate scope. Raw tenant/store identifiers remain excluded
-from the artifact.
+Version 2 requires proof that the foreign sentinel actually exists in the
+authoritative source while requiring zero sentinel matches inside the authorized
+candidate scope. It also binds the artifact to the candidate, sentinel-reference
+and scoped-diagnostic BigQuery jobs without storing raw job or scope identifiers.
 """
 
 from __future__ import annotations
@@ -45,6 +44,8 @@ class OrdersV2LiveCrossTenantEvidence(BaseModel):
     location: str | None = Field(default=None, max_length=128)
     executed_at: datetime
     query_job_id_sha256: str = Field(pattern=SHA256_PATTERN)
+    foreign_reference_job_id_sha256: str = Field(pattern=SHA256_PATTERN)
+    scoped_diagnostic_job_id_sha256: str = Field(pattern=SHA256_PATTERN)
     authorized_scope_sha256: str = Field(pattern=SHA256_PATTERN)
     foreign_sentinel_scope_sha256: str = Field(pattern=SHA256_PATTERN)
     returned_rowset_sha256: str = Field(pattern=SHA256_PATTERN)
@@ -107,6 +108,8 @@ def build_orders_v2_live_cross_tenant_evidence_candidate(
     schema_attestation: OrdersV2SchemaAttestationArtifact,
     executed_at: datetime,
     query_job_id: str,
+    foreign_reference_job_id: str,
+    scoped_diagnostic_job_id: str,
     authorized_scope_descriptor: str,
     foreign_sentinel_scope_descriptor: str,
     canonical_returned_rowset: str,
@@ -135,6 +138,8 @@ def build_orders_v2_live_cross_tenant_evidence_candidate(
         location=schema_attestation.location,
         executed_at=executed_at,
         query_job_id_sha256=sha256_text(query_job_id),
+        foreign_reference_job_id_sha256=sha256_text(foreign_reference_job_id),
+        scoped_diagnostic_job_id_sha256=sha256_text(scoped_diagnostic_job_id),
         authorized_scope_sha256=sha256_text(authorized_scope_descriptor),
         foreign_sentinel_scope_sha256=sha256_text(
             foreign_sentinel_scope_descriptor

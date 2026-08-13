@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - platform-core/eay-v2-jarvis-orders-schema-attestation-cli
+      - platform-core/eay-v2-jarvis-orders-live-cross-tenant-proof-contract
   pull_request:
     branches:
       - platform-core/**
@@ -33,16 +34,20 @@ jobs:
           cache: pip
       - name: Install Core API with BigQuery extra
         run: python -m pip install -e "./services/core-api[dev,bigquery]"
-      - name: Lint schema attestation slice
+      - name: Lint schema attestation and live evidence slices
         run: >-
           ruff check
           services/core-api/app/core/ai_orders_v2_schema_attestation.py
+          services/core-api/app/core/ai_orders_v2_live_cross_tenant_evidence.py
           services/core-api/app/cli/attest_orders_v2_schema.py
           services/core-api/tests/test_ai_orders_v2_schema_attestation.py
-      - name: Test attestation remains explicit and non-promoting
+          services/core-api/tests/test_ai_orders_v2_live_cross_tenant_evidence.py
+      - name: Test evidence remains privacy-minimized and non-promoting
         run: >-
           pytest -q
           services/core-api/tests/test_ai_orders_v2_schema_attestation.py
+          services/core-api/tests/test_ai_orders_v2_live_cross_tenant_evidence.py
           services/core-api/tests/test_ai_orders_v2_live_schema_collector.py
           services/core-api/tests/test_ai_orders_v2_schema_evidence.py
+          services/core-api/tests/test_ai_orders_v2_synthetic_proof.py
           services/core-api/tests/test_ai_query_contract_policy.py

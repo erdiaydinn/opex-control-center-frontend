@@ -1,0 +1,48 @@
+name: Jarvis Orders Live Schema Collector CI
+
+on:
+  push:
+    branches:
+      - platform-core/eay-v2-jarvis-orders-live-schema-collector
+  pull_request:
+    branches:
+      - platform-core/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-orders-live-schema-collector-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-schema-collector:
+    name: Orders live schema collector contract
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:unused@localhost:5432/unused
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:unused@localhost:5432/unused
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Core API with BigQuery extra
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Lint live schema collector
+        run: >-
+          ruff check
+          services/core-api/app/core/ai_orders_v2_schema_evidence.py
+          services/core-api/app/core/ai_orders_v2_live_schema_collector.py
+          services/core-api/tests/test_ai_orders_v2_live_schema_collector.py
+      - name: Test collector stays exact and non-promoting
+        run: >-
+          pytest -q
+          services/core-api/tests/test_ai_orders_v2_live_schema_collector.py
+          services/core-api/tests/test_ai_orders_v2_schema_evidence.py
+          services/core-api/tests/test_ai_orders_v2_query_contract.py
+          services/core-api/tests/test_ai_query_contract_policy.py

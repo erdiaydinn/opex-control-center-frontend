@@ -12,7 +12,7 @@ async def get_required_quiz_ids(
     principal: Principal,
     path_id: UUID,
 ) -> list[UUID]:
-    rows = (await session.execute(text("""
+    result = await session.execute(text("""
         SELECT q.id
         FROM academy_quizzes AS q
         JOIN academy_learning_path_items AS lpi
@@ -23,8 +23,8 @@ async def get_required_quiz_ids(
     """), {
         "tenant_id": principal.tenant_id,
         "path_id": path_id,
-    })).scalars().all()
-    return list(rows)
+    })
+    return [row[0] for row in result.all()]
 
 
 async def is_completion_revoked(

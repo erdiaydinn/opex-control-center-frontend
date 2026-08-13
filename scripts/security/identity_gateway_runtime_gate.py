@@ -1084,6 +1084,10 @@ print(
 def main() -> None:
     core_id = ""
     identity_id = ""
+    private_mode = (
+        PRIVATE_PATH.stat().st_mode
+        & 0o777
+    )
 
     try:
         static_gate()
@@ -1092,6 +1096,18 @@ def main() -> None:
             "build",
             "identity-gateway",
             "core-api",
+        )
+
+        # Docker Compose file-backed secrets are bind mounts;
+        # uid/gid/mode remapping is not available for file sources.
+        # The generated key is an ephemeral, gitignored CI fixture.
+        # Relax only for the runtime gate, then restore in finally.
+        os.chmod(
+            PRIVATE_PATH,
+            0o644,
+        )
+        print(
+            "IDENTITY_CI_FILE_SECRET_PERMISSION_BRIDGE=ACTIVE"
         )
 
         compose(
@@ -1198,6 +1214,24 @@ def main() -> None:
             "down",
             "--remove-orphans",
             check=False,
+        )
+
+        os.chmod(
+            PRIVATE_PATH,
+            private_mode,
+        )
+
+        restored_mode = (
+            PRIVATE_PATH.stat().st_mode
+            & 0o777
+        )
+        if restored_mode != private_mode:
+            raise SystemExit(
+                "IDENTITY_CI_PRIVATE_KEY_MODE_RESTORE_FAILED"
+            )
+
+        print(
+            "IDENTITY_CI_FILE_SECRET_PERMISSION_BRIDGE=RESTORED"
         )
 
 

@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import shutil
@@ -12,12 +13,49 @@ from .tenant_db import load_kv, read_conn, save_kv, write_conn
 STATE_PATH = Path(os.getenv('DOCKOS_STATE_FILE', str(Path(__file__).with_name('dockos_state.json'))))
 
 
+def _row_key(name, row):
+    if name == 'purchase_orders': return str(row.get('po_number') or row.get('po_order_id') or '')
+    if name == 'reservations': return str(row.get('reservation_no') or '')
+    if name == 'slot_capacity': return (row.get('warehouse_name'), row.get('date'), row.get('slot'))
+    if name == 'supplier_capacity': return (row.get('warehouse_name'), row.get('date'), row.get('slot'), row.get('supplier_name'))
+    if name == 'supplier_daily_limits': return (row.get('warehouse_name'), row.get('supplier_name'), row.get('date'))
+    if name == 'supplier_access': return str(row.get('email') or '').casefold()
+    if name == 'notification_outbox': return str(row.get('key') or '')
+    if name == 'audit_log':
+        return (row.get('timestamp'), row.get('action'), row.get('entity_type'), str(row.get('entity_id')), row.get('user_email'))
+    return json.dumps(row, sort_keys=True, default=str, ensure_ascii=False)
+
+
+def _merge_list(name, baseline, local_rows, remote_rows):
+    base = {_row_key(name, row): row for row in (baseline or [])}
+    local_map = {_row_key(name, row): row for row in (local_rows or [])}
+    remote = {_row_key(name, row): row for row in (remote_rows or [])}
+
+    if name != 'audit_log':
+        for key in set(base) - set(local_map):
+            remote.pop(key, None)
+    for key, row in local_map.items():
+        if key not in base or row != base[key]:
+            remote[key] = copy.deepcopy(row)
+
+    if name == 'audit_log':
+        # Audit is logically append-only: never propagate local trimming/deletion.
+        for key, row in local_map.items():
+            if key not in base:
+                remote[key] = copy.deepcopy(row)
+        rows = list(remote.values())
+        rows.sort(key=lambda item: str(item.get('timestamp') or ''))
+        return rows[-5000:]
+    return list(remote.values())
+
+
 class CrossProcessStateLock:
     def __init__(self):
         self._lock = RLock()
         self._local = local()
         self.collections = None
         self.settings = None
+        self.baseline = {}
 
     def bind(self, collections, settings):
         self.collections = collections
@@ -29,11 +67,12 @@ class CrossProcessStateLock:
         for name, target in self.collections.items():
             key = f'state:{name}'
             if key in values and isinstance(values[key], list):
-                target[:] = values[key]
+                target[:] = copy.deepcopy(values[key])
         if self.settings is not None:
             for key, value in values.items():
                 if key.startswith('config:'):
-                    self.settings[key[7:]] = value
+                    self.settings[key[7:]] = copy.deepcopy(value)
+        self.baseline = copy.deepcopy(values)
 
     def __enter__(self):
         self._lock.acquire()
@@ -75,13 +114,15 @@ def persistence_mode():
 
 
 def _state_values(collections, settings):
-    values = {f'state:{name}': value for name, value in collections.items()}
-    values.update({f'config:{name}': value for name, value in settings.items()})
+    values = {f'state:{name}': copy.deepcopy(value) for name, value in collections.items()}
+    values.update({f'config:{name}': copy.deepcopy(value) for name, value in settings.items()})
     return values
 
 
 def refresh_state():
     if not postgres_enabled() or STATE_LOCK.collections is None:
+        return
+    if STATE_LOCK.current_conn() is not None:
         return
     with STATE_LOCK._lock:
         with read_conn() as conn:
@@ -92,7 +133,7 @@ def load_state(collections, settings):
     STATE_LOCK.bind(collections, settings)
     if postgres_enabled():
         from .mock_data import MOCK_WAREHOUSES
-        configured = [item.strip() for item in os.getenv('DOCKOS_DC_NAMES','').split(',') if item.strip()]
+        configured = [item.strip() for item in os.getenv('DOCKOS_DC_NAMES', '').split(',') if item.strip()]
         if configured:
             MOCK_WAREHOUSES[:] = [{'warehouse_name': name} for name in configured]
         with STATE_LOCK:
@@ -102,7 +143,9 @@ def load_state(collections, settings):
             if not has_state:
                 for target in collections.values():
                     target.clear()
-                save_kv(conn, _state_values(collections, settings))
+                initial = _state_values(collections, settings)
+                save_kv(conn, initial)
+                STATE_LOCK.baseline = copy.deepcopy(initial)
         return
 
     with STATE_LOCK._lock:
@@ -122,14 +165,34 @@ def load_state(collections, settings):
             settings.update(restored_settings)
 
 
+def _merge_and_save_outside_lock(collections, settings):
+    local_values = _state_values(collections, settings)
+    baseline = copy.deepcopy(STATE_LOCK.baseline)
+    with write_conn() as conn:
+        remote = load_kv(conn)
+        merged = copy.deepcopy(remote)
+        for name in collections:
+            key = f'state:{name}'
+            merged[key] = _merge_list(name, baseline.get(key, []), local_values.get(key, []), remote.get(key, []))
+        for name in settings:
+            key = f'config:{name}'
+            local_value = local_values.get(key)
+            if key not in baseline or local_value != baseline.get(key):
+                merged[key] = copy.deepcopy(local_value)
+        save_kv(conn, merged)
+        STATE_LOCK._apply(merged)
+
+
 def save_state(collections, settings):
     if postgres_enabled():
         conn = STATE_LOCK.current_conn()
+        values = _state_values(collections, settings)
         if conn is not None:
-            save_kv(conn, _state_values(collections, settings))
+            save_kv(conn, values)
+            STATE_LOCK.baseline = copy.deepcopy(values)
             return
-        with STATE_LOCK:
-            save_kv(STATE_LOCK.current_conn(), _state_values(collections, settings))
+        with STATE_LOCK._lock:
+            _merge_and_save_outside_lock(collections, settings)
         return
 
     with STATE_LOCK._lock:
@@ -139,7 +202,7 @@ def save_state(collections, settings):
         temporary = STATE_PATH.with_suffix('.tmp')
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
         temporary.replace(STATE_PATH)
-        backup_root = os.getenv('DOCKOS_BACKUP_DIR','').strip()
+        backup_root = os.getenv('DOCKOS_BACKUP_DIR', '').strip()
         if backup_root:
             backup_dir = Path(backup_root)
             backup_dir.mkdir(parents=True, exist_ok=True)
@@ -147,7 +210,7 @@ def save_state(collections, settings):
             backup_temp = daily_backup.with_suffix('.tmp')
             shutil.copy2(STATE_PATH, backup_temp)
             backup_temp.replace(daily_backup)
-            retention = max(7, int(os.getenv('DOCKOS_BACKUP_RETENTION_DAYS','30') or 30))
+            retention = max(7, int(os.getenv('DOCKOS_BACKUP_RETENTION_DAYS', '30') or 30))
             backups = sorted(backup_dir.glob('dockos_state_*.json'), reverse=True)
             for old_backup in backups[retention:]:
                 old_backup.unlink(missing_ok=True)

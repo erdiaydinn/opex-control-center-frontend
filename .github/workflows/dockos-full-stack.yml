@@ -16,8 +16,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Validate DockOS locale and RTL contract
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('src/modules/DockOS/DockOSUiContext.jsx','utf8');
+          for (const locale of ['tr','en','de','ar']) {
+            if (!s.includes(`${locale}: {`)) throw new Error(`missing ${locale} translations`);
+          }
+          if (!s.includes('dir: locale === "ar" ? "rtl" : "ltr"')) throw new Error('Arabic RTL contract missing');
+          if (!s.includes('["tr", "en", "de", "ar"]')) throw new Error('locale allow-list missing');
+          console.log('DOCKOS_I18N_RTL=PASS');
+          NODE
 
-  backend:
+  backend-json:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,3 +48,57 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app
       - run: python -m app.modules.dockos.test_rc2
+
+  postgres-concurrency:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dockos
+          POSTGRES_USER: dockos
+          POSTGRES_PASSWORD: dockos_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dockos -d dockos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://dockos:dockos_ci@127.0.0.1:5432/dockos
+      PGPASSWORD: dockos_ci
+      DOCKOS_PERSISTENCE: postgres
+      DOCKOS_TENANT_KEY: ys_tr
+      DOCKOS_DC_NAMES: Ankara DC
+      DOCKOS_PO_SOURCE: LOCAL
+      DOCKOS_NOTIFICATION_AUTOMATION: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        working-directory: .
+      - name: Apply DockOS migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_dockos_postgres.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_runtime_hardening.sql
+          psql "$DATABASE_URL" -Atc "SELECT version FROM dockos.schema_migrations ORDER BY version;"
+      - run: python -m app.modules.dockos.test_postgres_concurrency
+      - run: python -m app.modules.dockos.test_postgres_limits
+      - name: PostgreSQL backup and restore acceptance
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --file=/tmp/dockos.dump
+          createdb -h 127.0.0.1 -U dockos dockos_restore
+          pg_restore -h 127.0.0.1 -U dockos -d dockos_restore /tmp/dockos.dump
+          restored=$(psql -h 127.0.0.1 -U dockos -d dockos_restore -Atc "SELECT count(*) FROM dockos.schema_migrations WHERE version IN ('001_dockos_postgres','002_runtime_hardening');")
+          test "$restored" = "2"
+          echo "POSTGRES_BACKUP_RESTORE=PASS migrations=$restored"

@@ -41,6 +41,8 @@ async def test_tenant_query_context_schema_is_force_rls_and_least_privilege() ->
                     """
                 )
             )
+            if isinstance(fk_delete_action, bytes):
+                fk_delete_action = fk_delete_action.decode("ascii")
 
             privileges = (
                 await connection.execute(

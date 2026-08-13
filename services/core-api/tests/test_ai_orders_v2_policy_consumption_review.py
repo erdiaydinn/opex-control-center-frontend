@@ -11,10 +11,15 @@ from app.core.ai_orders_v2_manual_policy_promotion import (
     OrdersV2ManualPolicyPromotionProposal,
     _target_policy_review_fingerprint,
 )
+from app.core.ai_orders_v2_policy_consumption_commit_attestation import (
+    COMMIT_ATTESTATION_BLOCKER,
+    attest_orders_v2_policy_consumption_commit_candidate,
+)
 from app.core.ai_orders_v2_policy_consumption_ledger import (
     LEDGER_GENESIS_FINGERPRINT,
     OrdersV2PolicyConsumptionEntry,
     OrdersV2PolicyConsumptionLedger,
+    build_next_orders_v2_policy_consumption_entry,
     get_orders_v2_policy_consumption_ledger,
 )
 from app.core.ai_orders_v2_policy_consumption_patch import (
@@ -263,3 +268,80 @@ def test_consumption_patch_rejects_entry_sequence_and_mutation_tamper() -> None:
     payload["ledger_mutation_permitted"] = True
     with pytest.raises(ValidationError):
         OrdersV2PolicyConsumptionPatchArtifact.model_validate(payload)
+
+
+def test_consumption_commit_attestation_binds_exact_patch_and_append() -> None:
+    ledger, _, _, review = _review()
+    patch = build_orders_v2_policy_consumption_patch_candidate(
+        ledger=ledger,
+        review=review,
+    )
+    entry = build_next_orders_v2_policy_consumption_entry(
+        ledger=ledger,
+        proposal_fingerprint=review.proposal_fingerprint,
+        guard_fingerprint=review.guard_fingerprint,
+        consumed_at=review.reviewed_at,
+    )
+    candidate = OrdersV2PolicyConsumptionLedger(
+        version=ledger.version,
+        kind=ledger.kind,
+        entries=(*ledger.entries, entry),
+    )
+
+    attestation = attest_orders_v2_policy_consumption_commit_candidate(
+        previous_ledger=ledger,
+        candidate_ledger=candidate,
+        patch=patch,
+    )
+
+    assert attestation.patch_fingerprint == patch.patch_fingerprint
+    assert attestation.previous_ledger_fingerprint == ledger.ledger_fingerprint
+    assert attestation.resulting_ledger_fingerprint == candidate.ledger_fingerprint
+    assert attestation.appended_entry_fingerprint == entry.entry_fingerprint
+    assert attestation.commit_candidate_validated is True
+    assert attestation.human_merge_required is True
+    assert attestation.ledger_mutation_permitted is False
+    assert attestation.policy_mutation_permitted is False
+    assert attestation.execution_enable_permitted is False
+    assert attestation.production_ready is False
+    assert attestation.production_blocker == COMMIT_ATTESTATION_BLOCKER
+
+
+def test_consumption_commit_attestation_rejects_extra_append() -> None:
+    ledger, _, _, review = _review()
+    patch = build_orders_v2_policy_consumption_patch_candidate(
+        ledger=ledger,
+        review=review,
+    )
+    first = build_next_orders_v2_policy_consumption_entry(
+        ledger=ledger,
+        proposal_fingerprint=review.proposal_fingerprint,
+        guard_fingerprint=review.guard_fingerprint,
+        consumed_at=review.reviewed_at,
+    )
+    one_entry_ledger = OrdersV2PolicyConsumptionLedger(
+        version=ledger.version,
+        kind=ledger.kind,
+        entries=(first,),
+    )
+    second = build_next_orders_v2_policy_consumption_entry(
+        ledger=one_entry_ledger,
+        proposal_fingerprint="f" * 64,
+        guard_fingerprint="e" * 64,
+        consumed_at=review.reviewed_at + timedelta(minutes=1),
+    )
+    candidate = OrdersV2PolicyConsumptionLedger(
+        version=ledger.version,
+        kind=ledger.kind,
+        entries=(first, second),
+    )
+    patched = patch.model_copy(
+        update={"resulting_ledger_fingerprint": candidate.ledger_fingerprint}
+    )
+
+    with pytest.raises(ValueError, match="exactly one appended entry"):
+        attest_orders_v2_policy_consumption_commit_candidate(
+            previous_ledger=ledger,
+            candidate_ledger=candidate,
+            patch=patched,
+        )

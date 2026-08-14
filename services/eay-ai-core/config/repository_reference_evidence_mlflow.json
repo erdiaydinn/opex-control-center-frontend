@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14T18:13:00+03:00",
+  "authority": "REFERENCE_ONLY",
+  "repository": "mlflow/mlflow",
+  "canonical_upstream": "mlflow/mlflow",
+  "ref": "master",
+  "commit_sha": "3b1b40722bde72efd8cb0b91b97e2c2d2c50d0ac",
+  "tree_sha": "e263a3493a1d79cc816ec5087e18ac0c8340748b",
+  "license": {
+    "spdx": "Apache-2.0",
+    "status": "VERIFIED_FROM_UPSTREAM"
+  },
+  "capabilities": [
+    "model-registry",
+    "ml-lifecycle",
+    "experiment-tracking",
+    "artifact-metadata",
+    "deployment-reference"
+  ],
+  "decision": "WATCH",
+  "commercial_use": "PERMISSIVE_WITH_NOTICE",
+  "security_relevance": "MLflow is a model-lifecycle and registry reference only. Registry state must not authorize production model-weight promotion by itself; sanitized training/eval evidence, explicit human approval, tenant-scoped artifact provenance, and separate production deployment authorization remain mandatory.",
+  "provenance": {
+    "commit_source": "GitHub REST commit for mlflow/mlflow master",
+    "license_source": "upstream LICENSE.txt at the pinned commit",
+    "supplied_archive_match": "NOT_APPLICABLE",
+    "registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+  }
+}

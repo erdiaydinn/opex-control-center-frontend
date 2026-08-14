@@ -24,6 +24,7 @@ import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import AcademyPathAuthoring from "./AcademyPathAuthoring.jsx";
 import "./academy.css";
 
 function localized(value, locale) {
@@ -407,7 +408,7 @@ export default function AcademyWorkspace() {
             {tab === "certificates" ? <Certificates data={data} locale={locale} t={t} formatDate={formatDate} /> : null}
             {tab === "tutor" ? <JarvisTutor locale={locale} t={t} /> : null}
             {tab === "studio" && canStudio ? <ContentStudio workspace={workspace} locale={locale} t={t} canAction={canAction} refresh={load} /> : null}
-            {tab === "paths" && canStudio ? <LearningPaths workspace={workspace} locale={locale} t={t} /> : null}
+            {tab === "paths" && canStudio ? <AcademyPathAuthoring workspace={workspace} locale={locale} t={t} canAction={canAction} refresh={load} /> : null}
             {tab === "analytics" && canAnalytics ? <Analytics workspace={workspace} t={t} formatNumber={formatNumber} /> : null}
           </div>
         ) : null}

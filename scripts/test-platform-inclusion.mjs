@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { messageCoverage, SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
 import { intelligenceMessageCoverage } from "../src/platform/i18n/intelligenceMessages.js";
+import { academyPlayerMessageCoverage } from "../src/platform/i18n/academyPlayerMessages.js";
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -25,24 +26,20 @@ requireCondition(prefs.includes("Intl.NumberFormat"), "locale-aware number forma
 requireCondition(prefs.includes("Intl.DateTimeFormat"), "locale-aware date formatting is required");
 
 const expectedLocales = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"];
-requireCondition(
-  JSON.stringify(SUPPORTED_LOCALES.map((item) => item.code)) === JSON.stringify(expectedLocales),
-  "runtime locale set/order drifted"
-);
+requireCondition(JSON.stringify(SUPPORTED_LOCALES.map((item) => item.code)) === JSON.stringify(expectedLocales), "runtime locale set/order drifted");
 for (const locale of expectedLocales) {
   requireCondition(quality.global_acceptance_targets.supported_locales.includes(locale), `quality contract locale missing: ${locale}`);
 }
 
-const coverage = messageCoverage();
-for (const locale of expectedLocales) {
-  requireCondition((coverage.missing[locale] || []).length === 0, `missing translations for ${locale}: ${(coverage.missing[locale] || []).join(", ")}`);
-  requireCondition((coverage.extra[locale] || []).length === 0, `translation key drift for ${locale}: ${(coverage.extra[locale] || []).join(", ")}`);
-}
-
-const intelligenceCoverage = intelligenceMessageCoverage(expectedLocales);
-for (const locale of expectedLocales) {
-  requireCondition((intelligenceCoverage.missing[locale] || []).length === 0, `missing intelligence translations for ${locale}: ${(intelligenceCoverage.missing[locale] || []).join(", ")}`);
-  requireCondition((intelligenceCoverage.extra[locale] || []).length === 0, `intelligence translation key drift for ${locale}: ${(intelligenceCoverage.extra[locale] || []).join(", ")}`);
+for (const [label, coverage] of [
+  ["platform", messageCoverage()],
+  ["intelligence", intelligenceMessageCoverage(expectedLocales)],
+  ["academy player", academyPlayerMessageCoverage(expectedLocales)],
+]) {
+  for (const locale of expectedLocales) {
+    requireCondition((coverage.missing[locale] || []).length === 0, `missing ${label} translations for ${locale}: ${(coverage.missing[locale] || []).join(", ")}`);
+    requireCondition((coverage.extra[locale] || []).length === 0, `${label} translation key drift for ${locale}: ${(coverage.extra[locale] || []).join(", ")}`);
+  }
 }
 
 requireCondition(quality.global_acceptance_targets.rtl_locales.includes("ar"), "Arabic RTL must remain mandatory");

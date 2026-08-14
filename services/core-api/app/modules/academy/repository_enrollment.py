@@ -212,7 +212,24 @@ async def get_enrollment_workspace(
                     'pass_score', q.pass_score,
                     'max_attempts', q.max_attempts,
                     'required', q.required,
-                    'version_number', q.version_number
+                    'version_number', q.version_number,
+                    'passed', EXISTS (
+                        SELECT 1
+                        FROM academy_quiz_attempts AS qa
+                        WHERE qa.tenant_id=q.tenant_id
+                          AND qa.quiz_id=q.id
+                          AND qa.enrollment_id=:enrollment_id
+                          AND qa.subject=:subject
+                          AND qa.passed=TRUE
+                    ),
+                    'attempt_count', (
+                        SELECT COUNT(*)
+                        FROM academy_quiz_attempts AS qa
+                        WHERE qa.tenant_id=q.tenant_id
+                          AND qa.quiz_id=q.id
+                          AND qa.enrollment_id=:enrollment_id
+                          AND qa.subject=:subject
+                    )
                 ) ORDER BY COALESCE(q.checkpoint_at_ms, 9223372036854775807), q.id
             ) AS items
             FROM academy_quizzes AS q

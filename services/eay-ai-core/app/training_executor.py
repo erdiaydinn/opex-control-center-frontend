@@ -64,8 +64,8 @@ def verify_plan_inputs(plan: TrainingExecutionPlan) -> None:
         raise ValueError("training_executor_local_offline_policy_required")
     if plan.method not in {"lora", "qlora"}:
         raise ValueError("training_executor_method_not_supported")
-    if output.exists() and (output.is_file() or any(output.iterdir())):
-        raise ValueError("training_executor_output_must_be_absent_or_empty")
+    if output.exists() and (not output.is_dir() or any(output.iterdir())):
+        raise ValueError("training_executor_output_must_be_absent_or_empty_directory")
 
 
 def preview_registered_training(
@@ -104,6 +104,9 @@ def execute_registered_training(
 
     The default backend performs actual Hugging Face TRL/PEFT training. Tests may
     inject a backend, but the same preflight and on-disk receipt hashing remain.
+    Runtime evidence is written inside the output directory before hashing, so
+    the receipt cryptographically binds the environment evidence as part of the
+    trained artifact tree.
     """
 
     registry = TrainingExecutionRegistry(db_path)
@@ -116,16 +119,23 @@ def execute_registered_training(
     output = Path(plan.output_path)
     if not output.exists():
         raise ValueError("training_executor_backend_did_not_create_artifact")
+    if not output.is_dir():
+        raise ValueError("training_executor_backend_output_must_be_directory")
+    if not any(output.iterdir()):
+        raise ValueError("training_executor_backend_created_empty_artifact")
 
     evidence = {
+        "plan_fingerprint": plan.fingerprint,
+        "training_job_fingerprint": plan.training_job_fingerprint,
+        "base_model_sha256": plan.base_model_sha256,
+        "training_dataset_sha256": plan.training_dataset_sha256,
+        "eval_dataset_sha256": plan.eval_dataset_sha256,
         "executor": executor.strip(),
         "execution_reference": execution_reference.strip(),
         "method": plan.method,
         **result.runtime_evidence,
     }
-    evidence_path = output / "eay_training_runtime_evidence.json" if output.is_dir() else output.with_suffix(
-        output.suffix + ".runtime.json"
-    )
+    evidence_path = output / "eay_training_runtime_evidence.json"
     evidence_path.write_text(
         json.dumps(evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
         encoding="utf-8",
@@ -161,7 +171,7 @@ def _run_huggingface_training(plan: TrainingExecutionPlan) -> TrainingBackendRes
         from trl import SFTConfig, SFTTrainer
     except ImportError as exc:
         raise RuntimeError(
-            "training_executor_dependencies_unavailable: install the ai-training extra"
+            "training_executor_dependencies_unavailable: install the training extra"
         ) from exc
 
     use_bf16 = plan.hyperparameters["precision"] == "bf16"

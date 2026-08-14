@@ -4,14 +4,23 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Locale = Literal["tr", "en", "de", "ar"]
-ContentType = Literal["document", "video", "sop"]
+Locale = Literal["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"]
+ContentType = Literal[
+    "document",
+    "video",
+    "sop",
+    "interactive",
+    "live",
+    "announcement",
+    "poster",
+    "survey",
+]
 PublicationStatus = Literal["draft", "published", "retired"]
+SUPPORTED_LOCALES = {"tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"}
 
 
 def _validate_i18n(value: dict[str, str], *, required: bool = True) -> dict[str, str]:
-    allowed = {"tr", "en", "de", "ar"}
-    invalid = set(value) - allowed
+    invalid = set(value) - SUPPORTED_LOCALES
     if invalid:
         raise ValueError(f"Unsupported locales: {', '.join(sorted(invalid))}")
     normalized = {

@@ -4,6 +4,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import Principal
+from app.modules.academy.repository_admin import (
+    academy_admin_summary,
+    list_admin_content,
+    list_admin_paths,
+)
 from app.modules.academy.repository_catalog import (
     get_media_asset,
     get_quiz_public_definition,
@@ -48,6 +53,7 @@ from app.modules.academy.repository_quiz_authoring import create_quiz
 from app.modules.academy.repository_utils import json_text
 
 __all__ = (
+    "academy_admin_summary",
     "claim_idempotency_key",
     "create_content",
     "create_content_version",
@@ -68,6 +74,8 @@ __all__ = (
     "ingest_document_chunks",
     "is_completion_revoked",
     "is_module_entitled",
+    "list_admin_content",
+    "list_admin_paths",
     "list_checkpoints",
     "list_entitled_content",
     "list_enrollments",

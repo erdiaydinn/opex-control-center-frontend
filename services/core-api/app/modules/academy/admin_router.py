@@ -13,7 +13,7 @@ from app.modules.academy.repository import (
 )
 from app.modules.academy.service import require_module
 
-router = APIRouter(prefix="/v1/academy/admin", tags=["academy-admin"])
+router = APIRouter(prefix="/admin", tags=["academy-admin"])
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 StudioUser = Annotated[
     Principal,

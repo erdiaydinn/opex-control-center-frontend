@@ -83,16 +83,16 @@
     id: "academy",
     moduleKey: "academy",
     title: "EAY Academy",
-    description: "SOP, eğitim, video kütüphanesi ve bilgi asistanı.",
-    route: "#",
-    enabled: false,
-    health: "soon",
-    healthLabel: "Yakında",
+    description: "Öğrenme yolları, interaktif içerik, yetkinlik, sertifika ve kaynaklı Jarvis eğitmen.",
+    route: "/academy",
+    enabled: true,
+    health: "healthy",
+    healthLabel: "Hazır",
     group: "Knowledge",
     shortcut: "A",
     icon: "academy",
     tone: "amber",
-    meta: "SOP · Video · AI",
+    meta: "Learning · Studio · Jarvis",
     lastUsedKey: "opex_last_academy",
   },
   {
@@ -178,6 +178,3 @@ export const commandStats = [
     detail: "Operasyonu takip etme. Ona yön ver.",
   },
 ];
-
-
-

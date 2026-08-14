@@ -162,5 +162,8 @@ jobs:
       - name: Production Identity Gateway secret boundary
         run: python scripts/security/production_identity_secret_gate.py
 
+      - name: Prepare non-root CI secret ownership
+        run: python scripts/security/prepare_identity_ci_secret.py
+
       - name: Identity Gateway Compose runtime adversarial gate
         run: python scripts/security/identity_gateway_runtime_gate.py

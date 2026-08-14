@@ -59,9 +59,13 @@ export default function App() {
       <Route
         path="/"
         element={
-          <ProtectedRoute>
-            <ControlCenterHome />
-          </ProtectedRoute>
+          EXPERIENCE_MODE
+            ? <EayExperience />
+            : (
+              <ProtectedRoute>
+                <ControlCenterHome />
+              </ProtectedRoute>
+            )
         }
       />
 

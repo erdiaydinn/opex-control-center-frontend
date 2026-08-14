@@ -121,6 +121,21 @@ def test_recovered_selected_reference_cannot_be_silently_dropped(tmp_path: Path)
         load_repository_registry(path)
 
 
+def test_registry_rejects_duplicate_verified_repository_identity(tmp_path: Path) -> None:
+    payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    ollama = next(item for item in payload["entries"] if item["id"] == "discovered-ollama")
+    duplicate = dict(ollama)
+    duplicate["id"] = "discovered-ollama-shadow"
+    duplicate["display_name"] = "Ollama shadow"
+    duplicate["repository"] = "OLLAMA/OLLAMA"
+    payload["entries"].append(duplicate)
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RepositoryRegistryError, match="cannot be duplicated"):
+        load_repository_registry(path)
+
+
 def test_registry_rejects_invented_owner_repo_for_unresolved_identity(tmp_path: Path) -> None:
     payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     entry = next(

@@ -145,6 +145,10 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
         workspace = await c.get(f"/v1/academy/enrollments/{enrollment}")
         assert workspace.status_code == 200, workspace.text
         assert workspace.json()["items"][0]["content_version_id"] == version
+        initial_quiz_state = workspace.json()["items"][0]["quizzes"][0]
+        assert initial_quiz_state["id"] == quiz_id
+        assert initial_quiz_state["passed"] is False
+        assert initial_quiz_state["attempt_count"] == 0
         play = await c.post(f"/v1/academy/media/{media.json()['id']}/playback-authorization")
         assert play.status_code == 200 and play.json()["expires_in_seconds"] == 90
         assert (
@@ -211,6 +215,12 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
                 json=attempt_payload,
             )
         ).json()["idempotent_replay"] is True
+        reloaded_workspace = await c.get(f"/v1/academy/enrollments/{enrollment}")
+        assert reloaded_workspace.status_code == 200, reloaded_workspace.text
+        passed_quiz_state = reloaded_workspace.json()["items"][0]["quizzes"][0]
+        assert passed_quiz_state["id"] == quiz_id
+        assert passed_quiz_state["passed"] is True
+        assert passed_quiz_state["attempt_count"] == 1
 
         seek_only = await c.patch(
             f"/v1/academy/enrollments/{enrollment}/progress",

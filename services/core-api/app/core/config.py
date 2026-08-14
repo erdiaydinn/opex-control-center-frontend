@@ -116,7 +116,10 @@ class Settings(BaseSettings):
                 )
 
             self.migration_database_url = migration_database_url
-        if self.environment in {"staging", "production"} and self.auth_mode not in {"oidc", "internal_assertion"}:
+        if (
+            self.environment in {"staging", "production"}
+            and self.auth_mode not in {"oidc", "internal_assertion"}
+        ):
             raise ValueError(
                 "Staging and production require OPEX_AUTH_MODE=oidc or internal_assertion"
             )

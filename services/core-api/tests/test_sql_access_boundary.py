@@ -13,6 +13,12 @@ from pathlib import Path
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
 RUNTIME_SQL_EXECUTION_POINTS = {
+    ("core/ai_data_scope_admin.py", "list_ai_data_scope_assignments"),
+    ("core/ai_data_scope_admin.py", "_write_scope_change_audit_in_transaction"),
+    ("core/ai_data_scope_admin.py", "update_ai_data_scope_assignment"),
+    ("core/ai_tenant_query_context.py", "get_ai_tenant_query_context"),
+    ("core/ai_tenant_query_context.py", "_write_query_context_audit_in_transaction"),
+    ("core/ai_tenant_query_context.py", "put_ai_tenant_query_context"),
     ("core/resources.py", "check_database"),
     ("core/resources.py", "ensure_audit_table"),
     ("core/resources.py", "write_audit_event"),
@@ -322,6 +328,12 @@ def test_privileged_admin_sql_uses_migration_identity() -> None:
 
 
 EXPECTED_EXECUTION_CALL_COUNTS = {
+    ("core/ai_data_scope_admin.py", "list_ai_data_scope_assignments"): 2,
+    ("core/ai_data_scope_admin.py", "_write_scope_change_audit_in_transaction"): 1,
+    ("core/ai_data_scope_admin.py", "update_ai_data_scope_assignment"): 3,
+    ("core/ai_tenant_query_context.py", "get_ai_tenant_query_context"): 2,
+    ("core/ai_tenant_query_context.py", "_write_query_context_audit_in_transaction"): 1,
+    ("core/ai_tenant_query_context.py", "put_ai_tenant_query_context"): 4,
     ("core/resources.py", "check_database"): 1,
     ("core/resources.py", "ensure_audit_table"): 1,
     ("core/resources.py", "write_audit_event"): 2,

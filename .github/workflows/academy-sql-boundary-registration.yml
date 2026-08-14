@@ -1,0 +1,61 @@
+name: Academy SQL Boundary Registration
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-academy-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  register:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/platform-convergence-academy-v0.1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Register reviewed Academy SQL execution points
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          boundary = Path('services/core-api/tests/test_sql_access_boundary.py')
+          source = boundary.read_text(encoding='utf-8')
+
+          union_anchor = '''ALLOWED_SQL_EXECUTION_POINTS = (\n    RUNTIME_SQL_EXECUTION_POINTS\n    | PRIVILEGED_ADMIN_SQL_POINTS\n    | BUDGET_SQL_EXECUTION_POINTS\n)\n'''
+          assert source.count(union_anchor) == 1
+          academy_set = '''ACADEMY_SQL_EXECUTION_POINTS = {\n    ("modules/academy/rag.py", "grounded_document_answer"),\n    ("modules/academy/repository.py", "record_learning_event"),\n    ("modules/academy/repository.py", "record_platform_audit"),\n    ("modules/academy/repository_catalog.py", "list_entitled_content"),\n    ("modules/academy/repository_catalog.py", "get_media_asset"),\n    ("modules/academy/repository_catalog.py", "list_checkpoints"),\n    ("modules/academy/repository_catalog.py", "get_quiz_public_definition"),\n    ("modules/academy/repository_certificate.py", "get_required_quiz_ids"),\n    ("modules/academy/repository_certificate.py", "is_completion_revoked"),\n    ("modules/academy/repository_certificate.py", "revoke_completion"),\n    ("modules/academy/repository_completion.py", "get_completion_snapshot"),\n    ("modules/academy/repository_completion.py", "mark_enrollment_completed"),\n    ("modules/academy/repository_content.py", "_insert_version"),\n    ("modules/academy/repository_content.py", "create_content"),\n    ("modules/academy/repository_content.py", "create_content_version"),\n    ("modules/academy/repository_content.py", "create_media_asset"),\n    ("modules/academy/repository_enrollment.py", "create_manual_enrollment"),\n    ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"),\n    ("modules/academy/repository_enrollment.py", "list_enrollments"),\n    ("modules/academy/repository_entitlement.py", "is_module_entitled"),\n    ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"),\n    ("modules/academy/repository_knowledge.py", "ingest_document_chunks"),\n    ("modules/academy/repository_path.py", "create_learning_path"),\n    ("modules/academy/repository_path.py", "grant_entitlement"),\n    ("modules/academy/repository_progress.py", "get_progress_target"),\n    ("modules/academy/repository_progress.py", "get_blocking_checkpoint"),\n    ("modules/academy/repository_progress.py", "save_progress"),\n    ("modules/academy/repository_progress.py", "get_progress_snapshot"),\n    ("modules/academy/repository_quiz.py", "get_quiz_definition_for_attempt"),\n    ("modules/academy/repository_quiz.py", "save_quiz_attempt"),\n    ("modules/academy/repository_quiz.py", "get_quiz_attempt_by_id"),\n    ("modules/academy/repository_quiz_authoring.py", "create_quiz"),\n}\n\n'''
+          replacement = academy_set + '''ALLOWED_SQL_EXECUTION_POINTS = (\n    RUNTIME_SQL_EXECUTION_POINTS\n    | PRIVILEGED_ADMIN_SQL_POINTS\n    | BUDGET_SQL_EXECUTION_POINTS\n    | ACADEMY_SQL_EXECUTION_POINTS\n)\n'''
+          source = source.replace(union_anchor, replacement)
+
+          count_anchor = '''    ("modules/budget/read_models.py", "financial_events"): 1,\n}\n'''
+          assert source.count(count_anchor) == 1
+          academy_counts = '''    ("modules/budget/read_models.py", "financial_events"): 1,\n    ("modules/academy/rag.py", "grounded_document_answer"): 1,\n    ("modules/academy/repository.py", "record_learning_event"): 1,\n    ("modules/academy/repository.py", "record_platform_audit"): 1,\n    ("modules/academy/repository_catalog.py", "list_entitled_content"): 1,\n    ("modules/academy/repository_catalog.py", "get_media_asset"): 1,\n    ("modules/academy/repository_catalog.py", "list_checkpoints"): 1,\n    ("modules/academy/repository_catalog.py", "get_quiz_public_definition"): 2,\n    ("modules/academy/repository_certificate.py", "get_required_quiz_ids"): 1,\n    ("modules/academy/repository_certificate.py", "is_completion_revoked"): 1,\n    ("modules/academy/repository_certificate.py", "revoke_completion"): 2,\n    ("modules/academy/repository_completion.py", "get_completion_snapshot"): 5,\n    ("modules/academy/repository_completion.py", "mark_enrollment_completed"): 3,\n    ("modules/academy/repository_content.py", "_insert_version"): 1,\n    ("modules/academy/repository_content.py", "create_content"): 1,\n    ("modules/academy/repository_content.py", "create_content_version"): 1,\n    ("modules/academy/repository_content.py", "create_media_asset"): 1,\n    ("modules/academy/repository_enrollment.py", "create_manual_enrollment"): 1,\n    ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"): 1,\n    ("modules/academy/repository_enrollment.py", "list_enrollments"): 1,\n    ("modules/academy/repository_entitlement.py", "is_module_entitled"): 1,\n    ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"): 2,\n    ("modules/academy/repository_knowledge.py", "ingest_document_chunks"): 3,\n    ("modules/academy/repository_path.py", "create_learning_path"): 3,\n    ("modules/academy/repository_path.py", "grant_entitlement"): 1,\n    ("modules/academy/repository_progress.py", "get_progress_target"): 1,\n    ("modules/academy/repository_progress.py", "get_blocking_checkpoint"): 1,\n    ("modules/academy/repository_progress.py", "save_progress"): 3,\n    ("modules/academy/repository_progress.py", "get_progress_snapshot"): 1,\n    ("modules/academy/repository_quiz.py", "get_quiz_definition_for_attempt"): 3,\n    ("modules/academy/repository_quiz.py", "save_quiz_attempt"): 2,\n    ("modules/academy/repository_quiz.py", "get_quiz_attempt_by_id"): 1,\n    ("modules/academy/repository_quiz_authoring.py", "create_quiz"): 5,\n}\n'''
+          source = source.replace(count_anchor, academy_counts)
+          boundary.write_text(source, encoding='utf-8')
+          PY
+      - name: Install Core API dev dependencies
+        run: python -m pip install -e './services/core-api[dev]'
+      - name: Verify full Core Ruff gate
+        run: ruff check services/core-api
+      - name: Verify complete central SQL boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Verify Academy source compiles
+        run: python -m compileall -q services/core-api/app/modules/academy
+      - name: Remove one-shot workflow and commit reviewed registration
+        shell: bash
+        run: |
+          rm -f .github/workflows/academy-sql-boundary-registration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add services/core-api/tests/test_sql_access_boundary.py .github/workflows/academy-sql-boundary-registration.yml
+          git diff --cached --check
+          git commit -m 'security(academy): register reviewed SQL execution boundary'
+          git push origin HEAD:release/platform-convergence-academy-v0.1

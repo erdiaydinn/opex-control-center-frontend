@@ -50,7 +50,7 @@ function cell(row, ...aliases) {
 async function readTabularFile(file, preferredSheet = "") {
   if (/\.xlsx?$/i.test(file.name)) {
     const bytes = await file.arrayBuffer();
-    const workbook = XLSX.read(bytes, { type: "array", cellDates: true });
+    const workbook = XLSX.read(bytes, { type: "array", cellDates: false });
     const sheet = (preferredSheet && workbook.Sheets[preferredSheet]) || workbook.Sheets[workbook.SheetNames[0]];
     return XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
   }
@@ -68,6 +68,13 @@ function timeText(value) {
 }
 
 function dateToIso(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed || !parsed.y || !parsed.m || !parsed.d) return "";
+    const month = String(parsed.m).padStart(2, "0");
+    const day = String(parsed.d).padStart(2, "0");
+    return `${parsed.y}-${month}-${day}`;
+  }
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     const year = value.getFullYear();
     const month = String(value.getMonth() + 1).padStart(2, "0");

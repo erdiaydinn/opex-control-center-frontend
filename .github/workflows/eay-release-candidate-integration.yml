@@ -1,0 +1,77 @@
+name: EAY Release Candidate Integration
+
+on:
+  push:
+    branches:
+      - release/eay-rc-composition-v0.1
+  pull_request:
+    branches:
+      - feature/phase-1-security-hardening
+    paths:
+      - "config/eay_release_candidate_v0_1.json"
+      - "scripts/validate_eay_release_candidate.py"
+      - ".github/workflows/eay-release-candidate-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-rc-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  composition:
+    name: Version lock, ancestry and virtual composition
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate locked release composition
+        id: composition
+        continue-on-error: true
+        run: |
+          python scripts/validate_eay_release_candidate.py \
+            --manifest config/eay_release_candidate_v0_1.json \
+            --result eay-rc-composition-result.json
+      - name: Upload composition evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eay-rc-composition-evidence
+          path: eay-rc-composition-result.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce composition gate
+        if: steps.composition.outcome == 'failure'
+        run: |
+          cat eay-rc-composition-result.json
+          exit 1
+      - name: Compile composed Python surfaces
+        if: steps.composition.outcome == 'success'
+        run: |
+          SYNTHETIC_HEAD="$(python - <<'PY'
+          import json
+          print(json.load(open('eay-rc-composition-result.json'))['synthetic_composition_head'])
+          PY
+          )"
+          git worktree add --detach /tmp/eay-rc "$SYNTHETIC_HEAD"
+          python -m compileall -q /tmp/eay-rc/backend/app /tmp/eay-rc/services/core-api/app
+      - name: Verify catalog coverage in composed tree
+        if: steps.composition.outcome == 'success'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          catalog = json.loads(Path('/tmp/eay-rc/config/module_catalog.json').read_text())
+          keys = {item['key'] for item in catalog['commercial_modules']}
+          required = {'workforce', 'inventory', 'planogram', 'dockos', 'budget', 'academy', 'jarvis'}
+          missing = required - keys
+          assert not missing, f'module catalog missing canonical modules: {sorted(missing)}'
+          PY

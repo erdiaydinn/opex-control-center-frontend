@@ -1,0 +1,66 @@
+name: EAY Product Quality Contract
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+    paths:
+      - "config/module_catalog.json"
+      - "config/product_quality_contract.json"
+      - "docs/EAY_PRODUCT_QUALITY_STANDARD.md"
+      - "scripts/validate_product_quality_contract.py"
+      - "src/**"
+      - "ops/inventory/**"
+      - ".github/workflows/product-quality-contract.yml"
+  push:
+    branches:
+      - release/platform-product-quality-v0.1
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-product-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-contract:
+    name: Product quality governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python scripts/validate_product_quality_contract.py
+      - name: Standard and field scorecard are version controlled
+        run: |
+          test -s docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Critical-task success" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Inventory terminal" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Expense Management" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+
+  web-shell-regression:
+    name: Web shell access and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:access
+      - run: npm run build
+
+  terminal-production-guard:
+    name: Inventory terminal production guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - run: sh ops/inventory/verify-android-production.sh

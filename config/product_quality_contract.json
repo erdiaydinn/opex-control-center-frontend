@@ -1,0 +1,110 @@
+{
+  "contract_version": 1,
+  "brand": "EAY",
+  "release_policy": {
+    "repository_ready_is_not_production_ready": true,
+    "field_evidence_required_for_market_leading_claim": true,
+    "critical_flow_may_not_depend_on_placeholder_or_demo_data": true,
+    "frontend_may_not_duplicate_authoritative_backend_or_kpi_truth": true
+  },
+  "global_dimensions": [
+    "functional_correctness",
+    "security_and_scope",
+    "data_integrity",
+    "task_usability",
+    "visual_quality",
+    "accessibility",
+    "performance",
+    "resilience_and_offline",
+    "localization",
+    "audit_and_explainability"
+  ],
+  "global_acceptance_targets": {
+    "web_accessibility": "WCAG_2_2_AA",
+    "supported_locales": ["tr", "en", "de", "ar"],
+    "rtl_required_for_ar": true,
+    "mobile_terminal_min_touch_target_dp": 48,
+    "critical_task_success_rate_percent": 98,
+    "usability_sus_target": 85,
+    "crash_free_sessions_percent": 99.8,
+    "terminal_local_scan_feedback_p95_ms": 150,
+    "terminal_cold_start_p95_seconds": 2.5,
+    "destructive_actions_require_explicit_confirmation": true,
+    "all_mutations_require_recoverable_error_state": true,
+    "offline_mutations_require_idempotent_replay": true
+  },
+  "commercial_module_coverage": [
+    "workforce",
+    "inventory",
+    "planogram",
+    "dockos",
+    "budget",
+    "academy",
+    "jarvis"
+  ],
+  "surfaces": {
+    "workforce": {
+      "owner": "workforce",
+      "channels": ["web", "mobile", "terminal", "api"],
+      "priority_flows": ["shift", "check_in", "break", "check_out", "leave", "correction", "employee_center"],
+      "field_evidence": ["corporate_oidc", "real_device", "biometric_presence", "gps_geofence", "real_hr_files"]
+    },
+    "hiring": {
+      "owner": "workforce",
+      "separate_employee_master_forbidden": true,
+      "channels": ["web", "api", "email"],
+      "priority_flows": ["norm", "vacancy", "candidate", "evidence", "approval_reject", "notification", "hire", "first_shift", "exit"]
+    },
+    "inventory": {
+      "owner": "inventory",
+      "channels": ["web", "mobile", "terminal", "api"],
+      "terminal_is_native_product_surface": true,
+      "priority_flows": ["assignment", "hardware_scan", "blind_count", "unexpected_sku", "offline_queue", "recount", "supervisor_handoff", "reconciliation", "approval"],
+      "field_evidence": ["managed_signing", "mdm", "corporate_oidc", "tls_pinning", "physical_zebra"]
+    },
+    "planogram": {
+      "owner": "planogram",
+      "channels": ["web", "api"],
+      "priority_flows": ["store_dna", "physical_master", "fixture_model", "constraint_edit", "solve", "infeasible_reason", "2d_validation", "3d_validation", "approval"],
+      "field_evidence": ["real_sku_dimensions", "real_fixture_geometry", "production_catalog", "store_validation"]
+    },
+    "dockos": {
+      "owner": "dockos",
+      "channels": ["web", "mobile", "api", "email"],
+      "priority_flows": ["supplier_access", "po_lookup", "slot_capacity", "reservation", "exception", "notification", "audit"],
+      "field_evidence": ["corporate_auth", "smtp", "bigquery_identity", "pilot_supplier_dc"]
+    },
+    "budget": {
+      "owner": "budget",
+      "channels": ["web", "api", "email"],
+      "priority_flows": ["budget_plan", "cost_center", "request", "approval", "po", "invoice", "actual", "commitment", "forecast", "variance", "reconciliation"],
+      "field_evidence": ["real_finance_files", "erp_accounting_integration", "finance_owner_uat"]
+    },
+    "academy": {
+      "owner": "academy",
+      "channels": ["web", "mobile", "api"],
+      "priority_flows": ["content", "learning_path", "video", "quiz", "progress", "completion", "grounded_qa"],
+      "field_evidence": ["real_content", "media_delivery", "concurrency", "learner_uat"]
+    },
+    "jarvis": {
+      "owner": "jarvis",
+      "channels": ["web", "mobile", "api", "email", "whatsapp"],
+      "priority_flows": ["question", "citation", "tenant_safe_analysis", "action_proposal", "approval", "execution", "follow_up", "audit", "learning"],
+      "field_evidence": ["live_bigquery", "controlled_cross_tenant_proof", "governed_model_run", "operator_acceptance"]
+    },
+    "insight_kpi": {
+      "owner": "platform_jarvis",
+      "duplicate_metric_truth_forbidden": true,
+      "channels": ["web", "api"],
+      "priority_flows": ["canonical_metric", "provenance", "tenant_scope", "drilldown", "trend", "export"],
+      "field_evidence": ["promoted_kpi_contracts", "live_schema_evidence", "analytics_uat"]
+    }
+  },
+  "next_phase_reserved": {
+    "expense_management": {
+      "separate_module": true,
+      "planned_flow": ["receipt_capture", "ocr", "field_extraction", "confidence_review", "duplicate_policy", "cost_center", "approval", "budget_link", "accounting_export", "audit"],
+      "silent_auto_post_forbidden": true
+    }
+  }
+}

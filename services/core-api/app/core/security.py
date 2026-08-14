@@ -17,10 +17,10 @@ from app.core.internal_identity import (
     verify_internal_service_assertion,
 )
 from app.core.internal_service_replay import (
+    INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
     InternalServiceReplayDetected,
     InternalServiceReplayUnavailable,
     RedisInternalServiceReplayGuard,
-    INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
 )
 from app.core.permission_catalog import is_known_permission
 from app.core.resources import redis_client, resolve_principal_access

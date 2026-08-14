@@ -1,16 +1,16 @@
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 from app.core.internal_service_replay import (
     INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS,
     INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
 )
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

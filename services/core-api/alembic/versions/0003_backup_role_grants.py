@@ -9,7 +9,6 @@ from collections.abc import Sequence
 
 from alembic import op
 
-
 revision: str = "0003_backup_role_grants"
 down_revision: str | None = "0002_runtime_role_grants"
 branch_labels: str | Sequence[str] | None = None

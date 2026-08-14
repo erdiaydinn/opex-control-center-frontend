@@ -1,12 +1,10 @@
 # PRODUCTION_CORS_RUNTIME_GATE_V1
 
-from pathlib import Path
-
 import os
 import subprocess
 import sys
 import textwrap
-
+from pathlib import Path
 
 RUNTIME_SCRIPT = r"""
 import asyncio

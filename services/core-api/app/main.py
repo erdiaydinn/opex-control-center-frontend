@@ -3,12 +3,11 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
 import httpx
-
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,14 +21,14 @@ from app.core.resources import (
     check_database,
     check_redis,
     close_resources,
-    write_audit_event,
+    create_tenant_member,
+    get_tenant,
     list_audit_events,
     list_tenant_members,
     list_tenant_roles,
-    get_tenant,
     update_tenant_display_name,
-    create_tenant_member,
     update_tenant_member_access,
+    write_audit_event,
 )
 from app.core.security import (
     Principal,
@@ -453,14 +452,14 @@ async def platform_health(
 
                     if completed_time.tzinfo is None:
                         completed_time = completed_time.replace(
-                            tzinfo=timezone.utc
+                            tzinfo=UTC
                         )
 
                     backup_age_hours = max(
                         0.0,
                         (
-                            datetime.now(timezone.utc)
-                            - completed_time.astimezone(timezone.utc)
+                            datetime.now(UTC)
+                            - completed_time.astimezone(UTC)
                         ).total_seconds()
                         / 3600,
                     )

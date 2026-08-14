@@ -1,5 +1,5 @@
 ﻿from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -28,7 +28,7 @@ def build_audit_event(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = AuditEvent(
-        occurred_at=datetime.now(timezone.utc).isoformat(),
+        occurred_at=datetime.now(UTC).isoformat(),
         request_id=request_id,
         actor=actor,
         tenant_id=tenant_id,

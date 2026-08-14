@@ -12,7 +12,6 @@ from app.core.resources import (
     resolve_external_identity_membership,
 )
 
-
 TENANT_A = UUID(
     "00000000-0000-0000-0000-00000000aa01"
 )

@@ -18,7 +18,6 @@ from app.core.internal_identity import (
     verify_internal_service_assertion,
 )
 
-
 ISSUER = "opex-identity-gateway"
 AUDIENCE = "opex-core-api"
 SERVICE_AUDIENCE = "opex-core-preauth"

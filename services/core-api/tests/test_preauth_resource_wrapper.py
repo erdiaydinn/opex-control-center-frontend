@@ -6,7 +6,6 @@ import pytest
 
 import app.core.resources as resources
 
-
 SAFE_FIELDS = {
     "tenant_id",
     "tenant_slug",

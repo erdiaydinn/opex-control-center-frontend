@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from app.core.config import Settings
 
-
 INTERNAL_ASSERTION_TYP = "opex-internal+jwt"
 INTERNAL_SERVICE_ASSERTION_TYP = "opex-internal-service+jwt"
 

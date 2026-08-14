@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
 
-
 BACKUP_ROLE = "opex_backup"
 
 

@@ -17,7 +17,6 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-
 revision: str = "0007_identity_foundation"
 down_revision: str | None = "0006_system_role_integrity"
 branch_labels: str | Sequence[str] | None = None

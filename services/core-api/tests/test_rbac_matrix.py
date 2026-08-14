@@ -10,7 +10,6 @@ from app.core.security import (
 )
 from app.main import app
 
-
 EXPECTED_RBAC = {
     ("GET", "/health/live"): None,
     ("GET", "/health/ready"): None,

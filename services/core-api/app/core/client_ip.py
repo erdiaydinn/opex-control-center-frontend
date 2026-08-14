@@ -5,7 +5,6 @@ import socket
 
 from starlette.requests import Request
 
-
 TRUSTED_PROXY_HOST = "gateway"
 
 

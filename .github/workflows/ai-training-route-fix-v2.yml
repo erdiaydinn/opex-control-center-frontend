@@ -1,0 +1,133 @@
+name: EAY AI Training Route Fix V2
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-ai-training-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/platform-convergence-ai-training-v0.1
+      - name: Patch promotion authority and endpoint-aware composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('services/eay-ai-core')
+
+          # Framework-neutral promotion adapter.
+          path = root / 'app/model_promotion_routes.py'
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('from fastapi import APIRouter, Header, HTTPException\n', 'from fastapi import HTTPException\n')
+          source = source.replace('router = APIRouter(prefix="/v1/model-promotions", tags=["model-promotions"])\n\n\n', '')
+          source = source.replace('@router.post("", response_model=PromotionRecord, status_code=201)\n', '')
+          source = source.replace('@router.get("/{model_record_id}", response_model=PromotionRecord)\n', '')
+          source = source.replace(
+              '    authorization: str | None = Header(default=None, alias="Authorization"),\n',
+              '    authorization: str | None = None,\n',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          # Direct public promotion surface owned by main.app.
+          path = root / 'app/main.py'
+          source = path.read_text(encoding='utf-8')
+          source = source.replace(
+              'from fastapi import FastAPI, HTTPException, Query\n',
+              'from fastapi import FastAPI, Header, HTTPException, Query\n',
+          )
+          anchor = '''@app.get("/v1/learning/candidates")\ndef candidates(limit: int = Query(default=100, ge=1, le=500)):\n'''
+          assert source.count(anchor) == 1
+          block = '''from .model_promotion_gate import PromotionRecord  # noqa: E402\nfrom .model_promotion_routes import (  # noqa: E402\n    PromotionApiRequest,\n    get_current_production_promotion as governed_get_current_production_promotion,\n    promote_model as governed_promote_model,\n)\n\n\n@app.post("/v1/model-promotions", response_model=PromotionRecord, status_code=201)\ndef promote_model(\n    payload: PromotionApiRequest,\n    authorization: str | None = Header(default=None, alias="Authorization"),\n):\n    return governed_promote_model(payload, authorization=authorization)\n\n\n@app.get(\n    "/v1/model-promotions/{model_record_id}",\n    response_model=PromotionRecord,\n)\ndef get_current_production_promotion(model_record_id: str):\n    return governed_get_current_production_promotion(model_record_id)\n\n\n'''
+          source = source.replace(anchor, block + anchor)
+          path.write_text(source, encoding='utf-8')
+
+          # Endpoint identity survives FastAPI route cloning; path metadata may be
+          # normalized during include_router. Use endpoint identity for fail-closed
+          # composition, then separately test no duplicate path+method pairs.
+          path = root / 'app/entrypoint.py'
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('from .model_promotion_routes import router as model_promotion_router\n', '')
+          source = source.replace('        model_promotion_router,\n', '')
+          start = source.index('def _signature(route) -> tuple[str, tuple[str, ...], str]:\n')
+          end = source.index('\n\napp = compose_app()\n', start)
+          replacement = '''def _router_endpoints(router: APIRouter) -> set[object]:\n    return {getattr(route, "endpoint", None) for route in router.routes if getattr(route, "endpoint", None)}\n\n\ndef _present_endpoints(target: FastAPI) -> set[object]:\n    return {getattr(route, "endpoint", None) for route in target.routes if getattr(route, "endpoint", None)}\n\n\ndef _include_router_once(\n    target: FastAPI,\n    *,\n    key: str,\n    router: APIRouter,\n) -> None:\n    expected = _router_endpoints(router)\n    if not expected:\n        return\n    registry = set(getattr(target.state, "eay_ai_router_keys", ()))\n    present = _present_endpoints(target)\n\n    if key in registry:\n        if not expected.issubset(present):\n            raise RuntimeError(f"ai_core_registered_router_missing:{key}")\n        return\n\n    overlap = expected & present\n    if overlap:\n        if overlap != expected:\n            raise RuntimeError(f"ai_core_partial_router_composition:{key}")\n        registry.add(key)\n        target.state.eay_ai_router_keys = tuple(sorted(registry))\n        return\n\n    target.include_router(router)\n    after = _present_endpoints(target)\n    if not expected.issubset(after):\n        raise RuntimeError(f"ai_core_router_composition_failed:{key}")\n    registry.add(key)\n    target.state.eay_ai_router_keys = tuple(sorted(registry))\n\n\ndef compose_app() -> FastAPI:\n    """Idempotently compose the production AI Core public surface."""\n\n    routers = (\n        ("regulatory", regulatory_router),\n        ("legal", legal_router),\n        ("legal-review", legal_review_router),\n        ("legal-verification", legal_verification_router),\n        ("legal-knowledge", legal_knowledge_router),\n        ("company-knowledge", company_knowledge_router),\n        ("employment-intelligence", employment_intelligence_router),\n        ("employment-grounding", employment_grounding_router),\n        ("payroll", payroll_router),\n        ("grounded-chat", grounded_chat_router),\n        ("tool-router", tool_router),\n        ("tool-intent", tool_intent_router),\n        ("tool-execution", tool_execution_router),\n        ("eval", eval_router),\n        ("observability", observability_router),\n        ("vision-audit", vision_audit_router),\n        ("vision-provenance", vision_provenance_router),\n        ("training-manifest", training_manifest_router),\n        ("learning-export-review", learning_export_router),\n        ("model-registry", model_registry_router),\n        ("voice-ws", voice_ws_router),\n    )\n    for key, router in routers:\n        _include_router_once(app, key=key, router=router)\n    return app\n'''
+          source = source[:start] + replacement + source[end:]
+          path.write_text(source, encoding='utf-8')
+
+          path = root / 'tests/test_model_promotion_routes.py'
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('from app.entrypoint import compose_app\n', 'from app.entrypoint import app, compose_app\n')
+          source = source.replace(
+              '    assert post[0].endpoint.__module__ == "app.model_promotion_routes"\n'
+              '    assert get[0].endpoint.__module__ == "app.model_promotion_routes"\n',
+              '    assert post[0].endpoint.__module__ == "app.main"\n'
+              '    assert get[0].endpoint.__module__ == "app.main"\n',
+          )
+          path.write_text(source, encoding='utf-8')
+
+          path = root / 'tests/test_public_api_surface.py'
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('from app.entrypoint import app\n', 'from app.entrypoint import app, compose_app\n')
+          addition = '''\n\ndef test_ai_core_composition_is_idempotent_without_duplicate_path_methods():\n    compose_app()\n    compose_app()\n    seen = set()\n    duplicates = []\n    for route in app.routes:\n        path = getattr(route, "path", "")\n        for method in sorted(getattr(route, "methods", set()) or set()):\n            key = (path, method)\n            if key in seen:\n                duplicates.append(key)\n            seen.add(key)\n    assert duplicates == []\n    assert "/v1/model-promotions" in _paths()\n    assert "/v1/model-promotions/{model_record_id}" in _paths()\n'''
+          assert 'test_ai_core_composition_is_idempotent_without_duplicate_path_methods' not in source
+          source += addition
+          path.write_text(source, encoding='utf-8')
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install AI Core
+        working-directory: services/eay-ai-core
+        run: python -m pip install -e '.[dev]'
+      - name: Compile
+        working-directory: services/eay-ai-core
+        run: python -m compileall -q app tests
+      - name: Route, authority and executor regression
+        working-directory: services/eay-ai-core
+        run: >-
+          pytest -q
+          tests/test_public_api_surface.py
+          tests/test_training_authority.py
+          tests/test_model_promotion_routes.py
+          tests/test_model_artifact_promotion.py
+          tests/test_training_execution.py
+          tests/test_training_executor.py
+      - name: Full AI Core regression
+        working-directory: services/eay-ai-core
+        run: pytest -q
+      - name: Static single-authority assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -c '@app.post("/v1/model-promotions"' services/eay-ai-core/app/main.py)" -eq 1
+          ! grep -F 'APIRouter' services/eay-ai-core/app/model_promotion_routes.py
+          ! grep -F 'model_promotion_router' services/eay-ai-core/app/entrypoint.py
+          grep -F 'eay_ai_router_keys' services/eay-ai-core/app/entrypoint.py
+          grep -F 'model_promotion_api_not_configured' services/eay-ai-core/app/model_promotion_routes.py
+          echo 'AI_TRAINING_DIRECT_PROMOTION_AUTHORITY=PASS'
+      - name: Commit and remove temporary workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'EAY Convergence CI'
+          git config user.email 'ci@eay.invalid'
+          rm -f .github/workflows/ai-training-route-diagnostic.yml
+          rm -f .github/workflows/ai-training-route-fix-v2.yml
+          git add -A
+          git diff --cached --check
+          test ! -e .github/workflows/ai-training-route-diagnostic.yml
+          test ! -e .github/workflows/ai-training-route-fix-v2.yml
+          git commit -m 'fix(ai-training): centralize promotion surface and endpoint-aware composition'
+          git push origin HEAD:release/platform-convergence-ai-training-v0.1

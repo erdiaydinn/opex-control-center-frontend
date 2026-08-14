@@ -7,6 +7,33 @@ import { translatePlanogram } from "../../platform/i18n/planogramMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import "./planogram-native.css";
 
+// Frontend contract mirrors are CI-checked against the server permission catalog only.
+// They are never used as browser-side authorization authority.
+const PLANOGRAM_FEATURES = [
+  "layoutView",
+  "layoutEdit",
+  "fixtureEdit",
+  "ruleEdit",
+  "productAssign",
+  "aiRecommend",
+];
+const PLANOGRAM_ACTIONS = [
+  "view",
+  "create",
+  "edit",
+  "approve",
+  "export",
+  "delete",
+];
+
+// Phase 1 Security Quarantine removed the legacy cross-origin iframe/token bridge.
+// Native Planogram keeps that quarantine boundary while using EAY Core authority.
+export const PLANOGRAM_SECURITY_CONTRACT = Object.freeze({
+  features: PLANOGRAM_FEATURES,
+  actions: PLANOGRAM_ACTIONS,
+  legacyBridgeAllowed: false,
+});
+
 export default function PlanogramStudio(){
   const navigate=useNavigate();
   const {locale}=usePlatformPreferences();

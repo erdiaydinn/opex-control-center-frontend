@@ -9,7 +9,6 @@ on:
       - "services/eay-ai-core/config/repository_*.json"
       - "services/eay-ai-core/docs/REPOSITORY_INTELLIGENCE.md"
       - "services/eay-ai-core/tests/test_*repository*.py"
-      - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/repository-intelligence-convergence.yml"
   push:
     branches:
@@ -25,8 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  provenance-and-memory:
-    name: Registry provenance and memory integrity
+  provenance-and-registry:
+    name: Canonical registry and provenance integrity
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -45,15 +44,10 @@ jobs:
         run: >-
           pytest -q
           tests/test_repository_intelligence.py
+          tests/test_repository_provenance.py
           tests/test_repository_archive_provenance.py
           tests/test_repository_contract_extractor.py
-          tests/test_repository_review_snapshot.py
-          tests/test_repository_memory_store.py
-          tests/test_repository_review_ingestion.py
-          tests/test_repository_memory_checkpoint.py
-          tests/test_historical_repository_registry.py
-          tests/test_github_repository_evidence.py
-      - name: Assert canonical archive policy
+      - name: Assert archive evidence policy
         run: |
           python - <<'PY'
           import json
@@ -61,17 +55,22 @@ jobs:
           from app.repository_intelligence import load_repository_registry
 
           registry = load_repository_registry(Path('config/repository_intelligence_registry.json'))
+          entries = registry.by_id()
           provenance = json.loads(Path('config/repository_archive_provenance.json').read_text(encoding='utf-8'))
           assert provenance['records']
           for record in provenance['records']:
               assert record['match'] == 'EXACT_RECOMPUTED_GIT_TREE'
-              entry = registry.by_id(record['registry_entry_id'])
-              assert entry['identity_status'] == 'VERIFIED'
-              assert entry['repository'] == record['canonical_repository']
-              assert entry['license'] == record['license']
-              assert entry['decision'] != 'ADOPT'
+              entry = entries[record['registry_entry_id']]
+              assert entry.identity == record['canonical_repository']
+              assert entry.canonical_upstream == record['canonical_repository']
+              assert entry.review.ref == record['ref']
+              assert entry.review.commit == record['commit_sha']
+              assert entry.review.license == record['license']['spdx']
+              assert entry.decision == record['decision']
+              assert entry.decision != 'adopt'
               if record['commercial_use'].startswith('REFERENCE_ONLY'):
-                  assert entry['decision'] == 'REFERENCE'
+                  assert entry.decision == 'reference'
+                  assert entry.review.commercial_use.startswith('reference-only')
           print('REPOSITORY_ARCHIVE_PROVENANCE=PASS')
           PY
 
@@ -113,23 +112,28 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
-      - name: No private material or adoption drift
+      - name: No private material, parallel authority, or adoption drift
         working-directory: services/eay-ai-core
         run: |
           test -s config/repository_intelligence_registry.json
           test -s config/repository_archive_provenance.json
           test -s docs/REPOSITORY_INTELLIGENCE.md
           ! grep -R -n -E 'BEGIN (RSA |EC |OPENSSH |PRIVATE )?PRIVATE KEY' app config docs tests
+          test ! -e app/repository_review_snapshot.py
+          test ! -e app/repository_memory_store.py
+          test ! -e app/repository_memory_checkpoint.py
+          test ! -e app/repository_review_ingestion.py
           python - <<'PY'
           import json
           from pathlib import Path
+
           registry = json.loads(Path('config/repository_intelligence_registry.json').read_text(encoding='utf-8'))
-          entries = {item['id']: item for item in registry['entries']}
-          assert entries['imported-cl4r1t4s']['decision'] == 'REFERENCE'
-          assert entries['imported-cl4r1t4s']['license']['spdx'] == 'AGPL-3.0'
-          assert entries['imported-computer-lab-automation']['decision'] == 'REFERENCE'
-          assert entries['imported-computer-lab-automation']['license']['spdx'] == 'GPL-3.0'
-          assert entries['discovered-apache-superset']['canonical_upstream'] == 'apache/superset'
-          assert entries['discovered-patika-superset-tr']['canonical_upstream'] == 'apache/superset'
+          entries = {item['id']: item for item in registry['repositories']}
+          assert entries['cl4r1t4s']['decision'] == 'reference'
+          assert entries['cl4r1t4s']['review']['license'] == 'AGPL-3.0'
+          assert entries['computer-lab-automation']['decision'] == 'reference'
+          assert entries['computer-lab-automation']['review']['license'] == 'GPL-3.0'
+          assert entries['apache-superset']['canonical_upstream'] == 'apache/superset'
+          assert entries['patika-superset-tr']['canonical_upstream'] == 'apache/superset'
           print('REPOSITORY_LICENSE_BOUNDARY=PASS')
           PY

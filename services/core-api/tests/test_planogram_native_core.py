@@ -116,7 +116,9 @@ def preview_request(*, dimensions: bool = True) -> PlanogramPreviewRequest:
 
 
 def test_canonical_app_registers_native_planogram_routes() -> None:
-    paths = {path for route in app.routes if (path := getattr(route, "path", None))}
+    # FastAPI >=0.141 can retain included routers lazily in app.routes. OpenAPI
+    # is the public ASGI contract and therefore the correct composition proof.
+    paths = set(app.openapi()["paths"])
     assert "/v1/planogram/readiness" in paths
     assert "/v1/planogram/preview" in paths
 

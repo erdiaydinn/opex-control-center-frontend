@@ -33,6 +33,10 @@ jobs:
           source = source.replace('router = APIRouter(prefix="/v1/model-promotions", tags=["model-promotions"])\n\n\n', '')
           source = source.replace('@router.post("", response_model=PromotionRecord, status_code=201)\n', '')
           source = source.replace('@router.get("/{model_record_id}", response_model=PromotionRecord)\n', '')
+          source = source.replace(
+              '    authorization: str | None = Header(default=None, alias="Authorization"),\n',
+              '    authorization: str | None = None,\n',
+          )
           path.write_text(source, encoding='utf-8')
 
           # main owns exactly one learning export and exactly one governed model

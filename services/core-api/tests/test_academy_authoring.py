@@ -170,6 +170,82 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
         )
         assert valid_path.status_code == 201, valid_path.text
 
+        single_question = [
+            {
+                "question_type": "single_choice",
+                "prompt_i18n": {"en": "Keep the cold chain?"},
+                "points": 1,
+                "required": True,
+                "options": [
+                    {"label_i18n": {"en": "No"}, "is_correct": False},
+                    {"label_i18n": {"en": "Yes"}, "is_correct": True},
+                ],
+            }
+        ]
+        sop_checkpoint = await client.post(
+            "/v1/academy/admin/quizzes",
+            json={
+                "content_version_id": version_id,
+                "kind": "checkpoint",
+                "checkpoint_at_ms": 1000,
+                "pass_score": 100,
+                "required": True,
+                "status": "published",
+                "questions": single_question,
+            },
+        )
+        assert sop_checkpoint.status_code == 400, sop_checkpoint.text
+        assert sop_checkpoint.json()["detail"] == (
+            "Checkpoint quizzes require video or live content"
+        )
+
+        video_response = await client.post(
+            "/v1/academy/admin/content",
+            json={
+                "content_type": "video",
+                "slug": "cold-chain-video",
+                "title_i18n": {"en": "Cold chain video"},
+                "version_label": "2026.1",
+                "locale": "en",
+                "source_sha256": "b" * 64,
+                "duration_ms": 10000,
+                "status": "published",
+            },
+        )
+        assert video_response.status_code == 201, video_response.text
+        video_version_id = video_response.json()["version"]["id"]
+
+        late_checkpoint = await client.post(
+            "/v1/academy/admin/quizzes",
+            json={
+                "content_version_id": video_version_id,
+                "kind": "checkpoint",
+                "checkpoint_at_ms": 11000,
+                "pass_score": 100,
+                "required": True,
+                "status": "published",
+                "questions": single_question,
+            },
+        )
+        assert late_checkpoint.status_code == 400, late_checkpoint.text
+        assert late_checkpoint.json()["detail"] == "Checkpoint time exceeds content duration"
+
+        checkpoint_response = await client.post(
+            "/v1/academy/admin/quizzes",
+            json={
+                "content_version_id": video_version_id,
+                "kind": "checkpoint",
+                "checkpoint_at_ms": 5000,
+                "pass_score": 100,
+                "max_attempts": 3,
+                "required": True,
+                "status": "published",
+                "questions": single_question,
+            },
+        )
+        assert checkpoint_response.status_code == 201, checkpoint_response.text
+        checkpoint_id = checkpoint_response.json()["id"]
+
         quiz_response = await client.post(
             "/v1/academy/admin/quizzes",
             json={
@@ -179,18 +255,7 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
                 "max_attempts": 3,
                 "required": True,
                 "status": "published",
-                "questions": [
-                    {
-                        "question_type": "single_choice",
-                        "prompt_i18n": {"en": "Keep the cold chain?"},
-                        "points": 1,
-                        "required": True,
-                        "options": [
-                            {"label_i18n": {"en": "No"}, "is_correct": False},
-                            {"label_i18n": {"en": "Yes"}, "is_correct": True},
-                        ],
-                    }
-                ],
+                "questions": single_question,
             },
         )
         assert quiz_response.status_code == 201, quiz_response.text
@@ -198,11 +263,13 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
 
         workspace_with_quiz = await client.get("/v1/academy/admin/workspace")
         quiz_rows = workspace_with_quiz.json()["authoring"]["quizzes"]
-        assert len(quiz_rows) == 1
-        assert quiz_rows[0]["id"] == quiz_id
-        assert quiz_rows[0]["content_version_id"] == version_id
-        assert quiz_rows[0]["question_count"] == 1
-        assert quiz_rows[0]["status"] == "published"
+        assert {row["id"] for row in quiz_rows} == {checkpoint_id, quiz_id}
+        by_id = {row["id"]: row for row in quiz_rows}
+        assert by_id[quiz_id]["content_version_id"] == version_id
+        assert by_id[quiz_id]["question_count"] == 1
+        assert by_id[quiz_id]["status"] == "published"
+        assert by_id[checkpoint_id]["content_version_id"] == video_version_id
+        assert by_id[checkpoint_id]["checkpoint_at_ms"] == 5000
 
         tenant_d_after_quiz = await client.get(
             "/v1/academy/admin/workspace",

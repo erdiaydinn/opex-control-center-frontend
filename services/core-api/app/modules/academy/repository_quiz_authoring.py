@@ -10,6 +10,34 @@ from app.modules.academy.repository_utils import json_text
 async def create_quiz(
     session: AsyncSession, principal: Principal, payload: Any
 ) -> dict[str, Any] | None:
+    target = (
+        (
+            await session.execute(
+                text("""
+        SELECT cv.id, cv.duration_ms, ci.content_type
+        FROM academy_content_versions AS cv
+        JOIN academy_content_items AS ci
+          ON ci.tenant_id=cv.tenant_id AND ci.id=cv.content_id
+        WHERE cv.tenant_id=:tenant_id AND cv.id=:content_version_id
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "content_version_id": payload.content_version_id,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if target is None:
+        return None
+    if payload.kind == "checkpoint":
+        if target["content_type"] not in {"video", "live"}:
+            raise ValueError("Checkpoint quizzes require video or live content")
+        duration_ms = target["duration_ms"]
+        if duration_ms is not None and payload.checkpoint_at_ms > int(duration_ms):
+            raise ValueError("Checkpoint time exceeds content duration")
+
     version_number = 1
     if payload.supersedes_quiz_id:
         previous = (
@@ -41,11 +69,11 @@ async def create_quiz(
         INSERT INTO academy_quizzes (
             tenant_id, content_version_id, kind, checkpoint_at_ms, pass_score,
             max_attempts, required, status, version_number, supersedes_quiz_id, created_by
-        ) SELECT :tenant_id, cv.id, :kind, :checkpoint_at_ms, :pass_score,
-                 :max_attempts, :required, :status, :version_number,
-                 :supersedes_quiz_id, :created_by
-          FROM academy_content_versions AS cv
-          WHERE cv.tenant_id=:tenant_id AND cv.id=:content_version_id
+        ) VALUES (
+            :tenant_id, :content_version_id, :kind, :checkpoint_at_ms, :pass_score,
+            :max_attempts, :required, :status, :version_number,
+            :supersedes_quiz_id, :created_by
+        )
         RETURNING id, content_version_id, kind, checkpoint_at_ms, pass_score,
                   max_attempts, required, status, version_number, supersedes_quiz_id
     """),
@@ -65,10 +93,8 @@ async def create_quiz(
             )
         )
         .mappings()
-        .one_or_none()
+        .one()
     )
-    if quiz is None:
-        return None
 
     if payload.supersedes_quiz_id:
         await session.execute(
@@ -102,7 +128,7 @@ async def create_quiz(
                 "required": question.required,
             },
         )
-        for o_ordinal, option in enumerate(question.options, 1):
+        for o_ordinal, choice in enumerate(question.options, 1):
             await session.execute(
                 text("""
                 INSERT INTO academy_question_options (
@@ -116,8 +142,8 @@ async def create_quiz(
                     "tenant_id": principal.tenant_id,
                     "question_id": question_id,
                     "ordinal": o_ordinal,
-                    "label_i18n": json_text(option.label_i18n),
-                    "is_correct": option.is_correct,
+                    "label_i18n": json_text(choice.label_i18n),
+                    "is_correct": choice.is_correct,
                 },
             )
     return dict(quiz)

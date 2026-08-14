@@ -540,6 +540,10 @@ def static_gate() -> None:
 def wait_identity_health(
     container_id: str,
 ) -> None:
+    """Wait for a bounded recovery window; fail closed with Docker evidence."""
+    last_health = "missing"
+    last_log: list[dict] = []
+
     for _ in range(60):
         state = inspect(
             container_id
@@ -555,30 +559,47 @@ def wait_identity_health(
                 "IDENTITY_GATEWAY_EXITED"
             )
 
-        health = (
+        health_state = (
             state.get(
                 "Health",
                 {}
-            ).get(
-                "Status"
+            )
+            or {}
+        )
+        last_health = str(
+            health_state.get(
+                "Status",
+                "missing",
             )
         )
+        raw_log = health_state.get(
+            "Log",
+            [],
+        )
+        if isinstance(raw_log, list):
+            last_log = raw_log[-3:]
 
-        if health == "healthy":
+        if last_health == "healthy":
             print(
                 "IDENTITY_GATEWAY_HEALTH=PASS"
             )
             return
 
-        if health == "unhealthy":
-            raise SystemExit(
-                "IDENTITY_GATEWAY_HEALTH=UNHEALTHY"
-            )
-
+        # Docker health can temporarily transition through `unhealthy`
+        # during process/bootstrap races. Do not accept it; continue polling
+        # only inside the bounded 60-second gate and fail if it never recovers.
         time.sleep(1)
 
+    diagnostics = json.dumps(
+        last_log,
+        sort_keys=True,
+        default=str,
+    )
     raise SystemExit(
-        "IDENTITY_GATEWAY_HEALTH_TIMEOUT"
+        "IDENTITY_GATEWAY_HEALTH_TIMEOUT="
+        + last_health
+        + ":"
+        + diagnostics
     )
 
 

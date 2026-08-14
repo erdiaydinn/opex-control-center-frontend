@@ -12,6 +12,7 @@ CONFIG_DIR = Path(__file__).parents[1] / "config"
 QDRANT_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_qdrant.json"
 PROMPTFOO_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_promptfoo.json"
 PHOENIX_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_phoenix.json"
+MLFLOW_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_mlflow.json"
 
 
 def _payload(path: Path = QDRANT_EVIDENCE_PATH) -> dict:
@@ -53,6 +54,21 @@ def test_phoenix_reference_evidence_preserves_elastic_2_hosting_boundary() -> No
     security = evidence.security_relevance.casefold()
     assert "hosted" in security
     assert "managed service" in security
+    assert evidence.authority == "REFERENCE_ONLY"
+
+
+def test_mlflow_reference_evidence_pins_model_weight_promotion_boundary() -> None:
+    evidence = load_repository_reference_evidence_text(MLFLOW_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    assert evidence.repository == "mlflow/mlflow"
+    assert evidence.commit_sha == "3b1b40722bde72efd8cb0b91b97e2c2d2c50d0ac"
+    assert evidence.tree_sha == "e263a3493a1d79cc816ec5087e18ac0c8340748b"
+    assert evidence.license.spdx == "Apache-2.0"
+    assert "model-registry" in evidence.capabilities
+    security = evidence.security_relevance.casefold()
+    assert "human approval" in security
+    assert "production model-weight" in security
+    assert "artifact provenance" in security
+    assert "deployment authorization" in security
     assert evidence.authority == "REFERENCE_ONLY"
 
 
@@ -105,4 +121,24 @@ def test_phoenix_elastic_2_reference_requires_visible_hosting_boundary() -> None
     payload = _payload(PHOENIX_EVIDENCE_PATH)
     payload["security_relevance"] = "Observability reference only."
     with pytest.raises(ValidationError, match="security_license_boundary"):
+        load_repository_reference_evidence_text(json.dumps(payload))
+
+
+def test_mlflow_model_lifecycle_reference_cannot_drop_human_approval_boundary() -> None:
+    payload = _payload(MLFLOW_EVIDENCE_PATH)
+    payload["security_relevance"] = (
+        "MLflow is a model-lifecycle reference with production model-weight controls, "
+        "tenant-scoped artifact provenance, and deployment authorization."
+    )
+    with pytest.raises(ValidationError, match="model_lifecycle_reference_requires_production_promotion_boundary"):
+        load_repository_reference_evidence_text(json.dumps(payload))
+
+
+def test_mlflow_model_lifecycle_reference_cannot_drop_deployment_authorization_boundary() -> None:
+    payload = _payload(MLFLOW_EVIDENCE_PATH)
+    payload["security_relevance"] = (
+        "MLflow is a model-lifecycle reference with human approval, production model-weight controls, "
+        "and tenant-scoped artifact provenance."
+    )
+    with pytest.raises(ValidationError, match="model_lifecycle_reference_requires_production_promotion_boundary"):
         load_repository_reference_evidence_text(json.dumps(payload))

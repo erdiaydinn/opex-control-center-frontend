@@ -6,23 +6,53 @@ const isolationFailures = new Rate("tenant_isolation_failures");
 const contextLatency = new Trend("platform_context_latency", true);
 const memberLatency = new Trend("platform_member_latency", true);
 
-const targetVus = Number(__ENV.TARGET_VUS || 1000);
+const loadProfile = (__ENV.LOAD_PROFILE || "burst").trim().toLowerCase();
+const isLatencyProfile = loadProfile === "latency";
+const targetVus = Number(
+  __ENV.TARGET_VUS || (isLatencyProfile ? 50 : 1000),
+);
+const iterationsPerVu = Number(
+  __ENV.ITERATIONS_PER_VU || (isLatencyProfile ? 2 : 1),
+);
+
+if (!Number.isInteger(targetVus) || targetVus < 1) {
+  throw new Error("TARGET_VUS must be a positive integer");
+}
+if (!Number.isInteger(iterationsPerVu) || iterationsPerVu < 1) {
+  throw new Error("ITERATIONS_PER_VU must be a positive integer");
+}
+if (!new Set(["burst", "latency"]).has(loadProfile)) {
+  throw new Error("LOAD_PROFILE must be burst or latency");
+}
+
+const latencyThresholds = isLatencyProfile
+  ? {
+      platform_context_latency: ["p(95)<2000", "p(99)<3000"],
+      platform_member_latency: ["p(95)<2000", "p(99)<3000"],
+    }
+  : {
+      // A 1000-VU all-at-once burst intentionally saturates the small
+      // GitHub-hosted runner and its default PostgreSQL connection ceiling.
+      // These are catastrophic-queueing guards, not production SLOs.
+      platform_context_latency: ["p(95)<12000", "p(99)<15000"],
+      platform_member_latency: ["p(95)<12000", "p(99)<15000"],
+    };
 
 export const options = {
   scenarios: {
-    tenant_burst: {
+    tenant_isolation: {
       executor: "per-vu-iterations",
       vus: targetVus,
-      iterations: 1,
+      iterations: iterationsPerVu,
       maxDuration: __ENV.MAX_DURATION || "90s",
     },
   },
   thresholds: {
-    http_req_failed: ["rate<0.01"],
-    checks: ["rate>0.995"],
-    tenant_isolation_failures: ["rate<0.001"],
-    platform_context_latency: ["p(95)<5000", "p(99)<10000"],
-    platform_member_latency: ["p(95)<5000", "p(99)<10000"],
+    // Correctness and isolation remain hard gates in every profile.
+    http_req_failed: ["rate==0"],
+    checks: ["rate==1"],
+    tenant_isolation_failures: ["rate==0"],
+    ...latencyThresholds,
   },
 };
 
@@ -61,12 +91,12 @@ export default function () {
   const token = useA ? tokenA : tokenB;
   const headers = {
     Authorization: `Bearer ${token}`,
-    "X-Request-ID": `load-${__VU}-${__ITER}-context`,
+    "X-Request-ID": `${loadProfile}-${__VU}-${__ITER}-context`,
   };
 
   const context = http.get(`${base}/v1/context`, {
     headers,
-    tags: { route: "context" },
+    tags: { route: "context", profile: loadProfile },
   });
   contextLatency.add(context.timings.duration);
   const contextBody = jsonOrNull(context);
@@ -81,9 +111,9 @@ export default function () {
   const members = http.get(`${base}/v1/admin/members`, {
     headers: {
       ...headers,
-      "X-Request-ID": `load-${__VU}-${__ITER}-members`,
+      "X-Request-ID": `${loadProfile}-${__VU}-${__ITER}-members`,
     },
-    tags: { route: "members" },
+    tags: { route: "members", profile: loadProfile },
   });
   memberLatency.add(members.timings.duration);
   const memberBody = jsonOrNull(members);

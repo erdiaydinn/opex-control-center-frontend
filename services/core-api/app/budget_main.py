@@ -1,6 +1,8 @@
-"""Platform Core ASGI composition with canonical Budget Intelligence routes."""
+"""Platform Core ASGI composition with canonical commercial product routes."""
 
 from app.main import app
 from app.modules.budget.routes import router as budget_router
+from app.modules.planogram.router import router as planogram_router
 
 app.include_router(budget_router)
+app.include_router(planogram_router)

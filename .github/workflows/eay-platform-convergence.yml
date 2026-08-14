@@ -1,0 +1,80 @@
+name: EAY Platform Convergence
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-platform-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  topology:
+    name: Security and product topology
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch canonical refs
+        run: |
+          git fetch --no-tags --force origin \
+            +refs/heads/feature/phase-1-security-hardening:refs/remotes/origin/feature/phase-1-security-hardening \
+            +refs/heads/product/workforce-field-pilot-v28:refs/remotes/origin/product/workforce-field-pilot-v28 \
+            +refs/heads/agent/inventory-production-terminal-p0:refs/remotes/origin/agent/inventory-production-terminal-p0
+      - name: Assert product ancestry retained
+        run: |
+          git merge-base --is-ancestor b966cec5969859f91f26096b2b8fd64259da152e HEAD
+          git merge-base --is-ancestor 19f7c93547078b9cec18cec0d39420e33a30f218 HEAD
+      - name: Diagnose frozen Security merge
+        id: security_merge
+        continue-on-error: true
+        run: |
+          set +e
+          git merge-tree --write-tree HEAD 6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d > security-merge.txt 2>&1
+          status=$?
+          cat security-merge.txt
+          exit $status
+      - name: Upload merge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-convergence-merge-tree
+          path: security-merge.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce security mergeability
+        if: steps.security_merge.outcome == 'failure'
+        run: |
+          cat security-merge.txt
+          exit 1
+
+  security-regression:
+    name: Browser authority regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: No browser-local authorization authority
+        run: |
+          test ! -f src/auth/accessConfig.js
+          ! grep -R --line-number --fixed-string 'X-Opex-User' src
+          ! grep -R --line-number --fixed-string 'X-Opex-Role' src
+          ! grep -R --line-number --fixed-string 'opex_access_config' src
+      - name: Frontend dependency install
+        run: npm ci
+      - name: Frontend production build
+        run: npm run build
+      - name: Compile product backends
+        run: python -m compileall -q backend/app services/core-api/app

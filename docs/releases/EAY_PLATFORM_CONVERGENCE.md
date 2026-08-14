@@ -20,6 +20,9 @@ Composed product/security lineage currently includes:
 - Budget Intelligence PostgreSQL foundation passed on the cumulative line after branch-to-branch composition, including `alembic upgrade head`, Budget unit contracts, canonical routes/permissions, ENABLE + FORCE RLS, and a runtime role without `BYPASSRLS`.
 - Budget's SQL-heavy files retain the canonical Budget CI's E501 exception as a narrowly scoped Ruff per-file policy. Other Ruff classes remain enabled.
 - A one-shot Ruff safe-fix workflow verified the full Core API Ruff gate and Budget unit contracts, then deleted its own write-capable workflow. The temporary workflow is not part of the resulting repository tree.
+- Budget runtime SQL was security-reviewed against the central fail-closed data-access guard. Eighteen Budget SQL-capable functions are explicitly registered with exact execution-call counts covering 53 real database execution calls. Static SQL provenance and bound-parameter guards remain enabled; no dynamic SQL exemption was added.
+- The Budget idempotency business callback was renamed from `execute` to `perform` so the AST guard no longer confuses application callback execution with a database execution point.
+- The one-shot SQL-boundary registration workflow passed the full Core Ruff gate, the complete central SQL-boundary test file, and Budget unit contracts, then deleted its own write-capable workflow. The resulting repository tree contains no such workflow.
 
 ## Current validation requirement
 

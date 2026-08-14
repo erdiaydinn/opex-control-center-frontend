@@ -1,122 +1,78 @@
 # EAY Repository Intelligence
 
-The version-controlled registry at `config/repository_intelligence_registry.json` is the canonical session bootstrap for cross-repository knowledge. Ad-hoc chat memory is not authoritative when it conflicts with this registry.
+The version-controlled registry at `config/repository_intelligence_registry.json` is the canonical bootstrap for cross-repository knowledge. Ad-hoc chat memory is not authoritative when it conflicts with the registry or exact GitHub evidence.
+
+## Canonical authority
+
+The active release authority is the current Pydantic registry/provenance model:
+
+- `app/repository_intelligence.py` validates source identity, classification, license/commercial-use state, canonical upstreams, required seed coverage, deterministic registry fingerprints, and safe repository-learning paths.
+- `app/repository_provenance.py` binds repository facts to the canonical registry, exact ref + commit SHA, file path, symbol/contract, content SHA-256, observation time, and temporal supersession.
+- `config/repository_intelligence_registry.json` is cumulative and cannot silently drop required OWN / IMPORTED / DISCOVERED seed entries.
+- `config/repository_archive_provenance.json` stores independently reviewed supplied-archive evidence where an exact archive-to-upstream tree match has been established.
+
+Repository Intelligence remains read-only project knowledge. It is not Jarvis execution authority, an authentication source, a production-policy mutator, or a model-promotion path.
 
 ## Invariants
 
 - Every source is classified as `OWN`, `IMPORTED`, or `DISCOVERED`.
-- Canonical seed entries cannot be silently removed; loader validation fails when any required seed disappears.
-- An unresolved archive never receives a guessed `owner/repo`. Its repository identity remains `null`, the identity status remains `UNRESOLVED`, and its adoption decision remains pending until provenance is recovered.
-- External code cannot be marked `ADOPT` unless its license has been explicitly verified.
-- Canonical upstream/fork/derivative relationships are recorded independently from display names.
-- Reviewed repository facts are pinned to branch/tag/ref plus commit SHA when the commit has actually been reviewed. Unknown SHAs remain `null` rather than being fabricated.
-- Registry JSON is deterministically SHA-256 fingerprinted so downstream repository-memory snapshots can bind themselves to the exact registry state.
+- Unknown identities remain `pending` with blocked commercial use; owner/repo identities are never guessed.
+- External adoption requires explicit license review. Copyleft references do not become proprietary EAY adoption authority merely because their upstream identity is verified.
+- Canonical upstream and derivative relationships are explicit. Apache Superset remains the canonical analytics upstream; `Patika-Global-Technology/superset-tr` remains a localization/vendor reference.
+- Reviewed facts are pinned to exact repository identity, ref and commit SHA when those values are reviewed.
+- Registry and provenance fingerprints are deterministic SHA-256 values.
+- Secrets, private-key material, generated dependency trees, build outputs and vendor noise are excluded from repository learning.
 
-## Learning boundary
+## Safe structural extraction
 
-Repository learning preserves provenance at this granularity:
+`app/repository_contract_extractor.py` is the only new extraction helper promoted by this convergence branch. It records structural facts without retaining secret values:
 
-`repository -> upstream/fork relation -> branch/tag -> commit SHA -> file -> symbol/contract`
+- Python: functions/classes/constants, HTTP method/path contracts and EAY/OPEX configuration variable names.
+- SQL/DDL: `CREATE TABLE`, `CREATE VIEW` and `ALTER TABLE` object contracts.
+- YAML: workflow name, action identifiers and the presence of run steps without persisting shell-command content.
 
-The registry layer provides the canonical source map, deterministic fingerprint, integrity gates, and a file-path admission filter. The filter excludes secret/private-key material and generated/vendor noise including `.env*`, private key containers, `node_modules`, `vendor`, build outputs, Python virtual environments, and caches.
+Excluded paths are rejected before parsing, binary-like input fails closed, and invalid Python syntax is rejected instead of heuristically guessed.
 
-Do not index raw secrets, credentials, tokens, generated dependency trees, or unnecessary personal data. Repository intelligence is retrieval/project memory, not an authorization source.
+## Supplied archive provenance
 
-## Immutable review snapshots
+The archive provenance ledger currently records exact recomputed Git-tree matches for:
 
-`app/repository_review_snapshot.py` adds the temporal evidence layer above the registry. A review snapshot is an immutable manifest bound to:
+- `council-of-high-intelligence-main.zip` -> `0xNyk/council-of-high-intelligence` @ `c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72`, MIT, decision `watch`.
+- `CL4R1T4S-main.zip` -> `elder-plinius/CL4R1T4S` @ `1a55b8a36d47c86e8d774acef83306d56fb0b302`, AGPL-3.0, decision `reference` and proprietary-EAY use restricted to reference-only.
+- `computer-lab-automation-master.zip` -> `mustafadalga/computer-lab-automation` @ `0f6fa81448062488f01144c67032764af25ee5fe`, GPL-3.0, decision `reference` unless separately cleared.
 
-- exact registry fingerprint,
-- exact registry entry / repository identity,
-- canonical upstream and relation,
-- reviewed branch/tag/ref,
-- exact 40-character commit SHA,
-- review timestamp,
-- one or more admitted file facts,
-- file Git blob SHA,
-- extracted symbol names and explicit contract statements,
-- optional content SHA-256,
-- prior snapshot fingerprint when the review continues an existing history.
+The CI gate requires the registry identity/ref/commit/license/decision to agree with this ledger and rejects adoption drift.
 
-The snapshot itself receives a deterministic SHA-256 fingerprint. A sequence of snapshots is hash-chained with `previous_snapshot_fingerprint`, so new reviews append history instead of replacing earlier project truth. Reordering, deletion of an interior review, field mutation, repository identity substitution, upstream substitution, registry-version substitution, duplicate paths, invalid Git/content hashes, unresolved identities, and excluded secret/generated paths fail closed.
+Still unresolved supplied sources remain explicit `pending` entries, including Deep-Learning-Tutorials, impeccable, image_understanding and the supplied JARVIS archive family until exact provenance is recovered.
 
-## Append-only repository memory store
+## Historical #39 capability
 
-`app/repository_memory_store.py` persists verified snapshots as immutable JSON artifacts under a repository-entry directory and maintains a minimal append-only `index.jsonl` containing only fingerprint, commit SHA, and review timestamp.
+Historical Repository Intelligence PR/branch work includes an append-only review-memory store, signed Ed25519 external checkpoints, GitHub ref->commit->tree->blob verification and historical-registry replay. Those capabilities remain preserved in their historical branch/PR record.
 
-Before every append, existing history is fully reloaded and hash-chain verified. A new snapshot must point to the exact current head fingerprint or the append fails. Duplicate snapshots, history forks, missing indexed artifacts, corrupt JSON, filename/index fingerprint substitution, reordered/deleted history, and tampered snapshot content fail closed.
+They are **not** copied wholesale into the cumulative release branch because that implementation used a parallel registry/snapshot API that conflicts with the newer canonical Pydantic registry/provenance authority already present in Platform Convergence. Reintroducing the old API would be a regression.
 
-Writes use a temporary file + `fsync` + atomic replacement for the snapshot artifact, followed by a separately `fsync`'d index append. If the index commit fails, the just-written unindexed snapshot is removed so partial history does not appear committed. JSON reload normalizes symbol/contract arrays back to immutable tuples before chain validation.
+If append-only persistence or signed checkpoints are promoted later, they must be reimplemented as consumers of the current `RepositoryRegistry` / `RepositoryFact` / `RepositorySnapshot` contracts and must pass full AI Core regression before convergence.
 
-This filesystem store is local-first durable project memory. It is not WORM/tamper-proof storage against an operating-system or disk administrator.
+## Release gate
 
-## Safe contract extraction
+`.github/workflows/repository-intelligence-convergence.yml` verifies:
 
-`app/repository_contract_extractor.py` performs deterministic structural extraction without retaining raw source text in repository facts:
+1. canonical registry tests,
+2. current `repository_provenance.py` tests,
+3. supplied archive provenance/license boundaries,
+4. safe structural extraction,
+5. full EAY AI Core regression,
+6. preservation of modern Jarvis and model-training/promotion authority,
+7. absence of the legacy parallel snapshot/memory authority from the cumulative branch.
 
-- Python: function/class/constants, HTTP route method/path, and EAY/OPEX configuration variable names.
-- SQL/DDL: `CREATE TABLE`, `CREATE VIEW`, and `ALTER TABLE` object contracts.
-- YAML: workflow name, action identifiers, and presence of list-form or mapping-form run steps without shell-command contents.
+No Repository Intelligence change is considered converged while any of those checks are red.
 
-Secret values are never copied into extracted contracts. Excluded paths are rejected before parsing, binary-like content fails closed, and invalid Python syntax is rejected rather than heuristically guessed.
+## Next work
 
-## Read-only review ingestion coordinator
+Highest-value next Repository Intelligence work is provenance debt closure, not new architecture:
 
-`app/repository_review_ingestion.py` composes already-fetched repository evidence into one verified memory transaction. Remote transport remains outside the trusted memory layer: the caller performs read-only GitHub retrieval and supplies the exact repository, ref, commit SHA, file path, blob SHA, and source text returned by that retrieval.
-
-Before any snapshot is committed, the coordinator resolves the target through the canonical registry, rejects repository/ref/commit substitution, enforces exact Git blob identity and bounded file size, applies the secret/generated path gate, extracts only structural facts, stores content SHA-256 rather than raw source, reloads the existing append-only chain, and binds the new snapshot to the exact current head.
-
-## GitHub object provenance adapter
-
-`app/github_repository_evidence.py` verifies the remote object chain before project memory is touched:
-
-`registry repository -> resolved ref -> commit SHA -> commit tree SHA -> tree path/blob SHA -> fetched UTF-8 source -> Git blob identity`
-
-Repository/ref/commit/tree/blob substitution, paths absent from the commit tree, duplicate paths, invalid object hashes, and fetched source that does not reproduce the exact Git blob SHA fail closed. Git blob identity is recomputed using Git's canonical `blob <byte-length>\0<content>` object format; protocol SHA-1 is used only for Git object identity while EAY repository-memory manifests remain SHA-256 fingerprinted.
-
-`ingest_verified_github_repository_review()` composes verified object evidence with the canonical registry, safe extractor, immutable review snapshot, and append-only local store. The adapter performs no network access, accepts no credentials, and cannot widen repository authority beyond the verified registry entry.
-
-## Historical registry revisions
-
-Historical truth is not reinterpreted under today's registry. `load_repository_registry_text()` applies the same schema, seed-preservation, identity, upstream, and license/adoption gates to an already-fetched historical registry JSON payload that the filesystem loader applies to the current registry.
-
-`app/historical_repository_registry.py` then binds an old snapshot to that historical payload by requiring exact `snapshot.registry_fingerprint == historical_registry.fingerprint` before running the normal snapshot verifier. A modified/newer registry revision, a registry missing a canonical seed, or a snapshot invalid under its original source map fails closed. The caller must fetch the registry text from the immutable Git revision; no fallback to the current registry is permitted.
-
-This means repository project memory now preserves both temporal axes: the reviewed repository commit and the exact source-registry revision that governed the review.
-
-## Signed external checkpoints
-
-`app/repository_memory_checkpoint.py` adds an optional independent anchor above the local append-only store. It does **not** convert the filesystem into WORM storage. Instead, an operator can periodically sign the verified head of one or more repository-memory chains and copy the resulting JSON artifact to a separately administered location.
-
-Checkpoint provenance is intentionally minimal:
-
-`registry fingerprint -> registry entry/repository -> snapshot count -> head snapshot fingerprint -> reviewed commit SHA -> review timestamp`
-
-Security properties:
-
-- every requested repository chain is fully reloaded and verified before signing,
-- checkpoint payloads are SHA-256 fingerprinted,
-- signatures use a **dedicated Ed25519 key** loaded from a file; raw private-key material is never accepted as an API argument and never exported,
-- the signer public key is bound by SHA-256 fingerprint plus explicit key ID,
-- checkpoint signatures are deterministic for the same key and payload,
-- checkpoint artifacts can themselves form a `previous_checkpoint_fingerprint` chain,
-- key rotation is supported by resolving each checkpoint's explicit signer key ID during chain verification,
-- cross-registry checkpoint history is verified by resolving each exact historical registry fingerprint rather than silently using the newest registry,
-- a checkpoint remains valid after later repository snapshots are appended because it anchors a specific historical position; callers may additionally require that it still represents the current head,
-- truncation, reordered/broken checkpoint history, wrong public key, payload/signature tamper, registry substitution, or missing historical registry revision fail closed,
-- exported checkpoint JSON contains signatures, public-key fingerprints, repository identities and hashes only; no raw source, tokens, credentials, private keys, or model data are included,
-- checkpoint export is atomic and refuses overwrite of an existing target path.
-
-Checkpoint signing keys are a separate trust domain from Jarvis machine identity, Identity Gateway, model signing, or any application JWT key. Do not reuse those private keys. Provision the checkpoint key through an external secret/host mount, publish only its public key to verifiers, and place exported checkpoints in a separately controlled system if independent evidence durability is required.
-
-## External-source policy
-
-External repositories are reference/adoption inputs, not architecture authority. Each reviewed external source records license status, capability mapping, reviewed ref/SHA, and one of `ADOPT`, `WATCH`, `REFERENCE`, `REJECT`, or `PENDING`.
-
-Apache Superset is the canonical analytics upstream. `Patika-Global-Technology/superset-tr` is tracked only as a localization/vendor derivative and must not replace Apache Superset as upstream authority.
-
-The supplied `council-of-high-intelligence-main.zip` archive is bound to verified upstream `0xNyk/council-of-high-intelligence`. Other supplied archives remain explicit unresolved entries until their exact upstream identities and license terms are recovered.
-
-## Next layer
-
-Continue exact upstream/license recovery for unresolved supplied archives and previously selected discovered repositories without weakening registry completeness or commercial-license gates. After source identities are recovered, add provenance-bound read-only reviews for the highest-value verified repositories and keep checkpoint/public-key operational guidance separate from application execution authority.
+1. recover exact upstream/ref/SHA/license for unresolved supplied archives,
+2. recover previously selected discovered repositories by capability domain,
+3. review commercial-use obligations before any adoption decision,
+4. generate current-model provenance facts for the highest-value verified sources,
+5. only then consider a current-model append-only persistence/checkpoint layer if it materially improves release or audit acceptance.

@@ -1,5 +1,5 @@
 {
-  "version": "0.1",
+  "version": "0.2",
   "principle": "Discovery signals are never promoted automatically to binding legal knowledge.",
   "sources": [
     {
@@ -42,9 +42,41 @@
       "role": "binding_publication_index",
       "jurisdiction": "TR",
       "enabled": true,
-      "topics": ["resmî gazete", "yönetmelik", "tebliğ"],
-      "keywords": ["gıda", "kodeksi", "tarım", "hijyen", "etiket", "pestisit", "yönetmelik", "tebliğ"],
-      "notes": "Official publication index. Even a relevant homepage change requires opening and verifying the exact instrument before promotion to binding knowledge."
+      "topics": [
+        "resmî gazete",
+        "yönetmelik",
+        "tebliğ",
+        "gıda ve perakende",
+        "tüketici hukuku",
+        "elektronik ticaret",
+        "fiyat ve reklam",
+        "kişisel veri",
+        "çalışma ve iş sağlığı"
+      ],
+      "keywords": [
+        "gıda",
+        "kodeksi",
+        "tarım",
+        "hijyen",
+        "etiket",
+        "pestisit",
+        "yönetmelik",
+        "tebliğ",
+        "perakende",
+        "tüketici",
+        "6502",
+        "fiyat etiketi",
+        "mesafeli sözleşmeler",
+        "ticari reklam",
+        "haksız ticari uygulama",
+        "elektronik ticaret",
+        "6563",
+        "kişisel veri",
+        "6698",
+        "iş sağlığı ve güvenliği",
+        "6331"
+      ],
+      "notes": "Official publication index used for cross-domain Food & Retail discovery, including consumer, e-commerce, pricing/advertising, privacy and workforce safety signals. A homepage/index hit never establishes a binding rule: the exact instrument, publication/effective dates and temporal relations must still pass legal verification."
     },
     {
       "id": "tr-guvenilir-gida",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import unicodedata
@@ -77,11 +78,23 @@ class ConsumerRegistryManifest(BaseModel):
             raise ValueError("duplicate_consumer_registry_title")
         return self
 
+    @property
+    def manifest_fingerprint(self) -> str:
+        payload = self.model_dump(mode="json")
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
 
 class RegistryDiscoveryCandidate(BaseModel):
     instrument_key: str
     title: str
     registry_url: str
+    registry_manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     discovered_url: str
     discovered_host: str
     discovery_only: Literal[True] = True
@@ -158,6 +171,7 @@ def resolve_priority_registry_links(
     for visible_title, href in parser.anchors:
         anchors.setdefault(_normalized_text(visible_title), []).append(href)
 
+    manifest_fingerprint = manifest.manifest_fingerprint
     resolved: list[RegistryDiscoveryCandidate] = []
     for instrument in manifest.instruments:
         matches = anchors.get(_normalized_text(instrument.title), [])
@@ -171,6 +185,7 @@ def resolve_priority_registry_links(
                 instrument_key=instrument.key,
                 title=instrument.title,
                 registry_url=str(manifest.registry_url),
+                registry_manifest_fingerprint=manifest_fingerprint,
                 discovered_url=discovered_url,
                 discovered_host=_hostname(discovered_url),
             )

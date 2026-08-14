@@ -144,6 +144,8 @@ def upgrade() -> None:
             """
         )
 
+    # asyncpg-backed Alembic uses prepared statements, so keep every op.execute
+    # to one SQL command while the surrounding Alembic transaction stays atomic.
     for role_key, (role_name, permissions) in ROLE_POLICIES.items():
         escaped_key = role_key.replace("'", "''")
         escaped_name = role_name.replace("'", "''")
@@ -156,15 +158,18 @@ def upgrade() -> None:
             FROM tenants
             ON CONFLICT (tenant_id, key)
             DO UPDATE SET name = EXCLUDED.name
-            WHERE roles.is_system IS TRUE;
-
+            WHERE roles.is_system IS TRUE
+            """
+        )
+        op.execute(
+            f"""
             INSERT INTO role_permissions (tenant_id, role_id, permission_key, scope)
             SELECT r.tenant_id, r.id, p.permission_key, '{{}}'::jsonb
             FROM roles AS r
             CROSS JOIN unnest({permission_array}) AS p(permission_key)
             WHERE r.key = '{escaped_key}' AND r.is_system IS TRUE
             ON CONFLICT (tenant_id, role_id, permission_key)
-            DO UPDATE SET scope = '{{}}'::jsonb;
+            DO UPDATE SET scope = '{{}}'::jsonb
             """
         )
 
@@ -179,7 +184,7 @@ def upgrade() -> None:
         CROSS JOIN unnest({_sql_array(super_admin_keys)}) AS p(permission_key)
         WHERE r.key = 'super_admin' AND r.is_system IS TRUE
         ON CONFLICT (tenant_id, role_id, permission_key)
-        DO UPDATE SET scope = '{{}}'::jsonb;
+        DO UPDATE SET scope = '{{}}'::jsonb
         """
     )
 
@@ -215,7 +220,7 @@ def downgrade() -> None:
           AND rp.role_id = r.id
           AND r.key = 'super_admin'
           AND r.is_system IS TRUE
-          AND rp.permission_key = ANY({_sql_array(created_keys)});
+          AND rp.permission_key = ANY({_sql_array(created_keys)})
         """
     )
 
@@ -228,8 +233,11 @@ def downgrade() -> None:
             WHERE rp.tenant_id = r.tenant_id
               AND rp.role_id = r.id
               AND r.key = '{escaped}'
-              AND r.is_system IS TRUE;
-
+              AND r.is_system IS TRUE
+            """
+        )
+        op.execute(
+            f"""
             DELETE FROM roles AS r
             WHERE r.key = '{escaped}'
               AND r.is_system IS TRUE
@@ -237,7 +245,7 @@ def downgrade() -> None:
                   SELECT 1 FROM membership_roles AS mr
                   WHERE mr.tenant_id = r.tenant_id
                     AND mr.role_id = r.id
-              );
+              )
             """
         )
 

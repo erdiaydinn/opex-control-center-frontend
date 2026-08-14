@@ -26,16 +26,80 @@ as production or market-leading evidence when external/field proof is missing.
    happened, preserve user work where safe, and provide a recovery path.
 5. **All states are designed.** Loading, empty, partial, stale, offline,
    conflict, retry, permission-denied and error states are part of the product.
-6. **Accessibility is product quality.** Web targets WCAG 2.2 AA. Keyboard,
-   focus order, labels, contrast, motion and screen-reader semantics are release
-   criteria, not post-launch work.
-7. **Four languages are first class.** TR/EN/DE/AR are supported; Arabic RTL
-   must be structurally correct rather than text-only translated.
-8. **EAY branding is canonical for new product surfaces.** Historic OPEX names
+6. **Accessibility is core product behavior.** Web targets WCAG 2.2 AA as the
+   minimum release baseline, with additional EAY requirements for screen readers,
+   keyboard/switch/voice operation, visible focus, forced-colors, reduced motion,
+   large targets, no color-only meaning, scalable text, media alternatives and
+   cognitive focus modes. Accessibility is not an optional theme.
+7. **Accessibility preferences do not require medical disclosure.** A user may
+   select captions, audio description, reduced motion, text size, contrast,
+   readable typography or other access preferences without declaring a disability
+   or health diagnosis. Sensitive diagnosis data is not required for the product
+   to adapt.
+8. **Global localization is first class.** The platform baseline is
+   TR/EN/DE/AR/FR/ES/IT/NL/PL/PT-BR. Arabic RTL is structural, not text-only.
+   Customer tenants may restrict the languages enabled for their organization,
+   but shared EAY components may not hard-code customer-facing copy.
+9. **EAY branding is canonical for new product surfaces.** Historic OPEX names
    may survive in internal identifiers during migration, but customer-facing new
    design must converge on EAY.
-9. **Evidence before claims.** "Best", "production ready" and >=95% readiness
+10. **Evidence before claims.** "Best", "production ready" and >=95% readiness
    require real field evidence against the acceptance matrix.
+
+## Inclusive Experience Standard
+
+EAY must not create a separate "disabled version" of the product. The same
+product must remain operable and understandable for users with permanent,
+temporary or situational access needs.
+
+### Visual and blind/low-vision users
+
+- semantic headings, landmarks, labels, descriptions and live regions;
+- screen-reader-compatible names and state announcements;
+- keyboard-visible focus and predictable focus restoration;
+- high contrast and operating-system forced-colors support;
+- text scaling and reflow without loss of task functionality;
+- status/error meaning never communicated by color alone;
+- charts and visual analytics provide textual/table equivalents;
+- video that contains important visual information supports audio description or
+  a descriptive transcript.
+
+### Deaf and hard-of-hearing users
+
+- captions for speech and relevant non-speech audio when media contains audio;
+- transcripts for recorded learning content;
+- descriptive transcripts for users who need both audio and visual information in
+  text form;
+- visual equivalents for operational sound alerts;
+- sign-language track/picture-in-picture capability when required by the audience
+  or customer policy.
+
+### Motor access
+
+- all critical flows operable without a pointer;
+- keyboard, switch and voice-control semantics use stable accessible names;
+- minimum 48dp touch targets on mobile/terminal primary actions;
+- drag-and-drop always has a non-drag alternative;
+- no precision-pointer-only gestures for critical operations;
+- destructive controls are not placed where accidental activation is likely.
+
+### Cognitive, learning and neurodivergent users
+
+- consistent navigation and terminology across modules;
+- focus/simplified mode that removes non-essential visual noise;
+- readable-font and text-spacing options without breaking layout;
+- complex instructions are chunked into explicit steps;
+- plain-language rendering capability for eligible explanatory content;
+- Academy learning supports pause/resume, adaptive review and configured
+  assessment accommodations without exposing unnecessary medical information.
+
+### Motion, vestibular sensitivity and photosensitivity
+
+- operating-system `prefers-reduced-motion` is respected;
+- user can force reduced motion regardless of OS setting;
+- essential information never depends on animation/parallax;
+- unsafe flashing patterns are forbidden;
+- decorative motion and blur may be removed by focus mode.
 
 ## Measurable product targets
 
@@ -69,10 +133,11 @@ biometric presence, warehouse GPS and real HR files remain mandatory field gates
 
 The counting terminal is a **native handheld product surface**, not a small web
 page. Acceptance includes hardware scan trigger/DataWedge behavior, one-hand use,
-large targets, blind count, unexpected SKU, immediate sound/vibration feedback,
-offline queue, duplicate/replay safety, rapid recount, supervisor handoff and
-recovery after network/app/device restart. The desktop surface is a dense manager
-console for assignment, variance, reconciliation, evidence and approval.
+large targets, blind count, unexpected SKU, immediate sound/vibration **and visual**
+feedback, offline queue, duplicate/replay safety, rapid recount, supervisor
+handoff and recovery after network/app/device restart. The desktop surface is a
+dense manager console for assignment, variance, reconciliation, evidence and
+approval.
 
 Managed signing, MDM, corporate OIDC, TLS pinning and physical Zebra testing are
 real-device gates and may not be replaced with emulator evidence.
@@ -82,7 +147,8 @@ real-device gates and may not be replaced with emulator evidence.
 Visual polish is invalid without physical truth. SKU dimensions, fixture geometry
 and Store DNA must be authoritative before solver quality or 3D appearance can be
 claimed. Infeasible placement must explain the violated constraint. 2D and 3D
-must represent the same saved planogram version.
+must represent the same saved planogram version. Drag placement must have a
+keyboard/non-drag equivalent for accessible authoring.
 
 ### DockOS
 
@@ -100,10 +166,18 @@ configured, durable audit and recoverable import/reconciliation errors.
 
 ### Academy
 
-Content discovery, playback, quiz/progress and grounded Q&A must feel like one
-learning product. Answers must show provenance. Video/media performance is tested
-under target concurrency; entitlement and tenant isolation are never delegated to
-frontend hiding.
+Academy is a learning operating system, not a video library. Content discovery,
+playback, interactive authoring, learning paths, adaptive review, quizzes,
+progress, field evidence and Jarvis Teacher must feel like one learning product.
+Grounded answers show provenance and the exact approved content/version.
+
+A media item is not considered accessibility-complete merely because the video
+plays. The media model must support captions, transcript, keyboard-accessible
+player controls, audio-description capability and descriptive-transcript
+capability. When the target audience/customer requires it, sign-language tracks or
+picture-in-picture sign interpretation are supported. Completion cannot depend on
+hearing or seeing a single modality when an equivalent accessible learning route
+can satisfy the same learning objective.
 
 ### Jarvis
 
@@ -113,12 +187,22 @@ approval-bound. Learning/training requires reviewed data, immutable lineage,
 offline eval, canary and governed promotion. Live BigQuery evidence cannot be
 replaced by synthetic proof.
 
+**Jarvis Security Guardian is EAY platform authority, not a tenant-company tool.**
+Its vulnerability intelligence, dependency remediation and platform security
+controls are visible/operable only to platform-admin/super-admin authority.
+Customer tenants do not approve, suppress or alter EAY platform security posture.
+Customer-facing Jarvis may explain the customer's own authorized security or
+compliance content only when that capability is explicitly part of the customer
+product and tenant scoped.
+
 ### Insight / KPI
 
 Insight consumes promoted canonical metric identifiers and provenance. Dashboard
 or frontend SQL may not weaken tenant/store/entity scope or create alternate KPI
 formulas. Orders/NSFR/PFR/Refund/Prep/Picking/OTP/Putaway become visible as
-production truth only after their governed activation evidence passes.
+production truth only after their governed activation evidence passes. Charts must
+also expose accessible text/table representations and may not use color as the
+only risk/status encoding.
 
 ## Field-test scorecard
 
@@ -137,8 +221,12 @@ A field run must cover at minimum:
 - duplicate request/retry/double tap;
 - concurrent edits or stale version conflict;
 - process/service/database restart where applicable;
-- localization including Arabic RTL;
-- keyboard/scanner/accessibility behavior appropriate to the surface;
+- localization including Arabic RTL and representative long-text locales;
+- keyboard-only and screen-reader critical flows on web;
+- forced-colors/high-contrast and 200% text/reflow checks;
+- reduced-motion behavior;
+- captions/transcript/media alternatives in Academy;
+- scanner/switch/assistive access behavior appropriate to the surface;
 - real error recovery, not just error display.
 
 ## Next-phase: Expense Management

@@ -10,6 +10,31 @@ from app.modules.academy.repository_utils import json_text
 async def create_learning_path(
     session: AsyncSession, principal: Principal, payload: Any
 ) -> dict[str, Any]:
+    role_keys = [assignment.role_key.strip().lower() for assignment in payload.role_assignments]
+    if len(role_keys) != len(set(role_keys)):
+        raise ValueError("Learning path contains duplicate role assignment")
+    if role_keys:
+        known_role_keys = set(
+            (
+                await session.execute(
+                    text("""
+                    SELECT key
+                    FROM roles
+                    WHERE tenant_id=:tenant_id
+                    """),
+                    {"tenant_id": principal.tenant_id},
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if set(role_keys) - known_role_keys:
+            raise ValueError("Learning path contains unknown role assignment")
+
+    content_version_ids = [item.content_version_id for item in payload.items]
+    if len(content_version_ids) != len(set(content_version_ids)):
+        raise ValueError("Learning path contains duplicate content version")
+
     path = (
         (
             await session.execute(
@@ -61,7 +86,7 @@ async def create_learning_path(
         )
         if inserted is None:
             raise ValueError("Learning path contains missing or unpublished content version")
-    for assignment in payload.role_assignments:
+    for assignment, role_key in zip(payload.role_assignments, role_keys, strict=True):
         await session.execute(
             text("""
             INSERT INTO academy_path_role_assignments (
@@ -71,7 +96,7 @@ async def create_learning_path(
             {
                 "tenant_id": principal.tenant_id,
                 "path_id": path["id"],
-                "role_key": assignment.role_key.strip().lower(),
+                "role_key": role_key,
                 "required": assignment.required,
                 "due_days": assignment.due_days,
             },

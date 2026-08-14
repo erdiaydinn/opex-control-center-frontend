@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import Principal
 from app.modules.academy.repository_admin import (
     academy_admin_summary,
+    academy_authoring_options,
     list_admin_content,
     list_admin_paths,
 )
@@ -56,6 +57,7 @@ from app.modules.academy.repository_utils import json_text
 
 __all__ = (
     "academy_admin_summary",
+    "academy_authoring_options",
     "claim_idempotency_key",
     "create_content",
     "create_content_version",

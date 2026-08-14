@@ -110,6 +110,60 @@ async def list_admin_paths(
     return [dict(row) for row in rows]
 
 
+async def academy_authoring_options(
+    session: AsyncSession,
+    principal: Principal,
+) -> dict[str, list[dict[str, Any]]]:
+    role_rows = (
+        (
+            await session.execute(
+                text("""
+        SELECT key, name, is_system
+        FROM roles
+        WHERE tenant_id=:tenant_id
+        ORDER BY is_system DESC, name, key
+    """),
+                {"tenant_id": principal.tenant_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    version_rows = (
+        (
+            await session.execute(
+                text("""
+        SELECT
+            cv.id AS content_version_id,
+            cv.content_id,
+            ci.slug,
+            ci.content_type,
+            ci.title_i18n,
+            cv.version_label,
+            cv.version_number,
+            cv.locale,
+            cv.duration_ms,
+            cv.accessibility_metadata
+        FROM academy_content_versions AS cv
+        JOIN academy_content_items AS ci
+          ON ci.tenant_id=cv.tenant_id AND ci.id=cv.content_id
+        WHERE cv.tenant_id=:tenant_id
+          AND cv.status='published'
+          AND ci.status='published'
+        ORDER BY ci.updated_at DESC, ci.slug, cv.version_number DESC
+    """),
+                {"tenant_id": principal.tenant_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return {
+        "roles": [dict(row) for row in role_rows],
+        "published_versions": [dict(row) for row in version_rows],
+    }
+
+
 async def academy_admin_summary(
     session: AsyncSession,
     principal: Principal,

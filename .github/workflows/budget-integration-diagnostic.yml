@@ -1,0 +1,54 @@
+name: Budget integration diagnostic
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch canonical Budget branch
+        run: git fetch origin product/budget-intelligence-v1
+      - name: Diagnose merge conflicts
+        id: merge
+        shell: bash
+        run: |
+          set +e
+          git config user.email "ci@eay.invalid"
+          git config user.name "EAY CI"
+          git merge --no-commit --no-ff origin/product/budget-intelligence-v1 >/tmp/budget-merge.log 2>&1
+          status=$?
+          git diff --name-only --diff-filter=U | tee /tmp/budget-conflicts.txt
+          cat /tmp/budget-merge.log
+          if [ "$status" -eq 0 ]; then
+            echo "BUDGET_MERGE_CONFLICTS=NONE"
+            git merge --abort || true
+            exit 0
+          fi
+          if [ ! -s /tmp/budget-conflicts.txt ]; then
+            echo "BUDGET_MERGE_FAILED_WITHOUT_CONFLICT_LIST"
+            git merge --abort || true
+            exit 1
+          fi
+          echo "BUDGET_MERGE_CONFLICTS=FOUND"
+          git merge --abort || true
+          exit 1
+      - name: Upload conflict diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: budget-integration-conflicts
+          path: |
+            /tmp/budget-conflicts.txt
+            /tmp/budget-merge.log
+          if-no-files-found: error
+          retention-days: 3

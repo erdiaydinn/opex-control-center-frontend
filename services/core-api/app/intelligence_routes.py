@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 
 from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
 from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS, TOOL_REQUIRED_SCOPES
-from app.core.permission_catalog import action_permission
 from app.core.security import Principal, get_current_principal, require_platform_admin
 
 router = APIRouter(prefix="/v1", tags=["intelligence"])

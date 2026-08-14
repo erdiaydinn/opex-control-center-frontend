@@ -93,7 +93,7 @@ jobs:
           asyncio.run(main())
           PY
       - name: Compile Budget slice and cumulative merge head
-        run: python -m compileall -q services/core-api/app/modules/budget services/core-api/alembic/versions/0009_budget_finance_foundation.py services/core-api/alembic/versions/0010_budget_procurement_foundation.py services/core-api/alembic/versions/0011_budget_ledger_foundation.py services/core-api/alembic/versions/0012_budget_import_foundation.py services/core-api/alembic/versions/0013_budget_evidence_foundation.py services/core-api/alembic/versions/0014_budget_rls_controls.py services/core-api/alembic/versions/0017_merge_jarvis_platform_heads.py
+        run: python -m compileall -q services/core-api/app/modules/budget services/core-api/alembic/versions/0009_budget_finance_foundation.py services/core-api/alembic/versions/0010_budget_procurement_foundation.py services/core-api/alembic/versions/0011_budget_ledger_foundation.py services/core-api/alembic/versions/0012_budget_import_foundation.py services/core-api/alembic/versions/0013_budget_evidence_foundation.py services/core-api/alembic/versions/0014_budget_rls_controls.py services/core-api/alembic/versions/0017_merge_jarvis_platform_heads.py services/core-api/alembic/versions/0018_academy_product_roles.py
       - name: Lint Budget slice
         run: ruff check --ignore E501 services/core-api/app/modules/budget services/core-api/tests/test_budget_domain.py
       - name: Unit finance contracts
@@ -134,7 +134,7 @@ jobs:
               con = await asyncpg.connect("postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test")
               try:
                   head = await con.fetchval("SELECT version_num FROM alembic_version")
-                  assert head == "0017_merge_jarvis_platform_heads", head
+                  assert head == "0018_academy_product_roles", head
                   rows = await con.fetch("SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = ANY($1::text[])", list(expected))
                   seen = {row["relname"] for row in rows}
                   assert seen == expected, (expected - seen)
@@ -179,7 +179,7 @@ jobs:
         run: |
           docker restart ${{ job.services.postgres.id }}
           for attempt in {1..30}; do pg_isready -h localhost -U opex_migrator -d opex_test && break; sleep 1; done
-          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0017_merge_jarvis_platform_heads'"
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0018_academy_product_roles'"
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM budget_plan"
       - name: Backup and isolated restore rehearsal
         run: |
@@ -187,5 +187,5 @@ jobs:
           dropdb -h localhost -U opex_migrator --if-exists opex_budget_restore
           createdb -h localhost -U opex_migrator opex_budget_restore
           pg_restore -h localhost -U opex_migrator -d opex_budget_restore --no-owner /tmp/eay-budget.dump
-          psql -h localhost -U opex_migrator -d opex_budget_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0017_merge_jarvis_platform_heads'"
+          psql -h localhost -U opex_migrator -d opex_budget_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0018_academy_product_roles'"
           psql -h localhost -U opex_migrator -d opex_budget_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM budget_plan"

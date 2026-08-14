@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+from contextlib import suppress
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
@@ -27,10 +28,10 @@ def _candidate_roots() -> tuple[Path, ...]:
         candidates.append(Path(configured))
 
     # Source checkout: services/core-api/app/modules/planogram -> repository root.
-    try:
-        candidates.append(Path(__file__).resolve().parents[5] / "apps" / "planai" / "backend")
-    except IndexError:
-        pass
+    with suppress(IndexError):
+        candidates.append(
+            Path(__file__).resolve().parents[5] / "apps" / "planai" / "backend"
+        )
 
     # Immutable Core API image target.
     candidates.append(Path("/opt/eay/planai"))
@@ -117,7 +118,9 @@ def generate_preview(
     _, _, _, physical_engine = _load_modules()
     generator = getattr(physical_engine, "generate_production_plan", None)
     if not callable(generator):
-        raise PlanogramEngineUnavailable("Canonical production Planogram entrypoint is unavailable")
+        raise PlanogramEngineUnavailable(
+            "Canonical production Planogram entrypoint is unavailable"
+        )
 
     result = generator(products, layout, store_dna, mode=mode)
     if not isinstance(result, dict):

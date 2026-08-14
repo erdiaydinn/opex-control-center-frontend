@@ -15,6 +15,7 @@ from app.modules.academy.repository import (
     create_manual_enrollment,
     create_media_asset,
     create_quiz,
+    get_enrollment_workspace,
     get_quiz_public_definition,
     grant_entitlement,
     ingest_document_chunks,
@@ -106,6 +107,19 @@ async def reconcile_enrollments(session: TenantSession, principal: Viewer) -> di
     await require_module(session, principal)
     created = await reconcile_role_enrollments(session, principal)
     return {"created": created, "enrollments": await list_enrollments(session, principal)}
+
+
+@router.get("/enrollments/{enrollment_id}")
+async def get_enrollment(
+    enrollment_id: UUID,
+    session: TenantSession,
+    principal: Viewer,
+) -> dict[str, object]:
+    await require_module(session, principal)
+    result = await get_enrollment_workspace(session, principal, enrollment_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Academy enrollment not found")
+    return result
 
 
 @router.patch("/enrollments/{enrollment_id}/progress")

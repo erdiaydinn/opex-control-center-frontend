@@ -12,7 +12,7 @@ from typing import Literal
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
 
 
@@ -795,6 +795,30 @@ def export_learning_dataset():
         return build_gated_export(review_store=review_store)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+from .model_promotion_gate import PromotionRecord  # noqa: E402
+from .model_promotion_routes import (  # noqa: E402
+    PromotionApiRequest,
+    get_current_production_promotion as governed_get_current_production_promotion,
+    promote_model as governed_promote_model,
+)
+
+
+@app.post("/v1/model-promotions", response_model=PromotionRecord, status_code=201)
+def promote_model(
+    payload: PromotionApiRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    return governed_promote_model(payload, authorization=authorization)
+
+
+@app.get(
+    "/v1/model-promotions/{model_record_id}",
+    response_model=PromotionRecord,
+)
+def get_current_production_promotion(model_record_id: str):
+    return governed_get_current_production_promotion(model_record_id)
 
 
 @app.get("/v1/learning/candidates")

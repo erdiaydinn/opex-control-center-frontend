@@ -13,7 +13,6 @@ from .legal_review import router as legal_review_router
 from .legal_verification import router as legal_verification_router
 from .learning_export_guard import router as learning_export_router
 from .main import app
-from .model_promotion_routes import router as model_promotion_router
 from .model_registry import router as model_registry_router
 from .observability import router as observability_router
 from .payroll_engine import router as payroll_router
@@ -78,7 +77,6 @@ def compose_app() -> FastAPI:
         training_manifest_router,
         learning_export_router,
         model_registry_router,
-        model_promotion_router,
         voice_ws_router,
     )
     for router in routers:

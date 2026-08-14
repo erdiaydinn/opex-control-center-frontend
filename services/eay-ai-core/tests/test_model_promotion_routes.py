@@ -85,8 +85,8 @@ def test_governed_promotion_routes_exist_once_after_recomposition():
     ]
     assert len(post) == 1
     assert len(get) == 1
-    assert post[0].endpoint.__module__ == "app.model_promotion_routes"
-    assert get[0].endpoint.__module__ == "app.model_promotion_routes"
+    assert post[0].endpoint.__module__ == "app.main"
+    assert get[0].endpoint.__module__ == "app.main"
 
 
 def test_post_uses_governed_gate_and_deployment_authoritative_operator(monkeypatch):

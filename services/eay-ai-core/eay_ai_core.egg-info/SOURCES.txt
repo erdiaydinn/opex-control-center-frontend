@@ -61,6 +61,7 @@ app/model_artifact_provenance.py
 app/model_artifact_registry.py
 app/model_lifecycle_ledger.py
 app/model_promotion_gate.py
+app/model_promotion_routes.py
 app/model_registry.py
 app/multilingual_learning.py
 app/observability.py
@@ -87,6 +88,7 @@ app/tool_execution.py
 app/tool_intent.py
 app/tool_router.py
 app/training_execution.py
+app/training_executor.py
 app/training_gate.py
 app/training_integrity.py
 app/training_job_registry.py
@@ -189,6 +191,7 @@ tests/test_license_gate.py
 tests/test_model_artifact_promotion.py
 tests/test_model_artifact_registry.py
 tests/test_model_lifecycle_ledger.py
+tests/test_model_promotion_routes.py
 tests/test_model_registry.py
 tests/test_multilingual_learning.py
 tests/test_payroll_engine.py
@@ -215,6 +218,7 @@ tests/test_tool_intent_evals_metrics.py
 tests/test_tool_router.py
 tests/test_training_authority.py
 tests/test_training_execution.py
+tests/test_training_executor.py
 tests/test_training_gate.py
 tests/test_training_integrity.py
 tests/test_training_job_spec.py

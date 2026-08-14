@@ -4,16 +4,13 @@ import os
 import secrets
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from .model_promotion_gate import ModelPromotionGate, PromotionRecord, PromotionRequest
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
 promotion_gate = ModelPromotionGate(DB_PATH)
-router = APIRouter(prefix="/v1/model-promotions", tags=["model-promotions"])
-
-
 class PromotionApiRequest(BaseModel):
     model_record_id: str = Field(min_length=1, max_length=180)
     canary_evidence_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -34,10 +31,9 @@ def _authorized_release_operator(authorization: str | None) -> str:
     return operator
 
 
-@router.post("", response_model=PromotionRecord, status_code=201)
 def promote_model(
     payload: PromotionApiRequest,
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    authorization: str | None = None,
 ) -> PromotionRecord:
     """Perform the one canonical evidence-bound production transition.
 
@@ -62,7 +58,6 @@ def promote_model(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.get("/{model_record_id}", response_model=PromotionRecord)
 def get_current_production_promotion(model_record_id: str) -> PromotionRecord:
     """Re-verify and return the current immutable production proof."""
 

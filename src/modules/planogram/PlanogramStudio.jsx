@@ -1,84 +1,40 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Boxes, CheckCircle2, LockKeyhole, RefreshCw, Ruler, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
+import { apiGet } from "../../api/client.js";
+import { translatePlanogram } from "../../platform/i18n/planogramMessages.js";
+import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import "./planogram-native.css";
 
-
-// Permission contract remains canonical while
-// Planogram Studio is security-quarantined.
-const PLANOGRAM_FEATURES = [
-  "aiRecommend",
-  "fixtureEdit",
-  "layoutEdit",
-  "layoutView",
-  "productAssign",
-  "ruleEdit"
-];
-
-const PLANOGRAM_ACTIONS = [
-  "approve",
-  "create",
-  "delete",
-  "edit",
-  "export",
-  "view"
-];
-export default function PlanogramStudio() {
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        boxSizing: "border-box",
-        background: "#f6f7fa",
-        color: "#111827",
-        fontFamily: "Inter, system-ui, sans-serif",
-      }}
-    >
-      <section
-        role="status"
-        style={{
-          width: "min(680px, 100%)",
-          padding: 28,
-          border: "1px solid #e5e7eb",
-          borderRadius: 18,
-          background: "#ffffff",
-          boxShadow: "0 16px 42px rgba(15,23,42,.10)",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 900,
-            letterSpacing: ".08em",
-            textTransform: "uppercase",
-            color: "#9f1239",
-          }}
-        >
-          Phase 1 Security Quarantine
-        </div>
-
-        <h1
-          style={{
-            margin: "10px 0 8px",
-            fontSize: 28,
-          }}
-        >
-          Planogram Studio ge?ici olarak kapal?
-        </h1>
-
-        <p
-          style={{
-            margin: 0,
-            lineHeight: 1.6,
-            color: "#475467",
-          }}
-        >
-          Legacy PlanAI entegrasyonu g?venli,
-          backend-arac?l? yetkilendirme s?n?r?
-          tamamlanana kadar yay?nlanm?yor.
-        </p>
+export default function PlanogramStudio(){
+  const navigate=useNavigate();
+  const {locale}=usePlatformPreferences();
+  const t=useMemo(()=>key=>translatePlanogram(locale,key),[locale]);
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const load=useCallback(async()=>{setLoading(true);setError("");try{setData(await apiGet("/v1/planogram/readiness"));}catch{setError(t("loadError"));}finally{setLoading(false);}},[t]);
+  useEffect(()=>{load();},[load]);
+  return <main className="eay-planogram-native">
+    <header className="eay-planogram-head">
+      <button type="button" onClick={()=>navigate("/")} aria-label={t("back")}><ArrowLeft size={18}/>{t("back")}</button>
+      <div><span>{t("coreAuthority")}</span><h1>{t("title")}</h1><p>{t("subtitle")}</p></div>
+      <span className="eay-planogram-gate"><ShieldCheck size={17}/>{t("securityBoundary")}</span>
+    </header>
+    {loading?<section className="eay-planogram-state" role="status"><RefreshCw className="spin" size={20}/>{t("loading")}</section>:null}
+    {error?<section className="eay-planogram-state" role="alert"><span>{error}</span><button type="button" onClick={load}>{t("retry")}</button></section>:null}
+    {data&&!loading?<>
+      <section className="eay-planogram-summary">
+        <article><Boxes size={21}/><span>{t("engine")}</span><strong>{data.engine?.contract}</strong><small>{t("libraryMode")}</small></article>
+        <article><LockKeyhole size={21}/><span>{t("productionBlocked")}</span><strong>{data.production_ready?"READY":"BLOCKED"}</strong><small>{t("solverBlocked")}</small></article>
+        <article><CheckCircle2 size={21}/><span>{t("securityBoundary")}</span><strong>{data.engine?.legacy_bridge_enabled?"LEGACY":"CORE"}</strong><small>{t("legacyOff")}</small></article>
       </section>
-    </main>
-  );
+      <section className="eay-planogram-evidence">
+        <header><div><Ruler size={22}/><span>{t("physicalTruth")}</span></div><strong>{t("externalRequired")}</strong></header>
+        <div className="eay-planogram-evidence-grid">{(data.physical_truth?.required_evidence||[]).map(item=><article key={item}><TriangleAlert size={18}/><span>{t(item)}</span></article>)}</div>
+      </section>
+      <section className="eay-planogram-generation"><LockKeyhole size={24}/><div><strong>{t("generationBlocked")}</strong><p>{t("requiredEvidence")}</p></div><button type="button" disabled>{t("solverBlocked")}</button></section>
+    </>:null}
+  </main>;
 }

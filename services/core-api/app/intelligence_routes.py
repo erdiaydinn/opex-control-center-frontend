@@ -29,11 +29,24 @@ InsightViewer = Annotated[
     Principal,
     Depends(require_permission(module_permission("insight"))),
 ]
+PlanogramViewer = Annotated[
+    Principal,
+    Depends(require_permission(module_permission("planogram"))),
+]
 
 _TOOLS: tuple[AiToolName, ...] = (
     "ops_kpi_query",
     "catalog_query",
     "regulatory_impact_query",
+)
+
+_PLANOGRAM_PHYSICAL_TRUTH_REQUIREMENTS = (
+    "approved_sku_dimensions",
+    "product_image_linkage",
+    "store_dna",
+    "fixture_geometry_capacity",
+    "physical_layout_aisle",
+    "pallet_fixture_authority",
 )
 
 
@@ -147,6 +160,32 @@ def build_insight_metrics(principal: Principal) -> dict[str, object]:
     }
 
 
+def build_planogram_readiness(principal: Principal) -> dict[str, object]:
+    """Expose the Core-authoritative Planogram gate without inventing physical evidence."""
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "actor": principal.subject,
+        "authority": "eay_core_api",
+        "features": _granted_features(principal, "planogram"),
+        "actions": _granted_actions(principal, "planogram"),
+        "engine": {
+            "contract": "deterministic-physical-truth",
+            "runtime_mode": "domain_library",
+            "legacy_bridge_enabled": False,
+            "parallel_planai_auth_allowed": False,
+        },
+        "physical_truth": {
+            "evidence_state": "external_required",
+            "verified_attestation": None,
+            "required_evidence": list(_PLANOGRAM_PHYSICAL_TRUTH_REQUIREMENTS),
+        },
+        "solver_optimizer_allowed": False,
+        "production_ready": False,
+        "generation_state": "blocked_external_physical_truth",
+    }
+
+
 @router.get("/v1/jarvis/workspace")
 async def get_jarvis_workspace(principal: JarvisViewer) -> dict[str, object]:
     return build_jarvis_workspace(principal)
@@ -155,3 +194,8 @@ async def get_jarvis_workspace(principal: JarvisViewer) -> dict[str, object]:
 @router.get("/v1/insight/metrics")
 async def get_insight_metrics(principal: InsightViewer) -> dict[str, object]:
     return build_insight_metrics(principal)
+
+
+@router.get("/v1/planogram/readiness", tags=["planogram"])
+async def get_planogram_readiness(principal: PlanogramViewer) -> dict[str, object]:
+    return build_planogram_readiness(principal)

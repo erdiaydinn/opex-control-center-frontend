@@ -59,13 +59,12 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-
-          report = json.loads(Path('/tmp/planogram-audit.json').read_text(encoding='utf-8'))
+          report=json.loads(Path('/tmp/planogram-audit.json').read_text(encoding='utf-8'))
           assert report['production_ready'] is False
           assert report['solver_optimizer_allowed'] is False
-          assert report['dataset']['dataset_rows'] == 1
-          assert report['dataset']['approved_dimension_coverage_pct'] == 0.0
-          assert report['fixture_requirements']['required_fixture_counts'].get('PALLET') == 1
+          assert report['dataset']['dataset_rows']==1
+          assert report['dataset']['approved_dimension_coverage_pct']==0.0
+          assert report['fixture_requirements']['required_fixture_counts'].get('PALLET')==1
           assert report['blockers']
           print('PLANOGRAM_RAW_MASTER_FAIL_CLOSED=PASS')
           PY
@@ -76,7 +75,9 @@ jobs:
           test ! -e apps/planai/backend/security.py
           test ! -e apps/planai/frontend
           test -e src/modules/planogram/PlanogramStudio.jsx
-          echo 'PLANOGRAM_NO_PARALLEL_AUTH_OR_FRONTEND=PASS'
+          grep -q '/v1/planogram/readiness' src/modules/planogram/PlanogramStudio.jsx
+          ! grep -Eq 'VITE_PLANAI_LEGACY_URL|<iframe|postMessage\(|access_token' src/modules/planogram/PlanogramStudio.jsx
+          echo 'PLANOGRAM_CORE_AUTHORITY_NATIVE_UI=PASS'
 
   platform-shell-regression:
     runs-on: ubuntu-latest

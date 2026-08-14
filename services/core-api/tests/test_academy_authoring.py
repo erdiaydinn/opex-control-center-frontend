@@ -144,7 +144,9 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
             },
         )
         assert duplicate_role_path.status_code == 400, duplicate_role_path.text
-        assert duplicate_role_path.json()["detail"] == "Learning path contains duplicate role assignment"
+        assert duplicate_role_path.json()["detail"] == (
+            "Learning path contains duplicate role assignment"
+        )
 
         after_rejections = await client.get("/v1/academy/admin/workspace")
         path_keys = {item["key"] for item in after_rejections.json()["paths"]}
@@ -172,4 +174,7 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
 
         tenant_d_home = await client.get("/v1/academy/me", headers={"X-Test-Tenant": "d"})
         assert tenant_d_home.status_code == 200, tenant_d_home.text
-        assert all(item["key"] != "picker-cold-chain" for item in tenant_d_home.json()["enrollments"])
+        assert all(
+            item["key"] != "picker-cold-chain"
+            for item in tenant_d_home.json()["enrollments"]
+        )

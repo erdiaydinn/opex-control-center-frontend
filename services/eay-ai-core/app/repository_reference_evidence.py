@@ -41,6 +41,15 @@ class RepositoryReferenceEvidence(BaseModel):
             raise ValueError("reference_repository_upstream_mismatch")
         if self.authority != "REFERENCE_ONLY":
             raise ValueError("reference_authority_required")
+
+        spdx = self.license.spdx.upper()
+        commercial_use = self.commercial_use.upper()
+        security = self.security_relevance.casefold()
+        if spdx in {"ELASTIC-2.0", "ELV2"}:
+            if commercial_use != "SOURCE_AVAILABLE_NO_HOSTED_MANAGED_SERVICE":
+                raise ValueError("elastic_2_reference_requires_hosted_service_restriction")
+            if "hosted" not in security or "managed service" not in security:
+                raise ValueError("elastic_2_reference_requires_security_license_boundary")
         return self
 
 

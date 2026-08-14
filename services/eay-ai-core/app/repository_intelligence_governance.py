@@ -59,15 +59,29 @@ def _require_hex(value: Any, length: int, field: str, record_id: str) -> str:
     return value
 
 
+def _verified_supplied_archive_ids(registry: RepositoryRegistry) -> set[str]:
+    """Return registry identities whose supplied archives are asserted as verified truth."""
+    required: set[str] = set()
+    for entry in registry.entries:
+        if entry["classification"] != "IMPORTED" or entry["identity_status"] != "VERIFIED":
+            continue
+        locator = entry["source_locator"]
+        if isinstance(locator, str) and ".zip" in locator.casefold():
+            required.add(entry["id"])
+    return required
+
+
 def validate_archive_provenance_governance(
     registry: RepositoryRegistry,
     provenance_payload: dict[str, Any],
 ) -> None:
-    """Require every promotion-grade archive record to agree with registry truth.
+    """Require promotion-grade archive evidence to be exact, consistent, and complete.
 
     Archive provenance is evidence, never an authority override. Records must represent an
     exact recomputed Git tree and bind the supplied archive to the same repository, upstream,
     reviewed revision, SPDX license and decision already carried by the governed registry.
+    Every verified IMPORTED registry identity sourced from a supplied ZIP must have exactly one
+    ledger record, preventing deletion of evidence while leaving a verified identity behind.
     """
     if provenance_payload.get("schema_version") != 1:
         raise RepositoryRegistryError("unsupported archive provenance schema_version")
@@ -132,6 +146,12 @@ def validate_archive_provenance_governance(
             "REJECT",
         }:
             raise RepositoryRegistryError(f"copyleft archive decision too permissive: {record_id}")
+
+    missing = _verified_supplied_archive_ids(registry) - seen_ids
+    if missing:
+        raise RepositoryRegistryError(
+            "verified supplied archive provenance missing: " + ", ".join(sorted(missing))
+        )
 
 
 def load_governed_repository_registry(path: str | Path) -> RepositoryRegistry:

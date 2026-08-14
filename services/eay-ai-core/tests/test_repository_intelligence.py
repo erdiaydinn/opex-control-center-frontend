@@ -1,99 +1,89 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
 from app.repository_intelligence import (
-    REQUIRED_SEED_IDS,
-    RepositoryRegistryError,
+    RepositoryRegistry,
     load_repository_registry,
     should_index_repository_path,
 )
 
-REGISTRY_PATH = Path(__file__).parents[1] / "config" / "repository_intelligence_registry.json"
+
+def test_registry_loads_seed_entries_and_classifies_sources():
+    registry = load_repository_registry()
+    entries = registry.by_id()
+
+    assert entries["eay-opex-frontend"].classification == "OWN"
+    assert entries["council-high-intelligence"].classification == "IMPORTED"
+    assert entries["apache-superset"].classification == "DISCOVERED"
+    assert entries["patika-superset-tr"].canonical_upstream == "apache/superset"
+    assert len(registry.fingerprint()) == 64
 
 
-def test_canonical_registry_loads_and_preserves_all_seed_entries() -> None:
-    registry = load_repository_registry(REGISTRY_PATH)
+def test_verified_archive_provenance_is_promoted_without_adoption_authority():
+    registry = load_repository_registry()
+    entries = registry.by_id()
 
-    assert registry.schema_version == 1
-    assert len(registry.fingerprint) == 64
-    assert REQUIRED_SEED_IDS <= {entry["id"] for entry in registry.entries}
+    council = entries["council-high-intelligence"]
+    assert council.identity == "0xNyk/council-of-high-intelligence"
+    assert council.review.commit == "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72"
+    assert council.review.license == "MIT"
+    assert council.decision == "watch"
 
+    cl4 = entries["cl4r1t4s"]
+    assert cl4.identity == "elder-plinius/CL4R1T4S"
+    assert cl4.review.commit == "1a55b8a36d47c86e8d774acef83306d56fb0b302"
+    assert cl4.review.license == "AGPL-3.0"
+    assert cl4.decision == "reference"
+    assert cl4.review.commercial_use == "reference-only-proprietary-eay"
 
-def test_required_repository_relationships_are_pinned() -> None:
-    registry = load_repository_registry(REGISTRY_PATH)
-
-    council = registry.by_id("imported-council-of-high-intelligence")
-    assert council["repository"] == "0xNyk/council-of-high-intelligence"
-    assert council["canonical_upstream"] == "0xNyk/council-of-high-intelligence"
-    assert council["license"] == {"spdx": "MIT", "status": "VERIFIED"}
-
-    cl4 = registry.by_id("imported-cl4r1t4s")
-    assert cl4["repository"] == "elder-plinius/CL4R1T4S"
-    assert cl4["canonical_upstream"] == "elder-plinius/CL4R1T4S"
-    assert cl4["license"] == {"spdx": "AGPL-3.0", "status": "VERIFIED"}
-    assert cl4["decision"] == "REFERENCE"
-
-    lab = registry.by_id("imported-computer-lab-automation")
-    assert lab["repository"] == "mustafadalga/computer-lab-automation"
-    assert lab["canonical_upstream"] == "mustafadalga/computer-lab-automation"
-    assert lab["license"] == {"spdx": "GPL-3.0", "status": "VERIFIED"}
-    assert lab["decision"] == "REFERENCE"
-
-    superset = registry.by_id("discovered-apache-superset")
-    assert superset["repository"] == "apache/superset"
-    assert superset["relation"] == "canonical-analytics-upstream"
-    assert superset["license"] == {"spdx": "Apache-2.0", "status": "VERIFIED"}
-
-    patika = registry.by_id("discovered-patika-superset-tr")
-    assert patika["canonical_upstream"] == "apache/superset"
-    assert patika["relation"] == "localization-vendor-derivative-not-canonical-upstream"
+    lab = entries["computer-lab-automation"]
+    assert lab.identity == "mustafadalga/computer-lab-automation"
+    assert lab.review.commit == "0f6fa81448062488f01144c67032764af25ee5fe"
+    assert lab.review.license == "GPL-3.0"
+    assert lab.decision == "reference"
 
 
-def test_unresolved_archive_identity_is_explicit_not_invented() -> None:
-    registry = load_repository_registry(REGISTRY_PATH)
+def test_unresolved_identity_is_preserved_and_fail_closed():
+    registry = load_repository_registry()
+    entry = registry.by_id()["impeccable"]
 
-    unresolved = registry.by_id("imported-impeccable")
-    assert unresolved["identity_status"] == "UNRESOLVED"
-    assert unresolved["repository"] is None
-    assert unresolved["decision"] == "PENDING"
+    assert entry.identity is None
+    assert entry.decision == "pending"
+    assert entry.review.commercial_use == "blocked"
 
 
-def test_registry_rejects_silent_seed_deletion(tmp_path: Path) -> None:
-    payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    payload["entries"] = [
-        entry for entry in payload["entries"] if entry["id"] != "imported-impeccable"
+def test_registry_rejects_silent_seed_drop(tmp_path):
+    source = load_repository_registry().model_dump(mode="json")
+    source["repositories"] = [
+        entry for entry in source["repositories"] if entry["id"] != "jarvis-archives"
     ]
     path = tmp_path / "registry.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    path.write_text(json.dumps(source), encoding="utf-8")
 
-    with pytest.raises(RepositoryRegistryError, match="silently dropped"):
+    with pytest.raises(ValueError, match="repository_registry_seed_entries_missing:jarvis-archives"):
         load_repository_registry(path)
 
 
-def test_registry_rejects_invented_owner_repo_for_unresolved_identity(tmp_path: Path) -> None:
-    payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    entry = next(item for item in payload["entries"] if item["id"] == "imported-impeccable")
-    entry["repository"] = "guessed/impeccable"
-    path = tmp_path / "registry.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
+def test_unresolved_identity_cannot_be_promoted_for_adoption():
+    payload = load_repository_registry().model_dump(mode="json")
+    for entry in payload["repositories"]:
+        if entry["id"] == "impeccable":
+            entry["decision"] = "adopt"
+            break
 
-    with pytest.raises(RepositoryRegistryError, match="rather than inventing owner/repo"):
-        load_repository_registry(path)
+    with pytest.raises(ValueError, match="unresolved_repository_identity_must_be_pending"):
+        RepositoryRegistry.model_validate(payload)
 
 
-def test_external_adoption_requires_verified_license(tmp_path: Path) -> None:
-    payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    entry = next(item for item in payload["entries"] if item["id"] == "discovered-patika-superset-tr")
-    entry["decision"] = "ADOPT"
-    path = tmp_path / "registry.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
+def test_canonical_superset_license_review_is_recorded():
+    registry = load_repository_registry()
+    superset = registry.by_id()["apache-superset"]
 
-    with pytest.raises(RepositoryRegistryError, match="license verification"):
-        load_repository_registry(path)
+    assert superset.review.license == "Apache-2.0"
+    assert superset.review.commercial_use == "allowed-with-license-obligations"
 
 
 @pytest.mark.parametrize(
@@ -111,5 +101,5 @@ def test_external_adoption_requires_verified_license(tmp_path: Path) -> None:
         ("build/model.bin", False),
     ],
 )
-def test_repository_learning_path_filter(path: str, expected: bool) -> None:
+def test_repository_learning_path_filter(path: str, expected: bool):
     assert should_index_repository_path(path) is expected

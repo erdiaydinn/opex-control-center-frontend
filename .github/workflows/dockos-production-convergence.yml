@@ -100,6 +100,8 @@ jobs:
       DOCKOS_NOTIFICATION_AUTOMATION: "false"
       WORKFORCE_AUTO_MIGRATE: "false"
       WORKFORCE_TENANT_ID: eay
+      RECRUITMENT_EVIDENCE_DIR: /tmp/eay/recruitment-evidence
+      INVENTORY_DB: /tmp/eay/inventory.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -145,6 +147,8 @@ jobs:
         run: python -m app.modules.dockos.test_postgres_concurrency
       - name: PostgreSQL supplier limits
         run: python -m app.modules.dockos.test_postgres_limits
+      - name: Serialized durable platform prestart
+        run: python -m app.prestart
       - name: Prepare and start four-worker API
         run: |
           python -m app.modules.dockos.test_http_multiworker_load prepare

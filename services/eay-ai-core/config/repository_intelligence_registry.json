@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-13T18:36:00+03:00",
+  "updated_at": "2026-08-14T12:28:00+03:00",
   "entries": [
     {
       "id": "own-opex-control-center-frontend",
@@ -225,6 +225,51 @@
       "license": {"spdx": null, "status": "PENDING"},
       "capabilities": ["analytics", "turkish-localization"],
       "decision": "REFERENCE",
+      "identity_status": "VERIFIED"
+    },
+    {
+      "id": "discovered-llama-cpp",
+      "classification": "DISCOVERED",
+      "display_name": "llama.cpp",
+      "repository": "ggml-org/llama.cpp",
+      "source_locator": "https://github.com/ggml-org/llama.cpp",
+      "canonical_upstream": "ggml-org/llama.cpp",
+      "relation": "previously-selected-local-llm-reference-exact-identity; supplied llama.cpp-master.zip match pending",
+      "last_reviewed_ref": "master",
+      "last_reviewed_sha": "885c5bbe8e04dc78db25beb911a2715312ad7b54",
+      "license": {"spdx": "MIT", "status": "VERIFIED"},
+      "capabilities": ["local-llm", "inference", "serving", "quantization"],
+      "decision": "WATCH",
+      "identity_status": "VERIFIED"
+    },
+    {
+      "id": "discovered-ollama",
+      "classification": "DISCOVERED",
+      "display_name": "Ollama",
+      "repository": "ollama/ollama",
+      "source_locator": "https://github.com/ollama/ollama",
+      "canonical_upstream": "ollama/ollama",
+      "relation": "previously-selected-local-llm-serving-reference-exact-identity; supplied ollama-main.zip match pending",
+      "last_reviewed_ref": "main",
+      "last_reviewed_sha": "39df91c9826b3c0c83677f75cd230d8848d287c3",
+      "license": {"spdx": "MIT", "status": "VERIFIED"},
+      "capabilities": ["local-llm", "serving", "model-runtime", "developer-experience"],
+      "decision": "WATCH",
+      "identity_status": "VERIFIED"
+    },
+    {
+      "id": "discovered-langgraph",
+      "classification": "DISCOVERED",
+      "display_name": "LangGraph",
+      "repository": "langchain-ai/langgraph",
+      "source_locator": "https://github.com/langchain-ai/langgraph",
+      "canonical_upstream": "langchain-ai/langgraph",
+      "relation": "previously-selected-agent-orchestration-reference-exact-identity; supplied langgraph-main.zip match pending",
+      "last_reviewed_ref": "main",
+      "last_reviewed_sha": "644815f9e5bc52ad8f7a5227a456227e9c3e639b",
+      "license": {"spdx": "MIT", "status": "VERIFIED"},
+      "capabilities": ["agent-orchestration", "stateful-workflows", "tool-routing"],
+      "decision": "WATCH",
       "identity_status": "VERIFIED"
     },
     {

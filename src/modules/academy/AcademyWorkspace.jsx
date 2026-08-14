@@ -88,7 +88,7 @@ function Metric({ label, value }) {
   );
 }
 
-function MyLearning({ data, locale, t, formatDate }) {
+function MyLearning({ data, locale, t, formatDate, onOpen }) {
   const items = data?.enrollments || [];
   if (!items.length) return <EmptyState title={t("academyEmpty")} />;
 
@@ -105,7 +105,7 @@ function MyLearning({ data, locale, t, formatDate }) {
             <h3>{localized(item.title_i18n, locale) || item.key}</h3>
             <p>{item.source === "role" ? t("academyRequired") : t("academyOptional")}</p>
           </div>
-          <button className="eay-academy-primary" type="button" disabled>
+          <button className="eay-academy-primary" type="button" onClick={() => onOpen(item.id)}>
             {item.status === "assigned" ? t("start") : t("academyResume")}
             <ChevronRight size={16} aria-hidden="true" />
           </button>
@@ -141,7 +141,6 @@ function Catalog({ data, locale, t, query, setQuery }) {
                 <div className="eay-academy-content-kind"><Icon size={19} aria-hidden="true" /><span>{item.content_type}</span></div>
                 <h3>{localized(item.title_i18n, locale) || item.slug}</h3>
                 <p>{localized(item.description_i18n, locale)}</p>
-                <button type="button" disabled>{t("open")}<ChevronRight size={16} aria-hidden="true" /></button>
               </article>
             );
           })}
@@ -403,7 +402,7 @@ export default function AcademyWorkspace() {
         {!loading && error ? <ErrorState label={error} retry={load} retryLabel={t("retry")} /> : null}
         {!loading && !error ? (
           <div className="eay-academy-view">
-            {tab === "learning" ? <MyLearning data={data} locale={locale} t={t} formatDate={formatDate} /> : null}
+            {tab === "learning" ? <MyLearning data={data} locale={locale} t={t} formatDate={formatDate} onOpen={(id) => navigate(`/academy/enrollments/${id}`)} /> : null}
             {tab === "catalog" ? <Catalog data={data} locale={locale} t={t} query={query} setQuery={setQuery} /> : null}
             {tab === "certificates" ? <Certificates data={data} locale={locale} t={t} formatDate={formatDate} /> : null}
             {tab === "tutor" ? <JarvisTutor locale={locale} t={t} /> : null}

@@ -1,0 +1,360 @@
+name: EAY AI Training Authority Hardening
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-ai-training-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/platform-convergence-ai-training-v0.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply fail-closed training authority patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('services/eay-ai-core')
+
+          # 1) Execution receipts are cryptographically self-checked and remain
+          # bound to the immutable plan/output path at every verification.
+          path = root / 'app/training_execution.py'
+          source = path.read_text(encoding='utf-8')
+          old = '''        if row is None:\n            raise KeyError("training_execution_verified_artifact_not_found")\n        path = Path(row["artifact_path"])\n        if not path.exists() or sha256_path(path) != row["artifact_sha256"]:\n            raise ValueError("training_execution_artifact_drift")\n        return TrainingExecutionReceipt(\n'''
+          new = '''        if row is None:\n            raise KeyError("training_execution_verified_artifact_not_found")\n        plan = self.get_plan(row["plan_fingerprint"])\n        if plan.training_job_fingerprint != row["training_job_fingerprint"]:\n            raise ValueError("training_execution_receipt_plan_job_drift")\n        path = Path(row["artifact_path"])\n        if not path.exists() or sha256_path(path) != row["artifact_sha256"]:\n            raise ValueError("training_execution_artifact_drift")\n        if Path(plan.output_path).resolve(strict=True) != path.resolve(strict=True):\n            raise ValueError("training_execution_receipt_output_path_drift")\n        canonical = {\n            "plan_fingerprint": row["plan_fingerprint"],\n            "training_job_fingerprint": row["training_job_fingerprint"],\n            "artifact_path": str(path.resolve(strict=True)),\n            "artifact_sha256": row["artifact_sha256"],\n            "executor": row["executor"],\n            "execution_reference": row["execution_reference"],\n        }\n        if _canonical_sha256(canonical) != row["fingerprint"]:\n            raise ValueError("training_execution_receipt_fingerprint_drift")\n        return TrainingExecutionReceipt(\n'''
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+          path.write_text(source, encoding='utf-8')
+
+          # 2) Canonical production promotion must include an observed, still
+          # present local training artifact receipt in the immutable release proof.
+          path = root / 'app/model_promotion_gate.py'
+          source = path.read_text(encoding='utf-8')
+          assert 'from .training_execution import TrainingExecutionRegistry' not in source
+          source = source.replace(
+              'from .training_job_registry import TrainingJobRegistry\n',
+              'from .training_execution import TrainingExecutionRegistry\n'
+              'from .training_job_registry import TrainingJobRegistry\n',
+          )
+          source = source.replace(
+              '    training_job_fingerprint: str\n    canary_evidence_fingerprint: str\n',
+              '    training_job_fingerprint: str\n'
+              '    training_execution_receipt_fingerprint: str\n'
+              '    canary_evidence_fingerprint: str\n',
+          )
+          source = source.replace(
+              '        self.training_jobs = TrainingJobRegistry(db_path)\n',
+              '        self.training_jobs = TrainingJobRegistry(db_path)\n'
+              '        self.training_executions = TrainingExecutionRegistry(db_path)\n',
+              1,
+          )
+          source = source.replace(
+              'artifact_provenance_fingerprint TEXT, training_job_fingerprint TEXT, canary_evidence_fingerprint TEXT NOT NULL,',
+              'artifact_provenance_fingerprint TEXT, training_job_fingerprint TEXT, '
+              'training_execution_receipt_fingerprint TEXT, canary_evidence_fingerprint TEXT NOT NULL,',
+          )
+          source = source.replace(
+              '"eval_dataset_sha256", "training_manifest_chain_sha256", "artifact_provenance_fingerprint"):',
+              '"eval_dataset_sha256", "training_manifest_chain_sha256", "artifact_provenance_fingerprint", '
+              '"training_execution_receipt_fingerprint"):',
+          )
+          source = source.replace(
+              'training_job_fingerprint=row["training_job_fingerprint"], canary_evidence_fingerprint=row["canary_evidence_fingerprint"],',
+              'training_job_fingerprint=row["training_job_fingerprint"], '
+              'training_execution_receipt_fingerprint=row["training_execution_receipt_fingerprint"], '
+              'canary_evidence_fingerprint=row["canary_evidence_fingerprint"],',
+          )
+          current_anchor = '''        self.artifacts.verify_artifact(artifact_sha256=row["artifact_sha256"], training_job_fingerprint=row["training_job_fingerprint"])\n        release_proof = _sha256({'''
+          current_replacement = '''        self.artifacts.verify_artifact(artifact_sha256=row["artifact_sha256"], training_job_fingerprint=row["training_job_fingerprint"])\n        receipt = self.training_executions.require_verified_artifact(\n            training_job_fingerprint=row["training_job_fingerprint"],\n            artifact_sha256=row["artifact_sha256"],\n        )\n        if row["training_execution_receipt_fingerprint"] != receipt.fingerprint:\n            raise ValueError("production_promotion_training_execution_receipt_drift")\n        release_proof = _sha256({'''
+          assert source.count(current_anchor) == 1
+          source = source.replace(current_anchor, current_replacement)
+          source = source.replace(
+              '"artifact_provenance_fingerprint": row["artifact_provenance_fingerprint"], "eval_dataset_sha256": row["eval_dataset_sha256"],',
+              '"artifact_provenance_fingerprint": row["artifact_provenance_fingerprint"], '
+              '"training_execution_receipt_fingerprint": receipt.fingerprint, '
+              '"eval_dataset_sha256": row["eval_dataset_sha256"],',
+          )
+          promote_anchor = '''        self.artifacts.verify_artifact(artifact_sha256=model["artifact_sha256"], training_job_fingerprint=training_job_fingerprint)\n        canary = self.artifacts.require_passing_canary'''
+          promote_replacement = '''        self.artifacts.verify_artifact(artifact_sha256=model["artifact_sha256"], training_job_fingerprint=training_job_fingerprint)\n        training_execution_receipt = self.training_executions.require_verified_artifact(\n            training_job_fingerprint=training_job_fingerprint,\n            artifact_sha256=model["artifact_sha256"],\n        )\n        canary = self.artifacts.require_passing_canary'''
+          assert source.count(promote_anchor) == 1
+          source = source.replace(promote_anchor, promote_replacement)
+          source = source.replace(
+              '"artifact_provenance_fingerprint": artifact_provenance_fingerprint, "eval_dataset_sha256": eval_dataset_sha256,',
+              '"artifact_provenance_fingerprint": artifact_provenance_fingerprint, '
+              '"training_execution_receipt_fingerprint": training_execution_receipt.fingerprint, '
+              '"eval_dataset_sha256": eval_dataset_sha256,',
+          )
+          source = source.replace(
+              'artifact_provenance_fingerprint,training_job_fingerprint,canary_evidence_fingerprint,approved_by,approval_reference,created_at)',
+              'artifact_provenance_fingerprint,training_job_fingerprint,'
+              'training_execution_receipt_fingerprint,canary_evidence_fingerprint,'
+              'approved_by,approval_reference,created_at)',
+          )
+          source = source.replace(
+              'row["artifact_sha256"],artifact_provenance_fingerprint,training_job_fingerprint,payload.canary_evidence_fingerprint,',
+              'row["artifact_sha256"],artifact_provenance_fingerprint,training_job_fingerprint,'
+              'training_execution_receipt.fingerprint,payload.canary_evidence_fingerprint,',
+          ) if 'row["artifact_sha256"],artifact_provenance_fingerprint' in source else source
+          # Current implementation names the pre-read model here, not row.
+          source = source.replace(
+              'model["artifact_sha256"],artifact_provenance_fingerprint,training_job_fingerprint,payload.canary_evidence_fingerprint,',
+              'model["artifact_sha256"],artifact_provenance_fingerprint,training_job_fingerprint,'
+              'training_execution_receipt.fingerprint,payload.canary_evidence_fingerprint,',
+          )
+          source = source.replace(
+              'training_job_fingerprint=training_job_fingerprint,canary_evidence_fingerprint=payload.canary_evidence_fingerprint,',
+              'training_job_fingerprint=training_job_fingerprint,'
+              'training_execution_receipt_fingerprint=training_execution_receipt.fingerprint,'
+              'canary_evidence_fingerprint=payload.canary_evidence_fingerprint,',
+          )
+          assert 'training_execution_receipt_fingerprint' in source
+          path.write_text(source, encoding='utf-8')
+
+          # 3) Eliminate the legacy direct production mutation path. Approval and
+          # canary staging remain here; production transition is exclusively the
+          # evidence-rich ModelPromotionGate.
+          path = root / 'app/model_registry.py'
+          source = path.read_text(encoding='utf-8')
+          start = source.index('    def promote(self, record_id: str, payload: PromotionRequest) -> ModelRecord:\n')
+          end = source.index('    @staticmethod\n    def _row(', start)
+          replacement = '''    def promote(self, record_id: str, payload: PromotionRequest) -> ModelRecord:\n        del record_id, payload\n        raise ValueError("production_promotion_requires_governed_promotion_gate")\n\n'''
+          source = source[:start] + replacement + source[end:]
+          path.write_text(source, encoding='utf-8')
+
+          # 4) Remove raw approved-candidate export and wire the reviewed/gated
+          # learning dataset plus governed manifest/model routes into runtime.
+          path = root / 'app/main.py'
+          source = path.read_text(encoding='utf-8')
+          raw_export = '''\n\n@app.get("/v1/learning/export")\ndef export_learning_dataset():\n    return {"format": "chat_sft", "examples": store.export_approved()}\n'''
+          assert source.count(raw_export) == 1
+          runtime = '''\n\n# Governance routers are imported after the core store/app exist so the\n# learning export guard can safely bind to the canonical candidate store.\nfrom .learning_export_guard import router as learning_export_router  # noqa: E402\nfrom .model_registry import router as model_registry_router  # noqa: E402\nfrom .training_manifest import router as training_manifest_router  # noqa: E402\n\napp.include_router(learning_export_router)\napp.include_router(training_manifest_router)\napp.include_router(model_registry_router)\n'''
+          source = source.replace(raw_export, runtime)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Adapt promotion tests to real observed local artifact receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('services/eay-ai-core/tests/test_model_artifact_promotion.py')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace('import sqlite3\n', 'import hashlib\nimport json\nimport sqlite3\n')
+          source = source.replace(
+              'from app.training_job_registry import TrainingJobRegistration\n',
+              'from app.training_execution import (\n'
+              '    TrainingExecutionReceiptCreate,\n'
+              '    TrainingExecutionRegistry,\n'
+              '    TrainingExecutionRequest,\n'
+              '    dataset_sha256_from_file,\n'
+              '    sha256_path,\n'
+              ')\n'
+              'from app.training_gate import canonical_dataset_sha256\n'
+              'from app.training_job_registry import TrainingJobRegistration\n',
+          )
+          old_constants = '''DATASET = "b" * 64\nCHAIN = "c" * 64\nEVAL_DATASET = "e" * 64\nARTIFACT = "a" * 64\n'''
+          new_constants = '''TRAIN_EXAMPLES = [{"messages": [{"role": "user", "content": "train question"}, {"role": "assistant", "content": "train answer"}], "metadata": {"human_approved": True, "contains_personal_data": False, "reason": "reviewed"}}]\nEVAL_EXAMPLES = [{"messages": [{"role": "user", "content": "eval question"}, {"role": "assistant", "content": "eval answer"}], "metadata": {"human_approved": True, "contains_personal_data": False, "reason": "reviewed"}}]\nDATASET = canonical_dataset_sha256(TRAIN_EXAMPLES)\nCHAIN = "c" * 64\nEVAL_DATASET = canonical_dataset_sha256(EVAL_EXAMPLES)\nBASE_BYTES = b"eay-local-base-model"\nBASE_SHA = hashlib.sha256(BASE_BYTES).hexdigest()\nARTIFACT_BYTES = b"eay-trained-adapter-artifact"\nARTIFACT = hashlib.sha256(ARTIFACT_BYTES).hexdigest()\n'''
+          assert source.count(old_constants) == 1
+          source = source.replace(old_constants, new_constants)
+          source = source.replace(
+              '"base_model_sha256": "1" * 64, "base_model_license_id": "apache-2.0",',
+              '"base_model_sha256": BASE_SHA, "base_model_license_id": "apache-2.0",',
+          )
+          anchor = '''    job = registry.training_jobs.register(\n        TrainingJobRegistration(spec=spec, approved_by="reviewer", approval_reference="JOB-1")\n    )\n    registry.artifacts.register(\n'''
+          replacement = '''    job = registry.training_jobs.register(\n        TrainingJobRegistration(spec=spec, approved_by="reviewer", approval_reference="JOB-1")\n    )\n    fixture_root = registry.db_path.parent\n    base_path = fixture_root / "local-base-model.bin"\n    train_path = fixture_root / "train.json"\n    eval_path = fixture_root / "eval.json"\n    artifact_path = fixture_root / "trained-adapter.safetensors"\n    base_path.write_bytes(BASE_BYTES)\n    train_path.write_text(json.dumps(TRAIN_EXAMPLES), encoding="utf-8")\n    eval_path.write_text(json.dumps(EVAL_EXAMPLES), encoding="utf-8")\n    assert sha256_path(base_path) == BASE_SHA\n    assert dataset_sha256_from_file(train_path) == DATASET\n    assert dataset_sha256_from_file(eval_path) == EVAL_DATASET\n    executions = TrainingExecutionRegistry(registry.db_path)\n    plan = executions.create_plan(TrainingExecutionRequest(\n        training_job_fingerprint=job.fingerprint,\n        base_model_path=str(base_path),\n        training_dataset_path=str(train_path),\n        eval_dataset_path=str(eval_path),\n        output_path=str(artifact_path),\n        requested_by="training-operator",\n        execution_reference="TRAIN-TEST-1",\n    ))\n    artifact_path.write_bytes(ARTIFACT_BYTES)\n    executions.register_receipt(TrainingExecutionReceiptCreate(\n        plan_fingerprint=plan.fingerprint,\n        executor="local-test-worker",\n        execution_reference="TRAIN-TEST-1:exit-0",\n    ))\n    registry.artifacts.register(\n'''
+          assert source.count(anchor) == 1
+          source = source.replace(anchor, replacement)
+          source = source.replace(
+              '    assert proof.training_job_fingerprint == job_fp\n',
+              '    assert proof.training_job_fingerprint == job_fp\n'
+              '    assert len(proof.training_execution_receipt_fingerprint) == 64\n',
+          )
+          source = source.replace(
+              '            artifact_provenance_fingerprint FROM model_production_promotions"""\n',
+              '            artifact_provenance_fingerprint,training_execution_receipt_fingerprint '\
+              'FROM model_production_promotions"""\n',
+          )
+          source = source.replace(
+              '        proof.artifact_provenance_fingerprint,\n    )\n',
+              '        proof.artifact_provenance_fingerprint,\n'
+              '        proof.training_execution_receipt_fingerprint,\n'
+              '    )\n',
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Add explicit bypass and receipt regression tests
+        shell: bash
+        run: |
+          cat > services/eay-ai-core/tests/test_training_authority.py <<'PY'
+          import hashlib
+          import json
+          import sqlite3
+
+          import pytest
+
+          from app.main import app
+          from app.model_registry import ModelRegistry, PromotionRequest
+          from app.training_execution import (
+              TrainingExecutionReceiptCreate,
+              TrainingExecutionRegistry,
+              TrainingExecutionRequest,
+              dataset_sha256_from_file,
+              sha256_path,
+          )
+          from app.training_gate import canonical_dataset_sha256
+          from app.training_job_registry import TrainingJobRegistration
+
+
+          def _examples(label: str):
+              return [{
+                  "messages": [
+                      {"role": "user", "content": f"{label} question"},
+                      {"role": "assistant", "content": f"{label} answer"},
+                  ],
+                  "metadata": {
+                      "human_approved": True,
+                      "contains_personal_data": False,
+                      "reason": "reviewed",
+                  },
+              }]
+
+
+          def test_runtime_has_one_gated_learning_export_and_no_raw_export_handler():
+              matches = [route for route in app.routes if getattr(route, "path", None) == "/v1/learning/export"]
+              assert len(matches) == 1
+              assert matches[0].endpoint.__module__ == "app.learning_export_guard"
+
+
+          def test_legacy_registry_production_mutation_is_fail_closed(tmp_path):
+              registry = ModelRegistry(tmp_path / "eay.db")
+              with pytest.raises(ValueError, match="production_promotion_requires_governed_promotion_gate"):
+                  registry.promote(
+                      "model-id",
+                      PromotionRequest(
+                          canary_result_fingerprint="a" * 64,
+                          approved_by="operator",
+                          note="must not bypass governed promotion",
+                      ),
+                  )
+
+
+          def test_verified_receipt_rejects_database_fingerprint_tampering(tmp_path):
+              db = tmp_path / "eay.db"
+              executions = TrainingExecutionRegistry(db)
+              base = tmp_path / "base.bin"
+              base.write_bytes(b"base")
+              train = tmp_path / "train.json"
+              eval_path = tmp_path / "eval.json"
+              train_examples = _examples("train")
+              eval_examples = _examples("eval")
+              train.write_text(json.dumps(train_examples), encoding="utf-8")
+              eval_path.write_text(json.dumps(eval_examples), encoding="utf-8")
+              train_sha = canonical_dataset_sha256(train_examples)
+              eval_sha = canonical_dataset_sha256(eval_examples)
+              chain = "c" * 64
+              with sqlite3.connect(db) as conn:
+                  conn.execute("""CREATE TABLE IF NOT EXISTS training_dataset_manifests (
+                  id TEXT PRIMARY KEY, dataset_sha256 TEXT NOT NULL UNIQUE,
+                  dataset_integrity_sha256 TEXT, quality_lineage_sha256 TEXT,
+                  eval_dataset_sha256 TEXT, eval_example_count INTEGER NOT NULL DEFAULT 0,
+                  chain_sha256 TEXT NOT NULL UNIQUE, example_count INTEGER NOT NULL,
+                  approved_by TEXT NOT NULL, approval_reference TEXT NOT NULL,
+                  parent_manifest_id TEXT, parent_chain_sha256 TEXT, created_at TEXT NOT NULL)""")
+                  conn.execute("""INSERT INTO training_dataset_manifests(
+                  id,dataset_sha256,dataset_integrity_sha256,quality_lineage_sha256,
+                  eval_dataset_sha256,eval_example_count,chain_sha256,example_count,
+                  approved_by,approval_reference,created_at)
+                  VALUES ('m',?,?,?,?,1,?,1,'reviewer','REF','2026-08-14T00:00:00+00:00')""",
+                  (train_sha, "f" * 64, "9" * 64, eval_sha, chain))
+              spec = {
+                  "job_version": "1", "method": "lora", "base_model": "local-base",
+                  "base_model_sha256": sha256_path(base), "base_model_license_id": "apache-2.0",
+                  "training_manifest_chain_sha256": chain, "dataset_sha256": train_sha,
+                  "eval_dataset_sha256": eval_sha, "seed": 42, "epochs": 1,
+                  "learning_rate": 0.0002, "batch_size": 1, "gradient_accumulation_steps": 1,
+                  "max_seq_length": 512, "lora_rank": 8, "lora_alpha": 16,
+                  "lora_dropout": 0.05, "precision": "bf16", "local_only": True,
+                  "allow_remote_code": False, "allow_network_during_training": False,
+              }
+              job = executions.training_jobs.register(TrainingJobRegistration(
+                  spec=spec, approved_by="reviewer", approval_reference="JOB-1"))
+              assert dataset_sha256_from_file(train) == train_sha
+              output = tmp_path / "adapter.safetensors"
+              plan = executions.create_plan(TrainingExecutionRequest(
+                  training_job_fingerprint=job.fingerprint, base_model_path=str(base),
+                  training_dataset_path=str(train), eval_dataset_path=str(eval_path),
+                  output_path=str(output), requested_by="operator", execution_reference="RUN-1"))
+              output.write_bytes(b"artifact")
+              receipt = executions.register_receipt(TrainingExecutionReceiptCreate(
+                  plan_fingerprint=plan.fingerprint, executor="worker", execution_reference="RUN-1:0"))
+              with sqlite3.connect(db) as conn:
+                  conn.execute(
+                      "UPDATE training_execution_receipts SET executor='tampered' WHERE fingerprint=?",
+                      (receipt.fingerprint,),
+                  )
+              with pytest.raises(ValueError, match="training_execution_receipt_fingerprint_drift"):
+                  executions.require_verified_artifact(
+                      training_job_fingerprint=job.fingerprint,
+                      artifact_sha256=hashlib.sha256(b"artifact").hexdigest(),
+                  )
+          PY
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install
+        working-directory: services/eay-ai-core
+        run: python -m pip install -e '.[dev]'
+      - name: Compile
+        working-directory: services/eay-ai-core
+        run: python -m compileall -q app tests
+      - name: Authority-focused regression
+        working-directory: services/eay-ai-core
+        run: >-
+          pytest -q
+          tests/test_training_execution.py
+          tests/test_training_authority.py
+          tests/test_model_registry.py
+          tests/test_model_artifact_promotion.py
+          tests/test_learning_export_guard.py
+          tests/test_training_manifest.py
+      - name: Full AI Core regression
+        working-directory: services/eay-ai-core
+        run: pytest -q
+      - name: Static no-bypass assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -c 'app.include_router(learning_export_router)' services/eay-ai-core/app/main.py)" -eq 1
+          ! grep -F 'return {"format": "chat_sft", "examples": store.export_approved()}' services/eay-ai-core/app/main.py
+          grep -F 'production_promotion_requires_governed_promotion_gate' services/eay-ai-core/app/model_registry.py
+          grep -F 'training_execution_receipt_fingerprint' services/eay-ai-core/app/model_promotion_gate.py
+          grep -F 'training_execution_receipt_fingerprint_drift' services/eay-ai-core/app/training_execution.py
+      - name: Commit hardening and self-delete workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'EAY Convergence CI'
+          git config user.email 'ci@eay.invalid'
+          rm -f .github/workflows/ai-training-authority-hardening.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(ai-training): require governed export and verified execution proof'
+          git push origin HEAD:release/platform-convergence-ai-training-v0.1

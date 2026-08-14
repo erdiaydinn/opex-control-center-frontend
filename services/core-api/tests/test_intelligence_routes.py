@@ -116,7 +116,7 @@ def test_planogram_readiness_preserves_physical_truth_and_security_gates() -> No
     assert payload["production_ready"] is False
 
 
-def test_security_guardian_never_invents_findings_without_observation_evidence() -> None:
+def test_security_guardian_unknown_without_observation_evidence() -> None:
     payload = build_security_guardian_workspace(_principal(role="platform_admin"))
     assert payload["scope"] == "eay_platform"
     assert payload["visibility"] == "platform_admin_only"
@@ -152,7 +152,10 @@ async def test_security_guardian_route_uses_canonical_platform_admin_gate() -> N
         for item in router.routes
         if getattr(item, "path", None) == "/v1/platform/security-guardian/workspace"
     )
-    assert any(dependency.call is require_platform_admin for dependency in route.dependant.dependencies)
+    assert any(
+        dependency.call is require_platform_admin
+        for dependency in route.dependant.dependencies
+    )
 
     platform_admin = _principal(role="platform_admin")
     super_admin = _principal(role="super_admin")
@@ -162,4 +165,7 @@ async def test_security_guardian_route_uses_canonical_platform_admin_gate() -> N
     with pytest.raises(HTTPException) as exc_info:
         await require_platform_admin(_principal(role="operator"))
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Platform administrator role is required"
+    assert exc_info.value.detail == {
+        "message": "You do not have permission to perform this action",
+        "required_roles": ["platform_admin", "super_admin"],
+    }

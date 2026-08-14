@@ -1,22 +1,27 @@
 import json
 from uuid import UUID
 
+import pytest
+from fastapi import HTTPException
+
 from app.core.permission_catalog import (
     action_permission,
     feature_permission,
     module_permission,
 )
-from app.core.security import PermissionAssignment, Principal
+from app.core.security import PermissionAssignment, Principal, require_platform_admin
 from app.intelligence_routes import (
     build_insight_metrics,
     build_jarvis_workspace,
     build_planogram_readiness,
+    build_security_guardian_workspace,
+    router,
 )
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000009201")
 
 
-def _principal() -> Principal:
+def _principal(*, role: str = "operator") -> Principal:
     ops_permission = action_permission("ai_assistant", "executeOpsRead")
     permissions = (
         module_permission("jarvis"),
@@ -33,12 +38,12 @@ def _principal() -> Principal:
     return Principal(
         subject="tenant-user",
         tenant_id=TENANT_ID,
-        roles=("operator",),
+        roles=(role,),
         permissions=permissions,
         permission_assignments=(
             PermissionAssignment(
                 key=ops_permission,
-                role_key="operator",
+                role_key=role,
                 scope={
                     "ai_data_scope": {
                         "version": 1,
@@ -109,3 +114,58 @@ def test_planogram_readiness_preserves_physical_truth_and_security_gates() -> No
     }
     assert payload["solver_optimizer_allowed"] is False
     assert payload["production_ready"] is False
+
+
+def test_security_guardian_unknown_without_observation_evidence() -> None:
+    payload = build_security_guardian_workspace(_principal(role="platform_admin"))
+    assert payload["scope"] == "eay_platform"
+    assert payload["visibility"] == "platform_admin_only"
+    assert payload["mode"] == "read_only_assessment"
+    assert payload["production_ready"] is False
+    assert payload["security_posture"] == "not_scored_without_observation_evidence"
+    assert payload["last_observed_at"] is None
+    assert payload["findings"]["state"] == "unknown_without_observation_evidence"
+    assert payload["findings"]["items"] == []
+    assert set(payload["findings"]["counts"].values()) == {None}
+    assert {item["source_id"] for item in payload["threat_intelligence"]} == {
+        "cisa_kev",
+        "osv",
+        "github_advisory",
+    }
+    assert {item["integration_state"] for item in payload["threat_intelligence"]} == {
+        "not_connected"
+    }
+    assert payload["release_policy"] == {
+        "customer_visibility": False,
+        "automatic_production_remediation": False,
+        "human_approval_required": True,
+        "zero_findings_without_evidence_allowed": False,
+    }
+    assert payload["blockers"]
+    assert "tenant_id" not in payload
+
+
+@pytest.mark.asyncio
+async def test_security_guardian_route_uses_canonical_platform_admin_gate() -> None:
+    route = next(
+        item
+        for item in router.routes
+        if getattr(item, "path", None) == "/v1/platform/security-guardian/workspace"
+    )
+    assert any(
+        dependency.call is require_platform_admin
+        for dependency in route.dependant.dependencies
+    )
+
+    platform_admin = _principal(role="platform_admin")
+    super_admin = _principal(role="super_admin")
+    assert await require_platform_admin(platform_admin) is platform_admin
+    assert await require_platform_admin(super_admin) is super_admin
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_platform_admin(_principal(role="operator"))
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == {
+        "message": "You do not have permission to perform this action",
+        "required_roles": ["platform_admin", "super_admin"],
+    }

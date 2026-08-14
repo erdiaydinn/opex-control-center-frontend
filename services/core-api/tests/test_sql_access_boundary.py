@@ -106,11 +106,27 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_quiz_authoring.py", "create_quiz"),
 }
 
+PLANOGRAM_SQL_EXECUTION_POINTS = {
+    # Reviewed 2026-08-14: all Store DNA SQL is static and tenant-bound. The
+    # repository uses the shared RLS tenant session; wildcard module approval is
+    # intentionally forbidden so future SQL paths fail CI until reviewed.
+    ("modules/planogram/repository_store_dna.py", "_record_store_dna_event"),
+    ("modules/planogram/repository_store_dna.py", "list_store_dna_versions"),
+    ("modules/planogram/repository_store_dna.py", "create_store_dna_draft"),
+    ("modules/planogram/repository_store_dna.py", "update_store_dna_draft"),
+    ("modules/planogram/repository_store_dna.py", "submit_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "approve_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "reject_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "revise_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "get_approved_store_dna"),
+}
+
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
     | BUDGET_SQL_EXECUTION_POINTS
     | ACADEMY_SQL_EXECUTION_POINTS
+    | PLANOGRAM_SQL_EXECUTION_POINTS
 )
 
 RUNTIME_ENGINE_CREATION = {
@@ -123,10 +139,7 @@ PRIVILEGED_ENGINE_CREATION = {
     ("cli/sync_backup_role_password.py", "synchronize"),
 }
 
-ALLOWED_ENGINE_CREATION = (
-    RUNTIME_ENGINE_CREATION
-    | PRIVILEGED_ENGINE_CREATION
-)
+ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | PRIVILEGED_ENGINE_CREATION
 
 EXECUTION_CALLS = {
     "execute",
@@ -154,17 +167,12 @@ DIRECT_DRIVER_CALLS = {
 def _call_name(node: ast.Call) -> str | None:
     if isinstance(node.func, ast.Name):
         return node.func.id
-
     if isinstance(node.func, ast.Attribute):
         return node.func.attr
-
     return None
 
 
-def _enclosing_function(
-    tree: ast.AST,
-    target: ast.AST,
-) -> str:
+def _enclosing_function(tree: ast.AST, target: ast.AST) -> str:
     result = "<module>"
 
     class Visitor(ast.NodeVisitor):
@@ -173,24 +181,12 @@ def _enclosing_function(
 
         def generic_visit(self, node: ast.AST) -> None:
             nonlocal result
-
-            is_function = isinstance(
-                node,
-                (ast.FunctionDef, ast.AsyncFunctionDef),
-            )
-
+            is_function = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             if is_function:
                 self.stack.append(node.name)
-
             if node is target:
-                result = (
-                    self.stack[-1]
-                    if self.stack
-                    else "<module>"
-                )
-
+                result = self.stack[-1] if self.stack else "<module>"
             super().generic_visit(node)
-
             if is_function:
                 self.stack.pop()
 
@@ -200,126 +196,57 @@ def _enclosing_function(
 
 def test_runtime_sql_execution_is_fail_closed() -> None:
     violations: list[str] = []
-
     for path in sorted(APP_ROOT.rglob("*.py")):
         relative = path.relative_to(APP_ROOT).as_posix()
-
-        source = path.read_text(
-            encoding="utf-8-sig",
-            errors="ignore",
-        )
-
+        source = path.read_text(encoding="utf-8-sig", errors="ignore")
         tree = ast.parse(source)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-
             name = _call_name(node)
-
             if not name:
                 continue
+            function = _enclosing_function(tree, node)
+            location = (relative, function)
+            if name in EXECUTION_CALLS and location not in ALLOWED_SQL_EXECUTION_POINTS:
+                violations.append(f"{relative}:{node.lineno} {function} -> {name}")
+            if name in ENGINE_CALLS and location not in ALLOWED_ENGINE_CREATION:
+                violations.append(f"{relative}:{node.lineno} {function} -> {name}")
 
-            function = _enclosing_function(
-                tree,
-                node,
-            )
-
-            location = (
-                relative,
-                function,
-            )
-
-            if (
-                name in EXECUTION_CALLS
-                and location not in ALLOWED_SQL_EXECUTION_POINTS
-            ):
-                violations.append(
-                    f"{relative}:{node.lineno} "
-                    f"{function} -> {name}"
-                )
-
-            if (
-                name in ENGINE_CALLS
-                and location not in ALLOWED_ENGINE_CREATION
-            ):
-                violations.append(
-                    f"{relative}:{node.lineno} "
-                    f"{function} -> {name}"
-                )
-
-        # Direct DB drivers may only exist behind the approved
-        # SQLAlchemy/session boundary. This intentionally blocks
-        # future asyncpg/psycopg shortcuts.
         for node in ast.walk(tree):
             if not isinstance(node, ast.Import):
                 continue
-
             for alias in node.names:
-                if alias.name in {
-                    "asyncpg",
-                    "psycopg",
-                    "psycopg2",
-                    "pg8000",
-                }:
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        "direct database driver import"
-                    )
+                if alias.name in {"asyncpg", "psycopg", "psycopg2", "pg8000"}:
+                    violations.append(f"{relative}:{node.lineno} direct database driver import")
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-
             module = node.module or ""
-
-            if module.split(".", 1)[0] in {
-                "asyncpg",
-                "psycopg",
-                "psycopg2",
-                "pg8000",
-            }:
-                violations.append(
-                    f"{relative}:{node.lineno} "
-                    "direct database driver import"
-                )
+            if module.split(".", 1)[0] in {"asyncpg", "psycopg", "psycopg2", "pg8000"}:
+                violations.append(f"{relative}:{node.lineno} direct database driver import")
 
     assert not violations, (
-        "SECURE SQL BOUNDARY VIOLATION. "
-        "New runtime database access is denied by default. "
-        "Route it through the reviewed data-access boundary "
-        "and explicitly security-review the new execution point:\n"
-        + "\n".join(sorted(violations))
+        "SECURE SQL BOUNDARY VIOLATION. New runtime database access is denied by default. "
+        "Route it through the reviewed data-access boundary and explicitly security-review "
+        "the new execution point:\n" + "\n".join(sorted(violations))
     )
 
 
 def test_approved_sql_functions_cannot_grow_silently() -> None:
     current_locations: set[tuple[str, str]] = set()
-
     for path in sorted(APP_ROOT.rglob("*.py")):
         relative = path.relative_to(APP_ROOT).as_posix()
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
+        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-
             name = _call_name(node)
-
             if name not in EXECUTION_CALLS:
                 continue
-
-            current_locations.add(
-                (
-                    relative,
-                    _enclosing_function(tree, node),
-                )
-            )
+            current_locations.add((relative, _enclosing_function(tree, node)))
 
     assert current_locations == ALLOWED_SQL_EXECUTION_POINTS, (
         "SQL execution allowlist drift detected. "
@@ -330,57 +257,31 @@ def test_approved_sql_functions_cannot_grow_silently() -> None:
 
 def test_raw_sql_text_must_be_static_literal() -> None:
     violations: list[str] = []
-
     for path in sorted(APP_ROOT.rglob("*.py")):
         relative = path.relative_to(APP_ROOT).as_posix()
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
+        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+            if not isinstance(node, ast.Call) or _call_name(node) != "text":
                 continue
-
-            if _call_name(node) != "text":
-                continue
-
             if not node.args:
-                violations.append(
-                    f"{relative}:{node.lineno} text() with no argument"
-                )
+                violations.append(f"{relative}:{node.lineno} text() with no argument")
                 continue
-
             first = node.args[0]
-
-            if not (
-                isinstance(first, ast.Constant)
-                and isinstance(first.value, str)
-            ):
-                violations.append(
-                    f"{relative}:{node.lineno} dynamic text() SQL"
-                )
+            if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+                violations.append(f"{relative}:{node.lineno} dynamic text() SQL")
 
     assert not violations, (
-        "DYNAMIC SQL DENIED. All SQLAlchemy text() statements "
-        "must be static literals with bound parameters:\n"
-        + "\n".join(sorted(violations))
+        "DYNAMIC SQL DENIED. All SQLAlchemy text() statements must be static literals "
+        "with bound parameters:\n" + "\n".join(sorted(violations))
     )
 
 
 def test_execution_sql_sources_are_static_reviewed() -> None:
     violations: list[str] = []
-
     for relative, function in sorted(ALLOWED_SQL_EXECUTION_POINTS):
         path = APP_ROOT / relative
-        source = path.read_text(
-            encoding="utf-8-sig",
-            errors="ignore",
-        )
+        source = path.read_text(encoding="utf-8-sig", errors="ignore")
         tree = ast.parse(source)
-
         matched = False
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -389,52 +290,31 @@ def test_execution_sql_sources_are_static_reviewed() -> None:
                 continue
             if _enclosing_function(tree, node) != function:
                 continue
-
             matched = True
-
         if not matched:
-            violations.append(
-                f"{relative}:{function} has no SQL execution"
-            )
+            violations.append(f"{relative}:{function} has no SQL execution")
 
     assert not violations, (
-        "STALE/INVALID SQL EXECUTION ALLOWLIST:\n"
-        + "\n".join(sorted(violations))
+        "STALE/INVALID SQL EXECUTION ALLOWLIST:\n" + "\n".join(sorted(violations))
     )
 
 
 def test_engine_creation_is_fail_closed() -> None:
     violations: list[str] = []
-
     for path in sorted(APP_ROOT.rglob("*.py")):
         relative = path.relative_to(APP_ROOT).as_posix()
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
+        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-
             if _call_name(node) not in ENGINE_CALLS:
                 continue
-
-            location = (
-                relative,
-                _enclosing_function(tree, node),
-            )
-
+            location = (relative, _enclosing_function(tree, node))
             if location not in ALLOWED_ENGINE_CREATION:
-                violations.append(
-                    f"{relative}:{node.lineno} {location[1]}"
-                )
+                violations.append(f"{relative}:{node.lineno} {location[1]}")
 
     assert not violations, (
-        "NEW DATABASE ENGINE CREATION DENIED:\n"
-        + "\n".join(sorted(violations))
+        "NEW DATABASE ENGINE CREATION DENIED:\n" + "\n".join(sorted(violations))
     )
 
 
@@ -442,25 +322,11 @@ def test_sql_execution_allowlist_has_no_stale_entries() -> None:
     for relative, function in ALLOWED_SQL_EXECUTION_POINTS:
         path = APP_ROOT / relative
         assert path.exists(), relative
-
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
+        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
         function_names = {
             node.name
             for node in ast.walk(tree)
-            if isinstance(
-                node,
-                (ast.FunctionDef, ast.AsyncFunctionDef),
-            )
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-
         if function != "<module>":
-            assert function in function_names, (
-                relative,
-                function,
-            )
+            assert function in function_names, (relative, function)

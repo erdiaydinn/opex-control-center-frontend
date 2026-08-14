@@ -116,8 +116,6 @@ def preview_request(*, dimensions: bool = True) -> PlanogramPreviewRequest:
 
 
 def test_canonical_app_registers_native_planogram_routes() -> None:
-    # FastAPI >=0.141 can retain included routers lazily in app.routes. OpenAPI
-    # is the public ASGI contract and therefore the correct composition proof.
     paths = set(app.openapi()["paths"])
     assert "/v1/planogram/readiness" in paths
     assert "/v1/planogram/preview" in paths
@@ -144,7 +142,10 @@ async def test_readiness_never_claims_unattested_physical_truth() -> None:
     assert response["production_ready"] is False
     assert response["publishable"] is False
     assert response["solver_optimizer_allowed"] is False
-    assert response["authority_state"] == "no_server_attested_physical_truth"
+    assert (
+        response["authority_state"]
+        == "server_store_dna_lifecycle_available_physical_truth_incomplete"
+    )
     assert response["physical_truth"]["server_attested"] is False
 
 

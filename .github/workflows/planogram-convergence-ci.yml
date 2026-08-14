@@ -78,6 +78,8 @@ jobs:
           test -e src/modules/planogram/PlanogramStudio.jsx
           test -e services/core-api/app/modules/planogram/engine_adapter.py
           test -e services/core-api/app/modules/planogram/router.py
+          test -e services/core-api/app/modules/planogram/store_dna.py
+          test -e services/core-api/alembic/versions/0019_planogram_store_dna_foundation.py
           grep -q '/v1/planogram/readiness' src/modules/planogram/PlanogramStudio.jsx
           ! grep -Eq 'VITE_PLANAI_LEGACY_URL|<iframe|postMessage\(|access_token' src/modules/planogram/PlanogramStudio.jsx
           echo 'PLANOGRAM_CORE_AUTHORITY_NATIVE_UI=PASS'
@@ -98,15 +100,30 @@ jobs:
           ruff check
           services/core-api/app/modules/planogram
           services/core-api/tests/test_planogram_native_core.py
-      - name: Native Core authority and preview fail-closed tests
-        run: pytest -q services/core-api/tests/test_planogram_native_core.py
+          services/core-api/tests/test_planogram_store_dna.py
+      - name: Native Core authority and Store DNA fail-closed tests
+        run: >-
+          pytest -q
+          services/core-api/tests/test_planogram_native_core.py
+          services/core-api/tests/test_planogram_store_dna.py
       - name: Assert canonical ASGI route composition
         run: |
           python - <<'PY'
           from app.budget_main import app
           paths=set(app.openapi()['paths'])
-          assert '/v1/planogram/readiness' in paths
-          assert '/v1/planogram/preview' in paths
+          required={
+              '/v1/planogram/readiness',
+              '/v1/planogram/preview',
+              '/v1/planogram/store-dna/workspace',
+              '/v1/planogram/store-dna/bootstrap',
+              '/v1/planogram/store-dna/{version_id}',
+              '/v1/planogram/store-dna/{version_id}/submit',
+              '/v1/planogram/store-dna/{version_id}/approve',
+              '/v1/planogram/store-dna/{version_id}/reject',
+              '/v1/planogram/store-dna/{version_id}/revise',
+              '/v1/planogram/store-dna/{store_code}/readiness',
+          }
+          assert required <= paths
           print('PLANOGRAM_NATIVE_CORE_ROUTES=PASS')
           PY
 

@@ -15,8 +15,9 @@ def _is_hex(value: str, length: int) -> bool:
     return len(value) == length and all(char in "0123456789abcdef" for char in value.lower())
 
 
-def test_exact_archive_matches_are_promoted_without_weakening_license_policy() -> None:
+def test_exact_archive_matches_are_bound_to_current_registry_without_adoption_drift():
     registry = load_repository_registry(REGISTRY_PATH)
+    entries = registry.by_id()
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
 
     assert provenance["schema_version"] == 1
@@ -30,31 +31,35 @@ def test_exact_archive_matches_are_promoted_without_weakening_license_policy() -
         assert _is_hex(record["readme_blob_sha"], 40)
         assert _is_hex(record["license_blob_sha"], 40)
 
-        entry = registry.by_id(record["registry_entry_id"])
-        assert entry["classification"] == "IMPORTED"
-        assert entry["identity_status"] == "VERIFIED"
-        assert entry["repository"] == record["canonical_repository"]
-        assert entry["canonical_upstream"] == record["canonical_repository"]
-        assert entry["source_locator"] == record["archive"]
-        assert entry["license"] == record["license"]
+        entry = entries[record["registry_entry_id"]]
+        assert entry.classification == "IMPORTED"
+        assert entry.identity == record["canonical_repository"]
+        assert entry.canonical_upstream == record["canonical_repository"]
+        assert entry.source_artifact == record["archive"]
+        assert entry.review.ref == record["ref"]
+        assert entry.review.commit == record["commit_sha"]
+        assert entry.review.license == record["license"]["spdx"]
+        assert entry.decision == record["decision"]
+        assert entry.decision != "adopt"
 
         if record["commercial_use"].startswith("REFERENCE_ONLY"):
-            assert entry["decision"] == "REFERENCE"
-        assert entry["decision"] != "ADOPT"
+            assert entry.decision == "reference"
+            assert entry.review.commercial_use.startswith("reference-only")
 
 
-def test_copyleft_archive_matches_remain_reference_only() -> None:
+def test_copyleft_archive_matches_remain_reference_only():
     registry = load_repository_registry(REGISTRY_PATH)
+    entries = registry.by_id()
     provenance = json.loads(PROVENANCE_PATH.read_text(encoding="utf-8"))
-
     by_id = {record["registry_entry_id"]: record for record in provenance["records"]}
+
     for entry_id, expected_spdx in (
-        ("imported-cl4r1t4s", "AGPL-3.0"),
-        ("imported-computer-lab-automation", "GPL-3.0"),
+        ("cl4r1t4s", "AGPL-3.0"),
+        ("computer-lab-automation", "GPL-3.0"),
     ):
         record = by_id[entry_id]
-        entry = registry.by_id(entry_id)
+        entry = entries[entry_id]
         assert record["license"] == {"spdx": expected_spdx, "status": "VERIFIED"}
-        assert entry["license"] == record["license"]
-        assert entry["decision"] == "REFERENCE"
+        assert entry.review.license == expected_spdx
+        assert entry.decision == "reference"
         assert "REFERENCE_ONLY" in record["commercial_use"]

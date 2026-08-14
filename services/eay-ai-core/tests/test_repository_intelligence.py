@@ -31,6 +31,18 @@ def test_required_repository_relationships_are_pinned() -> None:
     assert council["canonical_upstream"] == "0xNyk/council-of-high-intelligence"
     assert council["license"] == {"spdx": "MIT", "status": "VERIFIED"}
 
+    cl4 = registry.by_id("imported-cl4r1t4s")
+    assert cl4["repository"] == "elder-plinius/CL4R1T4S"
+    assert cl4["canonical_upstream"] == "elder-plinius/CL4R1T4S"
+    assert cl4["license"] == {"spdx": "AGPL-3.0", "status": "VERIFIED"}
+    assert cl4["decision"] == "REFERENCE"
+
+    lab = registry.by_id("imported-computer-lab-automation")
+    assert lab["repository"] == "mustafadalga/computer-lab-automation"
+    assert lab["canonical_upstream"] == "mustafadalga/computer-lab-automation"
+    assert lab["license"] == {"spdx": "GPL-3.0", "status": "VERIFIED"}
+    assert lab["decision"] == "REFERENCE"
+
     superset = registry.by_id("discovered-apache-superset")
     assert superset["repository"] == "apache/superset"
     assert superset["relation"] == "canonical-analytics-upstream"
@@ -44,7 +56,7 @@ def test_required_repository_relationships_are_pinned() -> None:
 def test_unresolved_archive_identity_is_explicit_not_invented() -> None:
     registry = load_repository_registry(REGISTRY_PATH)
 
-    unresolved = registry.by_id("imported-cl4r1t4s")
+    unresolved = registry.by_id("imported-impeccable")
     assert unresolved["identity_status"] == "UNRESOLVED"
     assert unresolved["repository"] is None
     assert unresolved["decision"] == "PENDING"
@@ -64,8 +76,8 @@ def test_registry_rejects_silent_seed_deletion(tmp_path: Path) -> None:
 
 def test_registry_rejects_invented_owner_repo_for_unresolved_identity(tmp_path: Path) -> None:
     payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    entry = next(item for item in payload["entries"] if item["id"] == "imported-cl4r1t4s")
-    entry["repository"] = "guessed/CL4R1T4S"
+    entry = next(item for item in payload["entries"] if item["id"] == "imported-impeccable")
+    entry["repository"] = "guessed/impeccable"
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
 

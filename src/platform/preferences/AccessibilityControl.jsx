@@ -3,6 +3,15 @@ import { Accessibility, Languages, RotateCcw, X } from "lucide-react";
 import { usePlatformPreferences } from "./PlatformPreferencesContext.jsx";
 import "./platform-preferences.css";
 
+const FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "select:not([disabled])",
+  "input:not([disabled])",
+  "textarea:not([disabled])",
+  "a[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 function Toggle({ checked, onChange, label }) {
   return (
     <label className="eay-pref-toggle">
@@ -30,11 +39,35 @@ export default function AccessibilityControl() {
   useEffect(() => {
     if (!open) return undefined;
     const previous = document.activeElement;
-    const first = dialogRef.current?.querySelector("select, input, button");
+    const first = dialogRef.current?.querySelector(FOCUSABLE_SELECTOR);
     first?.focus();
 
     function onKeyDown(event) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(dialogRef.current?.querySelectorAll(FOCUSABLE_SELECTOR) || [])
+        .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus?.();
+        return;
+      }
+
+      const firstFocusable = focusable[0];
+      const lastFocusable = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === firstFocusable || !dialogRef.current?.contains(active))) {
+        event.preventDefault();
+        lastFocusable.focus();
+      } else if (!event.shiftKey && active === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => {
@@ -71,6 +104,7 @@ export default function AccessibilityControl() {
             aria-modal="true"
             aria-labelledby="eay-accessibility-title"
             className="eay-pref-panel"
+            tabIndex="-1"
           >
             <header>
               <div>

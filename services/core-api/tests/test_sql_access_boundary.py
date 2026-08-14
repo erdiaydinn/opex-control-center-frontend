@@ -56,10 +56,46 @@ BUDGET_SQL_EXECUTION_POINTS = {
     ("modules/budget/read_models.py", "financial_events"),
 }
 
+ACADEMY_SQL_EXECUTION_POINTS = {
+    ("modules/academy/rag.py", "grounded_document_answer"),
+    ("modules/academy/repository.py", "record_learning_event"),
+    ("modules/academy/repository.py", "record_platform_audit"),
+    ("modules/academy/repository_catalog.py", "list_entitled_content"),
+    ("modules/academy/repository_catalog.py", "get_media_asset"),
+    ("modules/academy/repository_catalog.py", "list_checkpoints"),
+    ("modules/academy/repository_catalog.py", "get_quiz_public_definition"),
+    ("modules/academy/repository_certificate.py", "get_required_quiz_ids"),
+    ("modules/academy/repository_certificate.py", "is_completion_revoked"),
+    ("modules/academy/repository_certificate.py", "revoke_completion"),
+    ("modules/academy/repository_completion.py", "get_completion_snapshot"),
+    ("modules/academy/repository_completion.py", "mark_enrollment_completed"),
+    ("modules/academy/repository_content.py", "_insert_version"),
+    ("modules/academy/repository_content.py", "create_content"),
+    ("modules/academy/repository_content.py", "create_content_version"),
+    ("modules/academy/repository_content.py", "create_media_asset"),
+    ("modules/academy/repository_enrollment.py", "create_manual_enrollment"),
+    ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"),
+    ("modules/academy/repository_enrollment.py", "list_enrollments"),
+    ("modules/academy/repository_entitlement.py", "is_module_entitled"),
+    ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"),
+    ("modules/academy/repository_knowledge.py", "ingest_document_chunks"),
+    ("modules/academy/repository_path.py", "create_learning_path"),
+    ("modules/academy/repository_path.py", "grant_entitlement"),
+    ("modules/academy/repository_progress.py", "get_progress_target"),
+    ("modules/academy/repository_progress.py", "get_blocking_checkpoint"),
+    ("modules/academy/repository_progress.py", "save_progress"),
+    ("modules/academy/repository_progress.py", "get_progress_snapshot"),
+    ("modules/academy/repository_quiz.py", "get_quiz_definition_for_attempt"),
+    ("modules/academy/repository_quiz.py", "save_quiz_attempt"),
+    ("modules/academy/repository_quiz.py", "get_quiz_attempt_by_id"),
+    ("modules/academy/repository_quiz_authoring.py", "create_quiz"),
+}
+
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
     | BUDGET_SQL_EXECUTION_POINTS
+    | ACADEMY_SQL_EXECUTION_POINTS
 )
 
 RUNTIME_ENGINE_CREATION = {
@@ -320,6 +356,38 @@ EXPECTED_EXECUTION_CALL_COUNTS = {
     ("modules/budget/procurement.py", "create_po"): 4,
     ("modules/budget/read_models.py", "variance_summary"): 1,
     ("modules/budget/read_models.py", "financial_events"): 1,
+    ("modules/academy/rag.py", "grounded_document_answer"): 1,
+    ("modules/academy/repository.py", "record_learning_event"): 1,
+    ("modules/academy/repository.py", "record_platform_audit"): 1,
+    ("modules/academy/repository_catalog.py", "list_entitled_content"): 1,
+    ("modules/academy/repository_catalog.py", "get_media_asset"): 1,
+    ("modules/academy/repository_catalog.py", "list_checkpoints"): 1,
+    ("modules/academy/repository_catalog.py", "get_quiz_public_definition"): 2,
+    ("modules/academy/repository_certificate.py", "get_required_quiz_ids"): 1,
+    ("modules/academy/repository_certificate.py", "is_completion_revoked"): 1,
+    ("modules/academy/repository_certificate.py", "revoke_completion"): 2,
+    ("modules/academy/repository_completion.py", "get_completion_snapshot"): 5,
+    ("modules/academy/repository_completion.py", "mark_enrollment_completed"): 3,
+    ("modules/academy/repository_content.py", "_insert_version"): 1,
+    ("modules/academy/repository_content.py", "create_content"): 1,
+    ("modules/academy/repository_content.py", "create_content_version"): 1,
+    ("modules/academy/repository_content.py", "create_media_asset"): 1,
+    ("modules/academy/repository_enrollment.py", "create_manual_enrollment"): 1,
+    ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"): 1,
+    ("modules/academy/repository_enrollment.py", "list_enrollments"): 1,
+    ("modules/academy/repository_entitlement.py", "is_module_entitled"): 1,
+    ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"): 2,
+    ("modules/academy/repository_knowledge.py", "ingest_document_chunks"): 3,
+    ("modules/academy/repository_path.py", "create_learning_path"): 3,
+    ("modules/academy/repository_path.py", "grant_entitlement"): 1,
+    ("modules/academy/repository_progress.py", "get_progress_target"): 1,
+    ("modules/academy/repository_progress.py", "get_blocking_checkpoint"): 1,
+    ("modules/academy/repository_progress.py", "save_progress"): 3,
+    ("modules/academy/repository_progress.py", "get_progress_snapshot"): 1,
+    ("modules/academy/repository_quiz.py", "get_quiz_definition_for_attempt"): 3,
+    ("modules/academy/repository_quiz.py", "save_quiz_attempt"): 2,
+    ("modules/academy/repository_quiz.py", "get_quiz_attempt_by_id"): 1,
+    ("modules/academy/repository_quiz_authoring.py", "create_quiz"): 5,
 }
 
 

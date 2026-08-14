@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel, Field
 
 from .model_promotion_gate import ModelPromotionGate, PromotionRecord, PromotionRequest
 
@@ -12,12 +14,48 @@ promotion_gate = ModelPromotionGate(DB_PATH)
 router = APIRouter(prefix="/v1/model-promotions", tags=["model-promotions"])
 
 
-@router.post("", response_model=PromotionRecord, status_code=201)
-def promote_model(payload: PromotionRequest) -> PromotionRecord:
-    """Perform the one canonical evidence-bound production transition."""
+class PromotionApiRequest(BaseModel):
+    model_record_id: str = Field(min_length=1, max_length=180)
+    canary_evidence_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    release_evaluation_evidence_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approval_reference: str = Field(min_length=2, max_length=300)
 
+
+def _authorized_release_operator(authorization: str | None) -> str:
+    expected_token = os.getenv("EAY_MODEL_PROMOTION_API_TOKEN", "")
+    operator = os.getenv("EAY_MODEL_PROMOTION_OPERATOR_ID", "").strip()
+    if len(expected_token) < 32 or len(operator) < 2:
+        raise HTTPException(status_code=503, detail="model_promotion_api_not_configured")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=403, detail="model_promotion_authorization_required")
+    provided = authorization.removeprefix("Bearer ").strip()
+    if not secrets.compare_digest(provided, expected_token):
+        raise HTTPException(status_code=403, detail="model_promotion_authorization_invalid")
+    return operator
+
+
+@router.post("", response_model=PromotionRecord, status_code=201)
+def promote_model(
+    payload: PromotionApiRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> PromotionRecord:
+    """Perform the one canonical evidence-bound production transition.
+
+    The release approver identity is deployment-authoritative and cannot be
+    supplied by the request body. The endpoint is disabled unless both the
+    operator identity and a strong bearer secret are explicitly configured.
+    """
+
+    approved_by = _authorized_release_operator(authorization)
+    request = PromotionRequest(
+        model_record_id=payload.model_record_id,
+        canary_evidence_fingerprint=payload.canary_evidence_fingerprint,
+        release_evaluation_evidence_fingerprint=payload.release_evaluation_evidence_fingerprint,
+        approved_by=approved_by,
+        approval_reference=payload.approval_reference,
+    )
     try:
-        return promotion_gate.promote(payload)
+        return promotion_gate.promote(request)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

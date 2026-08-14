@@ -93,9 +93,9 @@ jobs:
           import json
           report=json.load(open('/tmp/planogram-audit.json',encoding='utf-8'))
           assert report['production_ready'] is False
-          assert report['products']['dataset_rows'] == 1
-          assert report['products']['approved_dimension_coverage_pct'] == 0.0
-          assert report['products']['required_fixture_counts'].get('PALLET') == 1
+          assert report['dataset']['dataset_rows'] == 1
+          assert report['dataset']['approved_dimension_coverage_pct'] == 0.0
+          assert report['fixture_requirements']['required_fixture_counts'].get('PALLET') == 1
           assert report['blockers']
           print('PLANOGRAM_FAIL_CLOSED_AUDIT=PASS')
           PY

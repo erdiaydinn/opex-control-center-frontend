@@ -9,10 +9,11 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
+COPY backend/migrations ./migrations
 COPY src/modules/workforce/staffingNorms.js ./app/modules/recruitment/data/staffingNorms.js
 
 RUN mkdir -p /var/lib/dockos /var/backups/dockos /var/lib/dockos/recruitment-evidence
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${DOCKOS_WORKERS:-2}"]

@@ -1,3 +1,5 @@
+import hashlib
+import json
 import sqlite3
 from datetime import date
 
@@ -14,12 +16,25 @@ from app.model_promotion_gate import ModelPromotionGate, PromotionRequest
 from app.model_registry import ApprovalRequest, CanaryRequest, EvalSummary, ModelCandidateCreate, ModelRegistry
 from app.release_evidence_registry import ReleaseEvaluationEvidenceRegistry
 from app.safety_evals import SafetyEvalCase, evaluate_safety_evals
+from app.training_execution import (
+    TrainingExecutionReceiptCreate,
+    TrainingExecutionRegistry,
+    TrainingExecutionRequest,
+    dataset_sha256_from_file,
+    sha256_path,
+)
+from app.training_gate import canonical_dataset_sha256
 from app.training_job_registry import TrainingJobRegistration
 
-DATASET = "b" * 64
+TRAIN_EXAMPLES = [{"messages": [{"role": "user", "content": "train question"}, {"role": "assistant", "content": "train answer"}], "metadata": {"human_approved": True, "contains_personal_data": False, "reason": "reviewed"}}]
+EVAL_EXAMPLES = [{"messages": [{"role": "user", "content": "eval question"}, {"role": "assistant", "content": "eval answer"}], "metadata": {"human_approved": True, "contains_personal_data": False, "reason": "reviewed"}}]
+DATASET = canonical_dataset_sha256(TRAIN_EXAMPLES)
 CHAIN = "c" * 64
-EVAL_DATASET = "e" * 64
-ARTIFACT = "a" * 64
+EVAL_DATASET = canonical_dataset_sha256(EVAL_EXAMPLES)
+BASE_BYTES = b"eay-local-base-model"
+BASE_SHA = hashlib.sha256(BASE_BYTES).hexdigest()
+ARTIFACT_BYTES = b"eay-trained-adapter-artifact"
+ARTIFACT = hashlib.sha256(ARTIFACT_BYTES).hexdigest()
 
 
 def _seed(registry: ModelRegistry):
@@ -43,7 +58,7 @@ def _seed(registry: ModelRegistry):
         )
     spec = {
         "job_version": "1", "method": "lora", "base_model": "local-base",
-        "base_model_sha256": "1" * 64, "base_model_license_id": "apache-2.0",
+        "base_model_sha256": BASE_SHA, "base_model_license_id": "apache-2.0",
         "training_manifest_chain_sha256": CHAIN, "dataset_sha256": DATASET,
         "eval_dataset_sha256": EVAL_DATASET, "seed": 42, "epochs": 2,
         "learning_rate": 0.0002, "batch_size": 2, "gradient_accumulation_steps": 8,
@@ -54,6 +69,33 @@ def _seed(registry: ModelRegistry):
     job = registry.training_jobs.register(
         TrainingJobRegistration(spec=spec, approved_by="reviewer", approval_reference="JOB-1")
     )
+    fixture_root = registry.db_path.parent
+    base_path = fixture_root / "local-base-model.bin"
+    train_path = fixture_root / "train.json"
+    eval_path = fixture_root / "eval.json"
+    artifact_path = fixture_root / "trained-adapter.safetensors"
+    base_path.write_bytes(BASE_BYTES)
+    train_path.write_text(json.dumps(TRAIN_EXAMPLES), encoding="utf-8")
+    eval_path.write_text(json.dumps(EVAL_EXAMPLES), encoding="utf-8")
+    assert sha256_path(base_path) == BASE_SHA
+    assert dataset_sha256_from_file(train_path) == DATASET
+    assert dataset_sha256_from_file(eval_path) == EVAL_DATASET
+    executions = TrainingExecutionRegistry(registry.db_path)
+    plan = executions.create_plan(TrainingExecutionRequest(
+        training_job_fingerprint=job.fingerprint,
+        base_model_path=str(base_path),
+        training_dataset_path=str(train_path),
+        eval_dataset_path=str(eval_path),
+        output_path=str(artifact_path),
+        requested_by="training-operator",
+        execution_reference="TRAIN-TEST-1",
+    ))
+    artifact_path.write_bytes(ARTIFACT_BYTES)
+    executions.register_receipt(TrainingExecutionReceiptCreate(
+        plan_fingerprint=plan.fingerprint,
+        executor="local-test-worker",
+        execution_reference="TRAIN-TEST-1:exit-0",
+    ))
     registry.artifacts.register(
         RegistryArtifactRegistration(
             training_job_fingerprint=job.fingerprint,
@@ -247,6 +289,7 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
     assert proof.training_manifest_chain_sha256 == CHAIN
     assert proof.artifact_sha256 == artifact.artifact_sha256
     assert proof.training_job_fingerprint == job_fp
+    assert len(proof.training_execution_receipt_fingerprint) == 64
 
     with sqlite3.connect(registry.db_path) as conn:
         status = conn.execute("SELECT status FROM model_registry WHERE id=?", (model_id,)).fetchone()[0]
@@ -254,7 +297,7 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
             """SELECT release_proof_fingerprint,offline_eval_fingerprint,
             release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,
             safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,
-            artifact_provenance_fingerprint FROM model_production_promotions"""
+            artifact_provenance_fingerprint,training_execution_receipt_fingerprint FROM model_production_promotions"""
         ).fetchone()
     assert status == "production"
     assert row == (
@@ -266,6 +309,7 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
         proof.eval_dataset_sha256,
         proof.training_manifest_chain_sha256,
         proof.artifact_provenance_fingerprint,
+        proof.training_execution_receipt_fingerprint,
     )
 
     with pytest.raises(ValueError, match="production_promotion_requires_canary_status"):
@@ -273,4 +317,29 @@ def test_production_promotion_binds_registered_artifact_evals_canary_and_human_a
             model_record_id=model_id, canary_evidence_fingerprint=evidence.fingerprint,
             release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
             approved_by="release-manager", approval_reference="REL-2",
+        ))
+
+
+def test_governed_promotion_rejects_stored_offline_eval_fingerprint_tampering(tmp_path):
+    registry = ModelRegistry(tmp_path / "eay.db")
+    model_id, job_fp = _seed(registry)
+    provenance = ModelArtifactProvenanceRegistry(registry.db_path)
+    provenance.register_artifact(PromotionArtifactRegistration(
+        training_job_fingerprint=job_fp, artifact_sha256=ARTIFACT,
+        format="safetensors", created_by="trainer", build_reference="BUILD-OFFLINE-TAMPER",
+    ))
+    canary = provenance.register_canary_evidence(_good_canary(model_id))
+    release_evidence = _release_evidence(registry.db_path)
+    with sqlite3.connect(registry.db_path) as conn:
+        conn.execute(
+            "UPDATE model_registry SET offline_eval_fingerprint=? WHERE id=?",
+            ("0" * 64, model_id),
+        )
+    with pytest.raises(ValueError, match="model_offline_eval_provenance_mismatch"):
+        ModelPromotionGate(registry.db_path).promote(PromotionRequest(
+            model_record_id=model_id,
+            canary_evidence_fingerprint=canary.fingerprint,
+            release_evaluation_evidence_fingerprint=release_evidence.fingerprint,
+            approved_by="release-manager",
+            approval_reference="REL-OFFLINE-TAMPER",
         ))

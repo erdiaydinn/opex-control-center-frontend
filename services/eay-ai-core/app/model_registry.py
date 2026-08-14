@@ -308,41 +308,8 @@ class ModelRegistry:
         return self._row(row)
 
     def promote(self, record_id: str, payload: PromotionRequest) -> ModelRecord:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute("SELECT * FROM model_registry WHERE id=?", (record_id,)).fetchone()
-            if row is None:
-                raise KeyError("model_not_found")
-            if row["status"] != "canary":
-                raise ValueError("production_promotion_requires_canary")
-            self._verify_row_lineage(row)
-            evals = EvalSummary(**json.loads(row["evals_json"]))
-            failures = ReleasePolicy.violations(evals)
-            if failures:
-                raise ValueError("release_gate_failed:" + ",".join(failures))
-            canary = self.canary_results.get_by_fingerprint(payload.canary_result_fingerprint)
-            if canary.model_record_id != record_id:
-                raise ValueError("production_canary_model_mismatch")
-            if canary.artifact_provenance_fingerprint != row["artifact_provenance_fingerprint"]:
-                raise ValueError("production_canary_artifact_mismatch")
-            if canary.current_percent != int(row["canary_percent"]):
-                raise ValueError("production_canary_percent_mismatch")
-            if not canary.passed:
-                raise ValueError("production_canary_gate_failed:" + ",".join(canary.violations))
-            now = datetime.now(timezone.utc)
-            conn.execute(
-                """UPDATE model_registry SET status='production', canary_result_fingerprint=?,
-                promoted_by=?, promotion_note=?, promoted_at=? WHERE id=?""",
-                (
-                    canary.result_fingerprint,
-                    payload.approved_by,
-                    payload.note,
-                    now.isoformat(),
-                    record_id,
-                ),
-            )
-            row = conn.execute("SELECT * FROM model_registry WHERE id=?", (record_id,)).fetchone()
-        return self._row(row)
+        del record_id, payload
+        raise ValueError("production_promotion_requires_governed_promotion_gate")
 
     @staticmethod
     def _row(row: sqlite3.Row) -> ModelRecord:

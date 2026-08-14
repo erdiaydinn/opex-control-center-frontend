@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,7 +10,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .main import settings, store as candidate_store
+candidate_store = None
+
+
+def _candidate_store():
+    if candidate_store is not None:
+        return candidate_store
+    from .main import store
+
+    return store
 from .teacher_quality import evaluate_teacher_review
 from .training_gate import DatasetGateResult, validate_training_examples
 
@@ -55,7 +64,7 @@ class LearningExportReviewStore:
             )
 
     def save(self, candidate_id: str, payload: ExportReviewCreate) -> ExportReview:
-        row = candidate_store.candidate_context(candidate_id)
+        row = _candidate_store().candidate_context(candidate_id)
         if row is None:
             raise KeyError("candidate_not_found")
         if row["status"] != "approved":
@@ -153,14 +162,15 @@ def build_gated_export(
     *,
     review_store: LearningExportReviewStore,
 ) -> GatedLearningExport:
-    exported = candidate_store.export_approved()
+    active_store = _candidate_store()
+    exported = active_store.export_approved()
     examples: list[dict[str, Any]] = []
     preflight_violations: list[str] = []
 
     for index, item in enumerate(exported):
         metadata = item.get("metadata") or {}
         candidate_id = str(metadata.get("candidate_id") or "")
-        row = candidate_store.candidate_context(candidate_id)
+        row = _candidate_store().candidate_context(candidate_id)
         if row is None:
             preflight_violations.append(f"example_{index}:candidate_not_found")
             continue
@@ -227,7 +237,9 @@ def build_gated_export(
     return GatedLearningExport(examples=examples, gate=gate)
 
 
-review_store = LearningExportReviewStore(settings.db_path)
+review_store = LearningExportReviewStore(
+    Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
+)
 router = APIRouter(tags=["learning-export"])
 
 
@@ -240,13 +252,5 @@ def review_candidate_for_export(candidate_id: str, payload: ExportReviewCreate):
         return review_store.save(candidate_id, payload)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
-@router.get("/v1/learning/export", response_model=GatedLearningExport)
-def export_gated_learning_dataset():
-    try:
-        return build_gated_export(review_store=review_store)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -787,6 +787,16 @@ def feedback(payload: FeedbackRequest):
     return {"ok": True, "learning_candidate_id": candidate_id}
 
 
+@app.get("/v1/learning/export")
+def export_learning_dataset():
+    from .learning_export_guard import build_gated_export, review_store
+
+    try:
+        return build_gated_export(review_store=review_store)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.get("/v1/learning/candidates")
 def candidates(limit: int = Query(default=100, ge=1, le=500)):
     return store.list_candidates(limit)
@@ -866,8 +876,3 @@ def decide(candidate_id: str, decision: str):
         "ok": True,
         "status": "approved" if decision == "approve" else "rejected",
     }
-
-
-@app.get("/v1/learning/export")
-def export_learning_dataset():
-    return {"format": "chat_sft", "examples": store.export_approved()}

@@ -111,18 +111,16 @@ def test_production_promotion_requires_registered_passing_canary_result(tmp_path
             evidence_reference="CANARY-2026-08-11-01",
         )
     )
-    promoted = registry.promote(
-        canary.id,
-        PromotionRequest(
-            canary_result_fingerprint=result.result_fingerprint,
-            approved_by="release-owner",
-            note="offline eval and canary evidence reviewed",
-        ),
-    )
-    assert promoted.status == "production"
-    assert promoted.canary_result_fingerprint == result.result_fingerprint
-    assert promoted.promoted_at is not None
-    assert len(promoted.offline_eval_fingerprint) == 64
+    assert result.passed is True
+    with pytest.raises(ValueError, match="production_promotion_requires_governed_promotion_gate"):
+        registry.promote(
+            canary.id,
+            PromotionRequest(
+                canary_result_fingerprint=result.result_fingerprint,
+                approved_by="release-owner",
+                note="legacy canary evidence is not sufficient for production",
+            ),
+        )
 
 
 def test_failed_canary_cannot_promote(tmp_path):
@@ -139,13 +137,14 @@ def test_failed_canary_cannot_promote(tmp_path):
         )
     )
     assert result.passed is False
-    with pytest.raises(ValueError, match="production_canary_gate_failed:kvkk_leak_detected"):
+    assert "kvkk_leak_detected" in result.violations
+    with pytest.raises(ValueError, match="production_promotion_requires_governed_promotion_gate"):
         registry.promote(
             canary.id,
             PromotionRequest(
                 canary_result_fingerprint=result.result_fingerprint,
                 approved_by="release-owner",
-                note="must fail",
+                note="legacy promotion remains unavailable",
             ),
         )
 
@@ -184,12 +183,12 @@ def test_offline_eval_tampering_blocks_promotion(tmp_path):
             "UPDATE model_registry SET offline_eval_fingerprint=? WHERE id=?",
             ("0" * 64, canary.id),
         )
-    with pytest.raises(ValueError, match="model_offline_eval_provenance_mismatch"):
+    with pytest.raises(ValueError, match="production_promotion_requires_governed_promotion_gate"):
         registry.promote(
             canary.id,
             PromotionRequest(
                 canary_result_fingerprint=result.result_fingerprint,
                 approved_by="release-owner",
-                note="must fail tamper",
+                note="legacy path cannot be used to mutate production",
             ),
         )

@@ -390,9 +390,24 @@ class TrainingExecutionRegistry:
             ).fetchone()
         if row is None:
             raise KeyError("training_execution_verified_artifact_not_found")
+        plan = self.get_plan(row["plan_fingerprint"])
+        if plan.training_job_fingerprint != row["training_job_fingerprint"]:
+            raise ValueError("training_execution_receipt_plan_job_drift")
         path = Path(row["artifact_path"])
         if not path.exists() or sha256_path(path) != row["artifact_sha256"]:
             raise ValueError("training_execution_artifact_drift")
+        if Path(plan.output_path).resolve(strict=True) != path.resolve(strict=True):
+            raise ValueError("training_execution_receipt_output_path_drift")
+        canonical = {
+            "plan_fingerprint": row["plan_fingerprint"],
+            "training_job_fingerprint": row["training_job_fingerprint"],
+            "artifact_path": str(path.resolve(strict=True)),
+            "artifact_sha256": row["artifact_sha256"],
+            "executor": row["executor"],
+            "execution_reference": row["execution_reference"],
+        }
+        if _canonical_sha256(canonical) != row["fingerprint"]:
+            raise ValueError("training_execution_receipt_fingerprint_drift")
         return TrainingExecutionReceipt(
             id=row["id"],
             fingerprint=row["fingerprint"],

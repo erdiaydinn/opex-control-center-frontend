@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field
 
 from .model_artifact_provenance import ModelArtifactProvenanceRegistry
 from .model_artifact_registry import ModelArtifactRegistry
+from .model_registry import EvalSummary, eval_summary_fingerprint
 from .release_evidence_registry import ReleaseEvaluationEvidenceRegistry
+from .training_execution import TrainingExecutionRegistry
 from .training_job_registry import TrainingJobRegistry
 
 
@@ -47,6 +49,7 @@ class PromotionRecord(BaseModel):
     artifact_sha256: str
     artifact_provenance_fingerprint: str
     training_job_fingerprint: str
+    training_execution_receipt_fingerprint: str
     canary_evidence_fingerprint: str
     approved_by: str
     approval_reference: str
@@ -59,17 +62,18 @@ class ModelPromotionGate:
         self.artifacts = ModelArtifactProvenanceRegistry(db_path)
         self.primary_artifacts = ModelArtifactRegistry(db_path)
         self.training_jobs = TrainingJobRegistry(db_path)
+        self.training_executions = TrainingExecutionRegistry(db_path)
         self.release_evidence = ReleaseEvaluationEvidenceRegistry(db_path)
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""CREATE TABLE IF NOT EXISTS model_production_promotions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, release_proof_fingerprint TEXT, offline_eval_fingerprint TEXT, release_evaluation_evidence_fingerprint TEXT, historical_legal_eval_fingerprint TEXT, safety_eval_fingerprint TEXT, eval_dataset_sha256 TEXT, training_manifest_chain_sha256 TEXT, model_record_id TEXT NOT NULL UNIQUE, artifact_sha256 TEXT NOT NULL, artifact_provenance_fingerprint TEXT, training_job_fingerprint TEXT, canary_evidence_fingerprint TEXT NOT NULL, approved_by TEXT NOT NULL, approval_reference TEXT NOT NULL, created_at TEXT NOT NULL)""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS model_production_promotions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, release_proof_fingerprint TEXT, offline_eval_fingerprint TEXT, release_evaluation_evidence_fingerprint TEXT, historical_legal_eval_fingerprint TEXT, safety_eval_fingerprint TEXT, eval_dataset_sha256 TEXT, training_manifest_chain_sha256 TEXT, model_record_id TEXT NOT NULL UNIQUE, artifact_sha256 TEXT NOT NULL, artifact_provenance_fingerprint TEXT, training_job_fingerprint TEXT, training_execution_receipt_fingerprint TEXT, canary_evidence_fingerprint TEXT NOT NULL, approved_by TEXT NOT NULL, approval_reference TEXT NOT NULL, created_at TEXT NOT NULL)""")
             existing = {row[1] for row in conn.execute("PRAGMA table_info(model_production_promotions)")}
-            for name in ("release_proof_fingerprint", "offline_eval_fingerprint", "release_evaluation_evidence_fingerprint", "historical_legal_eval_fingerprint", "safety_eval_fingerprint", "eval_dataset_sha256", "training_manifest_chain_sha256", "artifact_provenance_fingerprint"):
+            for name in ("release_proof_fingerprint", "offline_eval_fingerprint", "release_evaluation_evidence_fingerprint", "historical_legal_eval_fingerprint", "safety_eval_fingerprint", "eval_dataset_sha256", "training_manifest_chain_sha256", "artifact_provenance_fingerprint", "training_execution_receipt_fingerprint"):
                 if name not in existing:
                     conn.execute(f"ALTER TABLE model_production_promotions ADD COLUMN {name} TEXT")
 
     @staticmethod
     def _record(row: sqlite3.Row) -> PromotionRecord:
-        return PromotionRecord(id=row["id"], fingerprint=row["fingerprint"], release_proof_fingerprint=row["release_proof_fingerprint"], offline_eval_fingerprint=row["offline_eval_fingerprint"], release_evaluation_evidence_fingerprint=row["release_evaluation_evidence_fingerprint"], historical_legal_eval_fingerprint=row["historical_legal_eval_fingerprint"], safety_eval_fingerprint=row["safety_eval_fingerprint"], eval_dataset_sha256=row["eval_dataset_sha256"], training_manifest_chain_sha256=row["training_manifest_chain_sha256"], model_record_id=row["model_record_id"], artifact_sha256=row["artifact_sha256"], artifact_provenance_fingerprint=row["artifact_provenance_fingerprint"], training_job_fingerprint=row["training_job_fingerprint"], canary_evidence_fingerprint=row["canary_evidence_fingerprint"], approved_by=row["approved_by"], approval_reference=row["approval_reference"], created_at=datetime.fromisoformat(row["created_at"]))
+        return PromotionRecord(id=row["id"], fingerprint=row["fingerprint"], release_proof_fingerprint=row["release_proof_fingerprint"], offline_eval_fingerprint=row["offline_eval_fingerprint"], release_evaluation_evidence_fingerprint=row["release_evaluation_evidence_fingerprint"], historical_legal_eval_fingerprint=row["historical_legal_eval_fingerprint"], safety_eval_fingerprint=row["safety_eval_fingerprint"], eval_dataset_sha256=row["eval_dataset_sha256"], training_manifest_chain_sha256=row["training_manifest_chain_sha256"], model_record_id=row["model_record_id"], artifact_sha256=row["artifact_sha256"], artifact_provenance_fingerprint=row["artifact_provenance_fingerprint"], training_job_fingerprint=row["training_job_fingerprint"], training_execution_receipt_fingerprint=row["training_execution_receipt_fingerprint"], canary_evidence_fingerprint=row["canary_evidence_fingerprint"], approved_by=row["approved_by"], approval_reference=row["approval_reference"], created_at=datetime.fromisoformat(row["created_at"]))
 
     def require_current_production(self, *, model_record_id: str) -> PromotionRecord:
         """Re-verify the immutable production proof against the live model registry head."""
@@ -93,7 +97,13 @@ class ModelPromotionGate:
             raise ValueError("production_promotion_release_evidence_drift")
         self.training_jobs.verify_model_lineage(fingerprint=row["training_job_fingerprint"], base_model=model["base_model"], license_id=model["license_id"], training_dataset_sha256=model["training_dataset_sha256"], training_manifest_chain_sha256=row["training_manifest_chain_sha256"], eval_dataset_sha256=row["eval_dataset_sha256"])
         self.artifacts.verify_artifact(artifact_sha256=row["artifact_sha256"], training_job_fingerprint=row["training_job_fingerprint"])
-        release_proof = _sha256({"model_record_id": model_record_id, "training_job_fingerprint": row["training_job_fingerprint"], "training_manifest_chain_sha256": row["training_manifest_chain_sha256"], "artifact_sha256": row["artifact_sha256"], "artifact_provenance_fingerprint": row["artifact_provenance_fingerprint"], "eval_dataset_sha256": row["eval_dataset_sha256"], "offline_eval_fingerprint": current_offline, "release_evaluation_evidence_fingerprint": row["release_evaluation_evidence_fingerprint"], "historical_legal_eval_fingerprint": row["historical_legal_eval_fingerprint"], "safety_eval_fingerprint": row["safety_eval_fingerprint"], "canary_evidence_fingerprint": row["canary_evidence_fingerprint"], "approved_by": row["approved_by"], "approval_reference": row["approval_reference"]})
+        receipt = self.training_executions.require_verified_artifact(
+            training_job_fingerprint=row["training_job_fingerprint"],
+            artifact_sha256=row["artifact_sha256"],
+        )
+        if row["training_execution_receipt_fingerprint"] != receipt.fingerprint:
+            raise ValueError("production_promotion_training_execution_receipt_drift")
+        release_proof = _sha256({"model_record_id": model_record_id, "training_job_fingerprint": row["training_job_fingerprint"], "training_manifest_chain_sha256": row["training_manifest_chain_sha256"], "artifact_sha256": row["artifact_sha256"], "artifact_provenance_fingerprint": row["artifact_provenance_fingerprint"], "training_execution_receipt_fingerprint": receipt.fingerprint, "eval_dataset_sha256": row["eval_dataset_sha256"], "offline_eval_fingerprint": current_offline, "release_evaluation_evidence_fingerprint": row["release_evaluation_evidence_fingerprint"], "historical_legal_eval_fingerprint": row["historical_legal_eval_fingerprint"], "safety_eval_fingerprint": row["safety_eval_fingerprint"], "canary_evidence_fingerprint": row["canary_evidence_fingerprint"], "approved_by": row["approved_by"], "approval_reference": row["approval_reference"]})
         if release_proof != row["release_proof_fingerprint"] or _sha256({"kind": "production_promotion", "release_proof": release_proof}) != row["fingerprint"]:
             raise ValueError("production_promotion_proof_fingerprint_drift")
         return self._record(row)
@@ -116,11 +126,20 @@ class ModelPromotionGate:
         artifact_provenance_fingerprint = model["artifact_provenance_fingerprint"]
         if artifact_provenance_fingerprint != primary_artifact.provenance_fingerprint: raise ValueError("production_promotion_artifact_provenance_mismatch")
         self.artifacts.verify_artifact(artifact_sha256=model["artifact_sha256"], training_job_fingerprint=training_job_fingerprint)
+        training_execution_receipt = self.training_executions.require_verified_artifact(
+            training_job_fingerprint=training_job_fingerprint,
+            artifact_sha256=model["artifact_sha256"],
+        )
         canary = self.artifacts.require_passing_canary(model_record_id=payload.model_record_id, fingerprint=payload.canary_evidence_fingerprint)
         if canary.artifact_sha256 != model["artifact_sha256"]: raise ValueError("production_promotion_canary_artifact_mismatch")
         if canary.eval_dataset_sha256 != eval_dataset_sha256: raise ValueError("production_promotion_canary_eval_dataset_mismatch")
+        stored_eval_fingerprint = eval_summary_fingerprint(
+            EvalSummary.model_validate(json.loads(model["evals_json"]))
+        )
+        if model["offline_eval_fingerprint"] != stored_eval_fingerprint:
+            raise ValueError("model_offline_eval_provenance_mismatch")
         eval_fingerprint = offline_eval_fingerprint(model)
-        release_proof = _sha256({"model_record_id": payload.model_record_id, "training_job_fingerprint": training_job_fingerprint, "training_manifest_chain_sha256": training_manifest_chain_sha256, "artifact_sha256": model["artifact_sha256"], "artifact_provenance_fingerprint": artifact_provenance_fingerprint, "eval_dataset_sha256": eval_dataset_sha256, "offline_eval_fingerprint": eval_fingerprint, "release_evaluation_evidence_fingerprint": release_evidence.fingerprint, "historical_legal_eval_fingerprint": release_evidence.historical_legal_fingerprint, "safety_eval_fingerprint": release_evidence.safety_eval_fingerprint, "canary_evidence_fingerprint": payload.canary_evidence_fingerprint, "approved_by": payload.approved_by.strip(), "approval_reference": payload.approval_reference.strip()})
+        release_proof = _sha256({"model_record_id": payload.model_record_id, "training_job_fingerprint": training_job_fingerprint, "training_manifest_chain_sha256": training_manifest_chain_sha256, "artifact_sha256": model["artifact_sha256"], "artifact_provenance_fingerprint": artifact_provenance_fingerprint, "training_execution_receipt_fingerprint": training_execution_receipt.fingerprint, "eval_dataset_sha256": eval_dataset_sha256, "offline_eval_fingerprint": eval_fingerprint, "release_evaluation_evidence_fingerprint": release_evidence.fingerprint, "historical_legal_eval_fingerprint": release_evidence.historical_legal_fingerprint, "safety_eval_fingerprint": release_evidence.safety_eval_fingerprint, "canary_evidence_fingerprint": payload.canary_evidence_fingerprint, "approved_by": payload.approved_by.strip(), "approval_reference": payload.approval_reference.strip()})
         fingerprint = _sha256({"kind": "production_promotion", "release_proof": release_proof})
         record_id, created_at = str(uuid.uuid4()), datetime.now(timezone.utc)
         with sqlite3.connect(self.db_path) as conn:
@@ -131,11 +150,17 @@ class ModelPromotionGate:
                 if current["status"] != "canary" or current["artifact_sha256"] != model["artifact_sha256"] or current["artifact_provenance_fingerprint"] != artifact_provenance_fingerprint: raise ValueError("production_promotion_stale_model_state")
                 if str(current["eval_dataset_sha256"] or "") != eval_dataset_sha256: raise ValueError("production_promotion_stale_eval_dataset")
                 if str(current["training_manifest_chain_sha256"] or "") != training_manifest_chain_sha256: raise ValueError("production_promotion_stale_training_manifest")
-                if offline_eval_fingerprint(current) != eval_fingerprint: raise ValueError("production_promotion_stale_offline_eval")
+                current_stored_eval = eval_summary_fingerprint(
+                    EvalSummary.model_validate(json.loads(current["evals_json"]))
+                )
+                if current["offline_eval_fingerprint"] != current_stored_eval:
+                    raise ValueError("production_promotion_stale_offline_eval")
+                if offline_eval_fingerprint(current) != eval_fingerprint:
+                    raise ValueError("production_promotion_stale_offline_eval")
                 self.release_evidence.verify_for_lineage(fingerprint=release_evidence.fingerprint, eval_dataset_sha256=eval_dataset_sha256, training_manifest_chain_sha256=training_manifest_chain_sha256)
-                conn.execute("INSERT INTO model_production_promotions(id,fingerprint,release_proof_fingerprint,offline_eval_fingerprint,release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,model_record_id,artifact_sha256,artifact_provenance_fingerprint,training_job_fingerprint,canary_evidence_fingerprint,approved_by,approval_reference,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record_id,fingerprint,release_proof,eval_fingerprint,release_evidence.fingerprint,release_evidence.historical_legal_fingerprint,release_evidence.safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,payload.model_record_id,model["artifact_sha256"],artifact_provenance_fingerprint,training_job_fingerprint,payload.canary_evidence_fingerprint,payload.approved_by.strip(),payload.approval_reference.strip(),created_at.isoformat()))
+                conn.execute("INSERT INTO model_production_promotions(id,fingerprint,release_proof_fingerprint,offline_eval_fingerprint,release_evaluation_evidence_fingerprint,historical_legal_eval_fingerprint,safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,model_record_id,artifact_sha256,artifact_provenance_fingerprint,training_job_fingerprint,training_execution_receipt_fingerprint,canary_evidence_fingerprint,approved_by,approval_reference,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record_id,fingerprint,release_proof,eval_fingerprint,release_evidence.fingerprint,release_evidence.historical_legal_fingerprint,release_evidence.safety_eval_fingerprint,eval_dataset_sha256,training_manifest_chain_sha256,payload.model_record_id,model["artifact_sha256"],artifact_provenance_fingerprint,training_job_fingerprint,training_execution_receipt.fingerprint,payload.canary_evidence_fingerprint,payload.approved_by.strip(),payload.approval_reference.strip(),created_at.isoformat()))
                 updated = conn.execute("UPDATE model_registry SET status='production' WHERE id=? AND status='canary'", (payload.model_record_id,))
                 if updated.rowcount != 1: raise ValueError("production_promotion_atomic_update_failed")
             except Exception:
                 conn.rollback(); raise
-        return PromotionRecord(id=record_id,fingerprint=fingerprint,release_proof_fingerprint=release_proof,offline_eval_fingerprint=eval_fingerprint,release_evaluation_evidence_fingerprint=release_evidence.fingerprint,historical_legal_eval_fingerprint=release_evidence.historical_legal_fingerprint,safety_eval_fingerprint=release_evidence.safety_eval_fingerprint,eval_dataset_sha256=eval_dataset_sha256,training_manifest_chain_sha256=training_manifest_chain_sha256,model_record_id=payload.model_record_id,artifact_sha256=model["artifact_sha256"],artifact_provenance_fingerprint=artifact_provenance_fingerprint,training_job_fingerprint=training_job_fingerprint,canary_evidence_fingerprint=payload.canary_evidence_fingerprint,approved_by=payload.approved_by.strip(),approval_reference=payload.approval_reference.strip(),created_at=created_at)
+        return PromotionRecord(id=record_id,fingerprint=fingerprint,release_proof_fingerprint=release_proof,offline_eval_fingerprint=eval_fingerprint,release_evaluation_evidence_fingerprint=release_evidence.fingerprint,historical_legal_eval_fingerprint=release_evidence.historical_legal_fingerprint,safety_eval_fingerprint=release_evidence.safety_eval_fingerprint,eval_dataset_sha256=eval_dataset_sha256,training_manifest_chain_sha256=training_manifest_chain_sha256,model_record_id=payload.model_record_id,artifact_sha256=model["artifact_sha256"],artifact_provenance_fingerprint=artifact_provenance_fingerprint,training_job_fingerprint=training_job_fingerprint,training_execution_receipt_fingerprint=training_execution_receipt.fingerprint,canary_evidence_fingerprint=payload.canary_evidence_fingerprint,approved_by=payload.approved_by.strip(),approval_reference=payload.approval_reference.strip(),created_at=created_at)

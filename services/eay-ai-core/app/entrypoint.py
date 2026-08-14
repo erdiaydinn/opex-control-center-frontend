@@ -24,15 +24,8 @@ from .vision_provenance import router as vision_provenance_router
 from .voice_ws_api import router as voice_ws_router
 
 
-# The legacy learning export in main emitted approved candidates without the newer
-# privacy/evidence/quality gates. Remove that route from the public surface and replace it
-# with the gated router below while keeping the same external URL.
-app.router.routes = [
-    route
-    for route in app.router.routes
-    if getattr(route, "path", None) != "/v1/learning/export"
-]
-
+# The core app owns one gated learning-export wrapper. The entrypoint
+# composes review/manifest/model routers without deleting or duplicating it.
 app.include_router(regulatory_router)
 app.include_router(legal_router)
 app.include_router(legal_review_router)

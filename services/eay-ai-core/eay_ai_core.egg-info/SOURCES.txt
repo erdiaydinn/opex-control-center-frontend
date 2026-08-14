@@ -86,6 +86,7 @@ app/tool_contracts.py
 app/tool_execution.py
 app/tool_intent.py
 app/tool_router.py
+app/training_execution.py
 app/training_gate.py
 app/training_integrity.py
 app/training_job_registry.py
@@ -212,6 +213,8 @@ tests/test_tool_contracts.py
 tests/test_tool_execution.py
 tests/test_tool_intent_evals_metrics.py
 tests/test_tool_router.py
+tests/test_training_authority.py
+tests/test_training_execution.py
 tests/test_training_gate.py
 tests/test_training_integrity.py
 tests/test_training_job_spec.py

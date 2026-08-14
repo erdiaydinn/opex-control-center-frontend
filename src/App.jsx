@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import {
   Navigate,
   Route,
@@ -10,55 +10,67 @@ import AuthCallback from "./auth/AuthCallback.jsx";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
 
 import ControlCenterHome from "./modules/control-center/ControlCenterHome.jsx";
-import PlanogramStudio from "./modules/planogram/PlanogramStudio.jsx";
-import BudgetIntelligence from "./modules/budget-intelligence/BudgetIntelligence.jsx";
-import DockOSDashboard from "./modules/DockOS/DockOSDashboard.jsx";
-import AccessControl from "./modules/access-control/AccessControl.jsx";
-import ServerAccounts from "./modules/access-control/ServerAccounts.jsx";
-import InventoryDashboard from "./modules/inventory/InventoryDashboard.jsx";
 import { InventoryUiProvider } from "./modules/inventory/InventoryUiContext.jsx";
-import WorkforceControl from "./modules/workforce/WorkforceControl.jsx";
-import WorkforcePickerApp from "./modules/workforce/WorkforcePickerApp.jsx";
 import { WorkforceUiProvider } from "./modules/workforce/WorkforceUiContext.jsx";
-import RecruitmentControl from "./modules/recruitment/RecruitmentControl.jsx";
-import AcademyWorkspace from "./modules/academy/AcademyWorkspace.jsx";
-import AcademyPlayer from "./modules/academy/AcademyPlayer.jsx";
-import JarvisWorkspace from "./modules/intelligence/JarvisWorkspace.jsx";
-import InsightWorkspace from "./modules/intelligence/InsightWorkspace.jsx";
-import PlatformHealth from "./modules/platform-health/PlatformHealth.jsx";
-import AuditLog from "./modules/audit-log/AuditLog.jsx";
+import { usePlatformPreferences } from "./platform/preferences/PlatformPreferencesContext.jsx";
 
+const PlanogramStudio = lazy(() => import("./modules/planogram/PlanogramStudio.jsx"));
+const BudgetIntelligence = lazy(() => import("./modules/budget-intelligence/BudgetIntelligence.jsx"));
+const DockOSDashboard = lazy(() => import("./modules/DockOS/DockOSDashboard.jsx"));
+const AccessControl = lazy(() => import("./modules/access-control/AccessControl.jsx"));
+const ServerAccounts = lazy(() => import("./modules/access-control/ServerAccounts.jsx"));
+const InventoryDashboard = lazy(() => import("./modules/inventory/InventoryDashboard.jsx"));
+const WorkforceControl = lazy(() => import("./modules/workforce/WorkforceControl.jsx"));
+const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
+const RecruitmentControl = lazy(() => import("./modules/recruitment/RecruitmentControl.jsx"));
+const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
+const AcademyPlayer = lazy(() => import("./modules/academy/AcademyPlayer.jsx"));
+const JarvisWorkspace = lazy(() => import("./modules/intelligence/JarvisWorkspace.jsx"));
+const InsightWorkspace = lazy(() => import("./modules/intelligence/InsightWorkspace.jsx"));
+const PlatformHealth = lazy(() => import("./modules/platform-health/PlatformHealth.jsx"));
+const AuditLog = lazy(() => import("./modules/audit-log/AuditLog.jsx"));
 
 const PLATFORM_ADMIN_ROLES = [
   "platform_admin",
   "super_admin",
 ];
 
+function RouteLoadingFallback() {
+  const { t } = usePlatformPreferences();
+
+  return (
+    <div role="status" aria-live="polite" aria-busy="true">
+      {t("loading")}
+    </div>
+  );
+}
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/" element={<ProtectedRoute><ControlCenterHome /></ProtectedRoute>} />
-      <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
-      <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
-      <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />
-      <Route path="/academy" element={<ProtectedRoute moduleKey="academy"><AcademyWorkspace /></ProtectedRoute>} />
-      <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
-      <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />
-      <Route path="/insight" element={<ProtectedRoute moduleKey="insight"><InsightWorkspace /></ProtectedRoute>} />
-      <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryDashboard /></InventoryUiProvider></ProtectedRoute>} />
-      <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
-      <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
-      <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceControl /></WorkforceUiProvider></ProtectedRoute>} />
-      <Route path="/workforce/app" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforcePickerApp /></WorkforceUiProvider></ProtectedRoute>} />
-      <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentControl /></ProtectedRoute>} />
-      <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
-      <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
-      <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><PlatformHealth /></ProtectedRoute>} />
-      <Route path="/river" element={<Navigate to="/dockos" replace />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/" element={<ProtectedRoute><ControlCenterHome /></ProtectedRoute>} />
+        <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
+        <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
+        <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />
+        <Route path="/academy" element={<ProtectedRoute moduleKey="academy"><AcademyWorkspace /></ProtectedRoute>} />
+        <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
+        <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />
+        <Route path="/insight" element={<ProtectedRoute moduleKey="insight"><InsightWorkspace /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryDashboard /></InventoryUiProvider></ProtectedRoute>} />
+        <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
+        <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
+        <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceControl /></WorkforceUiProvider></ProtectedRoute>} />
+        <Route path="/workforce/app" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforcePickerApp /></WorkforceUiProvider></ProtectedRoute>} />
+        <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentControl /></ProtectedRoute>} />
+        <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
+        <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
+        <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><PlatformHealth /></ProtectedRoute>} />
+        <Route path="/river" element={<Navigate to="/dockos" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

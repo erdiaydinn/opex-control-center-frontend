@@ -50,6 +50,10 @@ def is_binding_verification_host(url: str) -> bool:
     return _hostname(url) in _BINDING_VERIFICATION_HOSTS
 
 
+def _is_allowed_discovery_target(host: str) -> bool:
+    return _is_discovery_host(host) or host in _BINDING_VERIFICATION_HOSTS
+
+
 class ConsumerRegistryInstrument(BaseModel):
     key: str = Field(min_length=3, max_length=120)
     title: str = Field(min_length=5, max_length=300)
@@ -149,8 +153,11 @@ def _safe_discovered_url(registry_url: str, href: str) -> str:
         raise ValueError("consumer_registry_discovered_url_requires_http_https")
     if parsed.username or parsed.password:
         raise ValueError("consumer_registry_discovered_url_must_not_contain_userinfo")
-    if not parsed.hostname:
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host:
         raise ValueError("consumer_registry_discovered_url_requires_host")
+    if not _is_allowed_discovery_target(host):
+        raise ValueError("consumer_registry_discovered_url_requires_official_target_host")
     return resolved
 
 

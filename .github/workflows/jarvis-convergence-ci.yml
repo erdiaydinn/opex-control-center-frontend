@@ -96,7 +96,7 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = '0017_merge_jarvis_platform_heads'
+          test "${heads[0]}" = '0018_academy_product_roles'
       - name: Apply cumulative database migrations
         working-directory: services/core-api
         run: alembic upgrade head

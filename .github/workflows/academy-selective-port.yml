@@ -64,177 +64,12 @@ jobs:
               marker = '\nsettings = get_settings()\n'
               assert source.count(marker) == 1
               source = source.replace(marker, f'\n{import_line}{marker.lstrip()}')
-          include_line = '\napp.include_router(academy_router)\n'
-          if include_line not in source:
-              source = source.rstrip() + include_line
+          if 'app.include_router(academy_router)' not in source:
+              source = source.rstrip() + '\n\napp.include_router(academy_router)\n'
           assert source.count(import_line) == 1
           assert source.count('app.include_router(academy_router)') == 1
           main.write_text(source, encoding='utf-8')
           PY
-
-      - name: Create cumulative Academy convergence CI
-        shell: bash
-        run: |
-          cat > .github/workflows/academy-convergence-ci.yml <<'YAML'
-          name: EAY Academy Convergence
-
-          on:
-            push:
-              branches:
-                - release/platform-convergence-academy-v0.1
-            pull_request:
-              branches:
-                - release/platform-convergence-v0.1
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: academy-convergence-${{ github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            academy-postgres:
-              runs-on: ubuntu-latest
-              env:
-                OPEX_ENVIRONMENT: test
-                OPEX_AUTH_MODE: development
-                OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
-                OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
-                OPEX_REDIS_URL: redis://localhost:6379/0
-              services:
-                postgres:
-                  image: postgres:16-alpine
-                  env:
-                    POSTGRES_DB: opex_test
-                    POSTGRES_USER: opex_migrator
-                    POSTGRES_PASSWORD: opex_migrator
-                  ports: ['5432:5432']
-                  options: >-
-                    --health-cmd "pg_isready -U opex_migrator -d opex_test"
-                    --health-interval 5s --health-timeout 3s --health-retries 12
-                redis:
-                  image: redis:7-alpine
-                  ports: ['6379:6379']
-                  options: >-
-                    --health-cmd "redis-cli ping"
-                    --health-interval 5s --health-timeout 3s --health-retries 12
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-python@v5
-                  with:
-                    python-version: '3.12'
-                    cache: pip
-                    cache-dependency-path: services/core-api/pyproject.toml
-                - run: python -m pip install -e './services/core-api[dev]'
-                - name: Create RLS-bound runtime role
-                  run: |
-                    python - <<'PY'
-                    import asyncio, asyncpg
-                    async def main():
-                        c = await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
-                        try:
-                            if not await c.fetchval("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"):
-                                await c.execute("CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS")
-                        finally:
-                            await c.close()
-                    asyncio.run(main())
-                    PY
-                - name: Full Core Ruff gate
-                  run: ruff check services/core-api
-                - name: Central SQL execution boundary
-                  run: pytest -q services/core-api/tests/test_sql_access_boundary.py
-                - name: Compile Academy
-                  run: python -m compileall -q services/core-api/app/modules/academy services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py
-                - name: Migrate through cumulative Academy head
-                  working-directory: services/core-api
-                  run: alembic upgrade head
-                - name: Assert single head, FORCE RLS and runtime posture
-                  run: |
-                    python - <<'PY'
-                    import asyncio, asyncpg
-                    async def main():
-                        c = await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
-                        try:
-                            head = await c.fetchval('SELECT version_num FROM alembic_version')
-                            assert head == '0016_academy_audit_idempotency', head
-                            rows = await c.fetch("SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'")
-                            assert rows and all(r['relrowsecurity'] and r['relforcerowsecurity'] for r in rows), rows
-                            role = await c.fetchrow("SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='opex_runtime'")
-                            assert role and not role['rolsuper'] and not role['rolbypassrls']
-                        finally:
-                            await c.close()
-                    asyncio.run(main())
-                    PY
-                - name: Academy lifecycle gates
-                  run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py
-                - name: Full Platform Core regression
-                  run: pytest -q services/core-api/tests
-
-            academy-build:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-                    cache: npm
-                - name: Materialize pinned SheetJS dependency
-                  run: node scripts/ci/materialize-sheetjs.mjs
-                - name: Validate Academy load contracts
-                  run: for f in ops/load/k6-academy-*.js; do node --check "$f"; done
-                - run: npm ci
-                - run: npm run build
-                - name: Build current cumulative Core API image
-                  run: docker build -f services/core-api/Dockerfile services/core-api
-                - name: Verify single runtime composition
-                  run: |
-                    grep -F 'app.include_router(academy_router)' services/core-api/app/main.py
-                    test ! -f services/core-api/app/main_academy.py
-
-            academy-dr:
-              runs-on: ubuntu-latest
-              env:
-                OPEX_ENVIRONMENT: test
-                OPEX_AUTH_MODE: development
-                OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
-                OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
-                OPEX_REDIS_URL: redis://localhost:6379/0
-                PGPASSWORD: opex_migrator
-              services:
-                postgres:
-                  image: postgres:16-alpine
-                  env:
-                    POSTGRES_DB: opex_test
-                    POSTGRES_USER: opex_migrator
-                    POSTGRES_PASSWORD: opex_migrator
-                  ports: ['5432:5432']
-                  options: >-
-                    --health-cmd "pg_isready -U opex_migrator -d opex_test"
-                    --health-interval 5s --health-timeout 3s --health-retries 12
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-python@v5
-                  with:
-                    python-version: '3.12'
-                - name: Install, migrate, seed, dump and restore
-                  run: |
-                    sudo apt-get update -qq && sudo apt-get install -y postgresql-client
-                    python -m pip install -e './services/core-api[dev]'
-                    psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"
-                    (cd services/core-api && alembic upgrade head)
-                    psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
-                    SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
-                    INSERT INTO tenants(id,slug,display_name) VALUES('00000000-0000-0000-0000-00000000d001','academy-dr','Academy DR');
-                    INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by) VALUES('00000000-0000-0000-0000-00000000d001','sop','dr-evidence','{"en":"DR evidence"}','published','ci');
-                    SQL
-                    pg_dump -h localhost -U opex_migrator -d opex_test --format=custom --no-owner --no-privileges -f /tmp/academy.dump
-                    createdb -h localhost -U opex_migrator opex_restore
-                    pg_restore -h localhost -U opex_migrator -d opex_restore --no-owner --no-privileges /tmp/academy.dump
-                    psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_content_items WHERE slug='dr-evidence';" | grep -qx 1
-                    psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0016_academy_audit_idempotency
-          YAML
-
       - name: Enforce selective-port scope
         shell: bash
         run: |
@@ -243,7 +78,7 @@ jobs:
           test ! -e services/core-api/alembic/versions/0009_academy_foundation.py
           test ! -e services/core-api/alembic/versions/0010_academy_audit_idempotency.py
           test ! -e services/core-api/app/main_academy.py
-          allowed='^(services/core-api/app/modules/academy/|services/core-api/tests/test_academy_|services/core-api/alembic/versions/001[56]_academy_|services/core-api/app/main.py$|docs/ACADEMY_|ops/load/k6-academy-|\.github/workflows/academy-convergence-ci.yml$|\.github/workflows/academy-selective-port.yml$)'
+          allowed='^(services/core-api/app/modules/academy/|services/core-api/tests/test_academy_|services/core-api/alembic/versions/001[56]_academy_|services/core-api/app/main.py$|docs/ACADEMY_|ops/load/k6-academy-|\.github/workflows/academy-selective-port.yml$)'
           unexpected=$(git status --short | sed 's/^...//' | grep -Ev "$allowed" || true)
           if [ -n "$unexpected" ]; then
             echo 'Unexpected Academy port paths:'

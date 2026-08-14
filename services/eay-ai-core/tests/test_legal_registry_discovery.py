@@ -23,6 +23,7 @@ def test_priority_consumer_registry_manifest_is_pinned_and_complete() -> None:
 
     assert str(manifest.registry_url).startswith("https://ticaret.gov.tr/")
     assert manifest.registry_role == "official_registry_discovery"
+    assert len(manifest.manifest_fingerprint) == 64
     assert {item.key for item in manifest.instruments} == {
         "tr-law-6502-consumer-protection",
         "tr-reg-price-label",
@@ -49,12 +50,24 @@ def test_registry_html_resolution_is_discovery_only_even_for_resmi_gazete_link()
 
     candidates = resolve_priority_registry_links(html, manifest)
     assert len(candidates) == 4
+    assert {item.registry_manifest_fingerprint for item in candidates} == {
+        manifest.manifest_fingerprint
+    }
     law = next(item for item in candidates if item.instrument_key == "tr-law-6502-consumer-protection")
     assert law.discovered_url_is_binding_host is True
     assert law.discovery_only is True
     assert law.binding_verified is False
     assert law.promotion_eligible is False
     assert law.requires_exact_binding_source is True
+
+
+def test_registry_manifest_fingerprint_changes_when_priority_contract_changes() -> None:
+    payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    baseline = ConsumerRegistryManifest.model_validate(payload)
+    payload["instruments"][0]["topics"].append("new-reviewed-topic")
+    changed = ConsumerRegistryManifest.model_validate(payload)
+
+    assert changed.manifest_fingerprint != baseline.manifest_fingerprint
 
 
 def test_registry_title_matching_normalizes_nbsp_and_whitespace() -> None:

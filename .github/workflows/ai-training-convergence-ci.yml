@@ -52,24 +52,40 @@ jobs:
           tests/test_training_multilingual_depth_gate.py
           tests/test_dataset_governance.py
           tests/test_privacy_guard.py
+          tests/test_training_authority.py
       - name: Reproducible local training execution acceptance
         run: >-
           pytest -q
           tests/test_training_job_spec.py
           tests/test_training_execution.py
-      - name: Model artifact, eval, canary and promotion acceptance
+          tests/test_training_executor.py
+      - name: Model artifact, eval, canary and governed promotion acceptance
         run: >-
           pytest -q
           tests/test_model_artifact_registry.py
           tests/test_model_artifact_promotion.py
           tests/test_model_lifecycle_ledger.py
           tests/test_model_registry.py
+          tests/test_model_promotion_routes.py
           tests/test_canary_evals.py
           tests/test_canary_result_registry.py
           tests/test_safety_evals.py
           tests/test_rag_evals.py
           tests/test_historical_legal_rag_evals.py
-      - name: Enforce local-only training policy in execution contract
+      - name: Verify optional local training runtime contract
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          payload = tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))
+          training = payload['project']['optional-dependencies']['training']
+          required = ('torch', 'transformers', 'datasets', 'peft', 'trl', 'accelerate', 'bitsandbytes')
+          for package in required:
+              assert any(item.lower().startswith(package) for item in training), package
+          print(f'AI_TRAINING_OPTIONAL_STACK={len(training)}')
+          PY
+      - name: Enforce local-only executor and single promotion authority
         shell: bash
         run: |
           set -euo pipefail
@@ -78,4 +94,17 @@ jobs:
           grep -F '"HF_DATASETS_OFFLINE": "1"' app/training_execution.py
           grep -F 'training_execution_base_model_hash_mismatch' app/training_execution.py
           grep -F 'training_execution_artifact_drift' app/training_execution.py
-          echo 'AI_TRAINING_LOCAL_EXECUTION_POLICY=PASS'
+          grep -F 'local_files_only' app/training_executor.py
+          grep -F 'trust_remote_code' app/training_executor.py
+          grep -F 'bnb_4bit_quant_type="nf4"' app/training_executor.py
+          grep -F 'training_executor_qlora_requires_cuda' app/training_executor.py
+          grep -F 'eay_training_runtime_evidence.json' app/training_executor.py
+          grep -F 'production_promotion_requires_governed_promotion_gate' app/model_registry.py
+          grep -F 'training_execution_receipt_fingerprint' app/model_promotion_gate.py
+          grep -F 'app.include_router(model_promotion_router)' app/entrypoint.py
+          test "$(grep -c '@app.get("/v1/learning/export")' app/main.py)" -eq 1
+          ! grep -F 'return {"format": "chat_sft", "examples": store.export_approved()}' app/main.py
+          echo 'AI_TRAINING_LOCAL_EXECUTION_AND_PROMOTION_AUTHORITY=PASS'
+      - name: Reject temporary write-capable training workflows
+        run: |
+          test -z "$(find ../../.github/workflows -maxdepth 1 -name 'ai-training-authority-hardening*.yml' -print -quit)"

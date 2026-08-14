@@ -10,28 +10,28 @@ from app.modules.academy.repository_catalog import (
     list_checkpoints,
     list_entitled_content,
 )
-from app.modules.academy.repository_completion import (
-    get_completion_snapshot,
-    mark_enrollment_completed,
-)
 from app.modules.academy.repository_certificate import (
     get_required_quiz_ids,
     is_completion_revoked,
     revoke_completion,
+)
+from app.modules.academy.repository_completion import (
+    get_completion_snapshot,
+    mark_enrollment_completed,
 )
 from app.modules.academy.repository_content import (
     create_content,
     create_content_version,
     create_media_asset,
 )
-from app.modules.academy.repository_entitlement import is_module_entitled
-from app.modules.academy.repository_idempotency_claim import claim_idempotency_key
-from app.modules.academy.repository_knowledge import ingest_document_chunks
 from app.modules.academy.repository_enrollment import (
     create_manual_enrollment,
     list_enrollments,
     reconcile_role_enrollments,
 )
+from app.modules.academy.repository_entitlement import is_module_entitled
+from app.modules.academy.repository_idempotency_claim import claim_idempotency_key
+from app.modules.academy.repository_knowledge import ingest_document_chunks
 from app.modules.academy.repository_path import create_learning_path, grant_entitlement
 from app.modules.academy.repository_progress import (
     get_blocking_checkpoint,
@@ -47,6 +47,39 @@ from app.modules.academy.repository_quiz import (
 from app.modules.academy.repository_quiz_authoring import create_quiz
 from app.modules.academy.repository_utils import json_text
 
+__all__ = (
+    "claim_idempotency_key",
+    "create_content",
+    "create_content_version",
+    "create_learning_path",
+    "create_manual_enrollment",
+    "create_media_asset",
+    "create_quiz",
+    "get_blocking_checkpoint",
+    "get_completion_snapshot",
+    "get_media_asset",
+    "get_progress_snapshot",
+    "get_progress_target",
+    "get_quiz_attempt_by_id",
+    "get_quiz_definition_for_attempt",
+    "get_quiz_public_definition",
+    "get_required_quiz_ids",
+    "grant_entitlement",
+    "ingest_document_chunks",
+    "is_completion_revoked",
+    "is_module_entitled",
+    "list_checkpoints",
+    "list_entitled_content",
+    "list_enrollments",
+    "mark_enrollment_completed",
+    "reconcile_role_enrollments",
+    "record_learning_event",
+    "record_platform_audit",
+    "revoke_completion",
+    "save_progress",
+    "save_quiz_attempt",
+)
+
 
 async def record_learning_event(
     session: AsyncSession,
@@ -61,7 +94,8 @@ async def record_learning_event(
     idempotency_key: str | None = None,
     data: dict[str, object] | None = None,
 ) -> None:
-    await session.execute(text("""
+    await session.execute(
+        text("""
         INSERT INTO academy_learning_events (
             tenant_id, subject, actor_subject, event_type, enrollment_id,
             content_version_id, quiz_id, idempotency_key, request_id, data
@@ -73,18 +107,20 @@ async def record_learning_event(
         ON CONFLICT (tenant_id, idempotency_key)
             WHERE idempotency_key IS NOT NULL
         DO NOTHING
-    """), {
-        "tenant_id": principal.tenant_id,
-        "subject": subject or principal.subject,
-        "actor_subject": principal.subject,
-        "event_type": event_type,
-        "enrollment_id": enrollment_id,
-        "content_version_id": content_version_id,
-        "quiz_id": quiz_id,
-        "idempotency_key": idempotency_key,
-        "request_id": request_id,
-        "data": json_text(data or {}),
-    })
+    """),
+        {
+            "tenant_id": principal.tenant_id,
+            "subject": subject or principal.subject,
+            "actor_subject": principal.subject,
+            "event_type": event_type,
+            "enrollment_id": enrollment_id,
+            "content_version_id": content_version_id,
+            "quiz_id": quiz_id,
+            "idempotency_key": idempotency_key,
+            "request_id": request_id,
+            "data": json_text(data or {}),
+        },
+    )
 
 
 async def record_platform_audit(
@@ -97,7 +133,8 @@ async def record_platform_audit(
     resource_id: str | None,
     data: dict[str, object] | None = None,
 ) -> None:
-    await session.execute(text("""
+    await session.execute(
+        text("""
         INSERT INTO audit_events (
             tenant_id, actor_subject, action, resource_type,
             resource_id, decision, request_id, data
@@ -105,12 +142,14 @@ async def record_platform_audit(
             :tenant_id, :actor_subject, :action, :resource_type,
             :resource_id, 'allowed', :request_id, CAST(:data AS jsonb)
         )
-    """), {
-        "tenant_id": principal.tenant_id,
-        "actor_subject": principal.subject,
-        "action": action,
-        "resource_type": resource_type,
-        "resource_id": resource_id,
-        "request_id": request_id,
-        "data": json_text(data or {}),
-    })
+    """),
+        {
+            "tenant_id": principal.tenant_id,
+            "actor_subject": principal.subject,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "request_id": request_id,
+            "data": json_text(data or {}),
+        },
+    )

@@ -14,9 +14,10 @@ async def get_progress_target(
     content_version_id: UUID,
 ) -> dict[str, Any] | None:
     row = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT e.id AS enrollment_id, e.status AS enrollment_status, e.path_id,
                        ci.content_type, cv.id AS content_version_id, cv.duration_ms,
                        lpi.required, lpi.completion_policy,
@@ -40,15 +41,18 @@ async def get_progress_target(
                   AND e.subject = :subject AND e.status IN ('assigned', 'in_progress')
                 FOR UPDATE OF e
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "enrollment_id": enrollment_id,
-                "content_version_id": content_version_id,
-                "subject": principal.subject,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "enrollment_id": enrollment_id,
+                    "content_version_id": content_version_id,
+                    "subject": principal.subject,
+                },
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     return dict(row) if row else None
 
 
@@ -61,9 +65,10 @@ async def get_blocking_checkpoint(
     requested_position_ms: int,
 ) -> dict[str, Any] | None:
     row = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT q.id AS quiz_id, q.checkpoint_at_ms, q.version_number
                 FROM academy_quizzes AS q
                 WHERE q.tenant_id = :tenant_id AND q.content_version_id = :content_version_id
@@ -78,16 +83,19 @@ async def get_blocking_checkpoint(
                 ORDER BY q.checkpoint_at_ms, q.version_number
                 LIMIT 1
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "content_version_id": content_version_id,
-                "requested_position_ms": requested_position_ms,
-                "enrollment_id": enrollment_id,
-                "subject": principal.subject,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "content_version_id": content_version_id,
+                    "requested_position_ms": requested_position_ms,
+                    "enrollment_id": enrollment_id,
+                    "subject": principal.subject,
+                },
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     return dict(row) if row else None
 
 
@@ -107,9 +115,10 @@ async def save_progress(
 ) -> dict[str, Any] | None:
     if expected_revision == 0:
         row = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     INSERT INTO academy_progress (
                         tenant_id, enrollment_id, content_version_id, subject, status,
                         progress_percent, last_position_ms, max_position_ms, watched_ms,
@@ -126,26 +135,30 @@ async def save_progress(
                               last_position_ms, max_position_ms, watched_ms, revision,
                               completed_at, updated_at
                     """
-                ),
-                {
-                    "tenant_id": principal.tenant_id,
-                    "enrollment_id": enrollment_id,
-                    "content_version_id": content_version_id,
-                    "subject": principal.subject,
-                    "status": status,
-                    "progress_percent": progress_percent,
-                    "last_position_ms": last_position_ms,
-                    "max_position_ms": max_position_ms,
-                    "watched_ms": watched_ms,
-                    "completed": completed,
-                },
+                    ),
+                    {
+                        "tenant_id": principal.tenant_id,
+                        "enrollment_id": enrollment_id,
+                        "content_version_id": content_version_id,
+                        "subject": principal.subject,
+                        "status": status,
+                        "progress_percent": progress_percent,
+                        "last_position_ms": last_position_ms,
+                        "max_position_ms": max_position_ms,
+                        "watched_ms": watched_ms,
+                        "completed": completed,
+                    },
+                )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
     else:
         row = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     UPDATE academy_progress
                     SET status = :status,
                         progress_percent = GREATEST(progress_percent, :progress_percent),
@@ -165,22 +178,25 @@ async def save_progress(
                               last_position_ms, max_position_ms, watched_ms, revision,
                               completed_at, updated_at
                     """
-                ),
-                {
-                    "tenant_id": principal.tenant_id,
-                    "enrollment_id": enrollment_id,
-                    "content_version_id": content_version_id,
-                    "subject": principal.subject,
-                    "status": status,
-                    "progress_percent": progress_percent,
-                    "last_position_ms": last_position_ms,
-                    "max_position_ms": max_position_ms,
-                    "watched_ms": watched_ms,
-                    "completed": completed,
-                    "expected_revision": expected_revision,
-                },
+                    ),
+                    {
+                        "tenant_id": principal.tenant_id,
+                        "enrollment_id": enrollment_id,
+                        "content_version_id": content_version_id,
+                        "subject": principal.subject,
+                        "status": status,
+                        "progress_percent": progress_percent,
+                        "last_position_ms": last_position_ms,
+                        "max_position_ms": max_position_ms,
+                        "watched_ms": watched_ms,
+                        "completed": completed,
+                        "expected_revision": expected_revision,
+                    },
+                )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
 
     if row is None:
         return None
@@ -209,9 +225,10 @@ async def get_progress_snapshot(
     content_version_id: UUID,
 ) -> dict[str, Any] | None:
     row = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT id, enrollment_id, content_version_id, status, progress_percent,
                        last_position_ms, max_position_ms, watched_ms, revision,
                        completed_at, updated_at
@@ -219,13 +236,16 @@ async def get_progress_snapshot(
                 WHERE tenant_id = :tenant_id AND enrollment_id = :enrollment_id
                   AND content_version_id = :content_version_id AND subject = :subject
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "enrollment_id": enrollment_id,
-                "content_version_id": content_version_id,
-                "subject": principal.subject,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "enrollment_id": enrollment_id,
+                    "content_version_id": content_version_id,
+                    "subject": principal.subject,
+                },
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     return dict(row) if row else None

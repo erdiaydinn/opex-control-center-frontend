@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from uuid import UUID
 
@@ -126,7 +125,9 @@ def test_playback_url_never_contains_object_storage_coordinates() -> None:
     assert "eay_token=" in url
 
 
-def test_media_secret_is_file_backed_in_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_media_secret_is_file_backed_in_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     secret = tmp_path / "academy-media.key"
     secret.write_bytes(b"z" * 48)
     monkeypatch.setenv("OPEX_ACADEMY_MEDIA_CDN_BASE_URL", "https://cdn.example.test")

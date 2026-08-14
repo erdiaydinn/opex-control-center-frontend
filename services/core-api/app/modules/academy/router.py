@@ -104,11 +104,7 @@ async def get_checkpoints(
     principal: Viewer,
 ) -> dict[str, object]:
     await require_module(session, principal)
-    return {
-        "items": await list_checkpoints(
-            session, principal, enrollment_id, content_version_id
-        )
-    }
+    return {"items": await list_checkpoints(session, principal, enrollment_id, content_version_id)}
 
 
 @router.get("/enrollments/{enrollment_id}/quizzes/{quiz_id}")
@@ -119,9 +115,7 @@ async def get_quiz(
     principal: Viewer,
 ) -> dict[str, object]:
     await require_module(session, principal)
-    definition = await get_quiz_public_definition(
-        session, principal, quiz_id, enrollment_id
-    )
+    definition = await get_quiz_public_definition(session, principal, quiz_id, enrollment_id)
     if definition is None:
         raise HTTPException(status_code=404, detail="Published quiz not found")
     return definition
@@ -192,8 +186,12 @@ async def post_content(
     await require_module(session, principal)
     result = await create_content(session, principal, payload)
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.content.created",
-        resource_type="academy_content", resource_id=str(result["content"]["id"]),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.content.created",
+        resource_type="academy_content",
+        resource_id=str(result["content"]["id"]),
         data={"content_version_id": str(result["version"]["id"])},
     )
     return result
@@ -212,8 +210,12 @@ async def post_content_version(
     if result is None:
         raise HTTPException(status_code=404, detail="Academy content not found")
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.content.version.created",
-        resource_type="academy_content_version", resource_id=str(result["id"]),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.content.version.created",
+        resource_type="academy_content_version",
+        resource_id=str(result["id"]),
         data={"content_id": str(content_id), "version_number": result["version_number"]},
     )
     return result
@@ -231,9 +233,16 @@ async def post_media(
     if result is None:
         raise HTTPException(status_code=404, detail="Content version not found")
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.media.created",
-        resource_type="academy_media", resource_id=str(result["id"]),
-        data={"content_version_id": str(result["content_version_id"]), "delivery_mode": result["delivery_mode"]},
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.media.created",
+        resource_type="academy_media",
+        resource_id=str(result["id"]),
+        data={
+            "content_version_id": str(result["content_version_id"]),
+            "delivery_mode": result["delivery_mode"],
+        },
     )
     return result
 
@@ -251,8 +260,13 @@ async def post_path(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.path.created",
-        resource_type="academy_learning_path", resource_id=str(result["id"]), data={},
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.path.created",
+        resource_type="academy_learning_path",
+        resource_id=str(result["id"]),
+        data={},
     )
     return result
 
@@ -272,8 +286,12 @@ async def post_quiz(
     if result is None:
         raise HTTPException(status_code=404, detail="Content version not found")
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.quiz.created",
-        resource_type="academy_quiz", resource_id=str(result["id"]),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.quiz.created",
+        resource_type="academy_quiz",
+        resource_id=str(result["id"]),
         data={"quiz_version": result["version_number"]},
     )
     return result
@@ -289,8 +307,12 @@ async def post_entitlement(
     await require_module(session, principal)
     result = await grant_entitlement(session, principal, payload)
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.entitlement.changed",
-        resource_type="academy_entitlement", resource_id=str(result["id"]),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.entitlement.changed",
+        resource_type="academy_entitlement",
+        resource_id=str(result["id"]),
         data={"resource_type": result["resource_type"], "permission": result["permission"]},
     )
     return result
@@ -310,8 +332,12 @@ async def post_manual_enrollment(
     if result is None:
         raise HTTPException(status_code=404, detail="Published learning path not found")
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.enrollment.assigned",
-        resource_type="academy_enrollment", resource_id=str(result["id"]),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.enrollment.assigned",
+        resource_type="academy_enrollment",
+        resource_id=str(result["id"]),
         data={"source": "manual"},
     )
     return result
@@ -330,8 +356,12 @@ async def post_document_ingest(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.document.ingested",
-        resource_type="academy_content_version", resource_id=str(payload.content_version_id),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.document.ingested",
+        resource_type="academy_content_version",
+        resource_id=str(payload.content_version_id),
         data={"chunk_count": count},
     )
     return {"content_version_id": payload.content_version_id, "chunk_count": count}
@@ -352,8 +382,12 @@ async def post_revoke_completion(
     if result is None:
         raise HTTPException(status_code=409, detail="Only completed enrollments can be revoked")
     await record_platform_audit(
-        session, principal, request_id=_request_id(request), action="academy.completion.revoked",
-        resource_type="academy_enrollment", resource_id=str(enrollment_id),
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.completion.revoked",
+        resource_type="academy_enrollment",
+        resource_id=str(enrollment_id),
         data={"reason_sha256": __import__("hashlib").sha256(payload.reason.encode()).hexdigest()},
     )
     return result

@@ -16,7 +16,10 @@ async def create_manual_enrollment(
     subject: str,
     due_at: Any,
 ) -> dict[str, Any] | None:
-    row = (await session.execute(text("""
+    row = (
+        (
+            await session.execute(
+                text("""
         INSERT INTO academy_enrollments (
             tenant_id, path_id, subject, source, status, assigned_by, due_at
         ) SELECT :tenant_id, lp.id, :subject, 'manual', 'assigned', :assigned_by, :due_at
@@ -25,15 +28,29 @@ async def create_manual_enrollment(
         ON CONFLICT (tenant_id, subject, path_id)
         DO UPDATE SET due_at=COALESCE(EXCLUDED.due_at, academy_enrollments.due_at)
         RETURNING id, path_id, subject, source, status, assigned_at, due_at
-    """), {
-        "tenant_id": principal.tenant_id, "path_id": path_id,
-        "subject": subject.strip(), "assigned_by": principal.subject, "due_at": due_at,
-    })).mappings().one_or_none()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "path_id": path_id,
+                    "subject": subject.strip(),
+                    "assigned_by": principal.subject,
+                    "due_at": due_at,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
     return dict(row) if row else None
 
 
-async def reconcile_role_enrollments(session: AsyncSession, principal: Principal) -> list[dict[str, Any]]:
-    rows = (await session.execute(text("""
+async def reconcile_role_enrollments(
+    session: AsyncSession, principal: Principal
+) -> list[dict[str, Any]]:
+    rows = (
+        (
+            await session.execute(
+                text("""
         WITH actor_roles AS (
             SELECT jsonb_array_elements_text(CAST(:roles AS jsonb)) AS role_key
         ), eligible AS (
@@ -52,15 +69,25 @@ async def reconcile_role_enrollments(session: AsyncSession, principal: Principal
           FROM eligible
         ON CONFLICT (tenant_id, subject, path_id) DO NOTHING
         RETURNING id, path_id, subject, source, status, assigned_at, due_at
-    """), {
-        "tenant_id": principal.tenant_id, "subject": principal.subject,
-        "roles": roles_json(principal),
-    })).mappings().all()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                    "roles": roles_json(principal),
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
 async def list_enrollments(session: AsyncSession, principal: Principal) -> list[dict[str, Any]]:
-    rows = (await session.execute(text("""
+    rows = (
+        (
+            await session.execute(
+                text("""
         SELECT e.id, e.path_id, lp.key, lp.title_i18n, e.source, e.status,
                e.assigned_at, e.due_at, e.started_at, e.completed_at,
                e.completion_revoked_at
@@ -69,8 +96,14 @@ async def list_enrollments(session: AsyncSession, principal: Principal) -> list[
           ON lp.tenant_id=e.tenant_id AND lp.id=e.path_id
         WHERE e.tenant_id=:tenant_id AND e.subject=:subject
         ORDER BY COALESCE(e.due_at, 'infinity'::timestamptz), e.assigned_at DESC
-    """), {
-        "tenant_id": principal.tenant_id,
-        "subject": principal.subject,
-    })).mappings().all()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]

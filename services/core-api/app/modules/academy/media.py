@@ -82,9 +82,7 @@ def issue_playback_token(
         "exp": expires_at,
         "nonce": secrets.token_urlsafe(12),
     }
-    encoded = _b64url(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    )
+    encoded = _b64url(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     signature = _b64url(
         hmac.new(config.signing_secret, encoded.encode("ascii"), hashlib.sha256).digest()
     )

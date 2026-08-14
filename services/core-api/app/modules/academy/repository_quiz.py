@@ -15,9 +15,10 @@ async def get_quiz_definition_for_attempt(
     enrollment_id: UUID,
 ) -> dict[str, Any] | None:
     enrollment = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT e.id, e.path_id
                 FROM academy_enrollments AS e
                 WHERE e.tenant_id = :tenant_id
@@ -26,21 +27,25 @@ async def get_quiz_definition_for_attempt(
                   AND e.status IN ('assigned', 'in_progress')
                 FOR UPDATE OF e
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "enrollment_id": enrollment_id,
-                "subject": principal.subject,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "enrollment_id": enrollment_id,
+                    "subject": principal.subject,
+                },
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if enrollment is None:
         return None
 
     quiz = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT
                     q.id,
                     q.content_version_id,
@@ -68,22 +73,26 @@ async def get_quiz_definition_for_attempt(
                   AND q.id = :quiz_id
                   AND q.status = 'published'
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "quiz_id": quiz_id,
-                "path_id": enrollment["path_id"],
-                "subject": principal.subject,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "quiz_id": quiz_id,
+                    "path_id": enrollment["path_id"],
+                    "subject": principal.subject,
+                },
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     if quiz is None:
         return None
 
     question_rows = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT
                     q.id AS question_id,
                     q.question_type,
@@ -99,13 +108,16 @@ async def get_quiz_definition_for_attempt(
                   AND q.quiz_id = :quiz_id
                 ORDER BY q.ordinal, o.ordinal
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "quiz_id": quiz_id,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "quiz_id": quiz_id,
+                },
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     questions: dict[UUID, dict[str, Any]] = {}
     for row in question_rows:
@@ -145,9 +157,10 @@ async def save_quiz_attempt(
     graded_answers: list[dict[str, Any]],
 ) -> dict[str, Any]:
     attempt = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 INSERT INTO academy_quiz_attempts (
                     id,
                     tenant_id,
@@ -170,19 +183,22 @@ async def save_quiz_attempt(
                 )
                 RETURNING id, attempt_number, score, passed, submitted_at
                 """
-            ),
-            {
-                "attempt_id": attempt_id,
-                "tenant_id": principal.tenant_id,
-                "enrollment_id": enrollment_id,
-                "quiz_id": quiz_id,
-                "subject": principal.subject,
-                "attempt_number": attempt_number,
-                "score": score,
-                "passed": passed,
-            },
+                ),
+                {
+                    "attempt_id": attempt_id,
+                    "tenant_id": principal.tenant_id,
+                    "enrollment_id": enrollment_id,
+                    "quiz_id": quiz_id,
+                    "subject": principal.subject,
+                    "attempt_number": attempt_number,
+                    "score": score,
+                    "passed": passed,
+                },
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
 
     for answer in graded_answers:
         await session.execute(
@@ -227,9 +243,10 @@ async def get_quiz_attempt_by_id(
     attempt_id: UUID,
 ) -> dict[str, Any] | None:
     row = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT
                     id,
                     enrollment_id,
@@ -243,12 +260,15 @@ async def get_quiz_attempt_by_id(
                   AND id = :attempt_id
                   AND subject = :subject
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "attempt_id": attempt_id,
-                "subject": principal.subject,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "attempt_id": attempt_id,
+                    "subject": principal.subject,
+                },
+            )
         )
-    ).mappings().one_or_none()
+        .mappings()
+        .one_or_none()
+    )
     return dict(row) if row else None

@@ -44,23 +44,27 @@ async def claim_idempotency_key(
         return {"claimed": True, "claim_id": claim_id, "resource_id": resource_id}
 
     existing = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT resource_id, request_fingerprint
                 FROM academy_idempotency_keys
                 WHERE tenant_id = :tenant_id AND subject = :subject
                   AND operation = :operation AND idempotency_key = :idempotency_key
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "subject": principal.subject,
-                "operation": operation,
-                "idempotency_key": idempotency_key,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                    "operation": operation,
+                    "idempotency_key": idempotency_key,
+                },
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     return {
         "claimed": False,
         "claim_id": None,

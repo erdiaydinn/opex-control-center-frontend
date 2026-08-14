@@ -15,9 +15,7 @@ def _validate_i18n(value: dict[str, str], *, required: bool = True) -> dict[str,
     if invalid:
         raise ValueError(f"Unsupported locales: {', '.join(sorted(invalid))}")
     normalized = {
-        key: text.strip()
-        for key, text in value.items()
-        if isinstance(text, str) and text.strip()
+        key: text.strip() for key, text in value.items() if isinstance(text, str) and text.strip()
     }
     if required and not normalized:
         raise ValueError("At least one non-empty localized value is required")
@@ -142,7 +140,9 @@ class QuestionCreate(BaseModel):
     def validate_correct_answers(self) -> "QuestionCreate":
         correct_count = sum(1 for option in self.options if option.is_correct)
         if self.question_type in {"single_choice", "true_false"} and correct_count != 1:
-            raise ValueError("Single-choice and true/false questions require exactly one correct option")
+            raise ValueError(
+                "Single-choice and true/false questions require exactly one correct option"
+            )
         if self.question_type == "multiple_choice" and correct_count < 1:
             raise ValueError("Multiple-choice questions require at least one correct option")
         return self

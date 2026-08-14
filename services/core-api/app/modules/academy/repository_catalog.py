@@ -8,8 +8,13 @@ from app.core.security import Principal
 from app.modules.academy.repository_utils import roles_json
 
 
-async def list_entitled_content(session: AsyncSession, principal: Principal) -> list[dict[str, Any]]:
-    rows = (await session.execute(text("""
+async def list_entitled_content(
+    session: AsyncSession, principal: Principal
+) -> list[dict[str, Any]]:
+    rows = (
+        (
+            await session.execute(
+                text("""
         WITH actor_roles AS (
             SELECT jsonb_array_elements_text(CAST(:roles AS jsonb)) AS role_key
         ), entitled AS (
@@ -40,16 +45,27 @@ async def list_entitled_content(session: AsyncSession, principal: Principal) -> 
           AND (ci.id IN (SELECT content_id FROM entitled)
                OR ci.id IN (SELECT content_id FROM enrolled))
         ORDER BY ci.slug
-    """), {
-        "tenant_id": principal.tenant_id,
-        "subject": principal.subject,
-        "roles": roles_json(principal),
-    })).mappings().all()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                    "roles": roles_json(principal),
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
-async def get_media_asset(session: AsyncSession, principal: Principal, media_id: UUID) -> dict[str, Any] | None:
-    row = (await session.execute(text("""
+async def get_media_asset(
+    session: AsyncSession, principal: Principal, media_id: UUID
+) -> dict[str, Any] | None:
+    row = (
+        (
+            await session.execute(
+                text("""
         WITH actor_roles AS (
             SELECT jsonb_array_elements_text(CAST(:roles AS jsonb)) AS role_key
         ), allowed_versions AS (
@@ -83,12 +99,18 @@ async def get_media_asset(session: AsyncSession, principal: Principal, media_id:
         WHERE ma.tenant_id=:tenant_id AND ma.id=:media_id
           AND ma.transcode_status='ready' AND cv.status='published'
           AND ma.content_version_id IN (SELECT content_version_id FROM allowed_versions)
-    """), {
-        "tenant_id": principal.tenant_id,
-        "subject": principal.subject,
-        "roles": roles_json(principal),
-        "media_id": media_id,
-    })).mappings().one_or_none()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                    "roles": roles_json(principal),
+                    "media_id": media_id,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
     return dict(row) if row else None
 
 
@@ -98,7 +120,10 @@ async def list_checkpoints(
     enrollment_id: UUID,
     content_version_id: UUID,
 ) -> list[dict[str, Any]]:
-    rows = (await session.execute(text("""
+    rows = (
+        (
+            await session.execute(
+                text("""
         SELECT q.id AS quiz_id, q.checkpoint_at_ms, q.pass_score, q.max_attempts,
                q.required, q.version_number, COALESCE(bool_or(qa.passed), FALSE) AS passed
         FROM academy_enrollments AS e
@@ -115,12 +140,18 @@ async def list_checkpoints(
           AND e.subject=:subject AND e.status IN ('assigned','in_progress','completed')
         GROUP BY q.id
         ORDER BY q.checkpoint_at_ms, q.version_number
-    """), {
-        "tenant_id": principal.tenant_id,
-        "enrollment_id": enrollment_id,
-        "content_version_id": content_version_id,
-        "subject": principal.subject,
-    })).mappings().all()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "enrollment_id": enrollment_id,
+                    "content_version_id": content_version_id,
+                    "subject": principal.subject,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
@@ -130,7 +161,10 @@ async def get_quiz_public_definition(
     quiz_id: UUID,
     enrollment_id: UUID,
 ) -> dict[str, Any] | None:
-    quiz = (await session.execute(text("""
+    quiz = (
+        (
+            await session.execute(
+                text("""
         SELECT q.id, q.content_version_id, q.kind, q.checkpoint_at_ms,
                q.pass_score, q.max_attempts, q.required, q.version_number
         FROM academy_quizzes AS q
@@ -141,16 +175,25 @@ async def get_quiz_public_definition(
         WHERE q.tenant_id=:tenant_id AND q.id=:quiz_id AND q.status='published'
           AND e.id=:enrollment_id AND e.subject=:subject
           AND e.status IN ('assigned','in_progress','completed')
-    """), {
-        "tenant_id": principal.tenant_id,
-        "quiz_id": quiz_id,
-        "enrollment_id": enrollment_id,
-        "subject": principal.subject,
-    })).mappings().one_or_none()
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "quiz_id": quiz_id,
+                    "enrollment_id": enrollment_id,
+                    "subject": principal.subject,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
     if quiz is None:
         return None
 
-    rows = (await session.execute(text("""
+    rows = (
+        (
+            await session.execute(
+                text("""
         SELECT q.id AS question_id, q.ordinal AS question_ordinal, q.question_type,
                q.prompt_i18n, q.points, q.required, o.id AS option_id,
                o.ordinal AS option_ordinal, o.label_i18n
@@ -159,16 +202,32 @@ async def get_quiz_public_definition(
           ON o.tenant_id=q.tenant_id AND o.question_id=q.id
         WHERE q.tenant_id=:tenant_id AND q.quiz_id=:quiz_id
         ORDER BY q.ordinal, o.ordinal
-    """), {"tenant_id": principal.tenant_id, "quiz_id": quiz_id})).mappings().all()
+    """),
+                {"tenant_id": principal.tenant_id, "quiz_id": quiz_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
     questions: dict[UUID, dict[str, Any]] = {}
     for row in rows:
-        item = questions.setdefault(row["question_id"], {
-            "id": row["question_id"], "ordinal": row["question_ordinal"],
-            "question_type": row["question_type"], "prompt_i18n": row["prompt_i18n"],
-            "points": float(row["points"]), "required": row["required"], "options": [],
-        })
-        item["options"].append({
-            "id": row["option_id"], "ordinal": row["option_ordinal"],
-            "label_i18n": row["label_i18n"],
-        })
+        item = questions.setdefault(
+            row["question_id"],
+            {
+                "id": row["question_id"],
+                "ordinal": row["question_ordinal"],
+                "question_type": row["question_type"],
+                "prompt_i18n": row["prompt_i18n"],
+                "points": float(row["points"]),
+                "required": row["required"],
+                "options": [],
+            },
+        )
+        item["options"].append(
+            {
+                "id": row["option_id"],
+                "ordinal": row["option_ordinal"],
+                "label_i18n": row["label_i18n"],
+            }
+        )
     return {**dict(quiz), "questions": list(questions.values())}

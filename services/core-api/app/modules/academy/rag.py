@@ -16,9 +16,10 @@ async def grounded_document_answer(
     top_k: int,
 ) -> dict[str, Any]:
     rows = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 WITH actor_roles AS (
                     SELECT jsonb_array_elements_text(CAST(:roles AS jsonb)) AS role_key
                 ), allowed_versions AS (
@@ -84,17 +85,20 @@ async def grounded_document_answer(
                 ORDER BY rank DESC, content_id, chunk_ordinal
                 LIMIT :top_k
                 """
-            ),
-            {
-                "tenant_id": principal.tenant_id,
-                "subject": principal.subject,
-                "roles": roles_json(principal),
-                "question": question.strip(),
-                "locale": locale,
-                "top_k": top_k,
-            },
+                ),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                    "roles": roles_json(principal),
+                    "question": question.strip(),
+                    "locale": locale,
+                    "top_k": top_k,
+                },
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     if not rows:
         return {

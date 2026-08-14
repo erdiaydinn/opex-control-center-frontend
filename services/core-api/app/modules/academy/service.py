@@ -21,9 +21,9 @@ from app.modules.academy.repository import (
     get_progress_snapshot,
     get_progress_target,
     get_quiz_attempt_by_id,
+    get_quiz_definition_for_attempt,
     get_required_quiz_ids,
     is_completion_revoked,
-    get_quiz_definition_for_attempt,
     is_module_entitled,
     mark_enrollment_completed,
     record_learning_event,
@@ -70,17 +70,25 @@ async def update_progress(
     )
     if not claim["claimed"]:
         if claim["request_fingerprint"] != fingerprint:
-            raise HTTPException(status_code=409, detail="Idempotency key was already used with a different request")
+            raise HTTPException(
+                status_code=409, detail="Idempotency key was already used with a different request"
+            )
         snapshot = await get_progress_snapshot(
             session, principal, enrollment_id, payload.content_version_id
         )
         if snapshot is None:
-            raise HTTPException(status_code=409, detail="Idempotent progress result is no longer available")
+            raise HTTPException(
+                status_code=409, detail="Idempotent progress result is no longer available"
+            )
         return {**snapshot, "idempotent_replay": True}
 
-    target = await get_progress_target(session, principal, enrollment_id, payload.content_version_id)
+    target = await get_progress_target(
+        session, principal, enrollment_id, payload.content_version_id
+    )
     if target is None:
-        raise HTTPException(status_code=404, detail="Active Academy enrollment/content target not found")
+        raise HTTPException(
+            status_code=404, detail="Active Academy enrollment/content target not found"
+        )
 
     current_revision = int(target["revision"])
     if payload.expected_revision is not None and payload.expected_revision != current_revision:
@@ -117,7 +125,9 @@ async def update_progress(
     if duration_ms:
         progress_percent = min(100.0, max_position_ms * 100.0 / duration_ms)
     else:
-        progress_percent = 100.0 if payload.complete_requested else float(target["progress_percent"])
+        progress_percent = (
+            100.0 if payload.complete_requested else float(target["progress_percent"])
+        )
 
     completed = bool(payload.complete_requested and progress_percent >= 90.0)
     progress_status = "completed" if completed else "in_progress"
@@ -177,24 +187,35 @@ async def submit_quiz_attempt(
     )
     if not claim["claimed"]:
         if claim["request_fingerprint"] != fingerprint:
-            raise HTTPException(status_code=409, detail="Idempotency key was already used with a different request")
+            raise HTTPException(
+                status_code=409, detail="Idempotency key was already used with a different request"
+            )
         attempt = await get_quiz_attempt_by_id(session, principal, UUID(str(claim["resource_id"])))
         if attempt is None:
-            raise HTTPException(status_code=409, detail="Idempotent quiz result is no longer available")
+            raise HTTPException(
+                status_code=409, detail="Idempotent quiz result is no longer available"
+            )
         return {**attempt, "idempotent_replay": True}
 
     definition = await get_quiz_definition_for_attempt(
         session, principal, quiz_id, payload.enrollment_id
     )
     if definition is None:
-        raise HTTPException(status_code=404, detail="Published quiz is not available for this enrollment")
-    if definition["max_attempts"] is not None and definition["previous_attempts"] >= definition["max_attempts"]:
+        raise HTTPException(
+            status_code=404, detail="Published quiz is not available for this enrollment"
+        )
+    if (
+        definition["max_attempts"] is not None
+        and definition["previous_attempts"] >= definition["max_attempts"]
+    ):
         raise HTTPException(status_code=409, detail="Maximum quiz attempts reached")
 
     answer_map = {answer.question_id: set(answer.selected_option_ids) for answer in payload.answers}
     expected_questions = {question["question_id"] for question in definition["questions"]}
     if set(answer_map) != expected_questions:
-        raise HTTPException(status_code=400, detail="Quiz answers must cover the exact published question set")
+        raise HTTPException(
+            status_code=400, detail="Quiz answers must cover the exact published question set"
+        )
 
     graded: list[dict[str, Any]] = []
     total_points = 0.0
@@ -202,7 +223,10 @@ async def submit_quiz_attempt(
     for question in definition["questions"]:
         selected = answer_map[question["question_id"]]
         if not selected.issubset(question["option_ids"]):
-            raise HTTPException(status_code=400, detail="Quiz answer contains an option outside the published quiz version")
+            raise HTTPException(
+                status_code=400,
+                detail="Quiz answer contains an option outside the published quiz version",
+            )
         correct = selected == question["correct_option_ids"]
         points = float(question["points"])
         total_points += points
@@ -264,8 +288,12 @@ async def complete_enrollment(
             status_code=409,
             detail={
                 "message": "Completion requirements are not satisfied",
-                "incomplete_content_version_ids": [str(v) for v in snapshot["incomplete_content_version_ids"]],
-                "missing_required_quiz_ids": [str(v) for v in snapshot["missing_required_quiz_ids"]],
+                "incomplete_content_version_ids": [
+                    str(v) for v in snapshot["incomplete_content_version_ids"]
+                ],
+                "missing_required_quiz_ids": [
+                    str(v) for v in snapshot["missing_required_quiz_ids"]
+                ],
             },
         )
     if snapshot["certificate"] and snapshot["certificate"]["revoked_at"] is None:
@@ -278,9 +306,7 @@ async def complete_enrollment(
             "idempotent_replay": True,
         }
 
-    required_quiz_ids = await get_required_quiz_ids(
-        session, principal, snapshot["path_id"]
-    )
+    required_quiz_ids = await get_required_quiz_ids(session, principal, snapshot["path_id"])
     completion_fingerprint = stable_fingerprint(
         {
             "contract": "academy-completion-v1",
@@ -292,7 +318,9 @@ async def complete_enrollment(
             "required_quiz_ids": required_quiz_ids,
         }
     )
-    certificate_code = f"EAY-{str(principal.tenant_id)[:8]}-{str(enrollment_id)[:8]}-{completion_fingerprint[:10]}".upper()
+    certificate_code = (
+        f"EAY-{str(principal.tenant_id)[:8]}-{str(enrollment_id)[:8]}-{completion_fingerprint[:10]}"
+    ).upper()
     certificate = await mark_enrollment_completed(
         session,
         principal,
@@ -319,7 +347,12 @@ async def complete_enrollment(
         resource_id=str(enrollment_id),
         data={"completion_fingerprint": completion_fingerprint},
     )
-    return {"enrollment_id": enrollment_id, "status": "completed", **certificate, "idempotent_replay": False}
+    return {
+        "enrollment_id": enrollment_id,
+        "status": "completed",
+        **certificate,
+        "idempotent_replay": False,
+    }
 
 
 async def authorize_playback(

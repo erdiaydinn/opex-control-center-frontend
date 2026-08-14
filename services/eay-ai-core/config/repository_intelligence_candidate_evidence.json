@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "observed_at": "2026-08-13T22:14:26+03:00",
-  "policy": "Candidate evidence is non-authoritative until supplied-archive tree/blob provenance matches exact upstream history. Registry identity must remain UNRESOLVED/PENDING until then.",
+  "observed_at": "2026-08-14T10:14:41+03:00",
+  "policy": "Candidate evidence is non-authoritative until supplied-archive tree/blob provenance matches exact upstream history. Directory-listing inventory observations are non-cryptographic locator evidence only. Registry identity must remain UNRESOLVED/PENDING until promotion-grade archive provenance exists.",
   "candidates": [
     {
       "registry_entry_id": "imported-deep-learning-tutorials",
@@ -14,7 +14,14 @@
       "candidate_evidence": "name/search similarity plus public repository metadata and license text",
       "archive_match_status": "NOT_VERIFIED",
       "promotion_status": "BLOCKED_PENDING_ARCHIVE_MATCH",
-      "decision_if_matched": "REFERENCE"
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 60441795,
+        "observed_local_mtime": "2026-06-02T21:33:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
     },
     {
       "registry_entry_id": "imported-impeccable",
@@ -27,7 +34,14 @@
       "candidate_evidence": "exact repository-name candidate plus public repository metadata and license text",
       "archive_match_status": "NOT_VERIFIED",
       "promotion_status": "BLOCKED_PENDING_ARCHIVE_MATCH",
-      "decision_if_matched": "REFERENCE"
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 53376175,
+        "observed_local_mtime": "2026-06-05T00:42:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
     },
     {
       "registry_entry_id": "imported-image-understanding-tthau",
@@ -40,7 +54,94 @@
       "candidate_evidence": "GitHub repository search for image_understanding+tthau returned no repository candidate",
       "archive_match_status": "NO_CANDIDATE_FOUND",
       "promotion_status": "BLOCKED_PENDING_IDENTITY_RECOVERY",
-      "decision_if_matched": "REFERENCE"
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 20723,
+        "observed_local_mtime": "2026-06-10T12:13:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
+    },
+    {
+      "registry_entry_id": "imported-jarvis-erdi-full-start",
+      "archive": "JARVIS-ERDI-full-start.zip",
+      "candidate_repository": null,
+      "candidate_default_branch": null,
+      "candidate_head_sha": null,
+      "candidate_tree_sha": null,
+      "candidate_license_spdx": null,
+      "candidate_evidence": "supplied archive inventory observed; upstream identity still unresolved",
+      "archive_match_status": "NO_CANDIDATE_FOUND",
+      "promotion_status": "BLOCKED_PENDING_IDENTITY_RECOVERY",
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 136382,
+        "observed_local_mtime": "2026-06-02T11:02:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
+    },
+    {
+      "registry_entry_id": "imported-jarvis-erdi-starter-patch",
+      "archive": "JARVIS-ERDI-starter-patch.zip",
+      "candidate_repository": null,
+      "candidate_default_branch": null,
+      "candidate_head_sha": null,
+      "candidate_tree_sha": null,
+      "candidate_license_spdx": null,
+      "candidate_evidence": "supplied archive inventory observed; upstream identity still unresolved",
+      "archive_match_status": "NO_CANDIDATE_FOUND",
+      "promotion_status": "BLOCKED_PENDING_IDENTITY_RECOVERY",
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 10601,
+        "observed_local_mtime": "2026-06-02T10:55:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
+    },
+    {
+      "registry_entry_id": "imported-jarvis-main-family",
+      "archive": "jarvis-main.zip",
+      "candidate_repository": null,
+      "candidate_default_branch": null,
+      "candidate_head_sha": null,
+      "candidate_tree_sha": null,
+      "candidate_license_spdx": null,
+      "candidate_evidence": "representative supplied jarvis-main family archive inventory observed; family contains additional variants and upstream identity remains unresolved",
+      "archive_match_status": "NO_CANDIDATE_FOUND",
+      "promotion_status": "BLOCKED_PENDING_IDENTITY_RECOVERY",
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 5248126,
+        "observed_local_mtime": "2026-06-01T13:29:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
+    },
+    {
+      "registry_entry_id": "imported-jarvis-master",
+      "archive": "Jarvis-master.zip",
+      "candidate_repository": null,
+      "candidate_default_branch": null,
+      "candidate_head_sha": null,
+      "candidate_tree_sha": null,
+      "candidate_license_spdx": null,
+      "candidate_evidence": "supplied archive inventory observed; upstream identity still unresolved",
+      "archive_match_status": "NO_CANDIDATE_FOUND",
+      "promotion_status": "BLOCKED_PENDING_IDENTITY_RECOVERY",
+      "decision_if_matched": "REFERENCE",
+      "archive_inventory_observation": {
+        "size_bytes": 1458173,
+        "observed_local_mtime": "2026-06-03T23:43:00",
+        "source_kind": "USER_DIRECTORY_LISTING",
+        "source_trust": "NON_CRYPTOGRAPHIC_DIRECTORY_LISTING",
+        "promotion_effect": "NONE"
+      }
     }
   ]
 }

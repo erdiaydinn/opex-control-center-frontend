@@ -1,9 +1,19 @@
 name: EAY Platform Convergence
 
 on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+    paths:
+      - "config/eay_release_candidate.json"
+      - "config/module_catalog.json"
+      - "config/product_quality_contract.json"
+      - "scripts/validate_eay_release_candidate.py"
+      - ".github/workflows/eay-platform-convergence.yml"
   push:
     branches:
       - release/platform-convergence-v0.1
+      - release/eay-rc0-test-readiness
   workflow_dispatch:
 
 permissions:
@@ -14,6 +24,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-readiness:
+    name: RC0 test-readiness policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate version-controlled release candidate
+        run: python scripts/validate_eay_release_candidate.py
+      - name: Enforce non-production RC boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          rc = json.loads(Path('config/eay_release_candidate.json').read_text(encoding='utf-8'))
+          assert rc['release_state'] == 'software_integration_test_ready'
+          assert rc['release_controls']['main_merge_permitted'] is False
+          assert rc['release_controls']['production_activation_permitted'] is False
+          assert rc['release_controls']['production_ready'] is False
+          assert all(not module['production_ready'] for module in rc['commercial_modules'].values())
+          assert all(not module['production_ready'] for module in rc['shared_release_dependencies'].values())
+          print(f"EAY_RC_RUNTIME_SHA={__import__('os').environ.get('GITHUB_SHA', 'local')}")
+          print('EAY_RC_PRODUCTION_READY=false')
+          PY
+
   topology:
     name: Security and product topology
     runs-on: ubuntu-latest

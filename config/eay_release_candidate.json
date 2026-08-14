@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "release_candidate_id": "EAY-RC0-INTERNAL-TEST",
+  "source_branch": "release/platform-convergence-v0.1",
+  "release_state": "software_integration_test_ready",
+  "evidence_policy": {
+    "runtime_github_sha_is_authoritative": true,
+    "all_required_ci_must_pass_on_exact_head": true,
+    "last_verified_parent_sha_before_manifest": "7595c7efe95865868d007f5473d5c53f0ac54c23",
+    "repository_ready_is_not_production_ready": true,
+    "external_evidence_may_not_be_replaced_by_synthetic_evidence": true
+  },
+  "release_controls": {
+    "main_merge_permitted": false,
+    "production_activation_permitted": false,
+    "production_ready": false,
+    "unresolved_external_gate_blocks_production": true,
+    "frozen_security_and_ai_foundations_may_not_be_mutated_for_rc": true
+  },
+  "testing_phases": [
+    {
+      "key": "software_integration",
+      "state": "ready",
+      "entry_rule": "All required repository CI authorities pass on the exact cumulative head."
+    },
+    {
+      "key": "staging_infrastructure",
+      "state": "blocked_external",
+      "entry_rule": "Corporate identity, managed data services and environment-specific credentials are available."
+    },
+    {
+      "key": "device_and_data_pilot",
+      "state": "blocked_external",
+      "entry_rule": "Real devices, production-shape source data and field/operator acceptance environments are available."
+    },
+    {
+      "key": "production_acceptance",
+      "state": "blocked_external",
+      "entry_rule": "All module external gates are evidenced, reviewed and fail-closed production controls remain green."
+    }
+  ],
+  "commercial_modules": {
+    "workforce": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["workforce-hiring-convergence.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "corporate_oidc",
+        "real_ios_app_attest",
+        "real_android_play_integrity",
+        "physical_device_biometric_and_replacement_lifecycle",
+        "gps_geofence_field_walk",
+        "real_hr_roster_leave_attendance_inputs",
+        "managed_staging_postgresql_and_dr",
+        "field_pilot"
+      ],
+      "notes": "Hiring remains in the authoritative Workforce Employee Master lifecycle; no competing employee database is permitted."
+    },
+    "inventory": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["eay-inventory-production.yml", "opex-inventory-android.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "managed_android_signing",
+        "mdm_distribution",
+        "corporate_oidc",
+        "physical_zebra_devices",
+        "datawedge_hardware_scan_acceptance",
+        "certificate_pinning_real_endpoint",
+        "offline_online_network_field_pilot"
+      ],
+      "notes": "Debug APK/software validation is green; managed release must remain fail-closed until signing, MDM, OIDC and physical Zebra evidence exist."
+    },
+    "planogram": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["planogram-convergence-ci.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "approved_sku_physical_dimensions",
+        "production_catalog_linkage",
+        "real_store_dna",
+        "measured_fixture_geometry_and_capacity",
+        "physical_store_validation"
+      ],
+      "notes": "A green physical-truth workflow means the engine fails closed correctly; it does not mean physical master data is complete."
+    },
+    "dockos": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["dockos-full-stack.yml", "dockos-production-convergence.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "corporate_oidc",
+        "production_gateway_deployment_and_rotation",
+        "bigquery_po_identity",
+        "real_smtp",
+        "managed_postgresql_staging",
+        "supplier_dc_pilot"
+      ],
+      "notes": "Concurrency, persistence, recovery and DR software gates are ready; external service identities and operational pilot remain required."
+    },
+    "budget": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["budget-intelligence-ci.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "real_finance_inputs_and_mapping",
+        "finance_owner_uat",
+        "approval_and_segregation_of_duties_uat",
+        "production_accounting_reconciliation",
+        "managed_staging_postgresql_and_dr"
+      ],
+      "notes": "Budget Plan through variance/reconciliation is software-testable; authoritative finance mappings and owner acceptance remain external."
+    },
+    "academy": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["academy-convergence-ci.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "object_storage_and_cdn",
+        "transcode_pipeline",
+        "corporate_oidc_claim_mapping",
+        "real_content",
+        "real_1200_concurrent_video_delivery_test",
+        "rtl_accessibility_staging_pilot",
+        "operator_dr_evidence"
+      ],
+      "notes": "Repository CI cannot substitute for real media delivery, scale and learner/operator acceptance."
+    },
+    "jarvis": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["jarvis-convergence-ci.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": [
+        "authorized_read_only_production_bigquery_identity",
+        "live_information_schema_observation",
+        "authoritative_tenant_discriminator_confirmation",
+        "controlled_live_cross_tenant_zero_leak_proof",
+        "orders_v2_human_release_deployment_promotion_evidence",
+        "governed_staging_execution",
+        "operator_acceptance"
+      ],
+      "notes": "Synthetic proof cannot promote ops.kpi.orders.v2 and production_ready must remain false until live evidence passes."
+    }
+  },
+  "shared_release_dependencies": {
+    "platform_core": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["platform-core-ci.yml", "eay-platform-convergence.yml"],
+      "external_acceptance_gates": ["corporate_oidc_sso", "managed_staging_and_dr", "operational_release_acceptance"]
+    },
+    "security": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["platform-core-ci.yml", "eay-platform-convergence.yml"],
+      "external_acceptance_gates": ["corporate_identity_claim_mapping", "managed_secret_rotation", "staging_security_acceptance"]
+    },
+    "eay_ai_core": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["ai-training-convergence-ci.yml", "repository-intelligence-convergence.yml"],
+      "external_acceptance_gates": ["real_kpi_source_mapping", "production_model_data_governance", "human_promotion_acceptance"]
+    },
+    "repository_intelligence": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["repository-intelligence-convergence.yml"],
+      "external_acceptance_gates": ["unresolved_supplied_archive_provenance_recovery", "external_license_review_for_future_adoption"]
+    },
+    "insight_kpi": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["jarvis-convergence-ci.yml", "product-quality-contract.yml"],
+      "external_acceptance_gates": ["promoted_orders_v2_contract", "live_schema_evidence", "nsfr_pfr_refund_real_mapping", "analytics_uat"]
+    },
+    "product_quality": {
+      "software_test_ready": true,
+      "production_ready": false,
+      "required_workflows": ["product-quality-contract.yml"],
+      "external_acceptance_gates": ["real_user_task_success_evidence", "accessibility_audit", "performance_field_measurement", "visual_ux_acceptance"]
+    }
+  },
+  "reserved_not_in_current_rc": {
+    "expense_management": {
+      "state": "deferred_until_current_p0_acceptance",
+      "separate_module": true,
+      "planned_flow": ["receipt_capture", "ocr", "field_extraction", "confidence_review", "duplicate_policy", "cost_center", "approval", "budget_link", "accounting_export", "audit"],
+      "silent_auto_post_forbidden": true
+    }
+  }
+}

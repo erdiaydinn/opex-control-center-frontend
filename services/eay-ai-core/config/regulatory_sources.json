@@ -1,6 +1,6 @@
 {
-  "version": "0.2",
-  "principle": "Discovery signals are never promoted automatically to binding legal knowledge.",
+  "version": "0.3",
+  "principle": "Discovery signals and official registries are never promoted automatically to binding legal knowledge.",
   "sources": [
     {
       "id": "tr-gkgm-home",
@@ -36,47 +36,26 @@
       "notes": "GKGM's official website links its Mevzuat menu to this KAYSİS registry. Availability can vary; watcher errors must not disable other sources."
     },
     {
+      "id": "tr-ticaret-consumer-law-registry",
+      "name": "T.C. Ticaret Bakanlığı - 6502 Tüketici Mevzuatı",
+      "url": "https://ticaret.gov.tr/tuketici/mevzuat/6502-sayili-tuketicinin-korunmasi-mevzuati",
+      "role": "official_registry",
+      "jurisdiction": "TR",
+      "enabled": true,
+      "topics": ["6502", "tüketici hukuku", "fiyat etiketi", "mesafeli sözleşmeler", "ticari reklam", "haksız ticari uygulamalar"],
+      "keywords": ["6502", "fiyat etiketi", "mesafeli sözleşmeler", "ticari reklam", "haksız ticari uygulamalar", "tebliğ", "kılavuz", "idari para cezası"],
+      "notes": "Official Commerce Ministry registry/index for consumer-law instruments. Registry presence is discovery evidence only: linked exact instrument text, publication/effective dates and temporal relations must pass the existing binding-law verification pipeline before legal promotion."
+    },
+    {
       "id": "tr-resmi-gazete",
       "name": "T.C. Resmî Gazete",
       "url": "https://www.resmigazete.gov.tr/",
       "role": "binding_publication_index",
       "jurisdiction": "TR",
       "enabled": true,
-      "topics": [
-        "resmî gazete",
-        "yönetmelik",
-        "tebliğ",
-        "gıda ve perakende",
-        "tüketici hukuku",
-        "elektronik ticaret",
-        "fiyat ve reklam",
-        "kişisel veri",
-        "çalışma ve iş sağlığı"
-      ],
-      "keywords": [
-        "gıda",
-        "kodeksi",
-        "tarım",
-        "hijyen",
-        "etiket",
-        "pestisit",
-        "yönetmelik",
-        "tebliğ",
-        "perakende",
-        "tüketici",
-        "6502",
-        "fiyat etiketi",
-        "mesafeli sözleşmeler",
-        "ticari reklam",
-        "haksız ticari uygulama",
-        "elektronik ticaret",
-        "6563",
-        "kişisel veri",
-        "6698",
-        "iş sağlığı ve güvenliği",
-        "6331"
-      ],
-      "notes": "Official publication index used for cross-domain Food & Retail discovery, including consumer, e-commerce, pricing/advertising, privacy and workforce safety signals. A homepage/index hit never establishes a binding rule: the exact instrument, publication/effective dates and temporal relations must still pass legal verification."
+      "topics": ["resmî gazete", "yönetmelik", "tebliğ", "gıda ve perakende", "tüketici hukuku", "elektronik ticaret", "fiyat ve reklam", "kişisel veri", "çalışma ve iş sağlığı"],
+      "keywords": ["gıda", "kodeksi", "tarım", "hijyen", "etiket", "pestisit", "yönetmelik", "tebliğ", "perakende", "tüketici", "6502", "fiyat etiketi", "mesafeli sözleşmeler", "ticari reklam", "haksız ticari uygulama", "elektronik ticaret", "6563", "kişisel veri", "6698", "iş sağlığı ve güvenliği", "6331"],
+      "notes": "Official publication index used for cross-domain Food & Retail discovery. A homepage/index hit never establishes a binding rule: the exact instrument, publication/effective dates and temporal relations must still pass legal verification."
     },
     {
       "id": "tr-guvenilir-gida",

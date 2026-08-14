@@ -57,6 +57,8 @@ export default function RouteAccessibility() {
     let cancelled = false;
     let observer;
     let timer;
+    let firstFrame;
+    let secondFrame;
 
     const settle = () => {
       if (cancelled) return false;
@@ -68,9 +70,9 @@ export default function RouteAccessibility() {
       return true;
     };
 
-    const frame = window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        if (settle()) return;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (settle() || cancelled) return;
         const root = document.getElementById("root") || document.body;
         observer = new MutationObserver(() => settle());
         observer.observe(root, { childList: true, subtree: true });
@@ -86,7 +88,8 @@ export default function RouteAccessibility() {
 
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(frame);
+      if (firstFrame) window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
       observer?.disconnect();
       if (timer) window.clearTimeout(timer);
     };

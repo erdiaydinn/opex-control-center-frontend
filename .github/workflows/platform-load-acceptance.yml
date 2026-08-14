@@ -1,0 +1,187 @@
+name: EAY Platform Synthetic Load Acceptance
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+    inputs:
+      target_vus:
+        description: Synthetic virtual users for the tenant-isolation burst
+        required: false
+        default: "1000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-load-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-tenant-burst:
+    name: 1000-VU Core tenant isolation burst
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_ALLOWED_HOSTS: 127.0.0.1,localhost
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@127.0.0.1:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@127.0.0.1:5432/opex_test
+      OPEX_REDIS_URL: redis://127.0.0.1:6379/9
+      TENANT_A_ID: 00000000-0000-0000-0000-00000000a001
+      TENANT_B_ID: 00000000-0000-0000-0000-00000000b001
+      SUBJECT_A: load-a
+      SUBJECT_B: load-b
+      TOKEN_A: dev.load-a.00000000-0000-0000-0000-00000000a001.viewer
+      TOKEN_B: dev.load-b.00000000-0000-0000-0000-00000000b001.viewer
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+
+      - name: Install Core API test runtime
+        run: python -m pip install -e "./services/core-api[dev]"
+
+      - name: Create non-bypass runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@127.0.0.1:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Migrate exact cumulative schema
+        working-directory: services/core-api
+        run: alembic upgrade head
+
+      - name: Bootstrap two isolated synthetic tenants
+        working-directory: services/core-api
+        run: |
+          python -m app.cli.bootstrap_access \
+            --tenant-id "$TENANT_A_ID" \
+            --tenant-slug load-a \
+            --tenant-name "Load Tenant A" \
+            --admin-subject "$SUBJECT_A"
+          python -m app.cli.bootstrap_access \
+            --tenant-id "$TENANT_B_ID" \
+            --tenant-slug load-b \
+            --tenant-name "Load Tenant B" \
+            --admin-subject "$SUBJECT_B"
+
+      - name: Start production-shaped Core API workers
+        working-directory: services/core-api
+        run: |
+          nohup python -m uvicorn app.main:app \
+            --host 127.0.0.1 \
+            --port 8000 \
+            --workers 4 \
+            > /tmp/eay-core-load.log 2>&1 &
+          echo $! > /tmp/eay-core-load.pid
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat /tmp/eay-core-load.log
+          exit 1
+
+      - name: Validate k6 contract syntax
+        run: node --check ops/load/k6-platform-core-tenant-burst.js
+
+      - name: Run 1000-VU tenant isolation burst
+        env:
+          TARGET_VUS: ${{ github.event_name == 'workflow_dispatch' && inputs.target_vus || '1000' }}
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/work" -w /work \
+            -e BASE_URL=http://127.0.0.1:8000 \
+            -e TARGET_VUS="$TARGET_VUS" \
+            -e TENANT_A_ID -e TENANT_B_ID \
+            -e SUBJECT_A -e SUBJECT_B \
+            -e TOKEN_A -e TOKEN_B \
+            grafana/k6:0.57.0 \
+            run ops/load/k6-platform-core-tenant-burst.js
+
+      - name: Verify no tenant membership contamination after load
+        working-directory: services/core-api
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          TENANT_A = "00000000-0000-0000-0000-00000000a001"
+          TENANT_B = "00000000-0000-0000-0000-00000000b001"
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@127.0.0.1:5432/opex_test"
+              )
+              try:
+                  rows = await connection.fetch(
+                      """
+                      SELECT tenant_id::text, external_subject
+                      FROM memberships
+                      WHERE tenant_id IN ($1::uuid, $2::uuid)
+                      ORDER BY tenant_id, external_subject
+                      """,
+                      TENANT_A,
+                      TENANT_B,
+                  )
+                  observed = {(row["tenant_id"], row["external_subject"]) for row in rows}
+                  assert observed == {(TENANT_A, "load-a"), (TENANT_B, "load-b")}, observed
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Core API diagnostic log
+        if: always()
+        run: tail -n 200 /tmp/eay-core-load.log || true

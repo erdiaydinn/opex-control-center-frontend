@@ -9,8 +9,9 @@ from .legal_api import router as legal_router
 from .legal_knowledge import router as legal_knowledge_router
 from .legal_review import router as legal_review_router
 from .legal_verification import router as legal_verification_router
-from .main import app
 from .learning_export_guard import router as learning_export_router
+from .main import app
+from .model_promotion_routes import router as model_promotion_router
 from .model_registry import router as model_registry_router
 from .observability import router as observability_router
 from .payroll_engine import router as payroll_router
@@ -50,4 +51,5 @@ app.include_router(vision_provenance_router)
 app.include_router(training_manifest_router)
 app.include_router(learning_export_router)
 app.include_router(model_registry_router)
+app.include_router(model_promotion_router)
 app.include_router(voice_ws_router)

@@ -18,6 +18,7 @@ from app.modules.academy.repository_catalog import (
 from app.modules.academy.repository_certificate import (
     get_required_quiz_ids,
     is_completion_revoked,
+    list_certificates,
     revoke_completion,
 )
 from app.modules.academy.repository_completion import (
@@ -76,6 +77,7 @@ __all__ = (
     "is_module_entitled",
     "list_admin_content",
     "list_admin_paths",
+    "list_certificates",
     "list_checkpoints",
     "list_entitled_content",
     "list_enrollments",

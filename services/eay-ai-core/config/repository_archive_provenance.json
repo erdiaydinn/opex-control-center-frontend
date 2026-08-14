@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-13T17:18:00+03:00",
+  "updated_at": "2026-08-14T15:12:00+03:00",
   "records": [
     {
-      "registry_entry_id": "imported-cl4r1t4s",
+      "registry_entry_id": "cl4r1t4s",
       "archive": "CL4R1T4S-main.zip",
       "archive_sha256": "8f7e5e896160f312df3f7919ba9da4a2f533f4ed53f92c0c7cedc2098034289c",
       "canonical_repository": "elder-plinius/CL4R1T4S",
@@ -15,10 +15,10 @@
       "match": "EXACT_RECOMPUTED_GIT_TREE",
       "license": {"spdx": "AGPL-3.0", "status": "VERIFIED"},
       "commercial_use": "REFERENCE_ONLY_FOR_PROPRIETARY_EAY",
-      "decision": "REFERENCE"
+      "decision": "reference"
     },
     {
-      "registry_entry_id": "imported-council-of-high-intelligence",
+      "registry_entry_id": "council-high-intelligence",
       "archive": "council-of-high-intelligence-main.zip",
       "archive_sha256": "f885a7900b242080e9aee8968a461987743c1faa78dc5d71f2f3b2655ad4ad15",
       "canonical_repository": "0xNyk/council-of-high-intelligence",
@@ -30,10 +30,10 @@
       "match": "EXACT_RECOMPUTED_GIT_TREE",
       "license": {"spdx": "MIT", "status": "VERIFIED"},
       "commercial_use": "PERMISSIVE_WITH_NOTICE",
-      "decision": "WATCH"
+      "decision": "watch"
     },
     {
-      "registry_entry_id": "imported-computer-lab-automation",
+      "registry_entry_id": "computer-lab-automation",
       "archive": "computer-lab-automation-master.zip",
       "archive_sha256": "a4f0708d4f160908f8094d05294bf27bdc529df487bc372ed8dac8755c4a09e3",
       "canonical_repository": "mustafadalga/computer-lab-automation",
@@ -45,7 +45,7 @@
       "match": "EXACT_RECOMPUTED_GIT_TREE",
       "license": {"spdx": "GPL-3.0", "status": "VERIFIED"},
       "commercial_use": "REFERENCE_ONLY_UNLESS_SEPARATELY_CLEARED",
-      "decision": "REFERENCE"
+      "decision": "reference"
     }
   ]
 }

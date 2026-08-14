@@ -19,7 +19,7 @@ class RegistryTemporalPromotionEvidence(BaseModel):
     """Non-mutating proof that registry-bound legal evidence is temporally coherent.
 
     This artifact is deliberately downstream of exact-source promotion review and the
-    existing relation/temporal resolver.  It can prove that a reviewed amendment,
+    existing relation/temporal resolver. It can prove that a reviewed amendment,
     repeal or supersession produced the expected historical state, but it cannot
     mutate legal records or activate an instrument by itself.
     """
@@ -97,6 +97,8 @@ def build_registry_temporal_promotion_evidence(
             raise ValueError("registry_temporal_gate_relation_type_mismatch")
         if relation.target_instrument_id != target:
             raise ValueError("registry_temporal_gate_relation_target_mismatch")
+        if relation.evidence_ref != f"registry-intake:{intake.intake_fingerprint}":
+            raise ValueError("registry_temporal_gate_relation_evidence_mismatch")
         if relation.id not in temporal_state.applied_relation_ids:
             raise ValueError("registry_temporal_gate_relation_not_applied")
         relation_fingerprint = relation.relation_fingerprint

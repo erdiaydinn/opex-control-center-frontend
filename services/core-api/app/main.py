@@ -36,6 +36,7 @@ from app.core.security import (
     require_super_admin,
     require_viewer,
 )
+from app.modules.academy.router import router as academy_router
 
 settings = get_settings()
 
@@ -87,9 +88,7 @@ app.add_middleware(
 async def request_context_and_security_headers(request: Request, call_next):
     supplied_request_id = request.headers.get("X-Request-ID", "")
     request_id = (
-        supplied_request_id
-        if REQUEST_ID_PATTERN.fullmatch(supplied_request_id)
-        else str(uuid4())
+        supplied_request_id if REQUEST_ID_PATTERN.fullmatch(supplied_request_id) else str(uuid4())
     )
     request.state.request_id = request_id
     request.state.client_ip = resolve_client_ip(request)
@@ -108,9 +107,7 @@ async def request_context_and_security_headers(request: Request, call_next):
         request_id=request_id,
         actor=getattr(audit_principal, "subject", None),
         tenant_id=(
-            str(getattr(audit_principal, "tenant_id", ""))
-            if audit_principal is not None
-            else None
+            str(getattr(audit_principal, "tenant_id", "")) if audit_principal is not None else None
         ),
         method=request.method,
         path=request.url.path,
@@ -196,8 +193,7 @@ async def current_context(
         "roles": principal.roles,
         "permissions": principal.permissions,
         "permission_assignments": [
-            assignment.model_dump()
-            for assignment in principal.permission_assignments
+            assignment.model_dump() for assignment in principal.permission_assignments
         ],
         "auth_mode": principal.auth_mode,
     }
@@ -234,6 +230,7 @@ async def get_audit_events(
         "count": len(items),
         "items": items,
     }
+
 
 @app.patch("/v1/admin/tenant", tags=["administration"])
 async def patch_current_tenant(
@@ -308,11 +305,7 @@ async def post_tenant_member(
             tenant_id=str(principal.tenant_id),
             subject=payload.subject.strip(),
             email=payload.email.strip() if payload.email else None,
-            display_name=(
-                payload.display_name.strip()
-                if payload.display_name
-                else None
-            ),
+            display_name=(payload.display_name.strip() if payload.display_name else None),
             roles=tuple(payload.roles),
         )
     except ValueError as exc:
@@ -426,12 +419,8 @@ async def platform_health(
         return_exceptions=True,
     )
 
-    backup_warning_after_hours = float(
-        os.getenv("OPEX_BACKUP_WARNING_AFTER_HOURS", "26")
-    )
-    backup_stale_after_hours = float(
-        os.getenv("OPEX_BACKUP_STALE_AFTER_HOURS", "30")
-    )
+    backup_warning_after_hours = float(os.getenv("OPEX_BACKUP_WARNING_AFTER_HOURS", "26"))
+    backup_stale_after_hours = float(os.getenv("OPEX_BACKUP_STALE_AFTER_HOURS", "30"))
 
     backup_details: dict[str, object] = {}
     backup_status = "unavailable"
@@ -446,22 +435,14 @@ async def platform_health(
 
             if isinstance(completed_at, str):
                 try:
-                    completed_time = datetime.fromisoformat(
-                        completed_at.replace("Z", "+00:00")
-                    )
+                    completed_time = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
 
                     if completed_time.tzinfo is None:
-                        completed_time = completed_time.replace(
-                            tzinfo=UTC
-                        )
+                        completed_time = completed_time.replace(tzinfo=UTC)
 
                     backup_age_hours = max(
                         0.0,
-                        (
-                            datetime.now(UTC)
-                            - completed_time.astimezone(UTC)
-                        ).total_seconds()
-                        / 3600,
+                        (datetime.now(UTC) - completed_time.astimezone(UTC)).total_seconds() / 3600,
                     )
 
                     if backup_age_hours > backup_stale_after_hours:
@@ -477,11 +458,7 @@ async def platform_health(
 
     backup_details.update(
         {
-            "age_hours": (
-                round(backup_age_hours, 2)
-                if backup_age_hours is not None
-                else None
-            ),
+            "age_hours": (round(backup_age_hours, 2) if backup_age_hours is not None else None),
             "warning_after_hours": backup_warning_after_hours,
             "stale_after_hours": backup_stale_after_hours,
         }
@@ -493,18 +470,10 @@ async def platform_health(
             "version": app.version,
         },
         "database": {
-            "status": (
-                "ok"
-                if not isinstance(database_result, Exception)
-                else "unavailable"
-            ),
+            "status": ("ok" if not isinstance(database_result, Exception) else "unavailable"),
         },
         "redis": {
-            "status": (
-                "ok"
-                if not isinstance(redis_result, Exception)
-                else "unavailable"
-            ),
+            "status": ("ok" if not isinstance(redis_result, Exception) else "unavailable"),
         },
         "containers": {
             "status": (
@@ -529,10 +498,7 @@ async def platform_health(
         },
     }
 
-    healthy = all(
-        item["status"] in {"ok", "healthy"}
-        for item in checks.values()
-    )
+    healthy = all(item["status"] in {"ok", "healthy"} for item in checks.values())
 
     return JSONResponse(
         status_code=200 if healthy else 503,
@@ -546,3 +512,6 @@ async def platform_health(
             "checks": checks,
         },
     )
+
+
+app.include_router(academy_router)

@@ -102,6 +102,14 @@ jobs:
       - name: Remove one-shot workflow and commit selective port
         shell: bash
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          for path in [
+              Path('apps/planai/backend/overrides.py'),
+              Path('apps/planai/backend/tests/test_engine_foundation_v4.py'),
+          ]:
+              path.write_text(path.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
+          PY
           rm -f .github/workflows/planogram-selective-port.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

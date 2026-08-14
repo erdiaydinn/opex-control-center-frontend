@@ -14,7 +14,9 @@ import PlanogramStudio from "./modules/planogram/PlanogramStudio.jsx";
 import BudgetIntelligence from "./modules/budget-intelligence/BudgetIntelligence.jsx";
 import DockOSDashboard from "./modules/DockOS/DockOSDashboard.jsx";
 import AccessControl from "./modules/access-control/AccessControl.jsx";
+import ServerAccounts from "./modules/access-control/ServerAccounts.jsx";
 import InventoryDashboard from "./modules/inventory/InventoryDashboard.jsx";
+import { InventoryUiProvider } from "./modules/inventory/InventoryUiContext.jsx";
 import WorkforceControl from "./modules/workforce/WorkforceControl.jsx";
 import WorkforcePickerApp from "./modules/workforce/WorkforcePickerApp.jsx";
 import { WorkforceUiProvider } from "./modules/workforce/WorkforceUiContext.jsx";
@@ -82,8 +84,32 @@ export default function App() {
         path="/inventory"
         element={
           <ProtectedRoute moduleKey="inventory">
-            <InventoryDashboard />
+            <InventoryUiProvider>
+              <InventoryDashboard />
+            </InventoryUiProvider>
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/inventory/access-management"
+        element={
+          <ProtectedRoute
+            moduleKey="inventory"
+            action="admin"
+          >
+            <ServerAccounts />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/accounts"
+        element={
+          <Navigate
+            to="/inventory/access-management"
+            replace
+          />
         }
       />
 

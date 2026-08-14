@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14",
+  "registry_url": "https://ticaret.gov.tr/tuketici/mevzuat/6502-sayili-tuketicinin-korunmasi-mevzuati",
+  "registry_role": "official_registry_discovery",
+  "instruments": [
+    {
+      "key": "tr-law-6502-consumer-protection",
+      "title": "6502 SAYILI TÜKETİCİNİN KORUNMASI HAKKINDA KANUN",
+      "law_number": "6502",
+      "registry_target_url": "https://www.mevzuat.gov.tr/mevzuatmetin/1.5.6502.pdf",
+      "topics": ["consumer-protection", "retail", "distance-commerce"],
+      "binding_source_required": true
+    },
+    {
+      "key": "tr-reg-price-label",
+      "title": "FİYAT ETİKETİ YÖNETMELİĞİ",
+      "law_number": null,
+      "registry_target_url": "https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=19819&MevzuatTertip=5&MevzuatTur=7",
+      "topics": ["pricing", "retail", "consumer-information"],
+      "binding_source_required": true
+    },
+    {
+      "key": "tr-reg-distance-contracts",
+      "title": "MESAFELİ SÖZLEŞMELER YÖNETMELİĞİ",
+      "law_number": null,
+      "registry_target_url": "https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=20237&MevzuatTertip=5&MevzuatTur=7",
+      "topics": ["distance-commerce", "consumer-protection", "e-commerce"],
+      "binding_source_required": true
+    },
+    {
+      "key": "tr-reg-commercial-advertising-unfair-practices",
+      "title": "TİCARİ REKLAM VE HAKSIZ TİCARİ UYGULAMALAR YÖNETMELİĞİ",
+      "law_number": null,
+      "registry_target_url": "https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=20435&MevzuatTertip=5&MevzuatTur=7",
+      "topics": ["advertising", "pricing", "consumer-protection", "unfair-commercial-practices"],
+      "binding_source_required": true
+    }
+  ]
+}

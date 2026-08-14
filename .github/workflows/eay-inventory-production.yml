@@ -2,13 +2,18 @@ name: EAY Inventory Production Gate
 
 on:
   pull_request:
+    branches:
+      - release/platform-convergence-v0.1
     paths:
       - "backend/app/modules/inventory/**"
       - "backend/migrations/003_inventory_production.sql"
       - "android-inventory/**"
       - ".github/workflows/eay-inventory-production.yml"
   push:
-    branches: ["agent/inventory-production-terminal-p0"]
+    branches:
+      - agent/inventory-production-terminal-p0
+      - release/platform-convergence-inventory-v0.1
+      - release/platform-convergence-v0.1
   workflow_dispatch:
 
 permissions:

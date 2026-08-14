@@ -238,6 +238,7 @@ def _parse_repository_registry_payload(payload: Any) -> RepositoryRegistry:
         raise RepositoryRegistryError("registry entries must be a non-empty list")
 
     ids: set[str] = set()
+    verified_repositories: dict[str, str] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             raise RepositoryRegistryError("registry entries must be objects")
@@ -246,6 +247,16 @@ def _parse_repository_registry_payload(payload: Any) -> RepositoryRegistry:
         if entry_id in ids:
             raise RepositoryRegistryError(f"duplicate registry id: {entry_id}")
         ids.add(entry_id)
+
+        if entry["identity_status"] == "VERIFIED":
+            repository_key = entry["repository"].casefold()
+            existing_entry_id = verified_repositories.get(repository_key)
+            if existing_entry_id is not None:
+                raise RepositoryRegistryError(
+                    "verified repository identity cannot be duplicated across registry entries: "
+                    f"{existing_entry_id}, {entry_id}"
+                )
+            verified_repositories[repository_key] = entry_id
 
     missing_seeds = REQUIRED_SEED_IDS - ids
     if missing_seeds:

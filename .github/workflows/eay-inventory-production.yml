@@ -88,8 +88,17 @@ jobs:
             module="${module%.py}"
             module="${module//\//.}"
             echo "::group::$module"
-            if ! python -m unittest "$module" -v; then
-              failures=$((failures + 1))
+            set +e
+            output=$(python -m unittest "$module" -v 2>&1)
+            status=$?
+            set -e
+            printf '%s\n' "$output"
+            if [ "$status" -ne 0 ]; then
+              if printf '%s\n' "$output" | grep -q 'NO TESTS RAN' && ! printf '%s\n' "$output" | grep -Eq 'FAILED|ERROR:|Traceback'; then
+                echo "zero-test helper module: accepted by cumulative unittest gate"
+              else
+                failures=$((failures + 1))
+              fi
             fi
             echo "::endgroup::"
           done < <(find backend/app -type f -name 'test_*.py' | sort)

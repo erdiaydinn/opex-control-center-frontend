@@ -1,0 +1,155 @@
+name: EAY AI Training Route Fix V3
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-ai-training-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/platform-convergence-ai-training-v0.1
+      - name: Move promotion surface onto the canonical FastAPI app
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('services/eay-ai-core')
+
+          adapter = root / 'app/model_promotion_routes.py'
+          source = adapter.read_text(encoding='utf-8')
+          source = source.replace(
+              'from fastapi import APIRouter, Header, HTTPException\n',
+              'from fastapi import HTTPException\n',
+          )
+          source = source.replace(
+              'router = APIRouter(prefix="/v1/model-promotions", tags=["model-promotions"])\n\n\n',
+              '',
+          )
+          source = source.replace(
+              '@router.post("", response_model=PromotionRecord, status_code=201)\n',
+              '',
+          )
+          source = source.replace(
+              '@router.get("/{model_record_id}", response_model=PromotionRecord)\n',
+              '',
+          )
+          source = source.replace(
+              '    authorization: str | None = Header(default=None, alias="Authorization"),\n',
+              '    authorization: str | None = None,\n',
+          )
+          assert 'APIRouter' not in source
+          assert '@router.' not in source
+          adapter.write_text(source, encoding='utf-8')
+
+          main = root / 'app/main.py'
+          source = main.read_text(encoding='utf-8')
+          assert 'from fastapi import FastAPI, HTTPException, Query\n' in source
+          source = source.replace(
+              'from fastapi import FastAPI, HTTPException, Query\n',
+              'from fastapi import FastAPI, Header, HTTPException, Query\n',
+              1,
+          )
+          anchor = '''@app.get("/v1/learning/candidates")\ndef candidates(limit: int = Query(default=100, ge=1, le=500)):\n'''
+          assert source.count(anchor) == 1
+          assert '/v1/model-promotions' not in source
+          block = '''from .model_promotion_gate import PromotionRecord  # noqa: E402\nfrom .model_promotion_routes import (  # noqa: E402\n    PromotionApiRequest,\n    get_current_production_promotion as governed_get_current_production_promotion,\n    promote_model as governed_promote_model,\n)\n\n\n@app.post("/v1/model-promotions", response_model=PromotionRecord, status_code=201)\ndef promote_model(\n    payload: PromotionApiRequest,\n    authorization: str | None = Header(default=None, alias="Authorization"),\n):\n    return governed_promote_model(payload, authorization=authorization)\n\n\n@app.get(\n    "/v1/model-promotions/{model_record_id}",\n    response_model=PromotionRecord,\n)\ndef get_current_production_promotion(model_record_id: str):\n    return governed_get_current_production_promotion(model_record_id)\n\n\n'''
+          source = source.replace(anchor, block + anchor)
+          main.write_text(source, encoding='utf-8')
+
+          entrypoint = root / 'app/entrypoint.py'
+          source = entrypoint.read_text(encoding='utf-8')
+          import_line = 'from .model_promotion_routes import router as model_promotion_router\n'
+          assert source.count(import_line) == 1
+          source = source.replace(import_line, '')
+          tuple_line = '        model_promotion_router,\n'
+          assert source.count(tuple_line) == 1
+          source = source.replace(tuple_line, '')
+          # Preserve the already-green generic composition implementation.
+          assert 'def _signature(route)' in source
+          assert 'def _include_router_once(target: FastAPI, router: APIRouter)' in source
+          entrypoint.write_text(source, encoding='utf-8')
+
+          test = root / 'tests/test_model_promotion_routes.py'
+          source = test.read_text(encoding='utf-8')
+          source = source.replace(
+              '    assert post[0].endpoint.__module__ == "app.model_promotion_routes"\n'
+              '    assert get[0].endpoint.__module__ == "app.model_promotion_routes"\n',
+              '    assert post[0].endpoint.__module__ == "app.main"\n'
+              '    assert get[0].endpoint.__module__ == "app.main"\n',
+          )
+          test.write_text(source, encoding='utf-8')
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install AI Core
+        working-directory: services/eay-ai-core
+        run: python -m pip install -e '.[dev]'
+      - name: Compile
+        working-directory: services/eay-ai-core
+        run: python -m compileall -q app tests
+      - name: Promotion, training and public surface regression
+        working-directory: services/eay-ai-core
+        run: >-
+          pytest -q
+          tests/test_public_api_surface.py
+          tests/test_training_authority.py
+          tests/test_model_promotion_routes.py
+          tests/test_model_artifact_promotion.py
+          tests/test_training_execution.py
+          tests/test_training_executor.py
+      - name: Full AI Core regression
+        working-directory: services/eay-ai-core
+        run: pytest -q
+      - name: Prove one fail-closed public promotion authority
+        working-directory: services/eay-ai-core
+        run: |
+          python - <<'PY'
+          from app.entrypoint import app, compose_app
+
+          compose_app()
+          compose_app()
+          post = [
+              route for route in app.routes
+              if getattr(route, 'path', None) == '/v1/model-promotions'
+              and 'POST' in (getattr(route, 'methods', set()) or set())
+          ]
+          get = [
+              route for route in app.routes
+              if getattr(route, 'path', None) == '/v1/model-promotions/{model_record_id}'
+              and 'GET' in (getattr(route, 'methods', set()) or set())
+          ]
+          assert len(post) == 1, len(post)
+          assert len(get) == 1, len(get)
+          assert post[0].endpoint.__module__ == 'app.main'
+          assert get[0].endpoint.__module__ == 'app.main'
+          print('AI_TRAINING_DIRECT_PROMOTION_SURFACE=PASS')
+          PY
+          grep -F 'model_promotion_api_not_configured' app/model_promotion_routes.py
+          grep -F 'production_promotion_requires_governed_promotion_gate' app/model_registry.py
+      - name: Commit and remove all route diagnostics/fixers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'EAY Convergence CI'
+          git config user.email 'ci@eay.invalid'
+          rm -f .github/workflows/ai-training-route-diagnostic.yml
+          rm -f .github/workflows/ai-training-route-fix-v2.yml
+          rm -f .github/workflows/ai-training-route-fix-v3.yml
+          git add -A
+          git diff --cached --check
+          test -z "$(find .github/workflows -maxdepth 1 \( -name 'ai-training-route-diagnostic.yml' -o -name 'ai-training-route-fix-v*.yml' \) -print -quit)"
+          git commit -m 'fix(ai-training): centralize governed promotion on canonical app'
+          git push origin HEAD:release/platform-convergence-ai-training-v0.1

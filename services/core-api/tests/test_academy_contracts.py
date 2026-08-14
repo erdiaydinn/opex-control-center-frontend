@@ -28,18 +28,29 @@ def principal() -> Principal:
     )
 
 
-def test_locales_are_restricted_to_tr_en_de_ar() -> None:
+def test_locales_are_restricted_to_eay_ten_locale_contract() -> None:
     ContentCreateRequest(
         content_type="sop",
         slug="safe-work",
-        title_i18n={"tr": "Güvenli Çalışma", "ar": "العمل الآمن"},
+        title_i18n={
+            "tr": "Güvenli Çalışma",
+            "en": "Safe Work",
+            "de": "Sicheres Arbeiten",
+            "ar": "العمل الآمن",
+            "fr": "Travail sûr",
+            "es": "Trabajo seguro",
+            "it": "Lavoro sicuro",
+            "nl": "Veilig werken",
+            "pl": "Bezpieczna praca",
+            "pt-BR": "Trabalho seguro",
+        },
         version_label="2026.1",
     )
     with pytest.raises(ValueError, match="Unsupported locales"):
         ContentCreateRequest(
             content_type="sop",
-            slug="bad-locale",
-            title_i18n={"fr": "Interdit"},
+            slug="unsupported-locale",
+            title_i18n={"ja": "安全な作業"},
             version_label="1",
         )
 

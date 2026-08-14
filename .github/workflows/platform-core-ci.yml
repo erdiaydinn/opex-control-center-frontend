@@ -58,6 +58,16 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 12
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -95,9 +105,16 @@ jobs:
           PY
       - name: Lint
         run: ruff check services/core-api
+      - name: Secure SQL data-access boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+
       - name: Apply database migrations as migrator
         working-directory: services/core-api
         run: alembic upgrade head
+
+      - name: Enforce AI database role isolation
+        run: pytest -q services/core-api/tests/test_ai_database_role_boundary.py
+
       - name: Test as RLS-bound runtime role
         run: pytest services/core-api/tests
 
@@ -116,3 +133,30 @@ jobs:
         run: docker build -f services/core-api/Dockerfile services/core-api
       - name: Build frontend container
         run: docker build -f Dockerfile .
+
+  identity-gateway-security:
+    name: Identity Gateway adversarial boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Identity Gateway test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./services/identity-gateway[dev]"
+
+      - name: Identity Gateway signer contract
+        run: pytest -q services/identity-gateway/tests
+
+      - name: Generate ephemeral CI signing material
+        run: python scripts/security/generate_identity_ci_material.py
+
+      - name: Production Identity Gateway secret boundary
+        run: python scripts/security/production_identity_secret_gate.py
+
+      - name: Identity Gateway Compose runtime adversarial gate
+        run: python scripts/security/identity_gateway_runtime_gate.py

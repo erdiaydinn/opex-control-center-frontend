@@ -26,7 +26,7 @@ function StatusCard({ title, status, detail, icon: Icon, successLabel = "Çalı�
 
 export default function PlatformHealth() {
   const navigate = useNavigate();
-  const { isSuperAdmin, getAccessToken } = useAuth();
+  const { isSuperAdmin } = useAuth();
 
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,18 +37,13 @@ export default function PlatformHealth() {
     setError("");
 
     try {
-      const token = getAccessToken();
+      const result = await apiFetch(
+        "/v1/platform/health",
+        {
+          method: "GET",
+        }
+      );
 
-      if (!token) {
-        throw new Error("Platform sağlık bilgisi için oturum anahtarı bulunamadı.");
-      }
-
-      const result = await apiFetch("/v1/platform/health", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
 
       setHealth(result);
     } catch (err) {
@@ -57,7 +52,7 @@ export default function PlatformHealth() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, []);
 
   useEffect(() => {
     if (isSuperAdmin()) {

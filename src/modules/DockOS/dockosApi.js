@@ -1,56 +1,49 @@
-import { filterRowsByDockOSScope, getCurrentDockOSUser, getDockOSScope } from "./dockosPermissions.js";
+import {
+  apiFetch as authenticatedApiFetch,
+} from "../../api/client.js";
 
-const LOCAL_API_ORIGIN =
-  typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:8000`
-    : "http://127.0.0.1:8000";
+import {
+  filterRowsByDockOSScope,
+} from "./dockosPermissions.js";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || `${LOCAL_API_ORIGIN}/api`).replace(/\/$/, "");
+
 const REQUEST_TIMEOUT_MS = 15000;
 
+
+// Scope is never sent by the browser as authorization input.
+// Backend must derive scope from authenticated principal / DB / RLS.
 function appendScopeParams(params) {
-  const scope = getDockOSScope();
-  params.set("scope_type", scope?.type || "all");
   return params;
 }
 
+
 async function apiFetch(path, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const controller =
+    new AbortController();
+
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT_MS
+  );
 
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "X-OPEX-User": getCurrentDockOSUser()?.email || "",
-        "X-OPEX-Role": getCurrentDockOSUser()?.role || "viewer",
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...(options.headers || {}),
-      },
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload?.detail || payload?.message || `API ${response.status}`);
-    }
-    return payload;
+    return await authenticatedApiFetch(
+      path,
+      {
+        ...options,
+        signal: controller.signal,
+      }
+    );
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("API zaman aşımına uğradı. Backend çalışıyor mu kontrol et.");
+      throw new Error(
+        "DockOS API iste?i zaman a??m?na u?rad?."
+      );
     }
-    if (error?.message && !/Failed to fetch|NetworkError|Load failed/i.test(error.message)) {
-      throw error;
-    }
-    const endpoint = `${API_BASE}${path}`;
-    const reason = error?.message || String(error);
-    throw new Error(
-      `DockOS API bağlantısı kurulamadı: ${endpoint}. ` +
-      `Backend 8000 portunda çalışıyor mu kontrol et. Detay: ${reason}`
-    );
+
+    throw error;
   } finally {
-    clearTimeout(timeout);
+    window.clearTimeout(timeout);
   }
 }
 

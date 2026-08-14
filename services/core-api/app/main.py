@@ -1,23 +1,62 @@
 import asyncio
+import json
 import os
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from uuid import uuid4
+from typing import Literal
+from uuid import UUID, uuid4
 
 import httpx
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.core.audit import build_audit_event
+from app.core.client_ip import resolve_client_ip
 from app.core.config import get_settings
-from app.core.resources import check_database, check_redis, close_resources
-from app.core.security import Principal, get_current_principal, require_platform_admin
+from app.core.resources import (
+    check_database,
+    check_redis,
+    close_resources,
+    write_audit_event,
+    list_audit_events,
+    list_tenant_members,
+    list_tenant_roles,
+    get_tenant,
+    update_tenant_display_name,
+    create_tenant_member,
+    update_tenant_member_access,
+)
+from app.core.security import (
+    Principal,
+    require_platform_admin,
+    require_super_admin,
+    require_viewer,
+)
 
 settings = get_settings()
+
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+class CreateTenantMemberRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=255)
+    email: str | None = Field(default=None, max_length=320)
+    display_name: str | None = Field(default=None, max_length=200)
+    roles: list[str] = Field(min_length=1, max_length=4)
+
+
+class UpdateTenantMemberAccessRequest(BaseModel):
+    status: Literal["active", "suspended"]
+    roles: list[str] = Field(min_length=1, max_length=4)
+
+
+class UpdateTenantRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=200)
 
 
 @asynccontextmanager
@@ -54,8 +93,67 @@ async def request_context_and_security_headers(request: Request, call_next):
         else str(uuid4())
     )
     request.state.request_id = request_id
+    request.state.client_ip = resolve_client_ip(request)
 
     response = await call_next(request)
+
+    principal = getattr(request.state, "principal", None)
+    authenticated_principal = getattr(
+        request.state,
+        "authenticated_principal",
+        None,
+    )
+    audit_principal = principal or authenticated_principal
+
+    audit_event = build_audit_event(
+        request_id=request_id,
+        actor=getattr(audit_principal, "subject", None),
+        tenant_id=(
+            str(getattr(audit_principal, "tenant_id", ""))
+            if audit_principal is not None
+            else None
+        ),
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        action=f"{request.method.lower()}:{request.url.path}",
+        metadata={
+            "client_host": getattr(
+                request.state,
+                "client_ip",
+                None,
+            ),
+        },
+    )
+
+    if request.url.path not in {
+        "/health/live",
+        "/health/ready",
+        "/v1/audit/events",
+    }:
+        print(
+            json.dumps(
+                {"event": "audit", **audit_event},
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+
+        try:
+            await write_audit_event(audit_event)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "event": "audit_write_failed",
+                        "request_id": request_id,
+                        "error_type": type(exc).__name__,
+                    },
+                    ensure_ascii=False,
+                ),
+                flush=True,
+            )
+
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
@@ -90,15 +188,212 @@ async def readiness() -> JSONResponse:
 @app.get("/v1/context", tags=["platform"])
 async def current_context(
     request: Request,
-    principal: Principal = Depends(get_current_principal),
+    principal: Principal = Depends(require_viewer),
 ) -> dict[str, object]:
     return {
         "request_id": request.state.request_id,
         "actor": principal.subject,
         "tenant_id": principal.tenant_id,
         "roles": principal.roles,
+        "permissions": principal.permissions,
+        "permission_assignments": [
+            assignment.model_dump()
+            for assignment in principal.permission_assignments
+        ],
         "auth_mode": principal.auth_mode,
     }
+
+
+@app.get("/v1/audit/events", tags=["platform"])
+async def get_audit_events(
+    principal: Principal = Depends(require_platform_admin),
+    limit: int = 50,
+    actor: str | None = None,
+    decision: str | None = None,
+    action: str | None = None,
+) -> dict[str, object]:
+    safe_limit = max(1, min(limit, 200))
+
+    if decision not in {None, "allowed", "denied", "error"}:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": "decision must be allowed, denied or error",
+            },
+        )
+
+    items = await list_audit_events(
+        tenant_id=str(principal.tenant_id),
+        limit=safe_limit,
+        actor=actor,
+        decision=decision,
+        action=action,
+    )
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "count": len(items),
+        "items": items,
+    }
+
+@app.patch("/v1/admin/tenant", tags=["administration"])
+async def patch_current_tenant(
+    payload: UpdateTenantRequest,
+    principal: Principal = Depends(require_super_admin),
+) -> dict[str, object]:
+    display_name = payload.display_name.strip()
+
+    if not display_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant display name cannot be empty",
+        )
+
+    tenant = await update_tenant_display_name(
+        tenant_id=str(principal.tenant_id),
+        display_name=display_name,
+    )
+
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    return tenant
+
+
+@app.get("/v1/admin/tenant", tags=["administration"])
+async def get_current_tenant(
+    principal: Principal = Depends(require_platform_admin),
+) -> dict[str, object]:
+    tenant = await get_tenant(
+        tenant_id=str(principal.tenant_id),
+    )
+
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    return tenant
+
+
+@app.get("/v1/admin/roles", tags=["administration"])
+async def get_tenant_roles(
+    principal: Principal = Depends(require_platform_admin),
+) -> dict[str, object]:
+    items = await list_tenant_roles(
+        tenant_id=str(principal.tenant_id),
+    )
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "count": len(items),
+        "items": items,
+    }
+
+
+@app.post(
+    "/v1/admin/members",
+    tags=["administration"],
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_tenant_member(
+    payload: CreateTenantMemberRequest,
+    principal: Principal = Depends(require_super_admin),
+) -> dict[str, object]:
+    try:
+        return await create_tenant_member(
+            tenant_id=str(principal.tenant_id),
+            subject=payload.subject.strip(),
+            email=payload.email.strip() if payload.email else None,
+            display_name=(
+                payload.display_name.strip()
+                if payload.display_name
+                else None
+            ),
+            roles=tuple(payload.roles),
+        )
+    except ValueError as exc:
+        detail = str(exc)
+
+        if detail == "Membership already exists for this subject":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Membership already exists for this subject",
+            ) from exc
+
+        if detail.startswith("Unknown or non-system roles:"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid role selection",
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid membership request",
+        ) from exc
+
+
+@app.patch(
+    "/v1/admin/members/{membership_id}",
+    tags=["administration"],
+)
+async def patch_tenant_member_access(
+    membership_id: UUID,
+    payload: UpdateTenantMemberAccessRequest,
+    principal: Principal = Depends(require_super_admin),
+) -> dict[str, object]:
+    try:
+        return await update_tenant_member_access(
+            tenant_id=str(principal.tenant_id),
+            membership_id=str(membership_id),
+            membership_status=payload.status,
+            roles=tuple(payload.roles),
+        )
+    except ValueError as exc:
+        detail = str(exc)
+
+        if detail == "Membership not found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Membership not found",
+            ) from exc
+
+        if detail == "Cannot remove or suspend the last active super admin":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot remove or suspend the last active super admin",
+            ) from exc
+
+        if detail.startswith("Unknown or non-system roles:"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid role selection",
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid membership update",
+        ) from exc
+
+
+@app.get("/v1/admin/members", tags=["administration"])
+async def get_tenant_members(
+    principal: Principal = Depends(require_platform_admin),
+) -> dict[str, object]:
+    items = await list_tenant_members(
+        tenant_id=str(principal.tenant_id),
+    )
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "count": len(items),
+        "items": items,
+    }
+
 
 @app.get("/v1/platform/health", tags=["platform"])
 async def platform_health(

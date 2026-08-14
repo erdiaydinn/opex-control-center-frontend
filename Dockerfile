@@ -2,7 +2,8 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install
+COPY scripts/ci/materialize-sheetjs.mjs ./scripts/ci/materialize-sheetjs.mjs
+RUN node scripts/ci/materialize-sheetjs.mjs && npm ci
 
 COPY . .
 RUN npm run build

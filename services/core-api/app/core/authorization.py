@@ -6,9 +6,9 @@ from fastapi import Depends, HTTPException, status
 
 from app.core.permission_catalog import is_known_permission
 from app.core.security import (
-    Principal,
     ROLE_PLATFORM_ADMIN,
     ROLE_SUPER_ADMIN,
+    Principal,
     get_current_principal,
     normalize_principal_roles,
 )

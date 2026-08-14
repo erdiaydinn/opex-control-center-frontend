@@ -2,62 +2,31 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Literal
 
-ALLOWED_CLASSIFICATIONS = frozenset({"OWN", "IMPORTED", "DISCOVERED"})
-ALLOWED_DECISIONS = frozenset({"ADOPT", "WATCH", "REFERENCE", "REJECT", "PENDING"})
-ALLOWED_IDENTITY_STATUS = frozenset({"VERIFIED", "UNRESOLVED"})
+from pydantic import BaseModel, Field, model_validator
 
-REQUIRED_SEED_IDS = frozenset(
-    {
-        "own-opex-control-center-frontend",
-        "own-planai-audit",
-        "own-adaronya",
-        "imported-council-of-high-intelligence",
-        "imported-cl4r1t4s",
-        "imported-computer-lab-automation",
-        "imported-deep-learning-tutorials",
-        "imported-impeccable",
-        "imported-image-understanding-tthau",
-        "imported-jarvis-erdi-full-start",
-        "imported-jarvis-erdi-starter-patch",
-        "imported-jarvis-main-family",
-        "imported-jarvis-master",
-        "discovered-apache-superset",
-        "discovered-patika-superset-tr",
-        "discovered-pending-local-llm-serving-routing",
-        "discovered-pending-agent-rag-eval-observability",
-        "discovered-pending-vision-doc-ml-lifecycle",
-        "discovered-pending-workflow-security-finetuning",
-    }
-)
+RegistryClass = Literal["OWN", "IMPORTED", "DISCOVERED"]
+Decision = Literal[
+    "canonical",
+    "adopt",
+    "watch",
+    "reference",
+    "localization-reference",
+    "reject",
+    "pending",
+]
 
-EXCLUDED_PATH_PARTS = frozenset(
-    {
-        ".git",
-        ".venv",
-        "venv",
-        "node_modules",
-        "vendor",
-        "dist",
-        "build",
-        "__pycache__",
-        ".next",
-        ".turbo",
-        ".vite",
-    }
-)
-EXCLUDED_FILENAMES = frozenset(
-    {
-        ".env",
-        ".env.local",
-        ".env.production",
-        "id_rsa",
-        "id_ed25519",
-    }
-)
+DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "repository_intelligence_registry.json"
+EXCLUDED_PATH_PARTS = {
+    ".git", ".venv", "venv", "node_modules", "vendor", "dist", "build",
+    "__pycache__", ".next", ".turbo", ".vite",
+}
+EXCLUDED_FILENAMES = {
+    ".env", ".env.local", ".env.production", "id_rsa", "id_ed25519",
+    "credentials.json", "secrets.json",
+}
 SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 
 
@@ -65,148 +34,142 @@ class RepositoryRegistryError(ValueError):
     pass
 
 
-@dataclass(frozen=True)
-class RepositoryRegistry:
-    schema_version: int
-    updated_at: str
-    entries: tuple[dict[str, Any], ...]
-    fingerprint: str
-
-    def by_id(self, entry_id: str) -> dict[str, Any]:
-        for entry in self.entries:
-            if entry["id"] == entry_id:
-                return entry
-        raise KeyError(entry_id)
-
-    @property
-    def unresolved(self) -> tuple[dict[str, Any], ...]:
-        return tuple(entry for entry in self.entries if entry["identity_status"] == "UNRESOLVED")
+class RepositoryReview(BaseModel):
+    ref: str | None = None
+    commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    license: str = Field(min_length=1)
+    commercial_use: str = Field(min_length=1)
 
 
-def _canonical_json(payload: Any) -> bytes:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+class RepositoryEntry(BaseModel):
+    id: str = Field(min_length=1)
+    classification: RegistryClass
+    identity: str | None = None
+    source_artifact: str | None = None
+    canonical_upstream: str | None = None
+    decision: Decision
+    capabilities: list[str] = Field(default_factory=list)
+    review: RepositoryReview
+
+    @model_validator(mode="after")
+    def unresolved_identity_is_fail_closed(self):
+        if self.identity is None:
+            if self.decision != "pending":
+                raise ValueError("unresolved_repository_identity_must_be_pending")
+            if self.review.commercial_use != "blocked":
+                raise ValueError("unresolved_repository_identity_must_block_commercial_use")
+        if self.classification == "OWN" and self.identity is None:
+            raise ValueError("owned_repository_identity_required")
+        if self.canonical_upstream and self.identity is None:
+            raise ValueError("canonical_upstream_requires_verified_identity")
+        return self
 
 
-def registry_fingerprint(payload: dict[str, Any]) -> str:
-    return hashlib.sha256(_canonical_json(payload)).hexdigest()
+class CanonicalSource(BaseModel):
+    repository: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    commit: str = Field(pattern=r"^[0-9a-f]{40}$")
 
 
-def _validate_entry(entry: dict[str, Any]) -> None:
-    required = {
-        "id",
-        "classification",
-        "display_name",
-        "repository",
-        "source_locator",
-        "canonical_upstream",
-        "relation",
-        "last_reviewed_ref",
-        "last_reviewed_sha",
-        "license",
-        "capabilities",
-        "decision",
-        "identity_status",
-    }
-    missing = required - entry.keys()
-    if missing:
-        raise RepositoryRegistryError(f"registry entry {entry.get('id')!r} missing fields: {sorted(missing)}")
+class RegistryPolicy(BaseModel):
+    allowed_classes: list[RegistryClass]
+    allowed_decisions: list[Decision]
+    never_silently_drop: bool
+    unknown_identity_must_remain_pending: bool
+    external_code_requires_license_review: bool
+    prohibit_risky_auto_merge: bool
+    prohibit_unapproved_production_weight_changes: bool
 
-    if entry["classification"] not in ALLOWED_CLASSIFICATIONS:
-        raise RepositoryRegistryError(f"invalid classification for {entry['id']}")
-    if entry["decision"] not in ALLOWED_DECISIONS:
-        raise RepositoryRegistryError(f"invalid decision for {entry['id']}")
-    if entry["identity_status"] not in ALLOWED_IDENTITY_STATUS:
-        raise RepositoryRegistryError(f"invalid identity status for {entry['id']}")
 
-    repository = entry["repository"]
-    if entry["identity_status"] == "VERIFIED":
-        if not isinstance(repository, str) or repository.count("/") != 1:
-            raise RepositoryRegistryError(f"verified entry {entry['id']} requires exact owner/repo identity")
-    elif repository is not None:
-        raise RepositoryRegistryError(
-            f"unresolved entry {entry['id']} must keep repository=null rather than inventing owner/repo"
+class RepositoryRegistry(BaseModel):
+    version: int = Field(ge=1)
+    updated_at: str = Field(min_length=10, max_length=10)
+    canonical_source: CanonicalSource
+    policy: RegistryPolicy
+    repositories: list[RepositoryEntry]
+    required_discovery_domains: list[str]
+
+    @model_validator(mode="after")
+    def registry_invariants(self):
+        ids = [entry.id for entry in self.repositories]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate_repository_registry_id")
+        identities = [entry.identity for entry in self.repositories if entry.identity]
+        if len(identities) != len(set(identities)):
+            raise ValueError("duplicate_verified_repository_identity")
+        if not self.policy.never_silently_drop:
+            raise ValueError("repository_registry_must_be_cumulative")
+        if not self.policy.unknown_identity_must_remain_pending:
+            raise ValueError("unresolved_repository_policy_must_fail_closed")
+        return self
+
+    def by_id(self) -> dict[str, RepositoryEntry]:
+        return {entry.id: entry for entry in self.repositories}
+
+    def fingerprint(self) -> str:
+        canonical = json.dumps(
+            self.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
         )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    reviewed_sha = entry["last_reviewed_sha"]
-    if reviewed_sha is not None:
-        if not isinstance(reviewed_sha, str) or len(reviewed_sha) != 40 or any(
-            char not in "0123456789abcdef" for char in reviewed_sha.lower()
-        ):
-            raise RepositoryRegistryError(f"invalid reviewed commit SHA for {entry['id']}")
-        if not entry["last_reviewed_ref"]:
-            raise RepositoryRegistryError(f"reviewed SHA without branch/tag/ref for {entry['id']}")
+    def assert_seed_entries(self) -> None:
+        required = {
+            "eay-opex-frontend",
+            "eay-planai-audit",
+            "eay-adaronya",
+            "council-high-intelligence",
+            "cl4r1t4s",
+            "computer-lab-automation",
+            "deep-learning-tutorials",
+            "impeccable",
+            "image-understanding",
+            "jarvis-archives",
+            "apache-superset",
+            "patika-superset-tr",
+        }
+        missing = sorted(required - set(self.by_id()))
+        if missing:
+            raise ValueError("repository_registry_seed_entries_missing:" + ",".join(missing))
 
-    license_info = entry["license"]
-    if not isinstance(license_info, dict) or set(license_info) != {"spdx", "status"}:
-        raise RepositoryRegistryError(f"invalid license contract for {entry['id']}")
-    if entry["classification"] != "OWN" and entry["decision"] == "ADOPT" and license_info["status"] != "VERIFIED":
-        raise RepositoryRegistryError(f"external code cannot be adopted before license verification: {entry['id']}")
-
-    if not isinstance(entry["capabilities"], list) or not entry["capabilities"]:
-        raise RepositoryRegistryError(f"capability mapping required for {entry['id']}")
-
-
-def _parse_repository_registry_payload(payload: Any) -> RepositoryRegistry:
-    if not isinstance(payload, dict):
-        raise RepositoryRegistryError("repository registry must be a JSON object")
-    if payload.get("schema_version") != 1:
-        raise RepositoryRegistryError("unsupported repository registry schema_version")
-    if not isinstance(payload.get("updated_at"), str) or not payload["updated_at"]:
-        raise RepositoryRegistryError("registry updated_at is required")
-    entries = payload.get("entries")
-    if not isinstance(entries, list) or not entries:
-        raise RepositoryRegistryError("registry entries must be a non-empty list")
-
-    ids: set[str] = set()
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise RepositoryRegistryError("registry entries must be objects")
-        _validate_entry(entry)
-        entry_id = entry["id"]
-        if entry_id in ids:
-            raise RepositoryRegistryError(f"duplicate registry id: {entry_id}")
-        ids.add(entry_id)
-
-    missing_seeds = REQUIRED_SEED_IDS - ids
-    if missing_seeds:
-        raise RepositoryRegistryError(f"canonical seed entries may not be silently dropped: {sorted(missing_seeds)}")
-
-    return RepositoryRegistry(
-        schema_version=payload["schema_version"],
-        updated_at=payload["updated_at"],
-        entries=tuple(entries),
-        fingerprint=registry_fingerprint(payload),
-    )
+    def assert_external_license_gate(self) -> None:
+        for entry in self.repositories:
+            if entry.classification == "OWN" or entry.decision in {
+                "watch", "reference", "localization-reference", "reject", "pending"
+            }:
+                continue
+            if entry.review.license in {"pending-review", "unresolved"} or entry.review.commercial_use.startswith("blocked"):
+                raise ValueError(f"repository_license_gate_blocked:{entry.id}")
 
 
 def load_repository_registry_text(source_text: str) -> RepositoryRegistry:
-    """Load a registry from already-verified UTF-8 text without weakening validation.
-
-    This entry point exists for immutable historical Git/GitHub evidence. It intentionally applies
-    the exact same schema, seed-preservation, identity and license gates as the filesystem loader.
-    """
     try:
         payload = json.loads(source_text)
     except json.JSONDecodeError as exc:
         raise RepositoryRegistryError("repository registry is not valid JSON") from exc
-    return _parse_repository_registry_payload(payload)
+    try:
+        registry = RepositoryRegistry.model_validate(payload)
+        registry.assert_seed_entries()
+        return registry
+    except ValueError as exc:
+        raise RepositoryRegistryError(str(exc)) from exc
 
 
-def load_repository_registry(path: str | Path) -> RepositoryRegistry:
-    registry_path = Path(path)
-    return load_repository_registry_text(registry_path.read_text(encoding="utf-8"))
+def load_repository_registry(path: str | Path = DEFAULT_REGISTRY_PATH) -> RepositoryRegistry:
+    return load_repository_registry_text(Path(path).read_text(encoding="utf-8"))
 
 
 def should_index_repository_path(path: str) -> bool:
-    """Return False for secrets, generated/vendor noise, and private-key material."""
+    """Reject secrets and generated/vendor noise before repository learning."""
     normalized = path.replace("\\", "/").strip("/")
     if not normalized:
         return False
     parts = normalized.split("/")
-    lowered_parts = {part.lower() for part in parts}
-    if lowered_parts & {part.lower() for part in EXCLUDED_PATH_PARTS}:
+    lowered = {part.lower() for part in parts}
+    if lowered & EXCLUDED_PATH_PARTS:
         return False
-
     filename = parts[-1].lower()
     if filename in EXCLUDED_FILENAMES or filename.startswith(".env."):
         return False

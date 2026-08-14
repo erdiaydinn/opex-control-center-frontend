@@ -1,114 +1,110 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
-  ACCESS_MODULES,
-  MODULE_DETAIL_CONFIG,
-  getAccessConfig,
-  refreshAccessConfig,
-  saveAccessConfig,
-} from "../src/auth/accessConfig.js";
+  clearAuthorizationSnapshot,
+  getAuthorizationSnapshot,
+  publishAuthorizationSnapshot,
+} from "../src/auth/authorizationStore.js";
 import { commandModules } from "../src/modules/control-center/commandCenterModules.js";
 
-class MemoryStorage {
-  constructor() {
-    this.values = new Map();
-  }
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const legacyAccessConfig = resolve(root, "src/auth/accessConfig.js");
+const authorizationStorePath = resolve(root, "src/auth/authorizationStore.js");
+const moduleCatalogPath = resolve(root, "config/module_catalog.json");
 
-  getItem(key) {
-    return this.values.has(key) ? this.values.get(key) : null;
-  }
-
-  setItem(key, value) {
-    this.values.set(key, String(value));
-  }
-
-  removeItem(key) {
-    this.values.delete(key);
-  }
-}
-
-globalThis.CustomEvent = class CustomEvent {
-  constructor(type, options = {}) {
-    this.type = type;
-    this.detail = options.detail;
-  }
-};
-
-globalThis.window = {
-  localStorage: new MemoryStorage(),
-  dispatchEvent() {},
-};
-
-const legacyConfig = {
-  groups: {
-    custom_ops: {
-      id: "custom_ops",
-      name: "Custom Ops",
-      status: "active",
-      modules: {
-        dockos: {
-          view: true,
-          admin: false,
-          details: {
-            features: { dashboard: true },
-            actions: { view: true, delete: false },
-            scope: { type: "warehouse", warehouses: ["Fulya (İstanbul)"] },
-          },
-        },
-      },
-    },
-  },
-  users: {
-    "admin@yemeksepeti.com": {
-      email: "admin@yemeksepeti.com",
-      name: "Admin User",
-      role: "admin",
-      status: "active",
-      groups: [],
-      modules: {
-        dockos: { view: true, admin: false },
-      },
-    },
-  },
-};
-
-window.localStorage.setItem("opex_access_config_v4", JSON.stringify(legacyConfig));
-
-const migrated = getAccessConfig();
-assert.ok(migrated.groups.custom_ops, "Custom group must survive migration");
-assert.deepEqual(migrated.users["admin@yemeksepeti.com"].groups, [], "Explicit group removals must survive migration");
-assert.equal(migrated.groups.custom_ops.modules.dockos.view, true, "Existing module permission must survive");
-assert.deepEqual(
-  migrated.groups.custom_ops.modules.dockos.details.scope.warehouses,
-  ["Fulya (İstanbul)"],
-  "Existing data scope must survive"
+assert.equal(
+  existsSync(legacyAccessConfig),
+  false,
+  "Legacy browser-local accessConfig.js must not return; authorization is server-authoritative"
 );
 
-for (const module of ACCESS_MODULES) {
-  assert.ok(migrated.groups.custom_ops.modules[module.key], `Missing migrated module: ${module.key}`);
-  assert.ok(MODULE_DETAIL_CONFIG[module.key], `Missing detail permission catalog: ${module.key}`);
+const authorizationStoreSource = readFileSync(authorizationStorePath, "utf8");
+for (const forbidden of ["localStorage", "sessionStorage", "saveAccessConfig", "refreshAccessConfig"]) {
+  assert.equal(
+    authorizationStoreSource.includes(forbidden),
+    false,
+    `Authorization snapshot store must not contain browser-local authority primitive: ${forbidden}`
+  );
 }
 
+const serverPayload = {
+  user: { email: "operator@example.test", displayName: "Operator" },
+  tenantId: "tenant-ys-tr",
+  roles: ["operations_manager"],
+  permissions: ["module:planogram:view", "module:dockos:view"],
+  permissionAssignments: [
+    {
+      key: "module:planogram:view",
+      role_key: "operations_manager",
+      scope: { warehouse_id: "WH-FULYA" },
+    },
+  ],
+};
+
+publishAuthorizationSnapshot(serverPayload);
+const snapshot = getAuthorizationSnapshot();
+
+assert.equal(snapshot.tenantId, "tenant-ys-tr");
+assert.deepEqual(snapshot.roles, ["operations_manager"]);
+assert.deepEqual(snapshot.permissions, ["module:planogram:view", "module:dockos:view"]);
+assert.deepEqual(snapshot.permissionAssignments, [
+  {
+    key: "module:planogram:view",
+    role_key: "operations_manager",
+    scope: { warehouse_id: "WH-FULYA" },
+  },
+]);
+assert.equal(snapshot.user.email, "operator@example.test");
+
+assert.ok(Object.isFrozen(snapshot), "Authorization snapshot must be immutable");
+assert.ok(Object.isFrozen(snapshot.user), "Published user identity must be immutable");
+assert.ok(Object.isFrozen(snapshot.roles), "Published roles must be immutable");
+assert.ok(Object.isFrozen(snapshot.permissions), "Published permissions must be immutable");
+assert.ok(Object.isFrozen(snapshot.permissionAssignments), "Permission assignments must be immutable");
+assert.ok(Object.isFrozen(snapshot.permissionAssignments[0]), "Permission assignment must be immutable");
+assert.ok(Object.isFrozen(snapshot.permissionAssignments[0].scope), "Permission scope must be immutable");
+
+serverPayload.user.displayName = "Tampered";
+serverPayload.roles.push("super_admin");
+serverPayload.permissions.push("admin_access:admin");
+serverPayload.permissionAssignments[0].scope.warehouse_id = "WH-OTHER";
+
+assert.equal(snapshot.user.displayName, "Operator", "Published user must not track caller mutations");
+assert.deepEqual(snapshot.roles, ["operations_manager"], "Published roles must not track caller mutations");
+assert.deepEqual(
+  snapshot.permissions,
+  ["module:planogram:view", "module:dockos:view"],
+  "Published permissions must not track caller mutations"
+);
+assert.equal(
+  snapshot.permissionAssignments[0].scope.warehouse_id,
+  "WH-FULYA",
+  "Published scope must not track caller mutations"
+);
+
+const catalog = JSON.parse(readFileSync(moduleCatalogPath, "utf8"));
+const commercialKeys = new Set(catalog.commercial_modules.map((module) => module.key));
 const commandKeys = new Set(commandModules.map((module) => module.moduleKey));
-for (const module of ACCESS_MODULES) {
-  assert.ok(commandKeys.has(module.key), `Command Center is missing module card: ${module.key}`);
+
+for (const moduleKey of ["planogram", "dockos", "budget", "workforce", "inventory", "academy"]) {
+  assert.ok(commercialKeys.has(moduleKey), `Canonical module catalog is missing ${moduleKey}`);
+  assert.ok(commandKeys.has(moduleKey), `Command Center is missing canonical module card ${moduleKey}`);
 }
 
-const withoutViewers = structuredClone(migrated);
-delete withoutViewers.groups.viewers;
-saveAccessConfig(withoutViewers);
-assert.equal(getAccessConfig().groups.viewers, undefined, "Save must not silently restore a deleted group");
+clearAuthorizationSnapshot();
+const cleared = getAuthorizationSnapshot();
+assert.equal(cleared.user, null);
+assert.equal(cleared.tenantId, null);
+assert.deepEqual(cleared.roles, []);
+assert.deepEqual(cleared.permissions, []);
+assert.deepEqual(cleared.permissionAssignments, []);
 
-const rawAfterDeletion = structuredClone(withoutViewers);
-delete rawAfterDeletion.groups.custom_ops.modules.workforce;
-const refreshed = refreshAccessConfig(rawAfterDeletion);
-assert.equal(refreshed.groups.viewers, undefined, "Module refresh must not recreate a deleted group");
-assert.ok(refreshed.groups.custom_ops.modules.workforce, "Module refresh should add a missing platform entry");
-assert.equal(refreshed.groups.custom_ops.modules.dockos.view, true, "Refresh must preserve existing grants");
-assert.deepEqual(
-  refreshed.groups.custom_ops.modules.dockos.details.scope.warehouses,
-  ["Fulya (İstanbul)"],
-  "Refresh must preserve existing scope"
+publishAuthorizationSnapshot(null);
+assert.equal(getAuthorizationSnapshot().user, null, "Invalid payload must fail closed to empty authorization");
+
+console.log(
+  `Server-authoritative access smoke OK: ${commandModules.length} command cards, no browser-local grant store.`
 );
-
-console.log(`Access catalog OK: ${ACCESS_MODULES.length} modules, existing grants preserved.`);

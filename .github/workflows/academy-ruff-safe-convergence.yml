@@ -40,6 +40,14 @@ jobs:
           source = source.replace('from app.main_academy import app', 'from app.main import app')
           integration.write_text(source, encoding='utf-8')
 
+          service = Path('services/core-api/app/modules/academy/service.py')
+          source = service.read_text(encoding='utf-8')
+          old = '    certificate_code = f"EAY-{str(principal.tenant_id)[:8]}-{str(enrollment_id)[:8]}-{completion_fingerprint[:10]}".upper()\n'
+          assert source.count(old) == 1
+          new = '''    certificate_code = (\n        f"EAY-{str(principal.tenant_id)[:8]}-{str(enrollment_id)[:8]}-"\n        f"{completion_fingerprint[:10]}"\n    ).upper()\n'''
+          source = source.replace(old, new)
+          service.write_text(source, encoding='utf-8')
+
           pyproject = Path('services/core-api/pyproject.toml')
           source = pyproject.read_text(encoding='utf-8')
           anchor = '"alembic/versions/*_budget_*.py" = ["E501"]\n'

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-08-12",
+  "updated_at": "2026-08-14",
   "canonical_source": {
     "repository": "erdiaydinn/Adaronya",
     "path": "governance/repository-intelligence-registry.yaml",
@@ -51,27 +51,27 @@
       "canonical_upstream": "0xNyk/council-of-high-intelligence",
       "decision": "watch",
       "capabilities": ["multi-agent", "council", "orchestration", "critique", "reasoning"],
-      "review": {"ref": "main", "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+      "review": {"ref": "main", "commit": "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72", "license": "MIT", "commercial_use": "permissive-with-notice"}
     },
     {
       "id": "cl4r1t4s",
       "classification": "IMPORTED",
-      "identity": null,
+      "identity": "elder-plinius/CL4R1T4S",
       "source_artifact": "CL4R1T4S-main.zip",
-      "canonical_upstream": null,
-      "decision": "pending",
-      "capabilities": [],
-      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+      "canonical_upstream": "elder-plinius/CL4R1T4S",
+      "decision": "reference",
+      "capabilities": ["agent-reference", "reasoning-reference"],
+      "review": {"ref": "main", "commit": "1a55b8a36d47c86e8d774acef83306d56fb0b302", "license": "AGPL-3.0", "commercial_use": "reference-only-proprietary-eay"}
     },
     {
       "id": "computer-lab-automation",
       "classification": "IMPORTED",
-      "identity": null,
+      "identity": "mustafadalga/computer-lab-automation",
       "source_artifact": "computer-lab-automation-master.zip",
-      "canonical_upstream": null,
-      "decision": "pending",
+      "canonical_upstream": "mustafadalga/computer-lab-automation",
+      "decision": "reference",
       "capabilities": ["workflow-automation"],
-      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+      "review": {"ref": "master", "commit": "0f6fa81448062488f01144c67032764af25ee5fe", "license": "GPL-3.0", "commercial_use": "reference-only-unless-separately-cleared"}
     },
     {
       "id": "deep-learning-tutorials",

@@ -19,6 +19,19 @@ Decision = Literal[
 ]
 
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "config" / "repository_intelligence_registry.json"
+EXCLUDED_PATH_PARTS = {
+    ".git", ".venv", "venv", "node_modules", "vendor", "dist", "build",
+    "__pycache__", ".next", ".turbo", ".vite",
+}
+EXCLUDED_FILENAMES = {
+    ".env", ".env.local", ".env.production", "id_rsa", "id_ed25519",
+    "credentials.json", "secrets.json",
+}
+SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+
+
+class RepositoryRegistryError(ValueError):
+    pass
 
 
 class RepositoryReview(BaseModel):
@@ -123,14 +136,45 @@ class RepositoryRegistry(BaseModel):
 
     def assert_external_license_gate(self) -> None:
         for entry in self.repositories:
-            if entry.classification == "OWN" or entry.decision in {"watch", "reference", "localization-reference", "reject", "pending"}:
+            if entry.classification == "OWN" or entry.decision in {
+                "watch", "reference", "localization-reference", "reject", "pending"
+            }:
                 continue
             if entry.review.license in {"pending-review", "unresolved"} or entry.review.commercial_use.startswith("blocked"):
                 raise ValueError(f"repository_license_gate_blocked:{entry.id}")
 
 
-def load_repository_registry(path: Path = DEFAULT_REGISTRY_PATH) -> RepositoryRegistry:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    registry = RepositoryRegistry.model_validate(payload)
-    registry.assert_seed_entries()
-    return registry
+def load_repository_registry_text(source_text: str) -> RepositoryRegistry:
+    try:
+        payload = json.loads(source_text)
+    except json.JSONDecodeError as exc:
+        raise RepositoryRegistryError("repository registry is not valid JSON") from exc
+    try:
+        registry = RepositoryRegistry.model_validate(payload)
+        registry.assert_seed_entries()
+        return registry
+    except ValueError as exc:
+        raise RepositoryRegistryError(str(exc)) from exc
+
+
+def load_repository_registry(path: str | Path = DEFAULT_REGISTRY_PATH) -> RepositoryRegistry:
+    return load_repository_registry_text(Path(path).read_text(encoding="utf-8"))
+
+
+def should_index_repository_path(path: str) -> bool:
+    """Reject secrets and generated/vendor noise before repository learning."""
+    normalized = path.replace("\\", "/").strip("/")
+    if not normalized:
+        return False
+    parts = normalized.split("/")
+    lowered = {part.lower() for part in parts}
+    if lowered & EXCLUDED_PATH_PARTS:
+        return False
+    filename = parts[-1].lower()
+    if filename in EXCLUDED_FILENAMES or filename.startswith(".env."):
+        return False
+    if filename.endswith(SECRET_SUFFIXES):
+        return False
+    if "private" in filename and "key" in filename:
+        return False
+    return True

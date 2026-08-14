@@ -98,6 +98,8 @@ jobs:
       DOCKOS_DC_NAMES: Ankara DC
       DOCKOS_PO_SOURCE: LOCAL
       DOCKOS_NOTIFICATION_AUTOMATION: "false"
+      WORKFORCE_AUTO_MIGRATE: "false"
+      WORKFORCE_TENANT_ID: eay
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -109,6 +111,16 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
         working-directory: .
+      - name: Apply Workforce V29-V32 migrations once
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_workforce_v29.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/003_workforce_v30_acceptance.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/004_workforce_v31_lifecycle_acceptance.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/005_workforce_v32_identity_revocation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_tenant_bindings(role_name, tenant_id) VALUES (current_user, 'eay') ON CONFLICT (role_name) DO UPDATE SET tenant_id=EXCLUDED.tenant_id;"
+          version=$(psql "$DATABASE_URL" -Atc "SELECT max(version) FROM workforce_schema_migrations;")
+          test "$version" = "32"
+          echo "WORKFORCE_PREMIGRATION=PASS version=$version"
       - name: Apply DockOS migrations
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_dockos_postgres.sql
@@ -192,8 +204,10 @@ jobs:
           createdb -h 127.0.0.1 -U dockos dockos_restore
           pg_restore -h 127.0.0.1 -U dockos -d dockos_restore /tmp/dockos.dump
           restored=$(psql -h 127.0.0.1 -U dockos -d dockos_restore -Atc "SELECT count(*) FROM dockos.schema_migrations WHERE version IN ('001_dockos_postgres','002_runtime_hardening');")
+          workforce_version=$(psql -h 127.0.0.1 -U dockos -d dockos_restore -Atc "SELECT max(version) FROM workforce_schema_migrations;")
           test "$restored" = "2"
-          echo "POSTGRES_BACKUP_RESTORE=PASS migrations=$restored"
+          test "$workforce_version" = "32"
+          echo "POSTGRES_BACKUP_RESTORE=PASS dockos_migrations=$restored workforce_version=$workforce_version"
       - name: Stop API process
         if: always()
         run: |

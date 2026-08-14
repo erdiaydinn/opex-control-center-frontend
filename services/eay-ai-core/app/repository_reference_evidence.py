@@ -45,11 +45,24 @@ class RepositoryReferenceEvidence(BaseModel):
         spdx = self.license.spdx.upper()
         commercial_use = self.commercial_use.upper()
         security = self.security_relevance.casefold()
+        capabilities = {capability.casefold() for capability in self.capabilities}
+
         if spdx in {"ELASTIC-2.0", "ELV2"}:
             if commercial_use != "SOURCE_AVAILABLE_NO_HOSTED_MANAGED_SERVICE":
                 raise ValueError("elastic_2_reference_requires_hosted_service_restriction")
             if "hosted" not in security or "managed service" not in security:
                 raise ValueError("elastic_2_reference_requires_security_license_boundary")
+
+        if "model-registry" in capabilities or "ml-lifecycle" in capabilities:
+            required_phrases = (
+                "human approval",
+                "production model-weight",
+                "artifact provenance",
+                "deployment authorization",
+            )
+            if any(phrase not in security for phrase in required_phrases):
+                raise ValueError("model_lifecycle_reference_requires_production_promotion_boundary")
+
         return self
 
 

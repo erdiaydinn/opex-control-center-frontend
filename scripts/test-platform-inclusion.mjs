@@ -4,6 +4,7 @@ import { intelligenceMessageCoverage } from "../src/platform/i18n/intelligenceMe
 import { academyPlayerMessageCoverage } from "../src/platform/i18n/academyPlayerMessages.js";
 import { academyAuthoringMessageCoverage } from "../src/platform/i18n/academyAuthoringMessages.js";
 import { academyQuizAuthoringMessageCoverage } from "../src/platform/i18n/academyQuizAuthoringMessages.js";
+import { academyContentMessageCoverage } from "../src/platform/i18n/academyContentMessages.js";
 import { planogramMessageCoverage } from "../src/platform/i18n/planogramMessages.js";
 
 function requireCondition(condition, message) { if (!condition) throw new Error(message); }
@@ -12,6 +13,7 @@ const prefs=fs.readFileSync("src/platform/preferences/PlatformPreferencesContext
 const control=fs.readFileSync("src/platform/preferences/AccessibilityControl.jsx","utf8");
 const css=fs.readFileSync("src/platform/preferences/platform-preferences.css","utf8");
 const planogram=fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx","utf8");
+const academyWorkspace=fs.readFileSync("src/modules/academy/AcademyWorkspace.jsx","utf8");
 const academyAuthoring=fs.readFileSync("src/modules/academy/AcademyPathAuthoring.jsx","utf8");
 const academyQuizAuthoring=fs.readFileSync("src/modules/academy/AcademyQuizAuthoring.jsx","utf8");
 const quality=JSON.parse(fs.readFileSync("config/product_quality_contract.json","utf8"));
@@ -29,7 +31,10 @@ requireCondition(prefs.includes("Intl.DateTimeFormat"),"locale-aware date format
 const expectedLocales=["tr","en","de","ar","fr","es","it","nl","pl","pt-BR"];
 requireCondition(JSON.stringify(SUPPORTED_LOCALES.map(item=>item.code))===JSON.stringify(expectedLocales),"runtime locale set/order drifted");
 for(const locale of expectedLocales){requireCondition(quality.global_acceptance_targets.supported_locales.includes(locale),`quality contract locale missing: ${locale}`);}
-for(const [label,coverage] of [["platform",messageCoverage()],["intelligence",intelligenceMessageCoverage(expectedLocales)],["academy player",academyPlayerMessageCoverage(expectedLocales)],["academy authoring",academyAuthoringMessageCoverage(expectedLocales)],["academy quiz authoring",academyQuizAuthoringMessageCoverage(expectedLocales)],["planogram",planogramMessageCoverage(expectedLocales)]]){for(const locale of expectedLocales){requireCondition((coverage.missing[locale]||[]).length===0,`missing ${label} translations for ${locale}: ${(coverage.missing[locale]||[]).join(", ")}`);requireCondition((coverage.extra[locale]||[]).length===0,`${label} translation key drift for ${locale}: ${(coverage.extra[locale]||[]).join(", ")}`);}}
+for(const [label,coverage] of [["platform",messageCoverage()],["intelligence",intelligenceMessageCoverage(expectedLocales)],["academy player",academyPlayerMessageCoverage(expectedLocales)],["academy authoring",academyAuthoringMessageCoverage(expectedLocales)],["academy quiz authoring",academyQuizAuthoringMessageCoverage(expectedLocales)],["academy content",academyContentMessageCoverage(expectedLocales)],["planogram",planogramMessageCoverage(expectedLocales)]]){for(const locale of expectedLocales){requireCondition((coverage.missing[locale]||[]).length===0,`missing ${label} translations for ${locale}: ${(coverage.missing[locale]||[]).join(", ")}`);requireCondition((coverage.extra[locale]||[]).length===0,`${label} translation key drift for ${locale}: ${(coverage.extra[locale]||[]).join(", ")}`);}}
+requireCondition(academyWorkspace.includes("translateAcademyContent(locale, item.content_type)"),"Academy content-type labels must remain localized");
+requireCondition(!academyWorkspace.includes("<span>{item.content_type}</span>"),"Academy catalog must not expose raw content-type enums");
+requireCondition(!academyWorkspace.includes("{answer.mode}"),"Academy tutor must not expose raw answer-mode enums");
 requireCondition(academyAuthoring.includes('canAction("academy", "managePaths")'),"Academy path authoring must remain permission-bound");
 requireCondition(academyAuthoring.includes("workspace?.authoring?.published_versions"),"Academy path content choices must remain server-authoritative");
 requireCondition(academyAuthoring.includes("workspace?.authoring?.roles"),"Academy audience role choices must remain server-authoritative");

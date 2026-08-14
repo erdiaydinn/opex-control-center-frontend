@@ -23,9 +23,21 @@ import { useNavigate } from "react-router-dom";
 
 import { apiGet, apiPost } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
+import { translateAcademyContent } from "../../platform/i18n/academyContentMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import AcademyPathAuthoring from "./AcademyPathAuthoring.jsx";
 import "./academy.css";
+
+const CONTENT_TYPES = [
+  "video",
+  "document",
+  "sop",
+  "interactive",
+  "live",
+  "announcement",
+  "poster",
+  "survey",
+];
 
 function localized(value, locale) {
   if (!value || typeof value !== "object") return "";
@@ -38,15 +50,16 @@ function contentIcon(type) {
   return Layers3;
 }
 
-function statusLabel(status, t) {
+function statusLabel(status, t, locale) {
   const map = {
     completed: t("completed"),
     in_progress: t("inProgress"),
     assigned: t("assigned"),
     draft: t("draft"),
     published: t("published"),
+    revoked: translateAcademyContent(locale, "revoked"),
   };
-  return map[status] || status || "—";
+  return map[status] || "—";
 }
 
 function EmptyState({ icon: Icon = Library, title, detail }) {
@@ -100,7 +113,7 @@ function MyLearning({ data, locale, t, formatDate, onOpen }) {
           <div className="eay-academy-card-icon"><GraduationCap size={20} aria-hidden="true" /></div>
           <div className="eay-academy-card-copy">
             <div className="eay-academy-card-topline">
-              <span className={`eay-academy-status is-${item.status}`}>{statusLabel(item.status, t)}</span>
+              <span className={`eay-academy-status is-${item.status}`}>{statusLabel(item.status, t, locale)}</span>
               {item.due_at ? <small>{t("due")}: {formatDate(item.due_at, { dateStyle: "medium" })}</small> : null}
             </div>
             <h3>{localized(item.title_i18n, locale) || item.key}</h3>
@@ -120,7 +133,12 @@ function Catalog({ data, locale, t, query, setQuery }) {
   const normalized = query.trim().toLocaleLowerCase(locale);
   const items = (data?.content || []).filter((item) => {
     if (!normalized) return true;
-    return [localized(item.title_i18n, locale), localized(item.description_i18n, locale), item.slug, item.content_type]
+    return [
+      localized(item.title_i18n, locale),
+      localized(item.description_i18n, locale),
+      item.slug,
+      item.content_type,
+    ]
       .join(" ")
       .toLocaleLowerCase(locale)
       .includes(normalized);
@@ -139,7 +157,10 @@ function Catalog({ data, locale, t, query, setQuery }) {
             const Icon = contentIcon(item.content_type);
             return (
               <article key={item.id} className="eay-academy-content-card">
-                <div className="eay-academy-content-kind"><Icon size={19} aria-hidden="true" /><span>{item.content_type}</span></div>
+                <div className="eay-academy-content-kind">
+                  <Icon size={19} aria-hidden="true" />
+                  <span>{translateAcademyContent(locale, item.content_type)}</span>
+                </div>
                 <h3>{localized(item.title_i18n, locale) || item.slug}</h3>
                 <p>{localized(item.description_i18n, locale)}</p>
               </article>
@@ -159,7 +180,7 @@ function Certificates({ data, locale, t, formatDate }) {
       {items.map((item) => (
         <article key={item.id} className={`eay-academy-certificate ${item.revoked_at ? "is-revoked" : ""}`}>
           <Award size={28} aria-hidden="true" />
-          <span>{item.revoked_at ? statusLabel("revoked", t) : t("completed")}</span>
+          <span>{item.revoked_at ? statusLabel("revoked", t, locale) : t("completed")}</span>
           <h3>{localized(item.title_i18n, locale) || item.path_key}</h3>
           <p>{item.certificate_code}</p>
           <small>{formatDate(item.issued_at, { dateStyle: "long" })}</small>
@@ -212,7 +233,11 @@ function JarvisTutor({ locale, t }) {
         <article className="eay-academy-answer">
           <div className="eay-academy-answer-head">
             <strong>{t("academySourceAnswer")}</strong>
-            <span>{answer.supported ? <><CheckCircle2 size={15} aria-hidden="true" /> {answer.mode}</> : answer.mode}</span>
+            <span>
+              {answer.supported
+                ? <><CheckCircle2 size={15} aria-hidden="true" /> {t("academySourceAnswer")}</>
+                : t("academyNoAnswer")}
+            </span>
           </div>
           <p>{answer.answer || (answer.supported ? "" : t("academyNoAnswer"))}</p>
           {(answer.sources || []).length ? (
@@ -221,7 +246,7 @@ function JarvisTutor({ locale, t }) {
               {(answer.sources || []).map((source, index) => (
                 <article key={`${source.content_version_id}-${source.chunk_ordinal || index}`}>
                   <span>{source.title || source.heading || `${t("academyContentVersion")} ${source.content_version_id}`}</span>
-                  <small>{source.source_page ? `p. ${source.source_page}` : source.source_anchor || source.content_version_id}</small>
+                  <small>{source.source_page ? `#${source.source_page}` : source.source_anchor || source.content_version_id}</small>
                 </article>
               ))}
             </div>
@@ -282,32 +307,22 @@ function ContentStudio({ workspace, locale, t, canAction, refresh }) {
         <form className="eay-academy-create-form" onSubmit={createContent}>
           <label><span>{t("academyTitle")}</span><input value={form.title} onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))} required /></label>
           <label><span>{t("academySlug")}</span><input value={form.slug} onChange={(event) => setForm((value) => ({ ...value, slug: event.target.value }))} required /></label>
-          <label><span>{t("academyContentType")}</span><select value={form.contentType} onChange={(event) => setForm((value) => ({ ...value, contentType: event.target.value }))}>{["video","document","sop","interactive","live","announcement","poster","survey"].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>
+            <span>{t("academyContentType")}</span>
+            <select value={form.contentType} onChange={(event) => setForm((value) => ({ ...value, contentType: event.target.value }))}>
+              {CONTENT_TYPES.map((item) => (
+                <option key={item} value={item}>{translateAcademyContent(locale, item)}</option>
+              ))}
+            </select>
+          </label>
           <label className="wide"><span>{t("academyDescription")}</span><textarea value={form.description} onChange={(event) => setForm((value) => ({ ...value, description: event.target.value }))} rows={3} /></label>
           {error ? <p role="alert">{error}</p> : null}
           <div className="wide eay-academy-form-actions"><button type="button" onClick={() => setCreating(false)}>{t("cancel")}</button><button className="eay-academy-primary" disabled={saving}>{saving ? t("loading") : t("create")}</button></div>
         </form>
       ) : null}
       {(workspace?.content || []).length ? (
-        <div className="eay-academy-table-wrap"><table><thead><tr><th>{t("academyTitle")}</th><th>{t("academyContentType")}</th><th>{t("academyContentVersion")}</th><th>{t("status")}</th></tr></thead><tbody>{workspace.content.map((item) => <tr key={item.id}><td><strong>{localized(item.title_i18n, locale) || item.slug}</strong><small>{item.slug}</small></td><td>{item.content_type}</td><td>{item.version_label || "—"} · {item.locale || "—"}</td><td><span className={`eay-academy-status is-${item.status}`}>{statusLabel(item.status, t)}</span></td></tr>)}</tbody></table></div>
+        <div className="eay-academy-table-wrap"><table><thead><tr><th>{t("academyTitle")}</th><th>{t("academyContentType")}</th><th>{t("academyContentVersion")}</th><th>{t("status")}</th></tr></thead><tbody>{workspace.content.map((item) => <tr key={item.id}><td><strong>{localized(item.title_i18n, locale) || item.slug}</strong><small>{item.slug}</small></td><td>{translateAcademyContent(locale, item.content_type)}</td><td>{item.version_label || "—"} · {item.locale || "—"}</td><td><span className={`eay-academy-status is-${item.status}`}>{statusLabel(item.status, t, locale)}</span></td></tr>)}</tbody></table></div>
       ) : <EmptyState title={t("emptyTitle")} />}
-    </section>
-  );
-}
-
-function LearningPaths({ workspace, locale, t }) {
-  const items = workspace?.paths || [];
-  if (!items.length) return <EmptyState icon={Layers3} title={t("emptyTitle")} />;
-  return (
-    <section className="eay-academy-path-grid">
-      {items.map((item) => (
-        <article key={item.id}>
-          <div><Layers3 size={19} aria-hidden="true" /><span className={`eay-academy-status is-${item.status}`}>{statusLabel(item.status, t)}</span></div>
-          <h3>{localized(item.title_i18n, locale) || item.key}</h3>
-          <p>{localized(item.description_i18n, locale)}</p>
-          <footer><span>{t("academyContent")}: {item.item_count}</span><span>{t("academyEnrollments")}: {item.enrollment_count}</span><span>{t("completed")}: {item.completed_count}</span></footer>
-        </article>
-      ))}
     </section>
   );
 }
@@ -395,7 +410,7 @@ export default function AcademyWorkspace() {
 
       <section className="eay-academy-main">
         <header className="eay-academy-header">
-          <div><span>EAY LEARNING OS</span><h1>{tabs.find(([key]) => key === tab)?.[1] || t("academy")}</h1><p>{t("academySubtitle")}</p></div>
+          <div><span>EAY · {t("academy")}</span><h1>{tabs.find(([key]) => key === tab)?.[1] || t("academy")}</h1><p>{t("academySubtitle")}</p></div>
           <button type="button" className="eay-academy-refresh" onClick={load} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={17} aria-hidden="true" /><span>{t("refresh")}</span></button>
         </header>
 

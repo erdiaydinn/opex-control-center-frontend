@@ -169,6 +169,19 @@ def test_registry_supersession_rejects_unapproved_relation(tmp_path):
         )
 
 
+def test_registry_supersession_rejects_relation_from_unrelated_evidence(tmp_path):
+    intake, decision, relation, state, _ = _supersession_scenario(tmp_path)
+    unrelated = replace(relation, evidence_ref="verification:unrelated-source")
+
+    with pytest.raises(ValueError, match="relation_evidence_mismatch"):
+        build_registry_temporal_promotion_evidence(
+            intake,
+            decision,
+            state,
+            relation=unrelated,
+        )
+
+
 def test_registry_temporal_gate_rejects_pre_effective_state(tmp_path):
     intake, decision, relation, state, _ = _supersession_scenario(tmp_path)
     early = replace(state, as_of="2026-06-30")

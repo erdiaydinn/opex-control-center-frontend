@@ -92,13 +92,17 @@ ROLE_POLICIES = {
 
 
 def _sql_array(values: tuple[str, ...]) -> str:
-    return "ARRAY[" + ",".join("'" + value.replace("'", "''") + "'" for value in values) + "]::varchar[]"
+    quoted = ",".join("'" + value.replace("'", "''") + "'" for value in values)
+    return f"ARRAY[{quoted}]::varchar[]"
 
 
 def upgrade() -> None:
     # Expand persisted Academy language/content contracts before the API starts
     # accepting them. UI, content versions and RAG chunks must share one truth.
-    op.execute("ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale")
+    op.execute(
+        "ALTER TABLE academy_content_versions "
+        "DROP CONSTRAINT ck_academy_content_version_locale"
+    )
     op.execute(
         f"""
         ALTER TABLE academy_content_versions
@@ -237,7 +241,10 @@ def downgrade() -> None:
             """
         )
 
-    op.execute("ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale")
+    op.execute(
+        "ALTER TABLE academy_content_versions "
+        "DROP CONSTRAINT ck_academy_content_version_locale"
+    )
     op.execute(
         """
         ALTER TABLE academy_content_versions

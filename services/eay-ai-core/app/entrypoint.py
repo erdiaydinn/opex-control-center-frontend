@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from fastapi import APIRouter, FastAPI
+
 from .company_knowledge import router as company_knowledge_router
 from .employment_intelligence import router as employment_intelligence_router
 from .employment_temporal_grounding import router as employment_grounding_router
@@ -25,31 +27,63 @@ from .vision_provenance import router as vision_provenance_router
 from .voice_ws_api import router as voice_ws_router
 
 
-# The core app owns one gated learning-export wrapper. The entrypoint
-# composes review/manifest/model routers without deleting or duplicating it.
-app.include_router(regulatory_router)
-app.include_router(legal_router)
-app.include_router(legal_review_router)
-app.include_router(legal_verification_router)
-app.include_router(legal_knowledge_router)
-app.include_router(company_knowledge_router)
-app.include_router(employment_intelligence_router)
-app.include_router(employment_grounding_router)
-app.include_router(payroll_router)
-app.include_router(grounded_chat_router)
-app.include_router(tool_router)
-app.include_router(tool_intent_router)
-app.include_router(tool_execution_router)
-# Deliberately do not expose bigquery_safe_executor.router. The executor classes are an
-# internal implementation detail used only after vetted template, scope, semantic, schema
-# and runtime-contract gates in tool_execution. Publishing /v1/bigquery/execute would let
-# callers submit arbitrary read-only SQL and bypass those governed KPI/legal contracts.
-app.include_router(eval_router)
-app.include_router(observability_router)
-app.include_router(vision_audit_router)
-app.include_router(vision_provenance_router)
-app.include_router(training_manifest_router)
-app.include_router(learning_export_router)
-app.include_router(model_registry_router)
-app.include_router(model_promotion_router)
-app.include_router(voice_ws_router)
+def _signature(route) -> tuple[str, tuple[str, ...], str]:
+    path = str(getattr(route, "path", ""))
+    methods = tuple(sorted(getattr(route, "methods", set()) or set()))
+    name = str(getattr(route, "name", ""))
+    return path, methods, name
+
+
+def _include_router_once(target: FastAPI, router: APIRouter) -> None:
+    expected = {_signature(route) for route in router.routes}
+    if not expected:
+        return
+    present = {_signature(route) for route in target.routes}
+    overlap = expected & present
+    if overlap == expected:
+        return
+    if overlap:
+        raise RuntimeError("ai_core_partial_router_composition_detected")
+    target.include_router(router)
+
+
+def compose_app() -> FastAPI:
+    """Idempotently compose the production AI Core public surface.
+
+    This function is safe to call again after isolated test/runtime setup. A
+    partially present router is treated as corruption rather than silently
+    duplicating or weakening the API surface.
+    """
+
+    routers = (
+        regulatory_router,
+        legal_router,
+        legal_review_router,
+        legal_verification_router,
+        legal_knowledge_router,
+        company_knowledge_router,
+        employment_intelligence_router,
+        employment_grounding_router,
+        payroll_router,
+        grounded_chat_router,
+        tool_router,
+        tool_intent_router,
+        tool_execution_router,
+        # Deliberately do not expose bigquery_safe_executor.router. Arbitrary
+        # read-only SQL would bypass governed KPI/legal scope contracts.
+        eval_router,
+        observability_router,
+        vision_audit_router,
+        vision_provenance_router,
+        training_manifest_router,
+        learning_export_router,
+        model_registry_router,
+        model_promotion_router,
+        voice_ws_router,
+    )
+    for router in routers:
+        _include_router_once(app, router)
+    return app
+
+
+app = compose_app()

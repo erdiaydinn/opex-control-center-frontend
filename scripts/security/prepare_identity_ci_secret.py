@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PRIVATE_PATH = ROOT / "runtime" / "identity-gateway" / "signing-private-key.pem"
 PROJECT = "opex-identity-ci-gate"
 COMPOSE_FILE = ROOT / "docker-compose.platform.yml"
+IMAGE_REF = f"{PROJECT}-identity-gateway"
 
 ENV = os.environ.copy()
 ENV.update(
@@ -75,12 +76,10 @@ def main() -> None:
     # Build only the Identity image so its runtime UID/GID is authoritative.
     run([*COMPOSE, "build", "identity-gateway"])
 
-    image_id = run(
-        [*COMPOSE, "images", "-q", "identity-gateway"],
-        capture=True,
-    ).stdout.strip()
-    if not re.fullmatch(r"[0-9a-f]{12,64}", image_id):
-        raise SystemExit("IDENTITY_CI_IMAGE_ID_INVALID")
+    # Compose gives the service a deterministic project-scoped image reference.
+    # Inspect that reference directly instead of parsing version-dependent
+    # `docker compose images -q` output (which may be blank or `sha256:`-prefixed).
+    run(["docker", "image", "inspect", IMAGE_REF], capture=True)
 
     owner = run(
         [
@@ -91,7 +90,7 @@ def main() -> None:
             "root",
             "--entrypoint",
             "sh",
-            image_id,
+            IMAGE_REF,
             "-c",
             "printf '%s:%s' \"$(id -u identity)\" \"$(id -g identity)\"",
         ],
@@ -99,7 +98,7 @@ def main() -> None:
     ).stdout.strip()
 
     if not re.fullmatch(r"[1-9][0-9]*:[1-9][0-9]*", owner):
-        raise SystemExit("IDENTITY_CI_RUNTIME_OWNER_INVALID")
+        raise SystemExit("IDENTITY_CI_RUNTIME_OWNER_INVALID=" + repr(owner))
 
     secret_dir = PRIVATE_PATH.parent.resolve()
     secret_name = PRIVATE_PATH.name
@@ -117,7 +116,7 @@ def main() -> None:
             "sh",
             "-v",
             f"{secret_dir}:/identity-ci-secret:rw",
-            image_id,
+            IMAGE_REF,
             "-c",
             (
                 f"chown {owner} /identity-ci-secret/{secret_name} && "

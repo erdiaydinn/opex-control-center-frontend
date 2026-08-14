@@ -16,6 +16,9 @@ const planogram=fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx","utf
 const academyWorkspace=fs.readFileSync("src/modules/academy/AcademyWorkspace.jsx","utf8");
 const academyAuthoring=fs.readFileSync("src/modules/academy/AcademyPathAuthoring.jsx","utf8");
 const academyQuizAuthoring=fs.readFileSync("src/modules/academy/AcademyQuizAuthoring.jsx","utf8");
+const academyPathCss=fs.readFileSync("src/modules/academy/academy-path-authoring.css","utf8");
+const academyPlayerCss=fs.readFileSync("src/modules/academy/academy-player.css","utf8");
+const academyQualityCss=fs.readFileSync("src/modules/academy/academy-quality.css","utf8");
 const quality=JSON.parse(fs.readFileSync("config/product_quality_contract.json","utf8"));
 requireCondition(main.includes("PlatformPreferencesProvider"),"global platform preferences provider is missing");
 requireCondition(main.includes("AccessibilityControl"),"global accessibility control is missing");
@@ -43,6 +46,9 @@ requireCondition(academyQuizAuthoring.includes('canAction("academy", "manageQuiz
 requireCondition(academyQuizAuthoring.includes("workspace?.authoring?.published_versions"),"Academy quiz content choices must remain server-authoritative");
 requireCondition(academyQuizAuthoring.includes("workspace?.authoring?.quizzes"),"Academy quiz state must remain server-authoritative");
 requireCondition(academyQuizAuthoring.includes('/v1/academy/admin/quizzes'),"Academy quiz authoring must persist through the governed Core API");
+requireCondition(academyPathCss.startsWith('@import "./academy-quality.css";'),"Academy workspace must load shared touch-target quality rules");
+requireCondition(academyPlayerCss.startsWith('@import "./academy-quality.css";'),"Academy player must load shared touch-target quality rules");
+for(const rule of [".eay-academy-page .eay-academy-back{width:48px;height:48px}",".eay-academy-page .eay-academy-nav nav button{min-height:48px}",".eay-academy-page .eay-academy-refresh,.eay-academy-page .eay-academy-primary{min-height:48px}",".eay-academy-page .eay-academy-search{height:48px}",".academy-player-page .academy-player-outline button,.academy-player-page .academy-player-checkpoint,.academy-player-page .academy-player-quiz label{min-height:48px}"]){requireCondition(academyQualityCss.includes(rule),`Academy 48px interaction rule missing: ${rule}`);}
 requireCondition(quality.global_acceptance_targets.rtl_locales.includes("ar"),"Arabic RTL must remain mandatory");
 requireCondition(quality.release_policy.accessibility_preferences_must_not_require_disability_or_health_diagnosis===true,"accessibility must not require diagnosis data");
 requireCondition(quality.surfaces.jarvis.security_guardian_scope==="platform_admin_only","Security Guardian scope regressed");

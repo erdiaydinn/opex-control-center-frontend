@@ -46,6 +46,23 @@ def _request_fingerprint(operation: str, value: object) -> str:
     return stable_fingerprint({"operation": operation, "payload": value})
 
 
+def _required_watch_percent(target: dict[str, Any]) -> float:
+    """Return the server-authoritative watch threshold for timed learning media."""
+
+    if target.get("content_type") not in {"video", "live"}:
+        return 0.0
+    if int(target.get("duration_ms") or 0) <= 0:
+        return 0.0
+
+    policy = target.get("completion_policy")
+    raw_value = policy.get("required_watch_percent", 90) if isinstance(policy, dict) else 90
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        value = 90.0
+    return min(100.0, max(0.0, value))
+
+
 async def update_progress(
     session: AsyncSession,
     principal: Principal,
@@ -121,15 +138,25 @@ async def update_progress(
         )
 
     watched_ms = int(target["watched_ms"]) + payload.watched_delta_ms
+    if duration_ms:
+        watched_ms = min(duration_ms, watched_ms)
     max_position_ms = max(int(target["max_position_ms"]), requested_position)
     if duration_ms:
         progress_percent = min(100.0, max_position_ms * 100.0 / duration_ms)
+        watched_percent = min(100.0, watched_ms * 100.0 / duration_ms)
     else:
         progress_percent = (
             100.0 if payload.complete_requested else float(target["progress_percent"])
         )
+        watched_percent = 100.0 if payload.complete_requested else 0.0
 
-    completed = bool(payload.complete_requested and progress_percent >= 90.0)
+    required_watch_percent = _required_watch_percent(target)
+    watched_requirement_met = watched_percent >= required_watch_percent
+    completed = bool(
+        payload.complete_requested
+        and progress_percent >= 90.0
+        and watched_requirement_met
+    )
     progress_status = "completed" if completed else "in_progress"
     row = await save_progress(
         session,
@@ -157,9 +184,19 @@ async def update_progress(
         enrollment_id=enrollment_id,
         content_version_id=payload.content_version_id,
         idempotency_key=idempotency_key,
-        data={"revision": row["revision"], "progress_percent": float(row["progress_percent"])},
+        data={
+            "revision": row["revision"],
+            "progress_percent": float(row["progress_percent"]),
+            "watched_percent": round(watched_percent, 2),
+            "required_watch_percent": required_watch_percent,
+        },
     )
-    return {**row, "idempotent_replay": False}
+    return {
+        **row,
+        "idempotent_replay": False,
+        "watched_percent": round(watched_percent, 2),
+        "required_watch_percent": required_watch_percent,
+    }
 
 
 async def submit_quiz_attempt(

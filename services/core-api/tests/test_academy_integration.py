@@ -212,18 +212,37 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
             )
         ).json()["idempotent_replay"] is True
 
-        p2 = await c.patch(
+        seek_only = await c.patch(
             f"/v1/academy/enrollments/{enrollment}/progress",
             headers={"Idempotency-Key": "p3"},
             json={
                 "content_version_id": version,
                 "last_position_ms": 10000,
-                "watched_delta_ms": 6000,
+                "watched_delta_ms": 1000,
                 "complete_requested": True,
                 "expected_revision": 1,
             },
         )
-        assert p2.status_code == 200 and p2.json()["status"] == "completed"
+        assert seek_only.status_code == 200, seek_only.text
+        assert seek_only.json()["progress_percent"] == 100
+        assert seek_only.json()["watched_percent"] == 50
+        assert seek_only.json()["required_watch_percent"] == 90
+        assert seek_only.json()["status"] == "in_progress"
+
+        watched_completion = await c.patch(
+            f"/v1/academy/enrollments/{enrollment}/progress",
+            headers={"Idempotency-Key": "p4"},
+            json={
+                "content_version_id": version,
+                "last_position_ms": 10000,
+                "watched_delta_ms": 5000,
+                "complete_requested": True,
+                "expected_revision": 2,
+            },
+        )
+        assert watched_completion.status_code == 200, watched_completion.text
+        assert watched_completion.json()["watched_percent"] == 100
+        assert watched_completion.json()["status"] == "completed"
         done = await c.post(f"/v1/academy/enrollments/{enrollment}/complete")
         assert done.status_code == 200, done.text
         assert done.json()["certificate_code"]

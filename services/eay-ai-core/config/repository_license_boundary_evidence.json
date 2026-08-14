@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14T13:21:00+03:00",
+  "records": [
+    {
+      "repository": "langfuse/langfuse",
+      "ref": "main",
+      "commit_sha": "95e4e652be90b2dae6021b9cbbb7ca4304742622",
+      "tree_sha": "2e0ed605ab6c6a8a42180da2c2781189885c3811",
+      "license_boundary": "MIXED",
+      "core_license": "MIT",
+      "restricted_paths": ["ee/", "web/src/ee/", "worker/src/ee/"],
+      "restricted_license": "LANGFUSE_ENTERPRISE_LICENSE",
+      "capabilities": ["llm-observability", "tracing", "evaluation", "prompt-management"],
+      "decision": "REFERENCE",
+      "commercial_use_policy": "CORE_ONLY_UNDER_MIT; ENTERPRISE_PATHS_REQUIRE_SEPARATE_LICENSE",
+      "source_license_blob_sha": "ec3a060911983bda23c2f6c77075fbed04de4948",
+      "restricted_license_blob_sha": "03b6de8c912cc4a9a8230ff7fb4a0b18e014274c"
+    }
+  ]
+}

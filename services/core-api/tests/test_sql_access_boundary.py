@@ -35,9 +35,31 @@ PRIVILEGED_ADMIN_SQL_POINTS = {
     ("cli/sync_backup_role_password.py", "synchronize"),
 }
 
+BUDGET_SQL_EXECUTION_POINTS = {
+    ("modules/budget/commands.py", "run_command"),
+    ("modules/budget/evidence.py", "emit_financial_event"),
+    ("modules/budget/imports.py", "stage_import"),
+    ("modules/budget/ledger.py", "post_invoice"),
+    ("modules/budget/ledger.py", "resolve_reconciliation"),
+    ("modules/budget/permissions.py", "dependency"),
+    ("modules/budget/planning.py", "create_plan"),
+    ("modules/budget/planning.py", "activate_plan"),
+    ("modules/budget/planning.py", "create_period"),
+    ("modules/budget/planning.py", "create_cost_center"),
+    ("modules/budget/planning.py", "create_line"),
+    ("modules/budget/planning.py", "create_forecast"),
+    ("modules/budget/planning.py", "close_period"),
+    ("modules/budget/procurement.py", "create_request"),
+    ("modules/budget/procurement.py", "decide_request"),
+    ("modules/budget/procurement.py", "create_po"),
+    ("modules/budget/read_models.py", "variance_summary"),
+    ("modules/budget/read_models.py", "financial_events"),
+}
+
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
+    | BUDGET_SQL_EXECUTION_POINTS
 )
 
 RUNTIME_ENGINE_CREATION = {
@@ -280,6 +302,24 @@ EXPECTED_EXECUTION_CALL_COUNTS = {
     ("db/session.py", "apply_tenant_context"): 2,
     ("cli/bootstrap_access.py", "bootstrap"): 7,
     ("cli/sync_backup_role_password.py", "synchronize"): 3,
+    ("modules/budget/commands.py", "run_command"): 3,
+    ("modules/budget/evidence.py", "emit_financial_event"): 3,
+    ("modules/budget/imports.py", "stage_import"): 3,
+    ("modules/budget/ledger.py", "post_invoice"): 6,
+    ("modules/budget/ledger.py", "resolve_reconciliation"): 9,
+    ("modules/budget/permissions.py", "dependency"): 1,
+    ("modules/budget/planning.py", "create_plan"): 1,
+    ("modules/budget/planning.py", "activate_plan"): 3,
+    ("modules/budget/planning.py", "create_period"): 4,
+    ("modules/budget/planning.py", "create_cost_center"): 1,
+    ("modules/budget/planning.py", "create_line"): 3,
+    ("modules/budget/planning.py", "create_forecast"): 1,
+    ("modules/budget/planning.py", "close_period"): 3,
+    ("modules/budget/procurement.py", "create_request"): 3,
+    ("modules/budget/procurement.py", "decide_request"): 3,
+    ("modules/budget/procurement.py", "create_po"): 4,
+    ("modules/budget/read_models.py", "variance_summary"): 1,
+    ("modules/budget/read_models.py", "financial_events"): 1,
 }
 
 

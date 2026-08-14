@@ -85,67 +85,67 @@ async def get_summary(uow: ViewSession):
 
 @router.post("/plans", status_code=201)
 async def post_plan(body: PlanCreate, key: IdempotencyKey, uow: PlanCreateSession):
-    return await run_command(uow, key=key, operation="budget.plan.create", payload=body, execute=lambda: create_plan(uow, body))
+    return await run_command(uow, key=key, operation="budget.plan.create", payload=body, perform=lambda: create_plan(uow, body))
 
 
 @router.post("/plans/{plan_id}/activate")
 async def post_plan_activation(plan_id: UUID, key: IdempotencyKey, uow: PlanActivateSession):
-    return await run_command(uow, key=key, operation="budget.plan.activate", payload={"plan_id": plan_id}, execute=lambda: activate_plan(uow, plan_id))
+    return await run_command(uow, key=key, operation="budget.plan.activate", payload={"plan_id": plan_id}, perform=lambda: activate_plan(uow, plan_id))
 
 
 @router.post("/periods", status_code=201)
 async def post_period(body: PeriodCreate, key: IdempotencyKey, uow: PeriodSession):
-    return await run_command(uow, key=key, operation="budget.period.create", payload=body, execute=lambda: create_period(uow, body))
+    return await run_command(uow, key=key, operation="budget.period.create", payload=body, perform=lambda: create_period(uow, body))
 
 
 @router.post("/cost-centers", status_code=201)
 async def post_cost_center(body: CostCenterCreate, key: IdempotencyKey, uow: CostCenterSession):
-    return await run_command(uow, key=key, operation="budget.cost_center.create", payload=body, execute=lambda: create_cost_center(uow, body))
+    return await run_command(uow, key=key, operation="budget.cost_center.create", payload=body, perform=lambda: create_cost_center(uow, body))
 
 
 @router.post("/lines", status_code=201)
 async def post_line(body: BudgetLineCreate, key: IdempotencyKey, uow: LineSession):
-    return await run_command(uow, key=key, operation="budget.line.create", payload=body, execute=lambda: create_line(uow, body))
+    return await run_command(uow, key=key, operation="budget.line.create", payload=body, perform=lambda: create_line(uow, body))
 
 
 @router.post("/requests", status_code=201)
 async def post_request(body: PurchaseRequestCreate, key: IdempotencyKey, uow: RequestSession):
-    return await run_command(uow, key=key, operation="budget.request.create", payload=body, execute=lambda: create_request(uow, body))
+    return await run_command(uow, key=key, operation="budget.request.create", payload=body, perform=lambda: create_request(uow, body))
 
 
 @router.post("/requests/{request_id}/decision")
 async def post_request_decision(request_id: UUID, body: ApprovalDecision, key: IdempotencyKey, uow: ApprovalSession):
-    return await run_command(uow, key=key, operation="budget.request.decision", payload={"request_id": request_id, "body": body}, execute=lambda: decide_request(uow, request_id, body))
+    return await run_command(uow, key=key, operation="budget.request.decision", payload={"request_id": request_id, "body": body}, perform=lambda: decide_request(uow, request_id, body))
 
 
 @router.post("/purchase-orders", status_code=201)
 async def post_purchase_order(body: PurchaseOrderCreate, key: IdempotencyKey, uow: POSession):
-    return await run_command(uow, key=key, operation="budget.po.create", payload=body, execute=lambda: create_po(uow, body))
+    return await run_command(uow, key=key, operation="budget.po.create", payload=body, perform=lambda: create_po(uow, body))
 
 
 @router.post("/invoices", status_code=201)
 async def post_invoice_route(body: InvoiceCreate, key: IdempotencyKey, uow: InvoiceSession):
-    return await run_command(uow, key=key, operation="budget.invoice.post", payload=body, execute=lambda: post_invoice(uow, body))
+    return await run_command(uow, key=key, operation="budget.invoice.post", payload=body, perform=lambda: post_invoice(uow, body))
 
 
 @router.post("/forecasts", status_code=201)
 async def post_forecast(body: ForecastCreate, key: IdempotencyKey, uow: ForecastSession):
-    return await run_command(uow, key=key, operation="budget.forecast.create", payload=body, execute=lambda: create_forecast(uow, body))
+    return await run_command(uow, key=key, operation="budget.forecast.create", payload=body, perform=lambda: create_forecast(uow, body))
 
 
 @router.post("/imports/stage", status_code=201)
 async def post_import(body: ImportStage, key: IdempotencyKey, uow: ImportSession):
-    return await run_command(uow, key=key, operation="budget.import.stage", payload=body, execute=lambda: stage_import(uow, body))
+    return await run_command(uow, key=key, operation="budget.import.stage", payload=body, perform=lambda: stage_import(uow, body))
 
 
 @router.post("/reconciliation/{issue_id}/resolve")
 async def post_reconciliation(issue_id: UUID, body: ReconciliationResolve, key: IdempotencyKey, uow: ReconciliationSession):
-    return await run_command(uow, key=key, operation="budget.reconciliation.resolve", payload={"issue_id": issue_id, "body": body}, execute=lambda: resolve_reconciliation(uow, issue_id, body))
+    return await run_command(uow, key=key, operation="budget.reconciliation.resolve", payload={"issue_id": issue_id, "body": body}, perform=lambda: resolve_reconciliation(uow, issue_id, body))
 
 
 @router.post("/periods/{period_id}/close")
 async def post_period_close(period_id: UUID, key: IdempotencyKey, uow: ClosePeriodSession):
-    return await run_command(uow, key=key, operation="budget.period.close", payload={"period_id": period_id}, execute=lambda: close_period(uow, period_id))
+    return await run_command(uow, key=key, operation="budget.period.close", payload={"period_id": period_id}, perform=lambda: close_period(uow, period_id))
 
 
 @router.get("/financial-events")

@@ -30,7 +30,7 @@ async def run_command(
     key: str,
     operation: str,
     payload: object,
-    execute: Callable[[], Awaitable[object]],
+    perform: Callable[[], Awaitable[object]],
 ):
     if not KEY_PATTERN.fullmatch(key):
         raise HTTPException(status_code=400, detail="Invalid Idempotency-Key")
@@ -66,7 +66,7 @@ async def run_command(
             return command.response
         raise HTTPException(status_code=409, detail="Command is already processing")
 
-    response = await execute()
+    response = await perform()
     encoded = jsonable_encoder(response)
     await uow.session.execute(
         text("UPDATE budget_command SET status='COMPLETED',response=CAST(:response AS jsonb),completed_at=now() WHERE tenant_id=:tenant AND idempotency_key=:key"),

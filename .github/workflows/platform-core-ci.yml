@@ -6,11 +6,13 @@ on:
       - main
       - feature/opex-command-center-v2
       - platform-core/**
+      - release/platform-convergence-v0.1
   pull_request:
     branches:
       - main
       - feature/opex-command-center-v2
       - platform-core/**
+      - release/platform-convergence-v0.1
 
 permissions:
   contents: read
@@ -29,6 +31,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then npm ci; else npm install; fi

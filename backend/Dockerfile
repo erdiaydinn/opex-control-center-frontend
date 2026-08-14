@@ -16,4 +16,4 @@ RUN mkdir -p /var/lib/dockos /var/backups/dockos /var/lib/dockos/recruitment-evi
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${DOCKOS_WORKERS:-2}"]
+CMD ["sh", "-c", "python -m app.prestart && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${DOCKOS_WORKERS:-2}"]

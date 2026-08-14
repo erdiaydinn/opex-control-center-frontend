@@ -6,6 +6,7 @@ on:
       - main
       - feature/opex-command-center-v2
       - platform-core/**
+      - product/planogram-*
       - release/platform-convergence-v0.1
   pull_request:
     branches:
@@ -135,7 +136,11 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose -f docker-compose.platform.yml config --quiet
       - name: Build Core API container
-        run: docker build -f services/core-api/Dockerfile services/core-api
+        run: >-
+          docker build
+          --build-context planai=apps/planai/backend
+          -f services/core-api/Dockerfile
+          services/core-api
       - name: Build frontend container
         run: docker build -f Dockerfile .
 

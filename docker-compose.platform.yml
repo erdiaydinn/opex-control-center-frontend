@@ -32,6 +32,8 @@ services:
     build:
       context: ./services/core-api
       dockerfile: Dockerfile
+      additional_contexts:
+        planai: ./apps/planai/backend
     command:
       - sh
       - -lc
@@ -90,6 +92,8 @@ services:
     build:
       context: ./services/core-api
       dockerfile: Dockerfile
+      additional_contexts:
+        planai: ./apps/planai/backend
     environment:
       OPEX_ENVIRONMENT: "${OPEX_ENVIRONMENT:-development}"
       OPEX_LOG_LEVEL: "${OPEX_LOG_LEVEL:-INFO}"

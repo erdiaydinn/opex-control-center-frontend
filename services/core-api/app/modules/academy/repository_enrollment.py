@@ -107,3 +107,138 @@ async def list_enrollments(session: AsyncSession, principal: Principal) -> list[
         .all()
     )
     return [dict(row) for row in rows]
+
+
+async def get_enrollment_workspace(
+    session: AsyncSession,
+    principal: Principal,
+    enrollment_id: UUID,
+) -> dict[str, Any] | None:
+    enrollment = (
+        (
+            await session.execute(
+                text("""
+        SELECT
+            e.id,
+            e.path_id,
+            e.subject,
+            e.source,
+            e.status,
+            e.assigned_at,
+            e.due_at,
+            e.started_at,
+            e.completed_at,
+            lp.key AS path_key,
+            lp.title_i18n,
+            lp.description_i18n,
+            lp.certificate_enabled,
+            lp.completion_policy
+        FROM academy_enrollments AS e
+        JOIN academy_learning_paths AS lp
+          ON lp.tenant_id=e.tenant_id AND lp.id=e.path_id
+        WHERE e.tenant_id=:tenant_id
+          AND e.id=:enrollment_id
+          AND e.subject=:subject
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "enrollment_id": enrollment_id,
+                    "subject": principal.subject,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if enrollment is None:
+        return None
+
+    rows = (
+        (
+            await session.execute(
+                text("""
+        SELECT
+            lpi.ordinal,
+            lpi.required,
+            lpi.completion_policy,
+            cv.id AS content_version_id,
+            cv.content_id,
+            cv.version_label,
+            cv.version_number,
+            cv.locale,
+            cv.mime_type,
+            cv.duration_ms,
+            cv.accessibility_metadata,
+            ci.slug,
+            ci.content_type,
+            ci.title_i18n,
+            ci.description_i18n,
+            COALESCE(p.status, 'not_started') AS progress_status,
+            COALESCE(p.progress_percent, 0) AS progress_percent,
+            COALESCE(p.last_position_ms, 0) AS last_position_ms,
+            COALESCE(p.watched_ms, 0) AS watched_ms,
+            COALESCE(p.revision, 0) AS progress_revision,
+            media.id AS media_id,
+            media.asset_kind,
+            media.delivery_mode,
+            media.duration_ms AS media_duration_ms,
+            media.transcode_status,
+            COALESCE(quizzes.items, '[]'::jsonb) AS quizzes
+        FROM academy_learning_path_items AS lpi
+        JOIN academy_content_versions AS cv
+          ON cv.tenant_id=lpi.tenant_id AND cv.id=lpi.content_version_id
+        JOIN academy_content_items AS ci
+          ON ci.tenant_id=cv.tenant_id AND ci.id=cv.content_id
+        LEFT JOIN academy_progress AS p
+          ON p.tenant_id=lpi.tenant_id
+         AND p.enrollment_id=:enrollment_id
+         AND p.content_version_id=cv.id
+         AND p.subject=:subject
+        LEFT JOIN LATERAL (
+            SELECT ma.*
+            FROM academy_media_assets AS ma
+            WHERE ma.tenant_id=cv.tenant_id
+              AND ma.content_version_id=cv.id
+              AND ma.transcode_status='ready'
+            ORDER BY ma.created_at DESC
+            LIMIT 1
+        ) AS media ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', q.id,
+                    'kind', q.kind,
+                    'checkpoint_at_ms', q.checkpoint_at_ms,
+                    'pass_score', q.pass_score,
+                    'max_attempts', q.max_attempts,
+                    'required', q.required,
+                    'version_number', q.version_number
+                ) ORDER BY COALESCE(q.checkpoint_at_ms, 9223372036854775807), q.id
+            ) AS items
+            FROM academy_quizzes AS q
+            WHERE q.tenant_id=cv.tenant_id
+              AND q.content_version_id=cv.id
+              AND q.status='published'
+        ) AS quizzes ON TRUE
+        WHERE lpi.tenant_id=:tenant_id
+          AND lpi.path_id=:path_id
+          AND cv.status='published'
+          AND ci.status='published'
+        ORDER BY lpi.ordinal
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "path_id": enrollment["path_id"],
+                    "enrollment_id": enrollment_id,
+                    "subject": principal.subject,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    return {
+        "enrollment": dict(enrollment),
+        "items": [dict(row) for row in rows],
+    }

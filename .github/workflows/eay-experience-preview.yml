@@ -7,6 +7,7 @@ on:
     paths:
       - "src/App.jsx"
       - "src/modules/experience/**"
+      - "scripts/START_EAY_PREVIEW.bat"
       - ".github/workflows/eay-experience-preview.yml"
       - "package.json"
       - "package-lock.json"
@@ -73,21 +74,29 @@ jobs:
         env:
           VITE_EAY_EXPERIENCE_MODE: "true"
         run: npm run build
-      - name: Add preview run instructions
+      - name: Add preview run instructions and Windows launcher
         run: |
+          cp scripts/START_EAY_PREVIEW.bat dist/START_EAY_PREVIEW.bat
           cat > dist/PREVIEW_README.txt <<'EOF'
           EAY EXPERIENCE PREVIEW
           ======================
           This artifact contains synthetic/demo data only and has no production credentials.
 
-          Run locally:
-            python -m http.server 4173 --directory dist
+          WINDOWS - EASIEST
+          -----------------
+          1. Extract the ZIP.
+          2. Double-click START_EAY_PREVIEW.bat.
+          3. Your browser opens http://localhost:4173/ automatically.
 
+          MANUAL
+          ------
+          From the extracted artifact directory:
+            python -m http.server 4173
           Then open:
-            http://localhost:4173/experience
+            http://localhost:4173/
 
-          If your static server does not provide SPA fallback, open the root URL first and navigate to /experience,
-          or use a SPA-capable static server such as: npx serve -s dist -l 4173
+          The preview build makes / the Experience Center only because VITE_EAY_EXPERIENCE_MODE=true at build time.
+          Normal production builds keep the authenticated Control Center at /.
           EOF
       - uses: actions/upload-artifact@v4
         with:

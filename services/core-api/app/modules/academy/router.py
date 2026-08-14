@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import require_permission
 from app.core.security import Principal
 from app.db.session import get_tenant_session
+from app.modules.academy.admin_router import router as admin_router
 from app.modules.academy.repository import (
     create_content,
     create_content_version,
@@ -17,6 +18,7 @@ from app.modules.academy.repository import (
     get_quiz_public_definition,
     grant_entitlement,
     ingest_document_chunks,
+    list_certificates,
     list_checkpoints,
     list_enrollments,
     list_entitled_content,
@@ -48,6 +50,8 @@ from app.modules.academy.service import (
 )
 
 router = APIRouter(prefix="/v1/academy", tags=["academy"])
+router.include_router(admin_router)
+
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 Viewer = Annotated[Principal, Depends(require_permission("module:academy:view"))]
 ManageContent = Annotated[
@@ -93,6 +97,7 @@ async def academy_home(session: TenantSession, principal: Viewer) -> dict[str, o
         },
         "enrollments": await list_enrollments(session, principal),
         "content": await list_entitled_content(session, principal),
+        "certificates": await list_certificates(session, principal),
     }
 
 

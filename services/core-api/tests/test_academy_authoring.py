@@ -103,6 +103,7 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
         assert [item["content_version_id"] for item in authoring["published_versions"]] == [
             version_id
         ]
+        assert authoring["quizzes"] == []
 
         tenant_d_workspace = await client.get(
             "/v1/academy/admin/workspace",
@@ -114,6 +115,7 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
         assert "academy_d_role" in tenant_d_roles
         assert "academy_c_role" not in tenant_d_roles
         assert tenant_d_authoring["published_versions"] == []
+        assert tenant_d_authoring["quizzes"] == []
 
         invalid_path = await client.post(
             "/v1/academy/admin/paths",
@@ -167,6 +169,46 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
             },
         )
         assert valid_path.status_code == 201, valid_path.text
+
+        quiz_response = await client.post(
+            "/v1/academy/admin/quizzes",
+            json={
+                "content_version_id": version_id,
+                "kind": "completion",
+                "pass_score": 100,
+                "max_attempts": 3,
+                "required": True,
+                "status": "published",
+                "questions": [
+                    {
+                        "question_type": "single_choice",
+                        "prompt_i18n": {"en": "Keep the cold chain?"},
+                        "points": 1,
+                        "required": True,
+                        "options": [
+                            {"label_i18n": {"en": "No"}, "is_correct": False},
+                            {"label_i18n": {"en": "Yes"}, "is_correct": True},
+                        ],
+                    }
+                ],
+            },
+        )
+        assert quiz_response.status_code == 201, quiz_response.text
+        quiz_id = quiz_response.json()["id"]
+
+        workspace_with_quiz = await client.get("/v1/academy/admin/workspace")
+        quiz_rows = workspace_with_quiz.json()["authoring"]["quizzes"]
+        assert len(quiz_rows) == 1
+        assert quiz_rows[0]["id"] == quiz_id
+        assert quiz_rows[0]["content_version_id"] == version_id
+        assert quiz_rows[0]["question_count"] == 1
+        assert quiz_rows[0]["status"] == "published"
+
+        tenant_d_after_quiz = await client.get(
+            "/v1/academy/admin/workspace",
+            headers={"X-Test-Tenant": "d"},
+        )
+        assert tenant_d_after_quiz.json()["authoring"]["quizzes"] == []
 
         home = await client.get("/v1/academy/me")
         assert home.status_code == 200, home.text

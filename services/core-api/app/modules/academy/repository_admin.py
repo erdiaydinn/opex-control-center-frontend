@@ -158,6 +158,46 @@ async def academy_admin_summary(
         .mappings()
         .all()
     )
+    quiz_rows = (
+        (
+            await session.execute(
+                text("""
+        SELECT
+            q.id,
+            q.content_version_id,
+            q.kind,
+            q.checkpoint_at_ms,
+            q.pass_score,
+            q.max_attempts,
+            q.required,
+            q.status,
+            q.version_number,
+            q.supersedes_quiz_id,
+            q.created_at,
+            ci.slug,
+            ci.title_i18n,
+            cv.version_label,
+            cv.locale,
+            COALESCE(question_counts.question_count, 0) AS question_count
+        FROM academy_quizzes AS q
+        JOIN academy_content_versions AS cv
+          ON cv.tenant_id=q.tenant_id AND cv.id=q.content_version_id
+        JOIN academy_content_items AS ci
+          ON ci.tenant_id=cv.tenant_id AND ci.id=cv.content_id
+        LEFT JOIN LATERAL (
+            SELECT count(*)::integer AS question_count
+            FROM academy_questions AS aq
+            WHERE aq.tenant_id=q.tenant_id AND aq.quiz_id=q.id
+        ) AS question_counts ON TRUE
+        WHERE q.tenant_id=:tenant_id
+        ORDER BY q.created_at DESC, q.version_number DESC
+    """),
+                {"tenant_id": principal.tenant_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
     row = (
         (
             await session.execute(
@@ -198,5 +238,6 @@ async def academy_admin_summary(
         "authoring": {
             "roles": roles,
             "published_versions": [dict(item) for item in version_rows],
+            "quizzes": [dict(item) for item in quiz_rows],
         },
     }

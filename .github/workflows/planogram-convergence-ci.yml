@@ -104,7 +104,7 @@ jobs:
         run: |
           python - <<'PY'
           from app.budget_main import app
-          paths={path for route in app.routes if (path := getattr(route, 'path', None))}
+          paths=set(app.openapi()['paths'])
           assert '/v1/planogram/readiness' in paths
           assert '/v1/planogram/preview' in paths
           print('PLANOGRAM_NATIVE_CORE_ROUTES=PASS')

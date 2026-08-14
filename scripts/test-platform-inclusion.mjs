@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { messageCoverage, SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
+import { intelligenceMessageCoverage } from "../src/platform/i18n/intelligenceMessages.js";
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
@@ -36,6 +37,12 @@ const coverage = messageCoverage();
 for (const locale of expectedLocales) {
   requireCondition((coverage.missing[locale] || []).length === 0, `missing translations for ${locale}: ${(coverage.missing[locale] || []).join(", ")}`);
   requireCondition((coverage.extra[locale] || []).length === 0, `translation key drift for ${locale}: ${(coverage.extra[locale] || []).join(", ")}`);
+}
+
+const intelligenceCoverage = intelligenceMessageCoverage(expectedLocales);
+for (const locale of expectedLocales) {
+  requireCondition((intelligenceCoverage.missing[locale] || []).length === 0, `missing intelligence translations for ${locale}: ${(intelligenceCoverage.missing[locale] || []).join(", ")}`);
+  requireCondition((intelligenceCoverage.extra[locale] || []).length === 0, `intelligence translation key drift for ${locale}: ${(intelligenceCoverage.extra[locale] || []).join(", ")}`);
 }
 
 requireCondition(quality.global_acceptance_targets.rtl_locales.includes("ar"), "Arabic RTL must remain mandatory");

@@ -37,6 +37,7 @@ from app.core.security import (
     require_super_admin,
     require_viewer,
 )
+from app.intelligence_routes import router as intelligence_router
 from app.modules.academy.router import router as academy_router
 
 settings = get_settings()
@@ -76,6 +77,7 @@ app = FastAPI(
 )
 
 app.include_router(ai_tool_router)
+app.include_router(intelligence_router)
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(

@@ -22,6 +22,8 @@ import WorkforcePickerApp from "./modules/workforce/WorkforcePickerApp.jsx";
 import { WorkforceUiProvider } from "./modules/workforce/WorkforceUiContext.jsx";
 import RecruitmentControl from "./modules/recruitment/RecruitmentControl.jsx";
 import AcademyWorkspace from "./modules/academy/AcademyWorkspace.jsx";
+import JarvisWorkspace from "./modules/intelligence/JarvisWorkspace.jsx";
+import InsightWorkspace from "./modules/intelligence/InsightWorkspace.jsx";
 import PlatformHealth from "./modules/platform-health/PlatformHealth.jsx";
 import AuditLog from "./modules/audit-log/AuditLog.jsx";
 
@@ -86,6 +88,24 @@ export default function App() {
         element={
           <ProtectedRoute moduleKey="academy">
             <AcademyWorkspace />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/jarvis"
+        element={
+          <ProtectedRoute moduleKey="jarvis">
+            <JarvisWorkspace />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/insight"
+        element={
+          <ProtectedRoute moduleKey="insight">
+            <InsightWorkspace />
           </ProtectedRoute>
         }
       />

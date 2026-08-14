@@ -103,7 +103,11 @@ def upgrade() -> None:
             CONSTRAINT ck_planogram_store_dna_rejection
                 CHECK (
                     status <> 'rejected'
-                    OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL)
+                    OR (
+                        rejected_by IS NOT NULL
+                        AND rejected_at IS NOT NULL
+                        AND rejection_reason IS NOT NULL
+                    )
                 ),
             CONSTRAINT uq_planogram_store_dna_version
                 UNIQUE (tenant_id, store_code, version_number),
@@ -149,11 +153,26 @@ def upgrade() -> None:
                 REFERENCES planogram_store_dna_versions(tenant_id, id)
                 ON DELETE RESTRICT,
             CONSTRAINT ck_planogram_store_dna_event_type
-                CHECK (event_type IN ('bootstrapped', 'updated', 'submitted', 'approved', 'rejected', 'superseded', 'revised')),
+                CHECK (
+                    event_type IN (
+                        'bootstrapped', 'updated', 'submitted', 'approved',
+                        'rejected', 'superseded', 'revised'
+                    )
+                ),
             CONSTRAINT ck_planogram_store_dna_event_from_status
-                CHECK (from_status IS NULL OR from_status IN ('draft', 'submitted', 'approved', 'rejected', 'superseded')),
+                CHECK (
+                    from_status IS NULL
+                    OR from_status IN (
+                        'draft', 'submitted', 'approved', 'rejected', 'superseded'
+                    )
+                ),
             CONSTRAINT ck_planogram_store_dna_event_to_status
-                CHECK (to_status IS NULL OR to_status IN ('draft', 'submitted', 'approved', 'rejected', 'superseded'))
+                CHECK (
+                    to_status IS NULL
+                    OR to_status IN (
+                        'draft', 'submitted', 'approved', 'rejected', 'superseded'
+                    )
+                )
         )
         """
     )
@@ -294,7 +313,12 @@ def downgrade() -> None:
             """
         )
 
-    op.execute("DROP TRIGGER IF EXISTS trg_planogram_store_dna_immutable_approved ON planogram_store_dna_versions")
+    op.execute(
+        """
+        DROP TRIGGER IF EXISTS trg_planogram_store_dna_immutable_approved
+        ON planogram_store_dna_versions
+        """
+    )
     op.execute("DROP FUNCTION IF EXISTS planogram_store_dna_immutable_approved()")
     op.execute("DROP TABLE planogram_store_dna_events")
     op.execute("DROP TABLE planogram_store_dna_versions")

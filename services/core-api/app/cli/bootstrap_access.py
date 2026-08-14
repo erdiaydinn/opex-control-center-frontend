@@ -14,6 +14,9 @@ SYSTEM_ROLE_NAMES = {
     "platform_admin": "Platform Admin",
     "operator": "Operator",
     "viewer": "Viewer",
+    "academy_learner": "Academy Learner",
+    "academy_instructor": "Academy Instructor",
+    "academy_admin": "Academy Admin",
 }
 
 if set(SYSTEM_ROLE_NAMES) != set(SYSTEM_ROLE_PERMISSIONS):
@@ -56,6 +59,8 @@ async def bootstrap(args: argparse.Namespace) -> None:
         ],
         separators=(",", ":"),
     )
+
+    role_keys = sorted(SYSTEM_ROLE_PERMISSIONS)
 
     try:
         async with engine.begin() as connection:
@@ -107,7 +112,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                         "Bootstrap refuses to reactivate a non-active tenant"
                     )
 
-            for role_key in sorted(SYSTEM_ROLE_PERMISSIONS):
+            for role_key in role_keys:
                 role_name = SYSTEM_ROLE_NAMES[role_key]
 
                 role_result = await connection.execute(
@@ -146,13 +151,9 @@ async def bootstrap(args: argparse.Namespace) -> None:
                     )
 
             # Canonical system-role permissions are authoritative.
-            #
-            # - unexpected permissions are removed
-            # - missing permissions are inserted
-            # - canonical scopes are normalized to {}
-            #
-            # Permission values are data parameters; SQL structure remains
-            # a static reviewed literal.
+            # Unexpected permissions are removed, missing permissions inserted,
+            # and canonical scopes normalized to {}. The target role list is
+            # parameterized so product roles can evolve without shadow SQL lists.
             await connection.execute(
                 text(
                     """
@@ -175,12 +176,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                         FROM roles AS r
                         WHERE r.tenant_id = CAST(:tenant_id AS UUID)
                           AND r.is_system IS TRUE
-                          AND r.key IN (
-                              'super_admin',
-                              'platform_admin',
-                              'operator',
-                              'viewer'
-                          )
+                          AND r.key = ANY(CAST(:role_keys AS varchar[]))
                     ),
                     deleted AS (
                         DELETE FROM role_permissions AS rp
@@ -221,6 +217,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                 {
                     "tenant_id": tenant_id,
                     "permission_payload": permission_payload,
+                    "role_keys": role_keys,
                 },
             )
 
@@ -301,14 +298,9 @@ async def bootstrap(args: argparse.Namespace) -> None:
             f"tenant={args.tenant_slug} "
             f"admin_subject={args.admin_subject}"
         )
-
     finally:
         await engine.dispose()
 
 
-def main() -> None:
-    asyncio.run(bootstrap(parse_args()))
-
-
 if __name__ == "__main__":
-    main()
+    asyncio.run(bootstrap(parse_args()))

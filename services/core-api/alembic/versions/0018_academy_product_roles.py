@@ -1,4 +1,4 @@
-"""Add tenant-safe Academy product roles and new platform permission keys.
+"""Add tenant-safe Academy product roles and broaden Academy content contracts.
 
 Revision ID: 0018_academy_product_roles
 Revises: 0017_merge_jarvis_platform_heads
@@ -13,6 +13,18 @@ revision: str = "0018_academy_product_roles"
 down_revision: str = "0017_merge_jarvis_platform_heads"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+ACADEMY_LOCALES = ("tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR")
+ACADEMY_CONTENT_TYPES = (
+    "document",
+    "video",
+    "sop",
+    "interactive",
+    "live",
+    "announcement",
+    "poster",
+    "survey",
+)
 
 ACADEMY_LEARNER = (
     "module:academy:view",
@@ -84,6 +96,25 @@ def _sql_array(values: tuple[str, ...]) -> str:
 
 
 def upgrade() -> None:
+    # Expand persisted Academy language/content contracts before the API starts
+    # accepting them. This keeps database truth aligned with the UI contract.
+    op.execute("ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale")
+    op.execute(
+        f"""
+        ALTER TABLE academy_content_versions
+        ADD CONSTRAINT ck_academy_content_version_locale
+        CHECK (locale = ANY({_sql_array(ACADEMY_LOCALES)}))
+        """
+    )
+    op.execute("ALTER TABLE academy_content_items DROP CONSTRAINT ck_academy_content_type")
+    op.execute(
+        f"""
+        ALTER TABLE academy_content_items
+        ADD CONSTRAINT ck_academy_content_type
+        CHECK (content_type = ANY({_sql_array(ACADEMY_CONTENT_TYPES)}))
+        """
+    )
+
     # Refuse to turn a customer-defined role into a canonical system role.
     for role_key in ROLE_POLICIES:
         escaped = role_key.replace("'", "''")
@@ -142,6 +173,24 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Refuse a lossy downgrade if newer locale/type values are already in use.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM academy_content_versions
+                WHERE locale NOT IN ('tr', 'en', 'de', 'ar')
+            ) OR EXISTS (
+                SELECT 1 FROM academy_content_items
+                WHERE content_type NOT IN ('document', 'video', 'sop')
+            ) THEN
+                RAISE EXCEPTION 'Academy downgrade would discard active locale/content contracts';
+            END IF;
+        END $$;
+        """
+    )
+
     created_keys = tuple(sorted(set(ACADEMY_ADMIN + NEW_PLATFORM_KEYS)))
     op.execute(
         f"""
@@ -176,3 +225,20 @@ def downgrade() -> None:
               );
             """
         )
+
+    op.execute("ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale")
+    op.execute(
+        """
+        ALTER TABLE academy_content_versions
+        ADD CONSTRAINT ck_academy_content_version_locale
+        CHECK (locale IN ('tr', 'en', 'de', 'ar'))
+        """
+    )
+    op.execute("ALTER TABLE academy_content_items DROP CONSTRAINT ck_academy_content_type")
+    op.execute(
+        """
+        ALTER TABLE academy_content_items
+        ADD CONSTRAINT ck_academy_content_type
+        CHECK (content_type IN ('document', 'video', 'sop'))
+        """
+    )

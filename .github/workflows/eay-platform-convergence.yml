@@ -72,6 +72,8 @@ jobs:
           ! grep -R --line-number --fixed-string 'X-Opex-User' src
           ! grep -R --line-number --fixed-string 'X-Opex-Role' src
           ! grep -R --line-number --fixed-string 'opex_access_config' src
+      - name: Materialize pinned SheetJS dependency
+        run: bash scripts/ci/materialize-sheetjs.sh
       - name: Frontend dependency install
         run: npm ci
       - name: Frontend production build

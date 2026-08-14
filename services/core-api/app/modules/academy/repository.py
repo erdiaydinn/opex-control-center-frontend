@@ -32,6 +32,7 @@ from app.modules.academy.repository_content import (
 )
 from app.modules.academy.repository_enrollment import (
     create_manual_enrollment,
+    get_enrollment_workspace,
     list_enrollments,
     reconcile_role_enrollments,
 )
@@ -64,6 +65,7 @@ __all__ = (
     "create_quiz",
     "get_blocking_checkpoint",
     "get_completion_snapshot",
+    "get_enrollment_workspace",
     "get_media_asset",
     "get_progress_snapshot",
     "get_progress_target",

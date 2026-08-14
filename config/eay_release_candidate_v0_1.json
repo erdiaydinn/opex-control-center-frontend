@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "candidate_id": "eay-rc-2026-08-14-a",
+  "repository": "erdiaydinn/opex-control-center-frontend",
+  "production_ready": false,
+  "main_merge_permitted": false,
+  "frozen_foundations": {
+    "security_core": {
+      "pr": 16,
+      "branch": "feature/phase-1-security-hardening",
+      "sha": "6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d"
+    },
+    "ai_core": {
+      "pr": 15,
+      "branch": "feature/eay-ai-core-v0.1",
+      "sha": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15"
+    }
+  },
+  "components": [
+    {
+      "key": "ai_core",
+      "pr": 15,
+      "branch": "feature/eay-ai-core-v0.1",
+      "sha": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15"
+    },
+    {
+      "key": "workforce_hiring",
+      "pr": 61,
+      "branch": "product/workforce-field-pilot-v28",
+      "sha": "b966cec5969859f91f26096b2b8fd64259da152e"
+    },
+    {
+      "key": "inventory",
+      "pr": 66,
+      "branch": "agent/inventory-production-terminal-p0",
+      "sha": "19f7c93547078b9cec18cec0d39420e33a30f218"
+    },
+    {
+      "key": "dockos",
+      "pr": 60,
+      "branch": "agent/dockos-production-persistence",
+      "sha": "a9240bd4a40e0044cd1a90ea164ef45bd3076751"
+    },
+    {
+      "key": "academy",
+      "pr": 67,
+      "branch": "product/academy-canonical-v1",
+      "sha": "8c93d5485b03c82377ad52745fa746f9be71cb5d"
+    },
+    {
+      "key": "budget",
+      "pr": 70,
+      "branch": "product/budget-intelligence-v1",
+      "sha": "245185072c9cb064dfe53df6bef4ce3a6b5be8c0"
+    },
+    {
+      "key": "planogram",
+      "pr": 62,
+      "branch": "agent/planogram-physical-truth-layer-v1",
+      "sha": "0f753711c565310eb0ada4a3f681465e0d1c3df4"
+    },
+    {
+      "key": "repository_intelligence",
+      "pr": 65,
+      "branch": "feature/eay-repository-intelligence-v0.3-governance",
+      "sha": "17358212e73b0c9c3fdd4174c596f263e90dc9d4"
+    },
+    {
+      "key": "jarvis_orders_v2",
+      "pr": 69,
+      "branch": "platform-core/eay-v2-orders-live-proof-authority-binding",
+      "sha": "a5591fbf998c41b6d0ae8c96cab2f8058d407a00"
+    }
+  ],
+  "required_ancestry": [
+    {
+      "ancestor_key": "workforce_hiring",
+      "descendant_key": "inventory",
+      "reason": "Inventory is a Workforce child and must contain the current canonical Workforce/Hiring V32 head."
+    },
+    {
+      "ancestor_key": "ai_core",
+      "descendant_key": "repository_intelligence",
+      "reason": "Repository Intelligence must preserve the frozen EAY AI Core foundation."
+    }
+  ],
+  "composition_order": [
+    "ai_core",
+    "workforce_hiring",
+    "inventory",
+    "dockos",
+    "academy",
+    "budget",
+    "planogram",
+    "repository_intelligence",
+    "jarvis_orders_v2"
+  ],
+  "external_acceptance_blockers": {
+    "jarvis_orders_v2": [
+      "authorized read-only corporate BigQuery identity/environment",
+      "live INFORMATION_SCHEMA observation",
+      "data-owner confirmation of authoritative tenant discriminator",
+      "controlled live cross-tenant zero-leak proof"
+    ],
+    "workforce_hiring": [
+      "corporate OIDC employee_id and warehouse_scope claims",
+      "real App Attest / Play Integrity verdicts",
+      "physical device biometric and registered-device lifecycle",
+      "warehouse GPS field acceptance",
+      "real HR/roster/leave/attendance reconciliation",
+      "staging DR and field-pilot sign-off"
+    ],
+    "inventory": [
+      "managed signed APK and MDM deployment",
+      "corporate OIDC",
+      "physical Zebra/DataWedge acceptance",
+      "staging DB/load/DR"
+    ],
+    "planogram": [
+      "approved SKU dimensions and product linkage",
+      "measured Store DNA and fixture capacities",
+      "multi-store physical acceptance"
+    ],
+    "dockos": [
+      "corporate OIDC",
+      "signed gateway deployment",
+      "production BigQuery workload identity",
+      "real SMTP",
+      "managed PostgreSQL staging and supplier/DC pilot"
+    ],
+    "academy": [
+      "real object storage/CDN and transcode pipeline",
+      "corporate OIDC",
+      "1200-concurrent CDN delivery test",
+      "staging accessibility/RTL and operator DR"
+    ],
+    "budget": [
+      "authoritative finance-source adapter",
+      "customer-format reconciliation",
+      "four-eyes approval UAT",
+      "production-shaped load/DR and export governance"
+    ]
+  }
+}

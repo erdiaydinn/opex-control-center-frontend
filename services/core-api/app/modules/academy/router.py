@@ -4,7 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import Principal, require_super_admin, require_viewer
+from app.core.authorization import require_permission
+from app.core.security import Principal
 from app.db.session import get_tenant_session
 from app.modules.academy.repository import (
     create_content,
@@ -48,8 +49,30 @@ from app.modules.academy.service import (
 
 router = APIRouter(prefix="/v1/academy", tags=["academy"])
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
-Viewer = Annotated[Principal, Depends(require_viewer)]
-Admin = Annotated[Principal, Depends(require_super_admin)]
+Viewer = Annotated[Principal, Depends(require_permission("module:academy:view"))]
+ManageContent = Annotated[
+    Principal, Depends(require_permission("action:academy:manageContent"))
+]
+ManagePaths = Annotated[
+    Principal, Depends(require_permission("action:academy:managePaths"))
+]
+ManageQuizzes = Annotated[
+    Principal, Depends(require_permission("action:academy:manageQuizzes"))
+]
+ManageEntitlements = Annotated[
+    Principal, Depends(require_permission("action:academy:manageEntitlements"))
+]
+AssignEnrollment = Annotated[
+    Principal, Depends(require_permission("action:academy:assignEnrollment"))
+]
+IngestDocuments = Annotated[
+    Principal, Depends(require_permission("action:academy:ingestDocuments"))
+]
+RevokeCompletion = Annotated[
+    Principal, Depends(require_permission("action:academy:revokeCompletion"))
+]
+
+SUPPORTED_LOCALES = ("tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR")
 
 
 def _request_id(request: Request) -> str:
@@ -63,8 +86,11 @@ async def academy_home(session: TenantSession, principal: Viewer) -> dict[str, o
     return {
         "tenant_id": str(principal.tenant_id),
         "subject": principal.subject,
-        "locales": ["tr", "en", "de", "ar"],
-        "direction_by_locale": {"tr": "ltr", "en": "ltr", "de": "ltr", "ar": "rtl"},
+        "locales": list(SUPPORTED_LOCALES),
+        "direction_by_locale": {
+            locale: ("rtl" if locale == "ar" else "ltr")
+            for locale in SUPPORTED_LOCALES
+        },
         "enrollments": await list_enrollments(session, principal),
         "content": await list_entitled_content(session, principal),
     }
@@ -181,7 +207,7 @@ async def post_content(
     payload: ContentCreateRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: ManageContent,
 ) -> dict[str, object]:
     await require_module(session, principal)
     result = await create_content(session, principal, payload)
@@ -203,7 +229,7 @@ async def post_content_version(
     payload: ContentVersionCreateRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: ManageContent,
 ) -> dict[str, object]:
     await require_module(session, principal)
     result = await create_content_version(session, principal, content_id, payload)
@@ -226,7 +252,7 @@ async def post_media(
     payload: MediaAssetCreateRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: ManageContent,
 ) -> dict[str, object]:
     await require_module(session, principal)
     result = await create_media_asset(session, principal, payload)
@@ -252,7 +278,7 @@ async def post_path(
     payload: LearningPathCreateRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: ManagePaths,
 ) -> dict[str, object]:
     await require_module(session, principal)
     try:
@@ -276,7 +302,7 @@ async def post_quiz(
     payload: QuizCreateRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: ManageQuizzes,
 ) -> dict[str, object]:
     await require_module(session, principal)
     try:
@@ -302,7 +328,7 @@ async def post_entitlement(
     payload: EntitlementCreateRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: ManageEntitlements,
 ) -> dict[str, object]:
     await require_module(session, principal)
     result = await grant_entitlement(session, principal, payload)
@@ -323,7 +349,7 @@ async def post_manual_enrollment(
     payload: ManualEnrollmentRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: AssignEnrollment,
 ) -> dict[str, object]:
     await require_module(session, principal)
     result = await create_manual_enrollment(
@@ -348,7 +374,7 @@ async def post_document_ingest(
     payload: DocumentIngestRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: IngestDocuments,
 ) -> dict[str, object]:
     await require_module(session, principal)
     try:
@@ -373,7 +399,7 @@ async def post_revoke_completion(
     payload: CertificateRevocationRequest,
     request: Request,
     session: TenantSession,
-    principal: Admin,
+    principal: RevokeCompletion,
 ) -> dict[str, object]:
     await require_module(session, principal)
     result = await revoke_completion(

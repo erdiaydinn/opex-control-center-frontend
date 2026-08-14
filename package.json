@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:access": "node scripts/test-access-config.mjs",
+    "test:inclusion": "node scripts/test-platform-inclusion.mjs",
+    "test:platform": "npm run test:access && npm run test:inclusion",
     "test:workforce-imports": "node scripts/test-workforce-imports.mjs",
     "test:workforce-attendance": "node scripts/test-workforce-attendance-proof.mjs",
     "test:workforce-experience": "node scripts/test-workforce-experience.mjs",

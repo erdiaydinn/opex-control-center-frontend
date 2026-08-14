@@ -78,7 +78,10 @@ jobs:
           WORKFORCE_REQUIRE_LOCAL_AUTH: "false"
           REDIS_URL: redis://127.0.0.1:6379/4
         run: |
-          redis-cli -n 4 FLUSHDB
+          python - <<'PY'
+          import redis
+          redis.Redis.from_url("redis://127.0.0.1:6379/4").flushdb()
+          PY
           failures=0
           while IFS= read -r file; do
             module="${file#backend/}"

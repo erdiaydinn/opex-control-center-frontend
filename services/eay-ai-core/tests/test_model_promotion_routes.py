@@ -3,9 +3,12 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.entrypoint import app
-from app.model_promotion_gate import PromotionRecord, PromotionRequest
 from app import model_promotion_routes
+from app.entrypoint import compose_app
+from app.model_promotion_gate import PromotionRecord, PromotionRequest
+from app.model_promotion_routes import PromotionApiRequest
+
+TOKEN = "t" * 48
 
 
 def _record() -> PromotionRecord:
@@ -50,17 +53,24 @@ class _Gate:
         return _record()
 
 
-def _request() -> PromotionRequest:
-    return PromotionRequest(
+def _request() -> PromotionApiRequest:
+    return PromotionApiRequest(
         model_record_id="model-1",
         canary_evidence_fingerprint="d" * 64,
         release_evaluation_evidence_fingerprint="4" * 64,
-        approved_by="release-manager",
         approval_reference="REL-1",
     )
 
 
-def test_governed_promotion_routes_exist_once_on_production_entrypoint():
+def _authorization(monkeypatch) -> str:
+    monkeypatch.setenv("EAY_MODEL_PROMOTION_API_TOKEN", TOKEN)
+    monkeypatch.setenv("EAY_MODEL_PROMOTION_OPERATOR_ID", "release-manager")
+    return f"Bearer {TOKEN}"
+
+
+def test_governed_promotion_routes_exist_once_after_recomposition():
+    app = compose_app()
+    app = compose_app()
     post = [
         route
         for route in app.routes
@@ -79,13 +89,37 @@ def test_governed_promotion_routes_exist_once_on_production_entrypoint():
     assert get[0].endpoint.__module__ == "app.model_promotion_routes"
 
 
-def test_post_uses_only_governed_promotion_gate(monkeypatch):
+def test_post_uses_governed_gate_and_deployment_authoritative_operator(monkeypatch):
     gate = _Gate()
     monkeypatch.setattr(model_promotion_routes, "promotion_gate", gate)
-    record = model_promotion_routes.promote_model(_request())
+    record = model_promotion_routes.promote_model(
+        _request(),
+        authorization=_authorization(monkeypatch),
+    )
     assert record.fingerprint == "1" * 64
     assert gate.promoted_payload is not None
     assert gate.promoted_payload.model_record_id == "model-1"
+    assert gate.promoted_payload.approved_by == "release-manager"
+
+
+def test_post_is_disabled_when_release_authority_is_not_configured(monkeypatch):
+    monkeypatch.delenv("EAY_MODEL_PROMOTION_API_TOKEN", raising=False)
+    monkeypatch.delenv("EAY_MODEL_PROMOTION_OPERATOR_ID", raising=False)
+    with pytest.raises(HTTPException) as exc:
+        model_promotion_routes.promote_model(_request(), authorization=None)
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "model_promotion_api_not_configured"
+
+
+def test_post_rejects_invalid_bearer_even_when_configured(monkeypatch):
+    _authorization(monkeypatch)
+    with pytest.raises(HTTPException) as exc:
+        model_promotion_routes.promote_model(
+            _request(),
+            authorization="Bearer definitely-not-the-release-secret",
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "model_promotion_authorization_invalid"
 
 
 def test_get_reverifies_current_production(monkeypatch):
@@ -106,5 +140,8 @@ def test_get_reverifies_current_production(monkeypatch):
 def test_api_maps_fail_closed_gate_errors(monkeypatch, failure, status):
     monkeypatch.setattr(model_promotion_routes, "promotion_gate", _Gate(failure=failure))
     with pytest.raises(HTTPException) as exc:
-        model_promotion_routes.promote_model(_request())
+        model_promotion_routes.promote_model(
+            _request(),
+            authorization=_authorization(monkeypatch),
+        )
     assert exc.value.status_code == status

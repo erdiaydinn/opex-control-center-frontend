@@ -224,9 +224,9 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
             },
         )
         assert seek_only.status_code == 200, seek_only.text
-        assert seek_only.json()["progress_percent"] == 100
-        assert seek_only.json()["watched_percent"] == 50
-        assert seek_only.json()["required_watch_percent"] == 90
+        assert float(seek_only.json()["progress_percent"]) == 100.0
+        assert float(seek_only.json()["watched_percent"]) == 50.0
+        assert float(seek_only.json()["required_watch_percent"]) == 90.0
         assert seek_only.json()["status"] == "in_progress"
 
         watched_completion = await c.patch(
@@ -241,7 +241,7 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
             },
         )
         assert watched_completion.status_code == 200, watched_completion.text
-        assert watched_completion.json()["watched_percent"] == 100
+        assert float(watched_completion.json()["watched_percent"]) == 100.0
         assert watched_completion.json()["status"] == "completed"
         done = await c.post(f"/v1/academy/enrollments/{enrollment}/complete")
         assert done.status_code == 200, done.text

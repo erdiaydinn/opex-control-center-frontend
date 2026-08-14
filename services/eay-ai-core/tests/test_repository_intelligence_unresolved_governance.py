@@ -131,3 +131,21 @@ def test_archive_provenance_cannot_promote_unresolved_candidate() -> None:
     )
     with pytest.raises(RepositoryRegistryError, match="requires verified IMPORTED entry"):
         validate_archive_provenance_governance(registry, payload)
+
+
+@pytest.mark.parametrize(
+    "entry_id",
+    [
+        "imported-council-of-high-intelligence",
+        "imported-cl4r1t4s",
+        "imported-computer-lab-automation",
+    ],
+)
+def test_verified_supplied_archive_evidence_cannot_be_silently_deleted(entry_id: str) -> None:
+    registry = load_governed_repository_registry(REGISTRY_PATH)
+    payload = _provenance_payload()
+    records = payload["records"]
+    assert isinstance(records, list)
+    payload["records"] = [record for record in records if record["registry_entry_id"] != entry_id]
+    with pytest.raises(RepositoryRegistryError, match="verified supplied archive provenance missing"):
+        validate_archive_provenance_governance(registry, payload)

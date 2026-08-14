@@ -216,7 +216,11 @@ jobs:
       - run: npm run test:platform
       - run: npm run build
       - name: Build current cumulative Core API image
-        run: docker build -f services/core-api/Dockerfile services/core-api
+        run: >-
+          docker build
+          --build-context planai=apps/planai/backend
+          -f services/core-api/Dockerfile
+          services/core-api
       - name: Verify single Core runtime composition
         run: |
           grep -F 'from app.modules.academy.router import router as academy_router' services/core-api/app/main.py

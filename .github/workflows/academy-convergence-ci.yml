@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release/platform-convergence-academy-v0.1
+      - release/platform-convergence-v0.1
   pull_request:
     branches:
       - release/platform-convergence-v0.1

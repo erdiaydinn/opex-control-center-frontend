@@ -4,11 +4,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
-from app.ai.schema_attestation import (
-    REQUIRED_ORDERS_V2_FIELDS,
-    resolve_orders_v2_schema_attestation,
-)
-from app.ai.tool_grants import get_tool_contract
+from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
+from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS, TOOL_REQUIRED_SCOPES
 from app.core.permission_catalog import action_permission
 from app.core.security import Principal, get_current_principal, require_platform_admin
 
@@ -39,51 +36,52 @@ def _permission_scope(principal: Principal, permission: str) -> dict[str, object
     return None
 
 
-def _orders_v2_attestation() -> Any:
-    return resolve_orders_v2_schema_attestation(
-        expected_table="curated_data_shared.orders",
-        required_fields=REQUIRED_ORDERS_V2_FIELDS,
-        scope_field="entity.id",
-    )
+def _single_scope_tool_permission(tool: str) -> str:
+    scopes = TOOL_REQUIRED_SCOPES.get(tool)
+    if not scopes or len(scopes) != 1:
+        raise RuntimeError(f"Unsupported intelligence workspace tool contract: {tool}")
+    return SCOPE_PERMISSION_KEYS[scopes[0]]
 
 
-def _orders_v2_blockers(principal: Principal) -> tuple[list[str], dict[str, Any]]:
-    permission = action_permission("ai_assistant", "executeOpsRead")
+def _orders_v2_blockers(principal: Principal) -> tuple[list[str], dict[str, bool]]:
+    permission = _single_scope_tool_permission("ops_kpi_query")
     scope = _permission_scope(principal, permission)
-    blockers: list[str] = []
+    candidate = ORDERS_V2_CANDIDATE
 
+    blockers: list[str] = []
     if permission not in principal.permissions:
         blockers.append("ops_read_permission_missing")
     if scope is None:
         blockers.append("server_authoritative_data_scope_missing")
 
-    attestation = _orders_v2_attestation()
-    if attestation is None:
+    # The version-controlled candidate is intentionally the authority for
+    # readiness here. There is no separate runtime attestation registry in
+    # Core API today, so a UI/workspace must not infer live evidence from a
+    # caller payload or from a synthetic test artifact.
+    blockers.extend(candidate.blockers)
+    if candidate.schema_evidence_fingerprint is None:
         blockers.extend(
-            [
+            (
                 "authorized_read_only_bigquery_identity_missing",
                 "live_schema_attestation_missing",
                 "tenant_discriminator_unverified",
-                "live_cross_tenant_zero_leak_proof_missing",
-            ]
+            )
         )
-        evidence = {
-            "schema_attested": False,
-            "tenant_discriminator_verified": False,
-            "cross_tenant_proof_verified": False,
-        }
-    else:
-        if not attestation.schema_evidence.verified:
-            blockers.append("live_schema_attestation_unverified")
-        if not attestation.scope_verified:
-            blockers.append("tenant_discriminator_unverified")
-        if not attestation.cross_tenant_proof_verified:
-            blockers.append("live_cross_tenant_zero_leak_proof_missing")
-        evidence = {
-            "schema_attested": bool(attestation.schema_evidence.verified),
-            "tenant_discriminator_verified": bool(attestation.scope_verified),
-            "cross_tenant_proof_verified": bool(attestation.cross_tenant_proof_verified),
-        }
+    if candidate.array_parameter_adapter_fingerprint is None:
+        blockers.append("bigquery_array_parameter_adapter_unverified")
+    if candidate.cross_tenant_proof_fingerprint is None:
+        blockers.append("live_cross_tenant_zero_leak_proof_missing")
+
+    # Stable order without silently dropping duplicate evidence reasons.
+    blockers = list(dict.fromkeys(blockers))
+    evidence = {
+        "schema_attested": candidate.schema_evidence_fingerprint is not None,
+        "tenant_discriminator_verified": candidate.schema_evidence_fingerprint is not None,
+        "array_parameter_adapter_verified": (
+            candidate.array_parameter_adapter_fingerprint is not None
+        ),
+        "cross_tenant_proof_verified": candidate.cross_tenant_proof_fingerprint is not None,
+    }
     return blockers, evidence
 
 
@@ -91,13 +89,12 @@ def build_jarvis_workspace(principal: Principal) -> dict[str, Any]:
     blockers, evidence = _orders_v2_blockers(principal)
     tools: list[dict[str, Any]] = []
 
-    for capability in ("ops_kpi_query", "app_read_query"):
-        contract = get_tool_contract(capability)
-        permission = action_permission("ai_assistant", contract.action)
+    for capability in ("ops_kpi_query", "catalog_query"):
+        permission = _single_scope_tool_permission(capability)
         scope = _permission_scope(principal, permission)
         item: dict[str, Any] = {
             "tool": capability,
-            "action": contract.action,
+            "action": permission.rsplit(":", 1)[-1],
             "required_permission": permission,
             "grant_eligible": permission in principal.permissions,
             "scope_source": "server_authoritative_permission_assignment",
@@ -106,7 +103,7 @@ def build_jarvis_workspace(principal: Principal) -> dict[str, Any]:
         if capability == "ops_kpi_query":
             item.update(
                 {
-                    "query_contract_id": "ops.kpi.orders.v2",
+                    "query_contract_id": ORDERS_V2_CANDIDATE.query_id,
                     "runtime_ready": len(blockers) == 0,
                     "activation_state": "ready" if len(blockers) == 0 else "blocked",
                     "blockers": blockers,
@@ -128,18 +125,19 @@ def build_jarvis_workspace(principal: Principal) -> dict[str, Any]:
 
 def build_insight_metrics(principal: Principal) -> dict[str, Any]:
     blockers, evidence = _orders_v2_blockers(principal)
-    permission = action_permission("ai_assistant", "executeOpsRead")
+    permission = _single_scope_tool_permission("ops_kpi_query")
+    candidate = ORDERS_V2_CANDIDATE
     return {
         "tenant_id": str(principal.tenant_id),
         "authority": "canonical_metric_contracts",
         "frontend_metric_truth_allowed": False,
         "metrics": [
             {
-                "metric_id": "ops.kpi.orders.v2",
+                "metric_id": candidate.query_id,
                 "family": "orders",
-                "source_relation": "curated_data_shared.orders",
+                "source_relation": candidate.source_table,
                 "tenant_discriminator": {
-                    "expression": "entity.id",
+                    "expression": candidate.tenant_discriminator_expression,
                     "authority": "candidate_unverified",
                 },
                 "required_permission": permission,
@@ -148,7 +146,7 @@ def build_insight_metrics(principal: Principal) -> dict[str, Any]:
                 "production_ready": False,
                 "evidence": {
                     "schema": evidence["schema_attested"],
-                    "array_parameter_adapter": False,
+                    "array_parameter_adapter": evidence["array_parameter_adapter_verified"],
                     "cross_tenant_proof": evidence["cross_tenant_proof_verified"],
                 },
                 "blockers": blockers,

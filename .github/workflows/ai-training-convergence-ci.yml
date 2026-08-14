@@ -53,12 +53,13 @@ jobs:
           tests/test_dataset_governance.py
           tests/test_privacy_guard.py
           tests/test_training_authority.py
-      - name: Reproducible local training execution acceptance
+      - name: Reproducible local training execution and operator acceptance
         run: >-
           pytest -q
           tests/test_training_job_spec.py
           tests/test_training_execution.py
           tests/test_training_executor.py
+          tests/test_training_operator_cli.py
       - name: Model artifact, eval, canary and governed promotion acceptance
         run: >-
           pytest -q
@@ -85,6 +86,15 @@ jobs:
               assert any(item.lower().startswith(package) for item in training), package
           print(f'AI_TRAINING_OPTIONAL_STACK={len(training)}')
           PY
+      - name: Verify operator CLI command surface
+        run: |
+          python -m app.training_operator_cli --help >/tmp/eay-training-cli-help.txt
+          grep -F 'create-manifest' /tmp/eay-training-cli-help.txt
+          grep -F 'register-job' /tmp/eay-training-cli-help.txt
+          grep -F 'create-plan' /tmp/eay-training-cli-help.txt
+          grep -F 'preview' /tmp/eay-training-cli-help.txt
+          grep -F 'execute' /tmp/eay-training-cli-help.txt
+          grep -F 'verify-receipt' /tmp/eay-training-cli-help.txt
       - name: Enforce local-only executor and single promotion authority
         shell: bash
         run: |
@@ -101,10 +111,24 @@ jobs:
           grep -F 'eay_training_runtime_evidence.json' app/training_executor.py
           grep -F 'production_promotion_requires_governed_promotion_gate' app/model_registry.py
           grep -F 'training_execution_receipt_fingerprint' app/model_promotion_gate.py
-          grep -F 'app.include_router(model_promotion_router)' app/entrypoint.py
+          test "$(grep -c '@app.post("/v1/model-promotions"' app/main.py)" -eq 1
+          test "$(grep -c '"/v1/model-promotions/{model_record_id}"' app/main.py)" -eq 1
+          ! grep -F 'model_promotion_router' app/entrypoint.py
+          grep -F 'model_promotion_api_not_configured' app/model_promotion_routes.py
+          grep -F 'EAY_MODEL_PROMOTION_OPERATOR_ID=' .env.example
+          grep -F 'EAY_MODEL_PROMOTION_API_TOKEN=' .env.example
           test "$(grep -c '@app.get("/v1/learning/export")' app/main.py)" -eq 1
           ! grep -F 'return {"format": "chat_sft", "examples": store.export_approved()}' app/main.py
           echo 'AI_TRAINING_LOCAL_EXECUTION_AND_PROMOTION_AUTHORITY=PASS'
+      - name: Verify production acceptance runbook
+        run: |
+          test -f docs/TRAINING_PRODUCTION_ACCEPTANCE.md
+          grep -F 'create-manifest' docs/TRAINING_PRODUCTION_ACCEPTANCE.md
+          grep -F 'register-job' docs/TRAINING_PRODUCTION_ACCEPTANCE.md
+          grep -F 'create-plan' docs/TRAINING_PRODUCTION_ACCEPTANCE.md
+          grep -F 'verify-receipt' docs/TRAINING_PRODUCTION_ACCEPTANCE.md
+          grep -F 'field/hardware acceptance gate' docs/TRAINING_PRODUCTION_ACCEPTANCE.md
+          grep -F 'Never replace any of those with synthetic CI evidence.' docs/TRAINING_PRODUCTION_ACCEPTANCE.md
       - name: Reject temporary write-capable training workflows
         run: |
-          test -z "$(find ../../.github/workflows -maxdepth 1 -name 'ai-training-authority-hardening*.yml' -print -quit)"
+          test -z "$(find ../../.github/workflows -maxdepth 1 \( -name 'ai-training-authority-hardening*.yml' -o -name 'ai-training-route-diagnostic.yml' -o -name 'ai-training-route-fix-v*.yml' \) -print -quit)"

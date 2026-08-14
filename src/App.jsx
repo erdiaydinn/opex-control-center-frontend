@@ -95,7 +95,7 @@ export default function App() {
         path="/inventory/access-management"
         element={
           <ProtectedRoute
-            moduleKey="inventory"
+            moduleKey="admin_access"
             action="admin"
           >
             <ServerAccounts />

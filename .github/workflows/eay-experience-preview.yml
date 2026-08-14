@@ -1,0 +1,97 @@
+name: EAY Experience Preview
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+    paths:
+      - "src/App.jsx"
+      - "src/modules/experience/**"
+      - ".github/workflows/eay-experience-preview.yml"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-experience-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundary-and-build:
+    name: Experience boundary + production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Assert Experience Mode remains explicit and synthetic
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const app = fs.readFileSync('src/App.jsx', 'utf8');
+          const experience = fs.readFileSync('src/modules/experience/EayExperience.jsx', 'utf8');
+          if (!app.includes('VITE_EAY_EXPERIENCE_MODE === "true"')) {
+            throw new Error('Experience route must remain behind an explicit build flag');
+          }
+          if (!experience.includes('DEMO · synthetic data')) {
+            throw new Error('Preview must visibly disclose synthetic data');
+          }
+          if (!experience.includes('production credentials disabled')) {
+            throw new Error('Preview must disclose disabled production credentials');
+          }
+          if (experience.includes('localStorage.setItem("token"') || experience.includes('sessionStorage.setItem("token"')) {
+            throw new Error('Experience preview must not mint or inject auth tokens');
+          }
+          console.log('EXPERIENCE_BOUNDARY=PASS');
+          NODE
+      - name: Build normal production frontend with preview disabled
+        run: npm run build
+      - name: Run existing access-config regression
+        run: npm run test:access
+
+  preview-artifact:
+    name: Interactive preview artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Build Experience Mode
+        env:
+          VITE_EAY_EXPERIENCE_MODE: "true"
+        run: npm run build
+      - name: Add preview run instructions
+        run: |
+          cat > dist/PREVIEW_README.txt <<'EOF'
+          EAY EXPERIENCE PREVIEW
+          ======================
+          This artifact contains synthetic/demo data only and has no production credentials.
+
+          Run locally:
+            python -m http.server 4173 --directory dist
+
+          Then open:
+            http://localhost:4173/experience
+
+          If your static server does not provide SPA fallback, open the root URL first and navigate to /experience,
+          or use a SPA-capable static server such as: npx serve -s dist -l 4173
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eay-experience-preview-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 14

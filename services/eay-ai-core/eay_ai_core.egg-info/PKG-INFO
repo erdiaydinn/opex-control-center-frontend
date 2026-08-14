@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: eay-ai-core
+Version: 0.1.0
+Summary: Local-first, regulatory-aware Food & Retail Operations Intelligence service.
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: httpx>=0.27
+Requires-Dist: pydantic>=2.9
+Requires-Dist: python-dotenv>=1.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: numpy<3,>=1.26; extra == "dev"
+Provides-Extra: bigquery
+Requires-Dist: google-cloud-bigquery<4,>=3.42; extra == "bigquery"
+Provides-Extra: training
+Requires-Dist: torch<3,>=2.6; extra == "training"
+Requires-Dist: transformers<6,>=4.57; extra == "training"
+Requires-Dist: datasets<5,>=3; extra == "training"
+Requires-Dist: peft<1,>=0.15; extra == "training"
+Requires-Dist: trl<1,>=0.28; extra == "training"
+Requires-Dist: accelerate<2,>=1; extra == "training"
+Requires-Dist: bitsandbytes<1,>=0.45; platform_system == "Linux" and extra == "training"
+Provides-Extra: voice-onnx
+Requires-Dist: numpy<3,>=1.26; extra == "voice-onnx"
+Requires-Dist: onnxruntime<2,>=1.16.1; extra == "voice-onnx"

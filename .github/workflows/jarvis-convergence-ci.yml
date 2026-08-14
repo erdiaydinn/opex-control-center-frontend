@@ -88,6 +88,15 @@ jobs:
         run: ruff check services/core-api
       - name: Preserve central SQL access boundary before migrations
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Enforce one cumulative Alembic head
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = '0017_merge_jarvis_platform_heads'
       - name: Apply cumulative database migrations
         working-directory: services/core-api
         run: alembic upgrade head

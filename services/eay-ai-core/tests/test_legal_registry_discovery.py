@@ -31,20 +31,28 @@ def test_priority_consumer_registry_manifest_is_pinned_and_complete() -> None:
         "tr-reg-commercial-advertising-unfair-practices",
     }
     assert all(item.binding_source_required is True for item in manifest.instruments)
+    assert all(
+        str(item.registry_target_url).startswith("https://www.mevzuat.gov.tr/")
+        for item in manifest.instruments
+    )
 
 
-def test_registry_html_resolution_is_discovery_only_even_for_resmi_gazete_link() -> None:
+def test_registry_html_resolution_matches_real_ministry_row_shape_but_stays_discovery_only() -> None:
     manifest = load_consumer_registry_manifest(CONFIG_PATH)
     html = """
     <html><body>
-      <a href="https://www.resmigazete.gov.tr/eskiler/2013/11/20131128-1.htm">
-        6502 SAYILI TÜKETİCİNİN KORUNMASI HAKKINDA KANUN
-      </a>
-      <a href="/consumer/download/fiyat-etiketi.pdf">FİYAT ETİKETİ YÖNETMELİĞİ</a>
-      <a href="/consumer/download/mesafeli.pdf">MESAFELİ SÖZLEŞMELER YÖNETMELİĞİ</a>
-      <a href="/consumer/download/reklam.pdf">
-        TİCARİ REKLAM VE HAKSIZ TİCARİ UYGULAMALAR YÖNETMELİĞİ
-      </a>
+      <div>6502 SAYILI TÜKETİCİNİN KORUNMASI HAKKINDA KANUN | 
+        <a href="https://www.mevzuat.gov.tr/mevzuatmetin/1.5.6502.pdf">İNDİR</a>
+      </div>
+      <div>FİYAT ETİKETİ YÖNETMELİĞİ | 
+        <a href="https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=19819&amp;MevzuatTertip=5&amp;MevzuatTur=7">İNDİR</a>
+      </div>
+      <div>MESAFELİ SÖZLEŞMELER YÖNETMELİĞİ | 
+        <a href="https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=20237&amp;MevzuatTertip=5&amp;MevzuatTur=7">İNDİR</a>
+      </div>
+      <div>TİCARİ REKLAM VE HAKSIZ TİCARİ UYGULAMALAR YÖNETMELİĞİ | 
+        <a href="https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=20435&amp;MevzuatTertip=5&amp;MevzuatTur=7">İNDİR</a>
+      </div>
     </body></html>
     """
 
@@ -53,12 +61,12 @@ def test_registry_html_resolution_is_discovery_only_even_for_resmi_gazete_link()
     assert {item.registry_manifest_fingerprint for item in candidates} == {
         manifest.manifest_fingerprint
     }
-    law = next(item for item in candidates if item.instrument_key == "tr-law-6502-consumer-protection")
-    assert law.discovered_url_is_binding_host is True
-    assert law.discovery_only is True
-    assert law.binding_verified is False
-    assert law.promotion_eligible is False
-    assert law.requires_exact_binding_source is True
+    assert all(item.registry_target_match is True for item in candidates)
+    assert all(item.discovered_url_is_binding_host is True for item in candidates)
+    assert all(item.discovery_only is True for item in candidates)
+    assert all(item.binding_verified is False for item in candidates)
+    assert all(item.promotion_eligible is False for item in candidates)
+    assert all(item.requires_exact_binding_source is True for item in candidates)
 
 
 def test_registry_manifest_fingerprint_changes_when_priority_contract_changes() -> None:
@@ -72,17 +80,34 @@ def test_registry_manifest_fingerprint_changes_when_priority_contract_changes() 
 
 def test_registry_title_matching_normalizes_nbsp_and_whitespace() -> None:
     manifest = load_consumer_registry_manifest(CONFIG_PATH)
-    html = '<a href="/x">FİYAT\u00a0ETİKETİ   YÖNETMELİĞİ</a>'
+    html = """
+    <div>FİYAT\u00a0ETİKETİ   YÖNETMELİĞİ | 
+      <a href="https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=19819&amp;MevzuatTertip=5&amp;MevzuatTur=7">İNDİR</a>
+    </div>
+    """
 
     candidates = resolve_priority_registry_links(html, manifest)
     assert [item.instrument_key for item in candidates] == ["tr-reg-price-label"]
 
 
-def test_ambiguous_duplicate_title_fails_closed() -> None:
+def test_registry_target_drift_fails_closed_for_review() -> None:
     manifest = load_consumer_registry_manifest(CONFIG_PATH)
     html = """
-    <a href="/a">FİYAT ETİKETİ YÖNETMELİĞİ</a>
-    <a href="/b">FİYAT ETİKETİ YÖNETMELİĞİ</a>
+    <div>FİYAT ETİKETİ YÖNETMELİĞİ | 
+      <a href="https://www.mevzuat.gov.tr/mevzuat?MevzuatNo=99999&amp;MevzuatTertip=5&amp;MevzuatTur=7">İNDİR</a>
+    </div>
+    """
+
+    with pytest.raises(ValueError, match="consumer_registry_target_drift:tr-reg-price-label"):
+        resolve_priority_registry_links(html, manifest)
+
+
+def test_ambiguous_duplicate_title_fails_closed() -> None:
+    manifest = load_consumer_registry_manifest(CONFIG_PATH)
+    target = str(next(item for item in manifest.instruments if item.key == "tr-reg-price-label").registry_target_url)
+    html = f"""
+    <div>FİYAT ETİKETİ YÖNETMELİĞİ | <a href="{target}">İNDİR</a></div>
+    <div>FİYAT ETİKETİ YÖNETMELİĞİ | <a href="{target}">İNDİR</a></div>
     """
 
     with pytest.raises(ValueError, match="ambiguous_consumer_registry_title"):
@@ -93,24 +118,24 @@ def test_unsafe_or_non_official_discovery_urls_are_rejected() -> None:
     manifest = load_consumer_registry_manifest(CONFIG_PATH)
     with pytest.raises(ValueError, match="requires_http_https"):
         resolve_priority_registry_links(
-            '<a href="javascript:alert(1)">FİYAT ETİKETİ YÖNETMELİĞİ</a>',
+            '<div>FİYAT ETİKETİ YÖNETMELİĞİ | <a href="javascript:alert(1)">İNDİR</a></div>',
             manifest,
         )
 
     with pytest.raises(ValueError, match="must_not_contain_userinfo"):
         resolve_priority_registry_links(
-            '<a href="https://user:pass@ticaret.gov.tr/x">FİYAT ETİKETİ YÖNETMELİĞİ</a>',
+            '<div>FİYAT ETİKETİ YÖNETMELİĞİ | <a href="https://user:pass@ticaret.gov.tr/x">İNDİR</a></div>',
             manifest,
         )
 
     with pytest.raises(ValueError, match="requires_official_target_host"):
         resolve_priority_registry_links(
-            '<a href="https://attacker.example/fake.pdf">FİYAT ETİKETİ YÖNETMELİĞİ</a>',
+            '<div>FİYAT ETİKETİ YÖNETMELİĞİ | <a href="https://attacker.example/fake.pdf">İNDİR</a></div>',
             manifest,
         )
 
 
-def test_registry_manifest_rejects_host_suffix_spoof_and_duplicate_titles() -> None:
+def test_registry_manifest_rejects_host_suffix_spoof_duplicate_titles_and_target_host() -> None:
     payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     payload["registry_url"] = "https://ticaret.gov.tr.attacker.example/registry"
     with pytest.raises(ValidationError, match="exact_ticaret_gov_tr_host"):
@@ -119,6 +144,11 @@ def test_registry_manifest_rejects_host_suffix_spoof_and_duplicate_titles() -> N
     payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     payload["instruments"].append(dict(payload["instruments"][0], key="different-key"))
     with pytest.raises(ValidationError, match="duplicate_consumer_registry_title"):
+        ConsumerRegistryManifest.model_validate(payload)
+
+    payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    payload["instruments"][0]["registry_target_url"] = "https://attacker.example/fake.pdf"
+    with pytest.raises(ValidationError, match="target_requires_official_host"):
         ConsumerRegistryManifest.model_validate(payload)
 
 

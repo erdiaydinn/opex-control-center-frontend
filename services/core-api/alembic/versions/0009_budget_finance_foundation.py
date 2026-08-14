@@ -17,6 +17,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Alembic creates alembic_version as VARCHAR(32) by default. Budget revision
+    # identifiers exceed that capacity, so widen the existing version table from
+    # inside the first Budget migration before Alembic writes this revision ID.
+    op.execute(
+        "ALTER TABLE alembic_version "
+        "ALTER COLUMN version_num TYPE VARCHAR(128)"
+    )
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     op.create_table(
         "budget_plan",

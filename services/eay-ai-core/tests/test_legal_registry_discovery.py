@@ -89,7 +89,7 @@ def test_ambiguous_duplicate_title_fails_closed() -> None:
         resolve_priority_registry_links(html, manifest)
 
 
-def test_javascript_or_userinfo_discovery_urls_are_rejected() -> None:
+def test_unsafe_or_non_official_discovery_urls_are_rejected() -> None:
     manifest = load_consumer_registry_manifest(CONFIG_PATH)
     with pytest.raises(ValueError, match="requires_http_https"):
         resolve_priority_registry_links(
@@ -100,6 +100,12 @@ def test_javascript_or_userinfo_discovery_urls_are_rejected() -> None:
     with pytest.raises(ValueError, match="must_not_contain_userinfo"):
         resolve_priority_registry_links(
             '<a href="https://user:pass@ticaret.gov.tr/x">FİYAT ETİKETİ YÖNETMELİĞİ</a>',
+            manifest,
+        )
+
+    with pytest.raises(ValueError, match="requires_official_target_host"):
+        resolve_priority_registry_links(
+            '<a href="https://attacker.example/fake.pdf">FİYAT ETİKETİ YÖNETMELİĞİ</a>',
             manifest,
         )
 

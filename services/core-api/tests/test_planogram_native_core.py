@@ -116,7 +116,7 @@ def preview_request(*, dimensions: bool = True) -> PlanogramPreviewRequest:
 
 
 def test_canonical_app_registers_native_planogram_routes() -> None:
-    paths = {route.path for route in app.routes}
+    paths = {path for route in app.routes if (path := getattr(route, "path", None))}
     assert "/v1/planogram/readiness" in paths
     assert "/v1/planogram/preview" in paths
 

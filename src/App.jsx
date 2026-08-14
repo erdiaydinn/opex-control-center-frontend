@@ -23,12 +23,15 @@ import { WorkforceUiProvider } from "./modules/workforce/WorkforceUiContext.jsx"
 import RecruitmentControl from "./modules/recruitment/RecruitmentControl.jsx";
 import PlatformHealth from "./modules/platform-health/PlatformHealth.jsx";
 import AuditLog from "./modules/audit-log/AuditLog.jsx";
+import EayExperience from "./modules/experience/EayExperience.jsx";
 
 
 const PLATFORM_ADMIN_ROLES = [
   "platform_admin",
   "super_admin",
 ];
+
+const EXPERIENCE_MODE = import.meta.env.VITE_EAY_EXPERIENCE_MODE === "true";
 
 
 export default function App() {
@@ -42,6 +45,15 @@ export default function App() {
       <Route
         path="/auth/callback"
         element={<AuthCallback />}
+      />
+
+      <Route
+        path="/experience"
+        element={
+          EXPERIENCE_MODE
+            ? <EayExperience />
+            : <Navigate to="/" replace />
+        }
       />
 
       <Route

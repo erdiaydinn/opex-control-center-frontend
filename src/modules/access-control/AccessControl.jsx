@@ -31,14 +31,14 @@ export default function AccessControl() {
         <section className="access-denied">
           <Lock size={32} />
           <h1>
-            Bu alan yalnızca Super Admin için.
+            Bu alan yaln?zca Super Admin i?in.
           </h1>
 
           <button
             type="button"
             onClick={() => navigate("/")}
           >
-            Ana ekrana dön
+            Ana ekrana d?n
           </button>
         </section>
       </main>
@@ -53,24 +53,24 @@ export default function AccessControl() {
         <ShieldCheck size={36} />
 
         <h1>
-          Veritabanı Yetki Otoritesi
+          Veritaban? Yetki Otoritesi
         </h1>
 
         <p>
-          Tarayıcı tabanlı kullanıcı, grup ve rol
-          editörü güvenlik nedeniyle devre dışıdır.
-          Yetkiler yalnızca backend ve veritabanı
-          üzerinden yönetilir.
+          Taray?c? tabanl? kullan?c?, grup ve rol
+          edit?r? g?venlik nedeniyle devre d???d?r.
+          Yetkiler yaln?zca backend ve veritaban?
+          ?zerinden y?netilir.
         </p>
 
         <p>
-          <strong>Kullanıcı:</strong>{" "}
-          {user?.email || user?.subject || "—"}
+          <strong>Kullan?c?:</strong>{" "}
+          {user?.email || user?.subject || "?"}
         </p>
 
         <p>
           <strong>Tenant:</strong>{" "}
-          {tenantId || "—"}
+          {tenantId || "?"}
         </p>
 
         <p>
@@ -82,13 +82,13 @@ export default function AccessControl() {
         </p>
 
         <p>
-          <strong>Permission sayısı:</strong>{" "}
+          <strong>Permission say?s?:</strong>{" "}
           {permissions.length}
         </p>
 
         <p>
           <strong>
-            Scope assignment sayısı:
+            Scope assignment say?s?:
           </strong>{" "}
           {permissionAssignments.length}
         </p>
@@ -98,7 +98,7 @@ export default function AccessControl() {
           onClick={() => navigate("/")}
         >
           <ArrowLeft size={16} />
-          Ana ekrana dön
+          Ana ekrana d?n
         </button>
       </section>
     </main>

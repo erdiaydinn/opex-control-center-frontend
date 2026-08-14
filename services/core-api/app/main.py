@@ -37,6 +37,7 @@ from app.core.security import (
     require_viewer,
 )
 
+from app.modules.academy.router import router as academy_router
 settings = get_settings()
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
@@ -546,3 +547,5 @@ async def platform_health(
             "checks": checks,
         },
     )
+
+app.include_router(academy_router)

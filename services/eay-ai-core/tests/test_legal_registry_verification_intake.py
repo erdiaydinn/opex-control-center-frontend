@@ -70,7 +70,7 @@ def test_registry_intake_rejects_manifest_substitution():
 
 
 def test_registry_intake_fingerprint_changes_with_publication_text():
-    original = _build(authoritative_text="publication text v1")
-    changed = _build(authoritative_text="publication text v2")
+    original = _build(authoritative_text="publication text version one")
+    changed = _build(authoritative_text="publication text version two")
     assert original.exact_binding_content_sha256 != changed.exact_binding_content_sha256
     assert original.intake_fingerprint != changed.intake_fingerprint

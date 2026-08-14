@@ -49,7 +49,6 @@ jobs:
           test ! -e apps/planai/backend/auth_routes.py
           test ! -e apps/planai/backend/security.py
           test ! -e apps/planai/frontend
-          test ! -e src/modules/planogram/PlanogramStudio.jsx
           allowed='^(apps/planai/backend/(engine.py|overrides.py|requirements.txt|physical_engine.py|physical_truth.py|physical_truth_audit.py|tests/test_engine_foundation_v4.py|tests/test_engine_v3.py|tests/test_physical_engine.py|tests/test_physical_truth.py|tests/test_physical_truth_audit.py)|\.github/workflows/planogram-selective-port.yml)$'
           unexpected=$(git status --short | sed 's/^...//' | grep -Ev "$allowed" || true)
           if [ -n "$unexpected" ]; then

@@ -1,46 +1,22 @@
-from typing import Annotated
+from __future__ import annotations
+
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 
-from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
-from app.core.ai_query_contract_policy import get_ai_query_contract_policy
-from app.core.ai_tool_authorization import (
-    AiToolAuthorizationError,
-    AiToolName,
-    derive_ai_tool_capability,
+from app.ai.schema_attestation import (
+    REQUIRED_ORDERS_V2_FIELDS,
+    resolve_orders_v2_schema_attestation,
 )
-from app.core.authorization import require_permission
-from app.core.permission_catalog import (
-    ACTIONS,
-    FEATURES,
-    action_permission,
-    feature_permission,
-    module_permission,
-)
-from app.core.security import Principal
+from app.ai.tool_grants import get_tool_contract
+from app.core.permission_catalog import action_permission
+from app.core.security import Principal, get_current_principal, require_platform_admin
 
-router = APIRouter(tags=["intelligence"])
+router = APIRouter(prefix="/v1", tags=["intelligence"])
+Authenticated = Annotated[Principal, Depends(get_current_principal)]
+PlatformAdmin = Annotated[Principal, Depends(require_platform_admin)]
 
-JarvisViewer = Annotated[
-    Principal,
-    Depends(require_permission(module_permission("jarvis"))),
-]
-InsightViewer = Annotated[
-    Principal,
-    Depends(require_permission(module_permission("insight"))),
-]
-PlanogramViewer = Annotated[
-    Principal,
-    Depends(require_permission(module_permission("planogram"))),
-]
-
-_TOOLS: tuple[AiToolName, ...] = (
-    "ops_kpi_query",
-    "catalog_query",
-    "regulatory_impact_query",
-)
-
-_PLANOGRAM_PHYSICAL_TRUTH_REQUIREMENTS = (
+PLANOGRAM_REQUIRED_EVIDENCE = (
     "approved_sku_dimensions",
     "product_image_linkage",
     "store_dna",
@@ -49,126 +25,142 @@ _PLANOGRAM_PHYSICAL_TRUTH_REQUIREMENTS = (
     "pallet_fixture_authority",
 )
 
+SECURITY_GUARDIAN_THREAT_SOURCES = (
+    "cisa_kev",
+    "osv",
+    "github_advisory",
+)
 
-def _granted_features(principal: Principal, module: str) -> list[str]:
-    return sorted(
-        feature
-        for feature in FEATURES.get(module, ())
-        if feature_permission(module, feature) in principal.permissions
+
+def _permission_scope(principal: Principal, permission: str) -> dict[str, object] | None:
+    for assignment in principal.permission_assignments:
+        if assignment.key == permission:
+            return dict(assignment.scope)
+    return None
+
+
+def _orders_v2_attestation() -> Any:
+    return resolve_orders_v2_schema_attestation(
+        expected_table="curated_data_shared.orders",
+        required_fields=REQUIRED_ORDERS_V2_FIELDS,
+        scope_field="entity.id",
     )
 
 
-def _granted_actions(principal: Principal, module: str) -> list[str]:
-    return sorted(
-        action
-        for action in ACTIONS.get(module, ())
-        if action_permission(module, action) in principal.permissions
-    )
+def _orders_v2_blockers(principal: Principal) -> tuple[list[str], dict[str, Any]]:
+    permission = action_permission("ai_assistant", "executeOpsRead")
+    scope = _permission_scope(principal, permission)
+    blockers: list[str] = []
 
+    if permission not in principal.permissions:
+        blockers.append("ops_read_permission_missing")
+    if scope is None:
+        blockers.append("server_authoritative_data_scope_missing")
 
-def _tool_state(principal: Principal, tool: AiToolName) -> dict[str, object]:
-    try:
-        capability = derive_ai_tool_capability(principal, tool=tool)
-    except AiToolAuthorizationError:
-        capability = None
-
-    if tool == "ops_kpi_query":
-        candidate = ORDERS_V2_CANDIDATE
-        production_ready = (
-            not candidate.blockers
-            and candidate.schema_evidence_fingerprint is not None
-            and candidate.array_parameter_adapter_fingerprint is not None
-            and candidate.cross_tenant_proof_fingerprint is not None
+    attestation = _orders_v2_attestation()
+    if attestation is None:
+        blockers.extend(
+            [
+                "authorized_read_only_bigquery_identity_missing",
+                "live_schema_attestation_missing",
+                "tenant_discriminator_unverified",
+                "live_cross_tenant_zero_leak_proof_missing",
+            ]
         )
-        return {
-            "tool": tool,
-            "grant_eligible": capability is not None,
-            "runtime_ready": production_ready,
-            "query_contract_id": candidate.query_id,
-            "activation_state": "ready" if production_ready else "blocked",
-            "blockers": list(candidate.blockers),
-            "data_scope_fingerprint": (
-                capability.data_scope_fingerprint if capability else None
-            ),
+        evidence = {
+            "schema_attested": False,
+            "tenant_discriminator_verified": False,
+            "cross_tenant_proof_verified": False,
         }
-
-    policy = get_ai_query_contract_policy(tool)
-    return {
-        "tool": tool,
-        "grant_eligible": capability is not None,
-        "runtime_ready": policy.production_ready,
-        "query_contract_id": policy.contract_id,
-        "activation_state": "ready" if policy.production_ready else "blocked",
-        "blockers": list(policy.blockers),
-        "data_scope_fingerprint": (
-            capability.data_scope_fingerprint if capability else None
-        ),
-    }
-
-
-def build_jarvis_workspace(principal: Principal) -> dict[str, object]:
-    """Build a tenant-bound Jarvis product read model without issuing grants."""
-
-    return {
-        "tenant_id": str(principal.tenant_id),
-        "actor": principal.subject,
-        "features": _granted_features(principal, "jarvis"),
-        "actions": _granted_actions(principal, "jarvis"),
-        "tools": [_tool_state(principal, tool) for tool in _TOOLS],
-        "security_guardian_visible": False,
-    }
+    else:
+        if not attestation.schema_evidence.verified:
+            blockers.append("live_schema_attestation_unverified")
+        if not attestation.scope_verified:
+            blockers.append("tenant_discriminator_unverified")
+        if not attestation.cross_tenant_proof_verified:
+            blockers.append("live_cross_tenant_zero_leak_proof_missing")
+        evidence = {
+            "schema_attested": bool(attestation.schema_evidence.verified),
+            "tenant_discriminator_verified": bool(attestation.scope_verified),
+            "cross_tenant_proof_verified": bool(attestation.cross_tenant_proof_verified),
+        }
+    return blockers, evidence
 
 
-def build_insight_metrics(principal: Principal) -> dict[str, object]:
-    """Expose canonical KPI readiness without duplicating metric SQL in UI."""
+def build_jarvis_workspace(principal: Principal) -> dict[str, Any]:
+    blockers, evidence = _orders_v2_blockers(principal)
+    tools: list[dict[str, Any]] = []
 
-    candidate = ORDERS_V2_CANDIDATE
-    production_ready = (
-        not candidate.blockers
-        and candidate.schema_evidence_fingerprint is not None
-        and candidate.array_parameter_adapter_fingerprint is not None
-        and candidate.cross_tenant_proof_fingerprint is not None
-    )
-
-    return {
-        "tenant_id": str(principal.tenant_id),
-        "actor": principal.subject,
-        "features": _granted_features(principal, "insight"),
-        "actions": _granted_actions(principal, "insight"),
-        "metrics": [
-            {
-                "metric_id": candidate.query_id,
-                "source": candidate.source_table,
-                "production_ready": production_ready,
-                "activation_state": "ready" if production_ready else "candidate",
-                "tenant_discriminator": {
-                    "expression": candidate.tenant_discriminator_expression,
-                    "authority": "candidate_unverified",
-                },
-                "evidence": {
-                    "schema": candidate.schema_evidence_fingerprint is not None,
-                    "array_parameter_adapter": (
-                        candidate.array_parameter_adapter_fingerprint is not None
-                    ),
-                    "cross_tenant_proof": (
-                        candidate.cross_tenant_proof_fingerprint is not None
-                    ),
-                },
-                "blockers": list(candidate.blockers),
-            }
-        ],
-    }
-
-
-def build_planogram_readiness(principal: Principal) -> dict[str, object]:
-    """Expose the Core-authoritative Planogram gate without inventing physical evidence."""
+    for capability in ("ops_kpi_query", "app_read_query"):
+        contract = get_tool_contract(capability)
+        permission = action_permission("ai_assistant", contract.action)
+        scope = _permission_scope(principal, permission)
+        item: dict[str, Any] = {
+            "tool": capability,
+            "action": contract.action,
+            "required_permission": permission,
+            "grant_eligible": permission in principal.permissions,
+            "scope_source": "server_authoritative_permission_assignment",
+            "scope_available": scope is not None,
+        }
+        if capability == "ops_kpi_query":
+            item.update(
+                {
+                    "query_contract_id": "ops.kpi.orders.v2",
+                    "runtime_ready": len(blockers) == 0,
+                    "activation_state": "ready" if len(blockers) == 0 else "blocked",
+                    "blockers": blockers,
+                    "evidence": evidence,
+                }
+            )
+        tools.append(item)
 
     return {
         "tenant_id": str(principal.tenant_id),
         "actor": principal.subject,
         "authority": "eay_core_api",
-        "features": _granted_features(principal, "planogram"),
-        "actions": _granted_actions(principal, "planogram"),
+        "security_guardian_visible": False,
+        "security_guardian_scope": "platform_admin_only",
+        "tools": tools,
+        "production_ready": False,
+    }
+
+
+def build_insight_metrics(principal: Principal) -> dict[str, Any]:
+    blockers, evidence = _orders_v2_blockers(principal)
+    permission = action_permission("ai_assistant", "executeOpsRead")
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "authority": "canonical_metric_contracts",
+        "frontend_metric_truth_allowed": False,
+        "metrics": [
+            {
+                "metric_id": "ops.kpi.orders.v2",
+                "family": "orders",
+                "source_relation": "curated_data_shared.orders",
+                "tenant_discriminator": {
+                    "expression": "entity.id",
+                    "authority": "candidate_unverified",
+                },
+                "required_permission": permission,
+                "scope_source": "server_authoritative_permission_assignment",
+                "activation_state": "candidate" if blockers else "ready_for_governed_activation",
+                "production_ready": False,
+                "evidence": {
+                    "schema": evidence["schema_attested"],
+                    "array_parameter_adapter": False,
+                    "cross_tenant_proof": evidence["cross_tenant_proof_verified"],
+                },
+                "blockers": blockers,
+            }
+        ],
+    }
+
+
+def build_planogram_readiness(principal: Principal) -> dict[str, Any]:
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "authority": "eay_core_api",
         "engine": {
             "contract": "deterministic-physical-truth",
             "runtime_mode": "domain_library",
@@ -178,24 +170,93 @@ def build_planogram_readiness(principal: Principal) -> dict[str, object]:
         "physical_truth": {
             "evidence_state": "external_required",
             "verified_attestation": None,
-            "required_evidence": list(_PLANOGRAM_PHYSICAL_TRUTH_REQUIREMENTS),
+            "required_evidence": list(PLANOGRAM_REQUIRED_EVIDENCE),
         },
         "solver_optimizer_allowed": False,
         "production_ready": False,
-        "generation_state": "blocked_external_physical_truth",
     }
 
 
-@router.get("/v1/jarvis/workspace")
-async def get_jarvis_workspace(principal: JarvisViewer) -> dict[str, object]:
+def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
+    return {
+        "scope": "eay_platform",
+        "visibility": "platform_admin_only",
+        "mode": "read_only_assessment",
+        "production_ready": False,
+        "security_posture": "not_scored_without_observation_evidence",
+        "last_observed_at": None,
+        "findings": {
+            "state": "unknown_without_observation_evidence",
+            "counts": {
+                "critical": None,
+                "high": None,
+                "medium": None,
+                "low": None,
+            },
+            "items": [],
+        },
+        "threat_intelligence": [
+            {
+                "source_id": source_id,
+                "integration_state": "not_connected",
+                "last_observed_at": None,
+            }
+            for source_id in SECURITY_GUARDIAN_THREAT_SOURCES
+        ],
+        "controls": [
+            {
+                "control_id": "tenant_authority",
+                "implementation_state": "implemented",
+                "evidence_state": "repository_and_ci",
+            },
+            {
+                "control_id": "platform_admin_scope",
+                "implementation_state": "implemented",
+                "evidence_state": "repository_and_ci",
+            },
+            {
+                "control_id": "audit_boundary",
+                "implementation_state": "implemented",
+                "evidence_state": "repository_and_ci",
+            },
+            {
+                "control_id": "approval_bound_remediation",
+                "implementation_state": "existing_platform_authority_not_wired",
+                "evidence_state": "integration_required",
+            },
+        ],
+        "release_policy": {
+            "customer_visibility": False,
+            "automatic_production_remediation": False,
+            "human_approval_required": True,
+            "zero_findings_without_evidence_allowed": False,
+        },
+        "blockers": [
+            "external_threat_intelligence_ingestion_missing",
+            "dependency_sbom_inventory_missing",
+            "reachable_code_analysis_missing",
+            "deployment_inventory_observation_missing",
+            "signed_finding_evidence_missing",
+            "approval_bound_remediation_adapter_missing",
+        ],
+    }
+
+
+@router.get("/jarvis/workspace")
+async def get_jarvis_workspace(principal: Authenticated) -> dict[str, Any]:
     return build_jarvis_workspace(principal)
 
 
-@router.get("/v1/insight/metrics")
-async def get_insight_metrics(principal: InsightViewer) -> dict[str, object]:
+@router.get("/insight/metrics")
+async def get_insight_metrics(principal: Authenticated) -> dict[str, Any]:
     return build_insight_metrics(principal)
 
 
-@router.get("/v1/planogram/readiness", tags=["planogram"])
-async def get_planogram_readiness(principal: PlanogramViewer) -> dict[str, object]:
+@router.get("/planogram/readiness")
+async def get_planogram_readiness(principal: Authenticated) -> dict[str, Any]:
     return build_planogram_readiness(principal)
+
+
+@router.get("/platform/security-guardian/workspace")
+async def get_security_guardian_workspace(principal: PlatformAdmin) -> dict[str, Any]:
+    return build_security_guardian_workspace(principal)

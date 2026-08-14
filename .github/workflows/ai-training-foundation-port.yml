@@ -1,0 +1,87 @@
+name: EAY AI Training Foundation Port
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-ai-training-v0.1
+
+permissions:
+  contents: write
+
+jobs:
+  port:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/platform-convergence-ai-training-v0.1
+          fetch-depth: 0
+      - name: Fetch frozen canonical AI Core foundation
+        run: |
+          git fetch origin feature/eay-ai-core-v0.1
+          test "$(git rev-parse origin/feature/eay-ai-core-v0.1)" = '9e1422df2a584b71593c2f6188d26c8ab4ab4c15'
+      - name: Port only isolated EAY AI Core service
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e services/eay-ai-core
+          git checkout origin/feature/eay-ai-core-v0.1 -- services/eay-ai-core
+          mapfile -t changed < <(git diff --name-only --cached)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              services/eay-ai-core/*) ;;
+              *) echo "unexpected path: $path"; exit 1 ;;
+            esac
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install frozen service dependencies
+        working-directory: services/eay-ai-core
+        run: python -m pip install -e '.[dev]'
+      - name: Compile frozen AI Core
+        working-directory: services/eay-ai-core
+        run: python -m compileall -q app tests
+      - name: Full frozen AI Core regression
+        working-directory: services/eay-ai-core
+        run: pytest -q
+      - name: Training and model lifecycle focused regression
+        working-directory: services/eay-ai-core
+        run: >-
+          pytest -q
+          tests/test_learning_export_guard.py
+          tests/test_learning_quality.py
+          tests/test_multilingual_learning.py
+          tests/test_teacher_quality.py
+          tests/test_training_gate.py
+          tests/test_training_integrity.py
+          tests/test_training_job_spec.py
+          tests/test_training_manifest.py
+          tests/test_training_multilingual_depth_gate.py
+          tests/test_canary_evals.py
+          tests/test_canary_result_registry.py
+          tests/test_model_artifact_promotion.py
+          tests/test_model_artifact_registry.py
+          tests/test_model_lifecycle_ledger.py
+          tests/test_model_registry.py
+          tests/test_dataset_governance.py
+          tests/test_privacy_guard.py
+          tests/test_safety_evals.py
+          tests/test_rag_evals.py
+          tests/test_historical_legal_rag_evals.py
+      - name: Commit provenance-preserving service port
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'EAY Convergence CI'
+          git config user.email 'ci@eay.invalid'
+          rm -f .github/workflows/ai-training-foundation-port.yml
+          git add -A
+          git diff --cached --check
+          test ! -e .github/workflows/ai-training-foundation-port.yml
+          git commit -m 'feat(ai-training): port frozen EAY AI Core learning and model lifecycle foundation'
+          git push origin HEAD:release/platform-convergence-ai-training-v0.1

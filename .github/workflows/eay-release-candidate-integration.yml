@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   composition:
-    name: Version lock, ancestry and virtual composition
+    name: Locked deployables, ancestry and platform composition
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -52,26 +52,40 @@ jobs:
         run: |
           cat eay-rc-composition-result.json
           exit 1
-      - name: Compile composed Python surfaces
+      - name: Materialize composed platform tree
         if: steps.composition.outcome == 'success'
         run: |
           SYNTHETIC_HEAD="$(python - <<'PY'
           import json
-          print(json.load(open('eay-rc-composition-result.json'))['synthetic_composition_head'])
+          result = json.load(open('eay-rc-composition-result.json'))
+          print(result['deployables']['platform_release']['synthetic_composition_head'])
           PY
           )"
-          git worktree add --detach /tmp/eay-rc "$SYNTHETIC_HEAD"
-          python -m compileall -q /tmp/eay-rc/backend/app /tmp/eay-rc/services/core-api/app
-      - name: Verify catalog coverage in composed tree
+          git worktree add --detach /tmp/eay-rc-platform "$SYNTHETIC_HEAD"
+      - name: Compile composed platform Python surfaces
+        if: steps.composition.outcome == 'success'
+        run: |
+          python -m compileall -q /tmp/eay-rc-platform/backend/app /tmp/eay-rc-platform/services/core-api/app
+      - name: Verify catalog coverage in composed platform tree
         if: steps.composition.outcome == 'success'
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
-          catalog = json.loads(Path('/tmp/eay-rc/config/module_catalog.json').read_text())
+          catalog = json.loads(Path('/tmp/eay-rc-platform/config/module_catalog.json').read_text())
           keys = {item['key'] for item in catalog['commercial_modules']}
           required = {'workforce', 'inventory', 'planogram', 'dockos', 'budget', 'academy', 'jarvis'}
           missing = required - keys
           assert not missing, f'module catalog missing canonical modules: {sorted(missing)}'
+          PY
+      - name: Assert AI deployable remains ancestry-bound
+        if: steps.composition.outcome == 'success'
+        run: |
+          python - <<'PY'
+          import json
+          result = json.load(open('eay-rc-composition-result.json'))
+          ai = result['deployables']['ai_service']
+          assert ai['repository_integration_ready'] is True
+          assert ai['artifact_head'] == result['locked_heads']['repository_intelligence']
           PY

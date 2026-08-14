@@ -3,6 +3,7 @@ import { GraduationCap, Layers3, Plus, Save } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
 import { translateAcademyAuthoring } from "../../platform/i18n/academyAuthoringMessages.js";
+import AcademyQuizAuthoring from "./AcademyQuizAuthoring.jsx";
 import "./academy-path-authoring.css";
 
 function localized(value, locale) {
@@ -136,205 +137,214 @@ export default function AcademyPathAuthoring({
   }
 
   return (
-    <section className="eay-academy-path-authoring">
-      <header className="eay-academy-section-head">
-        <div>
-          <span>{t("academyAdmin")}</span>
-          <h2>{t("learningPaths")}</h2>
-        </div>
-        {canManage ? (
-          <button
-            type="button"
-            className="eay-academy-primary"
-            onClick={() => setCreating((value) => !value)}
-            disabled={!versions.length}
-          >
-            <Plus size={16} aria-hidden="true" />
-            {at("createPath")}
-          </button>
-        ) : null}
-      </header>
-
-      {canManage && !versions.length ? (
-        <p className="eay-academy-path-notice" role="status">{at("noPublishedContent")}</p>
-      ) : null}
-
-      {creating && canManage ? (
-        <form className="eay-academy-create-form eay-academy-path-builder" onSubmit={createPath}>
-          <label>
-            <span>{at("pathKey")}</span>
-            <input
-              value={form.key}
-              onChange={(event) => setForm((value) => ({
-                ...value,
-                key: normalizePathKey(event.target.value),
-              }))}
-              pattern="[a-z0-9][a-z0-9._-]+"
-              minLength={2}
-              required
-            />
-          </label>
-          <label>
-            <span>{t("academyTitle")}</span>
-            <input
-              value={form.title}
-              onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            <span>{t("status")}</span>
-            <select
-              value={form.status}
-              onChange={(event) => setForm((value) => ({ ...value, status: event.target.value }))}
+    <>
+      <section className="eay-academy-path-authoring">
+        <header className="eay-academy-section-head">
+          <div>
+            <span>{t("academyAdmin")}</span>
+            <h2>{t("learningPaths")}</h2>
+          </div>
+          {canManage ? (
+            <button
+              type="button"
+              className="eay-academy-primary"
+              onClick={() => setCreating((value) => !value)}
+              disabled={!versions.length}
             >
-              <option value="draft">{t("draft")}</option>
-              <option value="published">{t("published")}</option>
-            </select>
-          </label>
-          <label className="wide">
-            <span>{t("academyDescription")}</span>
-            <textarea
-              value={form.description}
-              onChange={(event) => setForm((value) => ({ ...value, description: event.target.value }))}
-              rows={3}
-            />
-          </label>
-          <label className="wide eay-academy-path-toggle">
-            <input
-              type="checkbox"
-              checked={form.certificateEnabled}
-              onChange={(event) => setForm((value) => ({
-                ...value,
-                certificateEnabled: event.target.checked,
-              }))}
-            />
-            <span>{at("certificateEnabled")}</span>
-          </label>
+              <Plus size={16} aria-hidden="true" />
+              {at("createPath")}
+            </button>
+          ) : null}
+        </header>
 
-          <fieldset className="wide eay-academy-path-fieldset">
-            <legend>{at("publishedContent")}</legend>
-            <div className="eay-academy-path-options">
-              {versions.map((item) => {
-                const selected = Boolean(selectedVersions[item.content_version_id]);
-                return (
-                  <article key={item.content_version_id} className={selected ? "is-selected" : ""}>
-                    <label className="eay-academy-path-main-option">
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => toggleVersion(item.content_version_id)}
-                      />
-                      <span>
-                        <strong>{localized(item.title_i18n, locale) || item.slug}</strong>
-                        <small>{item.version_label} · {item.locale}</small>
-                      </span>
-                    </label>
-                    <label className="eay-academy-path-required">
-                      <input
-                        type="checkbox"
-                        checked={selectedVersions[item.content_version_id]?.required !== false}
-                        disabled={!selected}
-                        onChange={() => toggleVersionRequired(item.content_version_id)}
-                      />
-                      <span>{t("academyRequired")}</span>
-                    </label>
-                  </article>
-                );
-              })}
-            </div>
-          </fieldset>
+        {canManage && !versions.length ? (
+          <p className="eay-academy-path-notice" role="status">{at("noPublishedContent")}</p>
+        ) : null}
 
-          <fieldset className="wide eay-academy-path-fieldset">
-            <legend>{at("audienceRoles")}</legend>
-            <p>{at("audienceOptional")}</p>
-            {roles.length ? (
+        {creating && canManage ? (
+          <form className="eay-academy-create-form eay-academy-path-builder" onSubmit={createPath}>
+            <label>
+              <span>{at("pathKey")}</span>
+              <input
+                value={form.key}
+                onChange={(event) => setForm((value) => ({
+                  ...value,
+                  key: normalizePathKey(event.target.value),
+                }))}
+                pattern="[a-z0-9][a-z0-9._-]+"
+                minLength={2}
+                required
+              />
+            </label>
+            <label>
+              <span>{t("academyTitle")}</span>
+              <input
+                value={form.title}
+                onChange={(event) => setForm((value) => ({ ...value, title: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              <span>{t("status")}</span>
+              <select
+                value={form.status}
+                onChange={(event) => setForm((value) => ({ ...value, status: event.target.value }))}
+              >
+                <option value="draft">{t("draft")}</option>
+                <option value="published">{t("published")}</option>
+              </select>
+            </label>
+            <label className="wide">
+              <span>{t("academyDescription")}</span>
+              <textarea
+                value={form.description}
+                onChange={(event) => setForm((value) => ({ ...value, description: event.target.value }))}
+                rows={3}
+              />
+            </label>
+            <label className="wide eay-academy-path-toggle">
+              <input
+                type="checkbox"
+                checked={form.certificateEnabled}
+                onChange={(event) => setForm((value) => ({
+                  ...value,
+                  certificateEnabled: event.target.checked,
+                }))}
+              />
+              <span>{at("certificateEnabled")}</span>
+            </label>
+
+            <fieldset className="wide eay-academy-path-fieldset">
+              <legend>{at("publishedContent")}</legend>
               <div className="eay-academy-path-options">
-                {roles.map((role) => {
-                  const selected = Boolean(selectedRoles[role.key]);
+                {versions.map((item) => {
+                  const selected = Boolean(selectedVersions[item.content_version_id]);
                   return (
-                    <article key={role.key} className={selected ? "is-selected" : ""}>
+                    <article key={item.content_version_id} className={selected ? "is-selected" : ""}>
                       <label className="eay-academy-path-main-option">
                         <input
                           type="checkbox"
                           checked={selected}
-                          onChange={() => toggleRole(role.key)}
+                          onChange={() => toggleVersion(item.content_version_id)}
                         />
                         <span>
-                          <strong>{role.name || role.key}</strong>
-                          <small>{role.key}</small>
+                          <strong>{localized(item.title_i18n, locale) || item.slug}</strong>
+                          <small>{item.version_label} · {item.locale}</small>
                         </span>
                       </label>
                       <label className="eay-academy-path-required">
                         <input
                           type="checkbox"
-                          checked={selectedRoles[role.key]?.required !== false}
+                          checked={selectedVersions[item.content_version_id]?.required !== false}
                           disabled={!selected}
-                          onChange={() => updateRole(
-                            role.key,
-                            "required",
-                            selectedRoles[role.key]?.required === false,
-                          )}
+                          onChange={() => toggleVersionRequired(item.content_version_id)}
                         />
                         <span>{t("academyRequired")}</span>
-                      </label>
-                      <label className="eay-academy-path-days">
-                        <span>{at("dueDays")}</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="3650"
-                          value={selectedRoles[role.key]?.dueDays || ""}
-                          disabled={!selected}
-                          onChange={(event) => updateRole(role.key, "dueDays", event.target.value)}
-                        />
                       </label>
                     </article>
                   );
                 })}
               </div>
-            ) : (
-              <p className="eay-academy-path-notice">{at("noAudienceRoles")}</p>
-            )}
-            {!Object.keys(selectedRoles).length ? (
-              <small className="eay-academy-path-manual"><GraduationCap size={15} />{at("manualOnly")}</small>
-            ) : null}
-          </fieldset>
+            </fieldset>
 
-          {error ? <p className="wide eay-academy-inline-error" role="alert">{error}</p> : null}
-          <div className="wide eay-academy-form-actions">
-            <button type="button" onClick={closeBuilder}>{t("cancel")}</button>
-            <button className="eay-academy-primary" type="submit" disabled={saving}>
-              <Save size={16} aria-hidden="true" />
-              {saving ? t("loading") : at("savePath")}
-            </button>
-          </div>
-        </form>
-      ) : null}
+            <fieldset className="wide eay-academy-path-fieldset">
+              <legend>{at("audienceRoles")}</legend>
+              <p>{at("audienceOptional")}</p>
+              {roles.length ? (
+                <div className="eay-academy-path-options">
+                  {roles.map((role) => {
+                    const selected = Boolean(selectedRoles[role.key]);
+                    return (
+                      <article key={role.key} className={selected ? "is-selected" : ""}>
+                        <label className="eay-academy-path-main-option">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleRole(role.key)}
+                          />
+                          <span>
+                            <strong>{role.name || role.key}</strong>
+                            <small>{role.key}</small>
+                          </span>
+                        </label>
+                        <label className="eay-academy-path-required">
+                          <input
+                            type="checkbox"
+                            checked={selectedRoles[role.key]?.required !== false}
+                            disabled={!selected}
+                            onChange={() => updateRole(
+                              role.key,
+                              "required",
+                              selectedRoles[role.key]?.required === false,
+                            )}
+                          />
+                          <span>{t("academyRequired")}</span>
+                        </label>
+                        <label className="eay-academy-path-days">
+                          <span>{at("dueDays")}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="3650"
+                            value={selectedRoles[role.key]?.dueDays || ""}
+                            disabled={!selected}
+                            onChange={(event) => updateRole(role.key, "dueDays", event.target.value)}
+                          />
+                        </label>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="eay-academy-path-notice">{at("noAudienceRoles")}</p>
+              )}
+              {!Object.keys(selectedRoles).length ? (
+                <small className="eay-academy-path-manual"><GraduationCap size={15} />{at("manualOnly")}</small>
+              ) : null}
+            </fieldset>
 
-      {paths.length ? (
-        <section className="eay-academy-path-grid">
-          {paths.map((item) => (
-            <article key={item.id}>
-              <div>
-                <Layers3 size={19} aria-hidden="true" />
-                <span className={`eay-academy-status is-${item.status}`}>
-                  {item.status === "published" ? t("published") : t("draft")}
-                </span>
-              </div>
-              <h3>{localized(item.title_i18n, locale) || item.key}</h3>
-              <p>{localized(item.description_i18n, locale)}</p>
-              <footer>
-                <span>{t("academyContent")}: {item.item_count}</span>
-                <span>{t("academyEnrollments")}: {item.enrollment_count}</span>
-                <span>{t("completed")}: {item.completed_count}</span>
-              </footer>
-            </article>
-          ))}
-        </section>
-      ) : (
-        <p className="eay-academy-path-notice">{t("emptyTitle")}</p>
-      )}
-    </section>
+            {error ? <p className="wide eay-academy-inline-error" role="alert">{error}</p> : null}
+            <div className="wide eay-academy-form-actions">
+              <button type="button" onClick={closeBuilder}>{t("cancel")}</button>
+              <button className="eay-academy-primary" type="submit" disabled={saving}>
+                <Save size={16} aria-hidden="true" />
+                {saving ? t("loading") : at("savePath")}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {paths.length ? (
+          <section className="eay-academy-path-grid">
+            {paths.map((item) => (
+              <article key={item.id}>
+                <div>
+                  <Layers3 size={19} aria-hidden="true" />
+                  <span className={`eay-academy-status is-${item.status}`}>
+                    {item.status === "published" ? t("published") : t("draft")}
+                  </span>
+                </div>
+                <h3>{localized(item.title_i18n, locale) || item.key}</h3>
+                <p>{localized(item.description_i18n, locale)}</p>
+                <footer>
+                  <span>{t("academyContent")}: {item.item_count}</span>
+                  <span>{t("academyEnrollments")}: {item.enrollment_count}</span>
+                  <span>{t("completed")}: {item.completed_count}</span>
+                </footer>
+              </article>
+            ))}
+          </section>
+        ) : (
+          <p className="eay-academy-path-notice">{t("emptyTitle")}</p>
+        )}
+      </section>
+      <AcademyQuizAuthoring
+        workspace={workspace}
+        locale={locale}
+        t={t}
+        canAction={canAction}
+        refresh={refresh}
+      />
+    </>
   );
 }

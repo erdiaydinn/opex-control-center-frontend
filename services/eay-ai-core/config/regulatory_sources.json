@@ -1,0 +1,61 @@
+{
+  "version": "0.1",
+  "principle": "Discovery signals are never promoted automatically to binding legal knowledge.",
+  "sources": [
+    {
+      "id": "tr-gkgm-home",
+      "name": "T.C. Tarım ve Orman Bakanlığı - Gıda ve Kontrol Genel Müdürlüğü",
+      "url": "https://www.tarimorman.gov.tr/GKGM/",
+      "role": "discovery",
+      "jurisdiction": "TR",
+      "enabled": true,
+      "topics": ["gıda", "kodeks", "denetim", "mevzuat", "duyuru"],
+      "keywords": ["gıda", "kodeks", "mevzuat", "yönetmelik", "tebliğ", "etiket", "hijyen", "taslak", "kılavuz", "limit"],
+      "notes": "Official GKGM news/announcement discovery surface. A detected change is only a signal and cannot establish a binding legal rule by itself."
+    },
+    {
+      "id": "tr-gkgm-kodeks",
+      "name": "Gıda Kodeks ve Yem Mevzuatı Daire Başkanlığı",
+      "url": "https://www.tarimorman.gov.tr/GKGM/Menu/129/Gida-Kodeks-Ve-Yem-Mevzuati-Daire-Baskanligi",
+      "role": "official_registry",
+      "jurisdiction": "TR",
+      "enabled": true,
+      "topics": ["Türk Gıda Kodeksi", "kılavuz", "pestisit", "etiketleme", "katkı", "yem"],
+      "keywords": ["Türk Gıda Kodeksi", "kılavuz", "etiket", "pestisit", "kalıntı", "katkı", "yönetmelik", "tebliğ"],
+      "notes": "Official Ministry index for food-code and feed legislation/guidance. Exact binding text and effective date still require verification."
+    },
+    {
+      "id": "tr-kaysis-gkgm",
+      "name": "KAYSİS - GKGM Mevzuat Registry",
+      "url": "https://kms.kaysis.gov.tr/Home/Kurum/24308110",
+      "role": "official_registry",
+      "jurisdiction": "TR",
+      "enabled": true,
+      "topics": ["mevzuat", "yönetmelik", "tebliğ", "gıda"],
+      "keywords": ["gıda", "kodeksi", "yönetmelik", "tebliğ", "hijyen", "etiket", "işletme"],
+      "notes": "GKGM's official website links its Mevzuat menu to this KAYSİS registry. Availability can vary; watcher errors must not disable other sources."
+    },
+    {
+      "id": "tr-resmi-gazete",
+      "name": "T.C. Resmî Gazete",
+      "url": "https://www.resmigazete.gov.tr/",
+      "role": "binding_publication_index",
+      "jurisdiction": "TR",
+      "enabled": true,
+      "topics": ["resmî gazete", "yönetmelik", "tebliğ"],
+      "keywords": ["gıda", "kodeksi", "tarım", "hijyen", "etiket", "pestisit", "yönetmelik", "tebliğ"],
+      "notes": "Official publication index. Even a relevant homepage change requires opening and verifying the exact instrument before promotion to binding knowledge."
+    },
+    {
+      "id": "tr-guvenilir-gida",
+      "name": "Tarım ve Orman Bakanlığı - Güvenilir Gıda",
+      "url": "https://guvenilirgida.tarimorman.gov.tr/",
+      "role": "guidance",
+      "jurisdiction": "TR",
+      "enabled": true,
+      "topics": ["gıda güvenilirliği", "tüketici", "kodeks", "rehber"],
+      "keywords": ["gıda", "kodeksi", "etiket", "hijyen", "mevzuat", "denetim", "tüketici"],
+      "notes": "Official explanatory/guidance channel. It may help interpretation and discovery but is not automatically classified as binding legislation."
+    }
+  ]
+}

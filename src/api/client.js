@@ -1,81 +1,111 @@
-﻿import { getAccessToken } from "../auth/AuthContext.jsx";
+import { getAccessToken } from "../auth/tokenStore.js";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE || "/api";
-const LOCAL_PILOT_MODE = String(import.meta.env.VITE_LOCAL_PILOT_MODE || "false").toLowerCase() === "true";
 
-function localPilotHeaders() {
-  if (!LOCAL_PILOT_MODE) return {};
-  try {
-    const user = JSON.parse(localStorage.getItem("opex_current_user") || "null");
-    if (!user?.email) return {};
-    return {
-      "X-Opex-User": user.email,
-      "X-Opex-Role": user.role || "viewer",
-    };
-  } catch {
-    return {};
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "/api";
+
+
+function requireAccessToken() {
+  const token = getAccessToken();
+
+  if (!token) {
+    throw new Error(
+      "Authenticated access token is required."
+    );
   }
+
+  return token;
 }
 
-export function getDemoEmail() {
-  return localStorage.getItem("opex_demo_email") || "";
+
+function buildHeaders(options = {}) {
+  const headers = new Headers(
+    options.headers || {}
+  );
+
+  // Client-supplied identity is never authoritative.
+  headers.delete("X-User-Email");
+  headers.delete("X-OPEX-User");
+  headers.delete("X-OPEX-Role");
+
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    options.body instanceof FormData;
+
+  if (
+    options.body != null &&
+    !isFormData &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set(
+      "Content-Type",
+      "application/json"
+    );
+  }
+
+  // Callers cannot override central authentication.
+  headers.set(
+    "Authorization",
+    `Bearer ${requireAccessToken()}`
+  );
+
+  return headers;
 }
+
+
+async function readError(response, fallback) {
+  try {
+    const payload = await response.json();
+
+    if (
+      payload &&
+      typeof payload.detail === "string" &&
+      payload.detail.trim()
+    ) {
+      return payload.detail;
+    }
+  } catch {
+    // Use non-sensitive fallback.
+  }
+
+  return fallback;
+}
+
 
 export async function apiFetch(path, options = {}) {
-  const token = getAccessToken();
-  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(!token ? localPilotHeaders() : {}),
-      ...(options.headers || {}),
-    },
-  });
+  const response = await fetch(
+    `${API_BASE}${path}`,
+    {
+      ...options,
+      headers: buildHeaders(options),
+    }
+  );
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    if (response.status === 413) {
-      throw new Error("Yükleme paketi sunucu sınırını aştı. Güncel sürümde kayıtlar otomatik parçalara ayrılır; sayfayı Ctrl+F5 ile yenileyip tekrar deneyin.");
-    }
-    throw new Error(err.detail || `API error: ${response.status}`);
+    throw new Error(
+      await readError(
+        response,
+        `API error: ${response.status}`
+      )
+    );
   }
 
-  const text = await response.text();
+  const responseText = await response.text();
 
-  if (!text) {
+  if (!responseText) {
     return null;
   }
 
-  return JSON.parse(text);
+  return JSON.parse(responseText);
 }
 
-export function apiUpload(path, formData) {
-  return apiFetch(path, { method: "POST", body: formData });
-}
-
-export async function apiDownload(path) {
-  const token = getAccessToken();
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(!token ? localPilotHeaders() : {}),
-    },
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Download error: ${response.status}`);
-  }
-  return response.blob();
-}
 
 export function apiGet(path) {
   return apiFetch(path, {
     method: "GET",
   });
 }
+
 
 export function apiPost(path, data = {}) {
   return apiFetch(path, {
@@ -84,6 +114,7 @@ export function apiPost(path, data = {}) {
   });
 }
 
+
 export function apiPut(path, data = {}) {
   return apiFetch(path, {
     method: "PUT",
@@ -91,12 +122,47 @@ export function apiPut(path, data = {}) {
   });
 }
 
-export function apiPatch(path, data = {}) {
-  return apiFetch(path, { method: "PATCH", body: JSON.stringify(data) });
-}
 
 export function apiDelete(path) {
   return apiFetch(path, {
     method: "DELETE",
   });
+}
+
+
+export function apiPatch(path, data = {}) {
+  return apiFetch(path, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+
+export function apiUpload(path, formData) {
+  return apiFetch(path, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+
+export async function apiDownload(path) {
+  const response = await fetch(
+    `${API_BASE}${path}`,
+    {
+      method: "GET",
+      headers: buildHeaders(),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readError(
+        response,
+        `Download error: ${response.status}`
+      )
+    );
+  }
+
+  return response.blob();
 }

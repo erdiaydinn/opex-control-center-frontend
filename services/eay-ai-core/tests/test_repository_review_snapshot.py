@@ -112,7 +112,7 @@ def test_snapshot_rejects_unresolved_repository_identity() -> None:
     with pytest.raises(RepositorySnapshotError, match="unresolved repository identity"):
         create_repository_review_snapshot(
             registry,
-            registry_entry_id="imported-cl4r1t4s",
+            registry_entry_id="imported-impeccable",
             reviewed_ref="main",
             commit_sha="1" * 40,
             reviewed_at="2026-08-12T23:55:00+03:00",

@@ -57,6 +57,39 @@ def test_required_repository_relationships_are_pinned() -> None:
     assert patika["relation"] == "localization-vendor-derivative-not-canonical-upstream"
 
 
+def test_recovered_selected_reference_identities_are_exact_and_non_archive_authoritative() -> None:
+    registry = load_repository_registry(REGISTRY_PATH)
+
+    llama = registry.by_id("discovered-llama-cpp")
+    assert llama["repository"] == "ggml-org/llama.cpp"
+    assert llama["last_reviewed_ref"] == "master"
+    assert llama["last_reviewed_sha"] == "885c5bbe8e04dc78db25beb911a2715312ad7b54"
+    assert llama["license"] == {"spdx": "MIT", "status": "VERIFIED"}
+    assert "match pending" in llama["relation"]
+
+    ollama = registry.by_id("discovered-ollama")
+    assert ollama["repository"] == "ollama/ollama"
+    assert ollama["last_reviewed_ref"] == "main"
+    assert ollama["last_reviewed_sha"] == "39df91c9826b3c0c83677f75cd230d8848d287c3"
+    assert ollama["license"] == {"spdx": "MIT", "status": "VERIFIED"}
+    assert "match pending" in ollama["relation"]
+
+    langgraph = registry.by_id("discovered-langgraph")
+    assert langgraph["repository"] == "langchain-ai/langgraph"
+    assert langgraph["last_reviewed_ref"] == "main"
+    assert langgraph["last_reviewed_sha"] == "644815f9e5bc52ad8f7a5227a456227e9c3e639b"
+    assert langgraph["license"] == {"spdx": "MIT", "status": "VERIFIED"}
+    assert "match pending" in langgraph["relation"]
+
+    # Public repository identity is verified independently; the supplied ZIPs
+    # are still non-authoritative until archive SHA/tree matching succeeds.
+    for entry in (llama, ollama, langgraph):
+        assert entry["classification"] == "DISCOVERED"
+        assert entry["identity_status"] == "VERIFIED"
+        assert entry["decision"] == "WATCH"
+        assert not entry["relation"].startswith("supplied-archive-to-canonical-upstream")
+
+
 def test_unresolved_archive_identity_is_explicit_not_invented() -> None:
     registry = load_repository_registry(REGISTRY_PATH)
 
@@ -71,6 +104,16 @@ def test_registry_rejects_silent_seed_deletion(tmp_path: Path) -> None:
     payload["entries"] = [
         entry for entry in payload["entries"] if entry["id"] != "imported-impeccable"
     ]
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RepositoryRegistryError, match="silently dropped"):
+        load_repository_registry(path)
+
+
+def test_recovered_selected_reference_cannot_be_silently_dropped(tmp_path: Path) -> None:
+    payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    payload["entries"] = [entry for entry in payload["entries"] if entry["id"] != "discovered-llama-cpp"]
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
 

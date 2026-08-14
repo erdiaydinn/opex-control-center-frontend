@@ -9,6 +9,7 @@ on:
       - "config/product_quality_contract.json"
       - "docs/EAY_PRODUCT_QUALITY_STANDARD.md"
       - "scripts/validate_product_quality_contract.py"
+      - "scripts/test-platform-inclusion.mjs"
       - "src/**"
       - "ops/inventory/**"
       - ".github/workflows/product-quality-contract.yml"
@@ -41,10 +42,12 @@ jobs:
           test -s docs/EAY_PRODUCT_QUALITY_STANDARD.md
           grep -q "Critical-task success" docs/EAY_PRODUCT_QUALITY_STANDARD.md
           grep -q "Inventory terminal" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Inclusive Experience Standard" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Jarvis Security Guardian is EAY platform authority" docs/EAY_PRODUCT_QUALITY_STANDARD.md
           grep -q "Expense Management" docs/EAY_PRODUCT_QUALITY_STANDARD.md
 
   web-shell-regression:
-    name: Web shell access and build
+    name: Web shell access, inclusion and build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -54,7 +57,7 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - run: npm run test:access
+      - run: npm run test:platform
       - run: npm run build
 
   terminal-production-guard:

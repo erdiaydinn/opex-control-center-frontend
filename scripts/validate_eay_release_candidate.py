@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Fail-closed validator for the version-locked EAY release candidate.
 
-The validator never mutates a remote branch. It fetches the exact canonical refs,
-checks locked-head drift and required ancestry, then uses `git merge-tree` plus
-`git commit-tree` to build an ephemeral multi-parent composition locally. Any
-merge conflict blocks the release candidate before staging.
+EAY ships more than one deployable from this repository. The AI service line and
+the platform application line therefore must not be forced into one source tree.
+This validator locks every canonical ref, verifies required ancestry globally, and
+only performs virtual Git composition inside deployables that are actually meant
+to share one release tree.
 """
 
 from __future__ import annotations
@@ -19,10 +20,18 @@ from pathlib import Path
 from typing import Any
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-REVISION_RE = re.compile(r"^revision(?:\s*:\s*str)?\s*=\s*[\"']([^\"']+)[\"']", re.MULTILINE)
+REVISION_RE = re.compile(
+    r"^revision(?:\s*:\s*str)?\s*=\s*[\"']([^\"']+)[\"']",
+    re.MULTILINE,
+)
 
 
-def run(args: list[str], *, check: bool = True, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+def run(
+    args: list[str],
+    *,
+    check: bool = True,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     proc = subprocess.run(
         args,
         check=False,
@@ -60,22 +69,37 @@ def fetch_locked(branch: str, expected_sha: str) -> str:
     )
     actual = run(["git", "rev-parse", remote_ref]).stdout.strip()
     if actual != expected_sha:
-        raise ValueError(f"head drift for {branch}: locked={expected_sha} actual={actual}")
+        raise ValueError(
+            f"head drift for {branch}: locked={expected_sha} actual={actual}"
+        )
     run(["git", "cat-file", "-e", f"{expected_sha}^{{commit}}"])
     return actual
 
 
 def is_ancestor(ancestor: str, descendant: str) -> bool:
-    return run(["git", "merge-base", "--is-ancestor", ancestor, descendant], check=False).returncode == 0
+    return (
+        run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
-def virtual_merge(current: str, component: str, label: str) -> tuple[str | None, str | None]:
+def virtual_merge(
+    current: str,
+    component: str,
+    label: str,
+) -> tuple[str | None, str | None]:
     if current == component or is_ancestor(component, current):
         return current, None
     if is_ancestor(current, component):
         return component, None
 
-    merged = run(["git", "merge-tree", "--write-tree", current, component], check=False)
+    merged = run(
+        ["git", "merge-tree", "--write-tree", current, component],
+        check=False,
+    )
     if merged.returncode != 0:
         detail = (merged.stdout + "\n" + merged.stderr).strip()
         return None, detail[:30000]
@@ -97,7 +121,10 @@ def virtual_merge(current: str, component: str, label: str) -> tuple[str | None,
 def detect_duplicate_alembic_revisions(commit_sha: str) -> list[str]:
     listing = run(["git", "ls-tree", "-r", "--name-only", commit_sha]).stdout.splitlines()
     version_paths = [
-        p for p in listing if p.startswith("services/core-api/alembic/versions/") and p.endswith(".py")
+        path
+        for path in listing
+        if path.startswith("services/core-api/alembic/versions/")
+        and path.endswith(".py")
     ]
     seen: dict[str, str] = {}
     errors: list[str] = []
@@ -109,7 +136,9 @@ def detect_duplicate_alembic_revisions(commit_sha: str) -> list[str]:
         revision = match.group(1)
         prior = seen.get(revision)
         if prior and prior != path:
-            errors.append(f"duplicate Alembic revision {revision}: {prior} and {path}")
+            errors.append(
+                f"duplicate Alembic revision {revision}: {prior} and {path}"
+            )
         else:
             seen[revision] = path
     return errors
@@ -117,13 +146,52 @@ def detect_duplicate_alembic_revisions(commit_sha: str) -> list[str]:
 
 def load_manifest(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != 1:
+    if data.get("schema_version") != 2:
         raise ValueError("unsupported release manifest schema")
     if data.get("production_ready") is not False:
-        raise ValueError("release manifest must remain production_ready=false before external acceptance")
+        raise ValueError(
+            "release manifest must remain production_ready=false before external acceptance"
+        )
     if data.get("main_merge_permitted") is not False:
         raise ValueError("release manifest must remain main_merge_permitted=false")
+    if not isinstance(data.get("deployables"), dict) or not data["deployables"]:
+        raise ValueError("release manifest must define deployables")
     return data
+
+
+def validate_ref(
+    item: dict[str, Any],
+    *,
+    result: dict[str, Any],
+    refs: dict[str, dict[str, Any]],
+    branches: set[str],
+) -> None:
+    key = item.get("key")
+    branch = item.get("branch")
+    sha = item.get("sha")
+    pr = item.get("pr")
+
+    if not isinstance(key, str) or not key:
+        result["errors"].append("release ref missing key")
+        return
+    if key in refs:
+        result["errors"].append(f"duplicate release ref key: {key}")
+        return
+    if not isinstance(branch, str) or not branch:
+        result["errors"].append(f"{key}: invalid branch")
+        return
+    if branch in branches:
+        result["errors"].append(f"duplicate release ref branch: {branch}")
+        return
+    if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+        result["errors"].append(f"{key}: invalid locked SHA")
+        return
+    if pr is not None and (not isinstance(pr, int) or pr <= 0):
+        result["errors"].append(f"{key}: invalid PR number")
+        return
+
+    refs[key] = item
+    branches.add(branch)
 
 
 def main() -> int:
@@ -139,67 +207,50 @@ def main() -> int:
         "main_merge_permitted": False,
         "locked_heads": {},
         "ancestry": [],
-        "composition": [],
+        "deployables": {},
         "errors": [],
     }
 
-    components = manifest.get("components", [])
-    by_key: dict[str, dict[str, Any]] = {}
+    refs: dict[str, dict[str, Any]] = {}
     branches: set[str] = set()
-    prs: set[int] = set()
 
-    for component in components:
-        key = component.get("key")
-        branch = component.get("branch")
-        sha = component.get("sha")
-        pr = component.get("pr")
-        if not isinstance(key, str) or not key:
-            result["errors"].append("component missing key")
+    for item in manifest.get("lineage_refs", []):
+        validate_ref(item, result=result, refs=refs, branches=branches)
+
+    for deployable_name, deployable in manifest["deployables"].items():
+        if not isinstance(deployable, dict):
+            result["errors"].append(f"{deployable_name}: invalid deployable definition")
             continue
-        if key in by_key:
-            result["errors"].append(f"duplicate component key: {key}")
-        if not isinstance(branch, str) or not branch:
-            result["errors"].append(f"{key}: invalid branch")
-        elif branch in branches:
-            result["errors"].append(f"duplicate component branch: {branch}")
-        if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
-            result["errors"].append(f"{key}: invalid locked SHA")
-        if not isinstance(pr, int) or pr <= 0:
-            result["errors"].append(f"{key}: invalid PR number")
-        elif pr in prs and key != "ai_core":
-            result["errors"].append(f"duplicate PR number: {pr}")
-        by_key[key] = component
-        if isinstance(branch, str):
-            branches.add(branch)
-        if isinstance(pr, int):
-            prs.add(pr)
-
-    security = manifest["frozen_foundations"]["security_core"]
-    security_sha = security["sha"]
-    if not SHA_RE.fullmatch(security_sha):
-        result["errors"].append("invalid frozen Security/Core SHA")
+        for component in deployable.get("components", []):
+            validate_ref(component, result=result, refs=refs, branches=branches)
 
     if result["errors"]:
-        Path(args.result).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        Path(args.result).write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         return 1
 
     try:
-        fetch_locked(security["branch"], security_sha)
-        result["locked_heads"]["security_core"] = security_sha
-        for key, component in by_key.items():
-            actual = fetch_locked(component["branch"], component["sha"])
-            result["locked_heads"][key] = actual
-    except Exception as exc:  # fail closed with machine-readable evidence
+        for key, item in refs.items():
+            result["locked_heads"][key] = fetch_locked(item["branch"], item["sha"])
+    except Exception as exc:
         result["errors"].append(str(exc))
-        Path(args.result).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        Path(args.result).write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         return 1
 
     for rule in manifest.get("required_ancestry", []):
-        ancestor_key = rule["ancestor_key"]
-        descendant_key = rule["descendant_key"]
-        ancestor = by_key[ancestor_key]["sha"]
-        descendant = by_key[descendant_key]["sha"]
-        passed = is_ancestor(ancestor, descendant)
+        ancestor_key = rule.get("ancestor_key")
+        descendant_key = rule.get("descendant_key")
+        if ancestor_key not in refs or descendant_key not in refs:
+            result["errors"].append(
+                f"ancestry rule references unknown ref: {ancestor_key}->{descendant_key}"
+            )
+            continue
+        passed = is_ancestor(refs[ancestor_key]["sha"], refs[descendant_key]["sha"])
         result["ancestry"].append(
             {
                 "ancestor_key": ancestor_key,
@@ -213,43 +264,93 @@ def main() -> int:
                 f"ancestry violation: {descendant_key} does not contain {ancestor_key}"
             )
 
-    current = security_sha
-    for key in manifest.get("composition_order", []):
-        component = by_key.get(key)
-        if component is None:
-            result["errors"].append(f"composition_order references unknown component: {key}")
-            break
-        next_commit, conflict = virtual_merge(current, component["sha"], key)
-        entry: dict[str, Any] = {
-            "component": key,
-            "input_sha": component["sha"],
-            "base_before": current,
-            "passed": conflict is None,
+    for deployable_name, deployable in manifest["deployables"].items():
+        mode = deployable.get("mode")
+        component_keys = [item["key"] for item in deployable.get("components", [])]
+        deployable_result: dict[str, Any] = {
+            "mode": mode,
+            "components": component_keys,
+            "composition": [],
+            "errors": [],
         }
-        if conflict is not None:
-            entry["conflict"] = conflict
-            result["composition"].append(entry)
-            result["errors"].append(f"virtual composition conflict at {key}")
-            break
-        assert next_commit is not None
-        current = next_commit
-        entry["synthetic_head_after"] = current
-        result["composition"].append(entry)
+        result["deployables"][deployable_name] = deployable_result
 
-    if not result["errors"]:
-        result["errors"].extend(detect_duplicate_alembic_revisions(current))
-        result["synthetic_composition_head"] = current
+        if mode == "ancestry_release":
+            release_key = deployable.get("release_key")
+            if release_key not in component_keys or release_key not in refs:
+                message = f"{deployable_name}: invalid release_key {release_key!r}"
+                deployable_result["errors"].append(message)
+                result["errors"].append(message)
+                continue
+            deployable_result["artifact_head"] = refs[release_key]["sha"]
+            deployable_result["repository_integration_ready"] = not deployable_result[
+                "errors"
+            ]
+            continue
 
-    result["external_acceptance_blockers"] = manifest.get("external_acceptance_blockers", {})
+        if mode != "virtual_merge":
+            message = f"{deployable_name}: unsupported mode {mode!r}"
+            deployable_result["errors"].append(message)
+            result["errors"].append(message)
+            continue
+
+        base_key = deployable.get("base_key")
+        if base_key not in component_keys or base_key not in refs:
+            message = f"{deployable_name}: invalid base_key {base_key!r}"
+            deployable_result["errors"].append(message)
+            result["errors"].append(message)
+            continue
+
+        current = refs[base_key]["sha"]
+        for key in deployable.get("composition_order", []):
+            if key == base_key or key not in component_keys or key not in refs:
+                message = f"{deployable_name}: invalid composition component {key!r}"
+                deployable_result["errors"].append(message)
+                result["errors"].append(message)
+                break
+
+            next_commit, conflict = virtual_merge(current, refs[key]["sha"], key)
+            entry: dict[str, Any] = {
+                "component": key,
+                "input_sha": refs[key]["sha"],
+                "base_before": current,
+                "passed": conflict is None,
+            }
+            if conflict is not None:
+                entry["conflict"] = conflict
+                deployable_result["composition"].append(entry)
+                message = f"{deployable_name}: virtual composition conflict at {key}"
+                deployable_result["errors"].append(message)
+                result["errors"].append(message)
+                break
+
+            assert next_commit is not None
+            current = next_commit
+            entry["synthetic_head_after"] = current
+            deployable_result["composition"].append(entry)
+
+        if not deployable_result["errors"]:
+            if deployable.get("check_alembic_revisions") is True:
+                migration_errors = detect_duplicate_alembic_revisions(current)
+                deployable_result["errors"].extend(migration_errors)
+                result["errors"].extend(migration_errors)
+            deployable_result["synthetic_composition_head"] = current
+
+        deployable_result["repository_integration_ready"] = not deployable_result[
+            "errors"
+        ]
+
+    result["external_acceptance_blockers"] = manifest.get(
+        "external_acceptance_blockers", {}
+    )
     result["repository_integration_ready"] = not result["errors"]
 
-    Path(args.result).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if result["errors"]:
-        print(json.dumps(result, indent=2, sort_keys=True))
-        return 1
-
+    Path(args.result).write_text(
+        json.dumps(result, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    return 0 if not result["errors"] else 1
 
 
 if __name__ == "__main__":

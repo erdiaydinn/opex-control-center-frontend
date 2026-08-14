@@ -1,0 +1,44 @@
+name: EAY AI Training Route Diagnostic
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-ai-training-v0.1
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Find route mutations in tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -R -n -E 'router\.routes|app\.routes|include_router|routes[[:space:]]*=' tests || true
+      - name: Show fresh composition signatures
+        run: |
+          python - <<'PY'
+          from app.entrypoint import app, compose_app, model_promotion_router, _signature
+          print('PROMOTION_ROUTER', [_signature(r) for r in model_promotion_router.routes])
+          print('BEFORE', [_signature(r) for r in app.routes if 'model-promotions' in getattr(r, 'path', '')])
+          compose_app()
+          print('AFTER_ONE', [_signature(r) for r in app.routes if 'model-promotions' in getattr(r, 'path', '')])
+          compose_app()
+          print('AFTER_TWO', [_signature(r) for r in app.routes if 'model-promotions' in getattr(r, 'path', '')])
+          PY
+      - name: Run tests through promotion routes with route dump on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q tests/test_model_promotion_routes.py

@@ -14,7 +14,7 @@ async def create_learning_path(
     if len(role_keys) != len(set(role_keys)):
         raise ValueError("Learning path contains duplicate role assignment")
     if role_keys:
-        known_role_keys = set(
+        registered_role_keys = set(
             (
                 await session.execute(
                     text("""
@@ -28,6 +28,10 @@ async def create_learning_path(
             .scalars()
             .all()
         )
+        authenticated_role_keys = {
+            role.strip().lower() for role in principal.roles if role.strip()
+        }
+        known_role_keys = registered_role_keys | authenticated_role_keys
         if set(role_keys) - known_role_keys:
             raise ValueError("Learning path contains unknown role assignment")
 

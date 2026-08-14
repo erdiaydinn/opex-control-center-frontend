@@ -110,10 +110,10 @@ async def list_admin_paths(
     return [dict(row) for row in rows]
 
 
-async def academy_authoring_options(
+async def academy_admin_summary(
     session: AsyncSession,
     principal: Principal,
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     role_rows = (
         (
             await session.execute(
@@ -158,16 +158,6 @@ async def academy_authoring_options(
         .mappings()
         .all()
     )
-    return {
-        "roles": [dict(row) for row in role_rows],
-        "published_versions": [dict(row) for row in version_rows],
-    }
-
-
-async def academy_admin_summary(
-    session: AsyncSession,
-    principal: Principal,
-) -> dict[str, Any]:
     row = (
         (
             await session.execute(
@@ -186,4 +176,27 @@ async def academy_admin_summary(
         .mappings()
         .one()
     )
-    return dict(row)
+
+    roles = [{**dict(item), "source": "tenant_registry"} for item in role_rows]
+    known_role_keys = {str(item["key"]).strip().lower() for item in role_rows}
+    for raw_role in sorted(principal.roles):
+        role_key = raw_role.strip().lower()
+        if not role_key or role_key in known_role_keys:
+            continue
+        roles.append(
+            {
+                "key": role_key,
+                "name": role_key,
+                "is_system": False,
+                "source": "identity_claim",
+            }
+        )
+        known_role_keys.add(role_key)
+
+    return {
+        "summary": dict(row),
+        "authoring": {
+            "roles": roles,
+            "published_versions": [dict(item) for item in version_rows],
+        },
+    }

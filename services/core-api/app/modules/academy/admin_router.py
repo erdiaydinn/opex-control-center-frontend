@@ -8,7 +8,6 @@ from app.core.security import Principal
 from app.db.session import get_tenant_session
 from app.modules.academy.repository import (
     academy_admin_summary,
-    academy_authoring_options,
     list_admin_content,
     list_admin_paths,
 )
@@ -28,11 +27,12 @@ async def get_authoring_workspace(
     principal: StudioUser,
 ) -> dict[str, object]:
     await require_module(session, principal)
+    state = await academy_admin_summary(session, principal)
     return {
         "tenant_id": str(principal.tenant_id),
         "subject": principal.subject,
-        "summary": await academy_admin_summary(session, principal),
+        "summary": state["summary"],
         "content": await list_admin_content(session, principal),
         "paths": await list_admin_paths(session, principal),
-        "authoring": await academy_authoring_options(session, principal),
+        "authoring": state["authoring"],
     }

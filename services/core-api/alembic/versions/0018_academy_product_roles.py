@@ -97,12 +97,20 @@ def _sql_array(values: tuple[str, ...]) -> str:
 
 def upgrade() -> None:
     # Expand persisted Academy language/content contracts before the API starts
-    # accepting them. This keeps database truth aligned with the UI contract.
+    # accepting them. UI, content versions and RAG chunks must share one truth.
     op.execute("ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale")
     op.execute(
         f"""
         ALTER TABLE academy_content_versions
         ADD CONSTRAINT ck_academy_content_version_locale
+        CHECK (locale = ANY({_sql_array(ACADEMY_LOCALES)}))
+        """
+    )
+    op.execute("ALTER TABLE academy_document_chunks DROP CONSTRAINT ck_academy_chunk_locale")
+    op.execute(
+        f"""
+        ALTER TABLE academy_document_chunks
+        ADD CONSTRAINT ck_academy_chunk_locale
         CHECK (locale = ANY({_sql_array(ACADEMY_LOCALES)}))
         """
     )
@@ -182,6 +190,9 @@ def downgrade() -> None:
                 SELECT 1 FROM academy_content_versions
                 WHERE locale NOT IN ('tr', 'en', 'de', 'ar')
             ) OR EXISTS (
+                SELECT 1 FROM academy_document_chunks
+                WHERE locale NOT IN ('tr', 'en', 'de', 'ar')
+            ) OR EXISTS (
                 SELECT 1 FROM academy_content_items
                 WHERE content_type NOT IN ('document', 'video', 'sop')
             ) THEN
@@ -231,6 +242,14 @@ def downgrade() -> None:
         """
         ALTER TABLE academy_content_versions
         ADD CONSTRAINT ck_academy_content_version_locale
+        CHECK (locale IN ('tr', 'en', 'de', 'ar'))
+        """
+    )
+    op.execute("ALTER TABLE academy_document_chunks DROP CONSTRAINT ck_academy_chunk_locale")
+    op.execute(
+        """
+        ALTER TABLE academy_document_chunks
+        ADD CONSTRAINT ck_academy_chunk_locale
         CHECK (locale IN ('tr', 'en', 'de', 'ar'))
         """
     )

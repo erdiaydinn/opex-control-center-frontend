@@ -19,6 +19,7 @@ from .service import (
     get_feature_flags,
     list_audit,
     list_attendance,
+    list_daily_status,
     list_leaves,
     list_people,
     list_warehouses,
@@ -124,6 +125,7 @@ class WorkforceAuthorizationTests(unittest.TestCase):
             self.assertEqual(result["access_closures"], 1)
             self.assertEqual(result["revoked_devices"], 1)
             self.assertEqual(result["cancelled_shifts"], 1)
+            self.assertEqual(result["identity_revocations_queued"], 1)
             self.assertFalse(resolve_person_identity(person_id)["active"])
             self.assertEqual(next(row for row in _DEVICE_BINDINGS if row.get("device_id") == device_id)["status"], "REVOKED")
             self.assertEqual(next(row for row in _SHIFTS if row.get("id") == shift_id)["status"], "İptal")
@@ -153,6 +155,46 @@ class WorkforceAuthorizationTests(unittest.TestCase):
         finally:
             if previous is None: os.environ.pop("OPEX_PII_KEY", None)
             else: os.environ["OPEX_PII_KEY"] = previous
+
+    def test_future_exit_keeps_current_access_and_cancels_only_exit_date_forward(self):
+        previous = os.environ.get("OPEX_PII_KEY")
+        os.environ["OPEX_PII_KEY"] = base64.urlsafe_b64encode(b"f" * 32).decode()
+        person_id = "FUTURE-EXIT"
+        before_id, after_id = "SHIFT-BEFORE-EXIT", "SHIFT-AFTER-EXIT"
+        exit_date = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
+        before_date = (datetime.now(UTC).date() + timedelta(days=29)).isoformat()
+        try:
+            upsert_people([{"employee_id": person_id, "full_name": "Gelecek Çıkış", "tckn": "35467890123", "position": "Picker", "active": True}], "hr")
+            _SHIFTS.extend([
+                {"id": before_id, "person_id": person_id, "date": before_date, "status": "Atandı"},
+                {"id": after_id, "person_id": person_id, "date": exit_date, "status": "Atandı"},
+            ])
+            result = update_employment_lifecycle([{"person_id": person_id, "employment_end": exit_date, "identity_method": "EMPLOYEE_ID"}], "hr", "future-exit.csv")
+            self.assertEqual(result["access_closures"], 0)
+            self.assertTrue(resolve_person_identity(person_id)["active"])
+            self.assertEqual(next(row for row in _SHIFTS if row["id"] == before_id)["status"], "Atandı")
+            self.assertEqual(next(row for row in _SHIFTS if row["id"] == after_id)["status"], "İptal")
+        finally:
+            _PEOPLE[:] = [row for row in _PEOPLE if row.get("employee_id") != person_id]
+            _SHIFTS[:] = [row for row in _SHIFTS if row.get("id") not in {before_id, after_id}]
+            if previous is None: os.environ.pop("OPEX_PII_KEY", None)
+            else: os.environ["OPEX_PII_KEY"] = previous
+
+    def test_daily_status_keeps_leave_work_and_over_eleven_hour_exception(self):
+        attendance = {"id": "ATT-RECON", "person_id": "EMP-RECON", "name": "Mutabakat", "date": "2026-08-03", "net_minutes": 700, "daily_max_minutes": 660, "status": "İstisna"}
+        leave = {"id": "LEAVE-RECON", "person_id": "EMP-RECON", "person_name": "Mutabakat", "date": "2026-08-03", "type_id": "annual", "category": "Yıllık İzin", "approval": "Onaylandı"}
+        _ATTENDANCE.append(attendance)
+        _LEAVES.append(leave)
+        try:
+            row = next(item for item in list_daily_status() if item["person_id"] == "EMP-RECON")
+            self.assertTrue(row["work_present"])
+            self.assertTrue(row["leave_present"])
+            self.assertTrue(row["leave_work_conflict"])
+            self.assertTrue(row["daily_max_exception"])
+            self.assertTrue(row["requires_review"])
+        finally:
+            _ATTENDANCE.remove(attendance)
+            _LEAVES.remove(leave)
 
     def test_roster_id_conflict_is_reported_and_not_reassigned(self):
         previous = os.environ.get("OPEX_PII_KEY")

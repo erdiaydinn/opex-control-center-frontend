@@ -42,14 +42,34 @@ class RecruitmentDecision(BaseModel):
 
 
 class RecruitmentHireActivate(BaseModel):
-    candidate_id: str | None = Field(default=None, min_length=1, max_length=80)
+    candidate_id: str = Field(min_length=1, max_length=80)
     employee_id: str = Field(min_length=1, max_length=50)
-    roster_ids: list[str] = Field(default_factory=list, max_length=20)
+    roster_ids: list[str] = Field(min_length=1, max_length=20)
     full_name: str = Field(min_length=2, max_length=180)
     tckn: str = Field(pattern=r"^\d{11}$")
     email: str | None = Field(default=None, max_length=254)
     phone: str | None = Field(default=None, max_length=50)
     employment_start: date
+    first_shift: "RecruitmentFirstShift"
+
+    @model_validator(mode="after")
+    def bind_first_shift_to_roster(self):
+        if self.first_shift.roster_id is None:
+            self.first_shift.roster_id = self.roster_ids[0]
+        if self.first_shift.roster_id not in self.roster_ids:
+            raise ValueError("İlk vardiya roster_id değeri işe giriş roster kimliklerinden biri olmalıdır.")
+        return self
+
+
+class RecruitmentFirstShift(BaseModel):
+    roster_id: str | None = Field(default=None, min_length=1, max_length=80)
+    date: date
+    start: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    break_minutes: int = Field(default=60, ge=0, le=180)
+
+
+RecruitmentHireActivate.model_rebuild()
 
 
 class RecruitmentCandidateCreate(BaseModel):
@@ -91,3 +111,19 @@ class StaffingNormPatch(BaseModel):
     regional_manager: str = Field(default="", max_length=180)
     regional_executive: str = Field(default="", max_length=180)
     active: bool = True
+    base_norm: int | None = Field(default=None, ge=0, le=500)
+    temporary_adjustment: int = Field(default=0, ge=-20, le=20)
+    temporary_effective_from: date | None = None
+    temporary_effective_until: date | None = None
+    reversion_mode: str = Field(default="AUTOMATIC_REVIEW", pattern=r"^(AUTOMATIC|AUTOMATIC_REVIEW)$")
+
+    @model_validator(mode="after")
+    def validate_temporary_norm(self):
+        if self.temporary_adjustment:
+            if not self.temporary_effective_from or not self.temporary_effective_until:
+                raise ValueError("Geçici norm değişikliğinde başlangıç ve bitiş tarihi zorunludur.")
+            if self.temporary_effective_until < self.temporary_effective_from:
+                raise ValueError("Geçici norm bitiş tarihi başlangıçtan önce olamaz.")
+            if self.base_norm is None:
+                self.base_norm = self.norm - self.temporary_adjustment
+        return self

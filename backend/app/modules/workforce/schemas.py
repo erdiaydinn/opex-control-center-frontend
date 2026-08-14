@@ -1,6 +1,54 @@
 from datetime import datetime
+import re
+import unicodedata
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _header_key(value: object) -> str:
+    text = str(value or "").strip().lower().replace("ı", "i")
+    text = unicodedata.normalize("NFKD", text)
+    return re.sub(r"[^a-z0-9]", "", "".join(char for char in text if not unicodedata.combining(char)))
+
+
+_IDENTITY_ALIASES = {
+    "employee_id": ("employee id", "employee number", "employee no", "personel id", "sicil no", "sicil numarasi", "sap id"),
+    "tckn": ("tc", "t.c.", "tck", "tckn", "tc kimlik", "tc kimlik no", "tc kimlik numarasi", "kimlik no", "kimlik numarasi", "national id", "national identity number"),
+    "roster_ids": ("roster id", "rooster id", "roster employee id", "picker id", "picker_id", "rider id", "rider_id"),
+}
+
+
+def _normalize_columns(value: object, aliases: dict[str, tuple[str, ...]]) -> object:
+    if not isinstance(value, dict):
+        return value
+    normalized = {_header_key(key): cell for key, cell in value.items()}
+    result = dict(value)
+    for target, names in aliases.items():
+        if result.get(target) not in (None, "", []):
+            continue
+        for name in (target, *names):
+            key = _header_key(name)
+            if key in normalized and normalized[key] not in (None, ""):
+                result[target] = normalized[key]
+                break
+    return result
+
+
+def _normalize_identity_row(value: object, aliases: dict[str, tuple[str, ...]]) -> object:
+    result = _normalize_columns(value, {**_IDENTITY_ALIASES, **aliases})
+    if not isinstance(result, dict):
+        return result
+    if isinstance(result.get("roster_ids"), str):
+        result["roster_ids"] = [item.strip() for item in re.split(r"[,;|\n]+", result["roster_ids"]) if item.strip()]
+    tckn = "".join(character for character in str(result.get("tckn") or "") if character.isdigit())
+    if tckn:
+        result["tckn"] = tckn
+    source = result.get("source_person_id") or result.get("person_id")
+    if not source and len(tckn) == 11:
+        result["source_person_id"] = tckn
+        result["person_id"] = tckn
+        result["identity_method"] = "TC"
+    return result
 
 
 class ManualCorrectionRequest(BaseModel):
@@ -189,6 +237,25 @@ class PersonUpsertRequest(BaseModel):
     employment_end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     active: bool = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_customer_columns(cls, value: object) -> object:
+        return _normalize_identity_row(value, {
+            "full_name": ("name", "employee name", "ad soyad", "personel adi"),
+            "warehouse_id": ("warehouse id", "warehouse code", "depo kodu", "magaza kodu", "store id"),
+            "employment_start": ("hire date", "employment start date", "ise giris tarihi", "giris tarihi"),
+            "employment_end": ("termination date", "employment end date", "exit date", "isten cikis tarihi", "cikis tarihi", "ayrilis tarihi"),
+            "position": ("title", "unvan", "role", "job title"),
+            "email": ("e posta", "eposta"),
+            "phone": ("telefon", "telefon numarasi"),
+        })
+
+    @model_validator(mode="after")
+    def validate_employee_master_dates(self):
+        if self.employment_start and self.employment_end and self.employment_end < self.employment_start:
+            raise ValueError("İşten çıkış tarihi işe giriş tarihinden önce olamaz.")
+        return self
+
 
 class PeopleBulkUpsertRequest(BaseModel):
     rows: list[PersonUpsertRequest] = Field(min_length=1, max_length=5000)
@@ -200,6 +267,20 @@ class EmploymentLifecycleRow(BaseModel):
     employment_end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     identity_method: str = Field(default="TC", max_length=80)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_customer_columns(cls, value: object) -> object:
+        result = _normalize_identity_row(value, {
+            "person_id": ("employee id", "employee number", "personel id", "sicil no", "sap id"),
+            "source_person_id": ("tc", "tckn", "tc kimlik no", "kimlik numarasi", "national id"),
+            "employment_start": ("hire date", "employment start date", "ise giris tarihi", "giris tarihi"),
+            "employment_end": ("termination date", "employment end date", "exit date", "isten cikis tarihi", "cikis tarihi", "ayrilis tarihi"),
+        })
+        if isinstance(result, dict) and result.get("source_person_id") and not result.get("person_id"):
+            result["person_id"] = result["source_person_id"]
+            result["identity_method"] = "TC"
+        return result
+
 
 class EmploymentLifecycleImportRequest(BaseModel):
     rows: list[EmploymentLifecycleRow] = Field(min_length=1, max_length=10000)
@@ -207,13 +288,13 @@ class EmploymentLifecycleImportRequest(BaseModel):
 
 
 class AttendanceImportRow(BaseModel):
-    id: str = Field(min_length=1, max_length=180)
+    id: str = Field(default="", max_length=180)
     shift_id: str = Field(default="", max_length=180)
     person_id: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=180)
     role: str = Field(default="Picker", max_length=120)
     warehouse: str = Field(default="", max_length=180)
-    date: str = Field(pattern=r"^\d{2}\.\d{2}\.\d{4}$")
+    date: str = Field(pattern=r"^(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})$")
     planned: str = Field(default="Dosyadan", max_length=80)
     check_in: str | None = Field(default=None, max_length=40)
     check_out: str | None = Field(default=None, max_length=40)
@@ -226,6 +307,21 @@ class AttendanceImportRow(BaseModel):
     source_person_id: str = Field(default="", max_length=80)
     identity_method: str = Field(default="", max_length=80)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_customer_columns(cls, value: object) -> object:
+        return _normalize_identity_row(value, {
+            "person_id": ("employee id", "employee number", "personel id", "sicil no", "roster id", "picker id", "rider id"),
+            "source_person_id": ("employee id", "employee number", "personel id", "sicil no", "roster id", "picker id", "rider id"),
+            "name": ("employee name", "personel adi", "ad soyad", "picker name", "rider name"),
+            "date": ("shift date", "vardiya tarihi", "tarih"),
+            "check_in": ("check in", "giris", "giris saati", "baslangic"),
+            "check_out": ("check out", "cikis", "cikis saati", "bitis"),
+            "break_minutes": ("break minutes", "mola dakika", "mola suresi"),
+            "net_minutes": ("net minutes", "net dakika", "net sure", "gunluk net"),
+            "warehouse": ("warehouse name", "depo", "depo adi", "store"),
+        })
+
 
 class AttendanceImportRequest(BaseModel):
     rows: list[AttendanceImportRow] = Field(min_length=1, max_length=50000)
@@ -233,7 +329,7 @@ class AttendanceImportRequest(BaseModel):
 
 
 class LeaveImportRow(BaseModel):
-    id: str = Field(min_length=1, max_length=180)
+    id: str = Field(default="", max_length=180)
     person_id: str = Field(min_length=1, max_length=50)
     person_name: str = Field(default="", max_length=180)
     warehouse: str = Field(default="", max_length=180)
@@ -246,6 +342,20 @@ class LeaveImportRow(BaseModel):
     source: str = Field(default="Time Off Used", max_length=255)
     source_person_id: str = Field(default="", max_length=80)
     identity_method: str = Field(default="", max_length=80)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_customer_columns(cls, value: object) -> object:
+        return _normalize_identity_row(value, {
+            "person_id": ("employee id", "employee number", "personel id", "sicil no", "roster id", "picker id", "rider id"),
+            "source_person_id": ("employee id", "employee number", "personel id", "sicil no", "roster id", "picker id", "rider id"),
+            "person_name": ("employee name", "personel adi", "ad soyad", "name"),
+            "type_id": ("leave type id", "izin tipi kodu", "izin turu kodu"),
+            "category": ("leave category", "izin tipi", "izin turu", "time off type"),
+            "date": ("leave date", "izin tarihi", "tarih", "date"),
+            "minutes": ("leave minutes", "izin dakika", "sure dakika"),
+            "warehouse": ("warehouse name", "depo", "depo adi", "store"),
+        })
 
 
 class LeaveImportRequest(BaseModel):

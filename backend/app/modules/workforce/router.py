@@ -48,6 +48,7 @@ from .service import (
     get_feature_flags,
     list_audit,
     list_attendance,
+    list_daily_status,
     list_breaks,
     list_device_bindings,
     list_announcements,
@@ -173,10 +174,10 @@ def _require_rows_in_scope(request: Request, role: str, rows: list[dict]) -> Non
 
 
 def _enforce_self(request: Request, person_id: str, role: str) -> None:
-    from .service import resolve_person_identity
+    from .service import person_has_workforce_access, resolve_person_identity
 
     person = resolve_person_identity(person_id, "EMPLOYEE_ID")
-    if person is not None and not person.get("active", True):
+    if person is not None and not person_has_workforce_access(person):
         raise HTTPException(status_code=403, detail="İşten ayrılmış veya pasif personelin Workforce erişimi kapalıdır.")
     if role.strip().lower().replace("-", "_").replace(" ", "_") in {"admin", "administrator", "super_admin", "superadmin", "manager", "warehouse_manager", "hr"}:
         return
@@ -217,16 +218,22 @@ def health() -> dict:
         "tenant_id": bool(TENANT_ID),
         "atomic_snapshot_audit": ENABLED and current_schema_version >= SCHEMA_VERSION,
         "oidc": bool(os.getenv("OPEX_OIDC_ISSUER") and os.getenv("OPEX_OIDC_AUDIENCE")),
+        "oidc_employee_claim_mapping": bool(os.getenv("OPEX_OIDC_EMPLOYEE_ID_CLAIM")),
+        "oidc_warehouse_claim_mapping": bool(os.getenv("OPEX_OIDC_WAREHOUSE_SCOPE_CLAIM")),
+        "oidc_exit_revocation": bool(os.getenv("OPEX_OIDC_REVOCATION_URL") and os.getenv("OPEX_OIDC_REVOCATION_TOKEN")),
         "pii_encryption_key": bool(os.getenv("OPEX_PII_KEY")),
         "apple_app_attest": bool(os.getenv("APPLE_APP_ATTEST_VERIFY_URL")),
         "google_play_integrity": bool(os.getenv("GOOGLE_PLAY_INTEGRITY_VERIFY_URL")),
+        "attestation_gateway_credentials": bool(os.getenv("OPEX_ATTESTATION_GATEWAY_TOKEN")),
         "local_user_presence_required": production or os.getenv("WORKFORCE_REQUIRE_LOCAL_AUTH", "false").lower() == "true",
         "continuous_location_tracking": False,
         "biometric_template_storage": False,
     }
     required = (
-        "postgresql", "tenant_id", "atomic_snapshot_audit", "oidc", "pii_encryption_key",
-        "apple_app_attest", "google_play_integrity", "local_user_presence_required",
+        "postgresql", "tenant_id", "atomic_snapshot_audit", "oidc",
+        "oidc_employee_claim_mapping", "oidc_warehouse_claim_mapping", "oidc_exit_revocation",
+        "pii_encryption_key", "apple_app_attest", "google_play_integrity",
+        "attestation_gateway_credentials", "local_user_presence_required",
     )
     configured = all(controls[key] for key in required) if production else True
     return {
@@ -437,6 +444,14 @@ def device_challenge(
 def attendance(request: Request, person_id: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
     scoped = _scoped_person_id(request, person_id, x_opex_role)
     rows = list_attendance()
+    rows = rows if scoped is None else [item for item in rows if item.get("person_id") == scoped]
+    return {"rows": _scoped_rows(request, x_opex_role, rows)}
+
+
+@router.get("/daily-status")
+def daily_status(request: Request, person_id: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
+    scoped = _scoped_person_id(request, person_id, x_opex_role)
+    rows = list_daily_status()
     rows = rows if scoped is None else [item for item in rows if item.get("person_id") == scoped]
     return {"rows": _scoped_rows(request, x_opex_role, rows)}
 

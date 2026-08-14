@@ -20,13 +20,14 @@ function workbookFile(name, sheetName, rows) {
 }
 
 assert.equal(normalizeHeader(" T.C. KİMLİK_NUMARASI "), "tc kimlik numarasi");
+assert.equal(normalizeHeader("  Tc-KİMLİK / NO.  "), "tc kimlik no");
 assert.equal(normalizeNationalId(10009717724), "10009717724");
 assert.equal(normalizeNationalId("1.0009717724E+10"), "10009717724");
 
 const people = [{ id: "HR-77", name: "Murat Işılı", nationalId: "10009717724", warehouse: "Fulya (İstanbul)", role: "Picker" }];
 
 const employeeMaster = await parseEmployeeFile(workbookFile("personel.xlsx", "Personel Ana Veri", [{
-  "Employee ID": "HR-77",
+  "eMpLoYeE___NuMbEr": "HR-77",
   "Roster ID": "ROSTER-998",
   "T.C. KİMLİK NUMARASI": "10009717724",
   "Ad Soyad": "Murat Işılı",
@@ -38,6 +39,15 @@ assert.equal(employeeMaster[0].id, "HR-77");
 assert.equal(employeeMaster[0].hireDate, "2025-04-01");
 assert.equal(resolveWorkforcePerson({ sourcePersonId: "ROSTER-998" }, employeeMaster).person.id, "HR-77");
 assert.equal(resolveWorkforcePerson({ sourcePersonId: "ROSTER-998" }, employeeMaster).method, "Roster ID");
+
+const hostileHeaders = await parseEmployeeFile(workbookFile("hostile.xlsx", "People", [{
+  " SİCİL---NUMARASI ": "HR-88",
+  "tC_kİmLiK--No": "10009717725",
+  "PERSONEL   ADI": "Kolon Testi",
+  "DEPO___ADI": "Fulya (İstanbul)",
+} ]));
+assert.equal(hostileHeaders[0].id, "HR-88");
+assert.equal(hostileHeaders[0].nationalId, "10009717725");
 
 const timeOff = await parseTimeOffFile(workbookFile("izin.xlsx", "Time Off Used", [{
   "Employee Number": "27057",

@@ -141,6 +141,22 @@ class WorkforceFieldPilotApiTests(unittest.TestCase):
         self.assertEqual(own.status_code, 200, own.text)
         self.assertEqual(other.status_code, 403)
 
+    def test_employee_master_bulk_headers_ignore_case_spelling_and_punctuation(self):
+        raw = {
+            "SİCİL NO": "EMP-HEADER-1",
+            "T.C. KİMLİK NUMARASI": "31987654310",
+            "PERSONEL ADI": "Başlık Normalizasyonu",
+            "DEPO KODU": "fulya",
+            "İŞE GİRİŞ TARİHİ": "2026-08-13",
+            "ROOSTER ID": "RST-HEADER-1; RST-HEADER-2",
+        }
+        response = self.client.post("/api/workforce/people/bulk-upsert", json={"rows": [raw]}, headers=ADMIN_HEADERS)
+        self.assertEqual(response.status_code, 200, response.text)
+        person = service.resolve_person_identity("31987654310", "TC")
+        self.assertIsNotNone(person)
+        self.assertEqual(person["employee_id"], "EMP-HEADER-1")
+        self.assertEqual(person["roster_ids"], ["RST-HEADER-1", "RST-HEADER-2"])
+
     def test_production_manager_scope_filters_reads_and_blocks_cross_warehouse_writes(self):
         claims = {
             "sub": "fulya-manager", "name": "Fulya Saha Yöneticisi",

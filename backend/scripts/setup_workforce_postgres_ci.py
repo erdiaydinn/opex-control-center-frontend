@@ -10,6 +10,8 @@ admin_url = os.environ["WORKFORCE_MIGRATION_DATABASE_URL"]
 tenant_id = os.environ["WORKFORCE_TENANT_ID"]
 v29_migration = Path(__file__).resolve().parents[1] / "migrations" / "002_workforce_v29.sql"
 v30_migration = Path(__file__).resolve().parents[1] / "migrations" / "003_workforce_v30_acceptance.sql"
+v31_migration = Path(__file__).resolve().parents[1] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql"
+v32_migration = Path(__file__).resolve().parents[1] / "migrations" / "005_workforce_v32_identity_revocation.sql"
 
 with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", (tenant_id,))
@@ -41,12 +43,28 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     )
     cursor.execute(v30_migration.read_text(encoding="utf-8"))
     cursor.execute(
+        """INSERT INTO recruitment_norms(tenant_id,id,warehouse,payload,updated_at)
+           VALUES (%s,'v31-temp-fixture','Dicle (Diyarbakır)',
+                   '{"norm":7,"warehouse":"Dicle (Diyarbakır)"}'::jsonb,now())
+           ON CONFLICT (tenant_id,id) DO NOTHING""",
+        (tenant_id,),
+    )
+    cursor.execute(v31_migration.read_text(encoding="utf-8"))
+    cursor.execute(v32_migration.read_text(encoding="utf-8"))
+    cursor.execute(
         """SELECT tenant_id FROM recruitment_settings
            WHERE id='v29-upgrade-fixture'"""
     )
     upgraded_tenant = cursor.fetchone()
     if upgraded_tenant is None or upgraded_tenant[0] != tenant_id:
         raise RuntimeError("V29 -> V30 recruitment tenant backfill failed")
+    cursor.execute(
+        """SELECT payload->>'base_norm',payload->>'norm',payload->>'temporary_effective_until'
+           FROM recruitment_norms WHERE tenant_id=%s AND id='v31-temp-fixture'""",
+        (tenant_id,),
+    )
+    if cursor.fetchone() != ("7", "8", "2026-09-30"):
+        raise RuntimeError("V30 -> V31 temporary +1 norm preservation failed")
     cursor.execute(
         """
         DO $$
@@ -69,7 +87,8 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("GRANT USAGE ON SCHEMA public TO workforce_runtime")
     cursor.execute(
         """GRANT SELECT, INSERT, UPDATE, DELETE
-           ON workforce_entities, workforce_collection_versions, workforce_notification_outbox
+           ON workforce_entities, workforce_collection_versions, workforce_notification_outbox,
+              workforce_identity_revocation_outbox
            TO workforce_runtime"""
     )
     cursor.execute(

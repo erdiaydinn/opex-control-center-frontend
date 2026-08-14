@@ -3,9 +3,12 @@ from types import MappingProxyType
 ROUTE_MODULES = frozenset(
     {
         "admin_access",
+        "academy",
         "budget",
         "dockos",
+        "insight",
         "inventory",
+        "jarvis",
         "planogram",
         "recruitment",
         "workforce",
@@ -16,6 +19,7 @@ ROUTE_MODULES = frozenset(
 MODULE_ADMIN = frozenset(
     {
         "admin_access",
+        "academy",
         "planogram",
     }
 )
@@ -23,6 +27,22 @@ MODULE_ADMIN = frozenset(
 
 FEATURES = MappingProxyType(
     {
+        "academy": frozenset(
+            {
+                "home",
+                "catalog",
+                "learningPaths",
+                "player",
+                "quizzes",
+                "assignments",
+                "certificates",
+                "jarvisTutor",
+                "contentStudio",
+                "audiences",
+                "analytics",
+                "liveLearning",
+            }
+        ),
         "budget": frozenset(
             {
                 "summary",
@@ -53,6 +73,27 @@ FEATURES = MappingProxyType(
                 "vehicleTracking",
                 "excelUpload",
                 "duplicateResolution",
+            }
+        ),
+        "insight": frozenset(
+            {
+                "overview",
+                "canonicalMetrics",
+                "trends",
+                "drilldown",
+                "provenance",
+                "exports",
+            }
+        ),
+        "jarvis": frozenset(
+            {
+                "assistant",
+                "operations",
+                "academyTutor",
+                "sources",
+                "missions",
+                "approvals",
+                "history",
             }
         ),
         "planogram": frozenset(
@@ -91,6 +132,19 @@ FEATURES = MappingProxyType(
 
 ACTIONS = MappingProxyType(
     {
+        "academy": frozenset(
+            {
+                "manageContent",
+                "managePaths",
+                "manageQuizzes",
+                "manageEntitlements",
+                "assignEnrollment",
+                "ingestDocuments",
+                "revokeCompletion",
+                "manageLiveLearning",
+                "viewAnalytics",
+            }
+        ),
         "ai_assistant": frozenset(
             {
                 "executeOpsRead",
@@ -125,6 +179,22 @@ ACTIONS = MappingProxyType(
                 "approve",
                 "export",
                 "delete",
+            }
+        ),
+        "insight": frozenset(
+            {
+                "view",
+                "drilldown",
+                "export",
+            }
+        ),
+        "jarvis": frozenset(
+            {
+                "ask",
+                "proposeAction",
+                "approveAction",
+                "viewSources",
+                "viewHistory",
             }
         ),
         "planogram": frozenset(
@@ -197,6 +267,46 @@ for module, actions in ACTIONS.items():
 
 ALL_PERMISSION_KEYS = frozenset(_permission_keys)
 
+ACADEMY_LEARNER_PERMISSIONS = frozenset(
+    {
+        module_permission("academy"),
+        feature_permission("academy", "home"),
+        feature_permission("academy", "catalog"),
+        feature_permission("academy", "learningPaths"),
+        feature_permission("academy", "player"),
+        feature_permission("academy", "quizzes"),
+        feature_permission("academy", "assignments"),
+        feature_permission("academy", "certificates"),
+        feature_permission("academy", "jarvisTutor"),
+    }
+)
+
+ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
+    set(ACADEMY_LEARNER_PERMISSIONS)
+    | {
+        feature_permission("academy", "contentStudio"),
+        feature_permission("academy", "liveLearning"),
+        action_permission("academy", "manageContent"),
+        action_permission("academy", "managePaths"),
+        action_permission("academy", "manageQuizzes"),
+        action_permission("academy", "ingestDocuments"),
+        action_permission("academy", "manageLiveLearning"),
+    }
+)
+
+ACADEMY_ADMIN_PERMISSIONS = frozenset(
+    set(ACADEMY_INSTRUCTOR_PERMISSIONS)
+    | {
+        module_permission("academy", "admin"),
+        feature_permission("academy", "audiences"),
+        feature_permission("academy", "analytics"),
+        action_permission("academy", "manageEntitlements"),
+        action_permission("academy", "assignEnrollment"),
+        action_permission("academy", "revokeCompletion"),
+        action_permission("academy", "viewAnalytics"),
+    }
+)
+
 
 SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
     {
@@ -204,6 +314,9 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "platform_admin": frozenset({module_permission("admin_access", "view")}),
         "operator": frozenset(),
         "viewer": frozenset(),
+        "academy_learner": ACADEMY_LEARNER_PERMISSIONS,
+        "academy_instructor": ACADEMY_INSTRUCTOR_PERMISSIONS,
+        "academy_admin": ACADEMY_ADMIN_PERMISSIONS,
     }
 )
 

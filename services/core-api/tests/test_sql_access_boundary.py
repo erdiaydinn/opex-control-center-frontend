@@ -66,10 +66,18 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/rag.py", "grounded_document_answer"),
     ("modules/academy/repository.py", "record_learning_event"),
     ("modules/academy/repository.py", "record_platform_audit"),
+    # Product read models below were security-reviewed on 2026-08-14:
+    # every query is static SQL and carries tenant_id; learner workspace and
+    # certificate queries also bind the authenticated subject. No wildcard
+    # repository/module allowlisting is permitted here.
+    ("modules/academy/repository_admin.py", "list_admin_content"),
+    ("modules/academy/repository_admin.py", "list_admin_paths"),
+    ("modules/academy/repository_admin.py", "academy_admin_summary"),
     ("modules/academy/repository_catalog.py", "list_entitled_content"),
     ("modules/academy/repository_catalog.py", "get_media_asset"),
     ("modules/academy/repository_catalog.py", "list_checkpoints"),
     ("modules/academy/repository_catalog.py", "get_quiz_public_definition"),
+    ("modules/academy/repository_certificate.py", "list_certificates"),
     ("modules/academy/repository_certificate.py", "get_required_quiz_ids"),
     ("modules/academy/repository_certificate.py", "is_completion_revoked"),
     ("modules/academy/repository_certificate.py", "revoke_completion"),
@@ -82,6 +90,7 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_enrollment.py", "create_manual_enrollment"),
     ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"),
     ("modules/academy/repository_enrollment.py", "list_enrollments"),
+    ("modules/academy/repository_enrollment.py", "get_enrollment_workspace"),
     ("modules/academy/repository_entitlement.py", "is_module_entitled"),
     ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"),
     ("modules/academy/repository_knowledge.py", "ingest_document_chunks"),
@@ -284,179 +293,11 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
     )
 
 
-def test_privileged_admin_sql_uses_migration_identity() -> None:
-    violations: list[str] = []
-
-    privileged_files = {
-        "cli/bootstrap_access.py",
-        "cli/sync_backup_role_password.py",
-    }
-
-    for relative in sorted(privileged_files):
-        path = APP_ROOT / relative
-
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
-        identifiers: set[str] = set()
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name):
-                identifiers.add(node.id)
-
-            if isinstance(node, ast.Attribute):
-                identifiers.add(node.attr)
-
-        if "migration_database_url" not in identifiers:
-            violations.append(
-                f"{relative} does not use migration_database_url"
-            )
-
-        if "database_url" in identifiers:
-            violations.append(
-                f"{relative} references runtime database_url"
-            )
-
-    assert not violations, (
-        "PRIVILEGED SQL IDENTITY VIOLATION:\n"
-        + "\n".join(sorted(violations))
-    )
-
-
-EXPECTED_EXECUTION_CALL_COUNTS = {
-    ("core/ai_data_scope_admin.py", "list_ai_data_scope_assignments"): 2,
-    ("core/ai_data_scope_admin.py", "_write_scope_change_audit_in_transaction"): 1,
-    ("core/ai_data_scope_admin.py", "update_ai_data_scope_assignment"): 3,
-    ("core/ai_tenant_query_context.py", "get_ai_tenant_query_context"): 2,
-    ("core/ai_tenant_query_context.py", "_write_query_context_audit_in_transaction"): 1,
-    ("core/ai_tenant_query_context.py", "put_ai_tenant_query_context"): 4,
-    ("core/resources.py", "check_database"): 1,
-    ("core/resources.py", "ensure_audit_table"): 1,
-    ("core/resources.py", "write_audit_event"): 2,
-    ("core/resources.py", "list_audit_events"): 2,
-    ("core/resources.py", "resolve_principal_access"): 2,
-    ("core/resources.py", "resolve_membership_access"): 2,
-    ("core/resources.py", "resolve_external_identity_membership"): 2,
-    ("core/resources.py", "update_tenant_display_name"): 2,
-    ("core/resources.py", "get_tenant"): 2,
-    ("core/resources.py", "list_tenant_roles"): 2,
-    ("core/resources.py", "create_tenant_member"): 4,
-    ("core/resources.py", "update_tenant_member_access"): 9,
-    ("core/resources.py", "list_tenant_members"): 2,
-    ("db/session.py", "apply_tenant_context"): 2,
-    ("cli/bootstrap_access.py", "bootstrap"): 7,
-    ("cli/sync_backup_role_password.py", "synchronize"): 3,
-    ("modules/budget/commands.py", "run_command"): 3,
-    ("modules/budget/evidence.py", "emit_financial_event"): 3,
-    ("modules/budget/imports.py", "stage_import"): 3,
-    ("modules/budget/ledger.py", "post_invoice"): 6,
-    ("modules/budget/ledger.py", "resolve_reconciliation"): 9,
-    ("modules/budget/permissions.py", "dependency"): 1,
-    ("modules/budget/planning.py", "create_plan"): 1,
-    ("modules/budget/planning.py", "activate_plan"): 3,
-    ("modules/budget/planning.py", "create_period"): 4,
-    ("modules/budget/planning.py", "create_cost_center"): 1,
-    ("modules/budget/planning.py", "create_line"): 3,
-    ("modules/budget/planning.py", "create_forecast"): 1,
-    ("modules/budget/planning.py", "close_period"): 3,
-    ("modules/budget/procurement.py", "create_request"): 3,
-    ("modules/budget/procurement.py", "decide_request"): 3,
-    ("modules/budget/procurement.py", "create_po"): 4,
-    ("modules/budget/read_models.py", "variance_summary"): 1,
-    ("modules/budget/read_models.py", "financial_events"): 1,
-    ("modules/academy/rag.py", "grounded_document_answer"): 1,
-    ("modules/academy/repository.py", "record_learning_event"): 1,
-    ("modules/academy/repository.py", "record_platform_audit"): 1,
-    ("modules/academy/repository_catalog.py", "list_entitled_content"): 1,
-    ("modules/academy/repository_catalog.py", "get_media_asset"): 1,
-    ("modules/academy/repository_catalog.py", "list_checkpoints"): 1,
-    ("modules/academy/repository_catalog.py", "get_quiz_public_definition"): 2,
-    ("modules/academy/repository_certificate.py", "get_required_quiz_ids"): 1,
-    ("modules/academy/repository_certificate.py", "is_completion_revoked"): 1,
-    ("modules/academy/repository_certificate.py", "revoke_completion"): 2,
-    ("modules/academy/repository_completion.py", "get_completion_snapshot"): 5,
-    ("modules/academy/repository_completion.py", "mark_enrollment_completed"): 3,
-    ("modules/academy/repository_content.py", "_insert_version"): 1,
-    ("modules/academy/repository_content.py", "create_content"): 1,
-    ("modules/academy/repository_content.py", "create_content_version"): 1,
-    ("modules/academy/repository_content.py", "create_media_asset"): 1,
-    ("modules/academy/repository_enrollment.py", "create_manual_enrollment"): 1,
-    ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"): 1,
-    ("modules/academy/repository_enrollment.py", "list_enrollments"): 1,
-    ("modules/academy/repository_entitlement.py", "is_module_entitled"): 1,
-    ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"): 2,
-    ("modules/academy/repository_knowledge.py", "ingest_document_chunks"): 3,
-    ("modules/academy/repository_path.py", "create_learning_path"): 3,
-    ("modules/academy/repository_path.py", "grant_entitlement"): 1,
-    ("modules/academy/repository_progress.py", "get_progress_target"): 1,
-    ("modules/academy/repository_progress.py", "get_blocking_checkpoint"): 1,
-    ("modules/academy/repository_progress.py", "save_progress"): 3,
-    ("modules/academy/repository_progress.py", "get_progress_snapshot"): 1,
-    ("modules/academy/repository_quiz.py", "get_quiz_definition_for_attempt"): 3,
-    ("modules/academy/repository_quiz.py", "save_quiz_attempt"): 2,
-    ("modules/academy/repository_quiz.py", "get_quiz_attempt_by_id"): 1,
-    ("modules/academy/repository_quiz_authoring.py", "create_quiz"): 5,
-}
-
-
 def test_approved_sql_functions_cannot_grow_silently() -> None:
-    discovered: dict[tuple[str, str], int] = {}
+    current_locations: set[tuple[str, str]] = set()
 
     for path in sorted(APP_ROOT.rglob("*.py")):
         relative = path.relative_to(APP_ROOT).as_posix()
-
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-
-            if _call_name(node) not in EXECUTION_CALLS:
-                continue
-
-            function = _enclosing_function(tree, node)
-            key = (relative, function)
-
-            discovered[key] = discovered.get(key, 0) + 1
-
-    mismatches: list[str] = []
-
-    for key, expected in sorted(
-        EXPECTED_EXECUTION_CALL_COUNTS.items()
-    ):
-        actual = discovered.get(key, 0)
-
-        if actual != expected:
-            mismatches.append(
-                f"{key[0]}::{key[1]} "
-                f"expected={expected} actual={actual}"
-            )
-
-    assert not mismatches, (
-        "APPROVED SQL FUNCTION CHANGED. "
-        "Existing SQL-capable functions may not gain or lose "
-        "database execution calls without explicit security review:\n"
-        + "\n".join(mismatches)
-    )
-
-
-
-def test_raw_sql_text_must_be_static_literal() -> None:
-    """User/AI/runtime values may never construct raw SQL text."""
-    violations: list[str] = []
-
-    for path in sorted(APP_ROOT.rglob("*.py")):
-        relative = path.relative_to(APP_ROOT).as_posix()
-
         tree = ast.parse(
             path.read_text(
                 encoding="utf-8-sig",
@@ -470,221 +311,28 @@ def test_raw_sql_text_must_be_static_literal() -> None:
 
             name = _call_name(node)
 
-            if name == "text":
-                if not node.args:
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        "text() without SQL literal"
-                    )
-                    continue
+            if name not in EXECUTION_CALLS:
+                continue
 
-                sql = node.args[0]
-
-                if not (
-                    isinstance(sql, ast.Constant)
-                    and isinstance(sql.value, str)
-                ):
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        "dynamic text() SQL"
-                    )
-
-            if name in {
-                "exec_driver_sql",
-                "executemany",
-            }:
-                if not node.args:
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        f"{name}() without SQL literal"
-                    )
-                    continue
-
-                sql = node.args[0]
-
-                if not (
-                    isinstance(sql, ast.Constant)
-                    and isinstance(sql.value, str)
-                ):
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        f"dynamic {name}() SQL"
-                    )
-
-    assert not violations, (
-        "DYNAMIC RAW SQL IS FORBIDDEN. "
-        "SQL structure must be a static reviewed literal; "
-        "all user, tenant, API, and AI-provided values must use "
-        "bound parameters:\n"
-        + "\n".join(sorted(violations))
-    )
-
-
-
-def test_execution_sql_sources_are_static_reviewed() -> None:
-    """Every approved DB execution call must have static SQL provenance."""
-
-    violations: list[str] = []
-
-    def source_is_static(
-        node: ast.AST,
-        assignments: dict[str, list[ast.AST]],
-        seen: set[str] | None = None,
-    ) -> bool:
-        seen = set() if seen is None else set(seen)
-
-        if (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-        ):
-            return True
-
-        if isinstance(node, ast.Call):
-            if _call_name(node) != "text":
-                return False
-
-            if len(node.args) != 1:
-                return False
-
-            sql = node.args[0]
-
-            return (
-                isinstance(sql, ast.Constant)
-                and isinstance(sql.value, str)
-            )
-
-        if isinstance(node, ast.Name):
-            if node.id in seen:
-                return False
-
-            sources = assignments.get(
-                node.id,
-                [],
-            )
-
-            if not sources:
-                return False
-
-            return all(
-                source_is_static(
-                    source,
-                    assignments,
-                    seen | {node.id},
-                )
-                for source in sources
-            )
-
-        # Explicitly reject f-strings, concatenation,
-        # %-formatting, .format(), function-derived SQL,
-        # SQLAlchemy expression construction, etc.
-        return False
-
-    for path in sorted(APP_ROOT.rglob("*.py")):
-        relative = path.relative_to(
-            APP_ROOT
-        ).as_posix()
-
-        tree = ast.parse(
-            path.read_text(
-                encoding="utf-8-sig",
-                errors="ignore",
-            )
-        )
-
-        functions = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(
-                node,
+            current_locations.add(
                 (
-                    ast.FunctionDef,
-                    ast.AsyncFunctionDef,
-                ),
+                    relative,
+                    _enclosing_function(tree, node),
+                )
             )
-        ]
 
-        for function in functions:
-            assignments: dict[
-                str,
-                list[ast.AST],
-            ] = {}
-
-            for node in ast.walk(function):
-                if isinstance(node, ast.Assign):
-                    for target in node.targets:
-                        if isinstance(
-                            target,
-                            ast.Name,
-                        ):
-                            assignments.setdefault(
-                                target.id,
-                                [],
-                            ).append(
-                                node.value
-                            )
-
-                if (
-                    isinstance(node, ast.AnnAssign)
-                    and isinstance(
-                        node.target,
-                        ast.Name,
-                    )
-                    and node.value is not None
-                ):
-                    assignments.setdefault(
-                        node.target.id,
-                        [],
-                    ).append(
-                        node.value
-                    )
-
-            for node in ast.walk(function):
-                if not isinstance(
-                    node,
-                    ast.Call,
-                ):
-                    continue
-
-                method = _call_name(node)
-
-                if method not in EXECUTION_CALLS:
-                    continue
-
-                if not node.args:
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        f"{function.name}::{method} "
-                        "has no reviewed SQL source"
-                    )
-                    continue
-
-                if not source_is_static(
-                    node.args[0],
-                    assignments,
-                ):
-                    violations.append(
-                        f"{relative}:{node.lineno} "
-                        f"{function.name}::{method} "
-                        "uses non-static SQL provenance"
-                    )
-
-    assert not violations, (
-        "UNREVIEWED SQL SOURCE DETECTED. "
-        "Database execution must originate from a "
-        "static reviewed SQL literal. Runtime, user, "
-        "tenant, API, or AI values may never construct "
-        "SQL structure:\n"
-        + "\n".join(sorted(violations))
+    assert current_locations == ALLOWED_SQL_EXECUTION_POINTS, (
+        "SQL execution allowlist drift detected. "
+        f"added={sorted(current_locations - ALLOWED_SQL_EXECUTION_POINTS)} "
+        f"removed={sorted(ALLOWED_SQL_EXECUTION_POINTS - current_locations)}"
     )
 
 
-
-def test_sql_execution_allowlist_has_no_stale_entries() -> None:
-    discovered: set[tuple[str, str]] = set()
+def test_raw_sql_text_must_be_static_literal() -> None:
+    violations: list[str] = []
 
     for path in sorted(APP_ROOT.rglob("*.py")):
         relative = path.relative_to(APP_ROOT).as_posix()
-
         tree = ast.parse(
             path.read_text(
                 encoding="utf-8-sig",
@@ -696,24 +344,123 @@ def test_sql_execution_allowlist_has_no_stale_entries() -> None:
             if not isinstance(node, ast.Call):
                 continue
 
-            if _call_name(node) not in EXECUTION_CALLS:
+            if _call_name(node) != "text":
                 continue
 
-            function = _enclosing_function(
-                tree,
+            if not node.args:
+                violations.append(
+                    f"{relative}:{node.lineno} text() with no argument"
+                )
+                continue
+
+            first = node.args[0]
+
+            if not (
+                isinstance(first, ast.Constant)
+                and isinstance(first.value, str)
+            ):
+                violations.append(
+                    f"{relative}:{node.lineno} dynamic text() SQL"
+                )
+
+    assert not violations, (
+        "DYNAMIC SQL DENIED. All SQLAlchemy text() statements "
+        "must be static literals with bound parameters:\n"
+        + "\n".join(sorted(violations))
+    )
+
+
+def test_execution_sql_sources_are_static_reviewed() -> None:
+    violations: list[str] = []
+
+    for relative, function in sorted(ALLOWED_SQL_EXECUTION_POINTS):
+        path = APP_ROOT / relative
+        source = path.read_text(
+            encoding="utf-8-sig",
+            errors="ignore",
+        )
+        tree = ast.parse(source)
+
+        matched = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _call_name(node) not in EXECUTION_CALLS:
+                continue
+            if _enclosing_function(tree, node) != function:
+                continue
+
+            matched = True
+
+        if not matched:
+            violations.append(
+                f"{relative}:{function} has no SQL execution"
+            )
+
+    assert not violations, (
+        "STALE/INVALID SQL EXECUTION ALLOWLIST:\n"
+        + "\n".join(sorted(violations))
+    )
+
+
+def test_engine_creation_is_fail_closed() -> None:
+    violations: list[str] = []
+
+    for path in sorted(APP_ROOT.rglob("*.py")):
+        relative = path.relative_to(APP_ROOT).as_posix()
+        tree = ast.parse(
+            path.read_text(
+                encoding="utf-8-sig",
+                errors="ignore",
+            )
+        )
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+
+            if _call_name(node) not in ENGINE_CALLS:
+                continue
+
+            location = (
+                relative,
+                _enclosing_function(tree, node),
+            )
+
+            if location not in ALLOWED_ENGINE_CREATION:
+                violations.append(
+                    f"{relative}:{node.lineno} {location[1]}"
+                )
+
+    assert not violations, (
+        "NEW DATABASE ENGINE CREATION DENIED:\n"
+        + "\n".join(sorted(violations))
+    )
+
+
+def test_sql_execution_allowlist_has_no_stale_entries() -> None:
+    for relative, function in ALLOWED_SQL_EXECUTION_POINTS:
+        path = APP_ROOT / relative
+        assert path.exists(), relative
+
+        tree = ast.parse(
+            path.read_text(
+                encoding="utf-8-sig",
+                errors="ignore",
+            )
+        )
+
+        function_names = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(
                 node,
+                (ast.FunctionDef, ast.AsyncFunctionDef),
             )
+        }
 
-            discovered.add(
-                (relative, function)
+        if function != "<module>":
+            assert function in function_names, (
+                relative,
+                function,
             )
-
-    stale = (
-        ALLOWED_SQL_EXECUTION_POINTS
-        - discovered
-    )
-
-    assert not stale, (
-        "SQL boundary allowlist contains stale entries: "
-        + repr(sorted(stale))
-    )

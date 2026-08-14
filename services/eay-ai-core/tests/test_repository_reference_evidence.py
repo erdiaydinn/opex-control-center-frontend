@@ -11,6 +11,7 @@ from app.repository_reference_evidence import load_repository_reference_evidence
 CONFIG_DIR = Path(__file__).parents[1] / "config"
 QDRANT_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_qdrant.json"
 PROMPTFOO_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_promptfoo.json"
+PHOENIX_EVIDENCE_PATH = CONFIG_DIR / "repository_reference_evidence_phoenix.json"
 
 
 def _payload(path: Path = QDRANT_EVIDENCE_PATH) -> dict:
@@ -40,6 +41,19 @@ def test_promptfoo_reference_evidence_pins_eval_execution_trust_boundary() -> No
     assert "scoped credentials" in security
     assert "restricted egress" in security
     assert "not an execution sandbox" in security
+
+
+def test_phoenix_reference_evidence_preserves_elastic_2_hosting_boundary() -> None:
+    evidence = load_repository_reference_evidence_text(PHOENIX_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    assert evidence.repository == "Arize-ai/phoenix"
+    assert evidence.commit_sha == "4090acd0d248e1ed03d37bf339c9975ee171c7ff"
+    assert evidence.tree_sha == "9b64d0f178bf2721a62e914a1a7a38553e0cbf6f"
+    assert evidence.license.spdx == "Elastic-2.0"
+    assert evidence.commercial_use == "SOURCE_AVAILABLE_NO_HOSTED_MANAGED_SERVICE"
+    security = evidence.security_relevance.casefold()
+    assert "hosted" in security
+    assert "managed service" in security
+    assert evidence.authority == "REFERENCE_ONLY"
 
 
 @pytest.mark.parametrize(
@@ -77,4 +91,18 @@ def test_promptfoo_reference_evidence_cannot_be_escalated_to_adopt() -> None:
     payload = _payload(PROMPTFOO_EVIDENCE_PATH)
     payload["decision"] = "ADOPT"
     with pytest.raises(ValidationError):
+        load_repository_reference_evidence_text(json.dumps(payload))
+
+
+def test_phoenix_elastic_2_reference_cannot_be_relabelled_permissive() -> None:
+    payload = _payload(PHOENIX_EVIDENCE_PATH)
+    payload["commercial_use"] = "PERMISSIVE_WITH_NOTICE"
+    with pytest.raises(ValidationError, match="hosted_service_restriction"):
+        load_repository_reference_evidence_text(json.dumps(payload))
+
+
+def test_phoenix_elastic_2_reference_requires_visible_hosting_boundary() -> None:
+    payload = _payload(PHOENIX_EVIDENCE_PATH)
+    payload["security_relevance"] = "Observability reference only."
+    with pytest.raises(ValidationError, match="security_license_boundary"):
         load_repository_reference_evidence_text(json.dumps(payload))

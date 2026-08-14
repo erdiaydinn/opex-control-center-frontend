@@ -1,0 +1,61 @@
+name: EAY Jarvis Orders V2 Convergence
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-jarvis-v0.1
+      - release/platform-convergence-v0.1
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-orders-v2-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jarvis-contracts:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:unused@localhost:5432/unused
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:unused@localhost:5432/unused
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API with reviewed BigQuery SDK extra
+        run: python -m pip install -e './services/core-api[dev,bigquery]'
+      - name: Full Core Ruff gate
+        run: ruff check services/core-api
+      - name: Complete AI/Jarvis contract suite
+        shell: bash
+        run: pytest -q services/core-api/tests/test_ai_*.py
+      - name: Server-authoritative Orders V2 live-proof contract
+        run: pytest -q services/core-api/tests/test_ai_orders_v2_live_cross_tenant_runner.py
+      - name: Preserve central platform security boundaries
+        run: pytest -q services/core-api/tests/test_security_foundation.py services/core-api/tests/test_sql_access_boundary.py
+      - name: Verify cumulative runtime authority composition
+        run: |
+          grep -F 'from app.ai_tool_routes import router as ai_tool_router' services/core-api/app/main.py
+          grep -F 'app.include_router(ai_tool_router)' services/core-api/app/main.py
+          grep -F 'from app.modules.academy.router import router as academy_router' services/core-api/app/main.py
+          grep -F 'app.include_router(academy_router)' services/core-api/app/main.py
+          grep -F '"ai_assistant": frozenset(' services/core-api/app/core/permission_catalog.py
+          test ! -e src/auth/accessConfig.js
+          echo 'JARVIS_PLATFORM_AUTHORITY_COMPOSITION=PASS'
+      - name: Compile governed Orders V2 surface
+        run: >-
+          python -m compileall -q
+          services/core-api/app/ai_tool_routes.py
+          services/core-api/app/core/ai_orders_v2_live_cross_tenant_runner.py
+          services/core-api/app/core/ai_orders_v2_policy_transition.py
+          services/core-api/app/core/ai_orders_v2_policy_transition_guard.py

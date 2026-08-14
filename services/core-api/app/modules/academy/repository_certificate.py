@@ -7,6 +7,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import Principal
 
 
+async def list_certificates(
+    session: AsyncSession,
+    principal: Principal,
+) -> list[dict[str, Any]]:
+    rows = (
+        (
+            await session.execute(
+                text("""
+        SELECT
+            c.id,
+            c.enrollment_id,
+            c.certificate_code,
+            c.contract_version,
+            c.completion_fingerprint,
+            c.issued_at,
+            c.revoked_at,
+            lp.key AS path_key,
+            lp.title_i18n
+        FROM academy_certificates AS c
+        JOIN academy_enrollments AS e
+          ON e.tenant_id=c.tenant_id AND e.id=c.enrollment_id
+        JOIN academy_learning_paths AS lp
+          ON lp.tenant_id=e.tenant_id AND lp.id=e.path_id
+        WHERE c.tenant_id=:tenant_id AND e.subject=:subject
+        ORDER BY c.issued_at DESC
+    """),
+                {
+                    "tenant_id": principal.tenant_id,
+                    "subject": principal.subject,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]
+
+
 async def get_required_quiz_ids(
     session: AsyncSession,
     principal: Principal,

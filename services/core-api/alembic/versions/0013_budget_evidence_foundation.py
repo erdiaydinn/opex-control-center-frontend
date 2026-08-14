@@ -7,8 +7,9 @@ Revises: 0012_budget_import_foundation
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+
+from alembic import op
 
 revision: str = "0013_budget_evidence_foundation"
 down_revision: str | None = "0012_budget_import_foundation"

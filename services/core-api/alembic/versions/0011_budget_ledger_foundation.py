@@ -7,8 +7,9 @@ Revises: 0010_budget_procurement_foundation
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
+
+from alembic import op
 
 revision: str = "0011_budget_ledger_foundation"
 down_revision: str | None = "0010_budget_procurement_foundation"

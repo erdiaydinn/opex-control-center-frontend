@@ -7,8 +7,9 @@ Revises: 0009_budget_finance_foundation
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import UUID
+
 from alembic import op
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 revision: str = "0010_budget_procurement_foundation"
 down_revision: str | None = "0009_budget_finance_foundation"

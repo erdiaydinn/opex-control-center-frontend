@@ -209,7 +209,6 @@ jobs:
             /tmp/dockos.metrics
           if-no-files-found: warn
           retention-days: 5
-        working-directory: .
 
   container-build:
     runs-on: ubuntu-latest

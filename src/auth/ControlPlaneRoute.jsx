@@ -11,7 +11,7 @@ export default function ControlPlaneRoute({ children }) {
   useEffect(() => {
     let active = true;
 
-    apiGet("/v1/platform/health")
+    apiGet("/v1/platform/authority")
       .then(() => {
         if (active) setState("allowed");
       })

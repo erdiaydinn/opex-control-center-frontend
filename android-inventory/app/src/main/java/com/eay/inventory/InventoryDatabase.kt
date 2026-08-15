@@ -40,6 +40,8 @@ data class AuthSession(
 @Dao
 interface OfflineEventDao {
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insert(event: OfflineEvent)
+    @Query("SELECT * FROM offline_events WHERE eventId=:eventId LIMIT 1")
+    suspend fun byEventId(eventId: String): OfflineEvent?
     @Query("SELECT * FROM offline_events WHERE state='PENDING' AND nextAttemptAt<=:now ORDER BY deviceSequence LIMIT :limit")
     suspend fun due(now: Long, limit: Int = 100): List<OfflineEvent>
     @Query("UPDATE offline_events SET state='ACKED' WHERE eventId=:eventId") suspend fun acknowledge(eventId: String)

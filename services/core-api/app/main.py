@@ -205,6 +205,20 @@ async def current_context(
     }
 
 
+@app.get("/v1/platform/authority", tags=["platform"])
+async def platform_authority(
+    request: Request,
+    principal: Principal = Depends(require_control_plane_admin),
+) -> dict[str, object]:
+    """Prove EAY control-plane authority without coupling access to service health."""
+    return {
+        "authorized": True,
+        "request_id": request.state.request_id,
+        "tenant_id": str(principal.tenant_id),
+        "actor": principal.subject,
+    }
+
+
 @app.get("/v1/audit/events", tags=["platform"])
 async def get_audit_events(
     principal: Principal = Depends(require_platform_admin),

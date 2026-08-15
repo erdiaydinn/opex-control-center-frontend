@@ -1,14 +1,14 @@
 import fs from "node:fs";
 
 const routeSource = fs.readFileSync("src/platform/accessibility/RouteAccessibility.jsx", "utf8");
-const appSource = fs.readFileSync("src/App.jsx", "utf8");
+const mainSource = fs.readFileSync("src/main.jsx", "utf8");
 
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-requireCondition(appSource.includes('import RouteAccessibility from "./platform/accessibility/RouteAccessibility.jsx"'), "app shell must import route accessibility boundary");
-requireCondition(appSource.includes("<RouteAccessibility />"), "route accessibility boundary must remain mounted outside lazy route content");
+requireCondition(mainSource.includes('import RouteAccessibility from "./platform/accessibility/RouteAccessibility.jsx"'), "app shell must import route accessibility boundary");
+requireCondition(mainSource.includes("<RouteAccessibility />"), "route accessibility boundary must remain mounted outside lazy route content");
 requireCondition(routeSource.includes("useLocation"), "route accessibility must observe router path changes");
 requireCondition(routeSource.includes("previousPath.current === path"), "same-path updates must not steal keyboard focus");
 requireCondition(routeSource.includes("location.pathname"), "hash/query-only changes must not be treated as full page transitions");

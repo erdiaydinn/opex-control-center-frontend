@@ -1,23 +1,42 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Activity, ArrowLeft, Database, RefreshCw, Server, ShieldCheck } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, ArrowLeft, Database, RefreshCw, Server } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { useAuth } from "../../auth/AuthContext.jsx";
 import { apiFetch } from "../../api/client.js";
+import { translatePlatformHealth } from "../../platform/i18n/platformHealthMessages.js";
+import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import "./platform-health.css";
+import "./platform-health-quality.css";
 
-function StatusCard({ title, status, detail, icon: Icon, successLabel = "Çalışıyor" }) {
-  const healthy = status === "ok";
+const HEALTHY_STATES = new Set(["ok", "healthy", "success"]);
+
+function statusMessageKey(status) {
+  if (HEALTHY_STATES.has(status)) return "operational";
+  if (status === "warning") return "warning";
+  if (status === "stale") return "stale";
+  if (status === "failed" || status === "unhealthy") return "failed";
+  if (status === "unavailable") return "unavailable";
+  return "attentionRequired";
+}
+
+function StatusCard({ title, status, detail, icon: Icon, ph, successLabel }) {
+  const healthy = HEALTHY_STATES.has(status);
+  const statusLabel = healthy
+    ? successLabel || ph("operational")
+    : ph(statusMessageKey(status));
 
   return (
-    <article className={`platform-health-card ${healthy ? "healthy" : "unhealthy"}`}>
-      <div className="platform-health-card-icon">
+    <article
+      className={`platform-health-card ${healthy ? "healthy" : "unhealthy"}`}
+      data-service-status={status || "unknown"}
+    >
+      <div className="platform-health-card-icon" aria-hidden="true">
         <Icon size={22} />
       </div>
 
       <div>
         <span>{title}</span>
-        <strong>{healthy ? successLabel : "Sorun Var"}</strong>
+        <strong>{statusLabel}</strong>
         {detail ? <small>{detail}</small> : null}
       </div>
     </article>
@@ -26,59 +45,83 @@ function StatusCard({ title, status, detail, icon: Icon, successLabel = "Çalı�
 
 export default function PlatformHealth() {
   const navigate = useNavigate();
-  const { isSuperAdmin } = useAuth();
+  const { locale, formatDate, formatNumber, t } = usePlatformPreferences();
+  const ph = useCallback(
+    (key, params) => translatePlatformHealth(locale, key, params),
+    [locale]
+  );
 
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(false);
 
   const loadHealth = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setError(false);
 
     try {
-      const result = await apiFetch(
-        "/v1/platform/health",
-        {
-          method: "GET",
-        }
-      );
-
-
+      const result = await apiFetch("/v1/platform/health", { method: "GET" });
       setHealth(result);
-    } catch (err) {
+    } catch {
       setHealth(null);
-      setError(err.message || "Platform sağlık bilgisi alınamadı.");
+      setError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (isSuperAdmin()) {
-      loadHealth();
-    } else {
-      setLoading(false);
-    }
-  }, [isSuperAdmin, loadHealth]);
+    loadHealth();
+  }, [loadHealth]);
 
-  if (!isSuperAdmin()) {
-    return (
-      <main className="platform-health-page">
-        <section className="platform-health-denied">
-          <ShieldCheck size={42} />
-          <h1>Erişim reddedildi</h1>
-          <p>Platform Health yalnızca Super Admin kullanıcılarına açıktır.</p>
-          <button type="button" onClick={() => navigate("/")}>
-            Ana ekrana dön
-          </button>
-        </section>
-      </main>
-    );
-  }
+  const productState = loading ? "loading" : error ? "error" : health ? "ready" : "empty";
+
+  const backupCompletedAt = health?.checks?.backup?.details?.completed_at || null;
+  const backupDate = useMemo(() => {
+    if (!backupCompletedAt) return null;
+    try {
+      return formatDate(backupCompletedAt, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    } catch {
+      return null;
+    }
+  }, [backupCompletedAt, formatDate]);
+
+  const sizeLabel = useMemo(() => {
+    const raw = Number(health?.checks?.backup?.details?.size_bytes);
+    if (!Number.isFinite(raw) || raw < 0) return "—";
+    if (raw >= 1024 * 1024) {
+      return ph("megabytesValue", { value: formatNumber(raw / (1024 * 1024)) });
+    }
+    if (raw >= 1024) {
+      return ph("kilobytesValue", { value: formatNumber(raw / 1024) });
+    }
+    return ph("bytesValue", { value: formatNumber(raw) });
+  }, [formatNumber, health, ph]);
+
+  const retentionLabel = health?.checks?.backup?.details?.retention_days
+    ? ph("daysValue", {
+        value: formatNumber(health.checks.backup.details.retention_days),
+      })
+    : "—";
+  const intervalLabel = health?.checks?.backup?.details?.interval_hours
+    ? ph("hoursValue", {
+        value: formatNumber(health.checks.backup.details.interval_hours),
+      })
+    : "—";
+  const ageHours = health?.checks?.backup?.details?.age_hours;
+  const ageLabel = ageHours !== null && ageHours !== undefined
+    ? ph("hoursValue", { value: formatNumber(ageHours) })
+    : "—";
 
   return (
-    <main className="platform-health-page">
+    <main
+      className="platform-health-page"
+      data-eay-product-state={productState}
+      aria-busy={loading}
+    >
       <header className="platform-health-header">
         <div>
           <button
@@ -86,15 +129,13 @@ export default function PlatformHealth() {
             className="platform-health-back"
             onClick={() => navigate("/")}
           >
-            <ArrowLeft size={18} />
-            Ana ekran
+            <ArrowLeft className="platform-health-back-icon" size={18} aria-hidden="true" />
+            {t("back")}
           </button>
 
-          <p>Platform Core</p>
-          <h1>Platform Health</h1>
-          <span>
-            Kritik servislerin sağlık durumunu tek merkezden izle.
-          </span>
+          <p>{ph("platformCore")}</p>
+          <h1>{ph("title")}</h1>
+          <span>{ph("subtitle")}</span>
         </div>
 
         <button
@@ -102,157 +143,156 @@ export default function PlatformHealth() {
           className="platform-health-refresh"
           onClick={loadHealth}
           disabled={loading}
+          aria-busy={loading}
         >
-          <RefreshCw size={18} className={loading ? "spinning" : ""} />
-          {loading ? "Kontrol ediliyor" : "Yenile"}
+          <RefreshCw size={18} className={loading ? "spinning" : ""} aria-hidden="true" />
+          {loading ? ph("checking") : t("refresh")}
         </button>
       </header>
 
+      {loading ? (
+        <section
+          className="platform-health-loading"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <Activity size={20} aria-hidden="true" />
+          <strong>{ph("checking")}</strong>
+        </section>
+      ) : null}
+
       {error ? (
-        <section className="platform-health-error">
-          <strong>Sağlık bilgisi alınamadı</strong>
-          <span>{error}</span>
+        <section className="platform-health-error" role="alert" aria-live="assertive">
+          <strong>{ph("loadError")}</strong>
+          <button type="button" onClick={loadHealth}>
+            {t("retry")}
+          </button>
         </section>
       ) : null}
 
       {health ? (
         <>
-          <section className={`platform-health-summary ${health.status}`}>
-            <Activity size={24} />
+          <section
+            className={`platform-health-summary ${health.status}`}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <Activity size={24} aria-hidden="true" />
             <div>
               <strong>
                 {health.status === "healthy"
-                  ? "Platform sağlıklı"
-                  : "Platform kısmen çalışıyor"}
+                  ? ph("healthySummary")
+                  : ph("degradedSummary")}
               </strong>
               <span>
-                Ortam: {health.environment} · Versiyon: {health.version}
+                {ph("environmentVersion", {
+                  environment: health.environment || "—",
+                  version: health.version || "—",
+                })}
               </span>
             </div>
           </section>
 
           <section className="platform-health-grid">
             <StatusCard
-              title="Core API"
+              title={ph("coreApi")}
               status={health.checks?.api?.status}
-              detail={`Versiyon ${health.checks?.api?.version || "-"}`}
+              detail={ph("versionDetail", {
+                version: health.checks?.api?.version || "—",
+              })}
               icon={Server}
+              ph={ph}
             />
 
             <StatusCard
-              title="PostgreSQL"
+              title={ph("postgresql")}
               status={health.checks?.database?.status}
-              detail="Ana platform veritabanı"
+              detail={ph("databaseDetail")}
               icon={Database}
+              ph={ph}
             />
 
             <StatusCard
-              title="Redis"
+              title={ph("redis")}
               status={health.checks?.redis?.status}
-              detail="Önbellek ve geçici işlem servisi"
+              detail={ph("redisDetail")}
               icon={Activity}
+              ph={ph}
             />
 
             <StatusCard
-              title="Container Servisleri"
+              title={ph("containerServices")}
               status={health.checks?.containers?.status}
-              detail={`${health.checks?.containers?.summary?.running || 0} çalışıyor · ${health.checks?.containers?.summary?.stopped || 0} durmuş`}
+              detail={ph("containerSummary", {
+                running: formatNumber(health.checks?.containers?.summary?.running || 0),
+                stopped: formatNumber(health.checks?.containers?.summary?.stopped || 0),
+              })}
               icon={Server}
+              ph={ph}
             />
 
             <StatusCard
-              title="Veritabanı Yedeği"
+              title={ph("databaseBackup")}
               status={health.checks?.backup?.status}
-              successLabel="Başarılı"
-              detail={
-                health.checks?.backup?.details?.completed_at
-                  ? `Son yedek: ${new Date(
-                      health.checks.backup.details.completed_at
-                    ).toLocaleString("tr-TR")}`
-                  : "Henüz yedek bilgisi yok"
-              }
+              successLabel={ph("successful")}
+              detail={backupDate
+                ? ph("lastBackupDetail", { date: backupDate })
+                : ph("noBackupInfo")}
               icon={Database}
+              ph={ph}
             />
           </section>
 
           <section className="platform-health-backup">
             <div className="platform-health-section-title">
               <div>
-                <p>Data Protection</p>
-                <h2>Son Veritabanı Yedeği</h2>
+                <p>{ph("dataProtection")}</p>
+                <h2>{ph("lastDatabaseBackup")}</h2>
               </div>
 
               <span>
-                {health.checks?.backup?.details?.status === "success"
-                  ? "Başarılı"
-                  : "Kontrol gerekli"}
+                {HEALTHY_STATES.has(health.checks?.backup?.status)
+                  ? ph("successful")
+                  : ph(statusMessageKey(health.checks?.backup?.status))}
               </span>
             </div>
 
             <div className="platform-health-backup-grid">
               <div>
-                <span>Tamamlanma zamanı</span>
-                <strong>
-                  {health.checks?.backup?.details?.completed_at
-                    ? new Date(
-                        health.checks.backup.details.completed_at
-                      ).toLocaleString("tr-TR")
-                    : "-"}
-                </strong>
+                <span>{ph("completionTime")}</span>
+                <strong>{backupDate || "—"}</strong>
               </div>
 
               <div>
-                <span>Dosya</span>
-                <strong>
-                  {health.checks?.backup?.details?.filename || "-"}
-                </strong>
+                <span>{ph("file")}</span>
+                <strong>{health.checks?.backup?.details?.filename || "—"}</strong>
               </div>
 
               <div>
-                <span>Boyut</span>
-                <strong>
-                  {health.checks?.backup?.details?.size_bytes
-                    ? `${(
-                        health.checks.backup.details.size_bytes /
-                        1024
-                      ).toFixed(1)} KB`
-                    : "-"}
-                </strong>
+                <span>{ph("size")}</span>
+                <strong>{sizeLabel}</strong>
               </div>
 
               <div>
-                <span>Saklama süresi</span>
-                <strong>
-                  {health.checks?.backup?.details?.retention_days
-                    ? `${health.checks.backup.details.retention_days} gün`
-                    : "-"}
-                </strong>
+                <span>{ph("retentionPeriod")}</span>
+                <strong>{retentionLabel}</strong>
               </div>
 
               <div>
-                <span>Yedekleme aralığı</span>
-                <strong>
-                  {health.checks?.backup?.details?.interval_hours
-                    ? `${health.checks.backup.details.interval_hours} saat`
-                    : "-"}
-                </strong>
+                <span>{ph("backupInterval")}</span>
+                <strong>{intervalLabel}</strong>
               </div>
 
               <div>
-                <span>Yedek yaşı</span>
-                <strong>
-                  {health.checks?.backup?.details?.age_hours !== null &&
-                  health.checks?.backup?.details?.age_hours !== undefined
-                    ? `${health.checks.backup.details.age_hours.toFixed(1)} saat`
-                    : "-"}
-                </strong>
+                <span>{ph("backupAge")}</span>
+                <strong>{ageLabel}</strong>
               </div>
 
               <div>
-                <span>Veritabanı</span>
-                <strong>
-                  {health.checks?.backup?.details?.database || "-"}
-                </strong>
+                <span>{ph("database")}</span>
+                <strong>{health.checks?.backup?.details?.database || "—"}</strong>
               </div>
             </div>
           </section>
@@ -260,12 +300,14 @@ export default function PlatformHealth() {
           <section className="platform-health-containers">
             <div className="platform-health-section-title">
               <div>
-                <p>Runtime</p>
-                <h2>Container Durumu</h2>
+                <p>{ph("runtime")}</p>
+                <h2>{ph("containerStatus")}</h2>
               </div>
 
               <span>
-                Toplam {health.checks?.containers?.summary?.total || 0} servis
+                {ph("totalServices", {
+                  count: formatNumber(health.checks?.containers?.summary?.total || 0),
+                })}
               </span>
             </div>
 
@@ -296,12 +338,12 @@ export default function PlatformHealth() {
                     <div className="platform-health-container-state">
                       <strong>
                         {expectedStopped
-                          ? "Tamamlandı"
+                          ? ph("completed")
                           : container.state === "running"
-                            ? "Çalışıyor"
-                            : "Durmuş"}
+                            ? ph("running")
+                            : ph("stopped")}
                       </strong>
-                      <span>{container.status}</span>
+                      <span>{container.status || ph("unavailable")}</span>
                     </div>
                   </article>
                 );
@@ -311,16 +353,16 @@ export default function PlatformHealth() {
 
           <section className="platform-health-meta">
             <div>
-              <span>Tenant</span>
-              <strong>{health.tenant_id}</strong>
+              <span>{ph("tenant")}</span>
+              <strong>{health.tenant_id || "—"}</strong>
             </div>
             <div>
-              <span>Kontrol eden kullanıcı</span>
-              <strong>{health.actor}</strong>
+              <span>{ph("checkedBy")}</span>
+              <strong>{health.actor || "—"}</strong>
             </div>
             <div>
-              <span>Request ID</span>
-              <strong>{health.request_id}</strong>
+              <span>{ph("requestId")}</span>
+              <strong>{health.request_id || "—"}</strong>
             </div>
           </section>
         </>

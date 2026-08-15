@@ -2,6 +2,10 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.platform.business_glossary.jarvis import (
+    JarvisGlossaryAnswerUnavailable,
+    answer_business_term,
+)
 from app.platform.business_glossary.models import GlossaryScope, GlossaryStatus, GlossaryTerm, LocalizedText
 from app.platform.business_glossary.resolver import GlossaryResolutionError, resolve_term
 
@@ -37,3 +41,26 @@ def test_country_override_wins_over_tenant_default():
 def test_undefined_company_term_fails_closed_instead_of_inventing_definition():
     with pytest.raises(GlossaryResolutionError, match="no approved effective tenant glossary definition"):
         resolve_term([term("tenant-a", "A definition")], tenant_id="tenant-b", query="NSFR", locale="tr", domain="operations")
+
+
+def test_jarvis_uses_effective_tenant_definition():
+    answer = answer_business_term(
+        [term("tenant-a", "Company-approved NSFR meaning")],
+        tenant_id="tenant-a",
+        query="NSFR",
+        locale="tr",
+        domain="operations",
+    )
+    assert answer.authoritative is True
+    assert answer.definition == "Company-approved NSFR meaning"
+
+
+def test_jarvis_has_no_general_knowledge_fallback_for_company_term():
+    with pytest.raises(JarvisGlossaryAnswerUnavailable, match="no approved effective company definition"):
+        answer_business_term(
+            [term("tenant-a", "Company A definition")],
+            tenant_id="tenant-b",
+            query="NSFR",
+            locale="tr",
+            domain="operations",
+        )

@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+SUPPORTED_LOCALES = frozenset({"tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"})
+
 
 class GlossaryStatus(StrEnum):
     DRAFT = "draft"
@@ -27,7 +29,10 @@ class LocalizedText(BaseModel):
     values: dict[str, str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def reject_blank_values(self) -> "LocalizedText":
+    def validate_values(self) -> "LocalizedText":
+        unknown = set(self.values) - SUPPORTED_LOCALES
+        if unknown:
+            raise ValueError(f"unsupported glossary locales: {', '.join(sorted(unknown))}")
         if any(not value.strip() for value in self.values.values()):
             raise ValueError("localized glossary values must not be blank")
         return self
@@ -75,6 +80,8 @@ class GlossaryAnswer(BaseModel):
 
 
 def locale_value(text: LocalizedText, locale: str, fallback: str = "en") -> str:
+    if locale not in SUPPORTED_LOCALES:
+        raise ValueError(f"unsupported requested glossary locale: {locale}")
     if locale in text.values:
         return text.values[locale]
     if fallback in text.values:

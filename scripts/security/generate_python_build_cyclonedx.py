@@ -17,6 +17,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from validate_prebuild_evidence_contract import validate_document
+
 SPEC_VERSION = "1.7"
 NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)")
 
@@ -176,6 +178,7 @@ def main() -> None:
 
     bom = build_bom(args.root)
     validate_bom(bom)
+    validate_document(bom, source=args.output)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(bom, indent=2, ensure_ascii=False) + "\n",

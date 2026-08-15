@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends
 
 from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
 from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS, TOOL_REQUIRED_SCOPES
-from app.core.security import Principal, get_current_principal, require_platform_admin
+from app.core.authorization import require_control_plane_admin
+from app.core.security import Principal, get_current_principal
 
 router = APIRouter(prefix="/v1", tags=["intelligence"])
 Authenticated = Annotated[Principal, Depends(get_current_principal)]
-PlatformAdmin = Annotated[Principal, Depends(require_platform_admin)]
+ControlPlaneAdmin = Annotated[Principal, Depends(require_control_plane_admin)]
 
 PLANOGRAM_REQUIRED_EVIDENCE = (
     "approved_sku_dimensions",
@@ -250,5 +251,5 @@ async def get_insight_metrics(principal: Authenticated) -> dict[str, Any]:
 
 
 @router.get("/platform/security-guardian/workspace")
-async def get_security_guardian_workspace(principal: PlatformAdmin) -> dict[str, Any]:
+async def get_security_guardian_workspace(principal: ControlPlaneAdmin) -> dict[str, Any]:
     return build_security_guardian_workspace(principal)

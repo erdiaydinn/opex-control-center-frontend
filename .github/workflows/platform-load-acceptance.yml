@@ -156,6 +156,7 @@ jobs:
         env:
           TARGET_VUS: ${{ github.event_name == 'workflow_dispatch' && inputs.target_vus || '1000' }}
         run: |
+          echo "$TARGET_VUS" > /tmp/eay-burst-target-vus
           docker run --rm --network host \
             -v "$PWD:/work" -w /work \
             -e BASE_URL=http://127.0.0.1:8000 \
@@ -168,15 +169,28 @@ jobs:
             grafana/k6:0.57.0 \
             run ops/load/k6-platform-core-tenant-burst.js
 
-      - name: Verify no tenant membership contamination after load
+      - name: Verify tenant and audit correctness after load
         working-directory: services/core-api
         run: |
+          export BURST_TARGET_VUS="$(cat /tmp/eay-burst-target-vus)"
           python - <<'PY'
           import asyncio
+          import os
           import asyncpg
 
           TENANT_A = "00000000-0000-0000-0000-00000000a001"
           TENANT_B = "00000000-0000-0000-0000-00000000b001"
+          SUBJECT_A = "load-a"
+          SUBJECT_B = "load-b"
+          burst_vus = int(os.environ["BURST_TARGET_VUS"])
+
+          # The controlled latency profile uses 50 VUs x 2 iterations. Each
+          # iteration makes exactly two audited HTTP requests (context + members).
+          latency_events_per_tenant = 25 * 2 * 2
+          burst_events_a = ((burst_vus + 1) // 2) * 2
+          burst_events_b = (burst_vus // 2) * 2
+          expected_a = latency_events_per_tenant + burst_events_a
+          expected_b = latency_events_per_tenant + burst_events_b
 
           async def main() -> None:
               connection = await asyncpg.connect(
@@ -194,7 +208,66 @@ jobs:
                       TENANT_B,
                   )
                   observed = {(row["tenant_id"], row["external_subject"]) for row in rows}
-                  assert observed == {(TENANT_A, "load-a"), (TENANT_B, "load-b")}, observed
+                  assert observed == {(TENANT_A, SUBJECT_A), (TENANT_B, SUBJECT_B)}, observed
+
+                  audit_rows = await connection.fetch(
+                      """
+                      SELECT
+                          tenant_id::text AS tenant_id,
+                          actor_subject,
+                          action,
+                          decision,
+                          request_id
+                      FROM audit_events
+                      WHERE tenant_id IN ($1::uuid, $2::uuid)
+                      ORDER BY tenant_id, id
+                      """,
+                      TENANT_A,
+                      TENANT_B,
+                  )
+
+                  expected_subject = {TENANT_A: SUBJECT_A, TENANT_B: SUBJECT_B}
+                  expected_counts = {TENANT_A: expected_a, TENANT_B: expected_b}
+                  counts = {TENANT_A: 0, TENANT_B: 0}
+                  request_ids = {TENANT_A: set(), TENANT_B: set()}
+                  allowed_actions = {"get:/v1/context", "get:/v1/admin/members"}
+
+                  for row in audit_rows:
+                      tenant_id = row["tenant_id"]
+                      assert tenant_id in expected_subject, row
+                      assert row["actor_subject"] == expected_subject[tenant_id], row
+                      assert row["action"] in allowed_actions, row
+                      assert row["decision"] == "allowed", row
+                      assert row["request_id"], row
+                      counts[tenant_id] += 1
+                      request_ids[tenant_id].add(row["request_id"])
+
+                  assert counts == expected_counts, (counts, expected_counts)
+                  assert len(request_ids[TENANT_A]) == expected_a, len(request_ids[TENANT_A])
+                  assert len(request_ids[TENANT_B]) == expected_b, len(request_ids[TENANT_B])
+
+                  foreign_a = await connection.fetchval(
+                      """
+                      SELECT COUNT(*)
+                      FROM audit_events
+                      WHERE tenant_id = $1::uuid
+                        AND actor_subject = $2
+                      """,
+                      TENANT_A,
+                      SUBJECT_B,
+                  )
+                  foreign_b = await connection.fetchval(
+                      """
+                      SELECT COUNT(*)
+                      FROM audit_events
+                      WHERE tenant_id = $1::uuid
+                        AND actor_subject = $2
+                      """,
+                      TENANT_B,
+                      SUBJECT_A,
+                  )
+                  assert foreign_a == 0, foreign_a
+                  assert foreign_b == 0, foreign_b
               finally:
                   await connection.close()
 
@@ -207,6 +280,7 @@ jobs:
           This workflow is synthetic CI evidence only.
           The 50-VU profile is a runner-relative latency regression gate.
           The 1000-VU profile is a saturation/isolation gate, not a production capacity SLO.
+          Membership RLS isolation and durable tenant-bound HTTP audit correctness are hard gates.
           Real production readiness still requires staging/production-shape infrastructure evidence.
           EOF
 

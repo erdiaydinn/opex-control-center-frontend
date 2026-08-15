@@ -6,11 +6,15 @@ from fastapi import APIRouter, Depends
 
 from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
 from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS, TOOL_REQUIRED_SCOPES
-from app.core.authorization import require_control_plane_admin
-from app.core.security import Principal, get_current_principal
+from app.core.authorization import require_control_plane_admin, require_permission
+from app.core.security import Principal
 
 router = APIRouter(prefix="/v1", tags=["intelligence"])
-Authenticated = Annotated[Principal, Depends(get_current_principal)]
+
+jarvis_view_guard = require_permission("module:jarvis:view")
+insight_view_guard = require_permission("module:insight:view")
+JarvisViewer = Annotated[Principal, Depends(jarvis_view_guard)]
+InsightViewer = Annotated[Principal, Depends(insight_view_guard)]
 ControlPlaneAdmin = Annotated[Principal, Depends(require_control_plane_admin)]
 
 PLANOGRAM_REQUIRED_EVIDENCE = (
@@ -72,7 +76,6 @@ def _orders_v2_blockers(principal: Principal) -> tuple[list[str], dict[str, bool
     if candidate.cross_tenant_proof_fingerprint is None:
         blockers.append("live_cross_tenant_zero_leak_proof_missing")
 
-    # Stable order without silently dropping duplicate evidence reasons.
     blockers = list(dict.fromkeys(blockers))
     evidence = {
         "schema_attested": candidate.schema_evidence_fingerprint is not None,
@@ -241,12 +244,12 @@ def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
 
 
 @router.get("/jarvis/workspace")
-async def get_jarvis_workspace(principal: Authenticated) -> dict[str, Any]:
+async def get_jarvis_workspace(principal: JarvisViewer) -> dict[str, Any]:
     return build_jarvis_workspace(principal)
 
 
 @router.get("/insight/metrics")
-async def get_insight_metrics(principal: Authenticated) -> dict[str, Any]:
+async def get_insight_metrics(principal: InsightViewer) -> dict[str, Any]:
     return build_insight_metrics(principal)
 
 

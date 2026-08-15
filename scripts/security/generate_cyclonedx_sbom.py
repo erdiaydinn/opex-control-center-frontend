@@ -38,7 +38,7 @@ def npm_components() -> list[dict[str, Any]]:
 
     components: list[dict[str, Any]] = []
     for package_path, entry in packages.items():
-        if not package_path or not package_path.startswith("node_modules/"):
+        if not package_path or "node_modules/" not in package_path:
             continue
         if not isinstance(entry, dict):
             continue
@@ -46,16 +46,17 @@ def npm_components() -> list[dict[str, Any]]:
         if not isinstance(version, str) or not version:
             raise ValueError(f"npm package lacks resolved version: {package_path}")
 
-        name = package_path.removeprefix("node_modules/")
+        name = package_path.rsplit("node_modules/", maxsplit=1)[-1]
         component: dict[str, Any] = {
             "type": "library",
-            "bom-ref": f"npm:{name}@{version}",
+            "bom-ref": f"npm-path:{package_path}@{version}",
             "name": name,
             "version": version,
             "scope": "excluded" if entry.get("dev") is True else "required",
             "properties": [
                 property_item("eay:ecosystem", "npm"),
                 property_item("eay:source-manifest", "package-lock.json"),
+                property_item("eay:package-path", package_path),
                 property_item("eay:resolution-state", "lockfile-resolved"),
             ],
         }
@@ -222,7 +223,7 @@ def main() -> None:
     npm_count = sum(
         1
         for component in bom["components"]
-        if component["bom-ref"].startswith("npm:")
+        if component["bom-ref"].startswith("npm-path:")
     )
     python_count = len(bom["components"]) - npm_count
     print(

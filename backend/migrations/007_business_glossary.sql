@@ -25,10 +25,15 @@ CREATE TABLE IF NOT EXISTS glossary_terms (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, concept_id, version),
-  UNIQUE (tenant_id, canonical_key, country, region, business_unit, domain, version),
   CHECK (effective_to IS NULL OR effective_from IS NOT NULL),
   CHECK (effective_to IS NULL OR effective_to > effective_from)
 );
+-- PostgreSQL UNIQUE constraints normally treat NULL values as distinct. Business
+-- semantic scope does not: two tenant-wide definitions of the same key/version
+-- are ambiguous. NULLS NOT DISTINCT makes the database enforce that truth.
+CREATE UNIQUE INDEX IF NOT EXISTS glossary_semantic_scope_version_uq
+  ON glossary_terms (tenant_id, canonical_key, country, region, business_unit, domain, version)
+  NULLS NOT DISTINCT;
 CREATE INDEX IF NOT EXISTS glossary_lookup_idx
   ON glossary_terms (tenant_id, canonical_key, status, country, region, business_unit, domain, version DESC);
 

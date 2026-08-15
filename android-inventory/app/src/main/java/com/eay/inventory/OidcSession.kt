@@ -6,6 +6,7 @@ import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import kotlinx.coroutines.runBlocking
+import java.util.UUID
 
 class OidcSession(context: Context) {
     private val service = AuthorizationService(context)
@@ -18,12 +19,14 @@ class OidcSession(context: Context) {
         service.performTokenRequest(response.createTokenExchangeRequest()) { token, error ->
             if (token?.accessToken.isNullOrBlank() || token?.refreshToken.isNullOrBlank()) done(Result.failure(error ?: IllegalStateException("access/refresh token missing")))
             else {
+                val authBindingId = UUID.randomUUID().toString()
                 AccessTokenMemory.replace(token!!.accessToken!!, token.accessTokenExpirationTime ?: 0L)
                 runBlocking {
                     InventoryDatabase.get(appContext).sessions().put(AuthSession(
                         refreshToken = token.refreshToken!!,
                         tokenEndpoint = response.request.configuration.tokenEndpoint.toString(),
                         clientId = response.request.clientId,
+                        authBindingId = authBindingId,
                     ))
                 }
                 done(Result.success(Unit))

@@ -15,6 +15,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from validate_prebuild_evidence_contract import validate_document
+
 SPEC_VERSION = "1.7"
 COORDINATE = re.compile(
     r"(?:---|\\---|\\+---|\+---)\s+"
@@ -130,6 +132,7 @@ def main() -> None:
     report = args.input.read_text(encoding="utf-8", errors="strict")
     components = parse_components(report)
     bom = build_bom(components)
+    validate_document(bom, source=args.output)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

@@ -79,6 +79,7 @@ app = FastAPI(
 
 app.include_router(ai_tool_router)
 app.include_router(intelligence_router)
+app.include_router(academy_router)
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(

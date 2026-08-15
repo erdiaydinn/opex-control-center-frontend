@@ -6,6 +6,17 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+SUPPORTED_LOCALES = frozenset({"tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"})
+
+
+def validate_i18n(values: dict[str, str]) -> dict[str, str]:
+    unknown = set(values) - SUPPORTED_LOCALES
+    if unknown:
+        raise ValueError(f"unsupported locales: {', '.join(sorted(unknown))}")
+    if any(not value.strip() for value in values.values()):
+        raise ValueError("translations must not be blank")
+    return values
+
 
 class FieldType(StrEnum):
     TEXT = "text"
@@ -34,6 +45,7 @@ class RecordKind(StrEnum):
 class CollectionField(BaseModel):
     key: str = Field(min_length=1, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
     label: str = Field(min_length=1, max_length=160)
+    label_i18n: dict[str, str] = Field(default_factory=dict)
     field_type: FieldType
     required: bool = False
     options: tuple[str, ...] = ()
@@ -43,6 +55,7 @@ class CollectionField(BaseModel):
 
     @model_validator(mode="after")
     def validate_options_and_range(self) -> "CollectionField":
+        validate_i18n(self.label_i18n)
         if self.field_type is FieldType.SELECT and not self.options:
             raise ValueError("select fields require options")
         if self.field_type is not FieldType.SELECT and self.options:
@@ -51,10 +64,16 @@ class CollectionField(BaseModel):
             raise ValueError("min_value cannot exceed max_value")
         return self
 
+    def display_label(self, locale: str) -> str:
+        if locale not in SUPPORTED_LOCALES:
+            raise ValueError(f"unsupported requested locale: {locale}")
+        return self.label_i18n.get(locale) or self.label_i18n.get("en") or self.label
+
 
 class CollectionTemplate(BaseModel):
     template_id: str = Field(min_length=3, max_length=80, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     name: str = Field(min_length=1, max_length=160)
+    name_i18n: dict[str, str] = Field(default_factory=dict)
     version: int = Field(ge=1)
     record_kind: RecordKind
     fields: tuple[CollectionField, ...] = Field(min_length=1, max_length=200)
@@ -66,6 +85,16 @@ class CollectionTemplate(BaseModel):
         if len(keys) != len(set(keys)):
             raise ValueError("field keys must be unique")
         return fields
+
+    @model_validator(mode="after")
+    def validate_name_i18n(self) -> "CollectionTemplate":
+        validate_i18n(self.name_i18n)
+        return self
+
+    def display_name(self, locale: str) -> str:
+        if locale not in SUPPORTED_LOCALES:
+            raise ValueError(f"unsupported requested locale: {locale}")
+        return self.name_i18n.get(locale) or self.name_i18n.get("en") or self.name
 
 
 class SubmissionContext(BaseModel):

@@ -122,7 +122,19 @@ jobs:
         run: pytest -q services/core-api/tests/test_ai_database_role_boundary.py
 
       - name: Test as RLS-bound runtime role
-        run: pytest services/core-api/tests
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest services/core-api/tests 2>&1 | tee /tmp/eay-core-pytest.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            failures=$(grep -E '^(FAILED|ERROR) ' /tmp/eay-core-pytest.log | tail -20 | tr '\n' '; ' || true)
+            if [ -z "$failures" ]; then
+              failures=$(tail -20 /tmp/eay-core-pytest.log | tr '\n' '; ')
+            fi
+            echo "::error title=Core regression failing tests::$failures"
+          fi
+          exit "$status"
 
   platform-config:
     name: Platform configuration

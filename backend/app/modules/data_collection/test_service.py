@@ -19,14 +19,22 @@ def template() -> CollectionTemplate:
     return CollectionTemplate(
         template_id="warehouse.physical_truth",
         name="Warehouse physical truth",
+        name_i18n={"tr": "Depo fiziksel gerçeklik", "en": "Warehouse physical truth"},
         version=1,
         record_kind=RecordKind.GENERIC,
         fields=(
-            CollectionField(key="barcode", label="Barcode", field_type=FieldType.BARCODE, required=True),
-            CollectionField(key="lot", label="Lot", field_type=FieldType.LOT),
+            CollectionField(
+                key="barcode",
+                label="Barcode",
+                label_i18n={"tr": "Barkod", "en": "Barcode"},
+                field_type=FieldType.BARCODE,
+                required=True,
+            ),
+            CollectionField(key="lot", label="Lot", label_i18n={"tr": "Parti/Lot"}, field_type=FieldType.LOT),
             CollectionField(
                 key="quantity",
                 label="Quantity",
+                label_i18n={"tr": "Miktar", "en": "Quantity"},
                 field_type=FieldType.QUANTITY,
                 required=True,
                 min_value=0,
@@ -34,6 +42,7 @@ def template() -> CollectionTemplate:
             CollectionField(
                 key="asset_type",
                 label="Asset type",
+                label_i18n={"tr": "Varlık tipi", "en": "Asset type"},
                 field_type=FieldType.SELECT,
                 required=True,
                 options=("product", "pallet", "cabinet", "fixture"),
@@ -81,6 +90,16 @@ def test_supports_non_product_physical_assets(template: CollectionTemplate) -> N
         _submission({"barcode": "PALLET-9", "quantity": 3, "asset_type": "pallet"}),
     )
     assert result.normalized_values["asset_type"] == "pallet"
+
+
+def test_template_and_questions_follow_platform_locale_contract(template: CollectionTemplate) -> None:
+    assert template.display_name("tr") == "Depo fiziksel gerçeklik"
+    assert template.fields[0].display_label("tr") == "Barkod"
+    assert template.fields[1].display_label("en") == "Lot"
+    with pytest.raises(ValueError, match="unsupported requested locale"):
+        template.display_name("xx")
+    with pytest.raises(ValueError, match="unsupported locales"):
+        CollectionField(key="bad", label="Bad", label_i18n={"xx": "Bad"}, field_type=FieldType.TEXT)
 
 
 def test_unknown_field_fails_closed(template: CollectionTemplate) -> None:

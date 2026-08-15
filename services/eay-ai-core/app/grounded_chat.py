@@ -31,6 +31,9 @@ temporal_resolver = LegalTemporalResolver(DB_PATH)
 legal_interaction_audit = LegalInteractionAuditStore(DB_PATH)
 router = APIRouter(prefix="/v1/grounded", tags=["grounded-chat"])
 
+_TENANT_SCOPED_LAYERS = frozenset({"company", "operational"})
+_ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
+
 
 class ProvenanceItem(BaseModel):
     id: str
@@ -52,6 +55,41 @@ class GroundedChatAnswer(BaseModel):
     conflicts: list[dict] = Field(default_factory=list)
     temporal_resolution_fingerprint: str | None = None
     legal_audit_fingerprint: str | None = None
+
+
+def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
+    """Keep tenant-scoped retrieval closed until Core tenant authority is bound.
+
+    EAY AI Core's local SQLite/FTS store currently has no authoritative tenant
+    discriminator. A client-supplied company or tenant string therefore cannot
+    be treated as isolation authority. Local development/test remains available
+    for single-company research, while production allows only global legal and
+    standard retrieval until the canonical Core identity/tenant context is
+    carried into the retrieval store and query.
+    """
+
+    environment = os.getenv("EAY_ENVIRONMENT", "development").strip().lower()
+    if environment not in _ALLOWED_ENVIRONMENTS:
+        raise HTTPException(
+            status_code=503,
+            detail="Grounded retrieval environment is invalid",
+        )
+
+    if environment != "production":
+        return
+
+    tenant_scoped = sorted(_TENANT_SCOPED_LAYERS.intersection(request.layers))
+    if tenant_scoped:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "tenant_scoped_retrieval_not_production_ready",
+                "layers": tenant_scoped,
+                "truth_boundary": (
+                    "central tenant authority is not bound to grounded retrieval"
+                ),
+            },
+        )
 
 
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -212,6 +250,8 @@ def _filter_temporally_active_legal_evidence(
 
 @router.post("/chat", response_model=GroundedChatAnswer)
 async def grounded_chat(request: ChatRequest):
+    _enforce_grounded_retrieval_truth_boundary(request)
+
     temporal_state: LegalTemporalState | None = None
     if "legal" in request.layers:
         temporal_state = _resolve_temporal_state(request.as_of)

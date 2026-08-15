@@ -7,7 +7,20 @@ function camel(value) {
   return value;
 }
 
-export async function loadRecruitment() { return camel(await apiGet("/recruitment/bootstrap")); }
+let primedRecruitmentBootstrap = null;
+
+export function primeRecruitmentBootstrap(value) {
+  primedRecruitmentBootstrap = value;
+}
+
+export async function loadRecruitment() {
+  if (primedRecruitmentBootstrap) {
+    const value = primedRecruitmentBootstrap;
+    primedRecruitmentBootstrap = null;
+    return value;
+  }
+  return camel(await apiGet("/recruitment/bootstrap"));
+}
 export async function evaluateRecruitment(params) {
   const query = new URLSearchParams(params);
   return camel(await apiGet(`/recruitment/evaluate?${query}`));
@@ -29,4 +42,3 @@ export async function downloadRecruitmentEvidence(id, filename) {
   anchor.href = url; anchor.download = filename || `${id}-istifa-belgesi`; anchor.click();
   URL.revokeObjectURL(url);
 }
-

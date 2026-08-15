@@ -64,7 +64,13 @@ function statusLabel(status, t, locale) {
 
 function EmptyState({ icon: Icon = Library, title, detail }) {
   return (
-    <section className="eay-academy-empty">
+    <section
+      className="eay-academy-empty"
+      data-eay-product-state="empty"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
       <Icon size={28} aria-hidden="true" />
       <strong>{title}</strong>
       {detail ? <p>{detail}</p> : null}
@@ -74,7 +80,14 @@ function EmptyState({ icon: Icon = Library, title, detail }) {
 
 function LoadingState({ label }) {
   return (
-    <section className="eay-academy-loading" role="status" aria-live="polite">
+    <section
+      className="eay-academy-loading"
+      data-eay-product-state="loading"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      aria-busy="true"
+    >
       <LoaderCircle className="spin" size={22} aria-hidden="true" />
       <span>{label}</span>
     </section>
@@ -83,7 +96,12 @@ function LoadingState({ label }) {
 
 function ErrorState({ label, retry, retryLabel }) {
   return (
-    <section className="eay-academy-error" role="alert">
+    <section
+      className="eay-academy-error"
+      data-eay-product-state="error"
+      role="alert"
+      aria-atomic="true"
+    >
       <strong>{label}</strong>
       <button type="button" onClick={retry}>
         <RefreshCw size={16} aria-hidden="true" />
@@ -408,7 +426,7 @@ export default function AcademyWorkspace() {
         <div className="eay-academy-nav-foot"><Users size={17} aria-hidden="true" /><span>{data?.subject || "—"}</span></div>
       </aside>
 
-      <section className="eay-academy-main">
+      <section className="eay-academy-main" aria-busy={loading ? "true" : "false"}>
         <header className="eay-academy-header">
           <div><span>EAY · {t("academy")}</span><h1>{tabs.find(([key]) => key === tab)?.[1] || t("academy")}</h1><p>{t("academySubtitle")}</p></div>
           <button type="button" className="eay-academy-refresh" onClick={load} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={17} aria-hidden="true" /><span>{t("refresh")}</span></button>
@@ -417,7 +435,7 @@ export default function AcademyWorkspace() {
         {loading ? <LoadingState label={t("academyLoading")} /> : null}
         {!loading && error ? <ErrorState label={error} retry={load} retryLabel={t("retry")} /> : null}
         {!loading && !error ? (
-          <div className="eay-academy-view">
+          <div className="eay-academy-view" data-eay-product-state="ready">
             {tab === "learning" ? <MyLearning data={data} locale={locale} t={t} formatDate={formatDate} onOpen={(id) => navigate(`/academy/enrollments/${id}`)} /> : null}
             {tab === "catalog" ? <Catalog data={data} locale={locale} t={t} query={query} setQuery={setQuery} /> : null}
             {tab === "certificates" ? <Certificates data={data} locale={locale} t={t} formatDate={formatDate} /> : null}

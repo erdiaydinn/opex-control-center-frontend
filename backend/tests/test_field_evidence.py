@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app.modules.field_intelligence.evidence import (
+    EvidenceAuthorityContext,
     EvidenceCaptureSource,
     EvidenceItem,
     EvidenceKind,
@@ -14,6 +15,15 @@ from app.modules.field_intelligence.evidence import (
 )
 
 NOW = datetime(2026, 8, 16, 9, 0, tzinfo=timezone.utc)
+
+
+def authority(*, tenant="tenant-a", actor="employee-1", locations=frozenset({"store-1"}), devices=frozenset({"device-1"})):
+    return EvidenceAuthorityContext(
+        tenant_id=tenant,
+        actor_id=actor,
+        allowed_location_ids=locations,
+        trusted_device_ids=devices,
+    )
 
 
 def item(*, tenant="tenant-a", location="store-1", actor="employee-1", device="device-1", source=EvidenceCaptureSource.CAMERA, lat=41.0, lon=29.0):
@@ -47,11 +57,41 @@ def test_camera_managed_device_and_location_policy_accepts_bound_evidence():
         location_id="store-1",
         actor_id="employee-1",
         device_id="device-1",
+        authority=authority(),
         submitted_at=NOW,
         items=(item(),),
     )
     assert envelope.fingerprint
     assert envelope.tenant_id == "tenant-a"
+
+
+def test_managed_device_string_without_authoritative_device_trust_is_rejected():
+    with pytest.raises(EvidenceValidationError, match="not trusted"):
+        build_evidence_envelope(
+            policy=EvidencePolicy(managed_device_required=True),
+            tenant_id="tenant-a",
+            mission_id="lot-check-001",
+            location_id="store-1",
+            actor_id="employee-1",
+            device_id="device-spoofed",
+            authority=authority(devices=frozenset({"device-1"})),
+            submitted_at=NOW,
+            items=(item(device="device-spoofed"),),
+        )
+
+
+def test_authoritative_location_scope_is_enforced_before_capture_is_accepted():
+    with pytest.raises(EvidenceValidationError, match="not authorized"):
+        build_evidence_envelope(
+            policy=EvidencePolicy(),
+            tenant_id="tenant-a",
+            mission_id="lot-check-001",
+            location_id="store-1",
+            actor_id="employee-1",
+            authority=authority(locations=frozenset({"store-2"})),
+            submitted_at=NOW,
+            items=(item(),),
+        )
 
 
 def test_cross_tenant_evidence_reuse_fails_closed():

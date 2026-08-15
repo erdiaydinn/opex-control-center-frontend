@@ -192,7 +192,26 @@ def test_security_guardian_unknown_without_observation_evidence() -> None:
         "human_approval_required": True,
         "zero_findings_without_evidence_allowed": False,
     }
-    assert payload["blockers"]
+
+    controls = {item["control_id"]: item for item in payload["controls"]}
+    assert controls["prebuild_dependency_inventory"] == {
+        "control_id": "prebuild_dependency_inventory",
+        "implementation_state": "implemented",
+        "evidence_state": "cyclonedx_prebuild_repository_and_ci",
+    }
+    assert payload["dependency_inventory"] == {
+        "format": "CycloneDX",
+        "spec_version": "1.7",
+        "lifecycle": "pre-build",
+        "npm_resolution": "lockfile_resolved",
+        "python_resolution": "declared_direct_unresolved_transitives",
+        "android_resolution": "not_represented",
+        "runtime_deployment_attested": False,
+    }
+    assert "dependency_sbom_inventory_missing" not in payload["blockers"]
+    assert "resolved_python_transitive_dependency_graph_missing" in payload["blockers"]
+    assert "resolved_android_dependency_graph_missing" in payload["blockers"]
+    assert "runtime_deployment_sbom_observation_missing" in payload["blockers"]
     assert "tenant_id" not in payload
 
 

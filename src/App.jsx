@@ -22,7 +22,7 @@ const DockOSDashboard = lazy(() => import("./modules/DockOS/DockOSDashboard.jsx"
 const AccessControl = lazy(() => import("./modules/access-control/AccessControl.jsx"));
 const ServerAccounts = lazy(() => import("./modules/access-control/ServerAccounts.jsx"));
 const InventoryDashboard = lazy(() => import("./modules/inventory/InventoryDashboard.jsx"));
-const WorkforceControl = lazy(() => import("./modules/workforce/WorkforceControl.jsx"));
+const WorkforceBootstrapBoundary = lazy(() => import("./modules/workforce/WorkforceBootstrapBoundary.jsx"));
 const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
 const RecruitmentControl = lazy(() => import("./modules/recruitment/RecruitmentControl.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
@@ -67,7 +67,7 @@ export default function App() {
           <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryDashboard /></InventoryUiProvider></ProtectedRoute>} />
           <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
           <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
-          <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceControl /></WorkforceUiProvider></ProtectedRoute>} />
+          <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceBootstrapBoundary /></WorkforceUiProvider></ProtectedRoute>} />
           <Route path="/workforce/app" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforcePickerApp /></WorkforceUiProvider></ProtectedRoute>} />
           <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentControl /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />

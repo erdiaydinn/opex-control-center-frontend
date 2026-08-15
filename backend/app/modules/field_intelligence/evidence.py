@@ -41,6 +41,15 @@ class EvidencePolicy(BaseModel):
     manager_verification_required: bool = False
 
 
+class EvidenceAuthorityContext(BaseModel):
+    """Server-derived authority supplied by central identity/device services."""
+
+    tenant_id: str = Field(min_length=1)
+    actor_id: str = Field(min_length=1)
+    allowed_location_ids: frozenset[str] = Field(min_length=1)
+    trusted_device_ids: frozenset[str] = frozenset()
+
+
 class EvidenceItem(BaseModel):
     evidence_id: str = Field(min_length=3, max_length=120)
     tenant_id: str = Field(min_length=1)
@@ -105,9 +114,20 @@ def build_evidence_envelope(
     submitted_at: datetime,
     items: tuple[EvidenceItem, ...],
     device_id: str | None = None,
+    authority: EvidenceAuthorityContext | None = None,
 ) -> EvidenceEnvelope:
-    if policy.managed_device_required and not device_id:
-        raise EvidenceValidationError("managed device evidence is required")
+    if authority is not None:
+        if authority.tenant_id != tenant_id or authority.actor_id != actor_id:
+            raise EvidenceValidationError("central authority does not match evidence tenant/actor")
+        if location_id not in authority.allowed_location_ids:
+            raise EvidenceValidationError("actor is not authorized for evidence location")
+
+    if policy.managed_device_required:
+        if not device_id:
+            raise EvidenceValidationError("managed device evidence is required")
+        if authority is None or device_id not in authority.trusted_device_ids:
+            raise EvidenceValidationError("managed device is not trusted by authoritative device service")
+
     if not items:
         raise EvidenceValidationError("at least one physical evidence item is required")
 

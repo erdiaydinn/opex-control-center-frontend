@@ -11,23 +11,38 @@ class TargetResolutionError(ValueError):
     pass
 
 
-def _matches_positive_scope(location: LocationRecord, selector: TargetSelector) -> bool:
+def _matches_structured_scope(location: LocationRecord, selector: TargetSelector) -> bool:
     if selector.all_active_locations:
         return True
-    checks = []
+
+    scoped = False
     if selector.countries:
-        checks.append(location.country in selector.countries)
+        scoped = True
+        if location.country not in selector.countries:
+            return False
     if selector.regions:
-        checks.append(location.region in selector.regions)
+        scoped = True
+        if location.region not in selector.regions:
+            return False
     if selector.cities:
-        checks.append(location.city in selector.cities)
+        scoped = True
+        if location.city not in selector.cities:
+            return False
     if selector.districts:
-        checks.append(location.district in selector.districts)
+        scoped = True
+        if location.district not in selector.districts:
+            return False
     if selector.location_groups:
-        checks.append(bool(set(location.groups) & set(selector.location_groups)))
-    if selector.include_location_ids:
-        checks.append(location.location_id in selector.include_location_ids)
-    return any(checks)
+        scoped = True
+        if not (set(location.groups) & set(selector.location_groups)):
+            return False
+    return scoped
+
+
+def _matches_positive_scope(location: LocationRecord, selector: TargetSelector) -> bool:
+    if location.location_id in selector.include_location_ids:
+        return True
+    return _matches_structured_scope(location, selector)
 
 
 def resolve_target_snapshot(

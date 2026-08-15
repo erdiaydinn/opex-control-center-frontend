@@ -3,6 +3,7 @@ import inspect
 from fastapi.params import Depends as DependsParam
 from fastapi.routing import APIRoute
 
+from app.core.authorization import require_control_plane_admin
 from app.core.security import (
     require_platform_admin,
     require_super_admin,
@@ -17,7 +18,7 @@ EXPECTED_RBAC = {
     ("GET", "/v1/context"): require_viewer,
 
     ("GET", "/v1/audit/events"): require_platform_admin,
-    ("GET", "/v1/platform/health"): require_platform_admin,
+    ("GET", "/v1/platform/health"): require_control_plane_admin,
 
     ("GET", "/v1/admin/tenant"): require_platform_admin,
     ("PATCH", "/v1/admin/tenant"): require_super_admin,
@@ -69,6 +70,7 @@ def test_endpoint_rbac_matrix_is_complete():
                 require_viewer,
                 require_platform_admin,
                 require_super_admin,
+                require_control_plane_admin,
             }.intersection(dependencies)
         else:
             assert expected_guard in dependencies, (

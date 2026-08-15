@@ -23,7 +23,9 @@ def principal(*, tenant_id: UUID, roles: tuple[str, ...]) -> Principal:
 
 
 def test_platform_health_route_uses_control_plane_authority() -> None:
-    source = Path("app/main.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(
+        encoding="utf-8"
+    )
     health_block = source.split('@app.get("/v1/platform/health"', maxsplit=1)[1]
     health_signature = health_block.split("async def check_platform_agent", maxsplit=1)[0]
 

@@ -31,6 +31,8 @@ export default function InsightWorkspace() {
     load();
   }, [load]);
 
+  const metrics = data?.metrics || [];
+
   return (
     <main className="eay-intelligence-shell">
       <header className="eay-intelligence-head">
@@ -44,12 +46,13 @@ export default function InsightWorkspace() {
         </button>
       </header>
 
-      {loading ? <section className="eay-intelligence-state" role="status"><RefreshCw size={20} aria-hidden="true" />{i("workspaceLoading")}</section> : null}
-      {error ? <section className="eay-intelligence-state" role="alert"><span>{error}</span><button className="eay-intelligence-retry" type="button" onClick={load}>{t("retry")}</button></section> : null}
+      {loading ? <section className="eay-intelligence-state" role="status" aria-live="polite" aria-atomic="true" aria-busy="true" data-eay-product-state="loading"><RefreshCw size={20} aria-hidden="true" />{i("workspaceLoading")}</section> : null}
+      {error ? <section className="eay-intelligence-state" role="alert" aria-live="assertive" aria-atomic="true" data-eay-product-state="error"><span>{error}</span><button className="eay-intelligence-retry" type="button" onClick={load}>{t("retry")}</button></section> : null}
+      {data && !loading && !error && metrics.length === 0 ? <section className="eay-intelligence-state" role="status" aria-live="polite" aria-atomic="true" data-eay-product-state="empty">{t("emptyTitle")}</section> : null}
 
-      {data && !loading ? (
+      {data && !loading && !error && metrics.length > 0 ? (
         <section className="eay-intelligence-grid" aria-label={i("canonicalMetrics")}>
-          {(data.metrics || []).map((metric) => (
+          {metrics.map((metric) => (
             <article className="eay-intelligence-card" key={metric.metric_id}>
               <div className="eay-intelligence-card-head">
                 <strong>{metric.metric_id}</strong>

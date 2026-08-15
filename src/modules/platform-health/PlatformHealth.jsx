@@ -1,12 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, ArrowLeft, Database, RefreshCw, Server } from "lucide-react";
+import {
+  Activity,
+  ArrowLeft,
+  Database,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { apiFetch } from "../../api/client.js";
+import { apiFetchWithStatus } from "../../api/client.js";
 import { translatePlatformHealth } from "../../platform/i18n/platformHealthMessages.js";
+import { translateSecurityGuardian } from "../../platform/i18n/securityGuardianMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import "./platform-health.css";
 import "./platform-health-quality.css";
+import "./platform-health-guardian.css";
 
 const HEALTHY_STATES = new Set(["ok", "healthy", "success"]);
 
@@ -17,6 +26,16 @@ function statusMessageKey(status) {
   if (status === "failed" || status === "unhealthy") return "failed";
   if (status === "unavailable") return "unavailable";
   return "attentionRequired";
+}
+
+function isHealthDiagnosticResult(result) {
+  if (!result) return false;
+  if (result.ok && result.data?.checks) return true;
+  return (
+    result.status === 503 &&
+    result.data?.status === "degraded" &&
+    Boolean(result.data?.checks)
+  );
 }
 
 function StatusCard({ title, status, detail, icon: Icon, ph, successLabel }) {
@@ -43,6 +62,114 @@ function StatusCard({ title, status, detail, icon: Icon, ph, successLabel }) {
   );
 }
 
+function GuardianPanel({ guardian, state, sg, formatNumber }) {
+  if (state === "loading") {
+    return (
+      <section
+        className="platform-health-guardian is-loading"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        data-guardian-state="loading"
+      >
+        <ShieldCheck size={22} aria-hidden="true" />
+        <strong>{sg("loading")}</strong>
+      </section>
+    );
+  }
+
+  if (state !== "ready" || !guardian) {
+    return (
+      <section
+        className="platform-health-guardian is-unavailable"
+        role="status"
+        aria-live="polite"
+        data-guardian-state="unavailable"
+      >
+        <ShieldCheck size={22} aria-hidden="true" />
+        <div>
+          <strong>{sg("title")}</strong>
+          <span>{sg("unavailable")}</span>
+        </div>
+      </section>
+    );
+  }
+
+  const threatSources = Array.isArray(guardian.threat_intelligence)
+    ? guardian.threat_intelligence
+    : [];
+  const blockers = Array.isArray(guardian.blockers) ? guardian.blockers : [];
+  const observed = Boolean(guardian.last_observed_at);
+
+  return (
+    <section
+      className="platform-health-guardian"
+      aria-labelledby="platform-health-guardian-title"
+      data-guardian-state="ready"
+    >
+      <header>
+        <div className="platform-health-guardian-title">
+          <ShieldCheck size={24} aria-hidden="true" />
+          <div>
+            <p>{sg("readOnlyAssessment")}</p>
+            <h2 id="platform-health-guardian-title">{sg("title")}</h2>
+            <span>{sg("subtitle")}</span>
+          </div>
+        </div>
+        <strong>{guardian.production_ready ? sg("productionReady") : sg("noObservation")}</strong>
+      </header>
+
+      <div className="platform-health-guardian-grid">
+        <article>
+          <span>{sg("observationState")}</span>
+          <strong>{observed ? guardian.last_observed_at : sg("unknownWithoutEvidence")}</strong>
+        </article>
+        <article>
+          <span>{sg("humanApproval")}</span>
+          <strong>{guardian.release_policy?.human_approval_required ? sg("required") : sg("disabled")}</strong>
+        </article>
+        <article>
+          <span>{sg("automaticRemediation")}</span>
+          <strong>{guardian.release_policy?.automatic_production_remediation ? sg("required") : sg("disabled")}</strong>
+        </article>
+        <article>
+          <span>{sg("productionReady")}</span>
+          <strong>{guardian.production_ready ? sg("required") : sg("no")}</strong>
+        </article>
+      </div>
+
+      <div className="platform-health-guardian-detail-grid">
+        <div>
+          <div className="platform-health-guardian-subhead">
+            <strong>{sg("threatSources")}</strong>
+            <span>{formatNumber(threatSources.length)}</span>
+          </div>
+          <ul>
+            {threatSources.map((source) => (
+              <li key={source.source_id}>
+                <code>{source.source_id}</code>
+                <span>{source.integration_state === "not_connected" ? sg("notConnected") : source.integration_state}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <div className="platform-health-guardian-subhead">
+            <strong>{sg("blockers")}</strong>
+            <span>{formatNumber(blockers.length)}</span>
+          </div>
+          <ul>
+            {blockers.map((blocker) => (
+              <li key={blocker}><code>{blocker}</code></li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function PlatformHealth() {
   const navigate = useNavigate();
   const { locale, formatDate, formatNumber, t } = usePlatformPreferences();
@@ -50,24 +177,48 @@ export default function PlatformHealth() {
     (key, params) => translatePlatformHealth(locale, key, params),
     [locale]
   );
+  const sg = useCallback(
+    (key) => translateSecurityGuardian(locale, key),
+    [locale]
+  );
 
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [guardian, setGuardian] = useState(null);
+  const [guardianState, setGuardianState] = useState("loading");
 
   const loadHealth = useCallback(async () => {
     setLoading(true);
     setError(false);
+    setGuardianState("loading");
 
-    try {
-      const result = await apiFetch("/v1/platform/health", { method: "GET" });
-      setHealth(result);
-    } catch {
+    const [healthResult, guardianResult] = await Promise.all([
+      apiFetchWithStatus("/v1/platform/health", { method: "GET" }).catch(() => null),
+      apiFetchWithStatus("/v1/platform/security-guardian/workspace", { method: "GET" }).catch(() => null),
+    ]);
+
+    if (isHealthDiagnosticResult(healthResult)) {
+      setHealth(healthResult.data);
+      setError(false);
+    } else {
       setHealth(null);
       setError(true);
-    } finally {
-      setLoading(false);
     }
+
+    if (
+      guardianResult?.ok &&
+      guardianResult.data?.scope === "eay_platform" &&
+      guardianResult.data?.visibility === "platform_admin_only"
+    ) {
+      setGuardian(guardianResult.data);
+      setGuardianState("ready");
+    } else {
+      setGuardian(null);
+      setGuardianState("unavailable");
+    }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -244,6 +395,13 @@ export default function PlatformHealth() {
               ph={ph}
             />
           </section>
+
+          <GuardianPanel
+            guardian={guardian}
+            state={guardianState}
+            sg={sg}
+            formatNumber={formatNumber}
+          />
 
           <section className="platform-health-backup">
             <div className="platform-health-section-title">

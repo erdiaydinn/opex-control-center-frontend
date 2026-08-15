@@ -18,6 +18,7 @@ EXPECTED_RBAC = {
     ("GET", "/v1/context"): require_viewer,
 
     ("GET", "/v1/audit/events"): require_platform_admin,
+    ("GET", "/v1/platform/authority"): require_control_plane_admin,
     ("GET", "/v1/platform/health"): require_control_plane_admin,
 
     ("GET", "/v1/admin/tenant"): require_platform_admin,

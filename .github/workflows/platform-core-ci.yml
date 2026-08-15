@@ -82,6 +82,18 @@ jobs:
           cache-dependency-path: services/core-api/pyproject.toml
       - name: Install Core API with reviewed BigQuery SDK extra
         run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Capture resolved Core Python build dependency closure
+        run: >-
+          python scripts/security/generate_python_build_cyclonedx.py
+          --root opex-core-api
+          --output build/security/eay-core-python-build.cdx.json
+      - name: Retain Core Python dependency evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eay-core-python-build-sbom-${{ github.run_id }}
+          path: build/security/eay-core-python-build.cdx.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Create non-superuser runtime role
         run: |
           python - <<'PY'
@@ -180,6 +192,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e "./services/identity-gateway[dev]"
+
+      - name: Capture resolved Identity Gateway Python build dependency closure
+        run: >-
+          python scripts/security/generate_python_build_cyclonedx.py
+          --root opex-identity-gateway
+          --output build/security/eay-identity-python-build.cdx.json
+
+      - name: Retain Identity Gateway Python dependency evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eay-identity-python-build-sbom-${{ github.run_id }}
+          path: build/security/eay-identity-python-build.cdx.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Identity Gateway signer contract
         run: pytest -q services/identity-gateway/tests

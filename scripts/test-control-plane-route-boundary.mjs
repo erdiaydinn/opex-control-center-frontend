@@ -26,26 +26,20 @@ if (!app.includes('<ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute>')) 
   process.exit(1);
 }
 
-if (!coreMain.includes('"control_plane_admin": has_control_plane_admin_authority(principal)')) {
+if (!coreMain.includes('"control_plane_admin": await has_control_plane_admin_authority(principal)')) {
   console.error("/v1/context must publish the canonical control-plane capability projection.");
   process.exit(1);
 }
 
 for (const needle of [
-  "def has_control_plane_admin_authority(principal: Principal) -> bool:",
-  "roles.isdisjoint({ROLE_PLATFORM_ADMIN, ROLE_SUPER_ADMIN})",
-  "control_tenant_id = _control_plane_tenant_id()",
-  "return principal.tenant_id == control_tenant_id",
+  "async def has_control_plane_admin_authority(principal: Principal) -> bool:",
+  "await require_control_plane_admin(principal)",
+  "except HTTPException:\n        return False",
 ]) {
   if (!authorization.includes(needle)) {
-    console.error(`Canonical control-plane capability predicate drifted: ${needle}`);
+    console.error(`Canonical control-plane capability projection drifted: ${needle}`);
     process.exit(1);
   }
-}
-
-if (!authorization.includes("except HTTPException:\n        return False")) {
-  console.error("UI capability projection must fail closed when control-plane configuration is unavailable.");
-  process.exit(1);
 }
 
 console.log("Server-authoritative control-plane route boundary: PASS");

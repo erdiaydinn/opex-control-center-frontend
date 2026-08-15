@@ -28,11 +28,13 @@ FIELD_WORKER_PERMISSIONS = (
     "action:field_intelligence:submitEvidence",
 )
 FIELD_MANAGER_PERMISSIONS = FIELD_WORKER_PERMISSIONS + (
+    "module:field_intelligence:admin",
     "feature:field_intelligence:commandCenter",
     "feature:field_intelligence:missionBuilder",
     "feature:field_intelligence:evidenceReview",
     "feature:field_intelligence:targeting",
     "feature:field_intelligence:templates",
+    "feature:field_intelligence:analytics",
     "action:field_intelligence:createMission",
     "action:field_intelligence:activateMission",
     "action:field_intelligence:cancelMission",
@@ -41,6 +43,7 @@ FIELD_MANAGER_PERMISSIONS = FIELD_WORKER_PERMISSIONS + (
     "action:field_intelligence:manageTemplates",
     "action:field_intelligence:manageLocations",
     "action:field_intelligence:exportResults",
+    "action:field_intelligence:viewEvidence",
 )
 ROLE_POLICIES = {
     "field_worker": ("Field Worker", FIELD_WORKER_PERMISSIONS),
@@ -181,24 +184,23 @@ def upgrade() -> None:
     op.execute("CREATE TRIGGER field_evidence_append_only BEFORE UPDATE OR DELETE ON field_evidence FOR EACH ROW EXECUTE FUNCTION prevent_field_evidence_mutation()")
     op.execute("CREATE TRIGGER field_reviews_append_only BEFORE UPDATE OR DELETE ON field_reviews FOR EACH ROW EXECUTE FUNCTION prevent_field_evidence_mutation()")
 
-    op.execute(
-        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE field_locations, field_templates, field_missions, field_mission_targets TO " + RUNTIME_ROLE
-    )
+    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE field_locations, field_templates, field_missions, field_mission_targets TO " + RUNTIME_ROLE)
     op.execute("GRANT SELECT, INSERT ON TABLE field_evidence, field_reviews TO " + RUNTIME_ROLE)
 
     for role_key in ROLE_POLICIES:
         escaped = role_key.replace("'", "''")
         op.execute(f"DO $$ BEGIN IF EXISTS (SELECT 1 FROM roles WHERE key='{escaped}' AND is_system IS FALSE) THEN RAISE EXCEPTION 'Canonical Field role collision: {escaped}'; END IF; END $$")
 
+    all_scope = "'{\"type\":\"all\"}'::jsonb"
     for role_key, (role_name, permissions) in ROLE_POLICIES.items():
         escaped_key = role_key.replace("'", "''")
         escaped_name = role_name.replace("'", "''")
         permission_array = _sql_array(tuple(permissions))
         op.execute(f"INSERT INTO roles (tenant_id,key,name,is_system) SELECT id,'{escaped_key}','{escaped_name}',TRUE FROM tenants ON CONFLICT (tenant_id,key) DO UPDATE SET name=EXCLUDED.name WHERE roles.is_system IS TRUE")
-        op.execute(f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) SELECT r.tenant_id,r.id,p.permission_key,'{{}}'::jsonb FROM roles r CROSS JOIN unnest({permission_array}) p(permission_key) WHERE r.key='{escaped_key}' AND r.is_system IS TRUE ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope='{{}}'::jsonb")
+        op.execute(f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) SELECT r.tenant_id,r.id,p.permission_key,{all_scope} FROM roles r CROSS JOIN unnest({permission_array}) p(permission_key) WHERE r.key='{escaped_key}' AND r.is_system IS TRUE ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope=EXCLUDED.scope")
 
     super_admin_keys = tuple(sorted(set(FIELD_MANAGER_PERMISSIONS)))
-    op.execute(f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) SELECT r.tenant_id,r.id,p.permission_key,'{{}}'::jsonb FROM roles r CROSS JOIN unnest({_sql_array(super_admin_keys)}) p(permission_key) WHERE r.key='super_admin' AND r.is_system IS TRUE ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope='{{}}'::jsonb")
+    op.execute(f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) SELECT r.tenant_id,r.id,p.permission_key,{all_scope} FROM roles r CROSS JOIN unnest({_sql_array(super_admin_keys)}) p(permission_key) WHERE r.key='super_admin' AND r.is_system IS TRUE ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope=EXCLUDED.scope")
 
 
 def downgrade() -> None:

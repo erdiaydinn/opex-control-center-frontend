@@ -8,6 +8,11 @@ on:
       - "backend/app/modules/inventory/**"
       - "backend/migrations/003_inventory_production.sql"
       - "android-inventory/**"
+      - "src/modules/inventory/**"
+      - "src/App.jsx"
+      - "scripts/test-inventory-*.mjs"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/eay-inventory-production.yml"
   push:
     branches:
@@ -20,6 +25,23 @@ permissions:
   contents: read
 
 jobs:
+  web-truth-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Inventory production web truth boundary
+        run: node scripts/test-inventory-production-boundary.mjs
+      - name: Platform regression including Inventory boundary
+        run: npm run test:platform
+      - name: Production frontend build
+        run: npm run build
+
   backend-postgres-adversarial:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -36,7 +58,8 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 12
       redis:
         image: redis:7-alpine
-        ports: ["6379:6379"]
+        ports:
+          - 6379:6379
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s
           --health-timeout 3s --health-retries 12

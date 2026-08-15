@@ -8,9 +8,10 @@ import java.math.BigDecimal
 
 class OfflineContractTest {
     @Test fun eventIdentitySurvivesRetries() {
-        val event = OfflineEvent("e-1", 41, "{}", "a".repeat(64), attempts = 2)
+        val event = OfflineEvent("e-1", 41, "{}", "a".repeat(64), authBindingId = "session-a", attempts = 2)
         assertEquals("e-1", event.copy(attempts = 3).eventId)
         assertEquals(41, event.copy(attempts = 3).deviceSequence)
+        assertEquals("session-a", event.copy(attempts = 3).authBindingId)
     }
 
     @Test fun releaseUsesTwoDistinctPins() {
@@ -23,8 +24,24 @@ class OfflineContractTest {
         val canonical = "{\"barcode\":\"869\"}"
         val hash = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
             .joinToString("") { "%02x".format(it) }
-        assertTrue(QueueIntegrity.valid(OfflineEvent("e-2", 42, canonical, hash)))
-        assertTrue(!QueueIntegrity.valid(OfflineEvent("e-2", 42, canonical + "x", hash)))
+        val event = OfflineEvent("e-2", 42, canonical, hash, authBindingId = "session-a")
+        assertTrue(QueueIntegrity.valid(event, "session-a"))
+        assertTrue(!QueueIntegrity.valid(event.copy(canonicalPayload = canonical + "x"), "session-a"))
+    }
+
+    @Test fun interactiveSessionChangeBlocksReplay() {
+        val canonical = "{\"event_id\":\"e-3\"}"
+        val hash = TerminalEventCanonical.hash(canonical)
+        val event = OfflineEvent("e-3", 43, canonical, hash, authBindingId = "session-a")
+        assertTrue(QueueIntegrity.valid(event, "session-a"))
+        assertTrue(!QueueIntegrity.valid(event, "session-b"))
+    }
+
+    @Test fun migratedOrMalformedBindingFailsClosed() {
+        val canonical = "{\"event_id\":\"e-4\"}"
+        val hash = TerminalEventCanonical.hash(canonical)
+        assertTrue(!QueueIntegrity.valid(OfflineEvent("e-4", 44, canonical, hash), "session-a"))
+        assertTrue(!QueueIntegrity.valid(OfflineEvent("e-4", 44, canonical, hash, authBindingId = "session-a"), ""))
     }
 
     @Test fun canonicalEventIsStableAndQuantityNormalized() {

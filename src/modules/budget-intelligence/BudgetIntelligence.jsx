@@ -1,4 +1,4 @@
-import React,{useEffect,useState}from"react";import{apiGet}from"../../api/client.js";import"./budget.css";
+import React,{useEffect,useState}from"react";import{apiGet}from"../../api/client.js";import{usePlatformPreferences}from"../../platform/preferences/PlatformPreferencesContext.jsx";import"./budget.css";
 const money=v=>"₺"+Number(v||0).toLocaleString("tr-TR");
 const CATS=["All","Raf & Ekipman","Soğutucu & Dolap","Elektrik","Tadilat & Zemin","Tente & Cephe","Güvenlik & Yangın","Diğer Saha İşleri"];
 const MONTHS=["All","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -20,12 +20,13 @@ insights:[]
 };
 async function api(path){return apiGet(path)}
 export default function BudgetIntelligence(){
-const[tab,setTab]=useState("Executive"),[data,setData]=useState(EMPTY_DATA),[filters,setFilters]=useState({month:"All",quarter:"All",category:"All",scope:"Ops Relevant",compare:false}),[drawer,setDrawer]=useState(null),[task,setTask]=useState(null),[ask,setAsk]=useState(false),[ai,setAi]=useState(""),[prompt,setPrompt]=useState(""),[csv,setCsv]=useState([]),[apiError,setApiError]=useState(""),[loading,setLoading]=useState(true),[reloadKey,setReloadKey]=useState(0);
+const{t}=usePlatformPreferences();
+const[tab,setTab]=useState("Executive"),[data,setData]=useState(EMPTY_DATA),[filters,setFilters]=useState({month:"All",quarter:"All",category:"All",scope:"Ops Relevant",compare:false}),[drawer,setDrawer]=useState(null),[task,setTask]=useState(null),[ask,setAsk]=useState(false),[ai,setAi]=useState(""),[prompt,setPrompt]=useState(""),[csv,setCsv]=useState([]),[apiError,setApiError]=useState(false),[loading,setLoading]=useState(true),[reloadKey,setReloadKey]=useState(0);
 useEffect(()=>{
 let active=true;
 const q=new URLSearchParams(filters).toString();
 setLoading(true);
-setApiError("");
+setApiError(false);
 Promise.all([
 api("/budget/summary?"+q),
 api("/budget/requests?"+q),
@@ -41,7 +42,7 @@ setLoading(false);
 .catch(()=>{
 if(!active)return;
 setData(EMPTY_DATA);
-setApiError("Budget verileri şu anda alınamıyor. Erişim veya servis durumu doğrulanmadan finansal değer gösterilmiyor.");
+setApiError(true);
 setLoading(false);
 });
 return()=>{active=false};
@@ -52,11 +53,10 @@ function makeTask(ref,owner="Accounting",q="Aksiyon gerekli"){setTask({ref,assig
 function addTask(x){setData(p=>({...p,tasks:[{id:"TK-"+Date.now(),status:"Waiting Answer",answer:"",asked_by:"Director",...x},...p.tasks]}));setTask(null)}
 function csvLoad(e){const file=e.target.files?.[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{const lines=String(rd.result).split(/\r?\n/).filter(Boolean);const head=lines[0].split(/\t|;|,/).map(x=>x.trim());setCsv(lines.slice(1,9).map(l=>{const v=l.split(/\t|;|,/);return Object.fromEntries(head.map((h,i)=>[h,v[i]||""]))}))};rd.readAsText(file,"UTF-8")}
 const noData=!loading&&!apiError&&!Object.values(data.summary||{}).some(v=>Number(v||0)!==0)&&!data.requests.length&&!data.conflicts.length&&!data.tasks.length&&!data.insights.length;
-const productState=loading?"loading":apiError?"error":noData?"empty":"ready";
-return <div className="bi13" data-eay-product-state={productState}><aside><div className="brand"><b/><div><strong>Budget Intelligence</strong><span>Executive Finance OS</span></div></div>{["Executive","Requests","Accounting","Construction","Reconciliation","Task Center","Imports","Admin Scope"].map(x=><button key={x} className={tab===x?"on":""} onClick={()=>setTab(x)}>{x}</button>)}</aside><main aria-busy={loading?"true":"false"}><header><div><em>EXECUTIVE CONTROL</em><h1>Budget Intelligence</h1><p>Saha operasyon bütçesi, fatura gerçekleşmesi, scope ayrıştırma ve conflict workflow.</p></div><div className="headBtns"><button onClick={()=>setAsk(true)} disabled={loading||Boolean(apiError)}>Ask Budget AI</button><button onClick={()=>makeTask("", "Accounting","")} disabled={loading||Boolean(apiError)}>Task Ata</button></div></header><section className="filters"><Sel l="Ay" v={filters.month} a={MONTHS} on={v=>f("month",v)}/><Sel l="Çeyrek" v={filters.quarter} a={Q} on={v=>f("quarter",v)}/><Sel l="Kategori" v={filters.category} a={CATS} on={v=>f("category",v)}/><Sel l="Scope" v={filters.scope} a={["All","Ops Relevant","Admin Review","Exclude Requested"]} on={v=>f("scope",v)}/><label className="check"><input type="checkbox" checked={filters.compare} onChange={e=>f("compare",e.target.checked)}/> Önceki dönemle kıyasla</label></section>
-{loading&&<section className="bi-product-state" data-eay-product-state="loading" role="status" aria-live="polite" aria-atomic="true"><strong>Budget verileri yükleniyor…</strong><p>Doğrulanmış finansal veri gelene kadar önceki veya sıfır değerler karar verisi olarak gösterilmez.</p></section>}
-{!loading&&apiError&&<section className="bi-product-state" data-eay-product-state="error" role="alert" aria-atomic="true"><strong>Budget verileri doğrulanamadı</strong><p>{apiError}</p><button type="button" onClick={()=>setReloadKey(v=>v+1)}>Tekrar dene</button></section>}
-{noData&&<section className="bi-product-state" data-eay-product-state="empty" role="status" aria-live="polite" aria-atomic="true"><strong>Bu filtreler için doğrulanmış Budget kaydı yok</strong><p>Filtreleri değiştirin veya kaynak verinin yayımlandığını doğrulayın.</p></section>}
+return <div className="bi13"><aside><div className="brand"><b/><div><strong>Budget Intelligence</strong><span>Executive Finance OS</span></div></div>{["Executive","Requests","Accounting","Construction","Reconciliation","Task Center","Imports","Admin Scope"].map(x=><button key={x} className={tab===x?"on":""} onClick={()=>setTab(x)}>{x}</button>)}</aside><main><header><div><em>EXECUTIVE CONTROL</em><h1>Budget Intelligence</h1><p>Saha operasyon bütçesi, fatura gerçekleşmesi, scope ayrıştırma ve conflict workflow.</p></div><div className="headBtns"><button onClick={()=>setAsk(true)}>Ask Budget AI</button><button onClick={()=>makeTask("", "Accounting","")}>Task Ata</button></div></header><section className="filters"><Sel l="Ay" v={filters.month} a={MONTHS} on={v=>f("month",v)}/><Sel l="Çeyrek" v={filters.quarter} a={Q} on={v=>f("quarter",v)}/><Sel l="Kategori" v={filters.category} a={CATS} on={v=>f("category",v)}/><Sel l="Scope" v={filters.scope} a={["All","Ops Relevant","Admin Review","Exclude Requested"]} on={v=>f("scope",v)}/><label className="check"><input type="checkbox" checked={filters.compare} onChange={e=>f("compare",e.target.checked)}/> Önceki dönemle kıyasla</label></section>
+{loading&&<section className="bi-product-state" data-eay-product-state="loading" role="status" aria-busy="true" aria-live="polite" aria-atomic="true"><strong>{t("loading")}</strong></section>}
+{!loading&&apiError&&<section className="bi-product-state" data-eay-product-state="error" role="alert" aria-atomic="true"><strong>{t("errorTitle")}</strong><button type="button" onClick={()=>setReloadKey(v=>v+1)}>{t("retry")}</button></section>}
+{noData&&<section className="bi-product-state" data-eay-product-state="empty" role="status" aria-live="polite" aria-atomic="true"><strong>{t("emptyTitle")}</strong></section>}
 {!loading&&!apiError&&!noData&&<div data-eay-product-state="ready">
 {tab==="Executive"&&<Executive data={data} compare={filters.compare} open={setDrawer} makeTask={makeTask}/>}
 {tab==="Requests"&&<Page title="Saha Talepleri"><RequestTable rows={data.requests} open={setDrawer}/></Page>}

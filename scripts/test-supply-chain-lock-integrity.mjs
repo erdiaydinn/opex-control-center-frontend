@@ -75,6 +75,38 @@ if (remoteArtifacts === 0) {
   fail("lockfile unexpectedly contains no HTTPS artifacts to verify");
 }
 
+const truthValidatorPath = "scripts/security/validate_prebuild_evidence_contract.py";
+if (!fs.existsSync(truthValidatorPath)) {
+  fail("common pre-build evidence truth validator is missing");
+}
+const truthValidator = fs.readFileSync(truthValidatorPath, "utf8");
+for (const required of [
+  'ALLOWED_LIFECYCLES = {"pre-build", "build"}',
+  '"production_runtime_proof=true"',
+  '"deployment_attestation=true"',
+  '"runtime_attestation=true"',
+  '"reachability_proof=true"',
+  '"eay:truth-boundary"',
+]) {
+  if (!truthValidator.includes(required)) {
+    fail(`pre-build evidence truth validator lost required fail-closed rule: ${required}`);
+  }
+}
+
+for (const generatorPath of [
+  "scripts/security/generate_cyclonedx_sbom.py",
+  "scripts/security/generate_python_build_cyclonedx.py",
+  "scripts/security/gradle_dependency_report_to_cyclonedx.py",
+]) {
+  const source = fs.readFileSync(generatorPath, "utf8");
+  if (!source.includes("from validate_prebuild_evidence_contract import validate_document")) {
+    fail(`${generatorPath}: common pre-build evidence validator import is missing`);
+  }
+  if (!source.includes("validate_document(bom, source=")) {
+    fail(`${generatorPath}: generated dependency evidence is not truth-boundary validated`);
+  }
+}
+
 console.log(
-  `Supply-chain lock integrity: PASS (${manifestNames.length} direct dependencies, ${remoteArtifacts} integrity-pinned HTTPS artifacts)`,
+  `Supply-chain lock integrity: PASS (${manifestNames.length} direct dependencies, ${remoteArtifacts} integrity-pinned HTTPS artifacts, 3 truth-boundary-wired SBOM generators)`,
 );

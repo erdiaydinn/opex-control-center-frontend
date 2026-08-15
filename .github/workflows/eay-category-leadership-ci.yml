@@ -13,6 +13,10 @@ on:
       - "backend/app/modules/workforce/test_pressure_model.py"
       - "backend/app/modules/workforce/scenario_model.py"
       - "backend/app/modules/workforce/test_scenario_model.py"
+      - "backend/app/modules/workforce/policy_model.py"
+      - "backend/app/modules/workforce/test_policy_model.py"
+      - "backend/app/modules/workforce/skill_capacity.py"
+      - "backend/app/modules/workforce/test_skill_capacity.py"
       - "backend/app/platform/business_glossary/**"
       - "backend/migrations/006_field_intelligence.sql"
       - "backend/migrations/007_business_glossary.sql"
@@ -51,12 +55,14 @@ jobs:
             backend/app/modules/workforce/demand_model.py \
             backend/app/modules/workforce/pressure_model.py \
             backend/app/modules/workforce/scenario_model.py \
+            backend/app/modules/workforce/policy_model.py \
+            backend/app/modules/workforce/skill_capacity.py \
             backend/app/platform/business_glossary
-      - name: Run Field Intelligence adversarial lifecycle and persistence contracts
+      - name: Run Field Intelligence adversarial lifecycle offline and persistence contracts
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/tests/test_field_*.py
-      - name: Run Business Glossary semantic and governance contracts
+      - name: Run Business Glossary semantic authorization and governance contracts
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/tests/test_business_glossary_*.py
@@ -64,15 +70,16 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/app/modules/data_collection/test_service.py
-      - name: Run Workforce demand pressure and scenario contracts
+      - name: Run Workforce demand pressure scenario policy and skill contracts
         env:
           PYTHONPATH: backend
         run: |
-          tests=(backend/app/modules/workforce/test_pressure_model.py backend/app/modules/workforce/test_scenario_model.py)
-          if test -f backend/app/modules/workforce/test_demand_model.py; then
-            tests+=(backend/app/modules/workforce/test_demand_model.py)
-          fi
-          python -m pytest -q "${tests[@]}"
+          python -m pytest -q \
+            backend/app/modules/workforce/test_demand_model.py \
+            backend/app/modules/workforce/test_pressure_model.py \
+            backend/app/modules/workforce/test_scenario_model.py \
+            backend/app/modules/workforce/test_policy_model.py \
+            backend/app/modules/workforce/test_skill_capacity.py
       - name: Preserve production truth boundary
         run: |
           python - <<'PY'
@@ -81,8 +88,11 @@ jobs:
 
           roots = [
               Path("backend/app/modules/field_intelligence"),
+              Path("backend/app/modules/workforce/demand_model.py"),
               Path("backend/app/modules/workforce/pressure_model.py"),
               Path("backend/app/modules/workforce/scenario_model.py"),
+              Path("backend/app/modules/workforce/policy_model.py"),
+              Path("backend/app/modules/workforce/skill_capacity.py"),
               Path("backend/app/platform/business_glossary"),
               Path("docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"),
           ]
@@ -135,8 +145,10 @@ jobs:
           CREATE ROLE eay_field_b LOGIN PASSWORD 'runtime_b';
           INSERT INTO field_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
           INSERT INTO glossary_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
-          GRANT SELECT ON field_missions, field_mission_targets, field_evidence_envelopes, field_verifications, field_notification_events, field_audit TO eay_field_a, eay_field_b;
-          GRANT SELECT ON glossary_terms, glossary_governance_events TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT ON field_missions TO eay_field_a, eay_field_b;
+          GRANT SELECT ON field_mission_targets, field_offline_events, field_evidence_envelopes, field_verifications, field_notification_events, field_audit TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT ON glossary_terms TO eay_field_a, eay_field_b;
+          GRANT SELECT ON glossary_governance_events TO eay_field_a, eay_field_b;
           INSERT INTO field_missions(tenant_id, mission_id, template_id, template_version, status, priority, target_fingerprint, assigned_at, deadline_at, created_by)
           VALUES
             ('tenant-a','mission-a','lot-check',1,'active','normal',repeat('a',64),now(),now()+interval '1 hour','central-a'),
@@ -152,6 +164,23 @@ jobs:
           PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM field_missions;" | grep -qx 'tenant-b'
           PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-a'
           PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-b'
+      - name: Prove cross-tenant writes are blocked by RLS
+        run: |
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO field_missions(tenant_id, mission_id, template_id, template_version, status, priority, target_fingerprint, assigned_at, deadline_at, created_by) VALUES ('tenant-b','escape-field','x',1,'active','normal',repeat('c',64),now(),now()+interval '1 hour','attacker');"
+          field_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-b','escape-glossary','escape',1,'draft','{\"en\":\"Escape\"}','{\"en\":\"Escape\"}','attacker');"
+          glossary_status=$?
+          set -e
+          test "$field_status" -ne 0
+          test "$glossary_status" -ne 0
+      - name: Prove null-safe semantic scope uniqueness
+        run: |
+          set +e
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, domain, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-a','duplicate-backlog','backlog','operations',1,'draft','{\"en\":\"Duplicate\"}','{\"en\":\"Duplicate\"}','owner');"
+          duplicate_status=$?
+          set -e
+          test "$duplicate_status" -ne 0
       - name: Database restart durability
         run: |
           docker restart ${{ job.services.postgres.id }}

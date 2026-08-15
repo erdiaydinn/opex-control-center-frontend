@@ -24,7 +24,7 @@ const ServerAccounts = lazy(() => import("./modules/access-control/ServerAccount
 const InventoryDashboard = lazy(() => import("./modules/inventory/InventoryDashboard.jsx"));
 const WorkforceBootstrapBoundary = lazy(() => import("./modules/workforce/WorkforceBootstrapBoundary.jsx"));
 const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
-const RecruitmentControl = lazy(() => import("./modules/recruitment/RecruitmentControl.jsx"));
+const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
 const AcademyPlayer = lazy(() => import("./modules/academy/AcademyPlayer.jsx"));
 const JarvisWorkspace = lazy(() => import("./modules/intelligence/JarvisWorkspace.jsx"));
@@ -69,7 +69,7 @@ export default function App() {
           <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
           <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceBootstrapBoundary /></WorkforceUiProvider></ProtectedRoute>} />
           <Route path="/workforce/app" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforcePickerApp /></WorkforceUiProvider></ProtectedRoute>} />
-          <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentControl /></ProtectedRoute>} />
+          <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentBootstrapBoundary /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
           <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><PlatformHealth /></ProtectedRoute>} />

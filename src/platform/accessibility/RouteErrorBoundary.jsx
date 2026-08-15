@@ -37,6 +37,15 @@ class RouteErrorBoundaryCore extends React.Component {
   }
 
   retry() {
+    // React.lazy caches a rejected import promise. Merely clearing this boundary can
+    // therefore render the same failed lazy route forever after a transient chunk or
+    // deployment-cache failure. A user-requested retry performs a clean document
+    // reload so the browser can resolve the current chunk graph. Keep a non-browser
+    // fallback for test/SSR environments.
+    if (typeof window !== "undefined" && typeof window.location?.reload === "function") {
+      window.location.reload();
+      return;
+    }
     this.setState({ error: null });
   }
 

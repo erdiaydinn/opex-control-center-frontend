@@ -64,3 +64,19 @@ def test_jarvis_has_no_general_knowledge_fallback_for_company_term():
             locale="tr",
             domain="operations",
         )
+
+
+def test_glossary_rejects_locale_outside_platform_contract():
+    with pytest.raises(ValueError, match="unsupported glossary locales"):
+        LocalizedText(values={"xx": "not supported"})
+
+
+def test_jarvis_rejects_unknown_requested_locale():
+    with pytest.raises(ValueError, match="unsupported requested glossary locale"):
+        answer_business_term(
+            [term("tenant-a", "Company A definition")],
+            tenant_id="tenant-a",
+            query="NSFR",
+            locale="xx",
+            domain="operations",
+        )

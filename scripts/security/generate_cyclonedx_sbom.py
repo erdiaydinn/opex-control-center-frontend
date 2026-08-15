@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from validate_prebuild_evidence_contract import validate_document
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_LOCK = REPO_ROOT / "package-lock.json"
 PYTHON_MANIFESTS = (
@@ -231,6 +233,7 @@ def main() -> None:
 
     bom = build_bom()
     validate_truth_boundary(bom)
+    validate_document(bom, source=args.output)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(bom, ensure_ascii=False, indent=2, sort_keys=False) + "\n",

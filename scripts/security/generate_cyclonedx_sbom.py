@@ -15,6 +15,7 @@ import re
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_LOCK = REPO_ROOT / "package-lock.json"
@@ -28,6 +29,19 @@ REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9_.-]+)")
 
 def property_item(name: str, value: str) -> dict[str, str]:
     return {"name": name, "value": value}
+
+
+def npm_purl(name: str, version: str) -> str:
+    safe = ".-_~"
+    encoded_version = quote(version, safe=safe)
+    if name.startswith("@") and "/" in name:
+        namespace, package_name = name.split("/", maxsplit=1)
+        return (
+            "pkg:npm/"
+            f"{quote(namespace, safe=safe)}/{quote(package_name, safe=safe)}"
+            f"@{encoded_version}"
+        )
+    return f"pkg:npm/{quote(name, safe=safe)}@{encoded_version}"
 
 
 def npm_components() -> list[dict[str, Any]]:
@@ -52,6 +66,7 @@ def npm_components() -> list[dict[str, Any]]:
             "bom-ref": f"npm-path:{package_path}@{version}",
             "name": name,
             "version": version,
+            "purl": npm_purl(name, version),
             "scope": "excluded" if entry.get("dev") is True else "required",
             "properties": [
                 property_item("eay:ecosystem", "npm"),
@@ -199,6 +214,8 @@ def validate_truth_boundary(bom: dict[str, Any]) -> None:
         raise ValueError("SBOM must cover both resolved npm and declared Python dependencies")
     if any(not component.get("version") for component in npm):
         raise ValueError("npm lockfile components must remain version-resolved")
+    if any(not str(component.get("purl", "")).startswith("pkg:npm/") for component in npm):
+        raise ValueError("npm lockfile components must expose canonical npm package URLs")
     if any("version" in component for component in python):
         raise ValueError("unresolved Python declarations must not invent component versions")
 

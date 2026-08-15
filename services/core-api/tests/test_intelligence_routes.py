@@ -16,6 +16,8 @@ from app.intelligence_routes import (
     build_jarvis_workspace,
     build_planogram_readiness,
     build_security_guardian_workspace,
+    insight_view_guard,
+    jarvis_view_guard,
     router,
 )
 
@@ -23,25 +25,42 @@ TENANT_ID = UUID("00000000-0000-0000-0000-000000009201")
 CONTROL_TENANT_ID = UUID("00000000-0000-0000-0000-0000000000a1")
 
 
-def _principal(*, role: str = "operator", tenant_id: UUID = TENANT_ID) -> Principal:
+def _principal(
+    *,
+    role: str = "operator",
+    tenant_id: UUID = TENANT_ID,
+    include_jarvis: bool = True,
+    include_insight: bool = True,
+) -> Principal:
     ops_permission = action_permission("ai_assistant", "executeOpsRead")
-    permissions = (
-        module_permission("jarvis"),
-        feature_permission("jarvis", "assistant"),
-        action_permission("jarvis", "ask"),
-        module_permission("insight"),
-        feature_permission("insight", "canonicalMetrics"),
-        action_permission("insight", "view"),
+    permissions = [
         module_permission("planogram"),
         feature_permission("planogram", "layoutView"),
         action_permission("planogram", "view"),
         ops_permission,
-    )
+    ]
+    if include_jarvis:
+        permissions.extend(
+            (
+                module_permission("jarvis"),
+                feature_permission("jarvis", "assistant"),
+                action_permission("jarvis", "ask"),
+            )
+        )
+    if include_insight:
+        permissions.extend(
+            (
+                module_permission("insight"),
+                feature_permission("insight", "canonicalMetrics"),
+                action_permission("insight", "view"),
+            )
+        )
+
     return Principal(
         subject="tenant-user",
         tenant_id=tenant_id,
         roles=(role,),
-        permissions=permissions,
+        permissions=tuple(permissions),
         permission_assignments=(
             PermissionAssignment(
                 key=ops_permission,
@@ -92,6 +111,36 @@ def test_insight_uses_canonical_orders_v2_readiness() -> None:
     }
     assert metric["blockers"]
     assert "sql" not in metric
+
+
+@pytest.mark.asyncio
+async def test_jarvis_and_insight_routes_require_module_permissions() -> None:
+    route_by_path = {
+        getattr(item, "path", None): item
+        for item in router.routes
+    }
+    assert any(
+        dependency.call is jarvis_view_guard
+        for dependency in route_by_path["/v1/jarvis/workspace"].dependant.dependencies
+    )
+    assert any(
+        dependency.call is insight_view_guard
+        for dependency in route_by_path["/v1/insight/metrics"].dependant.dependencies
+    )
+
+    allowed = _principal()
+    assert await jarvis_view_guard(allowed) is allowed
+    assert await insight_view_guard(allowed) is allowed
+
+    with pytest.raises(HTTPException) as jarvis_exc:
+        await jarvis_view_guard(_principal(include_jarvis=False))
+    assert jarvis_exc.value.status_code == 403
+    assert jarvis_exc.value.detail["required_permission"] == "module:jarvis:view"
+
+    with pytest.raises(HTTPException) as insight_exc:
+        await insight_view_guard(_principal(include_insight=False))
+    assert insight_exc.value.status_code == 403
+    assert insight_exc.value.detail["required_permission"] == "module:insight:view"
 
 
 def test_planogram_readiness_preserves_physical_truth_and_security_gates() -> None:

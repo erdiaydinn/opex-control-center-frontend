@@ -53,26 +53,35 @@ function buildHeaders(options = {}) {
 }
 
 
-async function readError(response, fallback) {
-  try {
-    const payload = await response.json();
-
-    if (
-      payload &&
-      typeof payload.detail === "string" &&
-      payload.detail.trim()
-    ) {
-      return payload.detail;
-    }
-  } catch {
-    // Use non-sensitive fallback.
+function errorMessage(payload, fallback) {
+  if (
+    payload &&
+    typeof payload.detail === "string" &&
+    payload.detail.trim()
+  ) {
+    return payload.detail;
   }
 
   return fallback;
 }
 
 
-export async function apiFetch(path, options = {}) {
+async function readPayload(response) {
+  const responseText = await response.text();
+
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    return null;
+  }
+}
+
+
+export async function apiFetchWithStatus(path, options = {}) {
   const response = await fetch(
     `${API_BASE}${path}`,
     {
@@ -81,22 +90,27 @@ export async function apiFetch(path, options = {}) {
     }
   );
 
-  if (!response.ok) {
+  return {
+    ok: response.ok,
+    status: response.status,
+    data: await readPayload(response),
+  };
+}
+
+
+export async function apiFetch(path, options = {}) {
+  const result = await apiFetchWithStatus(path, options);
+
+  if (!result.ok) {
     throw new Error(
-      await readError(
-        response,
-        `API error: ${response.status}`
+      errorMessage(
+        result.data,
+        `API error: ${result.status}`
       )
     );
   }
 
-  const responseText = await response.text();
-
-  if (!responseText) {
-    return null;
-  }
-
-  return JSON.parse(responseText);
+  return result.data;
 }
 
 
@@ -156,9 +170,10 @@ export async function apiDownload(path) {
   );
 
   if (!response.ok) {
+    const payload = await readPayload(response);
     throw new Error(
-      await readError(
-        response,
+      errorMessage(
+        payload,
         `Download error: ${response.status}`
       )
     );

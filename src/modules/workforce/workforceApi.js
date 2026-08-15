@@ -6,6 +6,7 @@ export { normalizeAttendanceProof } from "./workforceAttendanceProof.js";
 const LOCAL_PILOT_MODE = String(import.meta.env.VITE_LOCAL_PILOT_MODE || "false").toLowerCase() === "true";
 const PILOT_DEVICE_IDS = { "100184": "DEVICE-1", "100221": "DEV-4418", "100287": "DEV-7781" };
 const IMPORT_BATCH_SIZE = 3000;
+const SAFE_WORKFORCE_BACKEND_ERROR = "Workforce işlemi tamamlanamadı. Lütfen tekrar deneyin.";
 
 function camelKey(key) { return key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase()); }
 function camel(value) {
@@ -14,21 +15,32 @@ function camel(value) {
   return value;
 }
 
-export async function loadMobileWorkforce(personId) {
-  return camel(await apiGet(`/workforce/mobile/bootstrap?person_id=${encodeURIComponent(personId)}`));
+async function safeBackendRequest(request, fallback = SAFE_WORKFORCE_BACKEND_ERROR) {
+  try {
+    return camel(await request);
+  } catch (error) {
+    const safe = new Error(fallback);
+    safe.name = "WorkforceBackendError";
+    safe.cause = error;
+    throw safe;
+  }
 }
-export async function loadAdminWorkforce() { return camel(await apiGet("/workforce/admin/bootstrap")); }
-export async function createShiftRemote(values) { return camel(await apiPost("/workforce/shifts", values)); }
-export async function approveAttendanceRemote(id, note = "") { return camel(await apiPost(`/workforce/attendance/${encodeURIComponent(id)}/approve`, { note })); }
-export async function bulkApproveRemote(ids, note = "") { return camel(await apiPost("/workforce/attendance/bulk-approve", { attendance_ids: ids, note })); }
-export async function correctAttendanceRemote(id, values) { return camel(await apiPost(`/workforce/attendance/${encodeURIComponent(id)}/manual-correction`, values)); }
-export async function resetDeviceRemote(personId, reason) { return camel(await apiPost(`/workforce/devices/${encodeURIComponent(personId)}/reset`, { reason })); }
-export async function createDeviceChallengeRemote(personId, deviceId) { return camel(await apiPost("/workforce/devices/challenge", { person_id: personId, device_id: deviceId })); }
-export async function createRuleRemote(values) { return camel(await apiPost("/workforce/rules", values)); }
-export async function createAnnouncementRemote(values) { return camel(await apiPost("/workforce/announcements", values)); }
-export async function saveNotificationPolicyRemote(values) { return camel(await apiPut("/workforce/notification-policy", values)); }
-export async function saveWarehouseRemote(values) { return camel(await apiPost("/workforce/warehouses", values)); }
-export async function bulkPatchWarehousesRemote(values) { return camel(await apiPatch("/workforce/warehouses", values)); }
+
+export async function loadMobileWorkforce(personId) {
+  return safeBackendRequest(apiGet(`/workforce/mobile/bootstrap?person_id=${encodeURIComponent(personId)}`));
+}
+export async function loadAdminWorkforce() { return safeBackendRequest(apiGet("/workforce/admin/bootstrap"), "Backend Workforce verileri alınamadı. Lütfen tekrar deneyin."); }
+export async function createShiftRemote(values) { return safeBackendRequest(apiPost("/workforce/shifts", values)); }
+export async function approveAttendanceRemote(id, note = "") { return safeBackendRequest(apiPost(`/workforce/attendance/${encodeURIComponent(id)}/approve`, { note })); }
+export async function bulkApproveRemote(ids, note = "") { return safeBackendRequest(apiPost("/workforce/attendance/bulk-approve", { attendance_ids: ids, note })); }
+export async function correctAttendanceRemote(id, values) { return safeBackendRequest(apiPost(`/workforce/attendance/${encodeURIComponent(id)}/manual-correction`, values)); }
+export async function resetDeviceRemote(personId, reason) { return safeBackendRequest(apiPost(`/workforce/devices/${encodeURIComponent(personId)}/reset`, { reason })); }
+export async function createDeviceChallengeRemote(personId, deviceId) { return safeBackendRequest(apiPost("/workforce/devices/challenge", { person_id: personId, device_id: deviceId })); }
+export async function createRuleRemote(values) { return safeBackendRequest(apiPost("/workforce/rules", values)); }
+export async function createAnnouncementRemote(values) { return safeBackendRequest(apiPost("/workforce/announcements", values)); }
+export async function saveNotificationPolicyRemote(values) { return safeBackendRequest(apiPut("/workforce/notification-policy", values)); }
+export async function saveWarehouseRemote(values) { return safeBackendRequest(apiPost("/workforce/warehouses", values)); }
+export async function bulkPatchWarehousesRemote(values) { return safeBackendRequest(apiPatch("/workforce/warehouses", values)); }
 
 async function postImportBatches(path, rows, makePayload, mergeResult, onProgress) {
   const source = Array.isArray(rows) ? rows : [];
@@ -37,7 +49,7 @@ async function postImportBatches(path, rows, makePayload, mergeResult, onProgres
   const batchCount = Math.ceil(source.length / IMPORT_BATCH_SIZE);
   for (let offset = 0, batchIndex = 0; offset < source.length; offset += IMPORT_BATCH_SIZE, batchIndex += 1) {
     const batch = source.slice(offset, offset + IMPORT_BATCH_SIZE);
-    const result = camel(await apiPost(path, makePayload(batch, batchIndex, batchCount)));
+    const result = await safeBackendRequest(apiPost(path, makePayload(batch, batchIndex, batchCount)));
     combined = mergeResult(combined, result, source.length);
     onProgress?.({ processed: Math.min(offset + batch.length, source.length), total: source.length, batch: batchIndex + 1, batchCount });
   }
@@ -91,50 +103,50 @@ export async function importLeavesRemote(rows, fileName, onProgress) {
   })) }), (previous, current, total) => sumResult(previous, current, total, ["inserted", "skipped", "unmatched"]), onProgress);
 }
 export async function postBreak(shiftId, personId, action) {
-  return camel(await apiPost(`/workforce/shifts/${encodeURIComponent(shiftId)}/breaks`, { person_id: personId, action: action.toUpperCase() }));
+  return safeBackendRequest(apiPost(`/workforce/shifts/${encodeURIComponent(shiftId)}/breaks`, { person_id: personId, action: action.toUpperCase() }));
 }
 export async function postLeave(values) {
-  return camel(await apiPost("/workforce/leave-requests", values));
+  return safeBackendRequest(apiPost("/workforce/leave-requests", values));
 }
 export async function postCorrection(values) {
-  return camel(await apiPost("/workforce/correction-requests", values));
+  return safeBackendRequest(apiPost("/workforce/correction-requests", values));
 }
 export async function dismissAnnouncementRemote(id, personId) {
-  return apiPost(`/workforce/announcements/${encodeURIComponent(id)}/dismiss`, { person_id: personId });
+  return safeBackendRequest(apiPost(`/workforce/announcements/${encodeURIComponent(id)}/dismiss`, { person_id: personId }));
 }
 export async function resolveLeave(id, decision, managerNote) {
-  return camel(await apiPost(`/workforce/leave-requests/${encodeURIComponent(id)}/resolve`, { decision, manager_note: managerNote }));
+  return safeBackendRequest(apiPost(`/workforce/leave-requests/${encodeURIComponent(id)}/resolve`, { decision, manager_note: managerNote }));
 }
 export async function resolveManagerTask(id, values) {
-  return camel(await apiPost(`/workforce/manager-tasks/${encodeURIComponent(id)}/resolve`, values));
+  return safeBackendRequest(apiPost(`/workforce/manager-tasks/${encodeURIComponent(id)}/resolve`, values));
 }
 export async function markNotificationRead(id, personId) {
-  return apiPost(`/workforce/notifications/${encodeURIComponent(id)}/read?person_id=${encodeURIComponent(personId)}`, {});
+  return safeBackendRequest(apiPost(`/workforce/notifications/${encodeURIComponent(id)}/read?person_id=${encodeURIComponent(personId)}`, {}));
 }
 export async function removeNotification(id, personId) {
-  return apiDelete(`/workforce/notifications/${encodeURIComponent(id)}?person_id=${encodeURIComponent(personId)}`);
+  return safeBackendRequest(apiDelete(`/workforce/notifications/${encodeURIComponent(id)}?person_id=${encodeURIComponent(personId)}`));
 }
 export async function removeAllNotifications(personId) {
-  return apiDelete(`/workforce/notifications?person_id=${encodeURIComponent(personId)}`);
+  return safeBackendRequest(apiDelete(`/workforce/notifications?person_id=${encodeURIComponent(personId)}`));
 }
 export async function postAttendance(shiftId, action, proof) {
-  return camel(await apiPost(`/workforce/shifts/${encodeURIComponent(shiftId)}/${action}`, proof));
+  return safeBackendRequest(apiPost(`/workforce/shifts/${encodeURIComponent(shiftId)}/${action}`, proof));
 }
 
 async function requestLocalPilotProof(shiftId, personId) {
   const [shiftResponse, warehouseResponse] = await Promise.all([
-    apiGet(`/workforce/shifts?person_id=${encodeURIComponent(personId)}`),
-    apiGet("/workforce/warehouses"),
+    safeBackendRequest(apiGet(`/workforce/shifts?person_id=${encodeURIComponent(personId)}`)),
+    safeBackendRequest(apiGet("/workforce/warehouses")),
   ]);
   const shift = (shiftResponse.rows || []).find((item) => String(item.id) === String(shiftId));
-  const warehouse = (warehouseResponse.rows || []).find((item) => String(item.id) === String(shift?.warehouse_id));
+  const warehouse = (warehouseResponse.rows || []).find((item) => String(item.id) === String(shift?.warehouseId || shift?.warehouse_id));
   const deviceId = PILOT_DEVICE_IDS[String(personId)];
   if (!shift || !warehouse) throw new Error("Yerel pilot için vardiya/depo koordinatı bulunamadı.");
   if (!deviceId) throw new Error("Bu pilot personeli için kayıtlı test cihazı yok.");
   return {
     latitude: Number(warehouse.latitude),
     longitude: Number(warehouse.longitude),
-    accuracy_meters: Math.min(5, Number(warehouse.max_accuracy || 50)),
+    accuracy_meters: Math.min(5, Number(warehouse.maxAccuracy || warehouse.max_accuracy || 50)),
     device_id: deviceId,
     device_trusted: true,
     local_auth_method: "DEVICE_BIOMETRIC",
@@ -151,7 +163,7 @@ export function requestNativeAttendanceProof(action, shiftId, personId) {
     function receive(event) {
       if (event.detail?.requestId !== requestId) return;
       window.clearTimeout(timeout); window.removeEventListener("opex-native-attendance-proof", receive);
-      if (event.detail.error) reject(new Error(event.detail.error));
+      if (event.detail.error) reject(new Error("Native cihaz doğrulaması başarısız oldu."));
       else {
         try { resolve(normalizeAttendanceProof(event.detail.proof)); }
         catch (error) { reject(error); }

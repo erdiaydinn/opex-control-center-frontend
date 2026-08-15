@@ -217,9 +217,9 @@ def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
                 "evidence_state": "repository_and_ci",
             },
             {
-                "control_id": "prebuild_dependency_inventory",
-                "implementation_state": "implemented",
-                "evidence_state": "cyclonedx_prebuild_repository_and_ci",
+                "control_id": "dependency_inventory",
+                "implementation_state": "implemented_build_evidence",
+                "evidence_state": "cyclonedx_prebuild_and_build_ci",
             },
             {
                 "control_id": "approval_bound_remediation",
@@ -230,10 +230,17 @@ def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
         "dependency_inventory": {
             "format": "CycloneDX",
             "spec_version": "1.7",
-            "lifecycle": "pre-build",
-            "npm_resolution": "lockfile_resolved",
-            "python_resolution": "declared_direct_unresolved_transitives",
-            "android_resolution": "not_represented",
+            "source_inventory": {
+                "lifecycle": "pre-build",
+                "npm_resolution": "lockfile_resolved",
+                "python_resolution": "declared_direct",
+            },
+            "build_inventory": {
+                "core_python": "resolved_installed_dependency_closure",
+                "identity_python": "resolved_installed_dependency_closure",
+                "android_release_runtime": "gradle_release_runtime_classpath_resolved",
+            },
+            "graph_semantics": "build_environment_conservative_not_reachability",
             "runtime_deployment_attested": False,
         },
         "release_policy": {
@@ -244,8 +251,6 @@ def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
         },
         "blockers": [
             "external_threat_intelligence_ingestion_missing",
-            "resolved_python_transitive_dependency_graph_missing",
-            "resolved_android_dependency_graph_missing",
             "runtime_deployment_sbom_observation_missing",
             "reachable_code_analysis_missing",
             "deployment_inventory_observation_missing",

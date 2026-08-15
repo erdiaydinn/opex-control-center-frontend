@@ -17,8 +17,9 @@ const requiredBoundaryContracts = [
   ["data-eay-product-state=\"error\"", "shared product-state marker"],
   ["tabIndex=\"-1\"", "programmatic error-heading focus"],
   ["this.headingRef.current?.focus()", "deterministic focus transfer"],
-  ["this.setState({ error: null })", "retry/reset recovery"],
   ["previousProps.resetKey !== this.props.resetKey", "route-change reset"],
+  ["window.location.reload()", "fresh lazy-chunk recovery"],
+  ["typeof window.location?.reload === \"function\"", "browser reload capability guard"],
   ["t(\"errorTitle\")", "localized error title"],
   ["t(\"retry\")", "localized retry action"],
 ];
@@ -28,6 +29,16 @@ for (const [needle, label] of requiredBoundaryContracts) {
     console.error(`Missing ${label}: ${needle}`);
     process.exit(1);
   }
+}
+
+const retryBody = boundary.match(/retry\(\) \{([\s\S]*?)\n  \}\n\n  render\(\)/)?.[1] || "";
+if (!retryBody.includes("window.location.reload()")) {
+  console.error("Route retry must perform a clean reload so rejected React.lazy imports can recover.");
+  process.exit(1);
+}
+if (retryBody.indexOf("window.location.reload()") > retryBody.indexOf("this.setState({ error: null })")) {
+  console.error("Browser retry must prefer a clean reload before the non-browser state-reset fallback.");
+  process.exit(1);
 }
 
 const requiredAppContracts = [
@@ -48,4 +59,4 @@ if (boundary.includes("this.state.error.message") || boundary.includes("this.sta
   process.exit(1);
 }
 
-console.log("Route error boundary accessibility contract: PASS");
+console.log("Route error boundary accessibility and recovery contract: PASS");

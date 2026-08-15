@@ -52,25 +52,6 @@ def _control_plane_tenant_id() -> UUID:
         ) from exc
 
 
-def has_control_plane_admin_authority(principal: Principal) -> bool:
-    """Return a UI-safe capability projection of the canonical control-plane authority.
-
-    Missing or invalid control-plane configuration deliberately resolves to False here so
-    ordinary authenticated context remains usable without widening platform access. The
-    protected backend dependency still returns 503 for configuration failures.
-    """
-    roles = normalize_principal_roles(principal)
-    if roles.isdisjoint({ROLE_PLATFORM_ADMIN, ROLE_SUPER_ADMIN}):
-        return False
-
-    try:
-        control_tenant_id = _control_plane_tenant_id()
-    except HTTPException:
-        return False
-
-    return principal.tenant_id == control_tenant_id
-
-
 async def require_control_plane_admin(
     principal: Annotated[Principal, Depends(get_current_principal)],
 ) -> Principal:
@@ -95,3 +76,12 @@ async def require_control_plane_admin(
         )
 
     return principal
+
+
+async def has_control_plane_admin_authority(principal: Principal) -> bool:
+    """Project the canonical control-plane dependency into a fail-closed UI capability."""
+    try:
+        await require_control_plane_admin(principal)
+    except HTTPException:
+        return False
+    return True

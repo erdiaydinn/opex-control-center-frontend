@@ -4,14 +4,13 @@ import process from "node:process";
 const app = fs.readFileSync("src/App.jsx", "utf8");
 const boundary = fs.readFileSync("src/auth/ControlPlaneRoute.jsx", "utf8");
 const coreMain = fs.readFileSync("services/core-api/app/main.py", "utf8");
-const authorization = fs.readFileSync("services/core-api/app/core/authorization.py", "utf8");
 
 const requiredBoundary = [
-  ["apiGet(\"/v1/context\")", "control-plane boundary must consume server authorization context"],
-  ["payload?.capabilities?.control_plane_admin === true", "control-plane access must require explicit true capability"],
-  ["setState(\"denied\")", "control-plane capability lookup failures must fail closed"],
+  ["apiGet(\"/v1/platform/health\")", "control-plane boundary must probe the canonical protected endpoint"],
+  ["setState(\"allowed\")", "successful protected probe must allow the route"],
+  ["setState(\"denied\")", "control-plane probe failures must fail closed"],
   ["<Navigate to=\"/\" replace />", "denied control-plane routes must redirect away"],
-  ["aria-busy=\"true\"", "control-plane capability loading must expose busy semantics"],
+  ["aria-busy=\"true\"", "control-plane probe loading must expose busy semantics"],
 ];
 
 for (const [needle, message] of requiredBoundary) {
@@ -26,20 +25,14 @@ if (!app.includes('<ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute>')) 
   process.exit(1);
 }
 
-if (!coreMain.includes('"control_plane_admin": await has_control_plane_admin_authority(principal)')) {
-  console.error("/v1/context must publish the canonical control-plane capability projection.");
+if (!coreMain.includes('principal: Principal = Depends(require_control_plane_admin)')) {
+  console.error("Canonical platform health endpoint must remain bound to require_control_plane_admin.");
   process.exit(1);
 }
 
-for (const needle of [
-  "async def has_control_plane_admin_authority(principal: Principal) -> bool:",
-  "await require_control_plane_admin(principal)",
-  "except HTTPException:\n        return False",
-]) {
-  if (!authorization.includes(needle)) {
-    console.error(`Canonical control-plane capability projection drifted: ${needle}`);
-    process.exit(1);
-  }
+if (boundary.includes("payload?.capabilities") || boundary.includes("user.roles")) {
+  console.error("Control-plane visibility must not trust browser role/capability reconstruction.");
+  process.exit(1);
 }
 
 console.log("Server-authoritative control-plane route boundary: PASS");

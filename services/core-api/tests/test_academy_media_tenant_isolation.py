@@ -1,13 +1,22 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from app.core.security import Principal
-from app.modules.academy.media import AcademyMediaConfig, issue_playback_token, verify_playback_token
+from app.modules.academy.media import (
+    AcademyMediaConfig,
+    issue_playback_token,
+    verify_playback_token,
+)
 
 
-def _principal(tenant_id, subject):
-    return Principal(subject=subject, tenant_id=tenant_id, roles=("employee",), claims={})
+def _principal(tenant_id: UUID, subject: str) -> Principal:
+    return Principal(
+        subject=subject,
+        tenant_id=tenant_id,
+        roles=("employee",),
+        auth_mode="test",
+    )
 
 
 def test_playback_token_is_bound_to_tenant_subject_object_and_delivery_key():

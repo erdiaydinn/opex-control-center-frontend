@@ -9,6 +9,8 @@ on:
       - "backend/app/modules/field_intelligence/**"
       - "backend/app/modules/workforce/demand_model.py"
       - "backend/app/modules/workforce/test_demand_model.py"
+      - "backend/app/modules/workforce/pressure_model.py"
+      - "backend/app/modules/workforce/test_pressure_model.py"
       - "backend/app/platform/business_glossary/**"
       - "backend/tests/test_business_glossary_resolver.py"
       - "backend/tests/test_field_intelligence.py"
@@ -38,7 +40,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "pydantic>=2.9,<3.0" "pytest>=8,<9"
       - name: Compile category-leadership backend
-        run: python -m compileall -q backend/app/modules/data_collection backend/app/modules/field_intelligence backend/app/platform/business_glossary
+        run: |
+          python -m compileall -q \
+            backend/app/modules/data_collection \
+            backend/app/modules/field_intelligence \
+            backend/app/modules/workforce/demand_model.py \
+            backend/app/modules/workforce/pressure_model.py \
+            backend/app/platform/business_glossary
       - name: Run Field Intelligence and Glossary adversarial contracts
         env:
           PYTHONPATH: backend
@@ -47,14 +55,19 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/app/modules/data_collection/test_service.py
-      - name: Run Workforce demand-model contracts when present
+      - name: Run Workforce demand and pressure contracts
         env:
           PYTHONPATH: backend
         run: |
+          tests=(backend/app/modules/workforce/test_pressure_model.py)
           if test -f backend/app/modules/workforce/test_demand_model.py; then
-            python -m pytest -q backend/app/modules/workforce/test_demand_model.py
+            tests+=(backend/app/modules/workforce/test_demand_model.py)
           fi
+          python -m pytest -q "${tests[@]}"
       - name: Preserve production truth boundary
         run: |
           ! grep -R --line-number -E 'production_ready\s*=\s*True|production_ready["'"']:\s*true' \
-            backend/app/modules/field_intelligence backend/app/platform/business_glossary docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md
+            backend/app/modules/field_intelligence \
+            backend/app/modules/workforce/pressure_model.py \
+            backend/app/platform/business_glossary \
+            docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md

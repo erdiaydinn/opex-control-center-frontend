@@ -2,7 +2,7 @@
   "schema_version": 1,
   "authority": "EAY Repository Intelligence Registry",
   "truth_policy": "Never infer or invent repository identity, upstream relation, commit SHA, release, or license. Unknown fields remain explicit pending entries until verified from authoritative source history.",
-  "last_reconstructed_at": "2026-08-15T02:53:00Z",
+  "last_reconstructed_at": "2026-08-15T03:00:00Z",
   "entries": [
     {
       "id": "own:opex-control-center-frontend",
@@ -15,7 +15,7 @@
       "license": { "status": "pending", "reason": "license file/terms not re-verified in this reconstruction" },
       "capabilities": ["platform-core", "security", "jarvis", "planogram", "workforce", "hiring", "inventory", "dockos", "budget", "academy", "insight"],
       "decision": "adopt",
-      "provenance": "GitHub canonical product-completion PR #92 exact head at reconstruction time"
+      "provenance": "GitHub canonical product-completion PR #92 reviewed head at reconstruction time; this SHA is historical provenance and is not asserted to follow later branch commits"
     },
     {
       "id": "own:planai-audit",
@@ -36,12 +36,12 @@
       "source": "erdiaydinn/Adaronya",
       "canonical_upstream": "self",
       "relation": "EAY-owned source",
-      "ref": "pending",
-      "commit_sha": "pending",
-      "license": { "status": "pending" },
-      "capabilities": ["reference"],
+      "ref": "main",
+      "commit_sha": "bf03a2f48f6960d13ed11c884477ed4506360b97",
+      "license": { "status": "project-owned" },
+      "capabilities": ["reference", "governance", "repository-intelligence"],
       "decision": "watch",
-      "provenance": "mandatory OWN source; exact ref/SHA pending authoritative re-verification"
+      "provenance": "carried from version-controlled EAY AI Core Repository Intelligence registry reviewed on 2026-08-14"
     },
     {
       "id": "imported:council-of-high-intelligence",
@@ -49,38 +49,38 @@
       "source": "council-of-high-intelligence-main.zip",
       "canonical_upstream": "0xNyk/council-of-high-intelligence",
       "relation": "user-supplied archive with identified upstream",
-      "ref": "pending",
-      "commit_sha": "pending",
-      "license": { "status": "pending" },
+      "ref": "main",
+      "commit_sha": "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72",
+      "license": { "status": "MIT", "commercial_use": "permissive-with-notice" },
       "capabilities": ["agent-orchestration", "multi-agent-reference"],
       "decision": "reference",
-      "provenance": "user-supplied archive; upstream identity preserved, exact archive-to-SHA mapping pending"
+      "provenance": "exact upstream/ref/SHA/license carried from the version-controlled EAY AI Core registry; supplied-archive provenance remains separately review-bound"
     },
     {
       "id": "imported:cl4r1t4s",
       "classification": "IMPORTED",
       "source": "CL4R1T4S-main.zip",
       "canonical_upstream": "elder-plinius/CL4R1T4S",
-      "relation": "user-supplied archive; upstream identity must remain verification-bound",
-      "ref": "pending",
-      "commit_sha": "pending",
-      "license": { "status": "pending" },
+      "relation": "user-supplied archive; upstream identity remains provenance-bound",
+      "ref": "main",
+      "commit_sha": "1a55b8a36d47c86e8d774acef83306d56fb0b302",
+      "license": { "status": "AGPL-3.0", "commercial_use": "reference-only-proprietary-eay" },
       "capabilities": ["agent-orchestration", "research-reference"],
       "decision": "reference",
-      "provenance": "identity retained only as previously verified project context; exact archive SHA pending"
+      "provenance": "exact upstream/ref/SHA/license carried from the version-controlled EAY AI Core registry; AGPL source remains reference-only for proprietary EAY"
     },
     {
       "id": "imported:computer-lab-automation",
       "classification": "IMPORTED",
       "source": "computer-lab-automation-master.zip",
-      "canonical_upstream": "pending",
-      "relation": "user-supplied archive",
-      "ref": "pending",
-      "commit_sha": "pending",
-      "license": { "status": "pending" },
-      "capabilities": ["automation-reference"],
+      "canonical_upstream": "mustafadalga/computer-lab-automation",
+      "relation": "user-supplied archive with verified upstream identity",
+      "ref": "master",
+      "commit_sha": "0f6fa81448062488f01144c67032764af25ee5fe",
+      "license": { "status": "GPL-3.0", "commercial_use": "reference-only-unless-separately-cleared" },
+      "capabilities": ["automation-reference", "workflow-automation"],
       "decision": "reference",
-      "provenance": "exact owner/repo unresolved; do not invent"
+      "provenance": "exact upstream/ref/SHA/license carried from the version-controlled EAY AI Core registry; GPL source remains reference-only unless separately cleared"
     },
     {
       "id": "imported:deep-learning-tutorials",
@@ -140,12 +140,12 @@
       "source": "apache/superset",
       "canonical_upstream": "self",
       "relation": "canonical analytics/BI upstream reference",
-      "ref": "pending",
-      "commit_sha": "pending",
-      "license": { "status": "pending_reverify" },
+      "ref": "master",
+      "commit_sha": "cc35056bc96df40e0b0d565c09c665d74a8e74ea",
+      "license": { "status": "Apache-2.0", "commercial_use": "allowed-with-license-obligations" },
       "capabilities": ["analytics", "bi", "semantic-layer-reference"],
       "decision": "watch",
-      "provenance": "canonical analytics upstream; exact current SHA/release/license re-verification intentionally pending"
+      "provenance": "canonical analytics upstream; reviewed exact SHA/license carried from the version-controlled EAY AI Core registry, not asserted as latest upstream head"
     },
     {
       "id": "discovered:patika-superset-tr",
@@ -158,7 +158,7 @@
       "license": { "status": "pending_reverify" },
       "capabilities": ["analytics-localization-reference"],
       "decision": "reference",
-      "provenance": "must be compared against apache/superset before adoption"
+      "provenance": "exact derivative ref/SHA/license pending re-verification; must be compared against apache/superset before adoption"
     },
     {
       "id": "discovered:local-llm-serving-routing-set",
@@ -171,7 +171,7 @@
       "license": { "status": "pending" },
       "capabilities": ["local-llm-serving", "inference", "routing"],
       "decision": "watch",
-      "provenance": "aggregate preservation entry until exact historical identities are recovered"
+      "provenance": "aggregate unresolved/pending preservation entry until exact historical identities are recovered"
     },
     {
       "id": "discovered:agent-rag-eval-observability-set",
@@ -184,7 +184,7 @@
       "license": { "status": "pending" },
       "capabilities": ["agents", "rag", "evaluation", "observability"],
       "decision": "watch",
-      "provenance": "aggregate preservation entry until exact historical identities are recovered"
+      "provenance": "aggregate unresolved/pending preservation entry until exact historical identities are recovered"
     },
     {
       "id": "discovered:vision-mlops-workflow-security-training-set",
@@ -197,7 +197,7 @@
       "license": { "status": "pending" },
       "capabilities": ["vision", "document-understanding", "model-registry", "ml-lifecycle", "workflow-automation", "security-guardrails", "lora", "qlora"],
       "decision": "watch",
-      "provenance": "aggregate preservation entry until exact historical identities are recovered"
+      "provenance": "aggregate unresolved/pending preservation entry until exact historical identities are recovered"
     }
   ]
 }

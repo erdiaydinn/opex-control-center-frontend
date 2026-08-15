@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentCreate(BaseModel):
@@ -36,6 +36,11 @@ class LocationLockCreate(BaseModel):
 
 
 class TerminalEventCreate(BaseModel):
+    # Production terminal identity is authoritative from verified OIDC + managed
+    # device headers. Never silently accept tenant/employee/device authority from
+    # an offline JSON payload, including stale or malicious queued events.
+    model_config = ConfigDict(extra="forbid")
+
     event_id: str
     document_id: str
     device_sequence: int = Field(gt=0)
@@ -54,5 +59,8 @@ class DocumentTransitionCreate(BaseModel):
 
 
 class DeviceEnrollCreate(BaseModel):
+    # Tenant and employee bindings come only from the authenticated principal.
+    model_config = ConfigDict(extra="forbid")
+
     activation_code: str = Field(min_length=32, max_length=256)
     public_key_pem: str = Field(min_length=100, max_length=2000)

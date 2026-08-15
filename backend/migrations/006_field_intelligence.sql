@@ -36,6 +36,23 @@ CREATE TABLE IF NOT EXISTS field_mission_targets (
 CREATE INDEX IF NOT EXISTS field_mission_targets_status_idx
   ON field_mission_targets (tenant_id, mission_id, status, updated_at);
 
+CREATE TABLE IF NOT EXISTS field_offline_events (
+  tenant_id text NOT NULL,
+  mission_id text NOT NULL,
+  location_id text NOT NULL,
+  actor_id text NOT NULL,
+  device_id text NOT NULL,
+  device_sequence bigint NOT NULL CHECK (device_sequence > 0),
+  idempotency_key text NOT NULL,
+  payload_hash text NOT NULL CHECK (payload_hash ~ '^[0-9a-f]{64}$'),
+  captured_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, device_id, device_sequence),
+  UNIQUE (tenant_id, idempotency_key),
+  FOREIGN KEY (tenant_id, mission_id, location_id)
+    REFERENCES field_mission_targets(tenant_id, mission_id, location_id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS field_evidence_envelopes (
   tenant_id text NOT NULL,
   mission_id text NOT NULL,
@@ -103,6 +120,9 @@ CREATE TABLE IF NOT EXISTS field_audit (
 CREATE OR REPLACE FUNCTION field_immutable_row() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION '% is append-only', TG_TABLE_NAME; END $$;
 
+DROP TRIGGER IF EXISTS field_offline_events_immutable ON field_offline_events;
+CREATE TRIGGER field_offline_events_immutable BEFORE UPDATE OR DELETE ON field_offline_events
+FOR EACH ROW EXECUTE FUNCTION field_immutable_row();
 DROP TRIGGER IF EXISTS field_evidence_immutable ON field_evidence_envelopes;
 CREATE TRIGGER field_evidence_immutable BEFORE UPDATE OR DELETE ON field_evidence_envelopes
 FOR EACH ROW EXECUTE FUNCTION field_immutable_row();
@@ -128,7 +148,7 @@ DO $$
 DECLARE table_name text;
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
-    'field_missions','field_mission_targets','field_evidence_envelopes',
+    'field_missions','field_mission_targets','field_offline_events','field_evidence_envelopes',
     'field_verifications','field_notification_events','field_audit'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
@@ -141,6 +161,6 @@ BEGIN
   END LOOP;
 END $$;
 
-INSERT INTO field_schema_migrations(version,name) VALUES (6,'field intelligence authority and evidence RLS')
+INSERT INTO field_schema_migrations(version,name) VALUES (6,'field intelligence authority evidence and offline replay RLS')
 ON CONFLICT (version) DO NOTHING;
 COMMIT;

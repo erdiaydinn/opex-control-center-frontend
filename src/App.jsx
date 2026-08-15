@@ -21,7 +21,7 @@ const BudgetIntelligence = lazy(() => import("./modules/budget-intelligence/Budg
 const DockOSDashboard = lazy(() => import("./modules/DockOS/DockOSDashboard.jsx"));
 const AccessControl = lazy(() => import("./modules/access-control/AccessControl.jsx"));
 const ServerAccounts = lazy(() => import("./modules/access-control/ServerAccounts.jsx"));
-const InventoryDashboard = lazy(() => import("./modules/inventory/InventoryDashboard.jsx"));
+const InventoryProductionBoundary = lazy(() => import("./modules/inventory/InventoryProductionBoundary.jsx"));
 const WorkforceBootstrapBoundary = lazy(() => import("./modules/workforce/WorkforceBootstrapBoundary.jsx"));
 const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
 const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
@@ -64,7 +64,7 @@ export default function App() {
           <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
           <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />
           <Route path="/insight" element={<ProtectedRoute moduleKey="insight"><InsightWorkspace /></ProtectedRoute>} />
-          <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryDashboard /></InventoryUiProvider></ProtectedRoute>} />
+          <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryProductionBoundary /></InventoryUiProvider></ProtectedRoute>} />
           <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
           <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
           <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceBootstrapBoundary /></WorkforceUiProvider></ProtectedRoute>} />

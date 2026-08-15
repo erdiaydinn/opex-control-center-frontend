@@ -1,0 +1,30 @@
+.eay-skip-link {
+  position: fixed;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 10000;
+  max-width: calc(100vw - 1.5rem);
+  padding: 0.75rem 1rem;
+  border: 2px solid currentColor;
+  border-radius: 0.75rem;
+  background: Canvas;
+  color: CanvasText;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 2rem));
+  transition: transform 120ms ease-out;
+}
+
+.eay-skip-link:focus,
+.eay-skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 3px solid Highlight;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eay-skip-link {
+    transition: none;
+  }
+}

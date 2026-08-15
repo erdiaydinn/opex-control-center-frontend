@@ -31,6 +31,9 @@ export default function JarvisWorkspace() {
     load();
   }, [load]);
 
+  const features = data?.features || [];
+  const tools = data?.tools || [];
+
   return (
     <main className="eay-intelligence-shell">
       <header className="eay-intelligence-head">
@@ -44,23 +47,24 @@ export default function JarvisWorkspace() {
         </button>
       </header>
 
-      {loading ? <section className="eay-intelligence-state" role="status"><RefreshCw size={20} aria-hidden="true" />{i("workspaceLoading")}</section> : null}
-      {error ? <section className="eay-intelligence-state" role="alert"><span>{error}</span><button className="eay-intelligence-retry" type="button" onClick={load}>{t("retry")}</button></section> : null}
+      {loading ? <section className="eay-intelligence-state" role="status" aria-live="polite" aria-atomic="true" aria-busy="true" data-eay-product-state="loading"><RefreshCw size={20} aria-hidden="true" />{i("workspaceLoading")}</section> : null}
+      {error ? <section className="eay-intelligence-state" role="alert" aria-live="assertive" aria-atomic="true" data-eay-product-state="error"><span>{error}</span><button className="eay-intelligence-retry" type="button" onClick={load}>{t("retry")}</button></section> : null}
 
-      {data && !loading ? (
+      {data && !loading && !error ? (
         <>
           <section className="eay-intelligence-section">
             <h2>{i("capabilities")}</h2>
             <div className="eay-intelligence-capabilities">
-              {(data.features || []).map((item) => <span className="eay-intelligence-pill" key={item}>{item}</span>)}
-              {!(data.features || []).length ? <p>{i("noCapabilities")}</p> : null}
+              {features.map((item) => <span className="eay-intelligence-pill" key={item}>{item}</span>)}
+              {!features.length ? <p role="status" aria-live="polite" aria-atomic="true" data-eay-product-state="empty">{i("noCapabilities")}</p> : null}
             </div>
           </section>
 
           <section className="eay-intelligence-section">
             <h2>{i("governedTools")}</h2>
-            <div className="eay-intelligence-grid">
-              {(data.tools || []).map((tool) => (
+            {!tools.length ? <p className="eay-intelligence-state" role="status" aria-live="polite" aria-atomic="true" data-eay-product-state="empty">{t("emptyTitle")}</p> : null}
+            {tools.length ? <div className="eay-intelligence-grid">
+              {tools.map((tool) => (
                 <article className="eay-intelligence-card" key={tool.tool}>
                   <div className="eay-intelligence-card-head">
                     <strong>{tool.tool}</strong>
@@ -76,7 +80,7 @@ export default function JarvisWorkspace() {
                   {(tool.blockers || []).length ? <><strong>{i("blockers")}</strong><ul className="eay-intelligence-blockers">{tool.blockers.map((item) => <li key={item}>{item}</li>)}</ul></> : null}
                 </article>
               ))}
-            </div>
+            </div> : null}
           </section>
 
           <section className="eay-intelligence-section eay-intelligence-note">

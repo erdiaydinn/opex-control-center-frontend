@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class GlossaryStatus(StrEnum):
+    DRAFT = "draft"
+    REVIEW = "review"
+    APPROVED = "approved"
+    EFFECTIVE = "effective"
+    SUPERSEDED = "superseded"
+
+
+class GlossaryScope(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    country: str | None = None
+    region: str | None = None
+    business_unit: str | None = None
+    domain: str | None = None
+
+
+class LocalizedText(BaseModel):
+    values: dict[str, str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def reject_blank_values(self) -> "LocalizedText":
+        if any(not value.strip() for value in self.values.values()):
+            raise ValueError("localized glossary values must not be blank")
+        return self
+
+
+class GlossaryTerm(BaseModel):
+    concept_id: str = Field(min_length=1)
+    canonical_key: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    scope: GlossaryScope
+    status: GlossaryStatus
+    version: int = Field(ge=1)
+    effective_from: datetime | None = None
+    effective_to: datetime | None = None
+    display_name: LocalizedText
+    short_definition: LocalizedText
+    detailed_definition: LocalizedText | None = None
+    aliases: list[str] = Field(default_factory=list)
+    formula: str | None = None
+    unit: str | None = None
+    data_source_refs: list[str] = Field(default_factory=list)
+    related_concepts: list[str] = Field(default_factory=list)
+    owner: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_effective_state(self) -> "GlossaryTerm":
+        if self.status == GlossaryStatus.EFFECTIVE and self.effective_from is None:
+            raise ValueError("effective glossary terms require effective_from")
+        if self.effective_from and self.effective_to and self.effective_to <= self.effective_from:
+            raise ValueError("effective_to must be after effective_from")
+        return self
+
+
+class GlossaryAnswer(BaseModel):
+    concept_id: str
+    canonical_key: str
+    locale: str
+    display_name: str
+    definition: str
+    formula: str | None = None
+    unit: str | None = None
+    scope: GlossaryScope
+    version: int
+    authoritative: bool
+
+
+def locale_value(text: LocalizedText, locale: str, fallback: str = "en") -> str:
+    if locale in text.values:
+        return text.values[locale]
+    if fallback in text.values:
+        return text.values[fallback]
+    return next(iter(text.values.values()))

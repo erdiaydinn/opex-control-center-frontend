@@ -22,6 +22,10 @@ def _specificity(term: GlossaryTerm) -> int:
     return sum(value is not None for value in (scope.country, scope.region, scope.business_unit, scope.domain))
 
 
+def _authority_rank(term: GlossaryTerm) -> tuple[int, int]:
+    return (_specificity(term), term.version)
+
+
 def resolve_term(
     terms: list[GlossaryTerm],
     *,
@@ -54,8 +58,15 @@ def resolve_term(
     if not candidates:
         raise GlossaryResolutionError("no approved effective tenant glossary definition")
 
-    candidates.sort(key=lambda item: (_specificity(item), item.version), reverse=True)
+    candidates.sort(key=_authority_rank, reverse=True)
     selected = candidates[0]
+    selected_rank = _authority_rank(selected)
+    equally_authoritative = [item for item in candidates if _authority_rank(item) == selected_rank]
+    if len(equally_authoritative) > 1:
+        identities = {(item.concept_id, item.canonical_key) for item in equally_authoritative}
+        if len(identities) > 1:
+            raise GlossaryResolutionError("ambiguous equally authoritative tenant glossary definitions")
+
     return GlossaryAnswer(
         concept_id=selected.concept_id,
         canonical_key=selected.canonical_key,

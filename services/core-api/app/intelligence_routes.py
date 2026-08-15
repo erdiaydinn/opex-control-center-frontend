@@ -58,10 +58,6 @@ def _orders_v2_blockers(principal: Principal) -> tuple[list[str], dict[str, bool
     if scope is None:
         blockers.append("server_authoritative_data_scope_missing")
 
-    # The version-controlled candidate is intentionally the authority for
-    # readiness here. There is no separate runtime attestation registry in
-    # Core API today, so a UI/workspace must not infer live evidence from a
-    # caller payload or from a synthetic test artifact.
     blockers.extend(candidate.blockers)
     if candidate.schema_evidence_fingerprint is None:
         blockers.extend(
@@ -221,11 +217,25 @@ def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
                 "evidence_state": "repository_and_ci",
             },
             {
+                "control_id": "prebuild_dependency_inventory",
+                "implementation_state": "implemented",
+                "evidence_state": "cyclonedx_prebuild_repository_and_ci",
+            },
+            {
                 "control_id": "approval_bound_remediation",
                 "implementation_state": "existing_platform_authority_not_wired",
                 "evidence_state": "integration_required",
             },
         ],
+        "dependency_inventory": {
+            "format": "CycloneDX",
+            "spec_version": "1.7",
+            "lifecycle": "pre-build",
+            "npm_resolution": "lockfile_resolved",
+            "python_resolution": "declared_direct_unresolved_transitives",
+            "android_resolution": "not_represented",
+            "runtime_deployment_attested": False,
+        },
         "release_policy": {
             "customer_visibility": False,
             "automatic_production_remediation": False,
@@ -234,7 +244,9 @@ def build_security_guardian_workspace(_: Principal) -> dict[str, Any]:
         },
         "blockers": [
             "external_threat_intelligence_ingestion_missing",
-            "dependency_sbom_inventory_missing",
+            "resolved_python_transitive_dependency_graph_missing",
+            "resolved_android_dependency_graph_missing",
+            "runtime_deployment_sbom_observation_missing",
             "reachable_code_analysis_missing",
             "deployment_inventory_observation_missing",
             "signed_finding_evidence_missing",

@@ -6,11 +6,11 @@ const boundary = fs.readFileSync("src/auth/ControlPlaneRoute.jsx", "utf8");
 const coreMain = fs.readFileSync("services/core-api/app/main.py", "utf8");
 
 const requiredBoundary = [
-  ["apiGet(\"/v1/platform/health\")", "control-plane boundary must probe the canonical protected endpoint"],
-  ["setState(\"allowed\")", "successful protected probe must allow the route"],
-  ["setState(\"denied\")", "control-plane probe failures must fail closed"],
+  ["apiGet(\"/v1/platform/authority\")", "control-plane boundary must probe the canonical authority endpoint"],
+  ["setState(\"allowed\")", "successful protected authority probe must allow the route"],
+  ["setState(\"denied\")", "control-plane authority failures must fail closed"],
   ["<Navigate to=\"/\" replace />", "denied control-plane routes must redirect away"],
-  ["aria-busy=\"true\"", "control-plane probe loading must expose busy semantics"],
+  ["aria-busy=\"true\"", "control-plane authority loading must expose busy semantics"],
 ];
 
 for (const [needle, message] of requiredBoundary) {
@@ -20,14 +20,23 @@ for (const [needle, message] of requiredBoundary) {
   }
 }
 
+if (boundary.includes('apiGet("/v1/platform/health")')) {
+  console.error("Control-plane authorization must not depend on Platform Health being healthy.");
+  process.exit(1);
+}
+
 if (!app.includes('<ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute>')) {
   console.error("Platform health route must remain wrapped by the server-authoritative ControlPlaneRoute boundary.");
   process.exit(1);
 }
 
-if (!coreMain.includes('principal: Principal = Depends(require_control_plane_admin)')) {
-  console.error("Canonical platform health endpoint must remain bound to require_control_plane_admin.");
-  process.exit(1);
+for (const route of ["/v1/platform/authority", "/v1/platform/health"]) {
+  const routeBlock = coreMain.split(`@app.get(\"${route}\"`, 2)[1] || "";
+  const signature = routeBlock.slice(0, 420);
+  if (!signature.includes("Depends(require_control_plane_admin)")) {
+    console.error(`${route} must remain bound to require_control_plane_admin.`);
+    process.exit(1);
+  }
 }
 
 if (boundary.includes("payload?.capabilities") || boundary.includes("user.roles")) {
@@ -35,4 +44,4 @@ if (boundary.includes("payload?.capabilities") || boundary.includes("user.roles"
   process.exit(1);
 }
 
-console.log("Server-authoritative control-plane route boundary: PASS");
+console.log("Server-authoritative control-plane authority/health separation: PASS");

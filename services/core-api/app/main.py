@@ -202,7 +202,7 @@ async def current_context(
             assignment.model_dump() for assignment in principal.permission_assignments
         ],
         "capabilities": {
-            "control_plane_admin": has_control_plane_admin_authority(principal),
+            "control_plane_admin": await has_control_plane_admin_authority(principal),
         },
         "auth_mode": principal.auth_mode,
     }

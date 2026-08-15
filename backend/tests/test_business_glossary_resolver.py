@@ -38,6 +38,26 @@ def test_country_override_wins_over_tenant_default():
     assert answer.version == 2
 
 
+def test_equally_authoritative_definitions_fail_closed_instead_of_using_input_order():
+    country_term = term("tenant-a", "Country scoped", country="TR", version=2)
+    business_unit_term = term("tenant-a", "Business unit scoped", version=2).model_copy(
+        update={
+            "concept_id": "tenant-a-nsfr-business-unit",
+            "scope": GlossaryScope(tenant_id="tenant-a", business_unit="darkstore", domain="operations"),
+        }
+    )
+    with pytest.raises(GlossaryResolutionError, match="ambiguous equally authoritative"):
+        resolve_term(
+            [country_term, business_unit_term],
+            tenant_id="tenant-a",
+            country="TR",
+            business_unit="darkstore",
+            domain="operations",
+            query="NSFR",
+            locale="tr",
+        )
+
+
 def test_undefined_company_term_fails_closed_instead_of_inventing_definition():
     with pytest.raises(GlossaryResolutionError, match="no approved effective tenant glossary definition"):
         resolve_term([term("tenant-a", "A definition")], tenant_id="tenant-b", query="NSFR", locale="tr", domain="operations")

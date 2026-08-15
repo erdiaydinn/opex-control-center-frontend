@@ -14,12 +14,15 @@ import java.util.UUID
 
 class InventorySyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
+        val database = InventoryDatabase.get(applicationContext)
         val deviceId = runCatching { ManagedDeviceIdentity(applicationContext).requireDeviceId() }.getOrElse { return Result.failure() }
-        val dao = InventoryDatabase.get(applicationContext).events()
+        val session = database.sessions().get() ?: return Result.failure()
+        if (session.authBindingId.isBlank()) return Result.failure()
+        val dao = database.events()
         val token = AccessTokenMemory.freshOrNull() ?: refreshAccessToken() ?: return Result.retry()
         val due = dao.due(System.currentTimeMillis())
         for (event in due) {
-            if (!QueueIntegrity.valid(event)) return Result.failure()
+            if (!QueueIntegrity.valid(event, session.authBindingId)) return Result.failure()
             val timestamp = Instant.now().toString()
             val nonce = UUID.randomUUID().toString()
             val proof = "$deviceId\n$timestamp\n$nonce\n${event.payloadHash}".toByteArray()
@@ -62,7 +65,7 @@ class InventorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
     private suspend fun refreshAccessToken(): String? {
         val sessionDao = InventoryDatabase.get(applicationContext).sessions()
         val session = sessionDao.get() ?: return null
-        if (!session.tokenEndpoint.startsWith("https://")) return null
+        if (session.authBindingId.isBlank() || !session.tokenEndpoint.startsWith("https://")) return null
         val request = Request.Builder().url(session.tokenEndpoint)
             .post(FormBody.Builder()
                 .add("grant_type", "refresh_token")
@@ -86,7 +89,9 @@ class InventorySyncWorker(context: Context, params: WorkerParameters) : Coroutin
 }
 
 object QueueIntegrity {
-    fun valid(event: OfflineEvent): Boolean {
+    fun valid(event: OfflineEvent, currentAuthBindingId: String): Boolean {
+        if (currentAuthBindingId.isBlank() || event.authBindingId.isBlank()) return false
+        if (event.authBindingId != currentAuthBindingId) return false
         val digest = MessageDigest.getInstance("SHA-256").digest(event.canonicalPayload.toByteArray())
             .joinToString("") { "%02x".format(it) }
         return digest == event.payloadHash

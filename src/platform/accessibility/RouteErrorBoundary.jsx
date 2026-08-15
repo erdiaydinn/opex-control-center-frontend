@@ -6,6 +6,7 @@ class RouteErrorBoundaryCore extends React.Component {
   constructor(props) {
     super(props);
     this.state = { error: null };
+    this.headingRef = React.createRef();
     this.retry = this.retry.bind(this);
   }
 
@@ -19,9 +20,19 @@ class RouteErrorBoundaryCore extends React.Component {
     console.error("EAY route render failure", error, info);
   }
 
-  componentDidUpdate(previousProps) {
+  componentDidMount() {
+    if (this.state.error) {
+      this.headingRef.current?.focus();
+    }
+  }
+
+  componentDidUpdate(previousProps, previousState) {
     if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
       this.setState({ error: null });
+      return;
+    }
+    if (!previousState.error && this.state.error) {
+      this.headingRef.current?.focus();
     }
   }
 
@@ -43,11 +54,11 @@ class RouteErrorBoundaryCore extends React.Component {
         data-eay-product-state="error"
         style={{ maxWidth: 720, margin: "48px auto", padding: 24 }}
       >
-        <h1 tabIndex="-1" ref={(node) => node?.focus()}>
+        <h1 tabIndex="-1" ref={this.headingRef}>
           {t("errorTitle")}
         </h1>
         <p>{t("retry")}</p>
-        <button type="button" onClick={this.retry} autoFocus>
+        <button type="button" onClick={this.retry}>
           {t("retry")}
         </button>
       </section>

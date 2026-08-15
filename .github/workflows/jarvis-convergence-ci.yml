@@ -85,7 +85,7 @@ jobs:
           asyncio.run(main())
           PY
       - name: Full Core Ruff gate
-        run: ruff check services/core-api
+        run: ruff check services/core-api --output-format=github
       - name: Preserve central SQL access boundary before migrations
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
       - name: Enforce one cumulative Alembic head

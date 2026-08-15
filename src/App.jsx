@@ -8,6 +8,7 @@ import {
 
 import Login from "./pages/Login.jsx";
 import AuthCallback from "./auth/AuthCallback.jsx";
+import ControlPlaneRoute from "./auth/ControlPlaneRoute.jsx";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
 
 import ControlCenterHome from "./modules/control-center/ControlCenterHome.jsx";
@@ -72,7 +73,7 @@ export default function App() {
           <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentBootstrapBoundary /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
-          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><PlatformHealth /></ProtectedRoute>} />
+          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute></ProtectedRoute>} />
           <Route path="/river" element={<Navigate to="/dockos" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

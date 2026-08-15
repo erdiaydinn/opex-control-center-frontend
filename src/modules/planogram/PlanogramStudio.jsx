@@ -10,6 +10,7 @@ import "./planogram-native.css";
 const PLANOGRAM_FEATURES = ["layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"];
 const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete"];
 
+// Phase 1 Security Quarantine remains the canonical boundary: no legacy iframe/token bridge.
 export const PLANOGRAM_SECURITY_CONTRACT = Object.freeze({
   features: PLANOGRAM_FEATURES,
   actions: PLANOGRAM_ACTIONS,

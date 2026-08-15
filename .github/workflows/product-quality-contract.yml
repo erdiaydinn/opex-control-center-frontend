@@ -11,6 +11,9 @@ on:
       - "docs/EAY_PRODUCT_QUALITY_STANDARD.md"
       - "package.json"
       - "package-lock.json"
+      - "services/core-api/pyproject.toml"
+      - "services/identity-gateway/pyproject.toml"
+      - "scripts/security/generate_cyclonedx_sbom.py"
       - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/test-github-action-pinning.mjs"
       - "scripts/validate_product_quality_contract.py"
@@ -43,6 +46,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/validate_product_quality_contract.py
+      - name: Generate truthful CycloneDX pre-build dependency inventory
+        run: >-
+          python scripts/security/generate_cyclonedx_sbom.py
+          --output build/security/eay-platform-prebuild.cdx.json
+      - name: Retain pre-build SBOM evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eay-platform-prebuild-sbom-${{ github.run_id }}
+          path: build/security/eay-platform-prebuild.cdx.json
+          if-no-files-found: error
+          retention-days: 14
       - name: GitHub Action provenance pinning
         run: node scripts/test-github-action-pinning.mjs
       - name: Standard and field scorecard are version controlled

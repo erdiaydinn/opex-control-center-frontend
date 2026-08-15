@@ -22,13 +22,20 @@ def principal(*, tenant_id: UUID, roles: tuple[str, ...]) -> Principal:
     )
 
 
-def test_platform_health_route_uses_control_plane_authority() -> None:
+def test_platform_authority_and_health_routes_use_control_plane_authority() -> None:
     source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(
         encoding="utf-8"
     )
+
+    authority_block = source.split('@app.get("/v1/platform/authority"', maxsplit=1)[1]
+    authority_signature = authority_block.split("@app.get", maxsplit=1)[0]
+    assert "Depends(require_control_plane_admin)" in authority_signature
+    assert "check_database" not in authority_signature
+    assert "check_redis" not in authority_signature
+    assert "PLATFORM_AGENT_URL" not in authority_signature
+
     health_block = source.split('@app.get("/v1/platform/health"', maxsplit=1)[1]
     health_signature = health_block.split("async def check_platform_agent", maxsplit=1)[0]
-
     assert "Depends(require_control_plane_admin)" in health_signature
     assert "Depends(require_platform_admin)" not in health_signature
 

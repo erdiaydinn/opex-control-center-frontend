@@ -78,8 +78,6 @@ export default function AccessibilityControl() {
 
   return (
     <>
-      <a className="eay-skip-link" href="#eay-main-content">{t("skipToContent")}</a>
-
       <button
         ref={triggerRef}
         type="button"

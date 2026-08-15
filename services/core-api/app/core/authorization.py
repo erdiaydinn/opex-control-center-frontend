@@ -76,12 +76,3 @@ async def require_control_plane_admin(
         )
 
     return principal
-
-
-async def has_control_plane_admin_authority(principal: Principal) -> bool:
-    """Project the canonical control-plane dependency into a fail-closed UI capability."""
-    try:
-        await require_control_plane_admin(principal)
-    except HTTPException:
-        return False
-    return True

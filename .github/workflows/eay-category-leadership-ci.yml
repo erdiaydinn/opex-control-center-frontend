@@ -52,14 +52,14 @@ jobs:
             backend/app/modules/workforce/pressure_model.py \
             backend/app/modules/workforce/scenario_model.py \
             backend/app/platform/business_glossary
-      - name: Run Field Intelligence adversarial and persistence contracts
+      - name: Run Field Intelligence adversarial lifecycle and persistence contracts
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/tests/test_field_intelligence.py backend/tests/test_field_evidence.py backend/tests/test_field_persistence_contract.py
+        run: python -m pytest -q backend/tests/test_field_*.py
       - name: Run Business Glossary semantic and governance contracts
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/tests/test_business_glossary_resolver.py backend/tests/test_business_glossary_governance.py
+        run: python -m pytest -q backend/tests/test_business_glossary_*.py
       - name: Run operational data collection contracts
         env:
           PYTHONPATH: backend
@@ -101,3 +101,68 @@ jobs:
               raise SystemExit(f"production truth boundary violated: {violations}")
           print("production truth boundary preserved")
           PY
+
+  postgres-authority:
+    name: Field and Glossary PostgreSQL RLS restart and restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_category_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_category_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Field Intelligence and Business Glossary migrations
+        run: |
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/006_field_intelligence.sql
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/007_business_glossary.sql
+      - name: Create isolated runtime identities and tenant bindings
+        run: |
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE eay_field_a LOGIN PASSWORD 'runtime_a';
+          CREATE ROLE eay_field_b LOGIN PASSWORD 'runtime_b';
+          INSERT INTO field_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          INSERT INTO glossary_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          GRANT SELECT ON field_missions, field_mission_targets, field_evidence_envelopes, field_verifications, field_notification_events, field_audit TO eay_field_a, eay_field_b;
+          GRANT SELECT ON glossary_terms, glossary_governance_events TO eay_field_a, eay_field_b;
+          INSERT INTO field_missions(tenant_id, mission_id, template_id, template_version, status, priority, target_fingerprint, assigned_at, deadline_at, created_by)
+          VALUES
+            ('tenant-a','mission-a','lot-check',1,'active','normal',repeat('a',64),now(),now()+interval '1 hour','central-a'),
+            ('tenant-b','mission-b','lot-check',1,'active','normal',repeat('b',64),now(),now()+interval '1 hour','central-b');
+          INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, domain, version, status, effective_from, display_name, short_definition, owner_subject)
+          VALUES
+            ('tenant-a','backlog-a','backlog','operations',1,'effective',now(),'{"en":"Backlog"}','{"en":"Tenant A definition"}','owner-a'),
+            ('tenant-b','backlog-b','backlog','operations',1,'effective',now(),'{"en":"Backlog"}','{"en":"Tenant B definition"}','owner-b');
+          SQL
+      - name: Prove cross-tenant zero-read under runtime roles
+        run: |
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM field_missions;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM field_missions;" | grep -qx 'tenant-b'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-b'
+      - name: Database restart durability
+        run: |
+          docker restart ${{ job.services.postgres.id }}
+          for attempt in {1..30}; do pg_isready -h localhost -U postgres -d eay_category_ci && break; sleep 1; done
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM field_missions;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM glossary_terms;" | grep -qx '1'
+      - name: Backup and isolated restore rehearsal
+        run: |
+          pg_dump -h localhost -U postgres -Fc -f /tmp/eay_category_ci.dump eay_category_ci
+          dropdb -h localhost -U postgres --if-exists eay_category_restore_ci
+          createdb -h localhost -U postgres eay_category_restore_ci
+          pg_restore -h localhost -U postgres -d eay_category_restore_ci /tmp/eay_category_ci.dump
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM field_missions;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM glossary_terms;" | grep -qx '2'

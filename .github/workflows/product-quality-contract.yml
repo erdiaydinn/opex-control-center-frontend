@@ -56,14 +56,29 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
       - name: Reject new hard-coded user-facing UI strings
         run: node scripts/test-no-new-hardcoded-ui-strings.mjs
       - run: npm ci
-      - run: npm run test:platform
+      - name: Server-authoritative access contract
+        run: npm run test:access
+      - name: Platform inclusion and locale coverage
+        run: node scripts/test-platform-inclusion.mjs
+      - name: Accessibility focus trap contract
+        run: node scripts/test-accessibility-focus-trap.mjs
+      - name: Route accessibility contract
+        run: node scripts/test-route-accessibility.mjs
+      - name: Skip navigation contract
+        run: node scripts/test-skip-navigation.mjs
+      - name: Route error boundary contract
+        run: node scripts/test-route-error-boundary.mjs
+      - name: Intelligence product-state contract
+        run: node scripts/test-intelligence-product-states.mjs
+      - name: Repository Intelligence registry contract
+        run: node scripts/test-repository-intelligence-registry.mjs
       - run: npm run build
 
   terminal-production-guard:

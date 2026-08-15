@@ -66,8 +66,28 @@ jobs:
           python -m pytest -q "${tests[@]}"
       - name: Preserve production truth boundary
         run: |
-          ! grep -R --line-number -E 'production_ready\s*=\s*True|production_ready["'"']:\s*true' \
-            backend/app/modules/field_intelligence \
-            backend/app/modules/workforce/pressure_model.py \
-            backend/app/platform/business_glossary \
-            docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          roots = [
+              Path("backend/app/modules/field_intelligence"),
+              Path("backend/app/modules/workforce/pressure_model.py"),
+              Path("backend/app/platform/business_glossary"),
+              Path("docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"),
+          ]
+          patterns = (
+              re.compile(r"production_ready\s*=\s*True"),
+              re.compile(r"[\"']production_ready[\"']\s*:\s*true", re.IGNORECASE),
+          )
+          violations = []
+          for root in roots:
+              files = [root] if root.is_file() else list(root.rglob("*.py")) + list(root.rglob("*.md"))
+              for path in files:
+                  text = path.read_text(encoding="utf-8")
+                  if any(pattern.search(text) for pattern in patterns):
+                      violations.append(str(path))
+          if violations:
+              raise SystemExit(f"production truth boundary violated: {violations}")
+          print("production truth boundary preserved")
+          PY

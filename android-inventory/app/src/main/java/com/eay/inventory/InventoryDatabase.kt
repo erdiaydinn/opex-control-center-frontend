@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -19,6 +21,7 @@ data class OfflineEvent(
     val deviceSequence: Long,
     val canonicalPayload: String,
     val payloadHash: String,
+    val authBindingId: String = "",
     val state: String = "PENDING",
     val attempts: Int = 0,
     val nextAttemptAt: Long = 0,
@@ -31,6 +34,7 @@ data class AuthSession(
     val refreshToken: String,
     val tokenEndpoint: String,
     val clientId: String,
+    val authBindingId: String,
 )
 
 @Dao
@@ -50,7 +54,7 @@ interface AuthSessionDao {
     @Query("DELETE FROM auth_session") suspend fun clear()
 }
 
-@Database(entities = [OfflineEvent::class, AuthSession::class], version = 2, exportSchema = true)
+@Database(entities = [OfflineEvent::class, AuthSession::class], version = 3, exportSchema = true)
 abstract class InventoryDatabase : RoomDatabase() {
     abstract fun events(): OfflineEventDao
     abstract fun sessions(): AuthSessionDao
@@ -58,6 +62,16 @@ abstract class InventoryDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: InventoryDatabase? = null
         private const val KEY_ALIAS = "eay-inventory-room-key-v1"
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Existing queued events predate auth-session binding. They deliberately
+                // migrate to an empty binding and therefore cannot be replayed until
+                // explicitly re-created under a verified interactive session.
+                db.execSQL("ALTER TABLE offline_events ADD COLUMN authBindingId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE auth_session ADD COLUMN authBindingId TEXT NOT NULL DEFAULT ''")
+            }
+        }
 
         fun get(context: Context): InventoryDatabase = instance ?: synchronized(this) {
             instance ?: build(context.applicationContext).also { instance = it }
@@ -77,6 +91,7 @@ abstract class InventoryDatabase : RoomDatabase() {
             val passphrase = loadOrCreatePassphrase(context, key)
             return Room.databaseBuilder(context, InventoryDatabase::class.java, "eay-inventory-offline.db")
                 .openHelperFactory(SupportOpenHelperFactory(passphrase))
+                .addMigrations(MIGRATION_2_3)
                 .build()
         }
 

@@ -9,6 +9,9 @@ on:
       - "config/product_quality_contract.json"
       - "config/ui_i18n_guard.json"
       - "docs/EAY_PRODUCT_QUALITY_STANDARD.md"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/validate_product_quality_contract.py"
       - "scripts/test-platform-inclusion.mjs"
       - "scripts/test-no-new-hardcoded-ui-strings.mjs"
@@ -62,6 +65,8 @@ jobs:
           cache: npm
       - name: Reject new hard-coded user-facing UI strings
         run: node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Supply-chain lock integrity
+        run: node scripts/test-supply-chain-lock-integrity.mjs
       - run: npm ci
       - name: Server-authoritative access contract
         run: npm run test:access

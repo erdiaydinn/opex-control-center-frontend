@@ -11,9 +11,13 @@ on:
       - "backend/app/modules/workforce/test_demand_model.py"
       - "backend/app/modules/workforce/pressure_model.py"
       - "backend/app/modules/workforce/test_pressure_model.py"
+      - "backend/app/modules/workforce/scenario_model.py"
+      - "backend/app/modules/workforce/test_scenario_model.py"
       - "backend/app/platform/business_glossary/**"
-      - "backend/tests/test_business_glossary_resolver.py"
-      - "backend/tests/test_field_intelligence.py"
+      - "backend/migrations/006_field_intelligence.sql"
+      - "backend/migrations/007_business_glossary.sql"
+      - "backend/tests/test_business_glossary_*.py"
+      - "backend/tests/test_field_*.py"
       - "docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"
       - ".github/workflows/eay-category-leadership-ci.yml"
   workflow_dispatch:
@@ -46,20 +50,25 @@ jobs:
             backend/app/modules/field_intelligence \
             backend/app/modules/workforce/demand_model.py \
             backend/app/modules/workforce/pressure_model.py \
+            backend/app/modules/workforce/scenario_model.py \
             backend/app/platform/business_glossary
-      - name: Run Field Intelligence and Glossary adversarial contracts
+      - name: Run Field Intelligence adversarial and persistence contracts
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/tests/test_field_intelligence.py backend/tests/test_business_glossary_resolver.py
+        run: python -m pytest -q backend/tests/test_field_intelligence.py backend/tests/test_field_evidence.py backend/tests/test_field_persistence_contract.py
+      - name: Run Business Glossary semantic and governance contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_business_glossary_resolver.py backend/tests/test_business_glossary_governance.py
       - name: Run operational data collection contracts
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/app/modules/data_collection/test_service.py
-      - name: Run Workforce demand and pressure contracts
+      - name: Run Workforce demand pressure and scenario contracts
         env:
           PYTHONPATH: backend
         run: |
-          tests=(backend/app/modules/workforce/test_pressure_model.py)
+          tests=(backend/app/modules/workforce/test_pressure_model.py backend/app/modules/workforce/test_scenario_model.py)
           if test -f backend/app/modules/workforce/test_demand_model.py; then
             tests+=(backend/app/modules/workforce/test_demand_model.py)
           fi
@@ -73,6 +82,7 @@ jobs:
           roots = [
               Path("backend/app/modules/field_intelligence"),
               Path("backend/app/modules/workforce/pressure_model.py"),
+              Path("backend/app/modules/workforce/scenario_model.py"),
               Path("backend/app/platform/business_glossary"),
               Path("docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"),
           ]

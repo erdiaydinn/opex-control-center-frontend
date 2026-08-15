@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-15T05:54:00+03:00",
+  "parent_review_commit": "d427777d8a53e775967af2f53d2be84f10c9932d",
+  "policy": {
+    "temporal_append_only": true,
+    "external_repositories_are_reference_not_authority": true,
+    "unverified_archive_identity_remains_pending": true,
+    "notify_only_meaningful_changes": true
+  },
+  "ci_observation": {
+    "commit": "d427777d8a53e775967af2f53d2be84f10c9932d",
+    "workflow": "EAY AI Core CI",
+    "run_number": 1210,
+    "conclusion": "success"
+  },
+  "meaningful_changes": [
+    {
+      "classification": "DISCOVERED",
+      "repository": "ggml-org/llama.cpp",
+      "canonical_upstream": "ggml-org/llama.cpp",
+      "ref": "master",
+      "previous_registry_sha": "885c5bbe8e04dc78db25beb911a2715312ad7b54",
+      "observed_head_sha": "9d57ce456c94d241dde672b2db9cf18879766568",
+      "relevant_commits": [
+        {
+          "sha": "16d222fc5ead59d20039501a37251c9ed457a454",
+          "summary": "add MiniMaxText01ForCausalLM and MiniMaxM1ForCausalLM support"
+        },
+        {
+          "sha": "9d57ce456c94d241dde672b2db9cf18879766568",
+          "summary": "fix Granite4 Vision image sequence/grid assembly and scaled-image truncation"
+        }
+      ],
+      "capability_mapping": ["local-llm", "inference", "model-runtime", "vision", "multimodal"],
+      "license": {"spdx": "MIT", "status": "registry-verified"},
+      "security_relevance": "Runtime/model capability changes are reference candidates only; model weights, model licenses and vision quality must remain independently provenance/eval gated before EAY promotion.",
+      "eay_impact": "Granite4 Vision correctness is relevant to local visual-audit experiments; MiniMax support expands optional local-model evaluation coverage without changing EAY model authority.",
+      "decision": "WATCH"
+    },
+    {
+      "classification": "DISCOVERED",
+      "repository": "ollama/ollama",
+      "canonical_upstream": "ollama/ollama",
+      "ref": "main",
+      "previous_registry_sha": "39df91c9826b3c0c83677f75cd230d8848d287c3",
+      "observed_head_sha": "e5a81899d014a847a08d47393351908b53d74008",
+      "relevant_commits": [
+        {
+          "sha": "e5a81899d014a847a08d47393351908b53d74008",
+          "summary": "update embedded llama.cpp runtime"
+        }
+      ],
+      "capability_mapping": ["local-llm", "serving", "model-runtime", "local-first"],
+      "license": {"spdx": "MIT", "status": "registry-verified"},
+      "security_relevance": "The runtime update should be tested against pinned EAY model/eval manifests before adoption; upstream movement does not authorize automatic runtime or model promotion.",
+      "eay_impact": "Ollama is tracking the newer llama.cpp runtime, so local serving tests should evaluate the pair together rather than treating their compatibility independently.",
+      "decision": "WATCH"
+    },
+    {
+      "classification": "DISCOVERED",
+      "repository": "apache/superset",
+      "canonical_upstream": "apache/superset",
+      "ref": "master",
+      "previous_review_sha": "f4587218dd19d046c3e4d00063e7d27f8a2ed354",
+      "observed_head_sha": "21ae918656c808c43df7214a7979f85800f4fc43",
+      "relevant_commits": [
+        {
+          "sha": "21ae918656c808c43df7214a7979f85800f4fc43",
+          "summary": "validate MCP chart queries before persistence"
+        },
+        {
+          "sha": "ca94026e977073e4d4af01a403fe6ca723775dac",
+          "summary": "fix SQL Lab async queries remaining stuck in Running"
+        },
+        {
+          "sha": "a3bc2d908c4e414e4fdbbaf1781938cdfefa945e",
+          "summary": "track frontend bundle size over time"
+        }
+      ],
+      "capability_mapping": ["analytics", "bi", "mcp", "tool-execution", "sql-lab", "performance"],
+      "license": {"spdx": "Apache-2.0", "status": "registry-verified"},
+      "security_relevance": "MCP-created chart queries now receive validation before persistence, which is useful defense-in-depth. EAY must still keep tenant/store/entity scope and governed KPI semantics server-authoritative outside Superset.",
+      "eay_impact": "Adopt the validation principle in any EAY-to-Superset MCP adapter; do not rely on persisted chart state as authorization or KPI truth.",
+      "decision": "WATCH"
+    }
+  ],
+  "no_material_change_observations": [
+    {
+      "repository": "0xNyk/council-of-high-intelligence",
+      "head_sha": "9fe924b4f17d4794fdf6ae9736585546a2cde2ce",
+      "reason": "latest observed change remains star-history maintenance; no agent-topology or execution-policy impact"
+    },
+    {
+      "repository": "qdrant/qdrant",
+      "head_sha": "74f3e85b9473c62560006c043e13737ce6b48412",
+      "reason": "no change since pinned 1.19.0/security baseline review"
+    },
+    {
+      "repository": "langchain-ai/langgraph",
+      "head_sha": "644815f9e5bc52ad8f7a5227a456227e9c3e639b",
+      "reason": "no change since previously recorded 1.2.11 head"
+    },
+    {
+      "repository": "Patika-Global-Technology/superset-tr",
+      "head_sha": "5490bc613b1275f44af5dfff39d8019f4f30cc24",
+      "reason": "still localization/vendor derivative at init tr 5.0.0; continues to lag canonical Apache Superset"
+    }
+  ],
+  "pending_identity_state_preserved": [
+    "Deep-Learning-Tutorials-master.zip",
+    "impeccable-main.zip",
+    "image_understanding / image_understanding-tthau",
+    "JARVIS-ERDI-full-start.zip",
+    "JARVIS-ERDI-starter-patch.zip",
+    "jarvis-main.zip family",
+    "Jarvis-master.zip"
+  ]
+}

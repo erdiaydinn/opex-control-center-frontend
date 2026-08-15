@@ -13,8 +13,8 @@ on:
       - "backend/app/modules/workforce/test_pressure_model.py"
       - "backend/app/modules/workforce/scenario_model.py"
       - "backend/app/modules/workforce/test_scenario_model.py"
-      - "backend/app/modules/workforce/policy_model.py"
-      - "backend/app/modules/workforce/test_policy_model.py"
+      - "backend/app/modules/workforce/policy_*.py"
+      - "backend/app/modules/workforce/test_policy_*.py"
       - "backend/app/modules/workforce/skill_capacity.py"
       - "backend/app/modules/workforce/test_skill_capacity.py"
       - "backend/app/platform/business_glossary/**"
@@ -56,13 +56,14 @@ jobs:
             backend/app/modules/workforce/pressure_model.py \
             backend/app/modules/workforce/scenario_model.py \
             backend/app/modules/workforce/policy_model.py \
+            backend/app/modules/workforce/policy_resolver.py \
             backend/app/modules/workforce/skill_capacity.py \
             backend/app/platform/business_glossary
       - name: Run Field Intelligence adversarial lifecycle offline and persistence contracts
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/tests/test_field_*.py
-      - name: Run Business Glossary semantic authorization and governance contracts
+      - name: Run Business Glossary semantic authorization governance and persistence contracts
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/tests/test_business_glossary_*.py
@@ -79,6 +80,7 @@ jobs:
             backend/app/modules/workforce/test_pressure_model.py \
             backend/app/modules/workforce/test_scenario_model.py \
             backend/app/modules/workforce/test_policy_model.py \
+            backend/app/modules/workforce/test_policy_resolver.py \
             backend/app/modules/workforce/test_skill_capacity.py
       - name: Preserve production truth boundary
         run: |
@@ -92,6 +94,7 @@ jobs:
               Path("backend/app/modules/workforce/pressure_model.py"),
               Path("backend/app/modules/workforce/scenario_model.py"),
               Path("backend/app/modules/workforce/policy_model.py"),
+              Path("backend/app/modules/workforce/policy_resolver.py"),
               Path("backend/app/modules/workforce/skill_capacity.py"),
               Path("backend/app/platform/business_glossary"),
               Path("docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"),
@@ -174,13 +177,16 @@ jobs:
           set -e
           test "$field_status" -ne 0
           test "$glossary_status" -ne 0
-      - name: Prove null-safe semantic scope uniqueness
+      - name: Prove semantic scope uniqueness and effective immutability
         run: |
           set +e
           psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, domain, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-a','duplicate-backlog','backlog','operations',1,'draft','{\"en\":\"Duplicate\"}','{\"en\":\"Duplicate\"}','owner');"
           duplicate_status=$?
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "UPDATE glossary_terms SET short_definition='{\"en\":\"Mutated\"}' WHERE tenant_id='tenant-a' AND concept_id='backlog-a' AND version=1;"
+          mutation_status=$?
           set -e
           test "$duplicate_status" -ne 0
+          test "$mutation_status" -ne 0
       - name: Database restart durability
         run: |
           docker restart ${{ job.services.postgres.id }}

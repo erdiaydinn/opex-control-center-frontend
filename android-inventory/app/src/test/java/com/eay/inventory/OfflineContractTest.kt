@@ -44,6 +44,45 @@ class OfflineContractTest {
         assertTrue(!QueueIntegrity.valid(OfflineEvent("e-4", 44, canonical, hash, authBindingId = "session-a"), ""))
     }
 
+    @Test fun exactDuplicateIdentityIsIdempotentAcrossQueueStateChanges() {
+        val canonical = "{\"event_id\":\"e-5\"}"
+        val hash = TerminalEventCanonical.hash(canonical)
+        val durable = OfflineEvent(
+            "e-5",
+            45,
+            canonical,
+            hash,
+            authBindingId = "session-a",
+            state = "ACKED",
+            attempts = 3,
+        )
+        val retry = OfflineEvent("e-5", 45, canonical, hash, authBindingId = "session-a")
+        assertTrue(OfflineEventIdentity.sameImmutableIdentity(durable, retry))
+    }
+
+    @Test fun duplicateEventIdWithDifferentImmutableIdentityFailsClosed() {
+        val canonical = "{\"event_id\":\"e-6\"}"
+        val hash = TerminalEventCanonical.hash(canonical)
+        val durable = OfflineEvent("e-6", 46, canonical, hash, authBindingId = "session-a")
+
+        assertTrue(!OfflineEventIdentity.sameImmutableIdentity(
+            durable,
+            durable.copy(deviceSequence = 47),
+        ))
+        assertTrue(!OfflineEventIdentity.sameImmutableIdentity(
+            durable,
+            durable.copy(canonicalPayload = canonical + " "),
+        ))
+        assertTrue(!OfflineEventIdentity.sameImmutableIdentity(
+            durable,
+            durable.copy(payloadHash = "0".repeat(64)),
+        ))
+        assertTrue(!OfflineEventIdentity.sameImmutableIdentity(
+            durable,
+            durable.copy(authBindingId = "session-b"),
+        ))
+    }
+
     @Test fun canonicalEventIsStableAndQuantityNormalized() {
         val body = TerminalEventCanonical.body(TerminalEventInput(
             " 869 ", 7, "550E8400-E29B-41D4-A716-446655440000",

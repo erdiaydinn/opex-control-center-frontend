@@ -45,6 +45,35 @@ def _python_files(path: Path) -> list[Path]:
     return sorted(item for item in path.rglob("*.py") if item.is_file())
 
 
+def scan_module_source(
+    relative: Path,
+    text: str,
+    forbidden_imports: tuple[str, ...],
+) -> list[str]:
+    violations: list[str] = []
+
+    if RAW_SCOPE_PATTERN.search(text):
+        violations.append(f"{relative}: raw permission assignments are Core authority only")
+    if LOCAL_LOCALE_PATTERN.search(text):
+        violations.append(f"{relative}: competing locale matrix is forbidden")
+    if TENANT_HEADER_PATTERN.search(text):
+        violations.append(f"{relative}: tenant authority cannot come from request headers")
+    if TENANT_QUERY_PATTERN.search(text):
+        violations.append(f"{relative}: tenant authority cannot come from query parameters")
+    if AUDIT_SINK_PATTERN.search(text):
+        violations.append(f"{relative}: competing platform audit sink is forbidden")
+
+    lowered = text.casefold()
+    for dependency in forbidden_imports:
+        normalized = dependency.casefold()
+        if f"import {normalized}" in lowered or f"from {normalized}" in lowered:
+            violations.append(
+                f"{relative}: direct notification transport {dependency} is forbidden"
+            )
+
+    return violations
+
+
 def validate(root: Path) -> list[str]:
     root = root.resolve()
     manifest_file = root / MANIFEST_PATH
@@ -135,28 +164,7 @@ def validate(root: Path) -> list[str]:
     for path in _python_files(root / CORE_MODULE_ROOT):
         relative = path.relative_to(root)
         text = path.read_text(encoding="utf-8")
-
-        if RAW_SCOPE_PATTERN.search(text):
-            violations.append(f"{relative}: raw permission assignments are Core authority only")
-        if LOCAL_LOCALE_PATTERN.search(text):
-            violations.append(f"{relative}: competing locale matrix is forbidden")
-        if TENANT_HEADER_PATTERN.search(text):
-            violations.append(f"{relative}: tenant authority cannot come from request headers")
-        if TENANT_QUERY_PATTERN.search(text):
-            violations.append(f"{relative}: tenant authority cannot come from query parameters")
-        if AUDIT_SINK_PATTERN.search(text):
-            violations.append(f"{relative}: competing platform audit sink is forbidden")
-
-        lowered = text.casefold()
-        for dependency in forbidden_imports:
-            normalized = dependency.casefold()
-            if (
-                f"import {normalized}" in lowered
-                or f"from {normalized}" in lowered
-            ):
-                violations.append(
-                    f"{relative}: direct notification transport {dependency} is forbidden"
-                )
+        violations.extend(scan_module_source(relative, text, forbidden_imports))
 
     return violations
 

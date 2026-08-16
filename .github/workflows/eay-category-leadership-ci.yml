@@ -7,6 +7,7 @@ on:
     paths:
       - "backend/app/modules/data_collection/**"
       - "backend/app/modules/field_intelligence/**"
+      - "backend/app/modules/customer_promise/**"
       - "backend/app/modules/workforce/demand_model.py"
       - "backend/app/modules/workforce/test_demand_model.py"
       - "backend/app/modules/workforce/pressure_model.py"
@@ -20,9 +21,12 @@ on:
       - "backend/app/platform/business_glossary/**"
       - "backend/migrations/006_field_intelligence.sql"
       - "backend/migrations/007_business_glossary.sql"
+      - "backend/migrations/008_customer_promise_delivery.sql"
       - "backend/tests/test_business_glossary_*.py"
       - "backend/tests/test_field_*.py"
+      - "backend/tests/test_customer_promise_*.py"
       - "docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"
+      - "docs/EAY_CUSTOMER_PROMISE_AND_DELIVERY_EXPERIENCE.md"
       - ".github/workflows/eay-category-leadership-ci.yml"
   workflow_dispatch:
 
@@ -35,7 +39,7 @@ concurrency:
 
 jobs:
   contracts:
-    name: Field, scheduling and semantic contracts
+    name: Field, scheduling, semantic and customer-promise contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -52,6 +56,7 @@ jobs:
           python -m compileall -q \
             backend/app/modules/data_collection \
             backend/app/modules/field_intelligence \
+            backend/app/modules/customer_promise \
             backend/app/modules/workforce/demand_model.py \
             backend/app/modules/workforce/pressure_model.py \
             backend/app/modules/workforce/scenario_model.py \
@@ -67,6 +72,10 @@ jobs:
         env:
           PYTHONPATH: backend
         run: python -m pytest -q backend/tests/test_business_glossary_*.py
+      - name: Run Customer Promise delivery deviation privacy and recovery contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_customer_promise_*.py
       - name: Run operational data collection contracts
         env:
           PYTHONPATH: backend
@@ -90,6 +99,7 @@ jobs:
 
           roots = [
               Path("backend/app/modules/field_intelligence"),
+              Path("backend/app/modules/customer_promise"),
               Path("backend/app/modules/workforce/demand_model.py"),
               Path("backend/app/modules/workforce/pressure_model.py"),
               Path("backend/app/modules/workforce/scenario_model.py"),
@@ -98,6 +108,7 @@ jobs:
               Path("backend/app/modules/workforce/skill_capacity.py"),
               Path("backend/app/platform/business_glossary"),
               Path("docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"),
+              Path("docs/EAY_CUSTOMER_PROMISE_AND_DELIVERY_EXPERIENCE.md"),
           ]
           patterns = (
               re.compile(r"production_ready\s*=\s*True"),
@@ -116,7 +127,7 @@ jobs:
           PY
 
   postgres-authority:
-    name: Field and Glossary PostgreSQL RLS restart and restore
+    name: Field, Glossary and Customer Promise PostgreSQL RLS restart and restore
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -137,10 +148,11 @@ jobs:
       PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v4
-      - name: Apply Field Intelligence and Business Glossary migrations
+      - name: Apply Field Intelligence, Business Glossary and Customer Promise migrations
         run: |
           psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/006_field_intelligence.sql
           psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/007_business_glossary.sql
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/008_customer_promise_delivery.sql
       - name: Create isolated runtime identities and tenant bindings
         run: |
           psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 <<'SQL'
@@ -148,10 +160,13 @@ jobs:
           CREATE ROLE eay_field_b LOGIN PASSWORD 'runtime_b';
           INSERT INTO field_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
           INSERT INTO glossary_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          INSERT INTO customer_promise_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
           GRANT SELECT, INSERT ON field_missions TO eay_field_a, eay_field_b;
           GRANT SELECT ON field_mission_targets, field_offline_events, field_evidence_envelopes, field_verifications, field_notification_events, field_audit TO eay_field_a, eay_field_b;
           GRANT SELECT, INSERT ON glossary_terms TO eay_field_a, eay_field_b;
           GRANT SELECT ON glossary_governance_events TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT, UPDATE ON customer_promises TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT ON customer_delivery_events, customer_promise_evaluations, customer_cause_assertions, customer_recovery_requests, customer_recovery_decisions TO eay_field_a, eay_field_b;
           INSERT INTO field_missions(tenant_id, mission_id, template_id, template_version, status, priority, target_fingerprint, assigned_at, deadline_at, created_by)
           VALUES
             ('tenant-a','mission-a','lot-check',1,'active','normal',repeat('a',64),now(),now()+interval '1 hour','central-a'),
@@ -160,6 +175,13 @@ jobs:
           VALUES
             ('tenant-a','backlog-a','backlog','operations',1,'effective',now(),'{"en":"Backlog"}','{"en":"Tenant A definition"}','owner-a'),
             ('tenant-b','backlog-b','backlog','operations',1,'effective',now(),'{"en":"Backlog"}','{"en":"Tenant B definition"}','owner-b');
+          INSERT INTO customer_promises(
+            tenant_id,promise_id,external_order_ref,version,supersedes_version,source_system,source_record_ref,
+            committed_at,promised_start_at,promised_end_at,service_level,customer_fee_minor_units,currency,
+            instruction_reference,instruction_fingerprint
+          ) VALUES
+            ('tenant-a','promise-a','order-a',1,NULL,'oms','oms-a-v1',now(),now()+interval '20 min',now()+interval '40 min','standard',499,'TRY','instruction-ref-a',repeat('a',64)),
+            ('tenant-b','promise-b','order-b',1,NULL,'oms','oms-b-v1',now(),now()+interval '20 min',now()+interval '40 min','standard',499,'TRY','instruction-ref-b',repeat('b',64));
           SQL
       - name: Prove cross-tenant zero-read under runtime roles
         run: |
@@ -167,6 +189,8 @@ jobs:
           PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM field_missions;" | grep -qx 'tenant-b'
           PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-a'
           PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-b'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM customer_promises;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM customer_promises;" | grep -qx 'tenant-b'
       - name: Prove cross-tenant writes are blocked by RLS
         run: |
           set +e
@@ -174,25 +198,42 @@ jobs:
           field_status=$?
           PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-b','escape-glossary','escape',1,'draft','{\"en\":\"Escape\"}','{\"en\":\"Escape\"}','attacker');"
           glossary_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO customer_promises(tenant_id,promise_id,external_order_ref,version,source_system,source_record_ref,committed_at,promised_start_at,promised_end_at,service_level) VALUES ('tenant-b','escape-promise','escape-order',1,'oms','escape',now(),now()+interval '10 min',now()+interval '20 min','standard');"
+          promise_status=$?
           set -e
           test "$field_status" -ne 0
           test "$glossary_status" -ne 0
-      - name: Prove semantic scope uniqueness and effective immutability
+          test "$promise_status" -ne 0
+      - name: Prove semantic immutability, promise append-only and delivery-event idempotency
         run: |
           set +e
           psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, domain, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-a','duplicate-backlog','backlog','operations',1,'draft','{\"en\":\"Duplicate\"}','{\"en\":\"Duplicate\"}','owner');"
-          duplicate_status=$?
+          duplicate_glossary_status=$?
           psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "UPDATE glossary_terms SET short_definition='{\"en\":\"Mutated\"}' WHERE tenant_id='tenant-a' AND concept_id='backlog-a' AND version=1;"
-          mutation_status=$?
+          glossary_mutation_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "UPDATE customer_promises SET service_level='mutated' WHERE tenant_id='tenant-a' AND promise_id='promise-a' AND version=1;"
+          promise_mutation_status=$?
           set -e
-          test "$duplicate_status" -ne 0
-          test "$mutation_status" -ne 0
+          test "$duplicate_glossary_status" -ne 0
+          test "$glossary_mutation_status" -ne 0
+          test "$promise_mutation_status" -ne 0
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO customer_delivery_events(tenant_id,event_id,external_order_ref,event_type,source_system,source_event_ref,occurred_at,idempotency_key,payload_fingerprint) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000a1','order-a','delivered','delivery-platform','source-a-1',now(),'delivery-idempotency-a',repeat('c',64));"
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO customer_delivery_events(tenant_id,event_id,external_order_ref,event_type,source_system,source_event_ref,occurred_at,idempotency_key,payload_fingerprint) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000a2','order-a','delivered','delivery-platform','source-a-2',now(),'delivery-idempotency-a',repeat('d',64));"
+          duplicate_event_status=$?
+          set -e
+          test "$duplicate_event_status" -ne 0
+      - name: Prove customer-promise persistence does not create raw customer PII columns
+        run: |
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_promises' AND column_name IN ('customer_name','phone','address','door_code','delivery_instruction_text');" | grep -qx '0'
       - name: Database restart durability
         run: |
           docker restart ${{ job.services.postgres.id }}
           for attempt in {1..30}; do pg_isready -h localhost -U postgres -d eay_category_ci && break; sleep 1; done
           PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM field_missions;" | grep -qx '1'
           PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM glossary_terms;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_promises;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_delivery_events;" | grep -qx '1'
       - name: Backup and isolated restore rehearsal
         run: |
           pg_dump -h localhost -U postgres -Fc -f /tmp/eay_category_ci.dump eay_category_ci
@@ -201,3 +242,5 @@ jobs:
           pg_restore -h localhost -U postgres -d eay_category_restore_ci /tmp/eay_category_ci.dump
           psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM field_missions;" | grep -qx '2'
           psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM glossary_terms;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_promises;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_delivery_events;" | grep -qx '1'

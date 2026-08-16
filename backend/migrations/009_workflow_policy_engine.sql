@@ -9,6 +9,46 @@ CREATE TABLE IF NOT EXISTS workflow_policy_schema_migrations (
   applied_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE OR REPLACE FUNCTION workflow_policy_scope_safe(payload jsonb)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT jsonb_typeof(payload)='object'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM jsonb_each(payload) AS item(key, value)
+      WHERE key NOT IN ('country','region','business_unit','location_id')
+         OR jsonb_typeof(value) NOT IN ('string','null')
+    )
+$$;
+
+CREATE OR REPLACE FUNCTION workflow_policy_parameters_safe(payload jsonb)
+RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT jsonb_typeof(payload)='object'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM jsonb_each(payload) AS item(key, value)
+      WHERE jsonb_typeof(value) NOT IN ('string','number','boolean','null')
+         OR lower(key) IN (
+              'password','secret','token','access_token','refresh_token','id_token','bearer_token',
+              'authorization','authorization_header','auth_header','api_key','private_key',
+              'phone','email','address','door_code','national_id','tc_kimlik',
+              'command','script','sql','sql_query','sql_text','query_sql','raw_sql','raw_query',
+              'endpoint_url','url','webhook_url'
+            )
+         OR lower(key) LIKE '%password%'
+         OR lower(key) LIKE '%secret%'
+         OR lower(key) LIKE '%phone%'
+         OR lower(key) LIKE '%email%'
+         OR lower(key) LIKE '%address%'
+         OR lower(key) LIKE '%door_code%'
+         OR lower(key) LIKE '%national_id%'
+         OR lower(key) LIKE '%tc_kimlik%'
+         OR lower(key) ~ '(_token|_api_key|_private_key)$'
+         OR lower(key) ~ '(^url_|_url$)'
+         OR lower(key) ~ '(^command_|_command$)'
+         OR lower(key) ~ '(^script_|_script$)'
+    )
+$$;
+
 CREATE TABLE IF NOT EXISTS workflow_policy_definitions (
   tenant_id text NOT NULL,
   workflow_id text NOT NULL,
@@ -16,7 +56,7 @@ CREATE TABLE IF NOT EXISTS workflow_policy_definitions (
   supersedes_version integer,
   source_module text NOT NULL,
   event_type text NOT NULL,
-  scope_json jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(scope_json)='object'),
+  scope_json jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (workflow_policy_scope_safe(scope_json)),
   effective_from timestamptz NOT NULL,
   effective_to timestamptz,
   content_fingerprint text NOT NULL CHECK (content_fingerprint ~ '^[0-9a-f]{64}$'),
@@ -69,6 +109,56 @@ CREATE TABLE IF NOT EXISTS workflow_policy_governance_events (
 CREATE INDEX IF NOT EXISTS workflow_policy_governance_latest_idx
   ON workflow_policy_governance_events (tenant_id, workflow_id, workflow_version, occurred_at DESC);
 
+CREATE OR REPLACE FUNCTION workflow_policy_validate_governance_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  current_status text;
+  last_occurred_at timestamptz;
+  definition_created_at timestamptz;
+  definition_created_by text;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext(NEW.tenant_id || '|' || NEW.workflow_id || '|' || NEW.workflow_version::text));
+
+  SELECT created_at, created_by
+    INTO definition_created_at, definition_created_by
+  FROM workflow_policy_definitions
+  WHERE tenant_id=NEW.tenant_id
+    AND workflow_id=NEW.workflow_id
+    AND version=NEW.workflow_version;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'workflow definition not found for governance event';
+  END IF;
+
+  SELECT to_status, occurred_at
+    INTO current_status, last_occurred_at
+  FROM workflow_policy_governance_events
+  WHERE tenant_id=NEW.tenant_id
+    AND workflow_id=NEW.workflow_id
+    AND workflow_version=NEW.workflow_version
+  ORDER BY occurred_at DESC, governance_event_id DESC
+  LIMIT 1;
+
+  current_status := coalesce(current_status, 'draft');
+  IF NEW.from_status <> current_status THEN
+    RAISE EXCEPTION 'workflow governance from_status % does not match current status %', NEW.from_status, current_status;
+  END IF;
+  IF NEW.occurred_at < definition_created_at THEN
+    RAISE EXCEPTION 'workflow governance event cannot predate workflow definition';
+  END IF;
+  IF last_occurred_at IS NOT NULL AND NEW.occurred_at <= last_occurred_at THEN
+    RAISE EXCEPTION 'workflow governance timestamps must advance monotonically';
+  END IF;
+  IF NEW.from_status='draft' AND NEW.to_status='approved' AND NEW.actor_id=definition_created_by THEN
+    RAISE EXCEPTION 'workflow author cannot approve own workflow version';
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS workflow_policy_governance_chain_guard ON workflow_policy_governance_events;
+CREATE TRIGGER workflow_policy_governance_chain_guard
+BEFORE INSERT ON workflow_policy_governance_events
+FOR EACH ROW EXECUTE FUNCTION workflow_policy_validate_governance_insert();
+
 CREATE OR REPLACE VIEW workflow_policy_current_status
 WITH (security_invoker=true) AS
 WITH latest AS (
@@ -103,7 +193,7 @@ CREATE TABLE IF NOT EXISTS workflow_policy_event_receipts (
   source_module text NOT NULL,
   event_type text NOT NULL,
   subject_ref text NOT NULL,
-  scope_json jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(scope_json)='object'),
+  scope_json jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (workflow_policy_scope_safe(scope_json)),
   facts_fingerprint text NOT NULL CHECK (facts_fingerprint ~ '^[0-9a-f]{64}$'),
   occurred_at timestamptz NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now(),
@@ -132,6 +222,33 @@ CREATE TABLE IF NOT EXISTS workflow_policy_evaluations (
     REFERENCES workflow_policy_event_receipts(tenant_id, event_id) ON DELETE RESTRICT
 );
 
+CREATE OR REPLACE FUNCTION workflow_policy_validate_evaluation_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE current_status text;
+BEGIN
+  SELECT status INTO current_status
+  FROM workflow_policy_current_status
+  WHERE tenant_id=NEW.tenant_id
+    AND workflow_id=NEW.workflow_id
+    AND workflow_version=NEW.workflow_version;
+
+  IF current_status IS NULL THEN
+    RAISE EXCEPTION 'workflow status not found for evaluation';
+  END IF;
+  IF NEW.dry_run THEN
+    IF current_status NOT IN ('draft','approved','effective') THEN
+      RAISE EXCEPTION 'dry-run evaluation is not permitted for workflow status %', current_status;
+    END IF;
+  ELSIF current_status <> 'effective' THEN
+    RAISE EXCEPTION 'live evaluation requires effective workflow status';
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS workflow_policy_evaluation_status_guard ON workflow_policy_evaluations;
+CREATE TRIGGER workflow_policy_evaluation_status_guard
+BEFORE INSERT ON workflow_policy_evaluations
+FOR EACH ROW EXECUTE FUNCTION workflow_policy_validate_evaluation_insert();
+
 CREATE TABLE IF NOT EXISTS workflow_policy_action_intents (
   tenant_id text NOT NULL,
   intent_id text NOT NULL CHECK (intent_id ~ '^[0-9a-f]{64}$'),
@@ -140,7 +257,7 @@ CREATE TABLE IF NOT EXISTS workflow_policy_action_intents (
   action_type text NOT NULL CHECK (action_type IN ('notify','create_task','request_approval','propose_domain_action','schedule_recheck')),
   effect text NOT NULL CHECK (effect IN ('informational','operational','financial','employment','security')),
   execution_mode text NOT NULL CHECK (execution_mode IN ('automatic','requires_approval','proposal_only')),
-  parameters_json jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(parameters_json)='object'),
+  parameters_json jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (workflow_policy_parameters_safe(parameters_json)),
   approval_required boolean NOT NULL,
   dry_run boolean NOT NULL DEFAULT false,
   dedupe_key text NOT NULL CHECK (dedupe_key ~ '^[0-9a-f]{64}$'),
@@ -151,8 +268,7 @@ CREATE TABLE IF NOT EXISTS workflow_policy_action_intents (
     REFERENCES workflow_policy_evaluations(tenant_id, evaluation_id) ON DELETE RESTRICT,
   CHECK (effect NOT IN ('financial','employment','security') OR execution_mode <> 'automatic'),
   CHECK (action_type <> 'propose_domain_action' OR execution_mode <> 'automatic'),
-  CHECK (effect NOT IN ('financial','employment','security') OR approval_required IS TRUE),
-  CHECK (NOT (parameters_json ?| ARRAY['password','secret','access_token','refresh_token','id_token','authorization','phone','email','address','door_code','national_id','tc_kimlik','command','script','sql_query','endpoint_url','webhook_url']))
+  CHECK (effect NOT IN ('financial','employment','security') OR approval_required IS TRUE)
 );
 
 CREATE TABLE IF NOT EXISTS workflow_policy_action_decisions (
@@ -169,6 +285,33 @@ CREATE TABLE IF NOT EXISTS workflow_policy_action_decisions (
     REFERENCES workflow_policy_action_intents(tenant_id, intent_id) ON DELETE RESTRICT,
   CHECK (decision='approved' OR length(trim(coalesce(reason,''))) > 0)
 );
+
+CREATE OR REPLACE FUNCTION workflow_policy_validate_action_decision_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  intent_dry_run boolean;
+  intent_execution_mode text;
+BEGIN
+  SELECT dry_run, execution_mode
+    INTO intent_dry_run, intent_execution_mode
+  FROM workflow_policy_action_intents
+  WHERE tenant_id=NEW.tenant_id AND intent_id=NEW.intent_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'workflow action intent not found';
+  END IF;
+  IF intent_dry_run THEN
+    RAISE EXCEPTION 'dry-run workflow intent cannot receive execution approval';
+  END IF;
+  IF intent_execution_mode='proposal_only' THEN
+    RAISE EXCEPTION 'proposal-only workflow intent cannot receive execution approval';
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS workflow_policy_action_decision_guard ON workflow_policy_action_decisions;
+CREATE TRIGGER workflow_policy_action_decision_guard
+BEFORE INSERT ON workflow_policy_action_decisions
+FOR EACH ROW EXECUTE FUNCTION workflow_policy_validate_action_decision_insert();
 
 CREATE OR REPLACE FUNCTION workflow_policy_immutable_row() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .main import Evidence, KnowledgeLayer, settings
 from .tenant_context_assertion import (
@@ -79,6 +79,16 @@ class TenantRetrievalRequest(BaseModel):
     as_of: date = Field(default_factory=date.today)
     layers: list[KnowledgeLayer] = Field(min_length=1, max_length=4)
     limit: int = Field(default=8, ge=1, le=32)
+
+    @field_validator("layers")
+    @classmethod
+    def layers_must_be_unique(
+        cls,
+        layers: list[KnowledgeLayer],
+    ) -> list[KnowledgeLayer]:
+        if len(layers) != len(set(layers)):
+            raise ValueError("retrieval layers must be unique")
+        return layers
 
 
 class TenantRetrievalResponse(BaseModel):

@@ -1,50 +1,21 @@
 from __future__ import annotations
 
-from fastapi import HTTPException, status
-
+from app.core.authorization import resolve_permission_scope
 from app.core.security import Principal
 
 from .schemas import FieldScope
 
 
 def require_field_permission(principal: Principal, permission_key: str) -> FieldScope:
-    if permission_key not in principal.permissions:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Field Intelligence permission is required",
-        )
+    """Translate Core-authoritative scope into the Field domain view.
 
-    assignments = [
-        assignment
-        for assignment in principal.permission_assignments
-        if assignment.key == permission_key
-    ]
-    unrestricted = False
-    regions: set[str] = set()
-    locations: set[str] = set()
-
-    for assignment in assignments:
-        scope = assignment.scope
-        if scope.get("type") == "all" and set(scope) == {"type"}:
-            unrestricted = True
-            break
-        for raw in scope.get("regions", ()) if isinstance(scope.get("regions"), list) else ():
-            value = str(raw).strip()
-            if value:
-                regions.add(value)
-        for raw in scope.get("warehouses", ()) if isinstance(scope.get("warehouses"), list) else ():
-            value = str(raw).strip()
-            if value:
-                locations.add(value)
-
-    field_scope = FieldScope(
-        unrestricted=unrestricted,
-        regions=frozenset(regions),
-        location_ids=frozenset(locations),
+    Field Intelligence no longer reads raw principal permission assignments or
+    decides what constitutes an unrestricted grant.  Core owns that authority;
+    this adapter only maps canonical dimensions to Field terminology.
+    """
+    scope = resolve_permission_scope(principal, permission_key)
+    return FieldScope(
+        unrestricted=scope.unrestricted,
+        regions=scope.values("regions"),
+        location_ids=scope.values("warehouses") | scope.values("locations"),
     )
-    if field_scope.empty:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Field Intelligence permission has no authorized location scope",
-        )
-    return field_scope

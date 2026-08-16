@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - release/platform-convergence-v0.1
+      - product/eay-product-completion-v1
     paths:
       - "config/module_catalog.json"
       - "config/product_quality_contract.json"
@@ -13,6 +14,9 @@ on:
       - "package-lock.json"
       - "services/core-api/pyproject.toml"
       - "services/identity-gateway/pyproject.toml"
+      - "services/core-api/app/modules/**"
+      - "services/core-api/app/intelligence_routes.py"
+      - "backend/app/modules/**"
       - "scripts/security/generate_cyclonedx_sbom.py"
       - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/test-github-action-pinning.mjs"
@@ -76,7 +80,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/setup-node@a0853c24544627f65d1b18a591444 # v5
         with:
           node-version: "22"
           cache: npm
@@ -89,7 +93,7 @@ jobs:
       - run: npm ci
       - name: Server-authoritative access contract
         run: npm run test:access
-      - name: Platform inclusion and locale coverage
+      - name: Platform inclusion, locale, RTL and surface-state coverage
         run: node scripts/test-platform-inclusion.mjs
       - name: Accessibility focus trap contract
         run: node scripts/test-accessibility-focus-trap.mjs

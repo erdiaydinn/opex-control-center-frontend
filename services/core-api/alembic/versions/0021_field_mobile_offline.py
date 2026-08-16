@@ -32,14 +32,36 @@ def _tenant_policy(table_name: str) -> None:
 
 
 def upgrade() -> None:
-    op.add_column(
-        "field_templates",
-        sa.Column(
-            "evidence_policy",
-            postgresql.JSONB(astext_type=sa.Text()),
-            nullable=False,
-            server_default=sa.text("'{}'::jsonb"),
+    op.create_table(
+        "field_template_evidence_policies",
+        sa.Column("tenant_id", UUID, nullable=False),
+        sa.Column("template_id", sa.String(length=120), nullable=False),
+        sa.Column("template_version", sa.Integer(), nullable=False),
+        sa.Column("camera_only_photo", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("managed_device_required", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("created_by", sa.String(length=255), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "template_id", "template_version"],
+            ["field_templates.tenant_id", "field_templates.template_id", "field_templates.version"],
+            ondelete="RESTRICT",
+            name="fk_field_template_evidence_policy_template",
         ),
+        sa.PrimaryKeyConstraint(
+            "tenant_id",
+            "template_id",
+            "template_version",
+            name="pk_field_template_evidence_policies",
+        ),
+    )
+    _tenant_policy("field_template_evidence_policies")
+    op.execute(
+        "CREATE TRIGGER field_template_evidence_policies_append_only "
+        "BEFORE UPDATE OR DELETE ON field_template_evidence_policies "
+        "FOR EACH ROW EXECUTE FUNCTION prevent_field_evidence_mutation()"
+    )
+    op.execute(
+        f"GRANT SELECT, INSERT ON TABLE field_template_evidence_policies TO {RUNTIME_ROLE}"
     )
 
     op.create_table(
@@ -93,4 +115,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS field_offline_receipts_append_only ON field_offline_receipts")
     op.drop_table("field_offline_receipts")
-    op.drop_column("field_templates", "evidence_policy")
+    op.execute(
+        "DROP TRIGGER IF EXISTS field_template_evidence_policies_append_only "
+        "ON field_template_evidence_policies"
+    )
+    op.drop_table("field_template_evidence_policies")

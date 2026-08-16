@@ -31,12 +31,33 @@ from .voice_ws_api import router as voice_ws_router
 _ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
 _LEGACY_PUBLIC_RETRIEVAL_PATHS = frozenset({"/v1/chat", "/v1/knowledge"})
 
+# These routes are backed by the pre-tenant Store in main.py. They remain useful
+# for local research, but exposing them in the production-composed app would
+# bypass canonical tenant authority. Production therefore removes the whole
+# unscoped retrieval + learning surface until a tenant-bound learning store and
+# authorization contract exists.
+_PRODUCTION_UNSCOPED_PATHS = frozenset(
+    {
+        *_LEGACY_PUBLIC_RETRIEVAL_PATHS,
+        "/v1/feedback",
+        "/v1/learning/export",
+        "/v1/learning/candidates",
+        "/v1/learning/candidates/{candidate_id}/teacher-review",
+        "/v1/learning/candidates/{candidate_id}/{decision}",
+        "/v1/learning/export-reviews/{candidate_id}",
+    }
+)
+
 
 def _signature(route) -> tuple[str, tuple[str, ...], str]:
     path = str(getattr(route, "path", ""))
     methods = tuple(sorted(getattr(route, "methods", set()) or set()))
     name = str(getattr(route, "name", ""))
     return path, methods, name
+
+
+def _route_paths(target: FastAPI) -> set[str]:
+    return {str(getattr(route, "path", "")) for route in target.routes}
 
 
 def _include_router_once(target: FastAPI, router: APIRouter) -> None:
@@ -59,36 +80,57 @@ def _runtime_environment() -> str:
     return environment
 
 
-def _quarantine_legacy_public_retrieval(target: FastAPI, environment: str) -> None:
-    """Remove legacy unscoped retrieval/write routes from production.
+def _quarantine_unscoped_production_routes(
+    target: FastAPI,
+    environment: str,
+) -> None:
+    """Remove tenant-unaware retrieval/learning routes from production.
 
-    ``main.app`` predates canonical tenant-scoped retrieval and still contains
-    ``/v1/chat`` and ``/v1/knowledge`` for local research. Keeping those routes
-    on the production-composed app would bypass the dedicated tenant-context
-    assertion and tenant-aware store. Development/test retains the legacy paths;
-    production removes them before the application surface is served.
+    The inherited ``main.Store`` has no tenant discriminator for interactions,
+    feedback, learning candidates or export reviews. Those local-research paths
+    must not become a cross-company production data surface merely because the
+    production app composes newer tenant-aware routers alongside them.
+
+    The operation is intentionally idempotent so repeated composition is safe.
+    Development/test retains the local learning workflow for repository tests
+    and offline research.
     """
 
     if environment != "production":
         return
 
-    present_paths = {
-        str(getattr(route, "path", ""))
-        for route in target.routes
-        if str(getattr(route, "path", "")) in _LEGACY_PUBLIC_RETRIEVAL_PATHS
-    }
-    if not present_paths:
-        # compose_app is intentionally idempotent; a second production compose
-        # sees the already-quarantined route set and leaves it unchanged.
-        return
-    if present_paths != _LEGACY_PUBLIC_RETRIEVAL_PATHS:
-        raise RuntimeError("ai_core_legacy_retrieval_quarantine_incomplete")
-
     target.router.routes = [
         route
         for route in target.router.routes
-        if str(getattr(route, "path", "")) not in _LEGACY_PUBLIC_RETRIEVAL_PATHS
+        if str(getattr(route, "path", "")) not in _PRODUCTION_UNSCOPED_PATHS
     ]
+
+    remaining = _route_paths(target) & _PRODUCTION_UNSCOPED_PATHS
+    if remaining:
+        raise RuntimeError("ai_core_unscoped_route_quarantine_incomplete")
+
+
+def _quarantine_legacy_public_retrieval(
+    target: FastAPI,
+    environment: str,
+) -> None:
+    """Preserve the original legacy quarantine API atop the stronger boundary.
+
+    The historical contract treats a partially composed legacy public retrieval
+    surface as corruption: both old routes must be present together or both must
+    already be absent. Keep that invariant because it detects route-composition
+    drift before the stronger production quarantine removes all tenant-unaware
+    retrieval and learning routes.
+    """
+
+    if environment != "production":
+        return
+
+    present = _route_paths(target) & _LEGACY_PUBLIC_RETRIEVAL_PATHS
+    if present and present != _LEGACY_PUBLIC_RETRIEVAL_PATHS:
+        raise RuntimeError("ai_core_legacy_retrieval_quarantine_incomplete")
+
+    _quarantine_unscoped_production_routes(target, environment)
 
 
 def compose_app() -> FastAPI:
@@ -98,8 +140,8 @@ def compose_app() -> FastAPI:
     share one runtime, but tenant-scoped retrieval is only exposed through the
     dedicated internal router. A partially present router is treated as
     corruption rather than silently duplicating or weakening the API surface.
-    Legacy unscoped retrieval/write endpoints are development/test only and are
-    removed from the production route inventory.
+    Tenant-unaware retrieval and learning endpoints are development/test only
+    and are removed from the production route inventory.
     """
 
     environment = _runtime_environment()

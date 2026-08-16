@@ -21,6 +21,24 @@ def test_repository_manifest_and_release_truth_are_valid() -> None:
     assert manifest["pr_roles"]["frozen"] == [15, 16]
 
 
+def test_open_pr_inventory_count_matches_every_classified_role() -> None:
+    manifest = MODULE.validate_manifest(ROOT)
+    classified = sum(len(items) for items in manifest["pr_roles"].values())
+    assert manifest["open_pr_inventory"]["observed_count"] == classified == 62
+
+
+def test_open_pr_inventory_count_drift_fails_closed(tmp_path: Path) -> None:
+    (tmp_path / "config").mkdir()
+    manifest = json.loads((ROOT / "config/eay_canonical_lineage.json").read_text(encoding="utf-8"))
+    release = json.loads((ROOT / "config/eay_release_candidate.json").read_text(encoding="utf-8"))
+    manifest["open_pr_inventory"]["observed_count"] = 61
+    (tmp_path / "config/eay_canonical_lineage.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (tmp_path / "config/eay_release_candidate.json").write_text(json.dumps(release), encoding="utf-8")
+
+    with pytest.raises(MODULE.LineageValidationError, match="open PR inventory count mismatch"):
+        MODULE.validate_manifest(tmp_path)
+
+
 def test_frozen_ai_core_is_pinned_without_false_direct_ancestry_claim() -> None:
     manifest = MODULE.validate_manifest(ROOT)
     anchors = {anchor["pr"]: anchor for anchor in manifest["immutable_anchors"]}

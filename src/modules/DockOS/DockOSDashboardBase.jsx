@@ -58,17 +58,11 @@ export default function DockOSDashboardBase() {
 
   const [activeTab, setActiveTab] = useState(tabs[0]?.key || "kpi");
   const [apiStatus, setApiStatus] = useState("checking");
-  const [apiMessage, setApiMessage] = useState("");
-  const [stats, setStats] = useState({
-    poCount: 0,
-    reservationCount: 0,
-    activeReservationCount: 0,
-    avgCapacityUsage: 0,
-  });
+  const [stats, setStats] = useState(null);
 
   async function loadStats() {
     setApiStatus("checking");
-    setApiMessage("");
+    setStats(null);
 
     try {
       await healthCheck();
@@ -97,9 +91,11 @@ export default function DockOSDashboardBase() {
       });
 
       setApiStatus("online");
-    } catch (error) {
+    } catch {
+      // Never surface transport/backend exception text in the product UI.
+      // The user-facing message stays localized and stable.
+      setStats(null);
       setApiStatus("offline");
-      setApiMessage(error.message);
     }
   }
 
@@ -112,6 +108,13 @@ export default function DockOSDashboardBase() {
       setActiveTab(tabs[0]?.key || "kpi");
     }
   }, [tabs, activeTab]);
+
+  const productState =
+    apiStatus === "checking"
+      ? "loading"
+      : apiStatus === "offline"
+        ? "error"
+        : "ready";
 
   return (
     <div style={styles.shell}>
@@ -147,7 +150,12 @@ export default function DockOSDashboardBase() {
           <label style={styles.languageField}><span>{t("language")}</span><select value={locale} onChange={(event) => setLocale(event.target.value)}><option value="tr">Türkçe</option><option value="en">English</option><option value="de">Deutsch</option><option value="ar">العربية</option></select></label>
         </div>
 
-        <div style={styles.apiCard}>
+        <div
+          style={styles.apiCard}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <span style={{
             ...styles.apiDot,
             background:
@@ -170,35 +178,66 @@ export default function DockOSDashboardBase() {
         </div>
       </aside>
 
-      <main style={styles.main}>
+      <main
+        style={styles.main}
+        aria-busy={apiStatus === "checking"}
+        data-eay-product-state={productState}
+      >
         <section style={styles.topbar}>
           <div>
             <p style={styles.kicker}>OPEX Control Center</p>
             <h1 style={styles.title}>DockOS</h1>
             <p style={styles.subtitle}>Inbound Intelligence & Dock Scheduling Platform</p>
           </div>
-          <button type="button" onClick={loadStats} style={styles.refreshButton}>
+          <button
+            type="button"
+            onClick={loadStats}
+            style={styles.refreshButton}
+            disabled={apiStatus === "checking"}
+          >
             {t("refresh")}
           </button>
         </section>
 
-        {apiStatus === "offline" && (
-          <section style={styles.errorPanel}>
-            <strong>{t("backendFailed")}</strong>
-            <span>{apiMessage}</span>
+        {apiStatus === "checking" && (
+          <section
+            style={styles.statePanel}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-eay-product-state="loading"
+          >
+            <strong>{t("checking")}</strong>
           </section>
         )}
 
-        <section style={styles.statsGrid}>
-          <StatCard label={t("openPo")} value={stats.poCount} />
-          <StatCard label={t("totalReservation")} value={stats.reservationCount} />
-          <StatCard label={t("activeReservation")} value={stats.activeReservationCount} />
-          <StatCard label={t("avgCapacity")} value={`%${stats.avgCapacityUsage}`} />
-        </section>
+        {apiStatus === "offline" && (
+          <section
+            style={styles.errorPanel}
+            role="alert"
+            data-eay-product-state="error"
+          >
+            <strong>{t("backendFailed")}</strong>
+            <button type="button" onClick={loadStats} style={styles.retryButton}>
+              {t("refresh")}
+            </button>
+          </section>
+        )}
 
-        {activeTab === "supplier" && <SupplierReservation />}
-        {activeTab === "admin" && <AdminReservations />}
-        {activeTab === "kpi" && <KpiSummary />}
+        {apiStatus === "online" && stats && (
+          <>
+            <section style={styles.statsGrid} data-eay-product-state="ready">
+              <StatCard label={t("openPo")} value={stats.poCount} />
+              <StatCard label={t("totalReservation")} value={stats.reservationCount} />
+              <StatCard label={t("activeReservation")} value={stats.activeReservationCount} />
+              <StatCard label={t("avgCapacity")} value={`%${stats.avgCapacityUsage}`} />
+            </section>
+
+            {activeTab === "supplier" && <SupplierReservation />}
+            {activeTab === "admin" && <AdminReservations />}
+            {activeTab === "kpi" && <KpiSummary />}
+          </>
+        )}
       </main>
     </div>
   );
@@ -313,9 +352,29 @@ const styles = {
     fontWeight: 800,
     cursor: "pointer",
   },
-  errorPanel: {
+  retryButton: {
+    justifySelf: "start",
+    border: 0,
+    borderRadius: 11,
+    padding: "9px 12px",
+    background: "#b42318",
+    color: "#ffffff",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  statePanel: {
     display: "grid",
     gap: 4,
+    marginBottom: 14,
+    padding: 14,
+    border: "1px solid var(--dockos-border)",
+    borderRadius: 14,
+    color: "var(--dockos-text)",
+    background: "var(--dockos-surface)",
+  },
+  errorPanel: {
+    display: "grid",
+    gap: 10,
     marginBottom: 14,
     padding: 14,
     border: "1px solid #fecdca",

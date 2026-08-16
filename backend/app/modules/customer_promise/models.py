@@ -6,16 +6,16 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class Money(BaseModel):
-    model_config = ConfigDict(frozen=True)
+class StrictFrozenModel(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
+
+class Money(StrictFrozenModel):
     minor_units: int = Field(ge=0)
     currency: str = Field(pattern=r"^[A-Z]{3}$")
 
 
-class PromiseWindow(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class PromiseWindow(StrictFrozenModel):
     starts_at: datetime
     ends_at: datetime
 
@@ -26,15 +26,13 @@ class PromiseWindow(BaseModel):
         return self
 
 
-class CustomerPromiseVersion(BaseModel):
+class CustomerPromiseVersion(StrictFrozenModel):
     """Immutable customer-visible commitment, not an OMS order record.
 
     Raw address, phone, customer name and free-text delivery instructions are
     intentionally absent. Sensitive instructions stay in their authoritative
     system and are referenced by opaque id + fingerprint only.
     """
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str = Field(min_length=1, max_length=120)
     promise_id: str = Field(min_length=3, max_length=160)
@@ -72,10 +70,8 @@ class DeliveryEventType(StrEnum):
     CUSTOMER_CONTACTED = "customer_contacted"
 
 
-class DeliveryEvent(BaseModel):
+class DeliveryEvent(StrictFrozenModel):
     """Append-only provenance event imported from an authoritative fulfillment source."""
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str = Field(min_length=1, max_length=120)
     event_id: str = Field(min_length=3, max_length=160)
@@ -102,10 +98,8 @@ class InstructionCompliance(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
-class DeliveryActualSnapshot(BaseModel):
+class DeliveryActualSnapshot(StrictFrozenModel):
     """Authoritative outcome observation referenced from OMS/delivery truth."""
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str = Field(min_length=1, max_length=120)
     external_order_ref: str = Field(min_length=1, max_length=200)
@@ -135,10 +129,8 @@ class PromiseOutcome(StrEnum):
     IN_PROGRESS = "in_progress"
 
 
-class PromiseDeviation(BaseModel):
+class PromiseDeviation(StrictFrozenModel):
     """Deterministic comparison of promise facts with observed delivery facts."""
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str
     promise_id: str
@@ -159,10 +151,8 @@ class CauseAssertionType(StrEnum):
     HYPOTHESIS = "hypothesis"
 
 
-class CauseAssertion(BaseModel):
+class CauseAssertion(StrictFrozenModel):
     """A root-cause statement that preserves whether it is proven or only hypothesized."""
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str = Field(min_length=1, max_length=120)
     assertion_id: str = Field(min_length=3, max_length=160)
@@ -196,10 +186,8 @@ class RecoveryKind(StrEnum):
 FINANCIAL_RECOVERY_KINDS = frozenset({RecoveryKind.FEE_REFUND, RecoveryKind.CREDIT})
 
 
-class RecoveryRequest(BaseModel):
+class RecoveryRequest(StrictFrozenModel):
     """Proposal only. This domain never silently executes a customer compensation."""
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str = Field(min_length=1, max_length=120)
     recovery_id: str = Field(min_length=3, max_length=160)
@@ -229,9 +217,7 @@ class RecoveryDecisionType(StrEnum):
     REJECTED = "rejected"
 
 
-class RecoveryDecision(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
+class RecoveryDecision(StrictFrozenModel):
     tenant_id: str = Field(min_length=1, max_length=120)
     decision_id: str = Field(min_length=3, max_length=160)
     recovery_id: str = Field(min_length=3, max_length=160)
@@ -247,10 +233,8 @@ class RecoveryDecision(BaseModel):
         return self
 
 
-class OrderExperienceSnapshot(BaseModel):
+class OrderExperienceSnapshot(StrictFrozenModel):
     """PII-minimized one-order view used by operations/Jarvis without creating CRM truth."""
-
-    model_config = ConfigDict(frozen=True)
 
     tenant_id: str
     external_order_ref: str

@@ -62,6 +62,8 @@ A workflow may also be disabled from draft, approved or effective state with an 
 
 PostgreSQL enforces the governance chain against the actual current status, requires monotonically advancing governance timestamps and prevents the workflow author from approving their own version. This provides a maker-checker baseline instead of treating an editable status column as release authority.
 
+An approved version cannot become effective until a reviewed simulation artifact exists for the same tenant, workflow and candidate version. The review binds the baseline/candidate versions, impact fingerprint, simulated sample count, changed-event count, high-risk changed-event count, reviewer and review time. High-risk changes require explicit acknowledgment. Simulation evidence is append-only and tenant isolated.
+
 ## Resolution semantics
 
 Live evaluation resolves only effective policies for the same tenant, source module, event type, effective time and matching scope. Scope may include country, region, business unit and location.
@@ -70,13 +72,17 @@ More specific scope wins, then higher version. Equally authoritative candidates 
 
 Missing facts do not satisfy comparison rules. Event-fact fingerprints are verified before evaluation. Exclusive-group ambiguity fails closed.
 
-## Simulation and change safety
+## Simulation, canary impact and change safety
 
 Draft, approved and effective workflow versions may be evaluated in explicit dry-run mode for a chosen effective time. Superseded or disabled versions are not treated as current simulation candidates.
 
 Dry-run and live evaluations produce distinct action-intent/dedupe identities. Simulation therefore cannot consume or block a future live side effect. Dry-run action intents cannot receive execution authority.
 
-This supports historical replay, change-impact review and future shadow/canary evaluation without silently changing production behavior.
+Candidate-vs-baseline comparison uses semantic action signatures rather than version-derived intent IDs. A no-op version bump is therefore reported as unchanged. Threshold/rule changes show only the affected events and added/removed semantic actions. New financial, employment or security effects mark the impact as high risk and require explicit review acknowledgment before activation.
+
+Simulation batches are bounded and event facts are evaluated in memory; the impact artifact stores fingerprints/counts and review provenance rather than creating a new raw-event archive. Scope changes require a separate scoped impact review instead of being silently compared as if the affected population were unchanged.
+
+This supports historical replay, pre-publish impact review and future shadow/canary evaluation without silently changing production behavior.
 
 ## Persistence and replay protection
 
@@ -87,11 +93,12 @@ The PostgreSQL authority stores:
 - event receipts with source/scope/provenance and a facts fingerprint, not raw event facts;
 - deterministic evaluation fingerprints;
 - action intents with dedupe keys;
-- approval/rejection decisions.
+- approval/rejection decisions;
+- append-only simulation reviews used to authorize effective promotion.
 
 Event id and idempotency key are unique per tenant. Action dedupe keys are unique per tenant. All authority tables use forced tenant RLS and append-only update/delete guards.
 
-Database constraints repeat critical application-level safety rules: high-risk automatic actions are rejected, direct automatic domain mutation is rejected, high-risk intents require approval, unsafe action-parameter payloads are rejected, invalid governance chains are rejected, live evaluation of non-effective policies is rejected, and dry-run/proposal-only intents cannot receive execution approval.
+Database constraints repeat critical application-level safety rules: high-risk automatic actions are rejected, direct automatic domain mutation is rejected, high-risk intents require approval, unsafe action-parameter payloads are rejected, invalid governance chains are rejected, live evaluation of non-effective policies is rejected, dry-run/proposal-only intents cannot receive execution approval, and approved policies cannot become effective without reviewed simulation evidence.
 
 ## Example compositions
 
@@ -107,13 +114,19 @@ Jarvis may explain why a rule matched from the deterministic trace, and may help
 
 ## Repository acceptance for Item 7
 
-Repository-ready acceptance requires deterministic rule evaluation, tenant/scope/version resolution, ambiguity rejection, event-fingerprint validation, strict payload safety, immutable versioning, auditable governance, maker-checker approval, dry-run/live separation, high-risk approval boundaries, PostgreSQL append-only persistence, tenant zero-read/zero-write proof, event/action replay protection, database restart durability and isolated backup/restore rehearsal.
+Repository-ready acceptance requires deterministic rule evaluation, tenant/scope/version resolution, ambiguity rejection, event-fingerprint validation, strict payload safety, immutable versioning, auditable governance, maker-checker approval, dry-run/live separation, semantic candidate-vs-baseline impact diff, simulation-gated effective promotion, explicit high-risk acknowledgment, PostgreSQL append-only persistence, tenant zero-read/zero-write proof, event/action replay protection, database restart durability and isolated backup/restore rehearsal.
 
 Repository/CI proof is not production acceptance.
 
+## Runtime integration boundary
+
+The canonical engine source currently lives under `backend/app/platform/workflow_policy`. Platform Core remains the browser-facing identity/tenant/permission authority. A Core runtime adapter must consume this single canonical engine source or a versioned package built from it; copying/reimplementing the evaluator inside Core is forbidden. The legacy backend must not gain a competing browser-facing workflow authorization path.
+
+Until the Core deployment/build context and registered action-adapter wiring are verified in the production-shaped runtime, repository engine success must not be reported as an active production automation service.
+
 ## External production acceptance still required
 
-Production readiness additionally requires canonical Platform Core identity/permission mapping, real event-source contracts, registered action-adapter allowlists, real notification/task providers, retry/dead-letter behavior, production audit/observability, customer-specific maker-checker roles, staging replay with representative events, policy-author UAT, controlled canary/shadow evaluation, production-shape throughput/load tests, backup/restore evidence and module-by-module acceptance of every side-effect adapter.
+Production readiness additionally requires canonical Platform Core identity/permission mapping, verified single-source Core runtime packaging, real event-source contracts, registered action-adapter allowlists, real notification/task providers, retry/dead-letter behavior, production audit/observability, customer-specific maker-checker roles, staging replay with representative events, policy-author UAT, controlled canary/shadow evaluation, production-shape throughput/load tests, backup/restore evidence and module-by-module acceptance of every side-effect adapter.
 
 No arbitrary webhook/command/SQL executor should be added as a shortcut around the registered-adapter model.
 

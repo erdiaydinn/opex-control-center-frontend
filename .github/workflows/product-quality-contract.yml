@@ -25,6 +25,7 @@ on:
       - "scripts/test-platform-inclusion.mjs"
       - "scripts/test-global-product-quality-v3.mjs"
       - "scripts/test-field-intelligence-ui.mjs"
+      - "scripts/test-field-mobile-offline.mjs"
       - "scripts/test-no-new-hardcoded-ui-strings.mjs"
       - "src/**"
       - "ops/inventory/**"
@@ -106,6 +107,8 @@ jobs:
         run: node scripts/test-global-product-quality-v3.mjs
       - name: Field Intelligence real UI contract
         run: node scripts/test-field-intelligence-ui.mjs
+      - name: Field Intelligence mobile/offline contract
+        run: node scripts/test-field-mobile-offline.mjs
       - name: Accessibility focus trap contract
         run: node scripts/test-accessibility-focus-trap.mjs
       - name: Route accessibility contract

@@ -15,6 +15,8 @@ on:
       - "config/eay_platform_authority_contract.json"
       - "scripts/validate_platform_authority.py"
       - "services/core-api/tests/test_platform_authority_*.py"
+      - "services/core-api/tests/test_academy_contracts.py"
+      - "services/core-api/tests/test_budget_domain.py"
       - ".github/workflows/eay-platform-authority-ci.yml"
   workflow_dispatch:
 
@@ -59,6 +61,13 @@ jobs:
           python -m pytest -q \
             services/core-api/tests/test_platform_authority_contract.py \
             services/core-api/tests/test_platform_authority_validator.py
+      - name: Run Academy and Budget authority regression contracts
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_academy_contracts.py \
+            services/core-api/tests/test_budget_domain.py
       - name: Preserve production truth boundary
         run: |
           python - <<'PY'

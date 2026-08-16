@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -51,20 +51,106 @@ class TenantScopedKnowledgeStore:
     def _tenant_value(tenant_id: UUID) -> str:
         return str(tenant_id)
 
+    @staticmethod
+    def _assert_existing_identity_is_safe(
+        existing: sqlite3.Row | None,
+        *,
+        document_id: str,
+        layer: KnowledgeLayer,
+        tenant_value: str | None,
+    ) -> None:
+        if existing is None:
+            return
+
+        existing_layer = str(existing["layer"])
+        existing_tenant = existing["tenant_id"]
+        requested_scoped = layer in _TENANT_SCOPED_LAYERS
+        existing_scoped = existing_layer in _TENANT_SCOPED_LAYERS
+
+        if requested_scoped:
+            # Document IDs are still a global primary key in the inherited store.
+            # Never let a second tenant silently overwrite/re-home an existing row.
+            # Legacy tenant-scoped rows with no tenant_id are deliberately
+            # unclaimable because ownership cannot be reconstructed safely.
+            if (
+                not existing_scoped
+                or existing_tenant is None
+                or existing_tenant != tenant_value
+            ):
+                raise ValueError(
+                    f"tenant_scoped_document_identity_collision:{document_id}"
+                )
+            return
+
+        # Shared legal/standard knowledge must never take over an ID already used
+        # by tenant-scoped knowledge, even when a legacy scoped row has no tenant.
+        if existing_scoped or existing_tenant is not None:
+            raise ValueError(f"global_document_identity_collision:{document_id}")
+
     def upsert(self, doc: KnowledgeUpsert, *, tenant_id: UUID | None = None) -> None:
-        if doc.layer in _TENANT_SCOPED_LAYERS and tenant_id is None:
+        requested_scoped = doc.layer in _TENANT_SCOPED_LAYERS
+        if requested_scoped and tenant_id is None:
             raise ValueError("tenant_id_required_for_tenant_scoped_knowledge")
-        if doc.layer not in _TENANT_SCOPED_LAYERS and tenant_id is not None:
+        if not requested_scoped and tenant_id is not None:
             raise ValueError("global_knowledge_must_not_be_tenant_scoped")
 
-        self.store.upsert_knowledge(doc)
+        tenant_value = self._tenant_value(tenant_id) if tenant_id is not None else None
+        payload = doc.model_dump()
+        payload["source_url"] = str(doc.source_url) if doc.source_url else None
+        payload["effective_from"] = (
+            doc.effective_from.isoformat() if doc.effective_from else None
+        )
+        payload["effective_to"] = (
+            doc.effective_to.isoformat() if doc.effective_to else None
+        )
+        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+        payload["tenant_id"] = tenant_value
+
+        # Keep the collision check, document mutation and FTS mutation in one
+        # SQLite transaction so a failed tenant-bound write cannot leave a row
+        # temporarily unscoped or partially indexed.
         with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT layer, tenant_id FROM knowledge_documents WHERE id = ?",
+                (doc.id,),
+            ).fetchone()
+            self._assert_existing_identity_is_safe(
+                existing,
+                document_id=doc.id,
+                layer=doc.layer,
+                tenant_value=tenant_value,
+            )
             conn.execute(
-                "UPDATE knowledge_documents SET tenant_id = ? WHERE id = ?",
-                (
-                    self._tenant_value(tenant_id) if tenant_id is not None else None,
-                    doc.id,
-                ),
+                """
+                INSERT INTO knowledge_documents (
+                    id, layer, title, content, source_name, source_url,
+                    jurisdiction, authority_level, effective_from, effective_to,
+                    version, updated_at, tenant_id
+                ) VALUES (
+                    :id, :layer, :title, :content, :source_name, :source_url,
+                    :jurisdiction, :authority_level, :effective_from, :effective_to,
+                    :version, :updated_at, :tenant_id
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    layer=excluded.layer,
+                    title=excluded.title,
+                    content=excluded.content,
+                    source_name=excluded.source_name,
+                    source_url=excluded.source_url,
+                    jurisdiction=excluded.jurisdiction,
+                    authority_level=excluded.authority_level,
+                    effective_from=excluded.effective_from,
+                    effective_to=excluded.effective_to,
+                    version=excluded.version,
+                    updated_at=excluded.updated_at,
+                    tenant_id=excluded.tenant_id
+                """,
+                payload,
+            )
+            conn.execute("DELETE FROM knowledge_fts WHERE doc_id = ?", (doc.id,))
+            conn.execute(
+                "INSERT INTO knowledge_fts (doc_id, title, content) VALUES (?, ?, ?)",
+                (doc.id, doc.title, doc.content),
             )
 
     def search(

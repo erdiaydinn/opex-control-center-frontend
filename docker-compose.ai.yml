@@ -1,0 +1,19 @@
+services:
+  eay-ai-core:
+    build:
+      context: ./services/eay-ai-core
+      dockerfile: Dockerfile
+    profiles: ["ai"]
+    environment:
+      EAY_ENVIRONMENT: "${EAY_ENVIRONMENT:-production}"
+      EAY_AI_DB_PATH: /var/lib/eay-ai/eay_ai.db
+    expose:
+      - "8091"
+    volumes:
+      - eay_ai_data:/var/lib/eay-ai
+    restart: unless-stopped
+    networks:
+      - ai_plane
+
+volumes:
+  eay_ai_data:

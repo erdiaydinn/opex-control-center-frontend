@@ -2,13 +2,38 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.localization import SUPPORTED_LOCALE_SET
 
 
-class LocalizedText(BaseModel):
+FIELD_INPUT_TYPES = frozenset(
+    {
+        "text",
+        "number",
+        "select",
+        "barcode",
+        "qr",
+        "photo",
+        "lot",
+        "batch",
+        "expiry",
+        "quantity",
+        "measurement",
+        "gps",
+        "yes_no",
+        "multi_row",
+    }
+)
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class LocalizedText(StrictModel):
     values: dict[str, str] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -21,7 +46,7 @@ class LocalizedText(BaseModel):
         return self
 
 
-class LocationUpsert(BaseModel):
+class LocationUpsert(StrictModel):
     location_id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=200)
     country: str | None = Field(default=None, max_length=80)
@@ -33,15 +58,47 @@ class LocationUpsert(BaseModel):
     source_ref: str | None = Field(default=None, max_length=300)
 
 
-class TemplateCreate(BaseModel):
+class TemplateFieldDefinition(StrictModel):
+    key: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z][a-zA-Z0-9_.-]*$")
+    type: str = Field(min_length=1, max_length=40)
+    label: LocalizedText
+    required: bool = False
+    helper: LocalizedText | None = None
+    options: tuple[str, ...] = Field(default=(), max_length=100)
+    unit: str | None = Field(default=None, max_length=40)
+    config: dict[str, object] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_type_and_options(self) -> "TemplateFieldDefinition":
+        if self.type not in FIELD_INPUT_TYPES:
+            raise ValueError(f"unsupported field type: {self.type}")
+        if self.type == "select" and not self.options:
+            raise ValueError("select fields require options")
+        if self.type != "select" and self.options:
+            raise ValueError("options are only valid for select fields")
+        return self
+
+
+class TemplateSchema(StrictModel):
+    fields: tuple[TemplateFieldDefinition, ...] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def unique_field_keys(self) -> "TemplateSchema":
+        keys = [field.key for field in self.fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError("template field keys must be unique")
+        return self
+
+
+class TemplateCreate(StrictModel):
     template_id: str = Field(min_length=3, max_length=120, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     version: int = Field(ge=1)
     name: LocalizedText
-    schema: dict
+    schema: TemplateSchema
     status: Literal["draft", "active"] = "draft"
 
 
-class TargetSelector(BaseModel):
+class TargetSelector(StrictModel):
     all_active_locations: bool = False
     countries: tuple[str, ...] = ()
     regions: tuple[str, ...] = ()
@@ -64,10 +121,13 @@ class TargetSelector(BaseModel):
         )
         if not positive:
             raise ValueError("at least one positive target selector is required")
+        overlap = set(self.include_location_ids) & set(self.exclude_location_ids)
+        if overlap:
+            raise ValueError("a location cannot be both included and excluded")
         return self
 
 
-class MissionCreate(BaseModel):
+class MissionCreate(StrictModel):
     template_id: str = Field(min_length=3, max_length=120)
     template_version: int = Field(ge=1)
     title: LocalizedText
@@ -85,7 +145,31 @@ class MissionCreate(BaseModel):
         return self
 
 
-class FieldScope(BaseModel):
+class EvidenceSubmit(StrictModel):
+    client_submission_id: UUID
+    payload: dict[str, object] = Field(min_length=1, max_length=100)
+    device_id: str | None = Field(default=None, max_length=180)
+    observed_at: datetime | None = None
+
+
+class EvidenceReview(StrictModel):
+    decision: Literal["accept", "rework", "reject"]
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_reason(self) -> "EvidenceReview":
+        if self.decision != "accept" and not (self.reason or "").strip():
+            raise ValueError("rework or reject decision requires a reason")
+        return self
+
+
+class NotificationIntentCreate(StrictModel):
+    kind: Literal["reminder", "escalation"]
+    reason_code: str = Field(min_length=2, max_length=120, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
+    location_ids: tuple[str, ...] = Field(default=(), max_length=500)
+
+
+class FieldScope(StrictModel):
     unrestricted: bool = False
     regions: frozenset[str] = frozenset()
     location_ids: frozenset[str] = frozenset()

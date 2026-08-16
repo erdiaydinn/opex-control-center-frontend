@@ -110,6 +110,21 @@ def _quarantine_unscoped_production_routes(
         raise RuntimeError("ai_core_unscoped_route_quarantine_incomplete")
 
 
+def _quarantine_legacy_public_retrieval(
+    target: FastAPI,
+    environment: str,
+) -> None:
+    """Compatibility entrypoint for the original production quarantine contract.
+
+    Historical tests and callers used this helper name when quarantine covered
+    only legacy public retrieval. Keep that API stable while delegating to the
+    stronger tenant-unaware retrieval + learning quarantine. This is deliberately
+    not a weaker or parallel security authority.
+    """
+
+    _quarantine_unscoped_production_routes(target, environment)
+
+
 def compose_app() -> FastAPI:
     """Idempotently compose the production AI Core surface.
 

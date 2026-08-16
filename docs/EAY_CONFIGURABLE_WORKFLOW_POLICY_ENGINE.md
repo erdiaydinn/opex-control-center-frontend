@@ -50,6 +50,16 @@ Financial, employment and security actions cannot be automatic. A domain mutatio
 
 A registered downstream adapter must still apply the target module's authorization and domain rules. Generic workflow approval is not a substitute for Customer Promise recovery approval, Workforce legal constraints, Inventory reconciliation authority or another module-specific control.
 
+## Registered adapter boundary
+
+An `ActionIntent` is not execution authority by itself. Before handoff, the platform must resolve exactly one enabled `RegisteredActionAdapter` matching the intent's action key, action type, effect and execution mode. Zero matches and multiple matches both fail closed.
+
+Adapter registrations describe only named internal capabilities: adapter id, target module, capability id, allowed effects/modes, optional required Platform Core permission, authoritative domain guard id and idempotency requirement. Provider URLs, credentials, scripts, commands and executable code are deliberately absent from the registration model.
+
+Automatic high-risk adapter registrations are invalid. A domain-action adapter cannot authorize automatic mutation. Dry-run and proposal-only intents cannot produce execution handoffs. Approval-required intents must carry a matching same-tenant approved decision before handoff. If an adapter declares a required permission, the handoff includes only a fingerprint of the granted permission set rather than raw authorization material.
+
+The resulting adapter handoff is deterministic and carries tenant, intent/dedupe identity, adapter/capability/domain-guard identifiers, bounded action parameters and decision provenance. It does not call the provider. The receiving adapter must still re-apply the target module's domain guard and idempotency contract. Repository adapter registration therefore proves a safe routing contract, not a connected production provider.
+
 ## Versioning and governance
 
 Workflow content is immutable and versioned. A revision advances exactly one version and explicitly supersedes the prior version.
@@ -114,7 +124,7 @@ Jarvis may explain why a rule matched from the deterministic trace, and may help
 
 ## Repository acceptance for Item 7
 
-Repository-ready acceptance requires deterministic rule evaluation, tenant/scope/version resolution, ambiguity rejection, event-fingerprint validation, strict payload safety, immutable versioning, auditable governance, maker-checker approval, dry-run/live separation, semantic candidate-vs-baseline impact diff, simulation-gated effective promotion, explicit high-risk acknowledgment, PostgreSQL append-only persistence, tenant zero-read/zero-write proof, event/action replay protection, database restart durability and isolated backup/restore rehearsal.
+Repository-ready acceptance requires deterministic rule evaluation, tenant/scope/version resolution, ambiguity rejection, event-fingerprint validation, strict payload safety, immutable versioning, auditable governance, maker-checker approval, dry-run/live separation, semantic candidate-vs-baseline impact diff, simulation-gated effective promotion, explicit high-risk acknowledgment, exact registered-adapter resolution, permission/domain-guard handoff enforcement, PostgreSQL append-only persistence, tenant zero-read/zero-write proof, event/action replay protection, database restart durability and isolated backup/restore rehearsal.
 
 Repository/CI proof is not production acceptance.
 
@@ -126,7 +136,7 @@ Until the Core deployment/build context and registered action-adapter wiring are
 
 ## External production acceptance still required
 
-Production readiness additionally requires canonical Platform Core identity/permission mapping, verified single-source Core runtime packaging, real event-source contracts, registered action-adapter allowlists, real notification/task providers, retry/dead-letter behavior, production audit/observability, customer-specific maker-checker roles, staging replay with representative events, policy-author UAT, controlled canary/shadow evaluation, production-shape throughput/load tests, backup/restore evidence and module-by-module acceptance of every side-effect adapter.
+Production readiness additionally requires canonical Platform Core identity/permission mapping, verified single-source Core runtime packaging, real event-source contracts, concrete registered adapters wired to real notification/task/domain providers, retry/dead-letter behavior, production audit/observability, customer-specific maker-checker roles, staging replay with representative events, policy-author UAT, controlled canary/shadow evaluation, production-shape throughput/load tests, backup/restore evidence and module-by-module acceptance of every side-effect adapter.
 
 No arbitrary webhook/command/SQL executor should be added as a shortcut around the registered-adapter model.
 

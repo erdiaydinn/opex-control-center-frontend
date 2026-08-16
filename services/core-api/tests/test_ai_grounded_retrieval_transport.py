@@ -2,7 +2,6 @@ from datetime import date
 
 import httpx
 import pytest
-
 from app.core import ai_grounded_retrieval as retrieval
 
 

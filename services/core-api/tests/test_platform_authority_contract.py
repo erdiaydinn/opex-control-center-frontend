@@ -47,6 +47,42 @@ def test_core_scope_unions_db_authoritative_dimensions():
     assert scope.role_keys == frozenset({"region-role", "warehouse-role"})
 
 
+def test_core_scope_centrally_normalizes_legacy_budget_scope():
+    permission = "module:budget:view"
+    center_a = "11111111-1111-1111-1111-111111111112"
+    center_b = "11111111-1111-1111-1111-111111111113"
+    principal = _principal(
+        PermissionAssignment(
+            key=permission,
+            role_key="budget-viewer",
+            scope={
+                "all_cost_centers": False,
+                "cost_center_ids": [center_a, center_b],
+            },
+        )
+    )
+
+    scope = resolve_permission_scope(principal, permission)
+
+    assert scope.unrestricted is False
+    assert scope.values("cost_center_ids") == frozenset({center_a, center_b})
+
+
+def test_core_scope_centrally_normalizes_legacy_budget_all_scope():
+    permission = "module:budget:view"
+    principal = _principal(
+        PermissionAssignment(
+            key=permission,
+            role_key="budget-admin",
+            scope={"all_cost_centers": True, "cost_center_ids": []},
+        )
+    )
+
+    scope = resolve_permission_scope(principal, permission)
+
+    assert scope.unrestricted is True
+
+
 def test_core_scope_accepts_only_exact_all_grant():
     permission = "module:field_intelligence:view"
     principal = _principal(

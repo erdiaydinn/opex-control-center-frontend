@@ -21,6 +21,7 @@ on:
       - "services/core-api/tests/test_production_tls_boundary.py"
       - "services/core-api/tests/test_frontend_browser_trust_boundary.py"
       - "services/core-api/tests/test_identity_foundation_adversarial.py"
+      - "services/core-api/tests/test_field_intelligence_rls.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "config/eay_security_hardening_contract.json"
       - ".github/workflows/eay-security-hardening-ci.yml"
@@ -113,14 +114,15 @@ jobs:
       - name: Apply canonical database migrations
         working-directory: services/core-api
         run: alembic upgrade head
-      - name: Run bearer and identity authority tests
+      - name: Run bearer identity and tenant-isolation authority tests
         env:
           PYTHONPATH: services/core-api
         run: |
           python -m pytest -q \
             services/core-api/tests/test_bearer_header_boundary.py \
             services/core-api/tests/test_security_foundation.py \
-            services/core-api/tests/test_identity_foundation_adversarial.py
+            services/core-api/tests/test_identity_foundation_adversarial.py \
+            services/core-api/tests/test_field_intelligence_rls.py
       - name: Run internal service and replay tests
         env:
           PYTHONPATH: services/core-api

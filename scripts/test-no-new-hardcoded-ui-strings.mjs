@@ -47,9 +47,22 @@ function brandOnly(value) {
   return allowedExact.has(punctuationStripped);
 }
 
+function jsxTernaryPredicate(value) {
+  const normalized = normalizeLiteral(value);
+  // The zero-context diff scanner can see the JavaScript predicate between
+  // adjacent JSX tags as if it were visible text. Ignore only a narrow ternary
+  // predicate grammar; actual prose and string literals remain guarded.
+  return /^[!A-Za-z_$][\w.$()[\]!\s]*\.length\s*(?:===|!==|[<>]=?)\s*\d+\s*\?$/u.test(normalized);
+}
+
 function meaningful(value) {
   const normalized = normalizeLiteral(value);
-  return Boolean(normalized && /\p{L}/u.test(normalized) && !brandOnly(normalized));
+  return Boolean(
+    normalized
+    && /\p{L}/u.test(normalized)
+    && !brandOnly(normalized)
+    && !jsxTernaryPredicate(normalized)
+  );
 }
 
 function documentedEscape(line) {

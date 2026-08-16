@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "portfolio_stage": "rise_era_category_leadership",
+  "source_gap_catalog": "config/eay_category_leadership_gates.json",
+  "portfolio_policy": {
+    "required_priorities": [
+      "P0",
+      "P1",
+      "P2"
+    ],
+    "priority_meaning": {
+      "P0": "production acceptance or foundational category blocker",
+      "P1": "verified category-parity capability",
+      "P2": "EAY differentiation or measurable leadership moat"
+    },
+    "implementation_states": [
+      "implemented_repository",
+      "partial_repository",
+      "planned"
+    ],
+    "production_evidence_states": [
+      "not_required",
+      "missing_external",
+      "verified_external"
+    ],
+    "commercial_core_may_require_other_commercial_module": false,
+    "cross_module_integrations_must_be_optional": true,
+    "leadership_claim_requires_all_p0_p1_implemented": true,
+    "leadership_claim_requires_all_external_evidence_verified": true,
+    "production_ready_claim_requires_all_p0_external_evidence_verified": true
+  },
+  "truth_boundary": {
+    "portfolio_category_parity_permitted": false,
+    "portfolio_category_leadership_permitted": false,
+    "portfolio_production_ready": false,
+    "repository_green_is_production_ready": false,
+    "synthetic_evidence_is_external_evidence": false,
+    "market_benchmark_target_is_verified_feature_claim": false
+  },
+  "modules": [
+    {
+      "module_id": "platform_core",
+      "module_kind": "shared_capability",
+      "standalone_sale_required": false,
+      "required_commercial_dependencies": [],
+      "optional_integrations": [],
+      "benchmark_products": ["Backstage", "ServiceNow"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/76", "config/eay_release_candidate.json"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"operability","capability":"Runtime service ownership, SLO, dependency, deployment, DR and backup-freshness authority for every production-facing service.","acceptance":"Managed staging topology plus operator DR/restore rehearsal.","evidence_type":"external_staging","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Managed staging runtime and operator-led DR evidence are not available in repository proof.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"developer_platform","capability":"Service catalog, dependency map, ownership, runtime health and change-impact surfaces that operators can use without source-code archaeology.","acceptance":"Operator UAT on service catalog/health/ownership flows.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Full operator-facing service catalog and real UAT evidence are incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"eay_operating_system","capability":"Cross-module operational graph that connects service health, product capability, data authority and business impact without coupling commercial modules.","acceptance":"Measured incident-to-impact and change-impact outcome evidence.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Cross-module outcome evidence requires deployed multi-module customer usage.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "security",
+      "module_kind": "shared_capability",
+      "standalone_sale_required": false,
+      "required_commercial_dependencies": [],
+      "optional_integrations": [],
+      "benchmark_products": ["Okta", "Auth0"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/16", "config/eay_canonical_lineage.json"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"production_identity","capability":"Corporate OIDC/workload identity, tenant isolation, lifecycle revocation and device trust where required.","acceptance":"Real issuer/JWKS/audience/claim mapping plus stale-token and exit-revocation proof.","evidence_type":"external_production_identity","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Corporate identity tenant, device attestation and real lifecycle evidence are external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"identity_lifecycle","capability":"Provisioning/deprovisioning, access review, least privilege and privileged-role evidence across modules.","acceptance":"SCIM/lifecycle-source and access-review UAT.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Real SCIM/lifecycle source and access-review evidence are not yet connected.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"adaptive_trust","capability":"Risk-aware session/device posture and evidence-driven authorization without weakening fail-closed server authority.","acceptance":"Controlled production-shape risk-policy pilot with false-positive/false-negative review.","evidence_type":"external_pilot","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Adaptive trust requires real identity/device telemetry and policy calibration.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "eay_ai_core",
+      "module_kind": "shared_capability",
+      "standalone_sale_required": false,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["jarvis", "repository_intelligence", "kpi_insight_analytics"],
+      "benchmark_products": ["Databricks Mosaic AI", "MLflow"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/15", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"runtime_governance","capability":"Source-grounded, eval-gated, observable model/tool runtime with controlled promotion, rollback and provenance.","acceptance":"Staging runtime observability, signed eval/canary and rollback rehearsal.","evidence_type":"external_staging","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Real model runtime observability/canary environment remains external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"model_lifecycle","capability":"Reproducible model registry, evaluation suites, dataset lineage and approval-based promotion across local and hosted models.","acceptance":"Operator model-promotion UAT with rollback and audit evidence.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"End-to-end operator promotion against deployed runtime remains unproven.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"retail_domain_intelligence","capability":"Food/retail-specific temporal legal, operational, vision and learning intelligence that stays provenance-bound and local-first where appropriate.","acceptance":"Measured domain eval uplift versus generic baseline on approved corpora.","evidence_type":"external_benchmark","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Comparable approved domain benchmark corpus and production-like evaluation are incomplete.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "jarvis",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["field_intelligence", "kpi_insight_analytics", "workforce", "inventory", "planogram", "dockos", "budget_intelligence", "academy"],
+      "benchmark_products": ["ThoughtSpot Spotter", "Databricks Genie"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/59", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"live_governed_data","capability":"Conversational KPI answers must execute only through approved tenant semantics and live governed data authority.","acceptance":"Authorized read-only production BigQuery identity, INFORMATION_SCHEMA, discriminator attestation and controlled cross-tenant zero-leak proof.","evidence_type":"external_production_data","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Authorized production BigQuery execution identity/environment is still missing.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"proactive_actions","capability":"Proactive insight, anomaly explanation, subscriptions and governed action proposals with traceable evidence.","acceptance":"Staging operator UAT for insight-to-action flows on live-like governed data.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Proactive action workflows need live-like staging and operator acceptance.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"ask_the_operation","capability":"Jarvis can resolve unknown physical facts by creating governed Field Intelligence missions, then answer from verified field evidence.","acceptance":"Multi-module pilot proving question→mission→verified evidence→answer loop.","evidence_type":"external_pilot","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Requires deployed Jarvis + Field Intelligence pilot and real field response evidence.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "repository_intelligence",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["eay_ai_core", "jarvis"],
+      "benchmark_products": ["Sourcegraph"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/65", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"provenance","capability":"Repository knowledge must bind exact upstream/fork/ref/commit/tree/blob/license provenance; unresolved identities stay pending.","acceptance":"Human-reviewed exact archive hashes/license evidence for any source promoted beyond PENDING.","evidence_type":"repository_plus_human_review","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Some supplied archives remain unresolved/pending and cannot be adopted.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"code_graph","capability":"Cross-repo symbol/dependency/ownership/impact graph with searchable provenance and change-impact analysis.","acceptance":"Representative multi-repo impact-analysis acceptance set.","evidence_type":"external_benchmark","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Full code-graph and ownership/impact UX needs representative acceptance corpus.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"decision_memory","capability":"Temporal project memory connects code, contracts, incidents, decisions and product capability without silently rewriting history.","acceptance":"Measured engineer/PM task-time improvement on controlled project-memory benchmark.","evidence_type":"external_ops_outcome","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Outcome benchmark across real project workflows is not yet available.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "kpi_insight_analytics",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["jarvis", "workforce", "inventory", "planogram", "dockos", "budget_intelligence", "field_intelligence"],
+      "benchmark_products": ["Tableau Pulse", "ThoughtSpot"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/92", "config/eay_category_leadership_gates.json"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"metric_authority","capability":"KPI surfaces consume server-authoritative metric contracts and tenant glossary semantics; browser formulas cannot become truth.","acceptance":"Live governed source proof per activated metric family, including tenant-isolation evidence.","evidence_type":"external_production_data","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Production data evidence remains missing for multiple metric families.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"proactive_analytics","capability":"Anomaly detection, root-cause paths, subscriptions and explainable drill-through tied to metric provenance.","acceptance":"Staging analyst UAT with known anomaly/root-cause scenarios.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Proactive analytics acceptance corpus and analyst UAT are incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"operational_graph","capability":"Cross-module causal analysis combines Workforce, Inventory, Dock, Planogram and Field evidence only when licensed/connected.","acceptance":"Customer pilot showing measurable time-to-root-cause improvement.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Requires real multi-module data and customer outcome evidence.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "planogram",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["inventory", "field_intelligence", "kpi_insight_analytics"],
+      "benchmark_products": ["RELEX", "Blue Yonder", "NIQ Spaceman"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/62", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"physical_truth","capability":"Production placement cannot publish without approved dimensions/images, Store DNA, fixture geometry/capacity and aisle evidence.","acceptance":"Measured physical master plus store execution-compliance sample.","evidence_type":"external_physical_field","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Approved SKU dimensions and measured Store DNA/fixtures remain external blockers.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"space_optimization","capability":"Store-specific assortment/space planning with financial, capacity, availability and execution constraints.","acceptance":"Scenario benchmark against approved stores and commercial owner review.","evidence_type":"external_benchmark","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Production-grade assortment/financial objective inputs and scenario benchmark are incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"darkstore_flow","capability":"Optimize space jointly for picker travel, replenishment, availability and physical handling rather than shelf aesthetics alone.","acceptance":"Field A/B or replay benchmark demonstrating travel/replenishment/availability gain.","evidence_type":"external_ops_outcome","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Measured baseline/outcome evidence on real darkstore layouts is missing.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "workforce",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["hiring_recruitment", "academy", "kpi_insight_analytics"],
+      "benchmark_products": ["UKG", "Workday", "Deputy"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/61", "github:pr/94"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"field_acceptance","capability":"Shift-required attendance, Employee Master, RLS, device trust and field presence must survive real identity/device/HR inputs.","acceptance":"Corporate OIDC, physical devices, GPS/geofence walk, real HR/roster files and staging DR/load acceptance.","evidence_type":"repository_plus_external_field","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Corporate OIDC, physical devices, GPS and real customer HR inputs remain external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"intelligent_scheduling","capability":"Demand truth feeds skill-aware scheduling with preferences, fairness, labor rules, overtime and intraday replan.","acceptance":"Staging schedule-quality benchmark against published rosters and rule edge cases.","evidence_type":"external_benchmark","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Preference/fairness/open-shift/intraday acceptance on real rosters is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"darkstore_labor_os","capability":"Darkstore task-level man-hour demand plus KPI/backlog pressure and outcome feedback drives explainable staffing decisions.","acceptance":"Field pilot proving service-level or labor-efficiency improvement without metric gaming.","evidence_type":"external_ops_outcome","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Operational outcome pilot is not yet available.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "hiring_recruitment",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["workforce", "academy"],
+      "benchmark_products": ["Ashby", "Greenhouse"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/61", "github:pr/94"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"employee_lifecycle","capability":"Norm→vacancy→candidate→approval/reject→notification→hire→Employee Master→first roster plus exit revocation stays one authoritative lifecycle.","acceptance":"Real HR inputs, notification channel and lifecycle UAT including exit/deprovisioning.","evidence_type":"external_uat","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Real HR/third-party workflow and notification delivery evidence are missing.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"ats_experience","capability":"Candidate CRM, structured scorecards, interview scheduling, bulk operations and funnel analytics without creating a second employee authority.","acceptance":"Recruiter/candidate UAT on representative funnel and scheduling scenarios.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"CRM/scheduling/scorecard experience is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"quality_of_hire","capability":"Closed-loop quality-of-hire connects first roster, training, retention and operational performance when data is licensed/available.","acceptance":"Cohort benchmark with HR-approved retention/performance outcomes.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Requires longitudinal HR and operational outcome data.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "inventory",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["planogram", "field_intelligence", "dockos", "kpi_insight_analytics"],
+      "benchmark_products": ["Manhattan Active WM"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/66", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"managed_terminal","capability":"Native signed managed terminal with MDM, corporate OIDC, Zebra/DataWedge, pinned TLS and encrypted offline/replay authority.","acceptance":"Physical Zebra acceptance, managed signing/MDM distribution and offline/online field pilot.","evidence_type":"external_device_field","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Corporate keystore, MDM, OIDC and physical Zebra evidence remain external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"wms_orchestration","capability":"Directed work, replenishment, exception handling, reconciliation and supervisor conflict resolution are backend-authoritative.","acceptance":"Staging multi-user task/replenishment benchmark with restart/replay/conflict cases.","evidence_type":"external_benchmark","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Broader directed-work/replenishment orchestration acceptance is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"operational_twin","capability":"Optional cross-module digital twin links physical evidence, slot/planogram context and work execution without making integrations mandatory.","acceptance":"Pilot showing measurable count/replenishment/exception resolution improvement.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Requires real device/store data and optional module integrations.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "dockos",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["inventory", "workforce", "kpi_insight_analytics"],
+      "benchmark_products": ["Opendock", "GoRamp", "Blue Yonder Yard"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/60", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"production_pilot","capability":"Corporate OIDC, signed gateway, real PO identity/source, SMTP and supplier/DC pilot are mandatory for readiness.","acceptance":"Managed staging plus gateway rotation, real PO source, SMTP retry/dead-letter and supplier/DC UAT.","evidence_type":"external_staging_pilot","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Corporate identity/gateway/PO/SMTP and supplier pilot remain external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"yard_execution","capability":"Carrier self-service, gate/driver flows, yard visibility, dwell clocks, scorecards and exception workflows.","acceptance":"Operational pilot across representative suppliers/slots/gate exceptions.","evidence_type":"external_pilot","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Real yard/gate/driver workflow acceptance is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"predictive_dock","capability":"ETA/risk-driven dock assignment and downstream impact prediction without requiring Inventory or Workforce licenses.","acceptance":"Pilot demonstrating dwell/late-arrival or dock-utilization improvement.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Needs live arrival/ETA history and customer outcome evidence.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "budget_intelligence",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["workforce", "inventory", "dockos", "kpi_insight_analytics"],
+      "benchmark_products": ["Oracle EPM", "SAP Analytics Cloud"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/70", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"finance_authority","capability":"Finance source mapping, reconciliation, SoD, approval and DR must be owned by finance authority, not inferred from operational modules.","acceptance":"Real finance source mapping, reconciliation, finance-owner UAT and managed staging DR.","evidence_type":"external_uat","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Real finance source and finance-owner UAT remain external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"enterprise_planning","capability":"Driver-based plans, rolling forecasts, scenarios, allocations and variance workflows with version authority.","acceptance":"Finance planning benchmark on representative fiscal cycles and approval cases.","evidence_type":"external_benchmark","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Full rolling forecast/scenario/allocation acceptance is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"operational_driver_intelligence","capability":"Optional operational modules enrich planning drivers and scenario simulations without replacing finance truth.","acceptance":"Pilot proving planning-cycle speed or forecast-accuracy improvement.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Requires approved finance + operational datasets and outcome baseline.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "academy",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["workforce", "hiring_recruitment", "kpi_insight_analytics"],
+      "benchmark_products": ["360Learning", "Coursera for Business"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/67", "github:pr/92"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"media_delivery","capability":"Private media plane, transcode, HLS/DASH/CDN, OIDC, content integrity, accessibility/RTL and 1,200-concurrent delivery must be proven.","acceptance":"Real storage/CDN/transcode/content plus staging load, accessibility/RTL and DR acceptance.","evidence_type":"external_staging_load","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Real media plane, content, OIDC and 1,200-concurrent load evidence remain external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"skills_learning","capability":"Role→skill→proficiency→learning→assessment with recommendations, authoring and outcome analytics.","acceptance":"Learner/admin UAT on skill-path-assessment workflows.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Skill graph/proficiency/recommendation acceptance is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"operational_learning_loop","capability":"Optional Workforce/operations signals target learning and measure post-training operational outcomes without making those modules mandatory.","acceptance":"Controlled cohort showing approved skill/performance uplift.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Requires real learner cohorts and downstream outcome data.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "field_intelligence",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["jarvis", "inventory", "planogram", "kpi_insight_analytics", "audit"],
+      "benchmark_products": ["YOOBIC", "Repsly", "SafetyCulture", "Fulcrum"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/94", "services/core-api/alembic/versions/0019_field_intelligence_foundation.py"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"verified_physical_truth","capability":"Server-authoritative missions, frozen targeting, secure evidence, offline replay protection, reminder/rework/escalation and verification must work on managed field devices.","acceptance":"Managed mobile/scanner pilot across real locations with offline, camera/barcode, rework and escalation evidence.","evidence_type":"repository_plus_external_field","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Managed field-device and real-location pilot evidence remain external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"mission_orchestration","capability":"Smart targeting, conditional questions, recurring campaigns, command-center completion and evidence review support distributed operations at scale.","acceptance":"Pilot campaign with representative target hierarchy, SLA and exception mix.","evidence_type":"external_pilot","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Real campaign/operator scale acceptance is not yet available.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"physical_truth_layer","capability":"Jarvis/analytics can request missing physical facts, smart-sample when policy allows, detect anomalies and feed verified truth back to decisions.","acceptance":"Multi-module field pilot proving signal→mission→evidence→decision/action loop.","evidence_type":"external_ops_outcome","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Needs live multi-module integration and customer outcome evidence.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "audit",
+      "module_kind": "commercial_module",
+      "standalone_sale_required": true,
+      "required_commercial_dependencies": [],
+      "optional_integrations": ["field_intelligence", "kpi_insight_analytics"],
+      "benchmark_products": ["SafetyCulture", "MaintainX"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/94", "docs/EAY_CATEGORY_LEADERSHIP_AND_MODULARITY.md"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"discovery_contract","capability":"Audit cannot be productized from guessed forms; approved question taxonomy, scoring, corrective-action and evidence governance are required first.","acceptance":"Customer audit templates plus product-owner discovery sign-off.","evidence_type":"discovery_required","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Approved customer audit taxonomy/scoring/corrective-action model is not yet available.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"audit_execution","capability":"Configurable inspections, scoring, schedules, corrective actions, evidence, rework and follow-up reuse shared Field/accountability primitives.","acceptance":"UAT on approved audit templates and corrective-action scenarios.","evidence_type":"external_uat","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Blocked until P0 discovery contract is approved.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"closed_loop_assurance","capability":"Audit findings connect to operational signals and verified corrective-action outcomes without becoming a duplicate task/notification system.","acceptance":"Customer pilot showing closure quality/time improvement.","evidence_type":"external_ops_outcome","implementation_state":"planned","production_evidence_state":"missing_external","blocker":"Requires approved Audit product plus operational outcome pilot.","external_evidence_refs":[]}
+      ]
+    },
+    {
+      "module_id": "shared_services",
+      "module_kind": "shared_capability",
+      "standalone_sale_required": false,
+      "required_commercial_dependencies": [],
+      "optional_integrations": [],
+      "benchmark_products": ["Salesforce Platform", "Atlassian Cloud"],
+      "benchmark_note": "Comparison targets only; inclusion here is not a claim that every named product currently implements every listed capability.",
+      "repository_evidence_refs": ["github:pr/92", "github:pr/94"],
+      "claims": {"category_parity_permitted": false, "category_leadership_permitted": false, "production_ready": false},
+      "gates": [
+        {"priority":"P0","gap_id":"platform_contract","capability":"Every surface preserves 10-language/RTL, accessibility, central identity/tenant scope, audit, secure evidence, loading/error/empty/offline semantics and fail-closed behavior.","acceptance":"Real-user/device UAT for critical workflows plus repository coverage gates.","evidence_type":"repository_plus_external_uat","implementation_state":"implemented_repository","production_evidence_state":"missing_external","blocker":"Repository contract exists; broad real-user/device UAT remains external.","external_evidence_refs":[]},
+        {"priority":"P1","gap_id":"shared_experience","capability":"Universal search, notification/accountability, preferences and operability behave consistently without forcing cross-module purchase.","acceptance":"Cross-module UX/accessibility UAT on independently licensed module combinations.","evidence_type":"external_uat","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Cross-module UX and notification/accountability acceptance is incomplete.","external_evidence_refs":[]},
+        {"priority":"P2","gap_id":"composable_advantage","capability":"Shared evidence/accountability/semantic primitives create compounding value when modules combine while keeping each module standalone.","acceptance":"Multi-module customer outcome benchmark with no mandatory commercial dependency.","evidence_type":"external_ops_outcome","implementation_state":"partial_repository","production_evidence_state":"missing_external","blocker":"Requires real multi-module deployments and measurable outcome evidence.","external_evidence_refs":[]}
+      ]
+    }
+  ]
+}

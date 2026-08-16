@@ -36,6 +36,8 @@ _internal_service_replay_guard = (
 INTERNAL_SERVICE_ASSERTION_HEADER = (
     "X-OPEX-Internal-Service-Assertion"
 )
+AUTHORIZATION_HEADER = "Authorization"
+MAX_BEARER_TOKEN_CHARACTERS = 16384
 
 
 def _internal_service_authentication_failed() -> HTTPException:
@@ -43,6 +45,105 @@ def _internal_service_authentication_failed() -> HTTPException:
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Internal service authentication failed",
     )
+
+
+def _bearer_authentication_failed(
+    detail: str = "Invalid bearer access token",
+) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _validated_bearer_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    """Return one unambiguous Bearer token or fail closed.
+
+    HTTPBearer remains attached for OpenAPI/dependency compatibility, but raw
+    ASGI headers are the trust boundary. This prevents duplicate Authorization
+    fields, proxy-coalesced credentials, whitespace/control-character
+    ambiguity, and parser disagreement from silently selecting one credential.
+    """
+
+    header_values = request.headers.getlist(
+        AUTHORIZATION_HEADER
+    )
+
+    if header_values:
+        if len(header_values) != 1:
+            raise _bearer_authentication_failed()
+
+        raw_header = header_values[0]
+
+        if (
+            not raw_header
+            or len(raw_header) > (
+                MAX_BEARER_TOKEN_CHARACTERS
+                + len("Bearer ")
+            )
+            or raw_header != raw_header.strip()
+            or "," in raw_header
+            or "\t" in raw_header
+        ):
+            raise _bearer_authentication_failed()
+
+        scheme, separator, token = raw_header.partition(" ")
+
+        if (
+            separator != " "
+            or scheme.lower() != "bearer"
+            or not token
+            or len(token) > MAX_BEARER_TOKEN_CHARACTERS
+            or token != token.strip()
+            or any(
+                ord(character) < 33
+                or ord(character) == 127
+                for character in token
+            )
+        ):
+            raise _bearer_authentication_failed()
+
+        if (
+            credentials is None
+            or credentials.scheme.lower() != "bearer"
+            or credentials.credentials != token
+        ):
+            raise _bearer_authentication_failed()
+
+        return token
+
+    # Direct in-process/unit invocation may supply the FastAPI dependency value
+    # without an ASGI header. Production HTTP cannot produce credentials here
+    # without an Authorization header, so this keeps existing unit ergonomics
+    # without relaxing the network trust boundary above.
+    if (
+        credentials is None
+        or credentials.scheme.lower() != "bearer"
+    ):
+        raise _bearer_authentication_failed(
+            "Bearer access token is required"
+        )
+
+    token = credentials.credentials
+
+    if (
+        not token
+        or len(token) > MAX_BEARER_TOKEN_CHARACTERS
+        or token != token.strip()
+        or "," in token
+        or any(
+            ord(character) < 33
+            or ord(character) == 127
+            for character in token
+        )
+    ):
+        raise _bearer_authentication_failed()
+
+    return token
 
 
 async def require_internal_service(
@@ -119,7 +220,6 @@ async def require_internal_service(
     request.state.internal_service = verified
 
     return verified
-
 
 
 async def require_fresh_internal_service(
@@ -302,17 +402,15 @@ async def get_current_principal(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Principal:
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Bearer access token is required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    token = _validated_bearer_token(
+        request,
+        credentials,
+    )
 
     if settings.auth_mode == "development":
-        principal = _decode_development_token(credentials.credentials)
+        principal = _decode_development_token(token)
     else:
-        principal = await _decode_oidc_token(credentials.credentials, settings)
+        principal = await _decode_oidc_token(token, settings)
 
     # Authentication succeeded. Keep the verified identity for audit only.
     # This does not mean the principal is authorized for tenant access.

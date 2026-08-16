@@ -1,0 +1,44 @@
+{
+  "contract_version": "1.0",
+  "master_plan_item": "4/60",
+  "authority": "platform-core-security",
+  "frozen_baseline": {
+    "pull_request": 16,
+    "branch": "feature/phase-1-security-hardening",
+    "mutable_from_this_continuation": false
+  },
+  "continuation": {
+    "pull_request": 94,
+    "branch": "product/eay-category-leadership-v1"
+  },
+  "bearer_request_boundary": {
+    "raw_authorization_header_is_network_trust_boundary": true,
+    "exactly_one_authorization_header_required": true,
+    "proxy_coalesced_credentials_rejected": true,
+    "dependency_parser_must_match_raw_header": true,
+    "leading_trailing_or_ambiguous_whitespace_rejected": true,
+    "control_characters_rejected": true,
+    "maximum_token_characters": 16384,
+    "failure_mode": "fail_closed"
+  },
+  "existing_security_authorities_preserved": {
+    "database_authoritative_tenant_membership_roles_permissions": true,
+    "internal_service_assertion_audience_separation": true,
+    "internal_service_single_use_replay_guard": true,
+    "trusted_proxy_client_ip_boundary": true,
+    "production_tls_and_cors_fail_closed": true,
+    "runtime_and_migration_database_identity_separation": true,
+    "sql_execution_boundary": true
+  },
+  "production_ready": false,
+  "production_activation_permitted": false,
+  "main_merge_permitted": false,
+  "truth_boundary": {
+    "repository_security_tests_are_production_identity_evidence": false,
+    "corporate_oidc_is_still_external": true,
+    "managed_runtime_proxy_waf_tls_acceptance_is_still_external": true,
+    "real_device_identity_and_attestation_are_still_external": true,
+    "live_security_observability_and_incident_response_acceptance_are_still_external": true,
+    "production_secret_rotation_and_recovery_evidence_are_still_external": true
+  }
+}

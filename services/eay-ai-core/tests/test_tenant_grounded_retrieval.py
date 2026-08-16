@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from datetime import date
@@ -68,8 +69,7 @@ def _company_doc(doc_id, title, content):
     )
 
 
-@pytest.mark.asyncio
-async def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatch):
+def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatch):
     private_key, jwks_file = _key_material(tmp_path)
     db_path = tmp_path / "tenant-retrieval.db"
     scoped_store = TenantScopedKnowledgeStore(db_path)
@@ -87,14 +87,16 @@ async def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatc
     monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_AUDIENCE", AUDIENCE)
     monkeypatch.setattr("app.tenant_grounded_retrieval.tenant_store", scoped_store)
 
-    result = await retrieve_for_verified_tenant(
-        TenantRetrievalRequest(
-            message="coldchain alpha",
-            as_of=date(2026, 8, 16),
-            layers=["company"],
-            limit=8,
-        ),
-        _issue(private_key, TENANT_A),
+    result = asyncio.run(
+        retrieve_for_verified_tenant(
+            TenantRetrievalRequest(
+                message="coldchain alpha",
+                as_of=date(2026, 8, 16),
+                layers=["company"],
+                limit=8,
+            ),
+            _issue(private_key, TENANT_A),
+        )
     )
 
     ids = {item.id for item in result.evidence}

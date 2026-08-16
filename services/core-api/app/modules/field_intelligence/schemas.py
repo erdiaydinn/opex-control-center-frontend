@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SUPPORTED_LOCALES = frozenset({"tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"})
+from app.core.localization import SUPPORTED_LOCALE_SET
 
 
 class LocalizedText(BaseModel):
@@ -13,7 +13,7 @@ class LocalizedText(BaseModel):
 
     @model_validator(mode="after")
     def validate_locales(self) -> "LocalizedText":
-        unknown = set(self.values) - SUPPORTED_LOCALES
+        unknown = set(self.values) - SUPPORTED_LOCALE_SET
         if unknown:
             raise ValueError(f"unsupported locales: {', '.join(sorted(unknown))}")
         if any(not value.strip() for value in self.values.values()):

@@ -100,6 +100,15 @@ def test_promise_model_refuses_partial_instruction_reference() -> None:
         promise(instruction_fingerprint=None)
 
 
+def test_promise_contract_rejects_raw_customer_pii_fields() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        promise(
+            customer_name="Example Customer",
+            phone="+900000000000",
+            address="raw-address-must-stay-in-authoritative-system",
+        )
+
+
 def test_on_time_delivery_has_no_timing_breach() -> None:
     result = evaluate_promise(promise(), actual(), evaluated_at=BASE + timedelta(hours=2))
     assert result.outcome is PromiseOutcome.ON_TIME

@@ -139,6 +139,7 @@
     "field_intelligence": ["loading", "error", "empty", "offline", "retry"]
   },
   "commercial_module_coverage": [
+    "field_intelligence",
     "workforce",
     "inventory",
     "planogram",
@@ -215,7 +216,7 @@
     },
     "field_intelligence": {
       "owner": "field_intelligence",
-      "channels": ["web", "mobile", "api"],
+      "channels": ["web", "api"],
       "priority_flows": ["mission_builder", "targeting", "capture", "evidence", "review", "rework", "reminder", "escalation", "verification", "results"],
       "field_evidence": ["real_device", "barcode_camera", "gps_when_policy_requires", "offline_sync", "pilot_locations", "assistive_technology_uat"]
     }

@@ -10,11 +10,19 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 _KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]{1,120}$")
-_BLOCKED_PAYLOAD_KEY_FRAGMENTS = (
+_BLOCKED_PAYLOAD_EXACT_KEYS = frozenset({
     "password",
     "secret",
     "token",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "bearer_token",
     "authorization",
+    "authorization_header",
+    "auth_header",
+    "api_key",
+    "private_key",
     "phone",
     "email",
     "address",
@@ -24,8 +32,21 @@ _BLOCKED_PAYLOAD_KEY_FRAGMENTS = (
     "command",
     "script",
     "sql",
-    "endpoint",
+    "sql_query",
+    "sql_text",
+    "endpoint_url",
     "url",
+    "webhook_url",
+})
+_BLOCKED_PAYLOAD_FRAGMENTS = (
+    "password",
+    "secret",
+    "phone",
+    "email",
+    "address",
+    "door_code",
+    "national_id",
+    "tc_kimlik",
 )
 
 
@@ -42,7 +63,19 @@ def _validate_structural_key(key: str, *, kind: str) -> str:
 def _validate_payload_key(key: str, *, kind: str) -> str:
     _validate_structural_key(key, kind=kind)
     lowered = key.lower()
-    if any(fragment in lowered for fragment in _BLOCKED_PAYLOAD_KEY_FRAGMENTS):
+    if lowered in _BLOCKED_PAYLOAD_EXACT_KEYS:
+        raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
+    if any(fragment in lowered for fragment in _BLOCKED_PAYLOAD_FRAGMENTS):
+        raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
+    if lowered.endswith("_token") or lowered.endswith("_api_key") or lowered.endswith("_private_key"):
+        raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
+    if lowered.endswith("_url") or lowered.startswith("url_"):
+        raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
+    if lowered.endswith("_command") or lowered.startswith("command_"):
+        raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
+    if lowered.endswith("_script") or lowered.startswith("script_"):
+        raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
+    if lowered in {"query_sql", "raw_sql", "raw_query"}:
         raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
     return key
 

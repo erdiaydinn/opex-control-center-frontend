@@ -90,11 +90,17 @@ class TemplateSchema(StrictModel):
         return self
 
 
+class EvidencePolicy(StrictModel):
+    camera_only_photo: bool = False
+    managed_device_required: bool = False
+
+
 class TemplateCreate(StrictModel):
     template_id: str = Field(min_length=3, max_length=120, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     version: int = Field(ge=1)
     name: LocalizedText
     schema: TemplateSchema
+    evidence_policy: EvidencePolicy = Field(default_factory=EvidencePolicy)
     status: Literal["draft", "active"] = "draft"
 
 
@@ -150,6 +156,31 @@ class EvidenceSubmit(StrictModel):
     payload: dict[str, object] = Field(min_length=1, max_length=100)
     device_id: str | None = Field(default=None, max_length=180)
     observed_at: datetime | None = None
+
+
+class OfflineEvidenceEvent(StrictModel):
+    client_submission_id: UUID
+    mission_id: UUID
+    location_id: str = Field(min_length=1, max_length=120)
+    device_id: str = Field(min_length=8, max_length=180)
+    device_sequence: int = Field(gt=0)
+    target_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    captured_at: datetime
+    payload: dict[str, object] = Field(min_length=1, max_length=100)
+
+
+class OfflineSyncBatch(StrictModel):
+    events: tuple[OfflineEvidenceEvent, ...] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def reject_duplicate_batch_identities(self) -> "OfflineSyncBatch":
+        sequences = [(event.device_id, event.device_sequence) for event in self.events]
+        if len(sequences) != len(set(sequences)):
+            raise ValueError("batch contains duplicate device sequence identities")
+        submissions = [event.client_submission_id for event in self.events]
+        if len(submissions) != len(set(submissions)):
+            raise ValueError("batch contains duplicate client submission ids")
+        return self
 
 
 class EvidenceReview(StrictModel):

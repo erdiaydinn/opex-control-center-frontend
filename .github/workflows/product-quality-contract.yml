@@ -24,6 +24,7 @@ on:
       - "scripts/validate_product_quality_contract.py"
       - "scripts/test-platform-inclusion.mjs"
       - "scripts/test-global-product-quality-v3.mjs"
+      - "scripts/test-field-intelligence-ui.mjs"
       - "scripts/test-no-new-hardcoded-ui-strings.mjs"
       - "src/**"
       - "ops/inventory/**"
@@ -103,6 +104,8 @@ jobs:
         run: node scripts/test-platform-inclusion.mjs
       - name: Global product quality v3 surface gate
         run: node scripts/test-global-product-quality-v3.mjs
+      - name: Field Intelligence real UI contract
+        run: node scripts/test-field-intelligence-ui.mjs
       - name: Accessibility focus trap contract
         run: node scripts/test-accessibility-focus-trap.mjs
       - name: Route accessibility contract

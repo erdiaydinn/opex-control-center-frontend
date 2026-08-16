@@ -9,6 +9,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException
 from jwt.algorithms import ECAlgorithm
+from pydantic import ValidationError
 
 from app.main import KnowledgeUpsert
 from app.tenant_context_assertion import TENANT_CONTEXT_PURPOSE, TENANT_CONTEXT_TYP
@@ -111,6 +112,16 @@ def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatch):
     ids = {item.id for item in result.evidence}
     assert "tenant-a-policy" in ids
     assert "tenant-b-policy" not in ids
+
+
+def test_internal_retrieval_rejects_duplicate_layers_before_authorization():
+    with pytest.raises(ValidationError, match="retrieval layers must be unique"):
+        TenantRetrievalRequest(
+            message="coldchain alpha",
+            as_of=date(2026, 8, 16),
+            layers=["company", "company"],
+            limit=8,
+        )
 
 
 def test_internal_retrieval_rejects_assertion_replay(tmp_path, monkeypatch):

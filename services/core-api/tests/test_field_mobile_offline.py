@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -69,14 +70,31 @@ async def seed_field_assignment(connection: AsyncConnection) -> None:
                 tenant_id, template_id, version, status, name_i18n, schema, created_by
             ) VALUES (
                 :tenant_id, 'mobile-proof', 1, 'active',
-                '{"en":"Mobile proof"}'::jsonb,
-                '{"fields":[{"key":"lot","type":"text","label":{"values":{"en":"Lot"}},"required":true,"helper":null,"options":[],"unit":null,"config":{}}]}'::jsonb,
-                'test-author'
+                CAST(:name_i18n AS JSONB), CAST(:schema AS JSONB), 'test-author'
             )
             ON CONFLICT (tenant_id, template_id, version) DO NOTHING
             """
         ),
-        {"tenant_id": TENANT_A},
+        {
+            "tenant_id": TENANT_A,
+            "name_i18n": json.dumps({"en": "Mobile proof"}),
+            "schema": json.dumps(
+                {
+                    "fields": [
+                        {
+                            "key": "lot",
+                            "type": "text",
+                            "label": {"values": {"en": "Lot"}},
+                            "required": True,
+                            "helper": None,
+                            "options": [],
+                            "unit": None,
+                            "config": {},
+                        }
+                    ]
+                }
+            ),
+        },
     )
     await connection.execute(
         text(
@@ -87,8 +105,8 @@ async def seed_field_assignment(connection: AsyncConnection) -> None:
                 assigned_at, deadline_at, created_by
             ) VALUES (
                 :tenant_id, :mission_id, 'mobile-proof', 1,
-                '{"en":"Offline proof"}'::jsonb, '{}'::jsonb,
-                'active', 'normal', '{"include_location_ids":["WH-001"]}'::jsonb,
+                CAST(:title_i18n AS JSONB), CAST(:instructions_i18n AS JSONB),
+                'active', 'normal', CAST(:selector AS JSONB),
                 :fingerprint, 1, CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP + interval '1 day', 'test-author'
             )
@@ -99,6 +117,9 @@ async def seed_field_assignment(connection: AsyncConnection) -> None:
             "tenant_id": TENANT_A,
             "mission_id": MISSION_ID,
             "fingerprint": TARGET_FINGERPRINT,
+            "title_i18n": json.dumps({"en": "Offline proof"}),
+            "instructions_i18n": json.dumps({}),
+            "selector": json.dumps({"include_location_ids": ["WH-001"]}),
         },
     )
     await connection.execute(
@@ -113,7 +134,13 @@ async def seed_field_assignment(connection: AsyncConnection) -> None:
     )
 
 
-def event(*, sequence: int, submission_id: UUID | None = None, fingerprint: str = TARGET_FINGERPRINT, lot: str = "LOT-A") -> OfflineEvidenceEvent:
+def event(
+    *,
+    sequence: int,
+    submission_id: UUID | None = None,
+    fingerprint: str = TARGET_FINGERPRINT,
+    lot: str = "LOT-A",
+) -> OfflineEvidenceEvent:
     return OfflineEvidenceEvent(
         client_submission_id=submission_id or uuid4(),
         mission_id=MISSION_ID,
@@ -133,7 +160,9 @@ def test_offline_batch_rejects_browser_authority_and_duplicate_sequence() -> Non
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         OfflineEvidenceEvent(**first.model_dump(mode="python"), trusted_device=True)
     with pytest.raises(ValidationError, match="duplicate device sequence"):
-        OfflineSyncBatch(events=(first, first.model_copy(update={"client_submission_id": uuid4()})))
+        OfflineSyncBatch(
+            events=(first, first.model_copy(update={"client_submission_id": uuid4()}))
+        )
 
 
 @pytest.mark.asyncio
@@ -147,14 +176,18 @@ async def test_offline_sync_is_idempotent_detects_conflict_stale_and_policy_bloc
         scope = FieldScope(unrestricted=True)
         first = event(sequence=1)
         accepted = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(first,)),
         )
         assert accepted["outcomes"][0]["decision"] == "accepted"
         evidence_id = accepted["outcomes"][0]["evidence_id"]
 
         replay = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(first,)),
         )
         assert replay["outcomes"][0] == {
@@ -167,20 +200,26 @@ async def test_offline_sync_is_idempotent_detects_conflict_stale_and_policy_bloc
 
         collision = event(sequence=1, lot="DIFFERENT")
         conflict = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(collision,)),
         )
         assert conflict["outcomes"][0]["decision"] == "conflict"
 
         stale = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(event(sequence=2, fingerprint="b" * 64),)),
         )
         assert stale["outcomes"][0]["decision"] == "stale_assignment"
 
         policy = await set_template_evidence_policy(
-            tenant_id=str(TENANT_A), actor_subject="manager-a",
-            template_id="mobile-proof", template_version=1,
+            tenant_id=str(TENANT_A),
+            actor_subject="manager-a",
+            template_id="mobile-proof",
+            template_version=1,
             policy=EvidencePolicy(camera_only_photo=True, managed_device_required=True),
         )
         assert policy["camera_only_photo"] is True
@@ -188,14 +227,18 @@ async def test_offline_sync_is_idempotent_detects_conflict_stale_and_policy_bloc
 
         restricted = event(sequence=3)
         blocked_device = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(restricted,)),
         )
         assert blocked_device["outcomes"][0]["decision"] == "blocked"
         assert "device attestation" in blocked_device["outcomes"][0]["reason"]
 
         blocked_camera = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(restricted,)),
             trusted_device_ids={DEVICE_ID},
         )
@@ -203,7 +246,9 @@ async def test_offline_sync_is_idempotent_detects_conflict_stale_and_policy_bloc
         assert "capture attestation" in blocked_camera["outcomes"][0]["reason"]
 
         attested = await sync_offline_batch(
-            tenant_id=str(TENANT_A), actor_subject="worker-a", scope=scope,
+            tenant_id=str(TENANT_A),
+            actor_subject="worker-a",
+            scope=scope,
             batch=OfflineSyncBatch(events=(restricted,)),
             trusted_device_ids={DEVICE_ID},
             camera_attested_submission_ids={str(restricted.client_submission_id)},
@@ -212,15 +257,22 @@ async def test_offline_sync_is_idempotent_detects_conflict_stale_and_policy_bloc
 
         with pytest.raises(FieldOfflineSyncError, match="already defined"):
             await set_template_evidence_policy(
-                tenant_id=str(TENANT_A), actor_subject="manager-b",
-                template_id="mobile-proof", template_version=1,
+                tenant_id=str(TENANT_A),
+                actor_subject="manager-b",
+                template_id="mobile-proof",
+                template_version=1,
                 policy=EvidencePolicy(),
             )
 
         async with engine.begin() as connection:
             await set_tenant_context(connection, TENANT_B)
             assert await connection.scalar(text("SELECT count(*) FROM field_offline_receipts")) == 0
-            assert await connection.scalar(text("SELECT count(*) FROM field_template_evidence_policies")) == 0
+            assert (
+                await connection.scalar(
+                    text("SELECT count(*) FROM field_template_evidence_policies")
+                )
+                == 0
+            )
 
         with pytest.raises(DBAPIError):
             async with engine.begin() as connection:
@@ -230,7 +282,9 @@ async def test_offline_sync_is_idempotent_detects_conflict_stale_and_policy_bloc
                         """
                         UPDATE field_template_evidence_policies
                         SET managed_device_required=FALSE
-                        WHERE tenant_id=:tenant_id AND template_id='mobile-proof' AND template_version=1
+                        WHERE tenant_id=:tenant_id
+                          AND template_id='mobile-proof'
+                          AND template_version=1
                         """
                     ),
                     {"tenant_id": TENANT_A},

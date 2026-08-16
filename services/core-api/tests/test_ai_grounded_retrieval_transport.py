@@ -134,3 +134,73 @@ async def test_transport_rejects_duplicate_layers_before_network():
             )
 
     assert called is False
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_untrusted_origin_before_credential_forwarding():
+    called = False
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"evidence": [{"id": "stolen"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError, match="base URL"):
+            await retrieve_tenant_grounded_evidence(
+                base_url="https://attacker.example",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_transport_requires_explicit_trust_for_non_default_internal_host():
+    observed: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(200, json={"evidence": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        evidence = await retrieve_tenant_grounded_evidence(
+            base_url="https://ai-core.internal",
+            tenant_context_assertion="signed.tenant.context",
+            message="stock policy",
+            as_of=date(2026, 8, 16),
+            layers=("company",),
+            client=client,
+            trusted_hosts=frozenset({"ai-core.internal"}),
+        )
+
+    assert evidence == []
+    assert len(observed) == 1
+    assert observed[0].url.host == "ai-core.internal"
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_base_url_path_before_network():
+    called = False
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"evidence": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError, match="base URL"):
+            await retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000/alternate",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+    assert called is False

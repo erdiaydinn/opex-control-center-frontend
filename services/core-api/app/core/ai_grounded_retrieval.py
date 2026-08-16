@@ -8,28 +8,46 @@ Identity Gateway assertion supplied by trusted server-side orchestration.
 from __future__ import annotations
 
 from datetime import date
+from ipaddress import ip_address
 from urllib.parse import urlsplit
 
 import httpx
 
 AI_TENANT_CONTEXT_HEADER = "X-EAY-AI-Tenant-Context"
 ALLOWED_LAYERS = frozenset({"legal", "standard", "company", "operational"})
+DEFAULT_TRUSTED_AI_HOSTS = frozenset({"eay-ai-core", "localhost"})
 
 
 class AIGroundedRetrievalUnavailable(RuntimeError):
     pass
 
 
-def _normalized_base_url(base_url: str) -> str:
+def _is_loopback_host(hostname: str) -> bool:
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _normalized_base_url(
+    base_url: str,
+    *,
+    trusted_hosts: frozenset[str] = DEFAULT_TRUSTED_AI_HOSTS,
+) -> str:
     value = base_url.strip().rstrip("/")
     parsed = urlsplit(value)
+    hostname = (parsed.hostname or "").lower()
+    normalized_trusted_hosts = {host.strip().lower() for host in trusted_hosts if host.strip()}
+
     if (
         parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
+        or not hostname
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
+        or parsed.path not in {"", "/"}
+        or (hostname not in normalized_trusted_hosts and not _is_loopback_host(hostname))
     ):
         raise ValueError("AI Core base URL is invalid")
     return value
@@ -56,6 +74,7 @@ async def retrieve_tenant_grounded_evidence(
     layers: tuple[str, ...],
     limit: int = 8,
     client: httpx.AsyncClient | None = None,
+    trusted_hosts: frozenset[str] = DEFAULT_TRUSTED_AI_HOSTS,
 ) -> list[dict[str, object]]:
     """Retrieve tenant-scoped evidence without accepting a tenant identifier."""
 
@@ -72,7 +91,7 @@ async def retrieve_tenant_grounded_evidence(
     if not 1 <= limit <= 32:
         raise ValueError("Grounded retrieval limit is invalid")
 
-    url = _normalized_base_url(base_url) + "/v1/internal/grounded/retrieve"
+    url = _normalized_base_url(base_url, trusted_hosts=trusted_hosts) + "/v1/internal/grounded/retrieve"
     headers = {AI_TENANT_CONTEXT_HEADER: _validated_assertion(tenant_context_assertion)}
     payload = {
         "message": normalized_message,

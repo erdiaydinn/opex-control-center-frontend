@@ -160,8 +160,17 @@ def _rule_match(rule, event: WorkflowEvent) -> tuple[bool, tuple[ConditionTrace,
     return any(trace.matched for trace in traces), traces
 
 
-def _ensure_evaluable(definition: WorkflowDefinition, event: WorkflowEvent, at: datetime) -> None:
-    if definition.status is not WorkflowStatus.EFFECTIVE:
+def _ensure_evaluable(
+    definition: WorkflowDefinition,
+    event: WorkflowEvent,
+    at: datetime,
+    *,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        if definition.status not in {WorkflowStatus.DRAFT, WorkflowStatus.APPROVED, WorkflowStatus.EFFECTIVE}:
+            raise WorkflowPolicyError("workflow status cannot be simulated")
+    elif definition.status is not WorkflowStatus.EFFECTIVE:
         raise WorkflowPolicyError("only effective workflows may evaluate production events")
     if definition.tenant_id != event.tenant_id:
         raise WorkflowPolicyError("workflow evaluation cannot cross tenant boundary")
@@ -182,7 +191,7 @@ def evaluate_workflow(
 ) -> EvaluationResult:
     """Evaluate fixed operators only; emit intents without executing module mutations."""
     evaluation_time = evaluated_at or datetime.now(UTC)
-    _ensure_evaluable(definition, event, evaluation_time)
+    _ensure_evaluable(definition, event, evaluation_time, dry_run=dry_run)
     if event.facts_fingerprint != build_event_fingerprint(event.facts):
         raise WorkflowPolicyError("event facts fingerprint mismatch")
 

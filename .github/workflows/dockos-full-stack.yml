@@ -12,8 +12,8 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: "22"
           cache: npm
@@ -32,8 +32,8 @@ jobs:
       DOCKOS_STATE_FILE: /tmp/dockos_ci_state.json
       DOCKOS_NOTIFICATION_AUTOMATION: "false"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
           cache: pip
@@ -72,8 +72,8 @@ jobs:
       RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-evidence
       OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
           cache: pip

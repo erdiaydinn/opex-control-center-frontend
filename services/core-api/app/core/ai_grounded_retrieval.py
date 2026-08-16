@@ -62,7 +62,12 @@ async def retrieve_tenant_grounded_evidence(
     normalized_message = message.strip()
     if not 2 <= len(normalized_message) <= 4000:
         raise ValueError("Grounded retrieval message is invalid")
-    if not layers or len(layers) > 4 or any(layer not in ALLOWED_LAYERS for layer in layers):
+    if (
+        not layers
+        or len(layers) > 4
+        or len(set(layers)) != len(layers)
+        or any(layer not in ALLOWED_LAYERS for layer in layers)
+    ):
         raise ValueError("Grounded retrieval layers are invalid")
     if not 1 <= limit <= 32:
         raise ValueError("Grounded retrieval limit is invalid")

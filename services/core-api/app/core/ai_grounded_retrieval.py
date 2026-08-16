@@ -15,7 +15,22 @@ import httpx
 
 AI_TENANT_CONTEXT_HEADER = "X-EAY-AI-Tenant-Context"
 ALLOWED_LAYERS = frozenset({"legal", "standard", "company", "operational"})
+ALLOWED_AUTHORITY_LEVELS = frozenset({"binding", "company", "voluntary", "operational"})
 DEFAULT_TRUSTED_AI_HOSTS = frozenset({"eay-ai-core", "localhost"})
+EVIDENCE_FIELDS = frozenset(
+    {
+        "id",
+        "layer",
+        "title",
+        "excerpt",
+        "source_name",
+        "source_url",
+        "effective_from",
+        "effective_to",
+        "authority_level",
+        "score",
+    }
+)
 
 
 class AIGroundedRetrievalUnavailable(RuntimeError):
@@ -65,6 +80,49 @@ def _validated_assertion(assertion: str) -> str:
     ):
         raise ValueError("AI tenant-context assertion is invalid")
     return assertion
+
+
+def _validated_evidence_response(
+    body: object,
+    *,
+    requested_limit: int,
+) -> list[dict[str, object]]:
+    evidence = body.get("evidence") if isinstance(body, dict) else None
+    if not isinstance(evidence, list) or len(evidence) > requested_limit:
+        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+
+    validated: list[dict[str, object]] = []
+    for item in evidence:
+        if not isinstance(item, dict) or set(item) != EVIDENCE_FIELDS:
+            raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        if item["layer"] not in ALLOWED_LAYERS:
+            raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        if item["authority_level"] not in ALLOWED_AUTHORITY_LEVELS:
+            raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        if not isinstance(item["score"], (int, float)) or isinstance(item["score"], bool):
+            raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        for field, maximum in (
+            ("id", 180),
+            ("title", 500),
+            ("excerpt", 1401),
+            ("source_name", 300),
+        ):
+            value = item[field]
+            if not isinstance(value, str) or not value or len(value) > maximum:
+                raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        source_url = item["source_url"]
+        if source_url is not None and (
+            not isinstance(source_url, str) or len(source_url) > 2048
+        ):
+            raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        for field in ("effective_from", "effective_to"):
+            value = item[field]
+            if value is not None and (
+                not isinstance(value, str) or len(value) != 10
+            ):
+                raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+        validated.append(item)
+    return validated
 
 
 async def retrieve_tenant_grounded_evidence(
@@ -131,7 +189,4 @@ async def retrieve_tenant_grounded_evidence(
     except ValueError as exc:
         raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable") from exc
 
-    evidence = body.get("evidence") if isinstance(body, dict) else None
-    if not isinstance(evidence, list) or any(not isinstance(item, dict) for item in evidence):
-        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
-    return evidence
+    return _validated_evidence_response(body, requested_limit=limit)

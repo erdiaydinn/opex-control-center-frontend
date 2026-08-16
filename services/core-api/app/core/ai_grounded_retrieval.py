@@ -37,7 +37,9 @@ def _normalized_base_url(
     value = base_url.strip().rstrip("/")
     parsed = urlsplit(value)
     hostname = (parsed.hostname or "").lower()
-    normalized_trusted_hosts = {host.strip().lower() for host in trusted_hosts if host.strip()}
+    normalized_trusted_hosts = {
+        host.strip().lower() for host in trusted_hosts if host.strip()
+    }
 
     if (
         parsed.scheme not in {"http", "https"}
@@ -91,7 +93,10 @@ async def retrieve_tenant_grounded_evidence(
     if not 1 <= limit <= 32:
         raise ValueError("Grounded retrieval limit is invalid")
 
-    url = _normalized_base_url(base_url, trusted_hosts=trusted_hosts) + "/v1/internal/grounded/retrieve"
+    url = (
+        _normalized_base_url(base_url, trusted_hosts=trusted_hosts)
+        + "/v1/internal/grounded/retrieve"
+    )
     headers = {AI_TENANT_CONTEXT_HEADER: _validated_assertion(tenant_context_assertion)}
     payload = {
         "message": normalized_message,

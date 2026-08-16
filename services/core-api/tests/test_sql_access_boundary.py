@@ -19,6 +19,7 @@ RUNTIME_SQL_EXECUTION_POINTS = {
     ("core/ai_tenant_query_context.py", "get_ai_tenant_query_context"),
     ("core/ai_tenant_query_context.py", "_write_query_context_audit_in_transaction"),
     ("core/ai_tenant_query_context.py", "put_ai_tenant_query_context"),
+    ("core/audit.py", "write_transactional_audit_event"),
     ("core/resources.py", "check_database"),
     ("core/resources.py", "ensure_audit_table"),
     ("core/resources.py", "write_audit_event"),
@@ -65,7 +66,6 @@ BUDGET_SQL_EXECUTION_POINTS = {
 ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/rag.py", "grounded_document_answer"),
     ("modules/academy/repository.py", "record_learning_event"),
-    ("modules/academy/repository.py", "record_platform_audit"),
     # Product read models below were security-reviewed on 2026-08-14:
     # every query is static SQL and carries tenant_id; learner workspace and
     # certificate queries also bind the authenticated subject. No wildcard
@@ -106,11 +106,25 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_quiz_authoring.py", "create_quiz"),
 }
 
+FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
+    # Security-reviewed on 2026-08-16 for item 4/60. SQL text is static,
+    # values are bound parameters, each transaction sets app.tenant_id, and
+    # migration 0019 enables + forces tenant RLS with USING/WITH CHECK.
+    ("modules/field_intelligence/repository.py", "_set_tenant"),
+    ("modules/field_intelligence/repository.py", "upsert_location"),
+    ("modules/field_intelligence/repository.py", "list_locations"),
+    ("modules/field_intelligence/repository.py", "list_templates"),
+    ("modules/field_intelligence/repository.py", "create_template"),
+    ("modules/field_intelligence/repository.py", "create_mission"),
+    ("modules/field_intelligence/repository.py", "list_missions"),
+}
+
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
     | BUDGET_SQL_EXECUTION_POINTS
     | ACADEMY_SQL_EXECUTION_POINTS
+    | FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS
 )
 
 RUNTIME_ENGINE_CREATION = {

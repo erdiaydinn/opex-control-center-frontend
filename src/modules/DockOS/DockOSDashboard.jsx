@@ -39,9 +39,9 @@ function DockOSGate() {
 function DockOSExperience() {
   const { theme, dir } = useDockOSUi();
   return (
-    <main dir={dir} className={`dockos-permission-shell dockos-theme-${theme} ${getDockOSPermissionClassNames()}`}>
+    <div dir={dir} className={`dockos-permission-shell dockos-theme-${theme} ${getDockOSPermissionClassNames()}`}>
       <DockOSPermissionBanner />
       <DockOSDashboardBase />
-    </main>
+    </div>
   );
 }

@@ -24,7 +24,11 @@ assert.match(registry, /translateField\(locale, "moduleTitle"\)/);
 const fieldProduct = catalog.commercial_modules.find((item) => item.key === "field_intelligence");
 assert.ok(fieldProduct, "Field Intelligence must be a commercial module");
 assert.equal(fieldProduct.standalone, true);
-assert.deepEqual(fieldProduct.channels, ["web", "api"], "mobile remains gated to item 9/60");
+assert.deepEqual(
+  fieldProduct.channels,
+  ["web", "mobile", "api"],
+  "Field channel truth must include the item 9 mobile/offline surface without regressing web/API",
+);
 
 for (const capability of [
   "mission_command_center",

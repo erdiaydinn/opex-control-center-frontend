@@ -1,8 +1,8 @@
 """Server-authoritative identity binding for Core -> EAY AI retrieval.
 
 This module deliberately accepts only an already authenticated Core Principal.
-Tenant and membership identifiers are resolved again from the authoritative Core
-authorization store; callers cannot provide or override them.
+Tenant, membership and Jarvis authorization are resolved again from the
+authoritative Core authorization store; callers cannot provide or override them.
 """
 
 from __future__ import annotations
@@ -10,12 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.core.permission_catalog import action_permission, module_permission
 from app.core.resources import resolve_principal_access
 from app.core.security import Principal
 
 
 class AIRetrievalAuthorityDenied(RuntimeError):
-    """The authenticated principal no longer has active tenant membership."""
+    """The authenticated principal no longer has active retrieval authority."""
 
 
 class AIRetrievalAuthorityUnavailable(RuntimeError):
@@ -29,14 +30,23 @@ class AuthorizedAIRetrievalIdentity:
     actor_subject: str
 
 
+_REQUIRED_RETRIEVAL_PERMISSIONS = frozenset(
+    {
+        module_permission("jarvis"),
+        action_permission("jarvis", "ask"),
+    }
+)
+
+
 async def resolve_authorized_ai_retrieval_identity(
     principal: Principal,
 ) -> AuthorizedAIRetrievalIdentity:
     """Resolve a fresh, immutable AI retrieval identity from Core authority.
 
     The caller supplies no tenant or membership identifier. This intentionally
-    re-checks Core membership state immediately before trusted AI orchestration
-    so a stale authenticated request cannot manufacture a retrieval identity.
+    re-checks Core membership and Jarvis permissions immediately before trusted
+    AI orchestration so a stale authenticated request cannot manufacture a
+    retrieval identity after access has been revoked.
     """
 
     actor_subject = principal.subject.strip()
@@ -58,6 +68,14 @@ async def resolve_authorized_ai_retrieval_identity(
         or access.get("tenant_status") != "active"
         or access.get("membership_status") != "active"
     ):
+        raise AIRetrievalAuthorityDenied("AI retrieval authority denied")
+
+    fresh_permissions = {
+        str(item.get("key", "")).strip()
+        for item in access.get("permission_assignments", ())
+        if isinstance(item, dict)
+    }
+    if not _REQUIRED_RETRIEVAL_PERMISSIONS.issubset(fresh_permissions):
         raise AIRetrievalAuthorityDenied("AI retrieval authority denied")
 
     try:

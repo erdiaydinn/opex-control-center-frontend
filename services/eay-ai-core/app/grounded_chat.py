@@ -114,6 +114,18 @@ def _company_conflicts_for_response(request: ChatRequest) -> list[dict]:
     ]
 
 
+def _model_backend_unavailable() -> HTTPException:
+    """Return a stable client-facing model failure without backend diagnostics."""
+
+    return HTTPException(
+        status_code=503,
+        detail={
+            "error": "grounded_model_unavailable",
+            "message": "Grounded answer generation is temporarily unavailable",
+        },
+    )
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     return (
         conn.execute(
@@ -314,10 +326,7 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
             schema=ANSWER_SCHEMA,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Local model unavailable or invalid response: {exc}",
-        ) from exc
+        raise _model_backend_unavailable() from exc
 
     interaction_id = str(uuid.uuid4())
     answer = ChatAnswer(

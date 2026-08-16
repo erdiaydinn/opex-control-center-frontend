@@ -12,6 +12,7 @@ from jwt.algorithms import ECAlgorithm
 
 from app.main import KnowledgeUpsert
 from app.tenant_context_assertion import TENANT_CONTEXT_PURPOSE, TENANT_CONTEXT_TYP
+from app.tenant_context_replay import TenantContextReplayGuard
 from app.tenant_grounded_retrieval import (
     TenantRetrievalRequest,
     _verify_header,
@@ -69,6 +70,18 @@ def _company_doc(doc_id, title, content):
     )
 
 
+def _configure_runtime(tmp_path, monkeypatch, jwks_file, scoped_store):
+    replay_guard = TenantContextReplayGuard(tmp_path / "replay.db")
+    monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_JWKS_FILE", jwks_file)
+    monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_ISSUER", ISSUER)
+    monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_AUDIENCE", AUDIENCE)
+    monkeypatch.setattr("app.tenant_grounded_retrieval.tenant_store", scoped_store)
+    monkeypatch.setattr(
+        "app.tenant_grounded_retrieval.tenant_context_replay_guard",
+        replay_guard,
+    )
+
+
 def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatch):
     private_key, jwks_file = _key_material(tmp_path)
     db_path = tmp_path / "tenant-retrieval.db"
@@ -81,11 +94,7 @@ def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatch):
         _company_doc("tenant-b-policy", "Cold chain B", "coldchain alpha tenant B"),
         tenant_id=TENANT_B,
     )
-
-    monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_JWKS_FILE", jwks_file)
-    monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_ISSUER", ISSUER)
-    monkeypatch.setenv("EAY_AI_TENANT_CONTEXT_AUDIENCE", AUDIENCE)
-    monkeypatch.setattr("app.tenant_grounded_retrieval.tenant_store", scoped_store)
+    _configure_runtime(tmp_path, monkeypatch, jwks_file, scoped_store)
 
     result = asyncio.run(
         retrieve_for_verified_tenant(
@@ -102,6 +111,30 @@ def test_internal_retrieval_uses_asserted_tenant_only(tmp_path, monkeypatch):
     ids = {item.id for item in result.evidence}
     assert "tenant-a-policy" in ids
     assert "tenant-b-policy" not in ids
+
+
+def test_internal_retrieval_rejects_assertion_replay(tmp_path, monkeypatch):
+    private_key, jwks_file = _key_material(tmp_path)
+    scoped_store = TenantScopedKnowledgeStore(tmp_path / "tenant-retrieval.db")
+    scoped_store.upsert(
+        _company_doc("tenant-a-policy", "Cold chain A", "coldchain alpha tenant A"),
+        tenant_id=TENANT_A,
+    )
+    _configure_runtime(tmp_path, monkeypatch, jwks_file, scoped_store)
+    token = _issue(private_key, TENANT_A)
+    request = TenantRetrievalRequest(
+        message="coldchain alpha",
+        as_of=date(2026, 8, 16),
+        layers=["company"],
+        limit=8,
+    )
+
+    first = asyncio.run(retrieve_for_verified_tenant(request, token))
+    assert {item.id for item in first.evidence} == {"tenant-a-policy"}
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(retrieve_for_verified_tenant(request, token))
+    assert exc_info.value.status_code == 401
 
 
 def test_internal_retrieval_rejects_core_audience_token(tmp_path, monkeypatch):

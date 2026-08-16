@@ -9,6 +9,11 @@ from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS, TOOL_REQUIRED_
 from app.core.authorization import require_control_plane_admin, require_permission
 from app.core.security import Principal
 from app.modules.field_intelligence.authorization import require_field_permission
+from app.modules.field_intelligence.mobile_offline import (
+    FieldOfflineSyncError,
+    set_template_evidence_policy,
+    sync_offline_batch,
+)
 from app.modules.field_intelligence.repository import (
     FieldRepositoryError,
     create_mission,
@@ -26,11 +31,13 @@ from app.modules.field_intelligence.repository import (
     upsert_location,
 )
 from app.modules.field_intelligence.schemas import (
+    EvidencePolicy,
     EvidenceReview,
     EvidenceSubmit,
     LocationUpsert,
     MissionCreate,
     NotificationIntentCreate,
+    OfflineSyncBatch,
     TemplateCreate,
 )
 
@@ -414,6 +421,27 @@ async def post_field_evidence(
         raise _field_bad_request(exc) from exc
 
 
+@router.post("/field/offline-sync")
+async def post_field_offline_sync(
+    payload: OfflineSyncBatch,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:submitEvidence")
+    try:
+        # Browser device_id/capture attributes are replay metadata only. Until
+        # canonical App Attest/Play Integrity/camera attestation providers are
+        # connected, policy-restricted evidence fails closed through empty
+        # authoritative attestation sets.
+        return await sync_offline_batch(
+            tenant_id=str(principal.tenant_id),
+            actor_subject=principal.subject,
+            scope=scope,
+            batch=payload,
+        )
+    except FieldOfflineSyncError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
 @router.get("/field/evidence")
 async def field_evidence(
     principal: FieldViewer,
@@ -521,4 +549,24 @@ async def post_field_template(payload: TemplateCreate, principal: FieldViewer) -
     try:
         return await create_template(str(principal.tenant_id), principal.subject, payload)
     except ValueError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.put("/field/templates/{template_id}/{template_version}/evidence-policy")
+async def put_field_template_evidence_policy(
+    template_id: str,
+    template_version: int,
+    payload: EvidencePolicy,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    require_field_permission(principal, "action:field_intelligence:manageTemplates")
+    try:
+        return await set_template_evidence_policy(
+            tenant_id=str(principal.tenant_id),
+            actor_subject=principal.subject,
+            template_id=template_id,
+            template_version=template_version,
+            policy=payload,
+        )
+    except FieldOfflineSyncError as exc:
         raise _field_bad_request(exc) from exc

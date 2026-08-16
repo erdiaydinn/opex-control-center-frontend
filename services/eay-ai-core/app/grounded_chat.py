@@ -92,6 +92,28 @@ def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
         )
 
 
+def _company_conflicts_for_response(request: ChatRequest) -> list[dict]:
+    """Project company-vs-law conflicts only where company scope is safe.
+
+    The normalized legal engine is not tenant-scoped yet. Production therefore
+    must never serialize its company requirements, even for global legal-only
+    requests. Development/test keeps the existing single-company research path,
+    but conflict projection is still opt-in through the explicit company layer.
+    """
+
+    if "company" not in request.layers:
+        return []
+
+    environment = os.getenv("EAY_ENVIRONMENT", "development").strip().lower()
+    if environment == "production":
+        return []
+
+    return [
+        item.model_dump()
+        for item in legal_engine.compare_company_to_law(request.as_of)
+    ]
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     return (
         conn.execute(
@@ -335,10 +357,7 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
     if answer.confidence < settings.low_confidence_threshold:
         store.create_low_confidence_candidate(interaction_id)
 
-    conflicts = [
-        item.model_dump()
-        for item in legal_engine.compare_company_to_law(request.as_of)
-    ]
+    conflicts = _company_conflicts_for_response(request)
     temporal_fingerprint = (
         temporal_state.resolution_fingerprint if temporal_state is not None else None
     )

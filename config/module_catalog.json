@@ -74,6 +74,38 @@
   },
   "commercial_modules": [
     {
+      "key": "field_intelligence",
+      "sku": "OPEX-FLD",
+      "name": "Field Intelligence",
+      "route": "/field-intelligence",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "api"],
+      "capabilities": [
+        "mission_command_center",
+        "mission_builder",
+        "authoritative_target_snapshots",
+        "governed_template_editor",
+        "barcode_qr_lot_batch_capture",
+        "expiry_quantity_measurement_capture",
+        "gps_yes_no_multi_row_capture",
+        "private_evidence_reference_capture",
+        "evidence_review_and_rework",
+        "reminder_and_escalation_intents",
+        "field_completion_analytics"
+      ],
+      "critical_controls": [
+        "tenant_and_location_scope",
+        "server_frozen_targets",
+        "append_only_evidence",
+        "idempotent_submission",
+        "latest_evidence_review_only",
+        "raw_public_photo_transport_rejected",
+        "notification_dispatch_truth_boundary",
+        "audit_log"
+      ]
+    },
+    {
       "key": "workforce",
       "sku": "OPEX-WFM",
       "name": "Workforce",

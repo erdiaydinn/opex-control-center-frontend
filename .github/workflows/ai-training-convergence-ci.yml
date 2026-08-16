@@ -39,6 +39,12 @@ jobs:
         run: python -m compileall -q app tests
       - name: Full AI Core regression
         run: pytest -q
+      - name: Build governed AI Core runtime image
+        run: |
+          docker build -t eay-ai-core:ci .
+          test "$(docker image inspect eay-ai-core:ci --format '{{.Config.User}}')" = "eay"
+          docker image inspect eay-ai-core:ci --format '{{json .Config.Cmd}}' | grep -F 'app.entrypoint:app'
+          echo 'AI_CORE_RUNTIME_IMAGE=PREBUILD_REPOSITORY_EVIDENCE_ONLY'
       - name: Learning and dataset governance acceptance
         run: >-
           pytest -q

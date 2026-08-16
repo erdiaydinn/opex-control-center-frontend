@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 _KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]{1,120}$")
-_BLOCKED_KEY_FRAGMENTS = (
+_BLOCKED_PAYLOAD_KEY_FRAGMENTS = (
     "password",
     "secret",
     "token",
@@ -33,11 +33,16 @@ class StrictFrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-def _validate_safe_key(key: str, *, kind: str) -> str:
+def _validate_structural_key(key: str, *, kind: str) -> str:
     if not _KEY_PATTERN.fullmatch(key):
         raise ValueError(f"invalid {kind} key")
+    return key
+
+
+def _validate_payload_key(key: str, *, kind: str) -> str:
+    _validate_structural_key(key, kind=kind)
     lowered = key.lower()
-    if any(fragment in lowered for fragment in _BLOCKED_KEY_FRAGMENTS):
+    if any(fragment in lowered for fragment in _BLOCKED_PAYLOAD_KEY_FRAGMENTS):
         raise ValueError(f"{kind} key is not permitted in workflow engine payloads")
     return key
 
@@ -46,7 +51,7 @@ def _validate_scalar_map(values: dict[str, JsonScalar], *, kind: str, max_items:
     if len(values) > max_items:
         raise ValueError(f"too many {kind} entries")
     for key, value in values.items():
-        _validate_safe_key(key, kind=kind)
+        _validate_payload_key(key, kind=kind)
         if isinstance(value, str) and len(value) > 256:
             raise ValueError(f"{kind} string values must be 256 characters or fewer")
     return values
@@ -125,7 +130,7 @@ class Condition(StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_condition(self) -> "Condition":
-        _validate_safe_key(self.fact_key, kind="fact")
+        _validate_payload_key(self.fact_key, kind="fact")
         if self.operator in {ConditionOperator.IN, ConditionOperator.NOT_IN}:
             if not self.values:
                 raise ValueError("in/not_in conditions require values")
@@ -154,7 +159,7 @@ class ActionTemplate(StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_action(self) -> "ActionTemplate":
-        _validate_safe_key(self.action_key, kind="action")
+        _validate_structural_key(self.action_key, kind="action")
         _validate_scalar_map(self.parameters, kind="action parameter", max_items=24)
         if self.effect in HIGH_RISK_EFFECTS and self.execution_mode is ExecutionMode.AUTOMATIC:
             raise ValueError("high-risk workflow actions cannot be automatic")
@@ -174,11 +179,11 @@ class WorkflowRule(StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_rule(self) -> "WorkflowRule":
-        _validate_safe_key(self.rule_id, kind="rule")
+        _validate_structural_key(self.rule_id, kind="rule")
         if len(self.conditions) > 32:
             raise ValueError("workflow rule has too many conditions")
         if self.exclusive_group is not None:
-            _validate_safe_key(self.exclusive_group, kind="exclusive group")
+            _validate_structural_key(self.exclusive_group, kind="exclusive group")
         return self
 
 
@@ -199,9 +204,9 @@ class WorkflowDefinition(StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_definition(self) -> "WorkflowDefinition":
-        _validate_safe_key(self.workflow_id, kind="workflow")
-        _validate_safe_key(self.source_module, kind="source module")
-        _validate_safe_key(self.event_type, kind="event type")
+        _validate_structural_key(self.workflow_id, kind="workflow")
+        _validate_structural_key(self.source_module, kind="source module")
+        _validate_structural_key(self.event_type, kind="event type")
         if self.version == 1 and self.supersedes_version is not None:
             raise ValueError("first workflow version cannot supersede another version")
         if self.version > 1 and self.supersedes_version != self.version - 1:
@@ -231,8 +236,8 @@ class WorkflowEvent(StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_event(self) -> "WorkflowEvent":
-        _validate_safe_key(self.source_module, kind="source module")
-        _validate_safe_key(self.event_type, kind="event type")
+        _validate_structural_key(self.source_module, kind="source module")
+        _validate_structural_key(self.event_type, kind="event type")
         _validate_scalar_map(self.facts, kind="fact", max_items=64)
         return self
 

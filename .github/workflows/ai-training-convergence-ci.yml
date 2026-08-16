@@ -60,7 +60,12 @@ jobs:
           assert networks['ai_plane'].get('internal') is True
           assert set(service.get('networks', {})) == {'ai_plane'}
           assert not service.get('ports'), service.get('ports')
-          assert service.get('secrets') in (None, []), service.get('secrets')
+
+          secrets = service.get('secrets') or []
+          assert len(secrets) == 1, secrets
+          trust_secret = secrets[0]
+          assert trust_secret.get('source') == 'internal_assertion_jwks', trust_secret
+          assert trust_secret.get('target') == 'ai_tenant_context_jwks', trust_secret
 
           expose = {str(item).split('/')[0] for item in service.get('expose', [])}
           assert expose == {'8091'}, expose
@@ -68,6 +73,10 @@ jobs:
           environment = service.get('environment', {})
           assert environment.get('EAY_ENVIRONMENT') == 'production'
           assert environment.get('EAY_AI_DB_PATH') == '/var/lib/eay-ai/eay_ai.db'
+          assert environment.get('EAY_AI_TENANT_CONTEXT_JWKS_FILE') == '/run/secrets/ai_tenant_context_jwks'
+          assert environment.get('EAY_AI_TENANT_CONTEXT_ISSUER') == 'opex-identity-gateway'
+          assert environment.get('EAY_AI_TENANT_CONTEXT_AUDIENCE') == 'eay-ai-core-grounded-retrieval'
+          assert environment.get('EAY_AI_TENANT_CONTEXT_MAX_LIFETIME_SECONDS') == '60'
           forbidden = ('PRIVATE', 'SECRET', 'SIGNING_KEY', 'DATABASE_URL', 'OIDC_CLIENT_SECRET')
           for key in environment:
               assert not any(marker in key.upper() for marker in forbidden), key
@@ -78,7 +87,9 @@ jobs:
           mounts = service.get('volumes', [])
           assert any(item.get('target') == '/var/lib/eay-ai' for item in mounts), mounts
           print('AI_CORE_INTERNAL_AI_PLANE_TOPOLOGY=PASS')
-          print('AI_CORE_SCOPED_PRODUCTION_RAG=FAIL_CLOSED_UNTIL_TRUSTED_TENANT_PROPAGATION')
+          print('AI_CORE_TENANT_TRUST_MATERIAL=PUBLIC_JWKS_ONLY')
+          print('AI_CORE_TRUSTED_TENANT_RETRIEVAL=ASSERTION_BOUND_INTERNAL_ONLY')
+          print('AI_CORE_PUBLIC_SCOPED_PRODUCTION_RAG=FAIL_CLOSED')
           PY
       - name: Build governed AI Core runtime image
         run: |

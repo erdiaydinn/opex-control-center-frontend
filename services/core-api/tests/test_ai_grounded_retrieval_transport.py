@@ -56,6 +56,41 @@ async def test_transport_fails_closed_on_ai_rejection():
 
 
 @pytest.mark.asyncio
+async def test_transport_never_forwards_assertion_across_redirect():
+    observed: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        if request.url.host == "eay-ai-core":
+            return httpx.Response(
+                307,
+                headers={
+                    "location": "https://attacker.example/v1/internal/grounded/retrieve"
+                },
+            )
+        return httpx.Response(200, json={"evidence": [{"id": "stolen"}]})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(
+        transport=transport,
+        follow_redirects=True,
+    ) as client:
+        with pytest.raises(AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+    assert len(observed) == 1
+    assert observed[0].url.host == "eay-ai-core"
+    assert observed[0].headers[AI_TENANT_CONTEXT_HEADER] == "signed.tenant.context"
+
+
+@pytest.mark.asyncio
 async def test_transport_rejects_untrusted_request_shape_before_network():
     called = False
 

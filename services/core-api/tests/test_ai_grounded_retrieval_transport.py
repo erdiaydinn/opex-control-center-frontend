@@ -4,8 +4,8 @@ import httpx
 import pytest
 
 from app.core.ai_grounded_retrieval import (
-    AI_TENANT_CONTEXT_HEADER,
     AIGroundedRetrievalUnavailable,
+    AI_TENANT_CONTEXT_HEADER,
     retrieve_tenant_grounded_evidence,
 )
 

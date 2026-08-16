@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -145,10 +146,7 @@ def test_activation_rejects_wrong_simulation_fingerprint() -> None:
         (sample_event(),),
         evaluated_at=NOW + timedelta(minutes=2),
     )
-    evidence = evidence_for(impact, acknowledge=False)
-    evidence = WorkflowActivationEvidence(
-        **{**evidence.__dict__, "impact_fingerprint": "f" * 64}
-    )
+    evidence = replace(evidence_for(impact, acknowledge=False), impact_fingerprint="f" * 64)
 
     with pytest.raises(WorkflowGovernanceError, match="fingerprint mismatch"):
         validate_effective_promotion(candidate, impact, evidence)

@@ -95,6 +95,19 @@ class EvidencePolicy(StrictModel):
     managed_device_required: bool = False
 
 
+class EvidenceObjectClaim(StrictModel):
+    receipt_id: UUID
+    field_key: str = Field(
+        min_length=1,
+        max_length=120,
+        pattern=r"^[a-zA-Z][a-zA-Z0-9_.-]*$",
+    )
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    media_type: Literal["image/jpeg", "image/png", "image/heic", "image/webp"]
+    byte_size: int = Field(gt=0, le=26_214_400)
+    capture_session_id: UUID | None = None
+
+
 class TemplateCreate(StrictModel):
     template_id: str = Field(min_length=3, max_length=120, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
     version: int = Field(ge=1)
@@ -166,6 +179,19 @@ class OfflineEvidenceEvent(StrictModel):
     target_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     captured_at: datetime
     payload: dict[str, object] = Field(min_length=1, max_length=100)
+    evidence_objects: tuple[EvidenceObjectClaim, ...] = Field(default=(), max_length=20)
+
+    @model_validator(mode="after")
+    def validate_capture_identity(self) -> "OfflineEvidenceEvent":
+        if self.captured_at.tzinfo is None or self.captured_at.utcoffset() is None:
+            raise ValueError("captured_at must be timezone-aware")
+        receipt_ids = [claim.receipt_id for claim in self.evidence_objects]
+        if len(receipt_ids) != len(set(receipt_ids)):
+            raise ValueError("offline event contains duplicate evidence receipt ids")
+        field_keys = [claim.field_key for claim in self.evidence_objects]
+        if len(field_keys) != len(set(field_keys)):
+            raise ValueError("offline event contains duplicate evidence object field keys")
+        return self
 
 
 class OfflineSyncBatch(StrictModel):

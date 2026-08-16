@@ -1,9 +1,10 @@
 from datetime import date
+from importlib import import_module
 
 import httpx
 import pytest
 
-from app.core import ai_grounded_retrieval as retrieval
+retrieval = import_module("app.core.ai_grounded_retrieval")
 
 
 VALID_EVIDENCE = {

@@ -30,6 +30,7 @@ const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.j
 const AcademyPlayer = lazy(() => import("./modules/academy/AcademyPlayer.jsx"));
 const JarvisWorkspace = lazy(() => import("./modules/intelligence/JarvisWorkspace.jsx"));
 const InsightWorkspace = lazy(() => import("./modules/intelligence/InsightWorkspace.jsx"));
+const FieldIntelligenceWorkspace = lazy(() => import("./modules/field-intelligence/FieldIntelligenceWorkspace.jsx"));
 const PlatformHealth = lazy(() => import("./modules/platform-health/PlatformHealth.jsx"));
 const AuditLog = lazy(() => import("./modules/audit-log/AuditLog.jsx"));
 
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
           <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />
           <Route path="/insight" element={<ProtectedRoute moduleKey="insight"><InsightWorkspace /></ProtectedRoute>} />
+          <Route path="/field-intelligence" element={<ProtectedRoute moduleKey="field_intelligence"><FieldIntelligenceWorkspace /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryProductionBoundary /></InventoryUiProvider></ProtectedRoute>} />
           <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
           <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />

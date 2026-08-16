@@ -66,10 +66,6 @@ BUDGET_SQL_EXECUTION_POINTS = {
 ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/rag.py", "grounded_document_answer"),
     ("modules/academy/repository.py", "record_learning_event"),
-    # Product read models below were security-reviewed on 2026-08-14:
-    # every query is static SQL and carries tenant_id; learner workspace and
-    # certificate queries also bind the authenticated subject. No wildcard
-    # repository/module allowlisting is permitted here.
     ("modules/academy/repository_admin.py", "list_admin_content"),
     ("modules/academy/repository_admin.py", "list_admin_paths"),
     ("modules/academy/repository_admin.py", "academy_admin_summary"),
@@ -107,7 +103,6 @@ ACADEMY_SQL_EXECUTION_POINTS = {
 }
 
 FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
-    # Foundation points security-reviewed on 2026-08-16 for item 4/60.
     ("modules/field_intelligence/repository.py", "_set_tenant"),
     ("modules/field_intelligence/repository.py", "upsert_location"),
     ("modules/field_intelligence/repository.py", "list_locations"),
@@ -115,10 +110,6 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/repository.py", "create_template"),
     ("modules/field_intelligence/repository.py", "create_mission"),
     ("modules/field_intelligence/repository.py", "list_missions"),
-    # Item 8/60 Field UI points security-reviewed on 2026-08-16. SQL text is
-    # static, values use bound parameters, every transaction sets app.tenant_id,
-    # migrations 0019/0020 FORCE tenant RLS, evidence/review/notification records
-    # are append-only where required, and replay/scope checks fail closed.
     ("modules/field_intelligence/repository.py", "get_mission_detail"),
     ("modules/field_intelligence/repository.py", "set_mission_status"),
     ("modules/field_intelligence/repository.py", "submit_evidence"),
@@ -126,6 +117,11 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/repository.py", "review_evidence"),
     ("modules/field_intelligence/repository.py", "queue_notification_intents"),
     ("modules/field_intelligence/repository.py", "field_analytics"),
+    # Item 9/60 security review: static SQL + bound parameters, canonical
+    # app.tenant_id context, FORCE RLS, append-only receipts/policy records,
+    # deterministic replay and fail-closed attestation policy gates.
+    ("modules/field_intelligence/mobile_offline.py", "set_template_evidence_policy"),
+    ("modules/field_intelligence/mobile_offline.py", "_sync_one"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (
@@ -216,8 +212,6 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
             if name in ENGINE_CALLS and location not in ALLOWED_ENGINE_CREATION:
                 violations.append(f"{relative}:{node.lineno} {function} -> {name}")
 
-        # Direct DB drivers may only exist behind the approved SQLAlchemy/session
-        # boundary. This intentionally blocks future asyncpg/psycopg shortcuts.
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:

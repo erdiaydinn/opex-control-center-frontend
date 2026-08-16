@@ -34,7 +34,11 @@ def assertion(
     audience: str = "eay-ai-core-grounded-retrieval",
     purpose: str = "grounded-retrieval",
 ) -> str:
-    header = {"alg": "ES256", "kid": "test-key", "typ": "eay-ai-tenant-context+jwt"}
+    header = {
+        "alg": "ES256",
+        "kid": "test-key",
+        "typ": "eay-ai-tenant-context+jwt",
+    }
     claims = {
         "iss": "https://identity.test",
         "aud": audience,
@@ -47,7 +51,7 @@ def assertion(
         "nbf": 1,
         "exp": 60,
     }
-    return f"{_segment(header)}.{_segment(claims)}.signature"
+    return f"{_segment(header)}.{_segment(claims)}.AA"
 
 
 @pytest.fixture
@@ -61,7 +65,10 @@ def principal() -> Principal:
 
 
 @pytest.mark.asyncio
-async def test_matching_binding_reaches_transport(monkeypatch, principal) -> None:
+async def test_matching_binding_reaches_transport(
+    monkeypatch,
+    principal,
+) -> None:
     async def resolve(_principal):
         return AuthorizedAIRetrievalIdentity(
             tenant_id=TENANT_A,
@@ -76,11 +83,13 @@ async def test_matching_binding_reaches_transport(monkeypatch, principal) -> Non
         return [{"id": "evidence-a"}]
 
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration.resolve_authorized_ai_retrieval_identity",
+        "app.core.ai_grounded_orchestration."
+        "resolve_authorized_ai_retrieval_identity",
         resolve,
     )
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration.retrieve_tenant_grounded_evidence",
+        "app.core.ai_grounded_orchestration."
+        "retrieve_tenant_grounded_evidence",
         retrieve,
     )
 
@@ -113,7 +122,11 @@ async def test_matching_binding_reaches_transport(monkeypatch, principal) -> Non
         assertion(purpose="other-purpose"),
     ],
 )
-async def test_binding_mismatch_fails_before_transport(monkeypatch, principal, token) -> None:
+async def test_binding_mismatch_fails_before_transport(
+    monkeypatch,
+    principal,
+    token,
+) -> None:
     async def resolve(_principal):
         return AuthorizedAIRetrievalIdentity(
             tenant_id=TENANT_A,
@@ -122,14 +135,18 @@ async def test_binding_mismatch_fails_before_transport(monkeypatch, principal, t
         )
 
     async def retrieve(**_kwargs):
-        raise AssertionError("transport must not run for a mismatched binding")
+        raise AssertionError(
+            "transport must not run for a mismatched binding"
+        )
 
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration.resolve_authorized_ai_retrieval_identity",
+        "app.core.ai_grounded_orchestration."
+        "resolve_authorized_ai_retrieval_identity",
         resolve,
     )
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration.retrieve_tenant_grounded_evidence",
+        "app.core.ai_grounded_orchestration."
+        "retrieve_tenant_grounded_evidence",
         retrieve,
     )
 

@@ -14,6 +14,10 @@ from app.core.security import Principal
 
 TENANT_ID = UUID("00000000-0000-0000-0000-00000000a001")
 MEMBERSHIP_ID = UUID("00000000-0000-0000-0000-00000000a101")
+JARVIS_PERMISSIONS = (
+    {"key": "module:jarvis:view", "role_key": "operator", "scope": {}},
+    {"key": "action:jarvis:ask", "role_key": "operator", "scope": {}},
+)
 
 
 def principal() -> Principal:
@@ -43,8 +47,8 @@ async def test_identity_comes_from_fresh_core_membership_authority(monkeypatch) 
             "tenant_status": "active",
             "membership_status": "active",
             "membership_id": str(MEMBERSHIP_ID),
-            "roles": ("viewer",),
-            "permission_assignments": (),
+            "roles": ("operator",),
+            "permission_assignments": JARVIS_PERMISSIONS,
         }
 
     monkeypatch.setattr(
@@ -65,6 +69,38 @@ async def test_identity_comes_from_fresh_core_membership_authority(monkeypatch) 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("permission_assignments"),
+    (
+        (),
+        (JARVIS_PERMISSIONS[0],),
+        (JARVIS_PERMISSIONS[1],),
+    ),
+)
+async def test_fresh_jarvis_permission_revocation_fails_closed(
+    monkeypatch,
+    permission_assignments,
+) -> None:
+    async def fake_resolve_principal_access(*, tenant_id: str, subject: str):
+        del tenant_id, subject
+        return {
+            "tenant_status": "active",
+            "membership_status": "active",
+            "membership_id": str(MEMBERSHIP_ID),
+            "roles": ("operator",),
+            "permission_assignments": permission_assignments,
+        }
+
+    monkeypatch.setattr(
+        "app.core.ai_retrieval_authority.resolve_principal_access",
+        fake_resolve_principal_access,
+    )
+
+    with pytest.raises(AIRetrievalAuthorityDenied):
+        await resolve_authorized_ai_retrieval_identity(principal())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("tenant_status", "membership_status"),
     (("suspended", "active"), ("active", "suspended")),
 )
@@ -80,7 +116,7 @@ async def test_inactive_authority_fails_closed(
             "membership_status": membership_status,
             "membership_id": str(MEMBERSHIP_ID),
             "roles": (),
-            "permission_assignments": (),
+            "permission_assignments": JARVIS_PERMISSIONS,
         }
 
     monkeypatch.setattr(
@@ -101,7 +137,7 @@ async def test_invalid_membership_identity_fails_closed(monkeypatch) -> None:
             "membership_status": "active",
             "membership_id": "not-a-uuid",
             "roles": (),
-            "permission_assignments": (),
+            "permission_assignments": JARVIS_PERMISSIONS,
         }
 
     monkeypatch.setattr(

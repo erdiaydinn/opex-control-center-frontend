@@ -27,21 +27,14 @@
   "global_acceptance_targets": {
     "web_accessibility": "WCAG_2_2_AA",
     "accessibility_enhancements_beyond_minimum": [
-      "screen_reader_semantics",
-      "keyboard_only_operation",
-      "visible_focus",
-      "forced_colors_support",
-      "reduced_motion",
-      "no_color_only_meaning",
-      "text_scaling_without_loss",
-      "large_touch_targets",
-      "visual_equivalent_for_audio_alerts",
-      "captions_by_default_when_available",
-      "transcript_support",
-      "audio_description_support",
-      "descriptive_transcript_support",
-      "non_drag_alternative_for_drag_interactions",
-      "plain_language_and_focus_mode_support"
+      "screen_reader_structure",
+      "accessible_names_and_descriptions",
+      "high_contrast",
+      "forced_colors",
+      "scalable_text",
+      "audio_description_for_visual_media",
+      "chart_table_equivalent",
+      "redundant_non_color_status_cues"
     ],
     "supported_locales": ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"],
     "rtl_locales": ["ar"],
@@ -216,8 +209,24 @@
     },
     "field_intelligence": {
       "owner": "field_intelligence",
-      "channels": ["web", "api"],
-      "priority_flows": ["mission_builder", "targeting", "capture", "evidence", "review", "rework", "reminder", "escalation", "verification", "results"],
+      "channels": ["web", "mobile", "api"],
+      "priority_flows": [
+        "mission_builder",
+        "targeting",
+        "capture",
+        "offline_queue",
+        "reconnect_replay",
+        "attachment_retry",
+        "stale_assignment",
+        "device_sequence_conflict",
+        "evidence",
+        "review",
+        "rework",
+        "reminder",
+        "escalation",
+        "verification",
+        "results"
+      ],
       "field_evidence": ["real_device", "barcode_camera", "gps_when_policy_requires", "offline_sync", "pilot_locations", "assistive_technology_uat"]
     }
   },

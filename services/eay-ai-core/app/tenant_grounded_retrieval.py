@@ -1,6 +1,6 @@
 """Trusted, tenant-bound grounded retrieval for Core -> EAY AI Core calls.
 
-This router is intentionally separate from the public grounded-chat surface.  It
+This router is intentionally separate from the public grounded-chat surface. It
 accepts no client-supplied tenant identifier: tenant, membership and actor
 identity come only from the dedicated Identity Gateway assertion.
 """
@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -21,6 +20,11 @@ from .tenant_context_assertion import (
     TenantContextAssertionUnavailable,
     VerifiedTenantContext,
     verify_tenant_context_assertion,
+)
+from .tenant_context_replay import (
+    TenantContextReplayDetected,
+    TenantContextReplayGuard,
+    TenantContextReplayUnavailable,
 )
 from .tenant_retrieval import TenantScopedKnowledgeStore
 
@@ -83,6 +87,7 @@ class TenantRetrievalResponse(BaseModel):
 
 router = APIRouter(prefix="/v1/internal/grounded", tags=["internal-grounded"])
 tenant_store = TenantScopedKnowledgeStore(settings.db_path)
+tenant_context_replay_guard = TenantContextReplayGuard(settings.db_path)
 
 
 def _verify_header(token: str) -> VerifiedTenantContext:
@@ -119,12 +124,28 @@ def _verify_header(token: str) -> VerifiedTenantContext:
         ) from exc
 
 
+def _consume_assertion(context: VerifiedTenantContext) -> None:
+    try:
+        tenant_context_replay_guard.consume(context.assertion_id)
+    except TenantContextReplayDetected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="AI tenant context authentication failed",
+        ) from exc
+    except TenantContextReplayUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI tenant context authentication unavailable",
+        ) from exc
+
+
 @router.post("/retrieve", response_model=TenantRetrievalResponse)
 async def retrieve_for_verified_tenant(
     request: TenantRetrievalRequest,
     tenant_context_assertion: str = Header(alias=TENANT_CONTEXT_HEADER),
 ) -> TenantRetrievalResponse:
     context = _verify_header(tenant_context_assertion)
+    _consume_assertion(context)
     evidence = tenant_store.search(
         request.message,
         request.as_of,

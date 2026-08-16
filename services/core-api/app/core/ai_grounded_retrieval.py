@@ -84,7 +84,15 @@ async def retrieve_tenant_grounded_evidence(
     owns_client = client is None
     active_client = client or httpx.AsyncClient(timeout=httpx.Timeout(10.0))
     try:
-        response = await active_client.post(url, headers=headers, json=payload)
+        # The tenant-context assertion is a bearer-equivalent server credential.
+        # Never inherit a caller-provided client's redirect policy: a 30x response
+        # must not be able to forward this assertion to another origin.
+        response = await active_client.post(
+            url,
+            headers=headers,
+            json=payload,
+            follow_redirects=False,
+        )
     except httpx.HTTPError as exc:
         raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable") from exc
     finally:

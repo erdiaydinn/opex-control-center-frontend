@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "canonical_continuation": {
+    "pr": 94,
+    "head_branch": "product/eay-category-leadership-v1",
+    "base_branch": "product/eay-product-completion-v1",
+    "base_must_be_ancestor_of_head": true,
+    "main_merge_permitted": false,
+    "force_push_permitted": false,
+    "production_activation_permitted": false
+  },
+  "rolling_parent": {
+    "pr": 92,
+    "branch": "product/eay-product-completion-v1",
+    "release_parent_branch": "release/platform-convergence-v0.1"
+  },
+  "immutable_anchors": [
+    {
+      "name": "ai_core_frozen_pr15",
+      "pr": 15,
+      "branch": "feature/eay-ai-core-v0.1",
+      "head_sha": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15",
+      "remote_tip_must_equal": true,
+      "must_be_ancestor_of_category_head": false,
+      "reason": "Frozen AI Core is composed into later convergence work without requiring direct Git ancestry."
+    },
+    {
+      "name": "security_frozen_pr16",
+      "pr": 16,
+      "branch": "feature/phase-1-security-hardening",
+      "head_sha": "6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d",
+      "remote_tip_must_equal": true,
+      "must_be_ancestor_of_category_head": true
+    },
+    {
+      "name": "rc0_release_anchor_pr76",
+      "pr": 76,
+      "branch": "release/platform-convergence-v0.1",
+      "head_sha": "e72c65a35f0d4d1ac41945f59293d80f6720fe7a",
+      "remote_tip_must_equal": true,
+      "must_be_ancestor_of_category_head": true
+    }
+  ],
+  "pr_roles": {
+    "frozen": [15, 16],
+    "parked_or_historical": [38, 44],
+    "release_anchor": [76],
+    "rolling_product_completion": [92],
+    "active_category_leadership": [94]
+  },
+  "production_truth": {
+    "release_policy_path": "config/eay_release_candidate.json",
+    "required_false_controls": [
+      "main_merge_permitted",
+      "production_activation_permitted",
+      "production_ready"
+    ],
+    "required_true_evidence_rules": [
+      "repository_ready_is_not_production_ready",
+      "external_evidence_may_not_be_replaced_by_synthetic_evidence"
+    ]
+  }
+}

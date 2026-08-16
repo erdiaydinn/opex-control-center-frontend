@@ -76,3 +76,26 @@ async def test_transport_rejects_untrusted_request_shape_before_network():
             )
 
     assert called is False
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_duplicate_layers_before_network():
+    called = False
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, json={"evidence": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError, match="layers"):
+            await retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company", "company"),
+                client=client,
+            )
+
+    assert called is False

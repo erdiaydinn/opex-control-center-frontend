@@ -29,6 +29,7 @@ from .vision_provenance import router as vision_provenance_router
 from .voice_ws_api import router as voice_ws_router
 
 _ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
+_LEGACY_PUBLIC_RETRIEVAL_PATHS = frozenset({"/v1/chat", "/v1/knowledge"})
 
 # These routes are backed by the pre-tenant Store in main.py. They remain useful
 # for local research, but exposing them in the production-composed app would
@@ -37,8 +38,7 @@ _ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "production"})
 # authorization contract exists.
 _PRODUCTION_UNSCOPED_PATHS = frozenset(
     {
-        "/v1/chat",
-        "/v1/knowledge",
+        *_LEGACY_PUBLIC_RETRIEVAL_PATHS,
         "/v1/feedback",
         "/v1/learning/export",
         "/v1/learning/candidates",
@@ -54,6 +54,10 @@ def _signature(route) -> tuple[str, tuple[str, ...], str]:
     methods = tuple(sorted(getattr(route, "methods", set()) or set()))
     name = str(getattr(route, "name", ""))
     return path, methods, name
+
+
+def _route_paths(target: FastAPI) -> set[str]:
+    return {str(getattr(route, "path", "")) for route in target.routes}
 
 
 def _include_router_once(target: FastAPI, router: APIRouter) -> None:
@@ -101,11 +105,7 @@ def _quarantine_unscoped_production_routes(
         if str(getattr(route, "path", "")) not in _PRODUCTION_UNSCOPED_PATHS
     ]
 
-    remaining = {
-        str(getattr(route, "path", ""))
-        for route in target.routes
-        if str(getattr(route, "path", "")) in _PRODUCTION_UNSCOPED_PATHS
-    }
+    remaining = _route_paths(target) & _PRODUCTION_UNSCOPED_PATHS
     if remaining:
         raise RuntimeError("ai_core_unscoped_route_quarantine_incomplete")
 
@@ -114,13 +114,21 @@ def _quarantine_legacy_public_retrieval(
     target: FastAPI,
     environment: str,
 ) -> None:
-    """Compatibility entrypoint for the original production quarantine contract.
+    """Preserve the original legacy quarantine API atop the stronger boundary.
 
-    Historical tests and callers used this helper name when quarantine covered
-    only legacy public retrieval. Keep that API stable while delegating to the
-    stronger tenant-unaware retrieval + learning quarantine. This is deliberately
-    not a weaker or parallel security authority.
+    The historical contract treats a partially composed legacy public retrieval
+    surface as corruption: both old routes must be present together or both must
+    already be absent. Keep that invariant because it detects route-composition
+    drift before the stronger production quarantine removes all tenant-unaware
+    retrieval and learning routes.
     """
+
+    if environment != "production":
+        return
+
+    present = _route_paths(target) & _LEGACY_PUBLIC_RETRIEVAL_PATHS
+    if present and present != _LEGACY_PUBLIC_RETRIEVAL_PATHS:
+        raise RuntimeError("ai_core_legacy_retrieval_quarantine_incomplete")
 
     _quarantine_unscoped_production_routes(target, environment)
 
@@ -165,7 +173,7 @@ def compose_app() -> FastAPI:
     )
     for router in routers:
         _include_router_once(app, router)
-    _quarantine_unscoped_production_routes(app, environment)
+    _quarantine_legacy_public_retrieval(app, environment)
     return app
 
 

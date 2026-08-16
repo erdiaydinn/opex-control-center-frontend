@@ -40,7 +40,28 @@ jobs:
       - name: Compile complete AI Core
         run: python -m compileall -q app tests
       - name: Full AI Core regression
-        run: pytest -q
+        id: full-ai-core-regression
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee /tmp/eay-ai-full-regression.log
+      - name: Surface AI Core regression diagnostics
+        if: failure() && steps.full-ai-core-regression.outcome == 'failure'
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/eay-ai-full-regression.log')
+          text = path.read_text(encoding='utf-8', errors='replace') if path.exists() else 'pytest diagnostic log unavailable'
+          tail = text[-12000:]
+          escaped = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print(f'::error title=AI Core full regression::{escaped}')
+          with Path('/tmp/eay-ai-regression-summary.txt').open('w', encoding='utf-8') as handle:
+              handle.write('AI Core full regression failed. Tail of pytest output:\n\n')
+              handle.write(tail)
+          PY
+          cat /tmp/eay-ai-regression-summary.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Validate internal AI plane topology
         run: |
           EAY_ENVIRONMENT=production docker compose \

@@ -11,6 +11,7 @@ on:
       - "services/core-api/app/core/client_ip.py"
       - "services/core-api/app/core/config.py"
       - "services/core-api/app/main.py"
+      - "services/core-api/alembic/**"
       - "services/core-api/tests/test_bearer_header_boundary.py"
       - "services/core-api/tests/test_security_foundation.py"
       - "services/core-api/tests/test_internal_service_auth_dependency.py"
@@ -36,7 +37,36 @@ jobs:
   security-hardening:
     name: Bearer tenant identity replay proxy TLS and SQL boundaries
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -53,6 +83,36 @@ jobs:
             services/core-api/app/core/client_ip.py \
             services/core-api/app/core/config.py \
             services/core-api/app/main.py
+      - name: Create RLS-bound runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Apply canonical database migrations
+        working-directory: services/core-api
+        run: alembic upgrade head
       - name: Run bearer and identity authority tests
         env:
           PYTHONPATH: services/core-api

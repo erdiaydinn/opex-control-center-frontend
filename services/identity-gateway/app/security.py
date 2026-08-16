@@ -16,6 +16,8 @@ from jwt.algorithms import ECAlgorithm
 
 INTERNAL_ASSERTION_TYP = "opex-internal+jwt"
 INTERNAL_SERVICE_ASSERTION_TYP = "opex-internal-service+jwt"
+AI_TENANT_CONTEXT_ASSERTION_TYP = "eay-ai-tenant-context+jwt"
+AI_TENANT_CONTEXT_PURPOSE = "grounded-retrieval"
 
 KID_PATTERN = re.compile(
     r"^[A-Za-z0-9._:-]{1,128}$"
@@ -39,6 +41,7 @@ class GatewaySettings:
     signing_kid: str
     assertion_lifetime_seconds: int
     service_audience: str = "opex-core-preauth"
+    ai_tenant_context_audience: str = "eay-ai-core-grounded-retrieval"
 
     @classmethod
     def from_environment(
@@ -62,6 +65,11 @@ class GatewaySettings:
         service_audience = os.getenv(
             "OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE",
             "opex-core-preauth",
+        ).strip()
+
+        ai_tenant_context_audience = os.getenv(
+            "OPEX_AI_TENANT_CONTEXT_AUDIENCE",
+            "eay-ai-core-grounded-retrieval",
         ).strip()
 
         signing_key_file = os.getenv(
@@ -107,6 +115,19 @@ class GatewaySettings:
                 "from end-user assertion audience"
             )
 
+        if not ai_tenant_context_audience:
+            raise IdentityGatewayConfigurationError(
+                "AI tenant-context audience is required"
+            )
+
+        if ai_tenant_context_audience in {
+            audience,
+            service_audience,
+        }:
+            raise IdentityGatewayConfigurationError(
+                "AI tenant-context audience must be dedicated"
+            )
+
         if not signing_key_file:
             raise IdentityGatewayConfigurationError(
                 "Signing key file is required"
@@ -147,6 +168,7 @@ class GatewaySettings:
             audience=audience,
             signing_key_file=signing_key_file,
             service_audience=service_audience,
+            ai_tenant_context_audience=ai_tenant_context_audience,
             signing_kid=signing_kid,
             assertion_lifetime_seconds=lifetime,
         )
@@ -274,6 +296,47 @@ class IdentitySigner:
             )
         )
 
+    def issue_ai_tenant_context_assertion(
+        self,
+        *,
+        tenant_id: UUID,
+        membership_id: UUID,
+        actor_subject: str,
+    ) -> str:
+        """Issue a short-lived, AI-only tenant context assertion.
+
+        Trusted server-side code must call this only after provider verification,
+        external-identity resolution and membership authorization. It is not an
+        end-user credential and must never be exposed through an HTTP issuance
+        endpoint.
+        """
+        normalized_actor = actor_subject.strip()
+        if not normalized_actor or len(normalized_actor) > 255:
+            raise ValueError("AI tenant-context actor is invalid")
+
+        now = int(time.time())
+        payload = {
+            "iss": self.settings.issuer,
+            "aud": self.settings.ai_tenant_context_audience,
+            "sub": normalized_actor,
+            "tenant_id": str(tenant_id),
+            "membership_id": str(membership_id),
+            "purpose": AI_TENANT_CONTEXT_PURPOSE,
+            "jti": str(uuid4()),
+            "iat": now,
+            "nbf": now,
+            "exp": now + self.settings.assertion_lifetime_seconds,
+        }
+
+        return jwt.encode(
+            payload,
+            self._private_key,
+            algorithm="ES256",
+            headers={
+                "kid": self.settings.signing_kid,
+                "typ": AI_TENANT_CONTEXT_ASSERTION_TYP,
+            },
+        )
 
     def issue_internal_service_assertion(
         self,

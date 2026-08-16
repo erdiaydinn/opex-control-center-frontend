@@ -1,10 +1,17 @@
 from datetime import date
 
+import pytest
+from fastapi import HTTPException
+
 from app.company_knowledge import ApprovalRequest, CompanyKnowledgeStore, CompanyPolicyCreate
-from app.grounded_chat import _provenance_for_evidence
+from app.grounded_chat import (
+    _enforce_grounded_retrieval_truth_boundary,
+    _provenance_for_evidence,
+)
 from app.legal_engine import LegalEngine, LegalInstrumentUpsert
 from app.legal_knowledge import LegalKnowledgeIndexer
 from app.legal_verification import LegalVerificationStore, VerificationCreate
+from app.main import ChatRequest
 
 
 def test_provenance_resolves_company_policy(tmp_path):
@@ -91,3 +98,62 @@ def test_provenance_resolves_verified_legal_chunk(tmp_path):
     assert items[0].verification_id == record.id
     assert items[0].content_sha256
     assert items[0].chunk_sha256
+
+
+def test_production_blocks_company_retrieval_without_central_tenant_authority(
+    monkeypatch,
+):
+    monkeypatch.setenv("EAY_ENVIRONMENT", "production")
+    request = ChatRequest(
+        message="What is our cold chain policy?",
+        layers=["company"],
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        _enforce_grounded_retrieval_truth_boundary(request)
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail["error"] == (
+        "tenant_scoped_retrieval_not_production_ready"
+    )
+    assert exc_info.value.detail["layers"] == ["company"]
+
+
+def test_production_blocks_operational_retrieval_without_tenant_authority(
+    monkeypatch,
+):
+    monkeypatch.setenv("EAY_ENVIRONMENT", "production")
+    request = ChatRequest(
+        message="Show current picking guidance",
+        layers=["operational"],
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        _enforce_grounded_retrieval_truth_boundary(request)
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail["layers"] == ["operational"]
+
+
+def test_production_allows_global_legal_and_standard_retrieval(monkeypatch):
+    monkeypatch.setenv("EAY_ENVIRONMENT", "production")
+    request = ChatRequest(
+        message="What regulation applies?",
+        layers=["legal", "standard"],
+    )
+
+    _enforce_grounded_retrieval_truth_boundary(request)
+
+
+def test_invalid_environment_fails_closed(monkeypatch):
+    monkeypatch.setenv("EAY_ENVIRONMENT", "prod-ish")
+    request = ChatRequest(
+        message="What regulation applies?",
+        layers=["legal"],
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        _enforce_grounded_retrieval_truth_boundary(request)
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "Grounded retrieval environment is invalid"

@@ -3,10 +3,13 @@ from pathlib import Path
 from uuid import UUID
 
 import jwt
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.security import (
+    AI_TENANT_CONTEXT_ASSERTION_TYP,
+    AI_TENANT_CONTEXT_PURPOSE,
     GatewaySettings,
     IdentitySigner,
     INTERNAL_ASSERTION_TYP,
@@ -162,6 +165,83 @@ def test_internal_assertion_contract_is_identity_only(
     ] == claims["iat"]
 
 
+def test_ai_tenant_context_assertion_is_dedicated_and_identity_bound(
+    tmp_path,
+):
+    settings = _settings(tmp_path)
+    signer = IdentitySigner(settings)
+
+    token = signer.issue_ai_tenant_context_assertion(
+        tenant_id=TENANT_ID,
+        membership_id=MEMBERSHIP_ID,
+        actor_subject="operator@example.test",
+    )
+
+    assert jwt.get_unverified_header(token) == {
+        "alg": "ES256",
+        "kid": "test-es256-v1",
+        "typ": AI_TENANT_CONTEXT_ASSERTION_TYP,
+    }
+
+    public_key = jwt.PyJWK.from_dict(
+        signer.public_jwks()["keys"][0]
+    ).key
+    claims = jwt.decode(
+        token,
+        public_key,
+        algorithms=["ES256"],
+        audience="eay-ai-core-grounded-retrieval",
+        issuer="opex-identity-gateway",
+    )
+
+    assert set(claims) == {
+        "iss",
+        "aud",
+        "sub",
+        "tenant_id",
+        "membership_id",
+        "purpose",
+        "jti",
+        "iat",
+        "nbf",
+        "exp",
+    }
+    assert claims["aud"] == "eay-ai-core-grounded-retrieval"
+    assert claims["aud"] != settings.audience
+    assert claims["aud"] != settings.service_audience
+    assert claims["sub"] == "operator@example.test"
+    assert claims["tenant_id"] == str(TENANT_ID)
+    assert claims["membership_id"] == str(MEMBERSHIP_ID)
+    assert claims["purpose"] == AI_TENANT_CONTEXT_PURPOSE
+    assert claims["nbf"] == claims["iat"]
+    assert claims["exp"] - claims["iat"] == 30
+    assert "roles" not in claims
+    assert "permissions" not in claims
+
+    with pytest.raises(jwt.InvalidAudienceError):
+        jwt.decode(
+            token,
+            public_key,
+            algorithms=["ES256"],
+            audience="opex-core-api",
+            issuer="opex-identity-gateway",
+        )
+
+
+def test_ai_tenant_context_assertion_rejects_invalid_actor(
+    tmp_path,
+):
+    signer = IdentitySigner(_settings(tmp_path))
+
+    for actor in ("", "   ", "x" * 256):
+        with pytest.raises(ValueError, match="actor is invalid"):
+            signer.issue_ai_tenant_context_assertion(
+                tenant_id=TENANT_ID,
+                membership_id=MEMBERSHIP_ID,
+                actor_subject=actor,
+            )
+
+
 def test_main_module_has_no_token_issuance_route():
     source = (
         Path(__file__)
@@ -281,7 +361,7 @@ def test_service_assertion_is_strictly_service_only(
     )
 
 
-def test_identity_and_service_token_types_are_distinct(
+def test_identity_service_and_ai_token_types_are_distinct(
     tmp_path,
 ):
     signer = IdentitySigner(
@@ -302,21 +382,20 @@ def test_identity_and_service_token_types_are_distinct(
         issue_internal_service_assertion()
     )
 
-    assert (
-        jwt.get_unverified_header(
-            identity_token
-        )["typ"]
-        == INTERNAL_ASSERTION_TYP
+    ai_token = signer.issue_ai_tenant_context_assertion(
+        tenant_id=TENANT_ID,
+        membership_id=MEMBERSHIP_ID,
+        actor_subject="operator@example.test",
     )
 
-    assert (
-        jwt.get_unverified_header(
-            service_token
-        )["typ"]
-        == INTERNAL_SERVICE_ASSERTION_TYP
-    )
+    token_types = {
+        jwt.get_unverified_header(identity_token)["typ"],
+        jwt.get_unverified_header(service_token)["typ"],
+        jwt.get_unverified_header(ai_token)["typ"],
+    }
 
-    assert (
-        INTERNAL_ASSERTION_TYP
-        != INTERNAL_SERVICE_ASSERTION_TYP
-    )
+    assert token_types == {
+        INTERNAL_ASSERTION_TYP,
+        INTERNAL_SERVICE_ASSERTION_TYP,
+        AI_TENANT_CONTEXT_ASSERTION_TYP,
+    }

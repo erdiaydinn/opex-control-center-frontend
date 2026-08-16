@@ -15,7 +15,7 @@ from .repository import (
     _validate_evidence_payload,
     list_locations,
 )
-from .schemas import FieldScope, OfflineEvidenceEvent, OfflineSyncBatch
+from .schemas import EvidencePolicy, FieldScope, OfflineEvidenceEvent, OfflineSyncBatch
 
 
 class FieldOfflineSyncError(ValueError):
@@ -38,6 +38,66 @@ def _camera_policy_satisfied(
     camera_attested_submission_ids: frozenset[str],
 ) -> bool:
     return str(event.client_submission_id) in camera_attested_submission_ids
+
+
+async def set_template_evidence_policy(
+    *,
+    tenant_id: str,
+    actor_subject: str,
+    template_id: str,
+    template_version: int,
+    policy: EvidencePolicy,
+) -> dict[str, object]:
+    """Create one immutable policy record for a versioned Field template."""
+    async with engine.begin() as connection:
+        await _set_tenant(connection, tenant_id)
+        template = await connection.execute(
+            text(
+                """
+                SELECT template_id, version
+                FROM field_templates
+                WHERE tenant_id=CAST(:tenant_id AS UUID)
+                  AND template_id=:template_id
+                  AND version=:template_version
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "template_id": template_id,
+                "template_version": template_version,
+            },
+        )
+        if template.mappings().first() is None:
+            raise FieldOfflineSyncError("template version not found in authorized tenant")
+        try:
+            result = await connection.execute(
+                text(
+                    """
+                    INSERT INTO field_template_evidence_policies (
+                        tenant_id, template_id, template_version,
+                        camera_only_photo, managed_device_required, created_by
+                    ) VALUES (
+                        CAST(:tenant_id AS UUID), :template_id, :template_version,
+                        :camera_only_photo, :managed_device_required, :created_by
+                    )
+                    RETURNING template_id, template_version, camera_only_photo,
+                              managed_device_required, created_by, created_at
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "template_id": template_id,
+                    "template_version": template_version,
+                    "camera_only_photo": policy.camera_only_photo,
+                    "managed_device_required": policy.managed_device_required,
+                    "created_by": actor_subject,
+                },
+            )
+        except IntegrityError as exc:
+            raise FieldOfflineSyncError(
+                "evidence policy is immutable and already defined for this template version"
+            ) from exc
+        return dict(result.mappings().one())
 
 
 async def _sync_one(
@@ -109,7 +169,8 @@ async def _sync_one(
                        m.status AS mission_status,
                        m.target_fingerprint,
                        ft.schema AS template_schema,
-                       ft.evidence_policy
+                       COALESCE(policy.camera_only_photo, false) AS camera_only_photo,
+                       COALESCE(policy.managed_device_required, false) AS managed_device_required
                 FROM field_mission_targets t
                 JOIN field_missions m
                   ON m.tenant_id=t.tenant_id AND m.id=t.mission_id
@@ -117,6 +178,10 @@ async def _sync_one(
                   ON ft.tenant_id=m.tenant_id
                  AND ft.template_id=m.template_id
                  AND ft.version=m.template_version
+                LEFT JOIN field_template_evidence_policies policy
+                  ON policy.tenant_id=ft.tenant_id
+                 AND policy.template_id=ft.template_id
+                 AND policy.template_version=ft.version
                 WHERE t.tenant_id=CAST(:tenant_id AS UUID)
                   AND t.mission_id=CAST(:mission_id AS UUID)
                   AND t.location_id=:location_id
@@ -163,8 +228,7 @@ async def _sync_one(
                 "reason": "target no longer accepts evidence",
             }
 
-        policy = dict(target["evidence_policy"] or {})
-        if bool(policy.get("managed_device_required")) and event.device_id not in trusted_device_ids:
+        if bool(target["managed_device_required"]) and event.device_id not in trusted_device_ids:
             return {
                 "client_submission_id": str(event.client_submission_id),
                 "device_sequence": event.device_sequence,
@@ -172,7 +236,7 @@ async def _sync_one(
                 "evidence_id": None,
                 "reason": "managed-device policy requires authoritative device attestation",
             }
-        if bool(policy.get("camera_only_photo")) and not _camera_policy_satisfied(
+        if bool(target["camera_only_photo"]) and not _camera_policy_satisfied(
             event=event,
             camera_attested_submission_ids=camera_attested_submission_ids,
         ):

@@ -16,6 +16,7 @@ on:
       - "scripts/security/generate_cyclonedx_sbom.py"
       - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/test-github-action-pinning.mjs"
+      - "scripts/test-dockos-product-state.mjs"
       - "scripts/validate_product_quality_contract.py"
       - "scripts/test-platform-inclusion.mjs"
       - "scripts/test-no-new-hardcoded-ui-strings.mjs"
@@ -101,6 +102,8 @@ jobs:
         run: node scripts/test-route-error-boundary.mjs
       - name: Intelligence product-state contract
         run: node scripts/test-intelligence-product-states.mjs
+      - name: DockOS fail-closed product-state contract
+        run: node scripts/test-dockos-product-state.mjs
       - name: Repository Intelligence registry contract
         run: node scripts/test-repository-intelligence-registry.mjs
       - run: npm run build

@@ -97,3 +97,64 @@ def test_global_knowledge_rejects_tenant_binding(tmp_path):
 
     with pytest.raises(ValueError, match="global_knowledge_must_not_be_tenant_scoped"):
         store.upsert(knowledge("legal-a", "legal", "global"), tenant_id=TENANT_A)
+
+
+def test_same_document_id_cannot_be_rehomed_to_another_tenant(tmp_path):
+    store = TenantScopedKnowledgeStore(tmp_path / "tenant-retrieval.db")
+    store.upsert(
+        knowledge("shared-company-id", "company", "tenant-a-original"),
+        tenant_id=TENANT_A,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="tenant_scoped_document_identity_collision:shared-company-id",
+    ):
+        store.upsert(
+            knowledge("shared-company-id", "company", "tenant-b-overwrite"),
+            tenant_id=TENANT_B,
+        )
+
+    tenant_a = store.search(
+        "tenant-a-original",
+        date(2026, 8, 16),
+        ["company"],
+        10,
+        tenant_id=TENANT_A,
+    )
+    tenant_b = store.search(
+        "tenant-a-original",
+        date(2026, 8, 16),
+        ["company"],
+        10,
+        tenant_id=TENANT_B,
+    )
+
+    assert [item.id for item in tenant_a] == ["shared-company-id"]
+    assert tenant_a[0].source_name == "source-tenant-a-original"
+    assert tenant_b == []
+
+
+def test_legacy_unscoped_tenant_id_cannot_be_silently_claimed(tmp_path):
+    store = TenantScopedKnowledgeStore(tmp_path / "tenant-retrieval.db")
+    store.store.upsert_knowledge(knowledge("legacy-shared", "company", "legacy"))
+
+    with pytest.raises(
+        ValueError,
+        match="tenant_scoped_document_identity_collision:legacy-shared",
+    ):
+        store.upsert(
+            knowledge("legacy-shared", "company", "tenant-a"),
+            tenant_id=TENANT_A,
+        )
+
+
+def test_global_document_cannot_overwrite_tenant_scoped_identity(tmp_path):
+    store = TenantScopedKnowledgeStore(tmp_path / "tenant-retrieval.db")
+    store.upsert(
+        knowledge("shared-id", "company", "tenant-a"),
+        tenant_id=TENANT_A,
+    )
+
+    with pytest.raises(ValueError, match="global_document_identity_collision:shared-id"):
+        store.upsert(knowledge("shared-id", "legal", "global-overwrite"))

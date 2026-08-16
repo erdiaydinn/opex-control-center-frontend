@@ -223,17 +223,52 @@ CREATE TABLE IF NOT EXISTS workflow_policy_evaluations (
 );
 
 CREATE OR REPLACE FUNCTION workflow_policy_validate_evaluation_insert() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE current_status text;
+DECLARE
+  current_status text;
+  definition_source_module text;
+  definition_event_type text;
+  definition_scope jsonb;
+  definition_effective_from timestamptz;
+  definition_effective_to timestamptz;
+  receipt_source_module text;
+  receipt_event_type text;
+  receipt_scope jsonb;
 BEGIN
-  SELECT status INTO current_status
-  FROM workflow_policy_current_status
-  WHERE tenant_id=NEW.tenant_id
-    AND workflow_id=NEW.workflow_id
-    AND workflow_version=NEW.workflow_version;
+  SELECT cs.status, d.source_module, d.event_type, d.scope_json, d.effective_from, d.effective_to
+    INTO current_status, definition_source_module, definition_event_type, definition_scope,
+         definition_effective_from, definition_effective_to
+  FROM workflow_policy_definitions d
+  JOIN workflow_policy_current_status cs
+    ON cs.tenant_id=d.tenant_id
+   AND cs.workflow_id=d.workflow_id
+   AND cs.workflow_version=d.version
+  WHERE d.tenant_id=NEW.tenant_id
+    AND d.workflow_id=NEW.workflow_id
+    AND d.version=NEW.workflow_version;
 
-  IF current_status IS NULL THEN
-    RAISE EXCEPTION 'workflow status not found for evaluation';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'workflow definition/status not found for evaluation';
   END IF;
+
+  SELECT source_module, event_type, scope_json
+    INTO receipt_source_module, receipt_event_type, receipt_scope
+  FROM workflow_policy_event_receipts
+  WHERE tenant_id=NEW.tenant_id AND event_id=NEW.event_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'workflow event receipt not found for evaluation';
+  END IF;
+  IF receipt_source_module <> definition_source_module OR receipt_event_type <> definition_event_type THEN
+    RAISE EXCEPTION 'workflow evaluation event contract mismatch';
+  END IF;
+  IF NOT (definition_scope <@ receipt_scope) THEN
+    RAISE EXCEPTION 'workflow evaluation scope mismatch';
+  END IF;
+  IF NEW.evaluated_at < definition_effective_from
+     OR (definition_effective_to IS NOT NULL AND NEW.evaluated_at >= definition_effective_to) THEN
+    RAISE EXCEPTION 'workflow evaluation time outside configured effective window';
+  END IF;
+
   IF NEW.dry_run THEN
     IF current_status NOT IN ('draft','approved','effective') THEN
       RAISE EXCEPTION 'dry-run evaluation is not permitted for workflow status %', current_status;
@@ -268,8 +303,30 @@ CREATE TABLE IF NOT EXISTS workflow_policy_action_intents (
     REFERENCES workflow_policy_evaluations(tenant_id, evaluation_id) ON DELETE RESTRICT,
   CHECK (effect NOT IN ('financial','employment','security') OR execution_mode <> 'automatic'),
   CHECK (action_type <> 'propose_domain_action' OR execution_mode <> 'automatic'),
-  CHECK (effect NOT IN ('financial','employment','security') OR approval_required IS TRUE)
+  CHECK (effect NOT IN ('financial','employment','security') OR approval_required IS TRUE),
+  CHECK (execution_mode <> 'requires_approval' OR approval_required IS TRUE)
 );
+
+CREATE OR REPLACE FUNCTION workflow_policy_validate_action_intent_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE evaluation_dry_run boolean;
+BEGIN
+  SELECT dry_run INTO evaluation_dry_run
+  FROM workflow_policy_evaluations
+  WHERE tenant_id=NEW.tenant_id AND evaluation_id=NEW.evaluation_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'workflow evaluation not found for action intent';
+  END IF;
+  IF NEW.dry_run <> evaluation_dry_run THEN
+    RAISE EXCEPTION 'workflow action intent dry-run flag must match parent evaluation';
+  END IF;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS workflow_policy_action_intent_context_guard ON workflow_policy_action_intents;
+CREATE TRIGGER workflow_policy_action_intent_context_guard
+BEFORE INSERT ON workflow_policy_action_intents
+FOR EACH ROW EXECUTE FUNCTION workflow_policy_validate_action_intent_insert();
 
 CREATE TABLE IF NOT EXISTS workflow_policy_action_decisions (
   tenant_id text NOT NULL,

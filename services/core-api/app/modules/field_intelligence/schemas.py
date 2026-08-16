@@ -100,7 +100,6 @@ class TemplateCreate(StrictModel):
     version: int = Field(ge=1)
     name: LocalizedText
     schema: TemplateSchema
-    evidence_policy: EvidencePolicy = Field(default_factory=EvidencePolicy)
     status: Literal["draft", "active"] = "draft"
 
 

@@ -14,6 +14,12 @@ from app.core.security import (
     normalize_principal_roles,
 )
 
+# Existing Budget assignments predate the canonical {"type":"all"} scope form.
+# Compatibility is intentionally centralized here so product modules never
+# reinterpret raw permission assignments themselves. New scope formats must use
+# canonical string-list dimensions or the exact {"type":"all"} grant.
+LEGACY_UNRESTRICTED_FLAGS = frozenset({"all_cost_centers"})
+
 
 class ResolvedPermissionScope(BaseModel):
     """Canonical DB-derived scope for one permission.
@@ -38,7 +44,7 @@ class ResolvedPermissionScope(BaseModel):
 
 def _invalid_scope() -> HTTPException:
     # A malformed DB-authoritative scope is an infrastructure/configuration
-    # fault.  Never reinterpret it permissively inside a product module.
+    # fault. Never reinterpret it permissively inside a product module.
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Authorization scope is invalid",
@@ -68,7 +74,7 @@ def resolve_permission_scope(
         if assignment.key == normalized
     )
     if not assignments:
-        # principal.permissions is itself derived from assignments.  If these
+        # principal.permissions is itself derived from assignments. If these
         # ever disagree, fail closed rather than inventing an unscoped grant.
         raise _invalid_scope()
 
@@ -88,8 +94,19 @@ def resolve_permission_scope(
             unrestricted = True
             continue
 
+        for legacy_flag in LEGACY_UNRESTRICTED_FLAGS:
+            if legacy_flag not in scope:
+                continue
+            legacy_value = scope[legacy_flag]
+            if not isinstance(legacy_value, bool):
+                raise _invalid_scope()
+            if legacy_value:
+                unrestricted = True
+
         for raw_dimension, raw_values in scope.items():
             dimension = str(raw_dimension or "").strip()
+            if dimension in LEGACY_UNRESTRICTED_FLAGS:
+                continue
             if not dimension or not isinstance(raw_values, list):
                 raise _invalid_scope()
 

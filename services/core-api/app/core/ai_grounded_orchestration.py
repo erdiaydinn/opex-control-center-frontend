@@ -21,9 +21,9 @@ import jwt
 from app.core.ai_grounded_retrieval import retrieve_tenant_grounded_evidence
 from app.core.ai_retrieval_authority import (
     AIRetrievalAuthorityDenied,
-    Principal,
     resolve_authorized_ai_retrieval_identity,
 )
+from app.core.security import Principal
 
 AI_TENANT_CONTEXT_TYP = "eay-ai-tenant-context+jwt"
 AI_TENANT_CONTEXT_AUDIENCE = "eay-ai-core-grounded-retrieval"
@@ -127,8 +127,8 @@ async def retrieve_authorized_tenant_grounded_evidence(
     """Freshly bind Core authorization to a session-issued AI assertion."""
 
     identity = await resolve_authorized_ai_retrieval_identity(principal)
-    asserted_tenant, asserted_membership, asserted_actor = _inspect_assertion_binding(
-        tenant_context_assertion
+    asserted_tenant, asserted_membership, asserted_actor = (
+        _inspect_assertion_binding(tenant_context_assertion)
     )
 
     if (

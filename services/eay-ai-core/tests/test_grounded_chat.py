@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from app.company_knowledge import ApprovalRequest, CompanyKnowledgeStore, CompanyPolicyCreate
 from app.grounded_chat import (
     _enforce_grounded_retrieval_truth_boundary,
+    _model_backend_unavailable,
     _provenance_for_evidence,
 )
 from app.legal_engine import LegalEngine, LegalInstrumentUpsert
@@ -157,3 +158,17 @@ def test_invalid_environment_fails_closed(monkeypatch):
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == "Grounded retrieval environment is invalid"
+
+
+def test_model_backend_failure_is_sanitized():
+    error = _model_backend_unavailable()
+
+    assert error.status_code == 503
+    assert error.detail == {
+        "error": "grounded_model_unavailable",
+        "message": "Grounded answer generation is temporarily unavailable",
+    }
+    serialized = str(error.detail)
+    assert "localhost" not in serialized
+    assert "token" not in serialized.lower()
+    assert "stack" not in serialized.lower()

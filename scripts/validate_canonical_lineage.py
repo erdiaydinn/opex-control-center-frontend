@@ -118,6 +118,18 @@ def validate_manifest(repo_root: Path) -> dict[str, Any]:
     _require(92 in roles.get("rolling_product_completion", []), "PR #92 must be rolling product-completion authority")
     _require(76 in roles.get("release_anchor", []), "PR #76 must remain release anchor")
 
+    inventory = manifest.get("open_pr_inventory")
+    _require(isinstance(inventory, dict), "open_pr_inventory is required")
+    observed_count = inventory.get("observed_count")
+    _require(isinstance(observed_count, int) and observed_count > 0, "open PR observed_count must be positive")
+    _require(
+        observed_count == len(all_role_prs),
+        f"open PR inventory count mismatch: observed={observed_count}, classified={len(all_role_prs)}",
+    )
+    for key in ("authority_rule", "closure_policy"):
+        value = inventory.get(key)
+        _require(isinstance(value, str) and value.strip(), f"open PR inventory {key} is required")
+
     truth = manifest.get("production_truth")
     _require(isinstance(truth, dict), "production_truth contract is required")
     release_policy_path = truth.get("release_policy_path")

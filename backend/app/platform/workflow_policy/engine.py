@@ -218,6 +218,7 @@ def evaluate_workflow(
                 "rule_id": rule.rule_id,
                 "action_index": index,
                 "action_key": action.action_key,
+                "dry_run": dry_run,
             }
             intent_id = _fingerprint(seed)
             action_intents.append(

@@ -10,6 +10,20 @@ from app.core.ai_grounded_retrieval import (
 )
 
 
+VALID_EVIDENCE = {
+    "id": "doc-a",
+    "layer": "company",
+    "title": "Stock policy",
+    "excerpt": "Canonical stock policy evidence.",
+    "source_name": "EAY policy",
+    "source_url": None,
+    "effective_from": "2026-01-01",
+    "effective_to": None,
+    "authority_level": "company",
+    "score": 0.9,
+}
+
+
 @pytest.mark.asyncio
 async def test_transport_sends_signed_context_without_tenant_parameter():
     observed = {}
@@ -18,7 +32,7 @@ async def test_transport_sends_signed_context_without_tenant_parameter():
         observed["url"] = str(request.url)
         observed["headers"] = dict(request.headers)
         observed["body"] = request.content.decode("utf-8")
-        return httpx.Response(200, json={"evidence": [{"id": "doc-a"}]})
+        return httpx.Response(200, json={"evidence": [VALID_EVIDENCE]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         evidence = await retrieve_tenant_grounded_evidence(
@@ -30,7 +44,7 @@ async def test_transport_sends_signed_context_without_tenant_parameter():
             client=client,
         )
 
-    assert evidence == [{"id": "doc-a"}]
+    assert evidence == [VALID_EVIDENCE]
     assert observed["url"].endswith("/v1/internal/grounded/retrieve")
     assert observed["headers"][AI_TENANT_CONTEXT_HEADER.lower()] == "signed.tenant.context"
     assert "tenant_id" not in observed["body"]
@@ -68,7 +82,7 @@ async def test_transport_never_forwards_assertion_across_redirect():
                     "location": "https://attacker.example/v1/internal/grounded/retrieve"
                 },
             )
-        return httpx.Response(200, json={"evidence": [{"id": "stolen"}]})
+        return httpx.Response(200, json={"evidence": [VALID_EVIDENCE]})
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(
@@ -143,7 +157,7 @@ async def test_transport_rejects_untrusted_origin_before_credential_forwarding()
     async def handler(_: httpx.Request) -> httpx.Response:
         nonlocal called
         called = True
-        return httpx.Response(200, json={"evidence": [{"id": "stolen"}]})
+        return httpx.Response(200, json={"evidence": [VALID_EVIDENCE]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(ValueError, match="base URL"):
@@ -204,3 +218,40 @@ async def test_transport_rejects_base_url_path_before_network():
             )
 
     assert called is False
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_scope_fields_in_ai_evidence_response():
+    leaked = {**VALID_EVIDENCE, "tenant_id": "00000000-0000-0000-0000-0000000000a1"}
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [leaked]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_evidence_count_above_requested_limit():
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [VALID_EVIDENCE, VALID_EVIDENCE]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                limit=1,
+                client=client,
+            )

@@ -123,6 +123,6 @@ def test_capacity_api_denies_missing_permission(monkeypatch) -> None:
 def test_main_app_registers_capacity_routes() -> None:
     from app.main import app
 
-    paths = {route.path for route in app.routes}
+    paths = set(app.openapi()["paths"])
     assert "/api/workforce/capacity-snapshots" in paths
     assert "/api/workforce/depots/{location_id}/capacity/latest" in paths

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .models import GlossaryAnswer, GlossaryTerm
-from .resolver import GlossaryResolutionError, resolve_term
+from .semantic_consumers import SemanticAuthorityUnavailable, resolve_for_jarvis
 
 
 class JarvisGlossaryAnswerUnavailable(LookupError):
@@ -22,15 +22,9 @@ def answer_business_term(
     domain: str | None = None,
     at: datetime | None = None,
 ) -> GlossaryAnswer:
-    """Resolve terminology strictly from approved tenant semantics.
-
-    This function intentionally has no web/general-knowledge fallback. A missing
-    company term must surface as unavailable rather than allowing Jarvis to invent
-    a company-specific definition or formula.
-    """
-
+    """Resolve terminology strictly from the shared approved semantic authority."""
     try:
-        return resolve_term(
+        return resolve_for_jarvis(
             terms,
             tenant_id=tenant_id,
             query=query,
@@ -41,7 +35,7 @@ def answer_business_term(
             domain=domain,
             at=at,
         )
-    except GlossaryResolutionError as exc:
+    except SemanticAuthorityUnavailable as exc:
         raise JarvisGlossaryAnswerUnavailable(
             "no approved effective company definition is available"
         ) from exc

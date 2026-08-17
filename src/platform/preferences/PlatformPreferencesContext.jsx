@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 import { SUPPORTED_LOCALES, translate } from "../i18n/messages.js";
+import { translateProduct } from "../i18n/productMessages.js";
 
 const STORAGE_KEY = "eay_platform_preferences_v1";
 
@@ -87,7 +88,7 @@ export function PlatformPreferencesProvider({ children }) {
       setLocale: (next) => setLocaleState(normalizeLocale(next)),
       setAccessibility: (patch) => setAccessibilityState((current) => ({ ...current, ...patch })),
       resetAccessibility: () => setAccessibilityState({ ...DEFAULT_ACCESSIBILITY }),
-      t: (key, params) => translate(locale, key, params),
+      t: (key, params) => translateProduct(locale, key, params) ?? translate(locale, key, params),
       formatNumber: (value) => numberFormatter.format(Number(value || 0)),
       formatPercent: (value) => percentFormatter.format(Number(value || 0)),
       formatDate: (value, options = {}) => new Intl.DateTimeFormat(locale, options).format(new Date(value)),

@@ -23,6 +23,7 @@ def _question(**overrides):
         domains=("operations", "city-events"),
         as_of=NOW,
         requires_current_information=True,
+        enforce_as_of_information_boundary=True,
         minimum_independent_sources=2,
     )
     payload.update(overrides)
@@ -125,3 +126,35 @@ def test_stale_only_current_evidence_fails_closed():
 
     assert assessment.verdict is ResearchVerdict.INSUFFICIENT
     assert "research_evidence_stale_only" in assessment.blockers
+
+
+def test_future_published_evidence_cannot_leak_backward_into_as_of_conclusion():
+    assessment = assess_research(
+        _question(),
+        claim_key="event-impact",
+        evidence=[
+            _evidence(
+                "future-official",
+                "official",
+                source_tier=SourceTier.PRIMARY,
+                published_at=NOW + timedelta(days=2),
+                fetched_at=NOW + timedelta(days=2),
+            ),
+            _evidence(
+                "future-secondary",
+                "publisher-b",
+                published_at=NOW + timedelta(days=1),
+                fetched_at=NOW + timedelta(days=1),
+            ),
+        ],
+    )
+
+    assert assessment.verdict is ResearchVerdict.INSUFFICIENT
+    assert assessment.temporally_unavailable_evidence_count == 2
+    assert assessment.evidence_refs == ()
+    assert set(assessment.excluded_evidence_refs) == {
+        "evidence://future-official",
+        "evidence://future-secondary",
+    }
+    assert "research_evidence_not_available_as_of" in assessment.blockers
+    assert "research_no_eligible_evidence" in assessment.blockers

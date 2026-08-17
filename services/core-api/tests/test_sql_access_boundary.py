@@ -146,12 +146,19 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/promotion.py", "decide_promotion_request"),
     ("modules/field_intelligence/promotion.py", "record_consumer_receipt"),
     ("modules/field_intelligence/promotion_access.py", "get_promotion_authorization_context"),
+    # Master 26/60: Planogram compliance uses the same governed Field promotion
+    # tables. New adapter SQL is static/bound, latest accepted evidence only,
+    # and transaction-local consumer receipt preserves atomic handoff.
+    ("modules/field_intelligence/planogram_compliance_promotion.py", "create_planogram_compliance_promotion"),
+    ("modules/field_intelligence/promotion_consumer_session.py", "get_promotion_context_in_session"),
+    ("modules/field_intelligence/promotion_consumer_session.py", "record_consumer_receipt_in_session"),
 }
 
-# Master 24/60 security review: Store DNA SQL is static text() with bound
-# parameters only. Runtime sessions enter canonical app.tenant_id context,
-# migration 0030 enforces FORCE RLS, approved versions are immutable, lifecycle
-# events are append-only, and maker/checker authority remains server-side.
+# Master 24-26/60 security review: Planogram SQL is static text() with bound
+# parameters only. Runtime sessions enter canonical app.tenant_id context.
+# 0030-0032 enforce FORCE RLS, immutable approved plan/Store DNA history,
+# append-only compliance evidence, runtime attestation denial and immutable
+# assignment identity. Cross-module compliance handoff is transaction-bound.
 PLANOGRAM_SQL_EXECUTION_POINTS = {
     ("modules/planogram/repository_store_dna.py", "_record_store_dna_event"),
     ("modules/planogram/repository_store_dna.py", "list_store_dna_versions"),
@@ -162,6 +169,20 @@ PLANOGRAM_SQL_EXECUTION_POINTS = {
     ("modules/planogram/repository_store_dna.py", "reject_store_dna"),
     ("modules/planogram/repository_store_dna.py", "revise_store_dna"),
     ("modules/planogram/repository_store_dna.py", "get_approved_store_dna"),
+    ("modules/planogram/repository_execution.py", "_plan_event"),
+    ("modules/planogram/repository_execution.py", "list_plan_versions"),
+    ("modules/planogram/repository_execution.py", "create_plan_draft"),
+    ("modules/planogram/repository_execution.py", "submit_plan"),
+    ("modules/planogram/repository_execution.py", "approve_plan"),
+    ("modules/planogram/repository_execution.py", "reject_plan"),
+    ("modules/planogram/repository_execution.py", "_execution_event"),
+    ("modules/planogram/repository_execution.py", "create_assignment"),
+    ("modules/planogram/repository_execution.py", "acknowledge_assignment"),
+    ("modules/planogram/repository_execution.py", "list_assignments"),
+    ("modules/planogram/repository_execution.py", "get_assignment_plan"),
+    ("modules/planogram/repository_execution.py", "insert_compliance_observation"),
+    ("modules/planogram/repository_plan_edit.py", "update_plan_draft"),
+    ("modules/planogram/repository_assignment_lifecycle.py", "close_assignment"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (

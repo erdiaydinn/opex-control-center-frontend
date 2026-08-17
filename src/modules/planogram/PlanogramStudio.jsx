@@ -15,9 +15,12 @@ import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { translatePlanogram } from "../../platform/i18n/planogramMessages.js";
+import { translatePlanogramOperations } from "../../platform/i18n/planogramOperationsMessages.js";
 import { translatePlanogramPreview } from "../../platform/i18n/planogramPreviewMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import "./planogram-native.css";
+import "./planogram-operations.css";
 import "./planogram-preview.css";
 
 const PLANOGRAM_FEATURES = ["layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"];
@@ -59,6 +62,10 @@ export default function PlanogramStudio() {
     () => (key, params) => translatePlanogramPreview(locale, key, params),
     [locale]
   );
+  const o = useMemo(
+    () => (key) => translatePlanogramOperations(locale, key),
+    [locale]
+  );
   const canCreatePreview = canAction("planogram", "create");
 
   const [data, setData] = useState(null);
@@ -69,6 +76,7 @@ export default function PlanogramStudio() {
   const [candidateError, setCandidateError] = useState("");
   const [preview, setPreview] = useState(null);
   const [previewRunning, setPreviewRunning] = useState(false);
+  const [optimizerRunning, setOptimizerRunning] = useState(false);
   const [previewError, setPreviewError] = useState("");
 
   const load = useCallback(async () => {
@@ -125,7 +133,7 @@ export default function PlanogramStudio() {
   }, [p]);
 
   const runPreview = useCallback(async () => {
-    if (!candidate || !canCreatePreview || previewRunning) return;
+    if (!candidate || !canCreatePreview || previewRunning || optimizerRunning) return;
     setPreviewRunning(true);
     setPreview(null);
     setPreviewError("");
@@ -136,10 +144,25 @@ export default function PlanogramStudio() {
     } finally {
       setPreviewRunning(false);
     }
-  }, [canCreatePreview, candidate, p, previewRunning]);
+  }, [canCreatePreview, candidate, optimizerRunning, p, previewRunning]);
+
+  const runOptimizerPreview = useCallback(async () => {
+    if (!candidate || !canCreatePreview || previewRunning || optimizerRunning) return;
+    setOptimizerRunning(true);
+    setPreview(null);
+    setPreviewError("");
+    try {
+      setPreview(await apiPost("/v1/planogram/optimize-preview", candidate));
+    } catch {
+      setPreviewError(p("previewError"));
+    } finally {
+      setOptimizerRunning(false);
+    }
+  }, [canCreatePreview, candidate, optimizerRunning, p, previewRunning]);
 
   const productState = loading ? "loading" : error ? "error" : data ? "ready" : "empty";
-  const engineResult = preview?.engine_result || null;
+  const engineResult = preview?.engine_result || preview?.optimizer_result || null;
+  const optimizerMeta = preview?.optimizer_result?.optimizer || null;
   const blockers = Array.isArray(engineResult?.physical_truth?.blockers)
     ? engineResult.physical_truth.blockers
     : [];
@@ -228,7 +251,16 @@ export default function PlanogramStudio() {
             <button type="button" disabled>{t("solverBlocked")}</button>
           </section>
 
-          <section className="eay-planogram-preview" aria-busy={previewRunning ? "true" : "false"}>
+          <PlanogramOperationsPanel
+            locale={locale}
+            formatNumber={formatNumber}
+            canAction={canAction}
+          />
+
+          <section
+            className="eay-planogram-preview"
+            aria-busy={previewRunning || optimizerRunning ? "true" : "false"}
+          >
             <header>
               <div>
                 <FileJson2 size={22} aria-hidden="true" />
@@ -262,9 +294,17 @@ export default function PlanogramStudio() {
                 type="button"
                 className="eay-planogram-preview-run"
                 onClick={runPreview}
-                disabled={!candidate || !canCreatePreview || previewRunning}
+                disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}
               >
                 {previewRunning ? p("runningPreview") : p("runPreview")}
+              </button>
+              <button
+                type="button"
+                className="eay-planogram-preview-run"
+                onClick={runOptimizerPreview}
+                disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}
+              >
+                {optimizerRunning ? o("optimizerRunning") : o("optimizerPreview")}
               </button>
             </div>
 
@@ -280,13 +320,29 @@ export default function PlanogramStudio() {
                   <strong>{p("previewReady")}</strong>
                   <span>{p("unattested")}</span>
                   <span>{p("productionReleaseBlocked")}</span>
+                  {optimizerMeta ? <span>{o("previewStillUnattested")}</span> : null}
                 </div>
                 <div className="eay-planogram-preview-metrics">
                   <div><span>{p("productsCount")}</span><strong>{formatNumber(candidate?.products?.length || 0)}</strong></div>
                   <div><span>{p("placed")}</span><strong>{formatNumber(engineResult?.summary?.placed || 0)}</strong></div>
                   <div><span>{p("unplaced")}</span><strong>{formatNumber(engineResult?.summary?.unplaced || 0)}</strong></div>
                   <div><span>{p("mode")}</span><strong>{candidate?.mode || "—"}</strong></div>
+                  {optimizerMeta ? (
+                    <>
+                      <div><span>{o("optimizerStrategy")}</span><strong>{optimizerMeta.selected_strategy}</strong></div>
+                      <div><span>{o("optimizerCandidates")}</span><strong>{formatNumber(optimizerMeta.candidate_count || 0)}</strong></div>
+                    </>
+                  ) : null}
                 </div>
+                {optimizerMeta ? (
+                  <p className="eay-planogram-preview-note">
+                    {optimizerMeta.allowed
+                      ? optimizerMeta.improved
+                        ? o("optimizerImproved")
+                        : o("optimizerBaseline")
+                      : o("optimizerBlocked")}
+                  </p>
+                ) : null}
                 <div className="eay-planogram-preview-blockers">
                   <strong>{p("blockers")}</strong>
                   {blockers.length ? (

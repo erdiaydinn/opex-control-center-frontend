@@ -95,7 +95,8 @@ export default function AuditLog() {
       {!loading && !error ? (
         <div className="audit-log__table-wrap">
           <table className="audit-log__table">
-            <thead><tr><th>{a("time")}</th><th>{a("actor")}</th><th>{a("action")}</th><th>{a("decision")}</th><th>{a("status")}</th><th>{a("requestId")}</th></tr></thead>
+            <caption className="sr-only">{a("title")}</caption>
+            <thead><tr><th scope="col">{a("time")}</th><th scope="col">{a("actor")}</th><th scope="col">{a("action")}</th><th scope="col">{a("decision")}</th><th scope="col">{a("status")}</th><th scope="col">{a("requestId")}</th></tr></thead>
             <tbody>
               {items.length === 0 ? <tr><td colSpan="6" className="audit-log__empty"><span role="status" aria-live="polite">{a("empty")}</span></td></tr> : null}
               {items.map((item) => (

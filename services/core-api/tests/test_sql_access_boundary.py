@@ -122,6 +122,8 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     # deterministic replay and fail-closed attestation policy gates.
     ("modules/field_intelligence/mobile_offline.py", "set_template_evidence_policy"),
     ("modules/field_intelligence/mobile_offline.py", "_sync_one"),
+    ("modules/field_intelligence/evidence_integrity.py", "_device_authority_fingerprint"),
+    ("modules/field_intelligence/evidence_integrity.py", "verify_evidence_authority"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (

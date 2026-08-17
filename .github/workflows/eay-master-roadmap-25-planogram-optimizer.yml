@@ -1,0 +1,64 @@
+name: EAY Master Roadmap 25 - Planogram Optimizer
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-25-planogram-optimizer
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+
+permissions:
+  contents: read
+
+jobs:
+  optimizer-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/planai/backend/requirements.txt
+      - name: Install deterministic Planogram dependencies
+        working-directory: apps/planai/backend
+        run: python -m pip install -r requirements.txt
+      - name: Verify Master Roadmap item 25 authority
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          roadmap=json.loads(Path('config/eay_master_roadmap_60.json').read_text(encoding='utf-8'))
+          item=next(row for row in roadmap['items'] if row['id']==25)
+          assert item['title']=='Planogram optimizer', item
+          print('MASTER_25_AUTHORITY=PASS')
+          PY
+      - name: Compile optimizer without changing foundation allocator
+        working-directory: apps/planai/backend
+        run: python -m compileall -q physical_optimizer.py physical_engine.py physical_truth.py engine.py
+      - name: Master 24 physical truth regression
+        working-directory: apps/planai/backend
+        run: >-
+          python -m unittest
+          tests.test_physical_truth
+          tests.test_physical_engine
+          tests.test_physical_truth_audit
+      - name: Master 25 optimizer adversarial acceptance
+        working-directory: apps/planai/backend
+        run: python -m unittest tests.test_physical_optimizer
+      - name: Prove hard-first and baseline-preserving contract
+        working-directory: apps/planai/backend
+        run: |
+          python - <<'PY'
+          from physical_optimizer import OBJECTIVE_ORDER, STRATEGIES
+          assert OBJECTIVE_ORDER[0]=='hard_violation_count'
+          assert STRATEGIES[0]==('baseline', None)
+          assert len({name for name, _ in STRATEGIES})==len(STRATEGIES)
+          print('MASTER_25_HARD_FIRST=PASS')
+          print('MASTER_25_BASELINE_ALWAYS_CANDIDATE=PASS')
+          print('MASTER_25_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
+          PY

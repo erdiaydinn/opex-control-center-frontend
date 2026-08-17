@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { translateAuditLog } from "../../platform/i18n/auditLogMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
@@ -45,17 +45,24 @@ export default function AuditLog() {
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestSequence = useRef(0);
 
   async function loadEvents(filters) {
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
     setLoading(true);
     setError("");
     try {
       const result = await fetchAuditEvents({ limit: 100, ...filters });
+      if (requestId !== requestSequence.current) return;
       setItems(Array.isArray(result?.items) ? result.items : []);
     } catch {
+      if (requestId !== requestSequence.current) return;
       setError(a("loadError"));
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -63,6 +70,9 @@ export default function AuditLog() {
     loadEvents(EMPTY_FILTERS);
     // Initial authoritative load only; filters are explicitly submitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      requestSequence.current += 1;
+    };
   }, []);
 
   const summary = useMemo(() => items.reduce((acc, item) => {

@@ -10,6 +10,7 @@ The security boundary is intentional:
 - only explicitly allowlisted application hosts are considered;
 - only traffic that was actually observed is eligible;
 - raw Authorization/Cookie values are never represented by this contract;
+- secret-bearing query parameters are removed before the URL is retained;
 - static assets are ignored;
 - mutating candidates require a correlated user action before promotion;
 - discovered endpoints are evidence, not production capabilities.
@@ -23,7 +24,7 @@ import json
 import re
 from collections import defaultdict
 from enum import Enum
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -82,6 +83,26 @@ class OperationKind(str, Enum):
     UNKNOWN = "unknown"
 
 
+def _sanitize_url(url: str) -> str:
+    """Remove secret-bearing query pairs before an observed URL is retained."""
+    parsed = urlparse(url)
+    safe_query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.casefold() not in _SECRETISH_QUERY_KEYS
+    ]
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            urlencode(safe_query, doseq=True),
+            "",
+        )
+    )
+
+
 class ObservedHttpExchange(BaseModel):
     """A secret-free fingerprint of one exchange observed in an authorized session."""
 
@@ -128,6 +149,7 @@ class ObservedHttpExchange(BaseModel):
             pass
         else:
             raise ValueError("api_discovery_ip_literal_forbidden")
+        self.url = _sanitize_url(self.url)
         return self
 
     @property
@@ -139,11 +161,7 @@ class ObservedHttpExchange(BaseModel):
         return urlparse(self.url).path or "/"
 
     def query_parameter_names(self) -> tuple[str, ...]:
-        names = {
-            key
-            for key, _ in parse_qsl(urlparse(self.url).query, keep_blank_values=True)
-            if key.casefold() not in _SECRETISH_QUERY_KEYS
-        }
+        names = {key for key, _ in parse_qsl(urlparse(self.url).query, keep_blank_values=True)}
         return tuple(sorted(names))
 
 

@@ -1,0 +1,8 @@
+{
+  "schema_version":1,
+  "chaos_scenarios":[
+    "db_restart","redis_unavailable","network_partition","duplicate_event","delayed_notification","object_storage_failure","downstream_api_timeout","bigquery_denial","mobile_offline","corrupted_queue","concurrent_edits","worker_crash","failover","retry_storm"
+  ],
+  "required_invariants":["tenant_isolation","no_authority_fabrication","idempotent_recovery","bounded_retry","audit_continuity","explicit_degraded_state"],
+  "dr":{"postgres_backup_restore":true,"object_metadata":true,"config":true,"audit":true,"glossary":true,"field_evidence_metadata":true,"module_migrations":true,"key_rotation":true,"rpo_seconds":"MEASURED_REQUIRED","rto_seconds":"MEASURED_REQUIRED","environment":"MANAGED_STAGING_REQUIRED"}
+}

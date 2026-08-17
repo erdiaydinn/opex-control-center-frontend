@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { translateAuditLog } from "../../platform/i18n/auditLogMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
@@ -6,10 +6,33 @@ import "./audit-log.css";
 import { fetchAuditEvents } from "./auditLogApi";
 
 const EMPTY_FILTERS = Object.freeze({ actor: "", decision: "", action: "" });
+const AUDIT_DECISIONS = new Set(["allowed", "denied", "error"]);
+
+function safeAuditText(value) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : "—";
+}
+
+function safeDecision(decision) {
+  return AUDIT_DECISIONS.has(decision) ? decision : "unknown";
+}
 
 function decisionLabel(decision, a) {
   const labels = { allowed: a("allowed"), denied: a("denied"), error: a("error") };
-  return labels[decision] || decision;
+  return labels[safeDecision(decision)] || "—";
+}
+
+function safeAuditDate(value, formatDate) {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return "—";
+  try {
+    return formatDate(value, { dateStyle: "short", timeStyle: "medium" });
+  } catch {
+    return "—";
+  }
+}
+
+function safeRequestId(value) {
+  if (typeof value !== "string" || !value.trim()) return { full: "", short: "—" };
+  return { full: value, short: value.length > 12 ? `${value.slice(0, 12)}…` : value };
 }
 
 export default function AuditLog() {
@@ -44,7 +67,10 @@ export default function AuditLog() {
 
   const summary = useMemo(() => items.reduce((acc, item) => {
     acc.total += 1;
-    acc[item.decision] = (acc[item.decision] || 0) + 1;
+    const normalizedDecision = safeDecision(item?.decision);
+    if (normalizedDecision !== "unknown") {
+      acc[normalizedDecision] += 1;
+    }
     return acc;
   }, { total: 0, allowed: 0, denied: 0, error: 0 }), [items]);
 
@@ -105,15 +131,22 @@ export default function AuditLog() {
             <thead><tr><th scope="col">{a("time")}</th><th scope="col">{a("actor")}</th><th scope="col">{a("action")}</th><th scope="col">{a("decision")}</th><th scope="col">{a("status")}</th><th scope="col">{a("requestId")}</th></tr></thead>
             <tbody>
               {items.length === 0 ? <tr><td colSpan="6" className="audit-log__empty"><span role="status" aria-live="polite">{a("empty")}</span></td></tr> : null}
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.created_at ? formatDate(item.created_at, { dateStyle: "short", timeStyle: "medium" }) : "—"}</td>
-                  <td>{item.actor}</td><td><code>{item.action}</code></td>
-                  <td><span className={`audit-log__decision audit-log__decision--${item.decision}`}>{decisionLabel(item.decision, a)}</span></td>
-                  <td>{item.data?.status_code ?? "—"}</td>
-                  <td><code title={item.request_id}>{item.request_id ? `${item.request_id.slice(0, 12)}…` : "—"}</code></td>
-                </tr>
-              ))}
+              {items.map((item, index) => {
+                const normalizedDecision = safeDecision(item?.decision);
+                const requestId = safeRequestId(item?.request_id);
+                const rowKey = typeof item?.id === "string" || typeof item?.id === "number"
+                  ? item.id
+                  : `${requestId.full || "audit"}-${index}`;
+                return (
+                  <tr key={rowKey}>
+                    <td>{safeAuditDate(item?.created_at, formatDate)}</td>
+                    <td>{safeAuditText(item?.actor)}</td><td><code>{safeAuditText(item?.action)}</code></td>
+                    <td><span className={`audit-log__decision audit-log__decision--${normalizedDecision}`}>{decisionLabel(item?.decision, a)}</span></td>
+                    <td>{safeAuditText(item?.data?.status_code)}</td>
+                    <td><code title={requestId.full || undefined}>{requestId.short}</code></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

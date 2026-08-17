@@ -13,7 +13,12 @@ for (const [needle, label] of [
   ["role=\"alert\"", "error alert semantics"],
   ["t(\"retry\")", "localized retry action"],
   ["translateAuditLog(locale, key)", "localized audit copy"],
-  ["formatDate(item.created_at", "locale-aware date formatting"],
+  ["safeAuditDate(item?.created_at, formatDate)", "fail-safe locale-aware date formatting"],
+  ["safeAuditText(item?.actor)", "fail-safe actor rendering"],
+  ["safeAuditText(item?.action)", "fail-safe action rendering"],
+  ["safeAuditText(item?.data?.status_code)", "fail-safe status rendering"],
+  ["const requestId = safeRequestId(item?.request_id)", "fail-safe request-id rendering"],
+  ["const normalizedDecision = safeDecision(item?.decision)", "fail-safe decision rendering"],
   ["<caption className=\"sr-only\">{a(\"title\")}</caption>", "accessible table caption"],
   ["<th scope=\"col\">{a(\"time\")}</th>", "column header scope semantics"],
   ["<th scope=\"col\">{a(\"requestId\")}</th>", "request-id column scope semantics"],
@@ -42,9 +47,21 @@ if (/async function loadEvents\(filters\s*=/.test(source)) {
   process.exit(1);
 }
 
-for (const forbidden of ["err.message", "error.message", "Intl.DateTimeFormat(\"tr-TR\"", "Audit kayıtları alınamadı.", "İzin verildi", "Kayıt bulunamadı."]) {
+for (const forbidden of [
+  "err.message",
+  "error.message",
+  "Intl.DateTimeFormat(\"tr-TR\"",
+  "Audit kayıtları alınamadı.",
+  "İzin verildi",
+  "Kayıt bulunamadı.",
+  "item.request_id.slice(",
+  "<td>{item.actor}</td>",
+  "<code>{item.action}</code>",
+  "item.data?.status_code ??",
+  "labels[decision] || decision",
+]) {
   if (source.includes(forbidden)) {
-    console.error(`Audit Log must not expose hard-coded/raw error presentation: ${forbidden}`);
+    console.error(`Audit Log must not expose hard-coded/raw or crash-prone presentation: ${forbidden}`);
     process.exit(1);
   }
 }
@@ -57,4 +74,4 @@ for (const locale of locales) {
   }
 }
 
-console.log("Audit Log localization/product-state/accessibility/query-state contract: PASS");
+console.log("Audit Log localization/product-state/accessibility/query-state/resilience contract: PASS");

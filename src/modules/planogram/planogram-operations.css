@@ -1,0 +1,143 @@
+.eay-planogram-operations {
+  margin-top: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.eay-planogram-operations-head,
+.eay-planogram-operations-card > header,
+.eay-planogram-operation-row,
+.eay-planogram-operations-form,
+.eay-planogram-operation-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eay-planogram-operations-head,
+.eay-planogram-operations-card > header {
+  justify-content: space-between;
+}
+
+.eay-planogram-operations-head h2,
+.eay-planogram-operations-card h3,
+.eay-planogram-operations-card h4 {
+  margin: 0;
+}
+
+.eay-planogram-operations-head p,
+.eay-planogram-operations-card p {
+  margin: 4px 0 0;
+}
+
+.eay-planogram-operations-head > div > span,
+.eay-planogram-operations-card > header > strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.eay-planogram-operations-head button,
+.eay-planogram-operations-form button,
+.eay-planogram-operation-actions button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.eay-planogram-operations-state {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+}
+
+.eay-planogram-operations-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.eay-planogram-operations-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 16px;
+}
+
+.eay-planogram-operations-card > header > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.eay-planogram-operations-form {
+  align-items: end;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.eay-planogram-operations-form label,
+.eay-planogram-operation-note {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  flex: 1 1 180px;
+}
+
+.eay-planogram-operations-form input,
+.eay-planogram-operation-note input {
+  min-height: 40px;
+  width: 100%;
+}
+
+.eay-planogram-operations-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.eay-planogram-operation-row {
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 12px;
+}
+
+.eay-planogram-operation-row.compact {
+  align-items: center;
+}
+
+.eay-planogram-operation-row > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 170px;
+}
+
+.eay-planogram-operation-row span {
+  font-size: 0.85rem;
+}
+
+.eay-planogram-operation-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 920px) {
+  .eay-planogram-operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eay-planogram-operations-head,
+  .eay-planogram-operations-card > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

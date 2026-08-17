@@ -47,7 +47,10 @@ def test_dpi_read_api_returns_non_manpower_root_cause(monkeypatch) -> None:
     client = TestClient(app)
     response = client.get(
         "/api/workforce/depots/WH-001/dpi/latest",
-        headers={"X-OPEX-Role": "regional_manager"},
+        headers={
+            "X-OPEX-Role": "regional_manager",
+            "X-OPEX-Permissions": "workforce.pressure.read",
+        },
     )
 
     assert response.status_code == 200, response.text

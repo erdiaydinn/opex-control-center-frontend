@@ -119,11 +119,14 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/repository.py", "field_analytics"),
     # Item 9/60 security review: static SQL + bound parameters, canonical
     # app.tenant_id context, FORCE RLS, append-only receipts/policy records,
-    # deterministic replay and fail-closed attestation policy gates.
+    # deterministic replay and fail-closed attestation/object authority gates.
     ("modules/field_intelligence/mobile_offline.py", "set_template_evidence_policy"),
     ("modules/field_intelligence/mobile_offline.py", "_sync_one"),
     ("modules/field_intelligence/evidence_integrity.py", "_device_authority_fingerprint"),
     ("modules/field_intelligence/evidence_integrity.py", "verify_evidence_authority"),
+    ("modules/field_intelligence/evidence_object_upload.py", "_authorize_upload"),
+    ("modules/field_intelligence/evidence_object_upload.py", "_existing_receipt"),
+    ("modules/field_intelligence/evidence_object_upload.py", "upload_private_evidence_object"),
     # Item 10/60 security review: Field promotion tables are RLS-bound and
     # append-only. These paths emit immutable candidate/decision/receipt evidence
     # and never update Inventory, Planogram or Budget authority tables.

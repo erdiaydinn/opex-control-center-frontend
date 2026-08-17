@@ -18,6 +18,7 @@ import { translatePlanogram } from "../../platform/i18n/planogramMessages.js";
 import { translatePlanogramOperations } from "../../platform/i18n/planogramOperationsMessages.js";
 import { translatePlanogramPreview } from "../../platform/i18n/planogramPreviewMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import "./planogram-native.css";
 import "./planogram-operations.css";
@@ -342,6 +343,14 @@ export default function PlanogramStudio() {
                         : o("optimizerBaseline")
                       : o("optimizerBlocked")}
                   </p>
+                ) : null}
+                {engineResult?.planogram ? (
+                  <PlanogramDigitalTwin
+                    engineResult={engineResult}
+                    candidate={candidate}
+                    locale={locale}
+                    formatNumber={formatNumber}
+                  />
                 ) : null}
                 <div className="eay-planogram-preview-blockers">
                   <strong>{p("blockers")}</strong>

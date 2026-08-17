@@ -14,6 +14,9 @@ for (const [needle, label] of [
   ["t(\"retry\")", "localized retry action"],
   ["translateAuditLog(locale, key)", "localized audit copy"],
   ["formatDate(item.created_at", "locale-aware date formatting"],
+  ["<caption className=\"sr-only\">{a(\"title\")}</caption>", "accessible table caption"],
+  ["<th scope=\"col\">{a(\"time\")}</th>", "column header scope semantics"],
+  ["<th scope=\"col\">{a(\"requestId\")}</th>", "request-id column scope semantics"],
 ]) {
   if (!source.includes(needle)) {
     console.error(`Audit Log product-state contract missing ${label}: ${needle}`);
@@ -36,4 +39,4 @@ for (const locale of locales) {
   }
 }
 
-console.log("Audit Log localization/product-state contract: PASS");
+console.log("Audit Log localization/product-state/accessibility contract: PASS");

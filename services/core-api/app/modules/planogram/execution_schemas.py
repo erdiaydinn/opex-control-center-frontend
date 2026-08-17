@@ -4,10 +4,14 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class PlanogramPlanDraftRequest(BaseModel):
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class PlanogramPlanDraftRequest(StrictModel):
     store_dna_version_id: UUID
     store_code: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
     source: Literal["optimizer_preview", "manual_import"] = "optimizer_preview"
@@ -18,7 +22,7 @@ class PlanogramPlanDraftRequest(BaseModel):
     )
 
 
-class PlanogramPlanEditRequest(BaseModel):
+class PlanogramPlanEditRequest(StrictModel):
     plan_payload: dict[str, Any]
     optimizer_fingerprint: str | None = Field(
         default=None,
@@ -26,11 +30,11 @@ class PlanogramPlanEditRequest(BaseModel):
     )
 
 
-class PlanogramPlanRejectRequest(BaseModel):
+class PlanogramPlanRejectRequest(StrictModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
-class PlanogramExecutionAssignmentRequest(BaseModel):
+class PlanogramExecutionAssignmentRequest(StrictModel):
     plan_version_id: UUID
     effective_from: datetime
     due_at: datetime | None = None
@@ -44,5 +48,5 @@ class PlanogramExecutionAssignmentRequest(BaseModel):
         return value
 
 
-class PlanogramComplianceConsumeRequest(BaseModel):
+class PlanogramComplianceConsumeRequest(StrictModel):
     field_promotion_id: UUID

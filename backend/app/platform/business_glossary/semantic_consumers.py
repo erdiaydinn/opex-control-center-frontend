@@ -51,3 +51,19 @@ def resolve_for_consumer(
     if not answer.authoritative:
         raise SemanticAuthorityUnavailable("semantic authority returned non-authoritative data")
     return answer
+
+
+def resolve_for_jarvis(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
+    return resolve_for_consumer(terms, consumer=SemanticConsumer.JARVIS, **kwargs)
+
+
+def resolve_for_insight(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
+    return resolve_for_consumer(terms, consumer=SemanticConsumer.INSIGHT, **kwargs)
+
+
+def resolve_for_academy(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
+    return resolve_for_consumer(terms, consumer=SemanticConsumer.ACADEMY, **kwargs)
+
+
+def resolve_for_help(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
+    return resolve_for_consumer(terms, consumer=SemanticConsumer.HELP, **kwargs)

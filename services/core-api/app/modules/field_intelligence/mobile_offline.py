@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.resources import engine
 
+from .evidence_integrity import FieldEvidenceIntegrityError, verify_evidence_authority
 from .repository import (
     FieldRepositoryError,
     _set_tenant,
@@ -32,12 +33,20 @@ def _event_fingerprint(event: OfflineEvidenceEvent) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _camera_policy_satisfied(
-    *,
-    event: OfflineEvidenceEvent,
-    camera_attested_submission_ids: frozenset[str],
-) -> bool:
-    return str(event.client_submission_id) in camera_attested_submission_ids
+def _payload_for_schema_validation(event: OfflineEvidenceEvent) -> dict[str, object]:
+    """Adapt opaque receipt ids to the legacy validator without weakening authority.
+
+    The persisted event payload keeps the server receipt UUID. This transient copy
+    exists only because the generic schema validator predates the receipt authority
+    and expects a private-reference object for photo fields.
+    """
+    payload = dict(event.payload)
+    for claim in event.evidence_objects:
+        payload[claim.field_key] = {
+            "evidence_reference": f"private-evidence://receipt/{claim.receipt_id}",
+            "fingerprint": claim.sha256,
+        }
+    return payload
 
 
 async def set_template_evidence_policy(
@@ -228,27 +237,34 @@ async def _sync_one(
                 "reason": "target no longer accepts evidence",
             }
 
-        if bool(target["managed_device_required"]) and event.device_id not in trusted_device_ids:
+        try:
+            authority_fingerprint = await verify_evidence_authority(
+                connection,
+                tenant_id=tenant_id,
+                client_submission_id=str(event.client_submission_id),
+                device_id=event.device_id,
+                captured_at=event.captured_at,
+                template_schema=dict(target["template_schema"]),
+                payload=event.payload,
+                claims=event.evidence_objects,
+                managed_device_required=bool(target["managed_device_required"]),
+                camera_only_photo=bool(target["camera_only_photo"]),
+                trusted_device_ids=trusted_device_ids,
+                camera_attested_submission_ids=camera_attested_submission_ids,
+            )
+        except FieldEvidenceIntegrityError as exc:
             return {
                 "client_submission_id": str(event.client_submission_id),
                 "device_sequence": event.device_sequence,
                 "decision": "blocked",
                 "evidence_id": None,
-                "reason": "managed-device policy requires authoritative device attestation",
-            }
-        if bool(target["camera_only_photo"]) and not _camera_policy_satisfied(
-            event=event,
-            camera_attested_submission_ids=camera_attested_submission_ids,
-        ):
-            return {
-                "client_submission_id": str(event.client_submission_id),
-                "device_sequence": event.device_sequence,
-                "decision": "blocked",
-                "evidence_id": None,
-                "reason": "camera-only policy requires authoritative capture attestation",
+                "reason": str(exc),
             }
 
-        _validate_evidence_payload(dict(target["template_schema"]), event.payload)
+        _validate_evidence_payload(
+            dict(target["template_schema"]),
+            _payload_for_schema_validation(event),
+        )
 
         evidence_result = await connection.execute(
             text(
@@ -284,12 +300,12 @@ async def _sync_one(
                 INSERT INTO field_offline_receipts (
                     tenant_id, mission_id, location_id, client_submission_id,
                     device_id, device_sequence, target_fingerprint, payload_fingerprint,
-                    evidence_id, actor_subject, captured_at
+                    evidence_id, actor_subject, captured_at, authority_fingerprint
                 ) VALUES (
                     CAST(:tenant_id AS UUID), CAST(:mission_id AS UUID), :location_id,
                     CAST(:client_submission_id AS UUID), :device_id, :device_sequence,
                     :target_fingerprint, :payload_fingerprint, CAST(:evidence_id AS UUID),
-                    :actor_subject, :captured_at
+                    :actor_subject, :captured_at, :authority_fingerprint
                 )
                 """
             ),
@@ -305,6 +321,7 @@ async def _sync_one(
                 "evidence_id": str(evidence["id"]),
                 "actor_subject": actor_subject,
                 "captured_at": event.captured_at,
+                "authority_fingerprint": authority_fingerprint,
             },
         )
         await connection.execute(
@@ -330,6 +347,7 @@ async def _sync_one(
             "decision": "accepted",
             "evidence_id": str(evidence["id"]),
             "reason": "offline evidence accepted exactly once",
+            "authority_fingerprint": authority_fingerprint,
         }
 
 
@@ -385,4 +403,5 @@ async def sync_offline_batch(
         "outcomes": outcomes,
         "device_authority": "canonical_attestation_required_for_managed_policy",
         "camera_authority": "canonical_capture_attestation_required_for_camera_only_policy",
+        "object_authority": "server_issued_private_evidence_receipt",
     }

@@ -3,14 +3,8 @@ name: EAY Master Roadmap 27 - Planogram 2D 3D Experience
 on:
   push:
     branches:
+      - agent/master-roadmap-27-exact-head-gate
       - product/eay-category-leadership-v1
-    paths:
-      - "src/modules/planogram/**"
-      - "src/platform/i18n/planogramDigitalTwinMessages.js"
-      - "scripts/test-planogram-digital-twin.mjs"
-      - "scripts/test-planogram-route-explainability.mjs"
-      - "package.json"
-      - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
   pull_request:
     branches:
       - product/eay-product-completion-v1

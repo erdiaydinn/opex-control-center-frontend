@@ -1,9 +1,9 @@
 """Production-only Planogram entry point guarded by physical truth.
 
-The canonical deterministic allocator in ``engine.py`` remains untouched.  This
+The canonical deterministic allocator in ``engine.py`` remains untouched. This
 wrapper is intentionally fail-closed: it resolves master/file dimensions with
-AI estimation disabled, validates measured Store DNA and fixture capacity, and
-only then delegates to the frozen foundation allocator.
+AI estimation disabled, validates measured Store DNA, fixture capacity and any
+declared store architecture, and only then delegates to the foundation allocator.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 import engine as deterministic_engine
+from architecture_truth import architecture_truth_report, layout_architecture_report
 from physical_truth import (
     clone_with_physical_truth,
     physical_constraint_reason,
@@ -46,7 +47,7 @@ def _explicit_unplaced(
                 "constraint_reason": constraint_reason,
                 "suggested_action": (
                     "Onaylı ürün ölçüsü/görseli, ölçülmüş Store DNA ve gerçek "
-                    "fixture kapasitesi tamamlanmadan production plan üretme."
+                    "fixture/mimari geometri tamamlanmadan production plan üretme."
                 ),
             }
         )
@@ -106,6 +107,35 @@ def validate_operational_physical_rules(planogram: Dict[str, Any]) -> Dict[str, 
     }
 
 
+def _apply_architecture_gate(
+    acceptance: Dict[str, Any],
+    layout: Optional[Dict[str, Any]],
+    store_dna: Optional[Dict[str, Any]],
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Fail closed only when an architecture contract has been declared.
+
+    Legacy approved stores can migrate incrementally. A store that supplies an
+    architecture object, however, cannot silently fall back to non-spatial truth.
+    """
+    architecture = architecture_truth_report(store_dna)
+    layout_validation = layout_architecture_report(layout, store_dna)
+    acceptance["architecture_truth"] = architecture
+    acceptance["layout_architecture_validation"] = layout_validation
+
+    if architecture.get("present") and (
+        not architecture.get("valid") or not layout_validation.get("valid")
+    ):
+        blockers = list(acceptance.get("blockers") or [])
+        for blocker in list(architecture.get("blockers") or []) + list(
+            layout_validation.get("blockers") or []
+        ):
+            if blocker not in blockers:
+                blockers.append(blocker)
+        acceptance["blockers"] = blockers
+        acceptance["production_ready"] = False
+    return architecture, layout_validation
+
+
 def generate_production_plan(
     products: List[Dict[str, Any]],
     layout: Optional[Dict[str, Any]],
@@ -124,6 +154,11 @@ def generate_production_plan(
         store_dna,
         require_images=require_images,
     )
+    architecture, layout_architecture = _apply_architecture_gate(
+        acceptance,
+        layout,
+        store_dna,
+    )
 
     if not acceptance.get("production_ready"):
         unplaced = _explicit_unplaced(prepared, acceptance)
@@ -135,6 +170,8 @@ def generate_production_plan(
             "publishable": False,
             "solver_optimizer_allowed": False,
             "physical_truth": acceptance,
+            "architecture_truth": architecture,
+            "layout_architecture_validation": layout_architecture,
             "summary": {
                 "total": len(prepared),
                 "placed": 0,
@@ -155,6 +192,8 @@ def generate_production_plan(
                     "valid": False,
                 },
                 "physical_truth_blockers": acceptance.get("blockers") or [],
+                "architecture_truth": architecture,
+                "layout_architecture_validation": layout_architecture,
             },
         }
 
@@ -183,12 +222,16 @@ def generate_production_plan(
     result["publishable"] = publishable
     result["solver_optimizer_allowed"] = True
     result["physical_truth"] = acceptance
+    result["architecture_truth"] = architecture
+    result["layout_architecture_validation"] = layout_architecture
     result["operational_physical_validation"] = operational
     result.setdefault("summary", {})["operational_physical_violation_count"] = operational[
         "violation_count"
     ]
     result.setdefault("summary", {})["production_acceptance_blocker_count"] = 0
     result.setdefault("diagnostics", {})["operational_physical_validation"] = operational
+    result.setdefault("diagnostics", {})["architecture_truth"] = architecture
+    result.setdefault("diagnostics", {})["layout_architecture_validation"] = layout_architecture
     if not publishable:
         result.setdefault("diagnostics", {}).setdefault("summary", {})["valid"] = False
     return result

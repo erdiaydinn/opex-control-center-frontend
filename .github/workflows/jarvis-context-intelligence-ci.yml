@@ -100,6 +100,7 @@ jobs:
             tests/test_context_provider_registry.py \
             tests/test_context_provider_gateway.py \
             tests/test_source_governance.py \
+            tests/test_source_unicode_intelligence.py \
             tests/test_agenda_intelligence.py \
             tests/test_counterfactual_intelligence.py \
             tests/test_hypothesis_intelligence.py \
@@ -126,6 +127,7 @@ jobs:
             tests/test_context_provider_registry.py \
             tests/test_context_provider_gateway.py \
             tests/test_source_governance.py \
+            tests/test_source_unicode_intelligence.py \
             tests/test_agenda_intelligence.py \
             tests/test_counterfactual_intelligence.py \
             tests/test_hypothesis_intelligence.py \

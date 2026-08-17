@@ -124,6 +124,14 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/mobile_offline.py", "_sync_one"),
     ("modules/field_intelligence/evidence_integrity.py", "_device_authority_fingerprint"),
     ("modules/field_intelligence/evidence_integrity.py", "verify_evidence_authority"),
+    # Item 10/60 security review: Field promotion tables are RLS-bound and
+    # append-only. These paths emit immutable candidate/decision/receipt evidence
+    # and never update Inventory, Planogram or Budget authority tables.
+    ("modules/field_intelligence/promotion.py", "create_promotion_request"),
+    ("modules/field_intelligence/promotion.py", "list_promotion_requests"),
+    ("modules/field_intelligence/promotion.py", "decide_promotion_request"),
+    ("modules/field_intelligence/promotion.py", "record_consumer_receipt"),
+    ("modules/field_intelligence/promotion_access.py", "get_promotion_authorization_context"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (

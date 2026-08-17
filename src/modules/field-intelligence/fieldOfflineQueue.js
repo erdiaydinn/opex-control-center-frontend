@@ -152,11 +152,14 @@ export async function enqueueFieldOfflineEvidence({ missionId, locationId, targe
       eventId: clientSubmissionId,
       fieldKey: attachment.fieldKey,
       captureSource: attachment.captureSource || "camera_claim",
+      captureSessionId: globalThis.crypto.randomUUID(),
       ...encrypted,
       state: "pending",
       attempts: 0,
       lastError: null,
-      privateReference: null,
+      receiptId: null,
+      receiptMediaType: null,
+      receiptByteSize: null,
     });
   }
 
@@ -228,9 +231,10 @@ async function removeEvent(eventId) {
 
 async function prepareAttachments(event, uploadAttachment) {
   const attachments = await attachmentsForEvent(event.clientSubmissionId);
-  if (!attachments.length) return { ...event, state: "queued" };
+  if (!attachments.length) return { ...event, state: "queued", evidenceObjects: [] };
 
   const nextPayload = structuredClone(event.payload);
+  const evidenceObjects = [];
   for (const attachment of attachments) {
     if (attachment.state !== "uploaded") {
       try {
@@ -240,13 +244,23 @@ async function prepareAttachments(event, uploadAttachment) {
           fingerprint: attachment.fingerprint,
           fieldKey: attachment.fieldKey,
           captureSource: attachment.captureSource,
+          captureSessionId: attachment.captureSessionId,
           clientSubmissionId: event.clientSubmissionId,
+          missionId: event.missionId,
+          locationId: event.locationId,
         });
-        if (!result?.evidence_reference || result?.fingerprint !== attachment.fingerprint) {
-          throw new Error("private attachment uploader returned an invalid reference contract");
+        if (
+          !result?.receipt_id
+          || result?.sha256 !== attachment.fingerprint
+          || result?.media_type !== attachment.mimeType
+          || Number(result?.byte_size) !== Number(attachment.size)
+        ) {
+          throw new Error("private attachment uploader returned an invalid server receipt contract");
         }
         attachment.state = "uploaded";
-        attachment.privateReference = result.evidence_reference;
+        attachment.receiptId = result.receipt_id;
+        attachment.receiptMediaType = result.media_type;
+        attachment.receiptByteSize = Number(result.byte_size);
         attachment.attempts += 1;
         attachment.lastError = null;
         await putAttachment(attachment);
@@ -260,14 +274,18 @@ async function prepareAttachments(event, uploadAttachment) {
         return blocked;
       }
     }
-    nextPayload[attachment.fieldKey] = {
-      evidence_reference: attachment.privateReference,
-      fingerprint: attachment.fingerprint,
-      capture_source: attachment.captureSource,
-    };
+    nextPayload[attachment.fieldKey] = attachment.receiptId;
+    evidenceObjects.push({
+      receipt_id: attachment.receiptId,
+      field_key: attachment.fieldKey,
+      sha256: attachment.fingerprint,
+      media_type: attachment.receiptMediaType || attachment.mimeType,
+      byte_size: attachment.receiptByteSize || attachment.size,
+      capture_session_id: attachment.captureSessionId,
+    });
   }
 
-  const ready = { ...event, payload: nextPayload, state: "queued", lastError: null };
+  const ready = { ...event, payload: nextPayload, evidenceObjects, state: "queued", lastError: null };
   await putEvent(ready);
   return ready;
 }
@@ -297,6 +315,7 @@ export async function drainFieldOfflineQueue({ syncBatch, uploadAttachment, batc
       target_fingerprint: event.targetFingerprint,
       captured_at: event.capturedAt,
       payload: event.payload,
+      evidence_objects: event.evidenceObjects || [],
     })),
   });
 

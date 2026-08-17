@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14T17:16:00+03:00",
+  "authority": "REFERENCE_ONLY",
+  "repository": "Arize-ai/phoenix",
+  "canonical_upstream": "Arize-ai/phoenix",
+  "ref": "main",
+  "commit_sha": "4090acd0d248e1ed03d37bf339c9975ee171c7ff",
+  "tree_sha": "9b64d0f178bf2721a62e914a1a7a38553e0cbf6f",
+  "license": {
+    "spdx": "Elastic-2.0",
+    "status": "VERIFIED_FROM_UPSTREAM"
+  },
+  "capabilities": [
+    "llm-observability",
+    "tracing",
+    "evaluation",
+    "experiment-analysis"
+  ],
+  "decision": "REFERENCE",
+  "commercial_use": "SOURCE_AVAILABLE_NO_HOSTED_MANAGED_SERVICE",
+  "security_relevance": "Phoenix is source-available under Elastic License 2.0. EAY may evaluate self-hosted use subject to the license, but must not expose Phoenix to third parties as a hosted or managed service that provides access to a substantial set of its functionality. It is observability/evaluation tooling, not an authorization, tenant-isolation, provenance, or policy authority.",
+  "provenance": {
+    "commit_source": "GitHub REST commit for Arize-ai/phoenix main",
+    "license_source": "upstream LICENSE at pinned commit",
+    "supplied_archive_match": "NOT_APPLICABLE",
+    "registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+  }
+}

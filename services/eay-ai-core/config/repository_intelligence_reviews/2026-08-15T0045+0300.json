@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-08-15T00:45:00+03:00",
+  "registry": {
+    "path": "services/eay-ai-core/config/repository_intelligence_registry.json",
+    "blob_sha": "aa23b4df9147b75acfd6a90ec22f2d026f5ea4f9",
+    "branch": "feature/eay-repository-intelligence-v0.3-governance",
+    "pre_review_head_sha": "258e16dada1c2cd95add8c8b5892eb3a741312bf"
+  },
+  "policy": {
+    "temporal_append_only_review": true,
+    "external_repository_is_authority": false,
+    "unresolved_identity_remains_pending": true,
+    "license_gate_required_before_code_adoption": true,
+    "exclude_secrets_credentials_private_keys_vendor_generated_noise_and_unnecessary_pii": true
+  },
+  "meaningful_reviews": [
+    {
+      "classification": "DISCOVERED",
+      "repository": "apache/superset",
+      "canonical_upstream": "apache/superset",
+      "ref": "master",
+      "previous_registry_sha": "cc35056bc96df40e0b0d565c09c665d74a8e74ea",
+      "observed_sha": "f4587218dd19d046c3e4d00063e7d27f8a2ed354",
+      "change": "MCP audit logging now populates user_id; adjacent MCP fixes improve list ordering compatibility and complete chart-query result return.",
+      "eay_impact": "Improves attributable audit trails for future EAY agent-to-analytics tool usage. Superset remains a rendering/analytics reference and must not become KPI, tenant-scope, authorization, or policy authority.",
+      "license": {"spdx": "Apache-2.0", "status": "VERIFIED"},
+      "security_relevance": "Keep server-authoritative EAY tenant/store scope and immutable identity binding above Superset. MCP audit user attribution is useful evidence, not an authorization substitute.",
+      "decision": "WATCH"
+    },
+    {
+      "classification": "DISCOVERED",
+      "repository": "qdrant/qdrant",
+      "canonical_upstream": "qdrant/qdrant",
+      "ref": "master",
+      "observed_sha": "74f3e85b9473c62560006c043e13737ce6b48412",
+      "observed_release_line": "1.19.0",
+      "change": "The 1.19.0 line contains the S3 snapshot path-traversal fix from parent commit 90910b34bb882d76d577b93ed4e3aad07de0be55.",
+      "eay_impact": "Any future self-hosted Qdrant retrieval/project-memory deployment should require a build containing this fix; tenant and provenance filters remain EAY policy-layer responsibilities.",
+      "license": {"spdx": "Apache-2.0", "status": "VERIFIED_FROM_UPSTREAM"},
+      "security_relevance": "Snapshot import/restore is a privileged data path; path traversal must be treated as a minimum-version security gate.",
+      "decision": "WATCH",
+      "canonical_registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+    },
+    {
+      "classification": "DISCOVERED",
+      "repository": "promptfoo/promptfoo",
+      "canonical_upstream": "promptfoo/promptfoo",
+      "ref": "main",
+      "previous_evidence_sha": "af026d02115c31dad4bebe0484ab5b6a3a62f6e2",
+      "observed_sha": "f7809f60e44fbb4898f5c2abc31990ac0712b5a8",
+      "change": "Tracing can now fetch external traces from Langfuse.",
+      "eay_impact": "Useful for correlating EAY eval/red-team runs with external trace evidence, but it introduces another cross-system provenance boundary. Trace identities, tenant context, retention and secret handling must stay explicit.",
+      "license": {"spdx": "MIT", "status": "VERIFIED_FROM_UPSTREAM"},
+      "security_relevance": "Promptfoo executes configured assertions/providers/transforms/hooks/plugins without being a sandbox. Untrusted eval configurations must stay inside disposable isolated execution with scoped credentials, filesystem and egress.",
+      "decision": "WATCH",
+      "canonical_registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+    },
+    {
+      "classification": "DISCOVERED",
+      "repository": "Arize-ai/phoenix",
+      "canonical_upstream": "Arize-ai/phoenix",
+      "ref": "main",
+      "previous_evidence_sha": "4090acd0d248e1ed03d37bf339c9975ee171c7ff",
+      "observed_sha": "a64519d48921e7305b83a82237e7d06255aa3048",
+      "observed_release": "arize-phoenix 20.2.1",
+      "change": "Upstream released Phoenix 20.2.1.",
+      "eay_impact": "Version should be re-reviewed before any evaluation deployment. Existing Elastic-2.0 commercial boundary remains decisive for EAY architecture.",
+      "license": {"spdx": "Elastic-2.0", "status": "VERIFIED_FROM_UPSTREAM"},
+      "commercial_use": "SOURCE_AVAILABLE_NO_HOSTED_MANAGED_SERVICE",
+      "security_relevance": "Phoenix remains observability/evaluation tooling only and cannot serve as authorization, tenant-isolation, provenance or policy authority.",
+      "decision": "REFERENCE",
+      "canonical_registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+    },
+    {
+      "classification": "DISCOVERED",
+      "repository": "mlflow/mlflow",
+      "canonical_upstream": "mlflow/mlflow",
+      "ref": "master",
+      "observed_sha": "3b1b40722bde72efd8cb0b91b97e2c2d2c50d0ac",
+      "change": "No architecture/security change since the pinned evidence; current head is the already-reviewed xdist artifact-test race fix.",
+      "eay_impact": "Keep MLflow as model-lifecycle/reference infrastructure. Registry state alone must never authorize production weight promotion.",
+      "license": {"spdx": "Apache-2.0", "status": "VERIFIED_FROM_UPSTREAM"},
+      "security_relevance": "Sanitized training/eval evidence, explicit human approval, tenant-scoped artifact provenance and separate deployment authorization remain mandatory.",
+      "decision": "WATCH",
+      "canonical_registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+    }
+  ],
+  "reviewed_no_material_change": [
+    {
+      "classification": "IMPORTED",
+      "repository": "0xNyk/council-of-high-intelligence",
+      "ref": "main",
+      "observed_sha": "9fe924b4f17d4794fdf6ae9736585546a2cde2ce",
+      "note": "Latest visible commits are chart/docs maintenance; no material agent-orchestration change identified."
+    }
+  ],
+  "pending_imported_identity_evidence": [
+    {
+      "archive": "Deep-Learning-Tutorials-master.zip",
+      "candidate_repository": "lisa-lab/DeepLearningTutorials",
+      "candidate_sha": "11c465105026cf87573937fc2d35ab7543678698",
+      "candidate_license": "BSD-3-Clause",
+      "status": "BLOCKED_PENDING_ARCHIVE_MATCH"
+    },
+    {
+      "archive": "impeccable-main.zip",
+      "candidate_repository": "pbakaus/impeccable",
+      "candidate_sha": "bd2535974861db28a9f4a18ec78608488cd868dd",
+      "candidate_license": "Apache-2.0",
+      "status": "BLOCKED_PENDING_ARCHIVE_MATCH"
+    },
+    {
+      "archive": "image_understanding-tthau.zip",
+      "candidate_repository": null,
+      "status": "BLOCKED_PENDING_IDENTITY_RECOVERY"
+    },
+    {
+      "archive_family": "all previously supplied JARVIS archives",
+      "candidate_repository": null,
+      "status": "BLOCKED_PENDING_IDENTITY_RECOVERY"
+    }
+  ],
+  "registry_consistency_findings": [
+    {
+      "finding": "Qdrant, Promptfoo, Phoenix and MLflow have provenance-bound reference evidence on the branch but are not yet explicit entries in the cumulative canonical registry.",
+      "required_action": "Promote them into the canonical registry only through the existing governance loader and regression tests; preserve prior category placeholders until all identities are recovered."
+    }
+  ]
+}

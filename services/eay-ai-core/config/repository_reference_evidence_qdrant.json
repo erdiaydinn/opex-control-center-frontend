@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14T14:15:00+03:00",
+  "authority": "REFERENCE_ONLY",
+  "repository": "qdrant/qdrant",
+  "canonical_upstream": "qdrant/qdrant",
+  "ref": "master",
+  "commit_sha": "74f3e85b9473c62560006c043e13737ce6b48412",
+  "tree_sha": "522b0ad27ad981c7e776e3cbe32fef2e50b92978",
+  "license": {
+    "spdx": "Apache-2.0",
+    "status": "VERIFIED_FROM_UPSTREAM"
+  },
+  "capabilities": [
+    "rag",
+    "vector-search",
+    "retrieval",
+    "hybrid-search",
+    "repository-project-memory"
+  ],
+  "decision": "WATCH",
+  "commercial_use": "PERMISSIVE_WITH_NOTICE",
+  "security_relevance": "Repository/project-memory retrieval must preserve tenant and provenance filters above the vector-store layer; Qdrant is infrastructure reference, not authorization authority.",
+  "provenance": {
+    "commit_source": "GitHub REST commit for qdrant/qdrant master",
+    "license_source": "upstream repository LICENSE/README",
+    "supplied_archive_match": "NOT_APPLICABLE",
+    "registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+  }
+}

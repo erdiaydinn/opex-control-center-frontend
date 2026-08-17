@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14T06:13:05+03:00",
+  "canonical_continuation": {
+    "branch": "feature/eay-repository-intelligence-v0.3-governance",
+    "base_branch": "feature/eay-repository-intelligence-v0.2-clean",
+    "base_sha": "71084ee9b0f2eadf24956973e8f246c9d6e720de",
+    "merge_base_sha": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15",
+    "reason": "Preserves the richer clean Repository Intelligence line: repository contract extraction, signed checkpoints, review ingestion/snapshots, memory store, historical registry and GitHub evidence, with v0.3 governance stacked on top."
+  },
+  "divergent_reference_lines": [
+    {
+      "branch": "feature/eay-ai-core-repository-intelligence-v0.2",
+      "pr": 64,
+      "relationship": "diverged-sibling-reference-not-canonical-continuation",
+      "merge_base_sha": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15",
+      "compared_against": "feature/eay-repository-intelligence-v0.2-clean",
+      "ahead_by": 16,
+      "behind_by": 5,
+      "adoption_policy": "Do not merge or copy wholesale. Forward-port only reviewed deltas that are absent from the canonical continuation and preserve existing v0.2-clean contracts/tests."
+    }
+  ],
+  "required_canonical_capabilities": [
+    "github_repository_evidence",
+    "historical_repository_registry",
+    "repository_contract_extractor",
+    "repository_memory_checkpoint",
+    "repository_memory_store",
+    "repository_review_ingestion",
+    "repository_review_snapshot",
+    "repository_archive_provenance_ledger",
+    "repository_registry_governance"
+  ],
+  "non_regression_policy": {
+    "never_silently_drop_seed_registry_entries": true,
+    "never_promote_unresolved_archive_identity_without_exact_archive_provenance": true,
+    "never_replace_historical_truth_with_current_registry_state": true,
+    "never_copy_divergent_branch_wholesale": true,
+    "production_model_weight_mutation_permitted": false,
+    "main_auto_merge_permitted": false
+  }
+}

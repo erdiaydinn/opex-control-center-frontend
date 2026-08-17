@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-17T22:59:00+03:00",
+  "registry_ref": "feature/eay-repository-intelligence-v0.3-governance",
+  "registry_head_before_review": "d231977641a24a260c70e0ddf8719a302b64493a",
+  "policy": {
+    "preserve_temporal_truth": true,
+    "never_silently_drop": true,
+    "external_sources_are_reference_only": true,
+    "pending_archives_require_exact_provenance_before_promotion": true,
+    "exclude_secrets_and_unnecessary_personal_data": true
+  },
+  "meaningful_changes": [
+    {
+      "repository": "ggml-org/llama.cpp",
+      "classification": "DISCOVERED",
+      "ref": "master",
+      "observed_head": "058df671b214a7447f33b3e962501175b3a752f4",
+      "relevant_commit": "087f94d82e597a966c78d2c0afd2b34df561ea34",
+      "change": "Server documentation now explicitly documents MCP stdio servers, tool naming and CORS defaults, including the warning that spawned MCP servers run with llama-server privileges and that tool-enabled deployments should constrain origins.",
+      "eay_impact": "EAY local-first inference can use llama.cpp MCP capability only behind the existing Jarvis tool-execution boundary. MCP child processes must be treated as privileged code execution, with isolated process/container identity, scoped filesystem/egress and explicit CORS/origin policy. Do not expose raw llama-server tool execution directly to end users.",
+      "decision": "WATCH",
+      "license_status": "MIT previously verified"
+    },
+    {
+      "repository": "ollama/ollama",
+      "classification": "DISCOVERED",
+      "ref": "main",
+      "observed_head": "d67ad83426633195089509347ffd4fe795120198",
+      "relevant_commit": "d67ad83426633195089509347ffd4fe795120198",
+      "change": "Ollama updated its MLX runtime after the earlier llama.cpp update.",
+      "eay_impact": "Local serving upgrades must be version-pinned and evaluated as runtime bundles rather than treating Ollama and its underlying inference backends independently. Apple/MLX paths need the same EAY model/eval manifest and regression gates before adoption.",
+      "decision": "WATCH",
+      "license_status": "MIT previously verified"
+    },
+    {
+      "repository": "promptfoo/promptfoo",
+      "classification": "DISCOVERED",
+      "ref": "main",
+      "observed_head": "be75b25b13a012d2c60820a244770bf1ef1241e0",
+      "relevant_commit": "be75b25b13a012d2c60820a244770bf1ef1241e0",
+      "change": "Red-team grading now preserves cumulative grading token usage instead of losing aggregate usage accounting.",
+      "eay_impact": "This directly improves local-token-minimization and eval cost governance. EAY evaluation records should preserve cumulative token/cost counters across grader passes so regressions cannot look cheaper due to accounting loss. Promptfoo remains evaluation tooling, not a sandbox or authorization authority.",
+      "decision": "WATCH",
+      "license_status": "MIT previously verified"
+    },
+    {
+      "repository": "Arize-ai/phoenix",
+      "classification": "DISCOVERED",
+      "ref": "main",
+      "observed_head": "70b01ceffbf0ab9db03e7da7c459d8c9bd3614f4",
+      "relevant_commit": "954cba21468aa247e48a5f9e9c19bd0487985a64",
+      "change": "Phoenix introduced a trace-level expression filter DSL with server-side validation, compiler-derived vocabulary, trace/span annotation filtering, quantifiers/reductions and SQLite/PostgreSQL differential semantics tests.",
+      "eay_impact": "Useful reference for EAY observability/query UX: expressive trace filters should compile through a server-authoritative typed grammar, validate against known vocabulary and retain entity scope. This must not replace EAY tenant/provenance authorization. Phoenix remains REFERENCE due to Elastic-2.0 hosted-service restrictions.",
+      "decision": "REFERENCE",
+      "license_status": "Elastic-2.0; no hosted managed-service adoption"
+    },
+    {
+      "repository": "apache/superset",
+      "classification": "DISCOVERED",
+      "ref": "master",
+      "observed_head": "1991e3f0d2bdff6a67a2d18172874a46258cea2f",
+      "relevant_commits": [
+        "cfd40bdd0d11f9580924bf930f290fe58c993e75",
+        "1991e3f0d2bdff6a67a2d18172874a46258cea2f"
+      ],
+      "change": "Dashboard filter scope is now derived on read rather than served from stale cached scope, and dataset metric certification preserves certified_by metadata while certification details are edited.",
+      "eay_impact": "Both changes matter to governed EAY Insight/KPI embedding. Scope metadata must be recalculated from authoritative state rather than trusted from stale dashboard cache, and promoted KPI certification provenance must survive UI edits. Superset remains a projection/analytics layer; EAY KPI truth and tenant/store/entity scope stay server-authoritative in Platform/Jarvis contracts.",
+      "decision": "WATCH",
+      "license_status": "Apache-2.0 previously verified"
+    }
+  ],
+  "reviewed_no_material_change": [
+    {
+      "repository": "qdrant/qdrant",
+      "head": "74f3e85b9473c62560006c043e13737ce6b48412",
+      "note": "Still on the pinned 1.19.0 line containing the S3 snapshot path-traversal fix; no newer material change observed."
+    },
+    {
+      "repository": "langchain-ai/langgraph",
+      "head": "644815f9e5bc52ad8f7a5227a456227e9c3e639b",
+      "note": "Still 1.2.11; no newer material change observed."
+    },
+    {
+      "repository": "0xNyk/council-of-high-intelligence",
+      "head": "0f63c19b71ac4e036ca89ef597c903f00deba67e",
+      "note": "Head changed only by automated star-history refresh; no council/orchestration capability change."
+    }
+  ],
+  "pending_preserved": [
+    "Deep-Learning-Tutorials-master.zip",
+    "impeccable-main.zip",
+    "image_understanding / image_understanding-tthau",
+    "JARVIS-ERDI-full-start.zip",
+    "JARVIS-ERDI-starter-patch.zip",
+    "jarvis-main.zip family",
+    "Jarvis-master.zip",
+    "all other unresolved/pending registry placeholders"
+  ],
+  "ci_before_review": {
+    "commit": "d231977641a24a260c70e0ddf8719a302b64493a",
+    "workflow": "EAY AI Core CI",
+    "run_number": 1211,
+    "conclusion": "success"
+  }
+}

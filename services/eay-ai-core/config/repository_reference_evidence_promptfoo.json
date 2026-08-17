@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-08-14T16:13:52+03:00",
+  "authority": "REFERENCE_ONLY",
+  "repository": "promptfoo/promptfoo",
+  "canonical_upstream": "promptfoo/promptfoo",
+  "ref": "main",
+  "commit_sha": "af026d02115c31dad4bebe0484ab5b6a3a62f6e2",
+  "tree_sha": "ddccaa1ee49edda851791d4f3dc0c5ce6f70c7a3",
+  "license": {
+    "spdx": "MIT",
+    "status": "VERIFIED_FROM_UPSTREAM"
+  },
+  "capabilities": [
+    "evaluation",
+    "red-teaming",
+    "llm-security-testing",
+    "rag-evaluation",
+    "agent-evaluation"
+  ],
+  "decision": "WATCH",
+  "commercial_use": "PERMISSIVE_WITH_NOTICE",
+  "security_relevance": "Promptfoo intentionally executes configured custom assertions, providers, transforms, hooks, plugins and other user-provided code without a sandbox and with the local runner's user permissions. EAY must therefore run untrusted or externally supplied eval configurations only inside an isolated disposable execution boundary with scoped credentials, restricted filesystem access and restricted egress; Promptfoo is evaluation tooling, not an execution sandbox or authorization authority.",
+  "provenance": {
+    "commit_source": "GitHub REST commit for promptfoo/promptfoo main",
+    "license_source": "upstream repository package metadata and LICENSE",
+    "supplied_archive_match": "NOT_APPLICABLE",
+    "registry_promotion": "PENDING_CANONICAL_REGISTRY_REVIEW"
+  }
+}

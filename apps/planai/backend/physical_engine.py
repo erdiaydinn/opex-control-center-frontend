@@ -8,10 +8,15 @@ declared store architecture, and only then delegates to the foundation allocator
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 import engine as deterministic_engine
-from architecture_truth import architecture_truth_report, layout_architecture_report
+from architecture_truth import (
+    architecture_route_objective,
+    architecture_truth_report,
+    layout_architecture_report,
+)
 from physical_truth import (
     clone_with_physical_truth,
     physical_constraint_reason,
@@ -133,7 +138,72 @@ def _apply_architecture_gate(
                 blockers.append(blocker)
         acceptance["blockers"] = blockers
         acceptance["production_ready"] = False
+        acceptance["solver_optimizer_allowed"] = False
     return architecture, layout_validation
+
+
+def _qualify_route_module_ids(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Scope module identity by aisle for spatial routing only.
+
+    The legacy allocator legitimately reuses small integer module ids across
+    aisle/fixture pools. Spatial routing must never collapse A/1 and PALLET/1
+    into the same physical location, so route-only copies use an aisle-qualified
+    identity while the canonical plan payload remains unchanged.
+    """
+    if payload is None:
+        return None
+    qualified = deepcopy(payload)
+    for aisle in qualified.get("aisles", []) or []:
+        aisle_id = str(aisle.get("aisle_id") or "").strip()
+        for module in aisle.get("modules", []) or []:
+            module_id = str(module.get("module_id") or "").strip()
+            module["module_id"] = f"{aisle_id}::{module_id}"
+    return qualified
+
+
+def _architecture_route_report(
+    result: Dict[str, Any],
+    prepared: List[Dict[str, Any]],
+    layout: Optional[Dict[str, Any]],
+    store_dna: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    routed_result = deepcopy(result)
+    routed_result["planogram"] = _qualify_route_module_ids(result.get("planogram"))
+    routed_layout = _qualify_route_module_ids(layout)
+    return architecture_route_objective(
+        routed_result,
+        prepared,
+        routed_layout,
+        store_dna,
+    )
+
+
+def _apply_route_gate(
+    acceptance: Dict[str, Any],
+    architecture: Dict[str, Any],
+    route_report: Dict[str, Any],
+) -> bool:
+    """Return whether declared architecture is physically walkable.
+
+    Missing architecture remains an incremental-migration state. Once measured
+    architecture is declared, however, an unreachable picker origin or placed
+    fixture is a production blocker rather than permission to fall back to an
+    ordinal route proxy.
+    """
+    if not architecture.get("present"):
+        return True
+    if route_report.get("available"):
+        return True
+
+    reason = str(route_report.get("reason") or "unknown").strip()
+    blocker = f"architecture_route_unavailable:{reason}"
+    blockers = list(acceptance.get("blockers") or [])
+    if blocker not in blockers:
+        blockers.append(blocker)
+    acceptance["blockers"] = blockers
+    acceptance["production_ready"] = False
+    acceptance["solver_optimizer_allowed"] = False
+    return False
 
 
 def generate_production_plan(
@@ -208,30 +278,41 @@ def generate_production_plan(
     )
 
     operational = validate_operational_physical_rules(result.get("planogram") or {})
+    route_report = _architecture_route_report(
+        result,
+        prepared,
+        layout,
+        store_dna,
+    )
+    route_valid = _apply_route_gate(acceptance, architecture, route_report)
     existing_strict = int(
         result.get("diagnostics", {})
         .get("summary", {})
         .get("strict_rule_violation_count", 0)
         or 0
     )
-    publishable = existing_strict == 0 and operational["valid"]
+    publishable = existing_strict == 0 and operational["valid"] and route_valid
 
     result["engine_version"] = "physical-truth-gated-deterministic-v1"
     result["foundation_engine_version"] = "deterministic-best-fit-v4.2"
     result["production_ready"] = publishable
     result["publishable"] = publishable
-    result["solver_optimizer_allowed"] = True
+    result["solver_optimizer_allowed"] = route_valid
     result["physical_truth"] = acceptance
     result["architecture_truth"] = architecture
     result["layout_architecture_validation"] = layout_architecture
+    result["architecture_route_objective"] = route_report
     result["operational_physical_validation"] = operational
     result.setdefault("summary", {})["operational_physical_violation_count"] = operational[
         "violation_count"
     ]
-    result.setdefault("summary", {})["production_acceptance_blocker_count"] = 0
+    result.setdefault("summary", {})["production_acceptance_blocker_count"] = len(
+        acceptance.get("blockers") or []
+    )
     result.setdefault("diagnostics", {})["operational_physical_validation"] = operational
     result.setdefault("diagnostics", {})["architecture_truth"] = architecture
     result.setdefault("diagnostics", {})["layout_architecture_validation"] = layout_architecture
+    result.setdefault("diagnostics", {})["architecture_route_objective"] = route_report
     if not publishable:
         result.setdefault("diagnostics", {}).setdefault("summary", {})["valid"] = False
     return result

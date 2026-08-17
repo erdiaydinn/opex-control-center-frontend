@@ -159,6 +159,15 @@
       "review": {"ref": "main", "commit": "04fb72b4f0f77e50c88689d436980f68f4c40a98", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
     },
     {
+      "id": "microsoft-playwright-python",
+      "classification": "DISCOVERED",
+      "identity": "microsoft/playwright-python",
+      "canonical_upstream": "microsoft/playwright-python",
+      "decision": "adopt",
+      "capabilities": ["python-browser-runtime", "cdp-attachment", "accessibility-locators", "network-observation", "managed-browser-execution"],
+      "review": {"ref": "main", "commit": "154f67ced51ada646b0fcf8574897d96c9712aa3", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
       "id": "chrome-devtools-mcp",
       "classification": "DISCOVERED",
       "identity": "ChromeDevTools/chrome-devtools-mcp",

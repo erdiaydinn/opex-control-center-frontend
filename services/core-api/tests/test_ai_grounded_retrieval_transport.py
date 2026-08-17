@@ -281,3 +281,93 @@ async def test_transport_rejects_evidence_outside_requested_layers():
                 layers=("legal",),
                 client=client,
             )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), -0.01, 1.01])
+async def test_transport_rejects_invalid_evidence_score(score: float):
+    unsafe = {**VALID_EVIDENCE, "score": score}
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [unsafe]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(retrieval.AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieval.retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "https://user:secret@example.com/policy",
+    ],
+)
+async def test_transport_rejects_unsafe_evidence_source_url(source_url: str):
+    unsafe = {**VALID_EVIDENCE, "source_url": source_url}
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [unsafe]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(retrieval.AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieval.retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("effective_from", ["2026-02-30", "2026-8-01", "not-a-date"])
+async def test_transport_rejects_invalid_evidence_effective_date(effective_from: str):
+    unsafe = {**VALID_EVIDENCE, "effective_from": effective_from}
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [unsafe]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(retrieval.AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieval.retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_inverted_evidence_effective_window():
+    unsafe = {
+        **VALID_EVIDENCE,
+        "effective_from": "2026-09-01",
+        "effective_to": "2026-08-01",
+    }
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [unsafe]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(retrieval.AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieval.retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="stock policy",
+                as_of=date(2026, 8, 16),
+                layers=("company",),
+                client=client,
+            )

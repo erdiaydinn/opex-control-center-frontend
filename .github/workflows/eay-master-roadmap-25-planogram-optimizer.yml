@@ -15,6 +15,9 @@ permissions:
 jobs:
   optimizer-authority:
     runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Prove exact checkout
@@ -23,7 +26,9 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: apps/planai/backend/requirements.txt
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
       - name: Install deterministic Planogram dependencies
         working-directory: apps/planai/backend
         run: python -m pip install -r requirements.txt
@@ -60,5 +65,34 @@ jobs:
           assert len({name for name, _ in STRATEGIES})==len(STRATEGIES)
           print('MASTER_25_HARD_FIRST=PASS')
           print('MASTER_25_BASELINE_ALWAYS_CANDIDATE=PASS')
+          PY
+      - name: Install Core API test surface
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Lint optimizer and Core boundary
+        run: >-
+          ruff check
+          apps/planai/backend/physical_optimizer.py
+          apps/planai/backend/tests/test_physical_optimizer.py
+          services/core-api/app/modules/planogram/engine_adapter.py
+          services/core-api/app/modules/planogram/optimizer_router.py
+          services/core-api/app/budget_main.py
+          services/core-api/tests/test_planogram_master25_optimizer_core.py
+      - name: Core optimizer preview and Master 24 native regression
+        run: >-
+          pytest -q
+          services/core-api/tests/test_planogram_master25_optimizer_core.py
+          services/core-api/tests/test_planogram_native_core.py
+          services/core-api/tests/test_planogram_master24_store_dna.py
+      - name: Prove Core route cannot become production release authority
+        run: |
+          python - <<'PY'
+          from app.budget_main import app
+          schema=app.openapi()
+          assert '/v1/planogram/optimize-preview' in schema['paths']
+          from app.modules.planogram.engine_adapter import engine_status
+          status=engine_status()
+          assert status['optimizer']['available'] is True
+          assert status['optimizer']['production_authority'] is False
+          print('MASTER_25_CORE_OPTIMIZER_PREVIEW=PASS')
           print('MASTER_25_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
           PY

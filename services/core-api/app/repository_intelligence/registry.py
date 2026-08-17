@@ -7,6 +7,7 @@ from typing import Literal
 
 Classification = Literal['OWN','IMPORTED','DISCOVERED']
 IdentityStatus = Literal['VERIFIED','UNRESOLVED']
+APPROVED_LICENSE_STATUSES = frozenset({'REPOSITORY_BOUND','REVIEWED','APPROVED'})
 
 @dataclass(frozen=True)
 class RepositoryEntry:
@@ -22,7 +23,7 @@ class RepositoryEntry:
 
     @property
     def usable_as_code_source(self) -> bool:
-        return self.identity_status == 'VERIFIED' and not self.license_status.startswith('BLOCKED_')
+        return self.identity_status == 'VERIFIED' and self.license_status in APPROVED_LICENSE_STATUSES
 
 
 def load_registry(path: Path) -> tuple[RepositoryEntry, ...]:

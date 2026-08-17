@@ -91,6 +91,20 @@ def test_action_without_counterfactual_is_association_not_causal_attribution():
     assert assessment.causal_claim_allowed is False
 
 
+def test_unverified_action_cannot_receive_counterfactual_supported_attribution():
+    assessment = assess_decision_outcome(
+        decision=_decision(),
+        outcomes=[_outcome()],
+        action=_action(effect_verified=False),
+        counterfactual_evidence_ref="counterfactual://matched-control",
+    )
+
+    assert assessment.attribution_strength is AttributionStrength.NONE
+    assert assessment.counterfactual_evidence_ref is None
+    assert "outcome_learning_action_effect_unverified" in assessment.blockers
+    assert "outcome_learning_counterfactual_ignored_until_action_effect_verified" in assessment.blockers
+
+
 def test_wrong_direction_reduces_suggested_confidence_multiplier():
     assessment = assess_decision_outcome(
         decision=_decision(),

@@ -9,10 +9,21 @@ TENANT_A = "11111111-1111-4111-8111-111111111111"
 TENANT_B = "22222222-2222-4222-8222-222222222222"
 DNA_DRAFT = "31111111-1111-4111-8111-111111111111"
 DNA_ATTESTED = "32222222-2222-4222-8222-222222222222"
+DNA_DIRECT = "33333333-3333-4333-8333-333333333333"
 PLAN_ATTESTED = "41111111-1111-4111-8111-111111111111"
+PLAN_DIRECT_DRAFT = "42222222-2222-4222-8222-222222222222"
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-PLAN_JSON = '{"aisles":[{"aisle_id":"A01","modules":[{"module_id":"M1","shelves":[{"shelf_no":1,"products":[{"sku":"SKU-1","facing_count":1}]}]}]}]}'
+PLAN_JSON = (
+    '{"aisles":[{"aisle_id":"A01","modules":[{"module_id":"M1",'
+    '"shelves":[{"shelf_no":1,"products":[{"sku":"SKU-1",'
+    '"facing_count":1}]}]}]}]}'
+)
+MUTATED_PLAN_JSON = (
+    '{"aisles":[{"aisle_id":"A01","modules":[{"module_id":"M1",'
+    '"shelves":[{"shelf_no":1,"products":[{"sku":"SKU-1",'
+    '"facing_count":9}]}]}]}]}'
+)
 
 
 def _dsn(env_name: str) -> str:
@@ -36,6 +47,7 @@ async def _seed_migrator() -> None:
         for dna_id, store_code, sha in (
             (DNA_DRAFT, "STORE-DRAFT", SHA_A),
             (DNA_ATTESTED, "STORE-ATTESTED", SHA_B),
+            (DNA_DIRECT, "STORE-DIRECT", SHA_A),
         ):
             await connection.execute(
                 """
@@ -78,6 +90,26 @@ async def _seed_migrator() -> None:
             SHA_A,
             SHA_B,
         )
+        await connection.execute(
+            """
+            INSERT INTO planogram_plan_versions (
+                id, tenant_id, store_dna_version_id, store_code, version_number,
+                source, status, plan_payload, plan_fingerprint,
+                optimizer_fingerprint, physical_truth_attested, created_by
+            ) VALUES (
+                $1::uuid, $2::uuid, $3::uuid, 'STORE-DIRECT', 1,
+                'optimizer_preview', 'draft', $4::jsonb, $5, $6,
+                TRUE, 'external-attestation-fixture'
+            )
+            ON CONFLICT (id) DO NOTHING
+            """,
+            PLAN_DIRECT_DRAFT,
+            TENANT_A,
+            DNA_DIRECT,
+            PLAN_JSON,
+            SHA_B,
+            SHA_A,
+        )
     finally:
         await connection.close()
 
@@ -111,8 +143,23 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
 
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await runtime.execute(
-                "UPDATE planogram_plan_versions SET physical_truth_attested=TRUE WHERE id=$1",
+                "UPDATE planogram_plan_versions "
+                "SET physical_truth_attested=TRUE WHERE id=$1",
                 draft_id,
+            )
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="draft may only remain draft or become submitted",
+        ):
+            await runtime.execute(
+                """
+                UPDATE planogram_plan_versions
+                SET status='approved', approved_by='runtime-checker',
+                    approved_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+                WHERE id=$1::uuid
+                """,
+                PLAN_DIRECT_DRAFT,
             )
 
         await runtime.execute(
@@ -124,7 +171,27 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
             """,
             draft_id,
         )
-        with pytest.raises(asyncpg.RaiseError, match="physical-truth attestation"):
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="Submitted Planogram candidate payload is immutable",
+        ):
+            await runtime.execute(
+                """
+                UPDATE planogram_plan_versions
+                SET plan_payload=$1::jsonb, plan_fingerprint=$2,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=$3
+                """,
+                MUTATED_PLAN_JSON,
+                SHA_B,
+                draft_id,
+            )
+
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="physical-truth attestation",
+        ):
             await runtime.execute(
                 """
                 UPDATE planogram_plan_versions
@@ -147,7 +214,8 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
             PLAN_ATTESTED,
         )
         approved = await runtime.fetchrow(
-            "SELECT status, physical_truth_attested FROM planogram_plan_versions WHERE id=$1::uuid",
+            "SELECT status, physical_truth_attested "
+            "FROM planogram_plan_versions WHERE id=$1::uuid",
             PLAN_ATTESTED,
         )
         assert approved is not None
@@ -158,7 +226,9 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
             """
             INSERT INTO planogram_execution_assignments (
                 tenant_id, plan_version_id, store_code, assigned_by, effective_from
-            ) VALUES ($1::uuid, $2::uuid, 'STORE-ATTESTED', 'assigner', CURRENT_TIMESTAMP)
+            ) VALUES (
+                $1::uuid, $2::uuid, 'STORE-ATTESTED', 'assigner', CURRENT_TIMESTAMP
+            )
             RETURNING id
             """,
             TENANT_A,
@@ -168,7 +238,8 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
 
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await runtime.execute(
-                "UPDATE planogram_execution_assignments SET plan_version_id=$1::uuid WHERE id=$2",
+                "UPDATE planogram_execution_assignments "
+                "SET plan_version_id=$1::uuid WHERE id=$2",
                 draft_id,
                 assignment_id,
             )
@@ -190,9 +261,13 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
             """,
             assignment_id,
         )
-        with pytest.raises(asyncpg.RaiseError, match="Closed Planogram execution assignment"):
+        with pytest.raises(
+            asyncpg.PostgresError,
+            match="Closed Planogram execution assignment",
+        ):
             await runtime.execute(
-                "UPDATE planogram_execution_assignments SET status='acknowledged' WHERE id=$1",
+                "UPDATE planogram_execution_assignments "
+                "SET status='acknowledged' WHERE id=$1",
                 assignment_id,
             )
 
@@ -227,7 +302,8 @@ async def test_master26_schema_is_force_rls_and_compliance_is_bound_to_field() -
             "planogram_compliance_observations",
         ):
             row = await connection.fetchrow(
-                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid=$1::regclass",
+                "SELECT relrowsecurity, relforcerowsecurity "
+                "FROM pg_class WHERE oid=$1::regclass",
                 table_name,
             )
             assert row is not None
@@ -247,7 +323,8 @@ async def test_master26_schema_is_force_rls_and_compliance_is_bound_to_field() -
             """
             SELECT EXISTS (
                 SELECT 1 FROM pg_trigger
-                WHERE tgname='trg_planogram_assignment_identity' AND NOT tgisinternal
+                WHERE tgname='trg_planogram_assignment_identity'
+                  AND NOT tgisinternal
             )
             """
         )

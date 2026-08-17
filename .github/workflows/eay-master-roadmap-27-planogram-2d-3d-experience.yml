@@ -8,6 +8,7 @@ on:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
+      - "scripts/test-planogram-route-explainability.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
   pull_request:
@@ -17,6 +18,7 @@ on:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
+      - "scripts/test-planogram-route-explainability.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
 
@@ -53,6 +55,8 @@ jobs:
           NODE
       - name: Digital twin truth and renderer contract
         run: node scripts/test-planogram-digital-twin.mjs
+      - name: Route explainability backend-to-twin contract
+        run: node scripts/test-planogram-route-explainability.mjs
       - name: Preserve canonical Planogram product-state boundary
         run: node scripts/test-planogram-product-states.mjs
       - name: Production build with dynamic 3D runtime
@@ -79,5 +83,6 @@ jobs:
       - name: Truth boundary
         run: |
           echo 'MASTER_27_REPOSITORY_RENDERER=IMPLEMENTED'
+          echo 'MASTER_27_ROUTE_EXPLAINABILITY=IMPLEMENTED'
           echo 'MASTER_27_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED'
           echo 'MASTER_27_PRODUCTION_READY=FALSE'

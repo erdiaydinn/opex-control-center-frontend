@@ -54,6 +54,7 @@ FEATURES = MappingProxyType(
             {
                 "commandCenter", "missionBuilder", "missions", "capture",
                 "evidenceReview", "targeting", "templates", "analytics", "promotions",
+                "governance",
             }
         ),
         "insight": frozenset(
@@ -102,7 +103,7 @@ ACTIONS = MappingProxyType(
                 "createMission", "activateMission", "cancelMission", "submitEvidence",
                 "sendReminder", "reviewEvidence", "manageTemplates", "manageLocations",
                 "exportResults", "viewEvidence", "proposePromotion", "approvePromotion",
-                "viewPromotions",
+                "viewPromotions", "manageRecurrence", "exemptTarget", "approveExport",
             }
         ),
         "insight": frozenset({"view", "drilldown", "export"}),
@@ -193,6 +194,7 @@ FIELD_MANAGER_PERMISSIONS = frozenset(
         feature_permission("field_intelligence", "templates"),
         feature_permission("field_intelligence", "analytics"),
         feature_permission("field_intelligence", "promotions"),
+        feature_permission("field_intelligence", "governance"),
         action_permission("field_intelligence", "createMission"),
         action_permission("field_intelligence", "activateMission"),
         action_permission("field_intelligence", "cancelMission"),
@@ -205,6 +207,9 @@ FIELD_MANAGER_PERMISSIONS = frozenset(
         action_permission("field_intelligence", "proposePromotion"),
         action_permission("field_intelligence", "approvePromotion"),
         action_permission("field_intelligence", "viewPromotions"),
+        action_permission("field_intelligence", "manageRecurrence"),
+        action_permission("field_intelligence", "exemptTarget"),
+        action_permission("field_intelligence", "approveExport"),
     }
 )
 

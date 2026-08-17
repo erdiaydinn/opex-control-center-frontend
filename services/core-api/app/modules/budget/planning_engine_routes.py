@@ -11,7 +11,7 @@ from .planning_engine_schemas import PlanningAllocationCreate, PlanningAssumptio
 
 router = APIRouter(prefix="/v1/budget/planning", tags=["budget-planning"])
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=160)]
-ViewSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_VIEW))]
+ViewSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_VIEW, all_cost_centers=True))]
 ManageSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_MANAGE_LINES, all_cost_centers=True))]
 PublishSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_ACTIVATE_PLAN, all_cost_centers=True))]
 

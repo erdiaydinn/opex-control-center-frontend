@@ -19,11 +19,27 @@ for (const [needle, label] of [
   ["<th scope=\"col\">{a(\"requestId\")}</th>", "request-id column scope semantics"],
   ["className=\"sr-only\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"", "result-count live announcement"],
   ["{a(\"total\")}: {summary.total}", "localized result count"],
+  ["const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS)", "separate applied-filter authority"],
+  ["const nextFilters = { actor, decision, action }", "submitted filter snapshot"],
+  ["setAppliedFilters(nextFilters)", "applied-filter update"],
+  ["onClick={() => loadEvents(appliedFilters)}", "refresh/retry use applied filters"],
+  ["setAppliedFilters(EMPTY_FILTERS)", "reset applied-filter authority"],
 ]) {
   if (!source.includes(needle)) {
     console.error(`Audit Log product-state contract missing ${label}: ${needle}`);
     process.exit(1);
   }
+}
+
+const appliedFilterReloads = source.match(/loadEvents\(appliedFilters\)/g) || [];
+if (appliedFilterReloads.length < 2) {
+  console.error("Audit Log refresh and retry must both reload the last submitted filter snapshot.");
+  process.exit(1);
+}
+
+if (/async function loadEvents\(filters\s*=/.test(source)) {
+  console.error("Audit Log loader must require an explicit filter snapshot instead of reading draft inputs implicitly.");
+  process.exit(1);
 }
 
 for (const forbidden of ["err.message", "error.message", "Intl.DateTimeFormat(\"tr-TR\"", "Audit kayıtları alınamadı.", "İzin verildi", "Kayıt bulunamadı."]) {
@@ -41,4 +57,4 @@ for (const locale of locales) {
   }
 }
 
-console.log("Audit Log localization/product-state/accessibility contract: PASS");
+console.log("Audit Log localization/product-state/accessibility/query-state contract: PASS");

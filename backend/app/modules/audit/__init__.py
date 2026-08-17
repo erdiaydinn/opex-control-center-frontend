@@ -1,99 +1,11 @@
 """Business Audit domain authority.
 
-Roadmap items 23+ live here. Platform Audit Log and shared Field evidence remain
-separate canonical services and must not be duplicated by this package.
+Roadmap items 23+ live in explicit submodules. Import the required submodule
+directly so historical acceptance gates do not inherit dependencies introduced
+by newer roadmap items (for example offline AES-GCM support).
+
+Examples:
+- app.modules.audit.template_authority
+- app.modules.audit.finding_lifecycle
+- app.modules.audit.offline_schedule
 """
-
-from .finding_lifecycle import (
-    AuditFinding,
-    AuditFindingError,
-    CorrectiveAction,
-    CorrectiveEvidence,
-    FindingLifecycle,
-    FindingReopen,
-    FindingSeverity,
-    FindingState,
-    FindingVerification,
-    VerificationOutcome,
-    add_corrective_action,
-    attach_evidence,
-    lifecycle_receipt,
-    open_finding,
-    reopen_finding,
-    verify_corrective_action,
-)
-from .offline_schedule import (
-    AuditOccurrence,
-    AuditSchedule,
-    EncryptedOfflineQueue,
-    OfflineAuditError,
-    OfflineAuditMutation,
-    OfflineAuditPackage,
-    OfflineSyncLedger,
-    OfflineSyncReceipt,
-    create_schedule,
-    issue_offline_package,
-    materialize_occurrence,
-    mutation,
-    open_queue,
-    reconcile_offline_mutations,
-    seal_queue,
-)
-from .template_authority import (
-    AuditQuestion,
-    AuditRunSnapshot,
-    AuditTemplateError,
-    AuditTemplateRevision,
-    AuditTemplateStatus,
-    BranchCondition,
-    BranchOperator,
-    create_next_revision,
-    draft_template,
-    evaluate_audit,
-    publish_template,
-)
-
-__all__ = [
-    "AuditFinding",
-    "AuditFindingError",
-    "AuditOccurrence",
-    "AuditQuestion",
-    "AuditRunSnapshot",
-    "AuditSchedule",
-    "AuditTemplateError",
-    "AuditTemplateRevision",
-    "AuditTemplateStatus",
-    "BranchCondition",
-    "BranchOperator",
-    "CorrectiveAction",
-    "CorrectiveEvidence",
-    "EncryptedOfflineQueue",
-    "FindingLifecycle",
-    "FindingReopen",
-    "FindingSeverity",
-    "FindingState",
-    "FindingVerification",
-    "OfflineAuditError",
-    "OfflineAuditMutation",
-    "OfflineAuditPackage",
-    "OfflineSyncLedger",
-    "OfflineSyncReceipt",
-    "VerificationOutcome",
-    "add_corrective_action",
-    "attach_evidence",
-    "create_next_revision",
-    "create_schedule",
-    "draft_template",
-    "evaluate_audit",
-    "issue_offline_package",
-    "lifecycle_receipt",
-    "materialize_occurrence",
-    "mutation",
-    "open_finding",
-    "open_queue",
-    "publish_template",
-    "reconcile_offline_mutations",
-    "reopen_finding",
-    "seal_queue",
-    "verify_corrective_action",
-]

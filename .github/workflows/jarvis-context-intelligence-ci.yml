@@ -7,12 +7,16 @@ on:
     paths:
       - "services/eay-ai-core/app/*intelligence.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
+      - "services/eay-ai-core/app/context_provider_registry.py"
+      - "services/eay-ai-core/app/context_provider_gateway.py"
       - "services/eay-ai-core/app/source_governance.py"
       - "services/eay-ai-core/app/enterprise_domain_registry.py"
       - "services/eay-ai-core/app/repository_intelligence.py"
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/eay-ai-core/tests/test_*intelligence.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
+      - "services/eay-ai-core/tests/test_context_provider_registry.py"
+      - "services/eay-ai-core/tests/test_context_provider_gateway.py"
       - "services/eay-ai-core/tests/test_source_governance.py"
       - "services/eay-ai-core/tests/test_context_anomaly_guard.py"
       - "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
@@ -24,12 +28,16 @@ on:
     paths:
       - "services/eay-ai-core/app/*intelligence.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
+      - "services/eay-ai-core/app/context_provider_registry.py"
+      - "services/eay-ai-core/app/context_provider_gateway.py"
       - "services/eay-ai-core/app/source_governance.py"
       - "services/eay-ai-core/app/enterprise_domain_registry.py"
       - "services/eay-ai-core/app/repository_intelligence.py"
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/eay-ai-core/tests/test_*intelligence.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
+      - "services/eay-ai-core/tests/test_context_provider_registry.py"
+      - "services/eay-ai-core/tests/test_context_provider_gateway.py"
       - "services/eay-ai-core/tests/test_source_governance.py"
       - "services/eay-ai-core/tests/test_context_anomaly_guard.py"
       - "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
@@ -48,7 +56,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Jarvis executive context, finance, legal and decision contracts
+    name: Jarvis executive context, finance, legal, agenda and decision contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -68,7 +76,10 @@ jobs:
           python -m compileall -q \
             app/context_intelligence.py \
             app/context_taxonomy.py \
+            app/context_provider_registry.py \
+            app/context_provider_gateway.py \
             app/source_governance.py \
+            app/agenda_intelligence.py \
             app/counterfactual_intelligence.py \
             app/hypothesis_intelligence.py \
             app/geospatial_intelligence.py \
@@ -81,7 +92,10 @@ jobs:
             tests/test_context_intelligence.py \
             tests/test_context_anomaly_guard.py \
             tests/test_context_taxonomy.py \
+            tests/test_context_provider_registry.py \
+            tests/test_context_provider_gateway.py \
             tests/test_source_governance.py \
+            tests/test_agenda_intelligence.py \
             tests/test_counterfactual_intelligence.py \
             tests/test_hypothesis_intelligence.py \
             tests/test_geospatial_intelligence.py \
@@ -99,7 +113,10 @@ jobs:
             tests/test_context_intelligence.py \
             tests/test_context_anomaly_guard.py \
             tests/test_context_taxonomy.py \
+            tests/test_context_provider_registry.py \
+            tests/test_context_provider_gateway.py \
             tests/test_source_governance.py \
+            tests/test_agenda_intelligence.py \
             tests/test_counterfactual_intelligence.py \
             tests/test_hypothesis_intelligence.py \
             tests/test_geospatial_intelligence.py \

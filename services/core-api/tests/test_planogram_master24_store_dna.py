@@ -4,8 +4,15 @@ import pytest
 
 from app.budget_main import app
 from app.core.permission_catalog import ALL_PERMISSION_KEYS
-from app.modules.planogram.schemas import FixtureMeasurement, PlanogramStoreDnaDraftRequest
+from app.modules.planogram.schemas import (
+    FixtureMeasurement,
+    PlanogramArchitectureDraft,
+    PlanogramArchitectureElement,
+    PlanogramStoreDnaDraftRequest,
+)
 from app.modules.planogram.store_dna import (
+    approved_store_dna_to_engine_contract,
+    architecture_attested,
     build_store_dna_configuration,
     clone_configuration,
     configuration_fingerprint,
@@ -42,6 +49,42 @@ def full_measurements() -> list[FixtureMeasurement]:
     return items
 
 
+def measured_architecture() -> PlanogramArchitectureDraft:
+    return PlanogramArchitectureDraft(
+        source="manual_survey",
+        source_ref="survey://FULYA/2026-08-17",
+        floor_width_m=25,
+        floor_depth_m=18,
+        elements=[
+            PlanogramArchitectureElement(
+                element_id="ENTRY-1",
+                element_type="picker_entry",
+                x_m=0.5,
+                y_m=0.5,
+                width_m=1,
+                depth_m=1,
+            ),
+            PlanogramArchitectureElement(
+                element_id="COL-1",
+                element_type="column",
+                x_m=8,
+                y_m=6,
+                width_m=0.6,
+                depth_m=0.6,
+            ),
+            PlanogramArchitectureElement(
+                element_id="EXIT-1",
+                element_type="emergency_exit",
+                x_m=23,
+                y_m=16,
+                width_m=1,
+                depth_m=1,
+                clearance_m=1,
+            ),
+        ],
+    )
+
+
 def test_default_bootstrap_is_topology_only_and_matches_warehouse_assumption() -> None:
     configuration = build_store_dna_configuration(request())
     assert configuration["store_code"] == "FULYA"
@@ -56,8 +99,10 @@ def test_default_bootstrap_is_topology_only_and_matches_warehouse_assumption() -
         "modules": 132,
         "shelves": 792,
         "pallets": 6,
+        "architecture_elements": 0,
     }
     assert geometry_attested(configuration) is False
+    assert architecture_attested(configuration) is False
     first = configuration["aisles"][0]["left_modules"][0]
     assert first["module_id"] == "A01-L01"
     assert first["shelf_geometry"] == {
@@ -77,6 +122,38 @@ def test_complete_measurements_can_attest_geometry_without_inventing_values() ->
     ))
     assert geometry_attested(configuration) is True
     assert summarize_store_dna(configuration)["shelves"] == 792
+
+
+def test_measured_architecture_is_versioned_and_reaches_engine_contract() -> None:
+    configuration = build_store_dna_configuration(
+        request(architecture=measured_architecture())
+    )
+    assert architecture_attested(configuration) is True
+    assert summarize_store_dna(configuration)["architecture_elements"] == 3
+    assert configuration["architecture"]["coordinate_system"] == "cartesian_m"
+    engine_contract = approved_store_dna_to_engine_contract(configuration)
+    assert engine_contract["architecture"] == configuration["architecture"]
+    assert engine_contract["architecture"] is not configuration["architecture"]
+
+
+def test_architecture_requires_exactly_one_picker_entry() -> None:
+    with pytest.raises(ValueError, match="exactly one picker_entry"):
+        PlanogramArchitectureDraft(
+            source="manual_survey",
+            source_ref="survey://FULYA/bad",
+            floor_width_m=25,
+            floor_depth_m=18,
+            elements=[
+                PlanogramArchitectureElement(
+                    element_id="COL-1",
+                    element_type="column",
+                    x_m=8,
+                    y_m=6,
+                    width_m=0.6,
+                    depth_m=0.6,
+                )
+            ],
+        )
 
 
 def test_unknown_fixture_or_aisle_measurement_fails_closed() -> None:

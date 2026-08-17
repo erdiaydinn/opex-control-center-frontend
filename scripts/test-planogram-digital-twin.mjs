@@ -67,7 +67,7 @@ const candidate = {
   layout: {
     aisles: [
       { aisle_id: "A", modules: [{ module_id: 1, x_m: 2, y_m: 1, width_m: 1, depth_m: 0.5 }] },
-      { aisle_id: "PALLET", modules: [{ module_id: 1, x_m: 8, y_m: 1, width_m: 1.2, depth_m: 1 }] },
+      { aisle_id: "PALLET", modules: [{ module_id: 1, x_m: 8, y_m: 1, width_m: 1.2, depth_m: 1, rotation_deg: 90 }] },
     ],
   },
   store_dna: {
@@ -80,7 +80,8 @@ const candidate = {
       floor_depth_m: 8,
       elements: [
         { element_id: "ENTRY", element_type: "picker_entry", x_m: 0.2, y_m: 0.2, width_m: 0.5, depth_m: 0.5 },
-        { element_id: "COL-1", element_type: "column", x_m: 5, y_m: 3, width_m: 0.4, depth_m: 0.4 },
+        { element_id: "WALL-90", element_type: "wall", x_m: 5, y_m: 3, width_m: 2, depth_m: 0.2, rotation_deg: 90 },
+        { element_id: "EXIT", element_type: "emergency_exit", x_m: 10.5, y_m: 7, width_m: 0.8, depth_m: 0.25, clearance_m: 1.1 },
       ],
     },
   },
@@ -97,6 +98,21 @@ if (measured.stats.facingCount !== 3) fail("Facing count is incorrect.");
 if (measured.stats.measuredCoordinatePct !== 100) fail("Measured coordinate coverage must be 100%.");
 if (measured.floor.widthM !== 12 || measured.floor.depthM !== 8) fail("Measured floorplate must remain authoritative.");
 if (!measured.route?.available || measured.route.value !== 84.5) fail("Canonical route evidence must flow into the twin.");
+
+const rotatedPallet = measured.modules.find((item) => item.aisleId === "PALLET");
+if (rotatedPallet.rotationDeg !== 90) fail("Module rotation truth was not preserved.");
+if (rotatedPallet.footprintWidthM !== 1 || rotatedPallet.footprintDepthM !== 1.2) {
+  fail("90-degree module footprint must swap physical width/depth exactly like the backend gate.");
+}
+if (rotatedPallet.centerXM !== 8.5 || rotatedPallet.centerYM !== 1.6) {
+  fail("Rotated module center must use the backend-equivalent footprint.");
+}
+const rotatedWall = measured.elements.find((item) => item.id === "WALL-90");
+if (rotatedWall.footprintWidthM !== 0.2 || rotatedWall.footprintDepthM !== 2) {
+  fail("Rotated architecture footprint must match collision geometry.");
+}
+const emergencyExit = measured.elements.find((item) => item.id === "EXIT");
+if (emergencyExit.clearanceM !== 1.1) fail("Emergency-exit clearance must remain visible in the twin model.");
 
 const topologyCandidate = structuredClone(candidate);
 topologyCandidate.layout.aisles[0].modules[0].x_m = null;
@@ -137,6 +153,8 @@ for (const [needle, label] of [
   ['await import("three/examples/jsm/controls/OrbitControls.js")', "dynamic OrbitControls loading"],
   ["InstancedMesh", "bounded product instancing"],
   ["data-coordinate-authority", "coordinate truth rendering"],
+  ["footprintWidthM", "backend-equivalent rotated footprint rendering"],
+  ["eay-twin-egress-clearance", "emergency-exit clearance rendering"],
   ["aria-selected", "accessible 2D/3D tabs"],
   ["tabIndex = 0", "keyboard-focusable 3D canvas"],
   ["maxProductInstances3d", "3D render cap"],
@@ -151,11 +169,12 @@ if (studio.includes("production_release_allowed ?") || renderer.includes("produc
   fail("Digital twin must never unlock production publication from preview payloads.");
 }
 for (const rule of [
+  "eay-twin-egress-clearance",
   "@media (prefers-reduced-motion: reduce)",
   "@media (forced-colors: active)",
   ":focus-visible",
 ]) {
-  if (!css.includes(rule)) fail(`Digital twin accessibility CSS missing: ${rule}`);
+  if (!css.includes(rule)) fail(`Digital twin accessibility/physical-truth CSS missing: ${rule}`);
 }
 
 console.log("Planogram canonical 2D/3D digital twin truth contract: PASS");

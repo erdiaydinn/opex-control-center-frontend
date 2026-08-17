@@ -1,0 +1,17 @@
+name: EAY Master Roadmap 42-44 - Notification Search Integration
+on:
+  push:
+    branches: [agent/master-roadmap-41-44-audit-shared-platform]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  operational-platform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12'}
+      - working-directory: services/core-api
+        run: python -m pip install pytest
+      - run: pytest -q services/core-api/tests/test_master41_44_shared_platform.py services/core-api/tests/test_master42_44_operational_platform.py
+      - run: python -m py_compile services/core-api/alembic/versions/0041_shared_platform_authorities.py services/core-api/alembic/versions/0042_shared_platform_delivery_search.py

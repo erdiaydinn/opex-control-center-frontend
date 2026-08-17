@@ -21,6 +21,7 @@ on:
       - "scripts/security/generate_cyclonedx_sbom.py"
       - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/test-github-action-pinning.mjs"
+      - "scripts/test-platform-load-governance.mjs"
       - "scripts/test-dockos-product-state.mjs"
       - "scripts/validate_product_quality_contract.py"
       - "scripts/test-platform-inclusion.mjs"
@@ -30,6 +31,7 @@ on:
       - "scripts/test-no-new-hardcoded-ui-strings.mjs"
       - "src/**"
       - "ops/inventory/**"
+      - ".github/workflows/platform-load-acceptance.yml"
       - ".github/workflows/product-quality-contract.yml"
   push:
     branches:
@@ -68,6 +70,8 @@ jobs:
           retention-days: 14
       - name: GitHub Action provenance pinning
         run: node scripts/test-github-action-pinning.mjs
+      - name: Synthetic load governance contract
+        run: node scripts/test-platform-load-governance.mjs
       - name: Standard and field scorecard are version controlled
         run: |
           test -s docs/EAY_PRODUCT_QUALITY_STANDARD.md
@@ -99,6 +103,8 @@ jobs:
         run: node scripts/test-supply-chain-lock-integrity.mjs
       - name: GitHub Action provenance pinning
         run: node scripts/test-github-action-pinning.mjs
+      - name: Synthetic load governance contract
+        run: node scripts/test-platform-load-governance.mjs
       - run: npm ci
       - name: Server-authoritative access contract
         run: npm run test:access

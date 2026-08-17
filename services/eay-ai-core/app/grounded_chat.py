@@ -9,6 +9,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .grounded_reasoning import (
+    DecisionQualityReport,
+    assess_and_calibrate_grounded_answer,
+)
 from .legal_engine import LegalEngine
 from .legal_interaction_audit import LegalInteractionAuditStore
 from .legal_temporal import LegalTemporalResolver, LegalTemporalState
@@ -55,6 +59,7 @@ class GroundedChatAnswer(BaseModel):
     conflicts: list[dict] = Field(default_factory=list)
     temporal_resolution_fingerprint: str | None = None
     legal_audit_fingerprint: str | None = None
+    decision_quality: DecisionQualityReport | None = None
 
 
 def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
@@ -343,6 +348,11 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         for item in evidence
     )
     answer = validate_citations(answer, valid_ids, has_legal)
+    decision_quality = assess_and_calibrate_grounded_answer(
+        request,
+        answer,
+        evidence,
+    )
     store.save_interaction(
         interaction_id=interaction_id,
         request=request,
@@ -380,4 +390,5 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         conflicts=conflicts,
         temporal_resolution_fingerprint=temporal_fingerprint,
         legal_audit_fingerprint=legal_audit_fingerprint,
+        decision_quality=decision_quality,
     )

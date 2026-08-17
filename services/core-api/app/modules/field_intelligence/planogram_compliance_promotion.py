@@ -32,21 +32,32 @@ def _required(payload: dict[str, object], key: str) -> str:
     return value.strip()
 
 
+def _positive_facing(value: object) -> int:
+    if isinstance(value, bool):
+        raise FieldPromotionError(
+            "Planogram compliance actual_facing_count must be positive integer"
+        )
+    try:
+        facing = int(str(value))
+    except (TypeError, ValueError) as exc:
+        raise FieldPromotionError(
+            "Planogram compliance actual_facing_count must be positive integer"
+        ) from exc
+    if facing < 1:
+        raise FieldPromotionError(
+            "Planogram compliance actual_facing_count must be positive integer"
+        )
+    return facing
+
+
 def _candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
     plan_version_id = _required(payload, "plan_version_id")
     try:
         UUID(plan_version_id)
     except ValueError as exc:
-        raise FieldPromotionError("Planogram compliance plan_version_id must be UUID") from exc
-    facing_raw = payload.get("actual_facing_count")
-    if isinstance(facing_raw, bool):
-        raise FieldPromotionError("Planogram compliance actual_facing_count must be positive integer")
-    try:
-        facing = int(str(facing_raw))
-    except (TypeError, ValueError) as exc:
-        raise FieldPromotionError("Planogram compliance actual_facing_count must be positive integer") from exc
-    if facing < 1:
-        raise FieldPromotionError("Planogram compliance actual_facing_count must be positive integer")
+        raise FieldPromotionError(
+            "Planogram compliance plan_version_id must be UUID"
+        ) from exc
     return {
         "candidate_type": "planogram_compliance_observation",
         "location_id": location_id,
@@ -55,7 +66,7 @@ def _candidate(payload: dict[str, object], location_id: str) -> dict[str, object
         "actual_aisle_id": _required(payload, "actual_aisle_id"),
         "actual_module_id": _required(payload, "actual_module_id"),
         "actual_shelf_no": _required(payload, "actual_shelf_no"),
-        "actual_facing_count": facing,
+        "actual_facing_count": _positive_facing(payload.get("actual_facing_count")),
         "planogram_truth_write_permitted": False,
         "requires_planogram_assignment_validation": True,
     }
@@ -111,13 +122,18 @@ async def create_planogram_compliance_promotion(
         )
         evidence = evidence_result.mappings().first()
         if evidence is None:
-            raise FieldPromotionError("promotion requires accepted evidence in authorized scope")
+            raise FieldPromotionError(
+                "promotion requires accepted evidence in authorized scope"
+            )
         if str(evidence["latest_evidence_id"]) != str(evidence["id"]):
             raise FieldPromotionError("stale Field evidence cannot be promoted")
         if str(evidence["target_status"]) != "verified":
             raise FieldPromotionError("promotion requires a verified Field target")
 
-        candidate = _candidate(dict(evidence["payload"]), str(evidence["location_id"]))
+        candidate = _candidate(
+            dict(evidence["payload"]),
+            str(evidence["location_id"]),
+        )
         candidate_fingerprint = _fingerprint(candidate)
         proposal_fingerprint = _fingerprint(
             {
@@ -158,7 +174,11 @@ async def create_planogram_compliance_promotion(
                 "location_id": str(evidence["location_id"]),
                 "adapter_key": ADAPTER_KEY,
                 "source_evidence_fingerprint": str(evidence["fingerprint"]),
-                "candidate_payload": json.dumps(candidate, ensure_ascii=False, sort_keys=True),
+                "candidate_payload": json.dumps(
+                    candidate,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
                 "candidate_fingerprint": candidate_fingerprint,
                 "proposal_fingerprint": proposal_fingerprint,
                 "requested_by": actor_subject,
@@ -175,7 +195,10 @@ async def create_planogram_compliance_promotion(
                       AND proposal_fingerprint=:proposal_fingerprint
                     """
                 ),
-                {"tenant_id": tenant_id, "proposal_fingerprint": proposal_fingerprint},
+                {
+                    "tenant_id": tenant_id,
+                    "proposal_fingerprint": proposal_fingerprint,
+                },
             )
             row = existing.mappings().one()
         return {

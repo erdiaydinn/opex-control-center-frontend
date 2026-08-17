@@ -1,12 +1,9 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-import hashlib
-import json
 import os
 
 import pytest
 
-from . import persistence
 from .capacity_authority import CapacityWorker, EffectiveCapacityRequest, build_effective_capacity_snapshot
 from .capacity_repository import persist_capacity_snapshot
 from .demand_authority import DemandSnapshot
@@ -28,55 +25,6 @@ pytestmark = pytest.mark.skipif(
 AT = datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc)
 LOCATION = "WH-RPL-001"
 MODEL_VERSION = "workforce-replan-v1"
-
-
-def _register_approved_model() -> None:
-    sensitivities = [
-        {
-            "kpi_key": "picking_seconds_per_order",
-            "delta_per_dpi_point": "100",
-            "source_ref": "model://sanitized/picking-sensitivity-v1",
-        },
-        {
-            "kpi_key": "otp_4_25_pct",
-            "delta_per_dpi_point": "-8",
-            "source_ref": "model://sanitized/otp-sensitivity-v1",
-        },
-    ]
-    authority = {
-        "model_version": MODEL_VERSION,
-        "kpi_sensitivities": sensitivities,
-        "cost_per_mh": "1000",
-        "source_ref": "model://sanitized/replan-v1",
-        "approved_by": "ops-excellence",
-        "effective_from": "2026-08-01T00:00:00+00:00",
-    }
-    fingerprint = hashlib.sha256(
-        json.dumps(authority, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    with persistence.connection() as database, database.cursor() as cursor:
-        cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", ("tenant-a",))
-        cursor.execute(
-            """
-            INSERT INTO workforce_replan_model_versions (
-              tenant_id,model_version,kpi_sensitivities,
-              incremental_cost_minor_units_per_man_hour,source_ref,approved_by,
-              effective_from,status,authority_fingerprint
-            ) VALUES (%s,%s,%s::jsonb,%s,%s,%s,%s,'approved',%s)
-            ON CONFLICT (tenant_id,model_version) DO NOTHING
-            """,
-            (
-                "tenant-a",
-                MODEL_VERSION,
-                json.dumps(sensitivities),
-                Decimal("1000"),
-                "model://sanitized/replan-v1",
-                "ops-excellence",
-                datetime(2026, 8, 1, tzinfo=timezone.utc),
-                fingerprint,
-            ),
-        )
-        database.commit()
 
 
 def _seed_baseline_chain() -> None:
@@ -175,7 +123,6 @@ def _seed_baseline_chain() -> None:
 
 
 def test_absence_scenario_uses_governed_baseline_and_approved_model() -> None:
-    _register_approved_model()
     _seed_baseline_chain()
     shock = ScenarioShock(
         shock_id="absence-rpl",

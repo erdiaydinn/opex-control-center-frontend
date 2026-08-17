@@ -29,6 +29,12 @@ for (const [needle, label] of [
   ["setAppliedFilters(nextFilters)", "applied-filter update"],
   ["onClick={() => loadEvents(appliedFilters)}", "refresh/retry use applied filters"],
   ["setAppliedFilters(EMPTY_FILTERS)", "reset applied-filter authority"],
+  ["const requestSequence = useRef(0)", "monotonic request ordering authority"],
+  ["const requestId = requestSequence.current + 1", "per-request sequence allocation"],
+  ["requestSequence.current = requestId", "latest request publication"],
+  ["if (requestId !== requestSequence.current) return", "stale success/error suppression"],
+  ["if (requestId === requestSequence.current)", "latest-request loading completion"],
+  ["requestSequence.current += 1", "unmount request invalidation"],
 ]) {
   if (!source.includes(needle)) {
     console.error(`Audit Log product-state contract missing ${label}: ${needle}`);
@@ -39,6 +45,12 @@ for (const [needle, label] of [
 const appliedFilterReloads = source.match(/loadEvents\(appliedFilters\)/g) || [];
 if (appliedFilterReloads.length < 2) {
   console.error("Audit Log refresh and retry must both reload the last submitted filter snapshot.");
+  process.exit(1);
+}
+
+const staleRequestGuards = source.match(/requestId !== requestSequence\.current/g) || [];
+if (staleRequestGuards.length < 2) {
+  console.error("Audit Log must suppress both stale success and stale error responses.");
   process.exit(1);
 }
 
@@ -74,4 +86,4 @@ for (const locale of locales) {
   }
 }
 
-console.log("Audit Log localization/product-state/accessibility/query-state/resilience contract: PASS");
+console.log("Audit Log localization/product-state/accessibility/query-state/resilience/race contract: PASS");

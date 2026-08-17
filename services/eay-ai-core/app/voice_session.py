@@ -1,10 +1,10 @@
 """Realtime conversational control state for Jarvis voice sessions.
 
 This is transport/model agnostic: ASR/TTS providers may stream partial content,
-but only a final, identity-bound user utterance can create intent. Barge-in
-immediately stops assistant speech. A stop request during a side-effecting
-execution becomes a halt request that still requires effect verification; it
-never assumes an in-flight external write was rolled back.
+but only a final, evidence-bound user identity plus final utterance can create
+intent. Barge-in immediately stops assistant speech. A stop request during a
+side-effecting execution becomes a halt request that still requires effect
+verification; it never assumes an in-flight external write was rolled back.
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ class VoiceEvent(BaseModel):
     principal_ref: str | None = None
     transcript_ref: str | None = None
     identity_verified: bool = False
+    identity_evidence_ref: str | None = None
     mission_ref: str | None = None
     side_effect_in_flight: bool = False
 
@@ -58,6 +59,11 @@ class VoiceEvent(BaseModel):
             raise ValueError("voice_utterance_requires_transcript_ref")
         if self.kind is VoiceEventKind.FINAL_UTTERANCE and not self.principal_ref:
             raise ValueError("voice_final_utterance_requires_principal")
+        if self.identity_verified:
+            if not self.principal_ref:
+                raise ValueError("voice_verified_identity_requires_principal")
+            if not self.identity_evidence_ref:
+                raise ValueError("voice_verified_identity_requires_evidence")
         return self
 
     @property
@@ -65,6 +71,7 @@ class VoiceEvent(BaseModel):
         return (
             self.kind is VoiceEventKind.FINAL_UTTERANCE
             and self.identity_verified
+            and bool(self.identity_evidence_ref)
             and bool(self.principal_ref)
             and bool(self.transcript_ref)
         )
@@ -121,7 +128,7 @@ def apply_voice_event(session: VoiceSession, event: VoiceEvent) -> tuple[VoiceSe
 
     if event.kind is VoiceEventKind.WAKE:
         after = VoiceSessionState.LISTENING
-        if event.identity_verified and event.principal_ref:
+        if event.identity_verified and event.principal_ref and event.identity_evidence_ref:
             principal = event.principal_ref
     elif event.kind is VoiceEventKind.PARTIAL_UTTERANCE:
         after = VoiceSessionState.LISTENING

@@ -1,10 +1,10 @@
 """Temporal multimodal context and referent grounding for Jarvis.
 
-Screen pixels, webpages, camera frames, documents and transcribed ambient audio
-are observations, not instructions. Only explicit user/system intent channels
-may create executable intent. This distinction prevents prompt-injection text
-rendered inside an observed application from silently changing the mission.
-Raw media is referenced by provenance IDs rather than embedded in this model.
+Screen pixels, webpages, camera frames, documents, sensors and transcribed
+ambient audio are observations, not instructions. Only an explicit user
+utterance or a separately verified system event may define intent. This
+prevents prompt-injection text or sensor payloads from silently changing a
+mission. Raw media is referenced by provenance IDs rather than embedded here.
 """
 
 from __future__ import annotations
@@ -76,7 +76,13 @@ class MultimodalObservation(BaseModel):
 
     @property
     def may_define_intent(self) -> bool:
-        return self.trust in {ObservationTrust.EXPLICIT_USER_INTENT, ObservationTrust.VERIFIED_SYSTEM}
+        return (
+            self.modality is ObservationModality.USER_UTTERANCE
+            and self.trust is ObservationTrust.EXPLICIT_USER_INTENT
+        ) or (
+            self.modality is ObservationModality.SYSTEM_EVENT
+            and self.trust is ObservationTrust.VERIFIED_SYSTEM
+        )
 
 
 class SessionSlice(BaseModel):

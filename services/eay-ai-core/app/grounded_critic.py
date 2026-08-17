@@ -77,6 +77,8 @@ class GroundedCriticReport(BaseModel):
     confidence_cap: float = Field(default=1.0, ge=0.0, le=1.0)
     requires_human_review: bool = False
     revision_instructions: list[str] = Field(default_factory=list, max_length=8)
+    revision_applied: bool = False
+    revision_guard_passed: bool = False
 
 
 CRITIC_SCHEMA = {
@@ -174,6 +176,21 @@ def should_run_grounded_critic(
     return confidence >= 0.85
 
 
+def is_high_assurance_critic(
+    request: Any,
+    answer: Any,
+    decision_quality: Any,
+) -> bool:
+    required_layers = list(getattr(decision_quality, "required_layers", []) or [])
+    if "legal" in required_layers or "company" in required_layers:
+        return True
+    risk = _norm(getattr(answer, "risk", "unknown"))
+    if risk in {"high", "critical"}:
+        return True
+    message = _norm(getattr(request, "message", ""))
+    return any(term in message for term in ("approve", "onay", "publish", "yayin", "yayın"))
+
+
 def build_critic_prompt(
     *,
     request: Any,
@@ -211,6 +228,37 @@ Return only the verifier verdict. Do not reveal hidden reasoning.
 """.strip()
 
 
+def build_revision_prompt(
+    *,
+    request: Any,
+    answer: Any,
+    evidence_text: str,
+    critic: GroundedCriticReport,
+) -> str:
+    answer_payload = answer.model_dump(mode="json")
+    critic_payload = critic.model_dump(mode="json")
+    return f"""
+USER QUESTION:
+{getattr(request, 'message', '')}
+
+AS_OF:
+{getattr(request, 'as_of', 'unknown')}
+
+RETRIEVED EVIDENCE:
+{evidence_text}
+
+CURRENT ANSWER JSON:
+{json.dumps(answer_payload, ensure_ascii=False, sort_keys=True)}
+
+VERIFIER RESULT JSON:
+{json.dumps(critic_payload, ensure_ascii=False, sort_keys=True)}
+
+Revise the answer only to address the verifier instructions. Do not add evidence,
+facts, citations, law, company rules, thresholds or dates that are not supplied.
+Keep all evidence layers separate. Return only the normal answer JSON schema.
+""".strip()
+
+
 def normalize_critic_report(
     payload: dict[str, Any],
     *,
@@ -228,6 +276,8 @@ def normalize_critic_report(
             report.verdict = "REVISE"
     elif not report.issue_codes:
         report.issue_codes = ["ambiguous_recommendation"]
+    if report.verdict == "REVISE" and not report.revision_instructions:
+        report.requires_human_review = True
     if report.verdict == "REJECT":
         report.requires_human_review = True
         report.confidence_cap = min(report.confidence_cap, 0.50)
@@ -251,5 +301,5 @@ def unavailable_critic_report(
 def apply_critic_constraints(answer: Any, report: GroundedCriticReport) -> None:
     confidence = float(getattr(answer, "confidence", 0.0) or 0.0)
     setattr(answer, "confidence", min(confidence, report.confidence_cap))
-    if report.requires_human_review or report.verdict in {"REVISE", "REJECT"}:
+    if report.requires_human_review or report.verdict == "REJECT":
         setattr(answer, "requires_human_review", True)

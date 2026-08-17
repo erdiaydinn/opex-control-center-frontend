@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 
-import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import { translateAuditLog } from "../../platform/i18n/auditLogMessages.js";
+import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import "./audit-log.css";
 import { fetchAuditEvents } from "./auditLogApi";
 
@@ -20,11 +20,11 @@ export default function AuditLog() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadEvents() {
+  async function loadEvents(filters = { actor, decision, action }) {
     setLoading(true);
     setError("");
     try {
-      const result = await fetchAuditEvents({ limit: 100, actor, decision, action });
+      const result = await fetchAuditEvents({ limit: 100, ...filters });
       setItems(Array.isArray(result?.items) ? result.items : []);
     } catch {
       setError(a("loadError"));
@@ -34,7 +34,7 @@ export default function AuditLog() {
   }
 
   useEffect(() => {
-    loadEvents();
+    loadEvents({ actor: "", decision: "", action: "" });
     // Initial authoritative load only; filters are explicitly submitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -51,10 +51,11 @@ export default function AuditLog() {
   }
 
   function handleReset() {
-    setActor("");
-    setDecision("");
-    setAction("");
-    queueMicrotask(() => loadEvents());
+    const cleared = { actor: "", decision: "", action: "" };
+    setActor(cleared.actor);
+    setDecision(cleared.decision);
+    setAction(cleared.action);
+    loadEvents(cleared);
   }
 
   const productState = loading ? "loading" : error ? "error" : items.length ? "ready" : "empty";
@@ -67,7 +68,7 @@ export default function AuditLog() {
           <h1>{a("title")}</h1>
           <p>{a("subtitle")}</p>
         </div>
-        <button className="audit-log__refresh" type="button" onClick={loadEvents} disabled={loading}>
+        <button className="audit-log__refresh" type="button" onClick={() => loadEvents()} disabled={loading}>
           {loading ? t("loading") : t("refresh")}
         </button>
       </header>
@@ -89,7 +90,7 @@ export default function AuditLog() {
       </form>
 
       {loading ? <div role="status" aria-live="polite" aria-atomic="true">{t("loading")}</div> : null}
-      {!loading && error ? <div className="audit-log__error" role="alert" aria-atomic="true">{error} <button type="button" onClick={loadEvents}>{t("retry")}</button></div> : null}
+      {!loading && error ? <div className="audit-log__error" role="alert" aria-atomic="true">{error} <button type="button" onClick={() => loadEvents()}>{t("retry")}</button></div> : null}
 
       {!loading && !error ? (
         <div className="audit-log__table-wrap">

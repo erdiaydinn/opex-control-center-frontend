@@ -24,6 +24,28 @@ requireText(
   'echo "$TARGET_VUS" > /tmp/eay-burst-target-vus',
   "Validated burst size must be persisted for post-load correctness accounting."
 );
+
+requireText(
+  "Run controlled 50-VU latency gate",
+  "Controlled runner-relative latency regression gate must remain present."
+);
+requireText(
+  "-e LOAD_PROFILE=latency",
+  "Controlled latency run must use the dedicated latency profile."
+);
+requireText(
+  "-e TARGET_VUS=50",
+  "Controlled latency regression profile must remain fixed at 50 VUs."
+);
+requireText(
+  "-e ITERATIONS_PER_VU=2",
+  "Controlled latency regression profile must retain two iterations per VU."
+);
+requireText(
+  "Allow CI worker pools to drain",
+  "Latency and saturation profiles must retain an explicit runner drain boundary."
+);
+
 requireText(
   "continue-on-error: true",
   "Burst execution must allow post-load correctness evidence to run before final enforcement."
@@ -49,11 +71,26 @@ requireText(
   "1000-VU evidence must never be labeled as a production SLO."
 );
 
+const latencyIndex = source.indexOf("Run controlled 50-VU latency gate");
+const drainIndex = source.indexOf("Allow CI worker pools to drain");
+const burstIndex = source.indexOf("Run 1000-VU tenant isolation saturation gate");
 const verifyIndex = source.indexOf("Verify tenant and audit correctness after load");
 const enforceIndex = source.indexOf("Enforce 1000-VU saturation result");
 const evidenceIndex = source.indexOf("Record synthetic evidence boundary");
-assert.ok(verifyIndex >= 0 && enforceIndex > verifyIndex, "Correctness verification must run before burst enforcement.");
-assert.ok(evidenceIndex > enforceIndex, "Synthetic evidence may only be recorded after all hard gates are enforced.");
+
+assert.ok(latencyIndex >= 0, "Controlled latency gate must remain in the workflow.");
+assert.ok(
+  drainIndex > latencyIndex && burstIndex > drainIndex,
+  "50-VU latency regression, runner drain and 1000-VU saturation must remain ordered."
+);
+assert.ok(
+  verifyIndex >= 0 && enforceIndex > verifyIndex,
+  "Correctness verification must run before burst enforcement."
+);
+assert.ok(
+  evidenceIndex > enforceIndex,
+  "Synthetic evidence may only be recorded after all hard gates are enforced."
+);
 
 for (const hardGate of [
   "assert observed == {(TENANT_A, SUBJECT_A), (TENANT_B, SUBJECT_B)}, observed",
@@ -64,4 +101,7 @@ for (const hardGate of [
   requireText(hardGate, `Tenant/correctness hard gate missing: ${hardGate}`);
 }
 
-console.log("Synthetic load governance contract: PASS (>=1000 VU, correctness-first, production truth preserved)");
+console.log(
+  "Synthetic load governance contract: PASS " +
+    "(fixed 50-VU regression, >=1000-VU saturation, correctness-first, production truth preserved)"
+);

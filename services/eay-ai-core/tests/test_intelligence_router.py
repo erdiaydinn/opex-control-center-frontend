@@ -46,22 +46,51 @@ def _task(**overrides):
     return IntelligenceTask(**payload)
 
 
-def test_restricted_company_data_stays_local_without_external_authorization():
-    frontier = _engine(
+def _frontier(**overrides):
+    payload = dict(
         engine_id="frontier",
         engine_class=EngineClass.FRONTIER,
         local_processing=False,
         maximum_privacy=PrivacyLevel.RESTRICTED,
+        maximum_risk=TaskRisk.CRITICAL,
         benchmark_score=0.99,
         benchmark_evidence_ref="eval://frontier",
         independent_provider_key="frontier-provider",
     )
+    payload.update(overrides)
+    return _engine(**payload)
+
+
+def test_restricted_company_data_stays_local_without_external_authorization():
     plan = route_intelligence(
         _task(privacy=PrivacyLevel.RESTRICTED),
-        [frontier, _engine()],
+        [_frontier(), _engine()],
     )
 
     assert plan.primary_engine_id == "local-strong"
+    assert plan.execution_permitted is True
+
+
+def test_confidential_company_data_stays_local_without_external_authorization():
+    plan = route_intelligence(
+        _task(privacy=PrivacyLevel.CONFIDENTIAL),
+        [_frontier(), _engine()],
+    )
+
+    assert plan.primary_engine_id == "local-strong"
+    assert plan.execution_permitted is True
+
+
+def test_explicit_external_processing_authorization_can_unlock_frontier_for_confidential_task():
+    plan = route_intelligence(
+        _task(
+            privacy=PrivacyLevel.CONFIDENTIAL,
+            external_processing_authorized=True,
+        ),
+        [_frontier(), _engine()],
+    )
+
+    assert plan.primary_engine_id == "frontier"
     assert plan.execution_permitted is True
 
 

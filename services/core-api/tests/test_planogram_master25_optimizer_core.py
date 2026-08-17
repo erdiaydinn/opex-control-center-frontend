@@ -119,12 +119,14 @@ def test_optimizer_route_is_part_of_canonical_core_contract() -> None:
     assert "/v1/planogram/optimize-preview" in app.openapi()["paths"]
 
 
-def test_engine_status_advertises_optimizer_without_production_authority() -> None:
+def test_engine_status_advertises_architecture_optimizer_without_production_authority() -> None:
     status = engine_status()
+    assert status["architecture_contract"] == "store-architecture-v1"
     assert status["optimizer"] == {
         "available": True,
-        "contract": "physical-plan-optimizer-v1",
+        "contract": "physical-plan-optimizer-v2",
         "production_authority": False,
+        "route_objective": "architecture-grid-astar-v1",
     }
     # Existing foundation identity remains stable.
     assert status["contract"] == "physical-truth-gated-deterministic-v1"
@@ -140,9 +142,11 @@ async def test_truth_shaped_optimizer_request_is_still_unattested_preview() -> N
     assert response["production_release_allowed"] is False
 
     result = response["optimizer_result"]
+    assert result["optimizer"]["optimizer_version"] == "physical-plan-optimizer-v2"
     assert result["optimizer"]["allowed"] is True
-    assert result["optimizer"]["candidate_count"] == 5
+    assert result["optimizer"]["candidate_count"] == 8
     assert result["optimizer"]["baseline_preserved"] is True
+    assert result["optimizer"]["route_objective"]["basis"] == "legacy_rank_v1"
     assert result["solver_optimizer_allowed"] is True
 
 

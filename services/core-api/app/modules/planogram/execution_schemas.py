@@ -18,6 +18,14 @@ class PlanogramPlanDraftRequest(BaseModel):
     )
 
 
+class PlanogramPlanEditRequest(BaseModel):
+    plan_payload: dict[str, Any]
+    optimizer_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+
 class PlanogramPlanRejectRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 

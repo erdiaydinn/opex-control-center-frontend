@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass,field
 from enum import StrEnum
-from typing import Mapping
+from typing import Literal,Mapping
 
 class ReleaseState(StrEnum):
     DEVELOPMENT='DEVELOPMENT'; PRODUCTION_CANDIDATE='PRODUCTION_CANDIDATE'; PILOT='PILOT'; PILOT_ACCEPTED='PILOT_ACCEPTED'; PRODUCTION_ACTIVE='PRODUCTION_ACTIVE'; STABILIZING='STABILIZING'
@@ -21,17 +21,26 @@ PROD_SIGNOFFS=('security','dr','identity','real_data','module_owner')
 def can_create_production_candidate(t:ReleaseTruth)->bool:
     return t.repository_green and all(t.sre_items.get(i,False) for i in REQUIRED_SRE) and all(t.external_items.get(i,False) for i in REQUIRED_EXTERNAL)
 
+def can_start_pilot(t:ReleaseTruth)->bool:
+    return can_create_production_candidate(t)
+
 def can_accept_pilot(t:ReleaseTruth)->bool:
     return can_create_production_candidate(t) and all(t.pilot_metrics.get(k,False) for k in PILOT_METRICS)
 
+def _controlled(values:tuple[str,...])->bool:
+    normalized={v.strip().lower() for v in values if v.strip()}
+    return bool(normalized) and not ({'*','all','all-tenants','all-modules'} & normalized)
+
 def can_activate_production(t:ReleaseTruth,*,tenant_ids:tuple[str,...],modules:tuple[str,...])->bool:
-    return can_accept_pilot(t) and bool(tenant_ids) and bool(modules) and all(t.signoffs.get(k,False) for k in PROD_SIGNOFFS)
+    return can_accept_pilot(t) and _controlled(tenant_ids) and _controlled(modules) and all(t.signoffs.get(k,False) for k in PROD_SIGNOFFS)
 
 def next_state(current:ReleaseState,t:ReleaseTruth,*,tenant_ids:tuple[str,...]=(),modules:tuple[str,...]=())->ReleaseState:
     if current==ReleaseState.DEVELOPMENT:
         if not can_create_production_candidate(t): raise ValueError('production candidate blocked by repository/SRE/external evidence')
         return ReleaseState.PRODUCTION_CANDIDATE
-    if current==ReleaseState.PRODUCTION_CANDIDATE: return ReleaseState.PILOT
+    if current==ReleaseState.PRODUCTION_CANDIDATE:
+        if not can_start_pilot(t): raise ValueError('pilot start blocked because release evidence is no longer valid')
+        return ReleaseState.PILOT
     if current==ReleaseState.PILOT:
         if not can_accept_pilot(t): raise ValueError('pilot acceptance evidence incomplete')
         return ReleaseState.PILOT_ACCEPTED
@@ -40,6 +49,15 @@ def next_state(current:ReleaseState,t:ReleaseTruth,*,tenant_ids:tuple[str,...]=(
         return ReleaseState.PRODUCTION_ACTIVE
     if current==ReleaseState.PRODUCTION_ACTIVE: return ReleaseState.STABILIZING
     raise ValueError('state transition requires explicit category-leadership iteration')
+
+Priority=Literal['P0','P1','P2']
+@dataclass(frozen=True)
+class StabilizationIssue:
+    source:str; category:str; description:str; evidence_ref:str; priority:Priority
+
+def stabilization_backlog(issues:tuple[StabilizationIssue,...])->tuple[StabilizationIssue,...]:
+    order={'P0':0,'P1':1,'P2':2}
+    return tuple(sorted((i for i in issues if i.evidence_ref.strip()),key=lambda i:(order[i.priority],i.category,i.source)))
 
 @dataclass(frozen=True)
 class BenchmarkSignal:

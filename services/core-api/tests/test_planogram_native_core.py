@@ -116,11 +116,20 @@ def preview_request(*, dimensions: bool = True) -> PlanogramPreviewRequest:
 
 
 def test_canonical_app_registers_native_planogram_routes() -> None:
-    # FastAPI >=0.141 can retain included routers lazily in app.routes. OpenAPI
-    # is the public ASGI contract and therefore the correct composition proof.
     paths = set(app.openapi()["paths"])
-    assert "/v1/planogram/readiness" in paths
-    assert "/v1/planogram/preview" in paths
+    required = {
+        "/v1/planogram/readiness",
+        "/v1/planogram/preview",
+        "/v1/planogram/store-dna/workspace",
+        "/v1/planogram/store-dna/bootstrap",
+        "/v1/planogram/store-dna/{version_id}",
+        "/v1/planogram/store-dna/{version_id}/submit",
+        "/v1/planogram/store-dna/{version_id}/approve",
+        "/v1/planogram/store-dna/{version_id}/reject",
+        "/v1/planogram/store-dna/{version_id}/revise",
+        "/v1/planogram/store-dna/{store_code}/readiness",
+    }
+    assert required <= paths
 
 
 def test_adapter_binds_reviewed_library_contract() -> None:
@@ -138,13 +147,16 @@ def test_adapter_binds_reviewed_library_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_readiness_never_claims_unattested_physical_truth() -> None:
+async def test_readiness_exposes_store_dna_lifecycle_without_claiming_full_truth() -> None:
     response = await get_planogram_readiness(principal())
     assert response["tenant_id"] == str(TENANT)
     assert response["production_ready"] is False
     assert response["publishable"] is False
     assert response["solver_optimizer_allowed"] is False
-    assert response["authority_state"] == "no_server_attested_physical_truth"
+    assert (
+        response["authority_state"]
+        == "server_store_dna_lifecycle_available_physical_truth_incomplete"
+    )
     assert response["physical_truth"]["server_attested"] is False
 
 

@@ -22,6 +22,25 @@ function hasFiniteCoordinate(value) {
   return Number.isFinite(Number(value));
 }
 
+function normalizedOrthogonalRotation(value) {
+  const raw = ((number(value, 0) % 360) + 360) % 360;
+  const candidates = [0, 90, 180, 270, 360];
+  const closest = candidates.reduce((best, candidate) =>
+    Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best
+  , 0);
+  return closest === 360 ? 0 : closest;
+}
+
+function orthogonalFootprint(widthM, depthM, rotationDeg) {
+  const rotation = normalizedOrthogonalRotation(rotationDeg);
+  const swapsAxes = rotation === 90 || rotation === 270;
+  return {
+    rotationDeg: rotation,
+    footprintWidthM: swapsAxes ? depthM : widthM,
+    footprintDepthM: swapsAxes ? widthM : depthM,
+  };
+}
+
 function moduleKey(aisleId, moduleId) {
   return `${text(aisleId)}::${text(moduleId)}`;
 }
@@ -51,14 +70,21 @@ function buildInputModuleIndex(candidate) {
 }
 
 function architectureElement(element) {
+  const widthM = positive(element?.width_m, 0);
+  const depthM = positive(element?.depth_m, 0);
+  const footprint = orthogonalFootprint(widthM, depthM, element?.rotation_deg);
+  const xM = number(element?.x_m);
+  const yM = number(element?.y_m);
   return {
     id: text(element?.element_id),
     type: text(element?.element_type).toLowerCase(),
-    xM: number(element?.x_m),
-    yM: number(element?.y_m),
-    widthM: positive(element?.width_m, 0),
-    depthM: positive(element?.depth_m, 0),
-    rotationDeg: number(element?.rotation_deg),
+    xM,
+    yM,
+    widthM,
+    depthM,
+    ...footprint,
+    centerXM: xM + footprint.footprintWidthM / 2,
+    centerYM: yM + footprint.footprintDepthM / 2,
     clearanceM: positive(element?.clearance_m, 0),
   };
 }
@@ -136,15 +162,27 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
       const moduleId = text(outputModule?.module_id || moduleIndex + 1);
       const sourceModule = inputModules.get(moduleKey(aisleId, moduleId)) || {};
       const merged = { ...sourceModule, ...outputModule };
+      for (const field of ["x_m", "y_m", "width_m", "depth_m", "rotation_deg"]) {
+        if ((merged[field] === null || merged[field] === undefined || merged[field] === "") && sourceModule[field] != null && sourceModule[field] !== "") {
+          merged[field] = sourceModule[field];
+        }
+      }
       const geometry = shelfGeometry(merged);
+      const rotation = orthogonalFootprint(
+        geometry.widthM,
+        geometry.depthM,
+        merged?.rotation_deg
+      );
       const hasCoordinates =
         hasFiniteCoordinate(merged?.x_m) && hasFiniteCoordinate(merged?.y_m);
       const fallback = inferTopologyPosition(
         aisleIndex,
         moduleIndex,
-        geometry.widthM,
-        geometry.depthM
+        rotation.footprintWidthM,
+        rotation.footprintDepthM
       );
+      const xM = hasCoordinates ? number(merged?.x_m) : fallback.xM;
+      const yM = hasCoordinates ? number(merged?.y_m) : fallback.yM;
       const summary = productSummary(outputModule?.shelves || []);
       if (hasCoordinates) measuredCoordinateCount += 1;
 
@@ -156,11 +194,13 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
         fixtureType: text(
           merged?.fixture_class ?? merged?.fixture_type ?? merged?.module_type ?? merged?.storage_type
         ).toUpperCase(),
-        xM: hasCoordinates ? number(merged?.x_m) : fallback.xM,
-        yM: hasCoordinates ? number(merged?.y_m) : fallback.yM,
+        xM,
+        yM,
         widthM: geometry.widthM,
         depthM: geometry.depthM,
-        rotationDeg: number(merged?.rotation_deg),
+        ...rotation,
+        centerXM: xM + rotation.footprintWidthM / 2,
+        centerYM: yM + rotation.footprintDepthM / 2,
         coordinateAuthority: hasCoordinates ? "measured" : "topology",
         shelfCount: Array.isArray(outputModule?.shelves) ? outputModule.shelves.length : 0,
         shelves: outputModule?.shelves || [],
@@ -175,8 +215,8 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
     ? (architecture?.elements || []).map(architectureElement).filter((item) => item.widthM > 0 && item.depthM > 0)
     : [];
 
-  const inferredMaxX = Math.max(...modules.map((module) => module.xM + module.widthM), 1) + 0.5;
-  const inferredMaxY = Math.max(...modules.map((module) => module.yM + module.depthM), 1) + 0.5;
+  const inferredMaxX = Math.max(...modules.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;
+  const inferredMaxY = Math.max(...modules.map((module) => module.yM + module.footprintDepthM), 1) + 0.5;
   const floorWidthM = hasMeasuredArchitecture
     ? positive(architecture?.floor_width_m, inferredMaxX)
     : inferredMaxX;

@@ -1,0 +1,24 @@
+name: EAY Master Roadmap 45-48 - SRE Scale Resilience DR
+on:
+  push:
+    branches: [agent/master-roadmap-45-48-sre-scale-resilience]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  sre-governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12'}
+      - working-directory: services/core-api
+        run: python -m pip install pytest
+      - run: pytest -q services/core-api/tests/test_master45_48_sre_governance.py
+      - name: Truth boundary
+        run: |
+          python - <<'PY'
+          import json
+          d=json.load(open('docs/governance/eay_sre_service_registry.json'))
+          assert all(x['synthetic_is_sufficient'] is False for x in d['production_shape_tests'])
+          assert d['dr_requirements']['synthetic_is_sufficient'] is False
+          PY

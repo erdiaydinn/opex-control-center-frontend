@@ -125,8 +125,9 @@ function Module3D({ module, selectedProductKey, onUnavailable }) {
     camera.position.set(width * 1.25, height * 0.9, Math.max(depth * 3.2, width * 1.6));
     camera.lookAt(0, height * 0.45, 0);
 
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+    controls.enableDamping = !reducedMotion;
     controls.enablePan = false;
     controls.minDistance = Math.max(width, height) * 0.8;
     controls.maxDistance = Math.max(width, height) * 6;
@@ -188,25 +189,42 @@ function Module3D({ module, selectedProductKey, onUnavailable }) {
       renderer.setSize(nextWidth, nextHeight, false);
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
+      renderer.render(scene, camera);
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(host);
 
     let frame = 0;
-    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    const render = () => {
+    const drawOnce = () => {
       controls.update();
       renderer.render(scene, camera);
-      if (!reducedMotion) frame = window.requestAnimationFrame(render);
     };
-    render();
+    const animate = () => {
+      drawOnce();
+      frame = window.requestAnimationFrame(animate);
+    };
+    const onControlChange = () => {
+      if (reducedMotion) renderer.render(scene, camera);
+    };
+
+    if (reducedMotion) {
+      controls.addEventListener("change", onControlChange);
+      drawOnce();
+    } else {
+      animate();
+    }
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
       observer.disconnect();
+      controls.removeEventListener("change", onControlChange);
       controls.dispose();
       disposeObject(scene);
+      frameMaterial.dispose();
+      shelfMaterial.dispose();
+      productMaterial.dispose();
+      selectedMaterial.dispose();
       renderer.dispose();
       host.replaceChildren();
     };

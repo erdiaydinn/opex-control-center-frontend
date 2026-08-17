@@ -17,6 +17,8 @@ for (const [needle, label] of [
   ["<caption className=\"sr-only\">{a(\"title\")}</caption>", "accessible table caption"],
   ["<th scope=\"col\">{a(\"time\")}</th>", "column header scope semantics"],
   ["<th scope=\"col\">{a(\"requestId\")}</th>", "request-id column scope semantics"],
+  ["className=\"sr-only\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"", "result-count live announcement"],
+  ["{a(\"total\")}: {summary.total}", "localized result count"],
 ]) {
   if (!source.includes(needle)) {
     console.error(`Audit Log product-state contract missing ${label}: ${needle}`);

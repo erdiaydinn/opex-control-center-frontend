@@ -52,6 +52,21 @@ def _standard_fingerprint(standard: LaborStandardVersion) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _require_v33_schema(cursor) -> None:
+    cursor.execute(
+        """
+        SELECT
+          to_regclass('public.workforce_labor_standard_versions') IS NOT NULL,
+          to_regclass('public.workforce_demand_snapshots') IS NOT NULL
+        """
+    )
+    labor_exists, snapshot_exists = cursor.fetchone()
+    if not labor_exists or not snapshot_exists:
+        raise DemandPersistenceError(
+            "Workforce V33 demand schema is missing; apply versioned migration 010 before demand execution"
+        )
+
+
 def _enter_tenant(cursor) -> str:
     configured = persistence.tenant_id()
     cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", (configured,))
@@ -61,6 +76,7 @@ def _enter_tenant(cursor) -> str:
         raise DemandPersistenceError(
             "runtime database identity is not bound to the configured Workforce tenant"
         )
+    _require_v33_schema(cursor)
     return configured
 
 

@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from app.voice_session import (
     VoiceEvent,
     VoiceEventKind,
@@ -45,12 +47,24 @@ def test_verified_final_utterance_becomes_intent():
             principal_ref="principal://erdi",
             transcript_ref="transcript://final",
             identity_verified=True,
+            identity_evidence_ref="identity://oidc-session/erdi",
         ),
     )
 
     assert transition.intent_accepted is True
     assert session.state is VoiceSessionState.THINKING
     assert session.active_principal_ref == "principal://erdi"
+
+
+def test_verified_identity_boolean_without_evidence_is_rejected():
+    with pytest.raises(ValueError, match="voice_verified_identity_requires_evidence"):
+        _event(
+            "fake-verified",
+            VoiceEventKind.FINAL_UTTERANCE,
+            principal_ref="principal://erdi",
+            transcript_ref="transcript://final",
+            identity_verified=True,
+        )
 
 
 def test_barge_in_cancels_assistant_speech_and_returns_to_listening():

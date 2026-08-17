@@ -1,0 +1,24 @@
+name: EAY Master Roadmap 56-60 - Release Pilot Production Leadership
+on:
+  push:
+    branches: [agent/master-roadmap-56-60-release-category-leadership]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  release-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12'}
+      - working-directory: services/core-api
+        run: python -m pip install pytest
+      - run: pytest -q services/core-api/tests/test_master56_60_release_leadership.py
+      - name: Policy truth boundary
+        run: |
+          python - <<'PY'
+          import json
+          d=json.load(open('docs/governance/eay_release_category_leadership_policy.json'))['release_requirements']
+          assert d['production']['activation']=='TENANT_MODULE_CONTROLLED'
+          assert d['production_candidate']['external_items']==list(range(49,56))
+          PY

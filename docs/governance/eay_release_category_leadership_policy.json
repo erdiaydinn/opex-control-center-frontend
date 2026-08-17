@@ -1,0 +1,10 @@
+{
+  "schema_version":1,
+  "release_requirements":{
+    "production_candidate":{"repository_green":true,"external_items":[49,50,51,52,53,54,55],"sre_items":[45,46,47,48]},
+    "pilot":{"requires":"PRODUCTION_CANDIDATE","measure":["error_budget","task_success","latency","reconciliation","support_cases","device_issues","user_feedback","rollback_criteria"]},
+    "production":{"requires":"PILOT_ACCEPTED","signoffs":["security","dr","identity","real_data","module_owner"],"activation":"TENANT_MODULE_CONTROLLED"},
+    "stabilization":{"requires":"PRODUCTION_ACTIVE","queues":["bugs","friction","support","slow_queries","abandoned_workflows","false_alerts","optimizer_rejections","user_feedback"]},
+    "category_leadership":{"loop":["DISCOVER","PROVE_VALUE","BUILD","TEST","PILOT","MEASURE","IMPROVE"]}
+  }
+}

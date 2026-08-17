@@ -1,0 +1,27 @@
+name: EAY Master Roadmap 34 - Jarvis Operational Tool Authority
+on:
+  push:
+    branches: [agent/master-roadmap-34-38-jarvis-insight-intelligence]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: eay-master-34-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tool-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12', cache: pip}
+      - working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - run: ruff check --ignore E501 services/core-api/app/core/operational_tool_authority.py services/core-api/tests/test_master34_operational_tool_authority.py
+      - run: pytest -q services/core-api/tests/test_ai_tool_authorization.py services/core-api/tests/test_master34_operational_tool_authority.py
+      - name: Fail closed contract
+        run: |
+          python - <<'PY'
+          from app.core.operational_tool_authority import OPERATIONAL_TOOL_REGISTRY
+          assert all(spec.risk=='read_only' for spec in OPERATIONAL_TOOL_REGISTRY.values())
+          assert len(OPERATIONAL_TOOL_REGISTRY)==9
+          PY

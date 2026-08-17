@@ -32,6 +32,8 @@ jobs:
       - name: Install deterministic Planogram dependencies
         working-directory: apps/planai/backend
         run: python -m pip install -r requirements.txt
+      - name: Install Core API test surface
+        run: python -m pip install -e "./services/core-api[dev]"
       - name: Verify Master Roadmap item 25 authority
         run: |
           python - <<'PY'
@@ -42,9 +44,16 @@ jobs:
           assert item['title']=='Planogram optimizer', item
           print('MASTER_25_AUTHORITY=PASS')
           PY
-      - name: Compile optimizer without changing foundation allocator
+      - name: Compile architecture optimizer without changing foundation allocator
         working-directory: apps/planai/backend
-        run: python -m compileall -q physical_optimizer.py physical_engine.py physical_truth.py engine.py
+        run: >-
+          python -m compileall -q
+          physical_optimizer.py
+          physical_optimizer_v2.py
+          architecture_truth.py
+          physical_engine.py
+          physical_truth.py
+          engine.py
       - name: Master 24 physical truth regression
         working-directory: apps/planai/backend
         run: >-
@@ -52,27 +61,41 @@ jobs:
           tests.test_physical_truth
           tests.test_physical_engine
           tests.test_physical_truth_audit
+      - name: Architecture truth and route hard-gate acceptance
+        working-directory: apps/planai/backend
+        run: >-
+          pytest -q
+          tests/test_architecture_truth.py
+          tests/test_architecture_route_gate.py
       - name: Master 25 optimizer adversarial acceptance
         working-directory: apps/planai/backend
         run: python -m unittest tests.test_physical_optimizer
-      - name: Prove hard-first and baseline-preserving contract
+      - name: Prove V2 hard-first and baseline-preserving contract
         working-directory: apps/planai/backend
         run: |
           python - <<'PY'
-          from physical_optimizer import OBJECTIVE_ORDER, STRATEGIES
+          from physical_optimizer import OBJECTIVE_ORDER, STRATEGIES as V1_STRATEGIES
+          from physical_optimizer_v2 import OPTIMIZER_VERSION, STRATEGIES as V2_STRATEGIES
           assert OBJECTIVE_ORDER[0]=='hard_violation_count'
-          assert STRATEGIES[0]==('baseline', None)
-          assert len({name for name, _ in STRATEGIES})==len(STRATEGIES)
+          assert V1_STRATEGIES[0]==('baseline', None)
+          assert V2_STRATEGIES[0]==('baseline', None)
+          assert OPTIMIZER_VERSION=='physical-plan-optimizer-v2'
+          assert len(V2_STRATEGIES)==8
+          assert len({name for name, _ in V2_STRATEGIES})==len(V2_STRATEGIES)
           print('MASTER_25_HARD_FIRST=PASS')
           print('MASTER_25_BASELINE_ALWAYS_CANDIDATE=PASS')
+          print('MASTER_25_ARCHITECTURE_OPTIMIZER_V2=PASS')
           PY
-      - name: Install Core API test surface
-        run: python -m pip install -e "./services/core-api[dev]"
-      - name: Lint optimizer and Core boundary
+      - name: Lint optimizer V2 and Core boundary
         run: >-
           ruff check
           apps/planai/backend/physical_optimizer.py
+          apps/planai/backend/physical_optimizer_v2.py
+          apps/planai/backend/architecture_truth.py
+          apps/planai/backend/physical_engine.py
           apps/planai/backend/tests/test_physical_optimizer.py
+          apps/planai/backend/tests/test_architecture_truth.py
+          apps/planai/backend/tests/test_architecture_route_gate.py
           services/core-api/app/modules/planogram/engine_adapter.py
           services/core-api/app/modules/planogram/optimizer_router.py
           services/core-api/app/budget_main.py
@@ -93,6 +116,9 @@ jobs:
           status=engine_status()
           assert status['optimizer']['available'] is True
           assert status['optimizer']['production_authority'] is False
+          assert status['optimizer']['contract']=='physical-plan-optimizer-v2'
+          assert status['optimizer']['route_objective']=='architecture-grid-astar-v1'
           print('MASTER_25_CORE_OPTIMIZER_PREVIEW=PASS')
+          print('MASTER_25_ARCHITECTURE_ROUTE_GATE=PASS')
           print('MASTER_25_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
           PY

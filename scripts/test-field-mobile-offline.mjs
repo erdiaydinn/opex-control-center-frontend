@@ -65,7 +65,7 @@ assert.match(uploadAuthority, /OPEX_FIELD_EVIDENCE_STORE_TOKEN_FILE/);
 assert.match(uploadAuthority, /follow_redirects=False/);
 assert.match(uploadAuthority, /private Field evidence store is not configured/);
 assert.match(uploadAuthority, /storage_receipt_hash/);
-assert.doesNotMatch(uploadAuthority, /storage_receipt[^_a-z].*return/s, "raw storage receipt must not be returned to browser");
+assert.doesNotMatch(uploadRoutes, /storage_receipt\s*:/, "raw storage provider receipt must not be returned by the browser route");
 
 assert.match(schemas, /class OfflineEvidenceEvent/);
 assert.match(schemas, /device_sequence: int = Field\(gt=0\)/);

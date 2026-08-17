@@ -10,8 +10,10 @@ on:
       - "services/core-api/app/core/internal_service_replay.py"
       - "services/core-api/app/core/client_ip.py"
       - "services/core-api/app/core/config.py"
+      - "services/core-api/app/core/permission_catalog.py"
       - "services/core-api/app/main.py"
       - "services/core-api/app/intelligence_routes.py"
+      - "services/core-api/app/field_promotion_routes.py"
       - "services/core-api/app/modules/field_intelligence/**"
       - "services/core-api/alembic/**"
       - "services/core-api/tests/test_bearer_header_boundary.py"
@@ -26,6 +28,7 @@ on:
       - "services/core-api/tests/test_field_intelligence_rls.py"
       - "services/core-api/tests/test_field_intelligence_ui_contract.py"
       - "services/core-api/tests/test_field_mobile_offline.py"
+      - "services/core-api/tests/test_field_governed_promotion.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "config/eay_security_hardening_contract.json"
       - ".github/workflows/eay-security-hardening-ci.yml"
@@ -87,11 +90,16 @@ jobs:
             services/core-api/app/core/internal_service_replay.py \
             services/core-api/app/core/client_ip.py \
             services/core-api/app/core/config.py \
+            services/core-api/app/core/permission_catalog.py \
             services/core-api/app/main.py \
             services/core-api/app/intelligence_routes.py \
+            services/core-api/app/field_promotion_routes.py \
             services/core-api/app/modules/field_intelligence/schemas.py \
             services/core-api/app/modules/field_intelligence/repository.py \
-            services/core-api/app/modules/field_intelligence/mobile_offline.py
+            services/core-api/app/modules/field_intelligence/mobile_offline.py \
+            services/core-api/app/modules/field_intelligence/evidence_integrity.py \
+            services/core-api/app/modules/field_intelligence/promotion.py \
+            services/core-api/app/modules/field_intelligence/promotion_access.py
       - name: Create RLS-bound runtime role
         run: |
           python - <<'PY'
@@ -132,7 +140,8 @@ jobs:
             services/core-api/tests/test_identity_foundation_adversarial.py \
             services/core-api/tests/test_field_intelligence_rls.py \
             services/core-api/tests/test_field_intelligence_ui_contract.py \
-            services/core-api/tests/test_field_mobile_offline.py
+            services/core-api/tests/test_field_mobile_offline.py \
+            services/core-api/tests/test_field_governed_promotion.py
       - name: Run internal service and replay tests
         env:
           PYTHONPATH: services/core-api

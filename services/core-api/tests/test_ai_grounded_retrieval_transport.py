@@ -1,6 +1,6 @@
+import json
 from datetime import date
 from importlib import import_module
-import json
 
 import httpx
 import pytest

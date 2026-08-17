@@ -11,6 +11,10 @@ from app.core.security import Principal, get_current_principal
 from app.field_evidence_object_routes import router as evidence_object_router
 from app.field_governance_routes import router as governance_router
 from app.modules.field_intelligence.authorization import require_field_permission
+from app.modules.field_intelligence.planogram_compliance_promotion import (
+    ADAPTER_KEY as PLANOGRAM_COMPLIANCE_ADAPTER,
+    create_planogram_compliance_promotion,
+)
 from app.modules.field_intelligence.promotion import (
     FieldPromotionError,
     create_promotion_request,
@@ -39,6 +43,7 @@ class PromotionCreate(StrictModel):
     evidence_id: UUID
     adapter_key: Literal[
         "planogram.fixture_measurement.v1",
+        "planogram.compliance_observation.v1",
         "inventory.count_observation.v1",
         "budget.supporting_evidence.v1",
     ]
@@ -76,16 +81,19 @@ def _consumer_scope_allows(
     location_id: str,
     candidate: dict[str, object],
 ) -> None:
-    adapter = next(
-        item
-        for item in (
-            get_adapter("inventory.count_observation.v1"),
-            get_adapter("planogram.fixture_measurement.v1"),
-            get_adapter("budget.supporting_evidence.v1"),
+    if consumer_module == "planogram":
+        permission_key = "action:planogram:acceptFieldEvidence"
+    else:
+        adapter = next(
+            item
+            for item in (
+                get_adapter("inventory.count_observation.v1"),
+                get_adapter("budget.supporting_evidence.v1"),
+            )
+            if item.consumer_module == consumer_module
         )
-        if item.consumer_module == consumer_module
-    )
-    scope = resolve_permission_scope(principal, adapter.consumer_permission)
+        permission_key = adapter.consumer_permission
+    scope = resolve_permission_scope(principal, permission_key)
     if scope.unrestricted:
         return
     if consumer_module == "budget":
@@ -137,6 +145,13 @@ async def post_field_promotion(
         "action:field_intelligence:proposePromotion",
     )
     try:
+        if payload.adapter_key == PLANOGRAM_COMPLIANCE_ADAPTER:
+            return await create_planogram_compliance_promotion(
+                tenant_id=str(principal.tenant_id),
+                actor_subject=principal.subject,
+                evidence_id=str(payload.evidence_id),
+                allowed_location_ids=allowed,
+            )
         return await create_promotion_request(
             tenant_id=str(principal.tenant_id),
             actor_subject=principal.subject,

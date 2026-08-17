@@ -60,6 +60,28 @@ def test_screen_instruction_like_text_is_observation_not_intent():
     assert screen.may_define_intent is False
 
 
+def test_sensor_payload_never_defines_intent_even_when_verified_system_evidence():
+    sensor = _observation(
+        observation_id="sensor-1",
+        modality=ObservationModality.SENSOR,
+        trust=ObservationTrust.VERIFIED_SYSTEM,
+        source_ref="sensor://warehouse",
+        content_ref="evidence://sensor-1",
+        contains_instruction_like_content=True,
+        focus_candidates=(),
+    )
+    session = slice_session(
+        [sensor],
+        session_id="session-1",
+        tenant_id="warehouse:fulya",
+        as_of=NOW,
+    )
+
+    assert sensor.may_define_intent is False
+    assert session.intent_observation_ids == ()
+    assert session.untrusted_instruction_observation_ids == ("sensor-1",)
+
+
 def test_screen_content_cannot_be_marked_as_explicit_user_intent():
     with pytest.raises(ValueError, match="observed_content_cannot_be_promoted_to_instruction_trust"):
         _observation(trust=ObservationTrust.EXPLICIT_USER_INTENT)

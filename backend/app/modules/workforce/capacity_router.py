@@ -16,6 +16,7 @@ from .capacity_authority import (
     build_effective_capacity_snapshot,
 )
 from .capacity_repository import get_latest_capacity_snapshot, persist_capacity_snapshot
+from .dpi_router import router as dpi_router
 from .skill_capacity import SkillDemand
 
 
@@ -140,3 +141,6 @@ def latest_capacity_snapshot(
     result["effective_capacity"] = float(snapshot["effective_capacity"])
     result["scheduled_fte"] = float(snapshot["scheduled_fte"])
     return result
+
+
+router.include_router(dpi_router)

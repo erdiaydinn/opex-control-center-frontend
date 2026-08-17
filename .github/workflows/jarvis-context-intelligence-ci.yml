@@ -12,6 +12,7 @@ on:
       - "services/eay-ai-core/app/world_model.py"
       - "services/eay-ai-core/app/jarvis_benchmark.py"
       - "services/eay-ai-core/app/procedural_memory.py"
+      - "services/eay-ai-core/app/effect_attribution.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_gateway.py"
@@ -26,6 +27,7 @@ on:
       - "services/eay-ai-core/tests/test_world_model.py"
       - "services/eay-ai-core/tests/test_jarvis_benchmark.py"
       - "services/eay-ai-core/tests/test_procedural_memory.py"
+      - "services/eay-ai-core/tests/test_effect_attribution.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
       - "services/eay-ai-core/tests/test_context_provider_registry.py"
       - "services/eay-ai-core/tests/test_context_provider_gateway.py"
@@ -46,6 +48,7 @@ on:
       - "services/eay-ai-core/app/world_model.py"
       - "services/eay-ai-core/app/jarvis_benchmark.py"
       - "services/eay-ai-core/app/procedural_memory.py"
+      - "services/eay-ai-core/app/effect_attribution.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_gateway.py"
@@ -60,6 +63,7 @@ on:
       - "services/eay-ai-core/tests/test_world_model.py"
       - "services/eay-ai-core/tests/test_jarvis_benchmark.py"
       - "services/eay-ai-core/tests/test_procedural_memory.py"
+      - "services/eay-ai-core/tests/test_effect_attribution.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
       - "services/eay-ai-core/tests/test_context_provider_registry.py"
       - "services/eay-ai-core/tests/test_context_provider_gateway.py"
@@ -129,6 +133,7 @@ jobs:
             app/world_model.py \
             app/jarvis_benchmark.py \
             app/procedural_memory.py \
+            app/effect_attribution.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
             tests/test_context_unicode_intelligence.py \
@@ -163,6 +168,7 @@ jobs:
             tests/test_world_model.py \
             tests/test_jarvis_benchmark.py \
             tests/test_procedural_memory.py \
+            tests/test_effect_attribution.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py
@@ -202,6 +208,7 @@ jobs:
             tests/test_world_model.py \
             tests/test_jarvis_benchmark.py \
             tests/test_procedural_memory.py \
+            tests/test_effect_attribution.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py

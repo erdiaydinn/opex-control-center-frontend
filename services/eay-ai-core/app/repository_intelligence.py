@@ -130,6 +130,8 @@ class RepositoryRegistry(BaseModel):
             "apache-superset",
             "patika-superset-tr",
         }
+        if self.version >= 2:
+            required.update({"yargi-mcp", "claude-legal-turkish"})
         missing = sorted(required - set(self.by_id()))
         if missing:
             raise ValueError("repository_registry_seed_entries_missing:" + ",".join(missing))

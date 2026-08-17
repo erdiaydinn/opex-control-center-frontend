@@ -86,6 +86,7 @@ def _validated_evidence_response(
     body: object,
     *,
     requested_limit: int,
+    requested_layers: frozenset[str],
 ) -> list[dict[str, object]]:
     evidence = body.get("evidence") if isinstance(body, dict) else None
     if not isinstance(evidence, list) or len(evidence) > requested_limit:
@@ -95,7 +96,7 @@ def _validated_evidence_response(
     for item in evidence:
         if not isinstance(item, dict) or set(item) != EVIDENCE_FIELDS:
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
-        if item["layer"] not in ALLOWED_LAYERS:
+        if item["layer"] not in requested_layers:
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
         if item["authority_level"] not in ALLOWED_AUTHORITY_LEVELS:
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
@@ -189,4 +190,8 @@ async def retrieve_tenant_grounded_evidence(
     except ValueError as exc:
         raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable") from exc
 
-    return _validated_evidence_response(body, requested_limit=limit)
+    return _validated_evidence_response(
+        body,
+        requested_limit=limit,
+        requested_layers=frozenset(layers),
+    )

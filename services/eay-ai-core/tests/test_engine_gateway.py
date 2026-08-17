@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx
@@ -79,8 +80,7 @@ def _task(**overrides):
     return IntelligenceTask(**payload)
 
 
-@pytest.mark.asyncio
-async def test_frontier_openai_adapter_uses_responses_api_store_false_and_retains_no_secret():
+def test_frontier_openai_adapter_uses_responses_api_store_false_and_retains_no_secret():
     captured = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -109,7 +109,7 @@ async def test_frontier_openai_adapter_uses_responses_api_store_false_and_retain
         transport_factory=lambda endpoint: transport,
         environ={"OPENAI_API_KEY": "sk-test-super-secret"},
     )
-    receipt = await gateway.invoke_primary(task=_task(), prompt="Analyze capacity risk")
+    receipt = asyncio.run(gateway.invoke_primary(task=_task(), prompt="Analyze capacity risk"))
 
     assert receipt.engine_id == "openai-frontier"
     assert receipt.provider is EngineProvider.OPENAI_RESPONSES
@@ -130,8 +130,7 @@ async def test_frontier_openai_adapter_uses_responses_api_store_false_and_retain
     assert receipt.secret_retained is False
 
 
-@pytest.mark.asyncio
-async def test_confidential_task_stays_local_without_external_authorization():
+def test_confidential_task_stays_local_without_external_authorization():
     called_urls = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -153,9 +152,11 @@ async def test_confidential_task_stays_local_without_external_authorization():
         transport_factory=lambda endpoint: transport,
         environ={"OPENAI_API_KEY": "sk-test"},
     )
-    receipt = await gateway.invoke_primary(
-        task=_task(privacy=PrivacyLevel.CONFIDENTIAL),
-        prompt="Sensitive company analysis",
+    receipt = asyncio.run(
+        gateway.invoke_primary(
+            task=_task(privacy=PrivacyLevel.CONFIDENTIAL),
+            prompt="Sensitive company analysis",
+        )
     )
 
     assert receipt.engine_id == "ollama-local"
@@ -163,8 +164,7 @@ async def test_confidential_task_stays_local_without_external_authorization():
     assert called_urls == ["http://127.0.0.1:11434/api/chat"]
 
 
-@pytest.mark.asyncio
-async def test_explicit_authorization_can_route_confidential_task_to_frontier():
+def test_explicit_authorization_can_route_confidential_task_to_frontier():
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -182,19 +182,20 @@ async def test_explicit_authorization_can_route_confidential_task_to_frontier():
         transport_factory=lambda endpoint: httpx.MockTransport(handler),
         environ={"OPENAI_API_KEY": "sk-test"},
     )
-    receipt = await gateway.invoke_primary(
-        task=_task(
-            privacy=PrivacyLevel.CONFIDENTIAL,
-            external_processing_authorized=True,
-        ),
-        prompt="Authorized confidential analysis",
+    receipt = asyncio.run(
+        gateway.invoke_primary(
+            task=_task(
+                privacy=PrivacyLevel.CONFIDENTIAL,
+                external_processing_authorized=True,
+            ),
+            prompt="Authorized confidential analysis",
+        )
     )
 
     assert receipt.engine_id == "openai-frontier"
 
 
-@pytest.mark.asyncio
-async def test_missing_frontier_secret_fails_before_network_call():
+def test_missing_frontier_secret_fails_before_network_call():
     called = False
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -208,12 +209,11 @@ async def test_missing_frontier_secret_fails_before_network_call():
         environ={},
     )
     with pytest.raises(EngineGatewayError, match="engine_secret_not_available"):
-        await gateway.invoke_primary(task=_task(), prompt="Analyze")
+        asyncio.run(gateway.invoke_primary(task=_task(), prompt="Analyze"))
     assert called is False
 
 
-@pytest.mark.asyncio
-async def test_local_ollama_adapter_preserves_existing_api_chat_shape():
+def test_local_ollama_adapter_preserves_existing_api_chat_shape():
     captured = {}
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -232,7 +232,7 @@ async def test_local_ollama_adapter_preserves_existing_api_chat_shape():
         [_local()],
         transport_factory=lambda endpoint: httpx.MockTransport(handler),
     )
-    receipt = await gateway.invoke_primary(task=_task(), prompt="Local reasoning")
+    receipt = asyncio.run(gateway.invoke_primary(task=_task(), prompt="Local reasoning"))
 
     assert receipt.engine_id == "ollama-local"
     assert captured["url"] == "http://127.0.0.1:11434/api/chat"

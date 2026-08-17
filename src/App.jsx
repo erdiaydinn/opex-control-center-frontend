@@ -18,7 +18,7 @@ import RouteErrorBoundary from "./platform/accessibility/RouteErrorBoundary.jsx"
 import { usePlatformPreferences } from "./platform/preferences/PlatformPreferencesContext.jsx";
 
 const PlanogramStudio = lazy(() => import("./modules/planogram/PlanogramStudio.jsx"));
-const BudgetIntelligence = lazy(() => import("./modules/budget-intelligence/BudgetIntelligence.jsx"));
+const BudgetWorkspace = lazy(() => import("./modules/budget-intelligence/BudgetWorkspace.jsx"));
 const DockOSDashboard = lazy(() => import("./modules/DockOS/DockOSDashboard.jsx"));
 const AccessControl = lazy(() => import("./modules/access-control/AccessControl.jsx"));
 const ServerAccounts = lazy(() => import("./modules/access-control/ServerAccounts.jsx"));
@@ -63,7 +63,7 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><ControlCenterHome /></ProtectedRoute>} />
           <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
           <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
-          <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />
+          <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetWorkspace /></ProtectedRoute>} />
           <Route path="/academy" element={<ProtectedRoute moduleKey="academy"><AcademyWorkspace /></ProtectedRoute>} />
           <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
           <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />

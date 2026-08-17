@@ -75,6 +75,26 @@ async def create_line(uow: BudgetUnitOfWork, body: BudgetLineCreate) -> dict[str
 
 
 async def create_forecast(uow: BudgetUnitOfWork, body: ForecastCreate) -> dict[str, object]:
+    exact_scope = await uow.session.execute(
+        text(
+            """SELECT 1 FROM budget_line
+               WHERE tenant_id=:tenant
+                 AND id=:line
+                 AND fiscal_period_id=:period
+                 AND cost_center_id=:center"""
+        ),
+        {
+            "tenant": uow.tenant_id,
+            "line": body.budget_line_id,
+            "period": body.fiscal_period_id,
+            "center": body.cost_center_id,
+        },
+    )
+    if exact_scope.first() is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Forecast scope does not match the authoritative Budget Line",
+        )
     result = await uow.session.execute(text("""INSERT INTO forecast(tenant_id,budget_line_id,fiscal_period_id,cost_center_id,forecast_base_amount,as_of,created_by) VALUES (:tenant,:line,:period,:center,:amount,:as_of,:actor) RETURNING *"""), {"tenant": uow.tenant_id, "line": body.budget_line_id, "period": body.fiscal_period_id, "center": body.cost_center_id, "amount": body.forecast_base_amount, "as_of": body.as_of, "actor": uow.actor})
     item = _row(result.one())
     await emit_financial_event(uow, event_type="FORECAST_CREATED", aggregate_type="forecast", aggregate_id=item["id"], cost_center_id=item["cost_center_id"], payload=item)

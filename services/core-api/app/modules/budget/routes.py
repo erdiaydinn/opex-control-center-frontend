@@ -43,7 +43,13 @@ from .planning import (
     create_plan,
 )
 from .procurement import create_po, create_request, decide_request
-from .read_models import financial_events, variance_summary
+from .read_models import (
+    financial_events,
+    plan_snapshot,
+    planning_catalog,
+    planning_workspace,
+    variance_summary,
+)
 from .schemas import (
     ApprovalDecision,
     BudgetLineCreate,
@@ -61,6 +67,7 @@ from .schemas import (
 router = APIRouter(prefix="/v1/budget", tags=["budget"])
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=160)]
 ViewSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_VIEW))]
+PlanSnapshotSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_VIEW, all_cost_centers=True))]
 PlanCreateSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_CREATE_PLAN, all_cost_centers=True))]
 PlanActivateSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_ACTIVATE_PLAN, all_cost_centers=True))]
 PeriodSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_MANAGE_PERIODS, all_cost_centers=True))]
@@ -83,6 +90,12 @@ async def get_summary(uow: ViewSession):
     return await variance_summary(uow)
 
 
+@router.get("/plans")
+async def get_plans(uow: PlanSnapshotSession):
+    catalog = await planning_catalog(uow)
+    return {"count": len(catalog["plans"]), "items": catalog["plans"]}
+
+
 @router.post("/plans", status_code=201)
 async def post_plan(body: PlanCreate, key: IdempotencyKey, uow: PlanCreateSession):
     return await run_command(uow, key=key, operation="budget.plan.create", payload=body, perform=lambda: create_plan(uow, body))
@@ -93,9 +106,26 @@ async def post_plan_activation(plan_id: UUID, key: IdempotencyKey, uow: PlanActi
     return await run_command(uow, key=key, operation="budget.plan.activate", payload={"plan_id": plan_id}, perform=lambda: activate_plan(uow, plan_id))
 
 
+@router.get("/plans/{plan_id}/workspace")
+async def get_plan_workspace(plan_id: UUID, uow: PlanSnapshotSession):
+    return await planning_workspace(uow, plan_id)
+
+
+@router.get("/plans/{plan_id}/snapshot")
+async def get_plan_snapshot(plan_id: UUID, uow: PlanSnapshotSession):
+    workspace = await plan_snapshot(uow, plan_id)
+    return workspace["plan"]
+
+
 @router.post("/periods", status_code=201)
 async def post_period(body: PeriodCreate, key: IdempotencyKey, uow: PeriodSession):
     return await run_command(uow, key=key, operation="budget.period.create", payload=body, perform=lambda: create_period(uow, body))
+
+
+@router.get("/cost-centers")
+async def get_cost_centers(uow: PlanSnapshotSession):
+    catalog = await planning_catalog(uow)
+    return {"count": len(catalog["cost_centers"]), "items": catalog["cost_centers"]}
 
 
 @router.post("/cost-centers", status_code=201)

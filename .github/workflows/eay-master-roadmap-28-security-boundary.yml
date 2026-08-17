@@ -1,0 +1,50 @@
+name: EAY Master Roadmap 28 - Security Boundary Review
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-28-budget-planning
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-master-roadmap-28-security-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  sql-boundary:
+    name: Master 28 reviewed SQL boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Prove fail-closed SQL execution architecture
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Assert Master 28 snapshot execution point is explicitly reviewed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('services/core-api/tests/test_sql_access_boundary.py').read_text(encoding='utf-8')
+          entry='("modules/budget/read_models.py", "plan_snapshot")'
+          assert entry in source, 'Master 28 snapshot SQL point is not explicitly reviewed'
+          print('MASTER_28_SQL_BOUNDARY_REVIEW=PASS')
+          PY

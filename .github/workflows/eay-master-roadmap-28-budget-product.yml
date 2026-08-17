@@ -1,0 +1,55 @@
+name: EAY Master Roadmap 28 - Budget Product Experience
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-28-budget-planning
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "src/modules/budget-intelligence/**"
+      - "src/platform/i18n/productMessages.js"
+      - "src/platform/preferences/PlatformPreferencesContext.jsx"
+      - "src/App.jsx"
+      - "services/core-api/app/modules/budget/read_models.py"
+      - "services/core-api/app/modules/budget/routes.py"
+      - "services/core-api/alembic/versions/0037_budget_planning_authority.py"
+      - "scripts/test-budget-planning-ui.mjs"
+      - ".github/workflows/eay-master-roadmap-28-budget-product.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-master-roadmap-28-budget-product-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budget-product-experience:
+    name: Budget authoritative planning product
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Prove Budget planning product contract
+        run: node scripts/test-budget-planning-ui.mjs
+      - name: Re-prove 10-locale accessibility and RTL foundation
+        run: npm run test:inclusion
+      - name: Production build
+        run: npm run build -- --manifest
+      - name: Preserve Master 28 truth boundary
+        run: |
+          echo 'MASTER_28_PLANNING_UI=IMPLEMENTED'
+          echo 'MASTER_28_CANONICAL_FINANCE_API=BOUND'
+          echo 'MASTER_28_LEGACY_RECONSTRUCTION_AS_ACTIVATION_PROOF=DENIED'
+          echo 'MASTER_28_REAL_FINANCE_FEED_UAT=REQUIRED'
+          echo 'MASTER_28_PRODUCTION_READY=FALSE'

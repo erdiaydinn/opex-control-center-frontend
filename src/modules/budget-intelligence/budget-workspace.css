@@ -1,0 +1,29 @@
+.budget-workspace-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding: .75rem clamp(1rem, 2vw, 2rem) 0;
+  background: var(--surface-canvas, #f7f8fa);
+}
+
+.budget-workspace-switcher button {
+  min-height: 48px;
+  border: 1px solid var(--border-strong, #cbd5e1);
+  border-radius: .5rem;
+  padding-inline: .9rem;
+  background: var(--surface-raised, #fff);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.budget-workspace-switcher button[aria-selected="true"] {
+  border-color: var(--accent, #df1067);
+  border-block-end-width: 3px;
+  font-weight: 700;
+}
+
+.budget-workspace-switcher button:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 2px;
+}

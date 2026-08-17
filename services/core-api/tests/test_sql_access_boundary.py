@@ -61,6 +61,10 @@ BUDGET_SQL_EXECUTION_POINTS = {
     ("modules/budget/procurement.py", "create_po"),
     ("modules/budget/read_models.py", "variance_summary"),
     ("modules/budget/read_models.py", "financial_events"),
+    # Master 28/60 security review: static SQL + bound tenant/plan parameters;
+    # tenant authority is session-bound/RLS and the route requires all-cost-center
+    # Budget view authority before returning the immutable full-plan snapshot.
+    ("modules/budget/read_models.py", "plan_snapshot"),
 }
 
 ACADEMY_SQL_EXECUTION_POINTS = {

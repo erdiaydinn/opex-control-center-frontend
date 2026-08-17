@@ -27,16 +27,21 @@ def _exchange(**overrides):
     return ObservedHttpExchange(**payload)
 
 
-def test_groups_dynamic_resource_ids_and_never_models_secret_query_values():
+def test_groups_dynamic_resource_ids_and_never_retains_secret_query_values():
+    first = _exchange()
+    second = _exchange(
+        capture_source=CaptureSource.PLAYWRIGHT_NETWORK,
+        url="https://carsi.example.com/api/products/456/stock?warehouse=fulya&token=another-secret",
+        user_action_ref="ui-action-stock-adjustment-2",
+    )
+
+    assert "secret-value" not in first.url
+    assert "another-secret" not in second.url
+    assert "token=" not in first.url
+    assert "token=" not in second.url
+
     candidates = discover_api_candidates(
-        [
-            _exchange(),
-            _exchange(
-                capture_source=CaptureSource.PLAYWRIGHT_NETWORK,
-                url="https://carsi.example.com/api/products/456/stock?warehouse=fulya&token=another-secret",
-                user_action_ref="ui-action-stock-adjustment-2",
-            ),
-        ],
+        [first, second],
         allowed_hosts={"carsi.example.com"},
     )
 

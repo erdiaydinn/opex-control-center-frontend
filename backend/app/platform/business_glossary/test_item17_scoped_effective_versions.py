@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from .models import GlossaryScope, GlossaryStatus, GlossaryTerm, LocalizedText
-from .resolver import GlossaryResolutionError, resolve_term
+from app.platform.business_glossary.models import GlossaryScope, GlossaryStatus, GlossaryTerm, LocalizedText
+from app.platform.business_glossary.resolver import GlossaryResolutionError, resolve_term
 
 AT = datetime(2026, 8, 17, tzinfo=timezone.utc)
 EFFECTIVE = datetime(2026, 1, 1, tzinfo=timezone.utc)

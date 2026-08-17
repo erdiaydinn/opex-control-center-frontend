@@ -15,6 +15,7 @@ class EnterpriseDomain(str, Enum):
     LOGISTICS = "logistics"
     SALES_COMMERCIAL = "sales_commercial"
     FINANCE_ACCOUNTING = "finance_accounting"
+    ECONOMICS_MARKET = "economics_market"
     LEGAL_COMPLIANCE = "legal_compliance"
     RETAIL_OPERATIONS = "retail_operations"
 
@@ -22,6 +23,7 @@ class EnterpriseDomain(str, Enum):
 class SourceAuthority(str, Enum):
     BINDING_LAW = "binding_law"
     OFFICIAL_GUIDANCE = "official_guidance"
+    OFFICIAL_ECONOMIC_DATA = "official_economic_data"
     COMPANY_POLICY = "company_policy"
     GOVERNED_OPERATIONAL_DATA = "governed_operational_data"
     EMPLOYEE_RECORD = "employee_record"
@@ -34,6 +36,8 @@ def _sha256(payload: object) -> str:
 
 # These are authority allow-list entries, not a claim that every page on the host is
 # binding law. Existing legal verification/temporal gates still decide instrument status.
+# Economic/statistical hosts are separate authority classes and can never satisfy a
+# binding-law requirement merely because they are official government/central-bank hosts.
 OFFICIAL_TR_AUTHORITY_HOSTS: dict[str, tuple[SourceAuthority, ...]] = {
     "resmigazete.gov.tr": (SourceAuthority.BINDING_LAW, SourceAuthority.OFFICIAL_GUIDANCE),
     "www.resmigazete.gov.tr": (SourceAuthority.BINDING_LAW, SourceAuthority.OFFICIAL_GUIDANCE),
@@ -46,6 +50,11 @@ OFFICIAL_TR_AUTHORITY_HOSTS: dict[str, tuple[SourceAuthority, ...]] = {
     "e.sgk.gov.tr": (SourceAuthority.OFFICIAL_GUIDANCE,),
     "gib.gov.tr": (SourceAuthority.OFFICIAL_GUIDANCE,),
     "www.gib.gov.tr": (SourceAuthority.OFFICIAL_GUIDANCE,),
+    "tcmb.gov.tr": (SourceAuthority.OFFICIAL_ECONOMIC_DATA,),
+    "www.tcmb.gov.tr": (SourceAuthority.OFFICIAL_ECONOMIC_DATA,),
+    "tuik.gov.tr": (SourceAuthority.OFFICIAL_ECONOMIC_DATA,),
+    "www.tuik.gov.tr": (SourceAuthority.OFFICIAL_ECONOMIC_DATA,),
+    "veriportali.tuik.gov.tr": (SourceAuthority.OFFICIAL_ECONOMIC_DATA,),
 }
 
 
@@ -145,6 +154,13 @@ DOMAIN_CONTRACTS: dict[EnterpriseDomain, DomainContract] = {
     EnterpriseDomain.FINANCE_ACCOUNTING: _contract(
         EnterpriseDomain.FINANCE_ACCOUNTING,
         (SourceAuthority.BINDING_LAW, SourceAuthority.OFFICIAL_GUIDANCE, SourceAuthority.COMPANY_POLICY),
+        temporal=True,
+        deterministic=True,
+        employee=False,
+    ),
+    EnterpriseDomain.ECONOMICS_MARKET: _contract(
+        EnterpriseDomain.ECONOMICS_MARKET,
+        (SourceAuthority.OFFICIAL_ECONOMIC_DATA, SourceAuthority.GOVERNED_OPERATIONAL_DATA),
         temporal=True,
         deterministic=True,
         employee=False,

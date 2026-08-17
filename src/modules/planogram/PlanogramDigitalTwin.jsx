@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Cuboid, Grid2X2, Rotate3D, Route, ScanLine } from "lucide-react";
 
 import { translatePlanogramDigitalTwin } from "../../platform/i18n/planogramDigitalTwinMessages.js";
@@ -44,80 +44,49 @@ function Twin2D({ model, t, formatNumber }) {
 
   return (
     <div className="eay-twin-2d-wrap">
-      <svg
-        className="eay-twin-2d"
-        viewBox={`0 0 ${SVG_WIDTH} ${height}`}
-        role="img"
-        aria-label={t("view2d")}
-      >
+      <svg className="eay-twin-2d" viewBox={`0 0 ${SVG_WIDTH} ${height}`} role="img" aria-label={t("view2d")}>
         <defs>
           <pattern id="eay-twin-grid" width="20" height="20" patternUnits="userSpaceOnUse">
             <path d="M 20 0 L 0 0 0 20" className="eay-twin-grid-line" fill="none" />
           </pattern>
         </defs>
-        <rect
-          x={offsetX}
-          y={offsetY}
-          width={model.floor.widthM * scale}
-          height={model.floor.depthM * scale}
-          className="eay-twin-floor"
-        />
-        <rect
-          x={offsetX}
-          y={offsetY}
-          width={model.floor.widthM * scale}
-          height={model.floor.depthM * scale}
-          fill="url(#eay-twin-grid)"
-          pointerEvents="none"
-        />
+        <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} className="eay-twin-floor" />
+        <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} fill="url(#eay-twin-grid)" pointerEvents="none" />
 
-        {model.elements.map((element) => (
-          <g key={`element-${element.id}`}>
-            <rect
-              x={offsetX + element.xM * scale}
-              y={y(element.yM, element.depthM)}
-              width={element.widthM * scale}
-              height={element.depthM * scale}
-              rx="3"
-              className={`eay-twin-architecture eay-twin-architecture--${architectureClass(element.type)}`}
-            />
-            {element.widthM * scale > 38 && element.depthM * scale > 16 ? (
+        {model.elements.map((element) => {
+          const width = element.footprintWidthM * scale;
+          const depth = element.footprintDepthM * scale;
+          const x = offsetX + element.xM * scale;
+          const top = y(element.yM, element.footprintDepthM);
+          const clearance = element.type === "emergency_exit" ? element.clearanceM * scale : 0;
+          return (
+            <g key={`element-${element.id}`}>
+              {clearance > 0 ? <rect x={x - clearance} y={top - clearance} width={width + clearance * 2} height={depth + clearance * 2} rx="5" className="eay-twin-egress-clearance" /> : null}
+              <rect x={x} y={top} width={width} height={depth} rx="3" className={`eay-twin-architecture eay-twin-architecture--${architectureClass(element.type)}`} />
               <title>{`${t("architecture")}: ${element.type} · ${element.id}`}</title>
-            ) : null}
-          </g>
-        ))}
+            </g>
+          );
+        })}
 
         {model.modules.map((module) => {
-          const width = Math.max(module.widthM * scale, 10);
-          const depth = Math.max(module.depthM * scale, 8);
+          const width = Math.max(module.footprintWidthM * scale, 10);
+          const depth = Math.max(module.footprintDepthM * scale, 8);
           const x = offsetX + module.xM * scale;
-          const top = y(module.yM, module.depthM);
+          const top = y(module.yM, module.footprintDepthM);
           return (
             <g key={module.key}>
-              <rect
-                x={x}
-                y={top}
-                width={width}
-                height={depth}
-                rx="4"
-                className={`eay-twin-module eay-twin-module--${fixtureClass(module.fixtureType)}`}
-                data-coordinate-authority={module.coordinateAuthority}
-              />
-              {width > 54 && depth > 20 ? (
-                <text x={x + width / 2} y={top + depth / 2 + 4} className="eay-twin-module-label">
-                  {module.aisleId} · {module.moduleId}
-                </text>
-              ) : null}
+              <rect x={x} y={top} width={width} height={depth} rx="4" className={`eay-twin-module eay-twin-module--${fixtureClass(module.fixtureType)}`} data-coordinate-authority={module.coordinateAuthority} />
+              {width > 54 && depth > 20 ? <text x={x + width / 2} y={top + depth / 2 + 4} className="eay-twin-module-label">{module.aisleId} · {module.moduleId}</text> : null}
               <title>{`${module.aisleId} / ${module.moduleId} · ${t("products")}: ${formatNumber(module.productCount)}`}</title>
             </g>
           );
         })}
       </svg>
       <div className="eay-twin-legend" aria-label={t("fixture")}>
-        <span><i className="regular" />Regular</span>
-        <span><i className="chilled" />+4</span>
-        <span><i className="frozen" />-18</span>
-        <span><i className="pallet" />Pallet</span>
+        <span><i className="regular" />REGULAR_SHELF</span>
+        <span><i className="chilled" />CHILLED +4</span>
+        <span><i className="frozen" />FROZEN -18</span>
+        <span><i className="pallet" />PALLET</span>
       </div>
     </div>
   );
@@ -157,15 +126,11 @@ function buildProductInstances(THREE, model) {
         const localZ = -module.depthM / 2 + cellD * (row + 0.5);
         const cos = Math.cos(-rotation);
         const sin = Math.sin(-rotation);
-        const worldX = module.xM + module.widthM / 2 + localX * cos - localZ * sin;
-        const worldZ = module.yM + module.depthM / 2 + localX * sin + localZ * cos;
+        const worldX = module.centerXM + localX * cos - localZ * sin;
+        const worldZ = module.centerYM + localX * sin + localZ * cos;
         const worldY = 0.08 + shelfIndex * levelHeight + height / 2;
         const matrix = new THREE.Matrix4();
-        matrix.compose(
-          new THREE.Vector3(worldX, worldY, worldZ),
-          quaternion,
-          new THREE.Vector3(width, height, depth)
-        );
+        matrix.compose(new THREE.Vector3(worldX, worldY, worldZ), quaternion, new THREE.Vector3(width, height, depth));
         matrices.push(matrix);
       }
     }
@@ -205,8 +170,7 @@ function Twin3D({ model, t, onViewerReady }) {
         renderer.domElement.setAttribute("aria-label", t("canvasLabel"));
         renderer.domElement.tabIndex = 0;
 
-        const ambient = new THREE.HemisphereLight(0xffffff, 0x172033, 1.25);
-        scene.add(ambient);
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x172033, 1.25));
         const key = new THREE.DirectionalLight(0xffffff, 2.2);
         key.position.set(model.floor.widthM * 0.35, 12, model.floor.depthM * 0.35);
         key.castShadow = true;
@@ -221,12 +185,7 @@ function Twin3D({ model, t, onViewerReady }) {
         floor.receiveShadow = true;
         scene.add(floor);
 
-        const grid = new THREE.GridHelper(
-          Math.max(model.floor.widthM, model.floor.depthM),
-          Math.max(10, Math.round(Math.max(model.floor.widthM, model.floor.depthM))),
-          0x343845,
-          0x242733
-        );
+        const grid = new THREE.GridHelper(Math.max(model.floor.widthM, model.floor.depthM), Math.max(10, Math.round(Math.max(model.floor.widthM, model.floor.depthM))), 0x343845, 0x242733);
         grid.position.set(model.floor.widthM / 2, 0.006, model.floor.depthM / 2);
         scene.add(grid);
 
@@ -242,16 +201,11 @@ function Twin3D({ model, t, onViewerReady }) {
         disposables.push(...Object.values(architectureMaterials));
 
         for (const element of model.elements) {
-          const height = element.type === "wall" || element.type === "column" ? 2.6 : 0.08;
-          const geometry = new THREE.BoxGeometry(element.widthM, height, element.depthM);
+          const elementHeight = element.type === "wall" || element.type === "column" ? 2.6 : 0.08;
+          const geometry = new THREE.BoxGeometry(element.widthM, elementHeight, element.depthM);
           disposables.push(geometry);
-          const material = architectureMaterials[element.type] || architectureMaterials.default;
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.position.set(
-            element.xM + element.widthM / 2,
-            height / 2,
-            element.yM + element.depthM / 2
-          );
+          const mesh = new THREE.Mesh(geometry, architectureMaterials[element.type] || architectureMaterials.default);
+          mesh.position.set(element.centerXM, elementHeight / 2, element.centerYM);
           mesh.rotation.y = (-element.rotationDeg * Math.PI) / 180;
           mesh.castShadow = true;
           mesh.receiveShadow = true;
@@ -275,11 +229,7 @@ function Twin3D({ model, t, onViewerReady }) {
           const frameGeometry = new THREE.BoxGeometry(module.widthM, moduleHeight, module.depthM);
           disposables.push(frameGeometry);
           const frame = new THREE.Mesh(frameGeometry, fixtureMaterials[kind]);
-          frame.position.set(
-            module.xM + module.widthM / 2,
-            moduleHeight / 2,
-            module.yM + module.depthM / 2
-          );
+          frame.position.set(module.centerXM, moduleHeight / 2, module.centerYM);
           frame.rotation.y = (-module.rotationDeg * Math.PI) / 180;
           frame.castShadow = true;
           frame.receiveShadow = true;
@@ -320,17 +270,9 @@ function Twin3D({ model, t, onViewerReady }) {
         const center = new THREE.Vector3(model.floor.widthM / 2, 0.6, model.floor.depthM / 2);
         const maxDimension = Math.max(model.floor.widthM, model.floor.depthM, 4);
         const setPreset = (preset = "perspective") => {
-          if (preset === "top") {
-            camera.position.set(center.x, maxDimension * 1.35, center.z + 0.001);
-          } else if (preset === "front") {
-            camera.position.set(center.x, maxDimension * 0.38, model.floor.depthM + maxDimension * 0.85);
-          } else {
-            camera.position.set(
-              model.floor.widthM + maxDimension * 0.45,
-              maxDimension * 0.72,
-              model.floor.depthM + maxDimension * 0.45
-            );
-          }
+          if (preset === "top") camera.position.set(center.x, maxDimension * 1.35, center.z + 0.001);
+          else if (preset === "front") camera.position.set(center.x, maxDimension * 0.38, model.floor.depthM + maxDimension * 0.85);
+          else camera.position.set(model.floor.widthM + maxDimension * 0.45, maxDimension * 0.72, model.floor.depthM + maxDimension * 0.45);
           controls.target.copy(center);
           controls.update();
         };
@@ -338,7 +280,7 @@ function Twin3D({ model, t, onViewerReady }) {
         onViewerReady?.({ setPreset });
 
         const resize = () => {
-          if (!host || !renderer) return;
+          if (!renderer) return;
           const width = Math.max(1, host.clientWidth);
           const height = Math.max(320, host.clientHeight || 520);
           renderer.setSize(width, height, false);
@@ -388,35 +330,21 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
   const [view, setView] = useState("2d");
   const viewerRef = useRef(null);
   const t = useMemo(() => (key) => translatePlanogramDigitalTwin(locale, key), [locale]);
-  const model = useMemo(
-    () => buildPlanogramDigitalTwinModel(engineResult, candidate),
-    [candidate, engineResult]
-  );
-  const bindViewer = useMemo(() => (viewer) => { viewerRef.current = viewer; }, []);
+  const model = useMemo(() => buildPlanogramDigitalTwinModel(engineResult, candidate), [candidate, engineResult]);
+  const bindViewer = useCallback((viewer) => { viewerRef.current = viewer; }, []);
 
-  if (!model) {
-    return <section className="eay-twin-empty" role="status"><ScanLine size={20} aria-hidden="true" />{t("noGeometry")}</section>;
-  }
+  if (!model) return <section className="eay-twin-empty" role="status"><ScanLine size={20} aria-hidden="true" />{t("noGeometry")}</section>;
 
   const measured = model.geometryAuthority === "measured";
-  const routeText = model.route?.available
-    ? `${formatNumber(model.route.value)} m`
-    : t("routeUnavailable");
+  const routeText = model.route?.available ? `${formatNumber(model.route.value)} m` : t("routeUnavailable");
 
   return (
     <section className="eay-twin" data-geometry-authority={model.geometryAuthority}>
       <header className="eay-twin-head">
-        <div className="eay-twin-title">
-          <Cuboid size={24} aria-hidden="true" />
-          <div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div>
-        </div>
+        <div className="eay-twin-title"><Cuboid size={24} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>
         <div className="eay-twin-tabs" role="tablist" aria-label={t("title")}>
-          <button type="button" role="tab" aria-selected={view === "2d"} onClick={() => setView("2d")}>
-            <Grid2X2 size={17} aria-hidden="true" />{t("view2d")}
-          </button>
-          <button type="button" role="tab" aria-selected={view === "3d"} onClick={() => setView("3d")}>
-            <Box size={17} aria-hidden="true" />{t("view3d")}
-          </button>
+          <button type="button" role="tab" aria-selected={view === "2d"} onClick={() => setView("2d")}><Grid2X2 size={17} aria-hidden="true" />{t("view2d")}</button>
+          <button type="button" role="tab" aria-selected={view === "3d"} onClick={() => setView("3d")}><Box size={17} aria-hidden="true" />{t("view3d")}</button>
         </div>
       </header>
 
@@ -435,18 +363,12 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
       </div>
 
       {view === "2d" ? <Twin2D model={model} t={t} formatNumber={formatNumber} /> : null}
-      {view === "3d" ? (
-        <>
-          <div className="eay-twin-camera-bar" aria-label={t("view3d")}>
-            <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}><Rotate3D size={16} aria-hidden="true" />{t("perspective")}</button>
-            <button type="button" onClick={() => viewerRef.current?.setPreset("top")}>{t("top")}</button>
-            <button type="button" onClick={() => viewerRef.current?.setPreset("front")}>{t("front")}</button>
-            <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}>{t("reset")}</button>
-          </div>
-          <Twin3D model={model} t={t} onViewerReady={bindViewer} />
-          <p className="eay-twin-interaction-hint">{t("interactionHint")}</p>
-        </>
-      ) : null}
+      {view === "3d" ? <><div className="eay-twin-camera-bar" aria-label={t("view3d")}>
+        <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}><Rotate3D size={16} aria-hidden="true" />{t("perspective")}</button>
+        <button type="button" onClick={() => viewerRef.current?.setPreset("top")}>{t("top")}</button>
+        <button type="button" onClick={() => viewerRef.current?.setPreset("front")}>{t("front")}</button>
+        <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}>{t("reset")}</button>
+      </div><Twin3D model={model} t={t} onViewerReady={bindViewer} /><p className="eay-twin-interaction-hint">{t("interactionHint")}</p></> : null}
     </section>
   );
 }

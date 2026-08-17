@@ -2,6 +2,7 @@ const DEFAULT_MODULE_WIDTH_M = 1;
 const DEFAULT_MODULE_DEPTH_M = 0.5;
 const DEFAULT_SHELF_HEIGHT_M = 0.36;
 const DEFAULT_AISLE_GAP_M = 1.4;
+const MAX_VISIBLE_ROUTE_HOTSPOTS = 12;
 
 function number(value, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
@@ -42,7 +43,9 @@ function orthogonalFootprint(widthM, depthM, rotationDeg) {
 }
 
 function moduleKey(aisleId, moduleId) {
-  return `${text(aisleId)}::${text(moduleId)}`;
+  const moduleText = text(moduleId);
+  if (moduleText.includes("::")) return moduleText;
+  return `${text(aisleId)}::${moduleText}`;
 }
 
 function shelfGeometry(module) {
@@ -146,6 +149,50 @@ function measuredArchitecture(candidate) {
   );
 }
 
+function normalizeRoutePath(path) {
+  if (!Array.isArray(path)) return [];
+  return path.slice(0, 64).flatMap((point) => {
+    if (!Array.isArray(point) || point.length < 2) return [];
+    const xM = number(point[0], Number.NaN);
+    const yM = number(point[1], Number.NaN);
+    return Number.isFinite(xM) && Number.isFinite(yM) ? [[xM, yM]] : [];
+  });
+}
+
+function routeProjection(rawRoute) {
+  if (!rawRoute || typeof rawRoute !== "object") return null;
+  const moduleDistances = rawRoute?.module_distances_m && typeof rawRoute.module_distances_m === "object"
+    ? Object.fromEntries(Object.entries(rawRoute.module_distances_m).map(([key, value]) => [text(key), number(value, 0)]))
+    : {};
+  const hotspots = Array.isArray(rawRoute?.route_hotspots)
+    ? rawRoute.route_hotspots.slice(0, MAX_VISIBLE_ROUTE_HOTSPOTS).map((row, index) => ({
+        rank: index + 1,
+        moduleId: text(row?.module_id),
+        distanceM: number(row?.distance_m, 0),
+        salesWeight: number(row?.sales_weight, 0),
+        placedProductCount: Math.max(0, Math.round(number(row?.placed_product_count, 0))),
+        weightedCost: number(row?.weighted_cost, 0),
+        pathM: normalizeRoutePath(row?.path_m),
+      }))
+    : [];
+  const pickerEntry = Array.isArray(rawRoute?.picker_entry_m) && rawRoute.picker_entry_m.length >= 2
+    ? [number(rawRoute.picker_entry_m[0]), number(rawRoute.picker_entry_m[1])]
+    : null;
+
+  return {
+    available: Boolean(rawRoute?.available),
+    metric: text(rawRoute?.metric),
+    value: number(rawRoute?.value, 0),
+    basis: text(rawRoute?.basis),
+    unreachableModuleIds: Array.isArray(rawRoute?.unreachable_module_ids)
+      ? rawRoute.unreachable_module_ids.map(text)
+      : [],
+    pickerEntryM: pickerEntry,
+    moduleDistancesM: moduleDistances,
+    hotspots,
+  };
+}
+
 export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
   const planogram = engineResult?.planogram;
   if (!planogram || !Array.isArray(planogram?.aisles)) return null;
@@ -160,7 +207,8 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
     const aisleId = text(aisle?.aisle_id || `A${aisleIndex + 1}`);
     for (const [moduleIndex, outputModule] of (aisle?.modules || []).entries()) {
       const moduleId = text(outputModule?.module_id || moduleIndex + 1);
-      const sourceModule = inputModules.get(moduleKey(aisleId, moduleId)) || {};
+      const key = moduleKey(aisleId, moduleId);
+      const sourceModule = inputModules.get(key) || {};
       const merged = { ...sourceModule, ...outputModule };
       for (const field of ["x_m", "y_m", "width_m", "depth_m", "rotation_deg"]) {
         if ((merged[field] === null || merged[field] === undefined || merged[field] === "") && sourceModule[field] != null && sourceModule[field] !== "") {
@@ -168,32 +216,20 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
         }
       }
       const geometry = shelfGeometry(merged);
-      const rotation = orthogonalFootprint(
-        geometry.widthM,
-        geometry.depthM,
-        merged?.rotation_deg
-      );
-      const hasCoordinates =
-        hasFiniteCoordinate(merged?.x_m) && hasFiniteCoordinate(merged?.y_m);
-      const fallback = inferTopologyPosition(
-        aisleIndex,
-        moduleIndex,
-        rotation.footprintWidthM,
-        rotation.footprintDepthM
-      );
+      const rotation = orthogonalFootprint(geometry.widthM, geometry.depthM, merged?.rotation_deg);
+      const hasCoordinates = hasFiniteCoordinate(merged?.x_m) && hasFiniteCoordinate(merged?.y_m);
+      const fallback = inferTopologyPosition(aisleIndex, moduleIndex, rotation.footprintWidthM, rotation.footprintDepthM);
       const xM = hasCoordinates ? number(merged?.x_m) : fallback.xM;
       const yM = hasCoordinates ? number(merged?.y_m) : fallback.yM;
       const summary = productSummary(outputModule?.shelves || []);
       if (hasCoordinates) measuredCoordinateCount += 1;
 
       modules.push({
-        key: moduleKey(aisleId, moduleId),
+        key,
         aisleId,
         moduleId,
         side: text(merged?.side).toUpperCase(),
-        fixtureType: text(
-          merged?.fixture_class ?? merged?.fixture_type ?? merged?.module_type ?? merged?.storage_type
-        ).toUpperCase(),
+        fixtureType: text(merged?.fixture_class ?? merged?.fixture_type ?? merged?.module_type ?? merged?.storage_type).toUpperCase(),
         xM,
         yM,
         widthM: geometry.widthM,
@@ -217,56 +253,43 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
 
   const inferredMaxX = Math.max(...modules.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;
   const inferredMaxY = Math.max(...modules.map((module) => module.yM + module.footprintDepthM), 1) + 0.5;
-  const floorWidthM = hasMeasuredArchitecture
-    ? positive(architecture?.floor_width_m, inferredMaxX)
-    : inferredMaxX;
-  const floorDepthM = hasMeasuredArchitecture
-    ? positive(architecture?.floor_depth_m, inferredMaxY)
-    : inferredMaxY;
+  const floorWidthM = hasMeasuredArchitecture ? positive(architecture?.floor_width_m, inferredMaxX) : inferredMaxX;
+  const floorDepthM = hasMeasuredArchitecture ? positive(architecture?.floor_depth_m, inferredMaxY) : inferredMaxY;
+  const route = routeProjection(engineResult?.architecture_route_objective || null);
+  const hotspotByModule = new Map((route?.hotspots || []).map((row) => [row.moduleId, row]));
+  const enrichedModules = modules.map((module) => ({
+    ...module,
+    routeDistanceM: route?.moduleDistancesM?.[module.key] ?? null,
+    routeHotspot: hotspotByModule.get(module.key) || null,
+  }));
 
-  const placedProductCount = modules.reduce((sum, module) => sum + module.productCount, 0);
-  const facingCount = modules.reduce((sum, module) => sum + module.facingCount, 0);
-  const sales7d = modules.reduce((sum, module) => sum + module.sales7d, 0);
-  const measuredPct = modules.length ? (measuredCoordinateCount * 100) / modules.length : 0;
-  const route = engineResult?.architecture_route_objective || null;
+  const placedProductCount = enrichedModules.reduce((sum, module) => sum + module.productCount, 0);
+  const facingCount = enrichedModules.reduce((sum, module) => sum + module.facingCount, 0);
+  const sales7d = enrichedModules.reduce((sum, module) => sum + module.sales7d, 0);
+  const measuredPct = enrichedModules.length ? (measuredCoordinateCount * 100) / enrichedModules.length : 0;
 
   return {
     contract: "planogram-digital-twin-v1",
-    geometryAuthority:
-      hasMeasuredArchitecture && measuredCoordinateCount === modules.length
-        ? "measured"
-        : "topology-preview",
+    geometryAuthority: hasMeasuredArchitecture && measuredCoordinateCount === enrichedModules.length ? "measured" : "topology-preview",
     architectureSource: hasMeasuredArchitecture ? text(architecture?.source) : "",
     architectureSourceRef: hasMeasuredArchitecture ? text(architecture?.source_ref) : "",
-    floor: {
-      widthM: floorWidthM,
-      depthM: floorDepthM,
-    },
+    floor: { widthM: floorWidthM, depthM: floorDepthM },
     elements,
-    modules,
+    modules: enrichedModules,
     stats: {
-      moduleCount: modules.length,
+      moduleCount: enrichedModules.length,
       measuredCoordinateCount,
       measuredCoordinatePct: Math.round(measuredPct * 100) / 100,
       placedProductCount,
       facingCount,
       sales7d: Math.round(sales7d * 100) / 100,
     },
-    route: route
-      ? {
-          available: Boolean(route?.available),
-          metric: text(route?.metric),
-          value: number(route?.value, 0),
-          basis: text(route?.basis),
-          unreachableModuleIds: Array.isArray(route?.unreachable_module_ids)
-            ? route.unreachable_module_ids.map(text)
-            : [],
-        }
-      : null,
+    route,
   };
 }
 
 export const PLANOGRAM_DIGITAL_TWIN_LIMITS = Object.freeze({
   maxProductInstances3d: 1500,
+  maxVisibleRouteHotspots: MAX_VISIBLE_ROUTE_HOTSPOTS,
   fallbackShelfHeightM: DEFAULT_SHELF_HEIGHT_M,
 });

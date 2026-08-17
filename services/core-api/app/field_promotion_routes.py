@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.authorization import require_permission, resolve_permission_scope
 from app.core.security import Principal, get_current_principal
+from app.field_evidence_object_routes import router as evidence_object_router
 from app.modules.field_intelligence.authorization import require_field_permission
 from app.modules.field_intelligence.promotion import (
     FieldPromotionError,
@@ -20,7 +21,8 @@ from app.modules.field_intelligence.promotion import (
 from app.modules.field_intelligence.promotion_access import get_promotion_authorization_context
 from app.modules.field_intelligence.repository import list_locations
 
-router = APIRouter(prefix="/v1/field/promotions", tags=["field-promotion"])
+router = APIRouter()
+promotion_router = APIRouter(prefix="/v1/field/promotions", tags=["field-promotion"])
 FieldViewer = Annotated[
     Principal,
     Depends(require_permission("module:field_intelligence:view")),
@@ -74,11 +76,13 @@ def _consumer_scope_allows(
     candidate: dict[str, object],
 ) -> None:
     adapter = next(
-        item for item in (
+        item
+        for item in (
             get_adapter("inventory.count_observation.v1"),
             get_adapter("planogram.fixture_measurement.v1"),
             get_adapter("budget.supporting_evidence.v1"),
-        ) if item.consumer_module == consumer_module
+        )
+        if item.consumer_module == consumer_module
     )
     scope = resolve_permission_scope(principal, adapter.consumer_permission)
     if scope.unrestricted:
@@ -97,7 +101,7 @@ def _consumer_scope_allows(
     )
 
 
-@router.get("")
+@promotion_router.get("")
 async def get_field_promotions(
     principal: FieldViewer,
     limit: int = Query(default=100, ge=1, le=500),
@@ -122,7 +126,7 @@ async def get_field_promotions(
     }
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@promotion_router.post("", status_code=status.HTTP_201_CREATED)
 async def post_field_promotion(
     payload: PromotionCreate,
     principal: FieldViewer,
@@ -143,7 +147,7 @@ async def post_field_promotion(
         raise _bad_request(exc) from exc
 
 
-@router.post("/{promotion_id}/decision")
+@promotion_router.post("/{promotion_id}/decision")
 async def post_field_promotion_decision(
     promotion_id: UUID,
     payload: PromotionDecision,
@@ -166,7 +170,7 @@ async def post_field_promotion_decision(
         raise _bad_request(exc) from exc
 
 
-@router.post("/{promotion_id}/consumer-receipt")
+@promotion_router.post("/{promotion_id}/consumer-receipt")
 async def post_field_promotion_consumer_receipt(
     promotion_id: UUID,
     payload: ConsumerReceipt,
@@ -200,3 +204,7 @@ async def post_field_promotion_consumer_receipt(
         )
     except FieldPromotionError as exc:
         raise _bad_request(exc) from exc
+
+
+router.include_router(promotion_router)
+router.include_router(evidence_object_router)

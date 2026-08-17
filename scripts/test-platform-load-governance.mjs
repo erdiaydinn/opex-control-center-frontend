@@ -1,0 +1,67 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const workflowPath = ".github/workflows/platform-load-acceptance.yml";
+const source = readFileSync(workflowPath, "utf8");
+
+function requireText(fragment, message) {
+  assert.ok(source.includes(fragment), message);
+}
+
+requireText(
+  'default: "1000"',
+  "Canonical synthetic load workflow must default to 1000 VUs."
+);
+requireText(
+  "''|*[!0-9]*)",
+  "TARGET_VUS must remain strict decimal-integer input before load execution."
+);
+requireText(
+  'if [ "$TARGET_VUS" -lt 1000 ]; then',
+  "Manual dispatch must fail closed below the canonical 1000-VU minimum."
+);
+requireText(
+  'echo "$TARGET_VUS" > /tmp/eay-burst-target-vus',
+  "Validated burst size must be persisted for post-load correctness accounting."
+);
+requireText(
+  "continue-on-error: true",
+  "Burst execution must allow post-load correctness evidence to run before final enforcement."
+);
+requireText(
+  "Verify tenant and audit correctness after load",
+  "Post-load tenant/audit correctness verification is a hard governance requirement."
+);
+requireText(
+  "Enforce 1000-VU saturation result",
+  "A failed burst must still make the workflow RED after correctness evidence is collected."
+);
+requireText(
+  'if [ "$BURST_OUTCOME" != "success" ]; then',
+  "Saturation failure enforcement must remain explicit and fail closed."
+);
+requireText(
+  "Record synthetic evidence boundary",
+  "Synthetic evidence must remain explicitly separated from production capacity proof."
+);
+requireText(
+  "not a production capacity SLO",
+  "1000-VU evidence must never be labeled as a production SLO."
+);
+
+const verifyIndex = source.indexOf("Verify tenant and audit correctness after load");
+const enforceIndex = source.indexOf("Enforce 1000-VU saturation result");
+const evidenceIndex = source.indexOf("Record synthetic evidence boundary");
+assert.ok(verifyIndex >= 0 && enforceIndex > verifyIndex, "Correctness verification must run before burst enforcement.");
+assert.ok(evidenceIndex > enforceIndex, "Synthetic evidence may only be recorded after all hard gates are enforced.");
+
+for (const hardGate of [
+  "assert observed == {(TENANT_A, SUBJECT_A), (TENANT_B, SUBJECT_B)}, observed",
+  "assert counts == expected_counts, (counts, expected_counts)",
+  "assert foreign_a == 0, foreign_a",
+  "assert foreign_b == 0, foreign_b",
+]) {
+  requireText(hardGate, `Tenant/correctness hard gate missing: ${hardGate}`);
+}
+
+console.log("Synthetic load governance contract: PASS (>=1000 VU, correctness-first, production truth preserved)");

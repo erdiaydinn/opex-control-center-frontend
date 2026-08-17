@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, model_validator
 
 CONTEXT_INTELLIGENCE_CONTRACT = "eay-context-intelligence-v1"
+MATERIAL_DEVIATION_PCT = 5.0
 
 
 class ContextKind(str, Enum):
@@ -155,6 +156,8 @@ class ContextRelation(BaseModel):
     temporal_overlap: float = Field(ge=0.0, le=1.0)
     geographic_overlap: float = Field(ge=0.0, le=1.0)
     semantic_overlap: float = Field(ge=0.0, le=1.0)
+    anomaly_strength: float = Field(ge=0.0, le=1.0)
+    deviation_pct: float | None = None
     causality_proven: bool = False
     evidence_refs: tuple[str, ...]
     blockers: tuple[str, ...] = ()
@@ -206,25 +209,51 @@ def _semantic_overlap(signal: ContextSignal, observation: OperationalObservation
     return 1.0 if observation.impact_dimension in set(signal.expected_impacts) else 0.0
 
 
+def _anomaly_strength(observation: OperationalObservation) -> float:
+    deviation = observation.deviation_pct
+    if deviation is None:
+        return 0.0
+    return round(min(abs(deviation) / 20.0, 1.0), 6)
+
+
 def assess_relation(signal: ContextSignal, observation: OperationalObservation) -> ContextRelation:
     temporal = _temporal_overlap(signal, observation)
     geographic = _geographic_overlap(signal, observation)
     semantic = _semantic_overlap(signal, observation)
+    deviation = observation.deviation_pct
+    anomaly = _anomaly_strength(observation)
     blockers: list[str] = []
+    warnings = ["correlation_is_not_causation"]
+
     if temporal == 0.0:
         blockers.append("no_temporal_overlap")
     if geographic == 0.0:
         blockers.append("no_geographic_overlap")
     if semantic == 0.0:
         blockers.append("impact_dimension_mismatch")
+    if deviation is None:
+        warnings.append("baseline_evidence_missing")
+    elif abs(deviation) < MATERIAL_DEVIATION_PCT:
+        blockers.append("operational_anomaly_not_material")
 
-    weighted_overlap = (0.45 * temporal) + (0.30 * geographic) + (0.25 * semantic)
+    weighted_overlap = (
+        (0.35 * temporal)
+        + (0.25 * geographic)
+        + (0.20 * semantic)
+        + (0.20 * anomaly)
+    )
     score = round(
         weighted_overlap * signal.source_confidence * _SOURCE_WEIGHT[signal.source_class],
         6,
     )
     if blockers:
         status = RelationStatus.INSUFFICIENT
+    elif deviation is None:
+        status = (
+            RelationStatus.CONTEXT_CANDIDATE
+            if score >= 0.45
+            else RelationStatus.INSUFFICIENT
+        )
     elif score >= 0.65:
         status = RelationStatus.PLAUSIBLE_CONTRIBUTOR
     elif score >= 0.45:
@@ -240,8 +269,11 @@ def assess_relation(signal: ContextSignal, observation: OperationalObservation) 
         temporal_overlap=temporal,
         geographic_overlap=geographic,
         semantic_overlap=semantic,
+        anomaly_strength=anomaly,
+        deviation_pct=deviation,
         evidence_refs=(signal.source_url, observation.provenance_ref),
         blockers=tuple(blockers),
+        warnings=tuple(warnings),
     )
 
 
@@ -257,15 +289,15 @@ def build_context_insight(
         status = RelationStatus.PLAUSIBLE_CONTRIBUTOR
         confidence = round(sum(item.score for item in supporting) / len(supporting), 6)
         summary = (
-            f"{signal.title} zaman, coğrafya ve etki boyutlarında yönetilen operasyon verisiyle "
+            f"{signal.title} zaman, coğrafya, ilgili etki boyutu ve anlamlı operasyon sapmasıyla "
             "örtüşüyor; olası katkı faktörü olarak değerlendirilmelidir, nedensellik kanıtı değildir."
         )
     elif candidates:
         status = RelationStatus.CONTEXT_CANDIDATE
         confidence = round(sum(item.score for item in candidates) / len(candidates), 6)
         summary = (
-            f"{signal.title} operasyonel değişimle kısmi bağlam örtüşmesi gösteriyor; ek kanıt olmadan "
-            "etki veya nedensellik sonucu çıkarılmamalıdır."
+            f"{signal.title} operasyonel değişimle kısmi bağlam örtüşmesi gösteriyor; ek baseline veya "
+            "karşılaştırma kanıtı olmadan etki ya da nedensellik sonucu çıkarılmamalıdır."
         )
     else:
         status = RelationStatus.INSUFFICIENT

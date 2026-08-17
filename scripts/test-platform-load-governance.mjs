@@ -55,6 +55,10 @@ requireText(
   "Post-load tenant/audit correctness verification is a hard governance requirement."
 );
 requireText(
+  "if: always() && steps.burst_gate.outcome != 'skipped'",
+  "Post-load correctness and saturation enforcement must survive a failed burst execution."
+);
+requireText(
   "Enforce 1000-VU saturation result",
   "A failed burst must still make the workflow RED after correctness evidence is collected."
 );
@@ -65,6 +69,10 @@ requireText(
 requireText(
   "Record synthetic evidence boundary",
   "Synthetic evidence must remain explicitly separated from production capacity proof."
+);
+requireText(
+  "if: success()",
+  "Synthetic evidence may only be emitted after every hard gate succeeds."
 );
 requireText(
   "not a production capacity SLO",
@@ -92,6 +100,28 @@ assert.ok(
   "Synthetic evidence may only be recorded after all hard gates are enforced."
 );
 
+const verificationBlock = source.slice(verifyIndex, enforceIndex);
+assert.ok(
+  verificationBlock.includes("if: always() && steps.burst_gate.outcome != 'skipped'"),
+  "Post-load correctness verification must run after a failed burst so correctness evidence is not lost."
+);
+assert.ok(
+  verificationBlock.includes('export BURST_TARGET_VUS="$(cat /tmp/eay-burst-target-vus)"'),
+  "Post-load accounting must use the validated burst size rather than reconstructing a weaker default."
+);
+
+const enforcementBlock = source.slice(enforceIndex, evidenceIndex);
+assert.ok(
+  enforcementBlock.includes("if: always() && steps.burst_gate.outcome != 'skipped'"),
+  "Burst failure enforcement must execute after correctness verification."
+);
+
+const evidenceBlock = source.slice(evidenceIndex);
+assert.ok(
+  evidenceBlock.includes("if: success()"),
+  "Synthetic evidence must not be emitted when latency, burst, tenant, or audit correctness failed."
+);
+
 for (const hardGate of [
   "assert observed == {(TENANT_A, SUBJECT_A), (TENANT_B, SUBJECT_B)}, observed",
   "assert counts == expected_counts, (counts, expected_counts)",
@@ -103,5 +133,5 @@ for (const hardGate of [
 
 console.log(
   "Synthetic load governance contract: PASS " +
-    "(fixed 50-VU regression, >=1000-VU saturation, correctness-first, production truth preserved)"
+    "(fixed 50-VU regression, >=1000-VU saturation, correctness-first, success-only evidence)"
 );

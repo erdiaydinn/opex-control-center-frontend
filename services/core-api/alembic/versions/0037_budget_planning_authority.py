@@ -14,6 +14,9 @@ down_revision: str = "0036_planogram_product_roles"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+ACTIVATION_TRIGGER = "ACTIVATION_TRIGGER"
+LEGACY_RECONSTRUCTION = "LEGACY_MIGRATION_RECONSTRUCTION"
+
 
 def upgrade() -> None:
     # Never repair finance truth silently. Existing inconsistencies must be
@@ -77,7 +80,8 @@ def upgrade() -> None:
         ALTER TABLE budget_plan
           ADD COLUMN planning_snapshot jsonb,
           ADD COLUMN planning_fingerprint char(64),
-          ADD COLUMN planning_snapshot_at timestamptz
+          ADD COLUMN planning_snapshot_at timestamptz,
+          ADD COLUMN planning_snapshot_provenance varchar(40)
         """
     )
 
@@ -145,10 +149,13 @@ def upgrade() -> None:
         """
     )
 
-    # Backfill pre-existing ACTIVE plans with an exact immutable snapshot before
-    # enabling the lifecycle guard/check constraint.
+    # Pre-existing ACTIVE plans did not have an activation-time snapshot. We do
+    # capture their current exact structure so they can be protected going
+    # forward, but we label it explicitly as a migration-time reconstruction and
+    # timestamp the observation NOW. This must never be presented as historical
+    # activation evidence.
     op.execute(
-        """
+        f"""
         UPDATE budget_plan b
         SET planning_snapshot = budget_plan_planning_snapshot(b.tenant_id,b.id),
             planning_fingerprint = encode(
@@ -161,13 +168,14 @@ def upgrade() -> None:
               ),
               'hex'
             ),
-            planning_snapshot_at = COALESCE(b.activated_at,CURRENT_TIMESTAMP)
+            planning_snapshot_at = CURRENT_TIMESTAMP,
+            planning_snapshot_provenance = '{LEGACY_RECONSTRUCTION}'
         WHERE b.status='ACTIVE'
         """
     )
 
     op.execute(
-        """
+        f"""
         ALTER TABLE budget_plan
           ADD CONSTRAINT ck_budget_plan_planning_authority
           CHECK (
@@ -176,20 +184,25 @@ def upgrade() -> None:
               AND planning_snapshot IS NULL
               AND planning_fingerprint IS NULL
               AND planning_snapshot_at IS NULL
+              AND planning_snapshot_provenance IS NULL
             )
             OR
             (
               status='ACTIVE'
               AND planning_snapshot IS NOT NULL
-              AND planning_fingerprint ~ '^[0-9a-f]{64}$'
+              AND planning_fingerprint ~ '^[0-9a-f]{{64}}$'
               AND planning_snapshot_at IS NOT NULL
+              AND planning_snapshot_provenance IN (
+                '{ACTIVATION_TRIGGER}',
+                '{LEGACY_RECONSTRUCTION}'
+              )
             )
           )
         """
     )
 
     op.execute(
-        """
+        f"""
         CREATE OR REPLACE FUNCTION budget_plan_planning_authority_guard()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -206,6 +219,7 @@ def upgrade() -> None:
                OR NEW.planning_snapshot IS NOT NULL
                OR NEW.planning_fingerprint IS NOT NULL
                OR NEW.planning_snapshot_at IS NOT NULL
+               OR NEW.planning_snapshot_provenance IS NOT NULL
             THEN
               RAISE EXCEPTION 'Budget Plan must begin as an unactivated DRAFT';
             END IF;
@@ -230,6 +244,7 @@ def upgrade() -> None:
                OR NEW.planning_snapshot IS NOT NULL
                OR NEW.planning_fingerprint IS NOT NULL
                OR NEW.planning_snapshot_at IS NOT NULL
+               OR NEW.planning_snapshot_provenance IS NOT NULL
             THEN
               RAISE EXCEPTION 'DRAFT Budget Plan cannot carry activation evidence';
             END IF;
@@ -246,6 +261,7 @@ def upgrade() -> None:
             IF NEW.planning_snapshot IS NOT NULL
                OR NEW.planning_fingerprint IS NOT NULL
                OR NEW.planning_snapshot_at IS NOT NULL
+               OR NEW.planning_snapshot_provenance IS NOT NULL
             THEN
               RAISE EXCEPTION 'Budget activation evidence is server-authored';
             END IF;
@@ -267,6 +283,7 @@ def upgrade() -> None:
               'hex'
             );
             NEW.planning_snapshot_at := NEW.activated_at;
+            NEW.planning_snapshot_provenance := '{ACTIVATION_TRIGGER}';
             RETURN NEW;
           END IF;
 
@@ -416,6 +433,7 @@ def downgrade() -> None:
     op.execute("ALTER TABLE budget_plan DROP CONSTRAINT IF EXISTS ck_budget_plan_planning_authority")
     op.execute(
         "ALTER TABLE budget_plan "
+        "DROP COLUMN IF EXISTS planning_snapshot_provenance,"
         "DROP COLUMN IF EXISTS planning_snapshot_at,"
         "DROP COLUMN IF EXISTS planning_fingerprint,"
         "DROP COLUMN IF EXISTS planning_snapshot"

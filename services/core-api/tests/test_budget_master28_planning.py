@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -55,3 +56,22 @@ def test_forecast_fails_closed_before_insert_when_scope_does_not_match_line() ->
         "period": period_id,
         "center": center_id,
     }
+
+
+def test_planning_snapshot_provenance_never_claims_legacy_activation_truth() -> None:
+    migration = Path(
+        "services/core-api/alembic/versions/0037_budget_planning_authority.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'ACTIVATION_TRIGGER = "ACTIVATION_TRIGGER"' in migration
+    assert (
+        'LEGACY_RECONSTRUCTION = "LEGACY_MIGRATION_RECONSTRUCTION"'
+        in migration
+    )
+    assert "planning_snapshot_at = CURRENT_TIMESTAMP" in migration
+    assert "planning_snapshot_provenance = '{LEGACY_RECONSTRUCTION}'" in migration
+    assert "NEW.planning_snapshot_at := NEW.activated_at" in migration
+    assert (
+        "NEW.planning_snapshot_provenance := '{ACTIVATION_TRIGGER}'"
+        in migration
+    )

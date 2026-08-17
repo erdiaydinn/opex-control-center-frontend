@@ -50,7 +50,9 @@ async def plan_snapshot(uow: BudgetUnitOfWork, plan_id: UUID) -> dict[str, objec
         text(
             """SELECT id,name,fiscal_year,base_currency,status,created_by,activated_by,
                       created_at,activated_at,planning_snapshot,planning_fingerprint,
-                      planning_snapshot_at
+                      planning_snapshot_at,planning_snapshot_provenance,
+                      (planning_snapshot_provenance='ACTIVATION_TRIGGER')
+                        AS activation_snapshot_attested
                FROM budget_plan
                WHERE tenant_id=:tenant AND id=:plan"""
         ),

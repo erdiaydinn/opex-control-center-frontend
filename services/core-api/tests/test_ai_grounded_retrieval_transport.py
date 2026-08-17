@@ -1,5 +1,6 @@
 from datetime import date
 from importlib import import_module
+import json
 
 import httpx
 import pytest
@@ -289,7 +290,14 @@ async def test_transport_rejects_invalid_evidence_score(score: float):
     unsafe = {**VALID_EVIDENCE, "score": score}
 
     async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"evidence": [unsafe]})
+        # Use raw JSON bytes so non-finite adversarial values reach the response
+        # validator instead of being rejected by httpx's outbound JSON encoder.
+        wire_body = json.dumps({"evidence": [unsafe]}, allow_nan=True).encode("utf-8")
+        return httpx.Response(
+            200,
+            content=wire_body,
+            headers={"content-type": "application/json"},
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(retrieval.AIGroundedRetrievalUnavailable, match="unavailable"):

@@ -7,6 +7,10 @@ on:
     paths:
       - "services/eay-ai-core/app/*intelligence.py"
       - "services/eay-ai-core/app/browser_api_observer.py"
+      - "services/eay-ai-core/app/intelligence_router.py"
+      - "services/eay-ai-core/app/mission_runtime.py"
+      - "services/eay-ai-core/app/world_model.py"
+      - "services/eay-ai-core/app/jarvis_benchmark.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_gateway.py"
@@ -16,6 +20,10 @@ on:
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/eay-ai-core/tests/test_*intelligence.py"
       - "services/eay-ai-core/tests/test_browser_api_observer.py"
+      - "services/eay-ai-core/tests/test_intelligence_router.py"
+      - "services/eay-ai-core/tests/test_mission_runtime.py"
+      - "services/eay-ai-core/tests/test_world_model.py"
+      - "services/eay-ai-core/tests/test_jarvis_benchmark.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
       - "services/eay-ai-core/tests/test_context_provider_registry.py"
       - "services/eay-ai-core/tests/test_context_provider_gateway.py"
@@ -31,6 +39,10 @@ on:
     paths:
       - "services/eay-ai-core/app/*intelligence.py"
       - "services/eay-ai-core/app/browser_api_observer.py"
+      - "services/eay-ai-core/app/intelligence_router.py"
+      - "services/eay-ai-core/app/mission_runtime.py"
+      - "services/eay-ai-core/app/world_model.py"
+      - "services/eay-ai-core/app/jarvis_benchmark.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_gateway.py"
@@ -40,6 +52,10 @@ on:
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/eay-ai-core/tests/test_*intelligence.py"
       - "services/eay-ai-core/tests/test_browser_api_observer.py"
+      - "services/eay-ai-core/tests/test_intelligence_router.py"
+      - "services/eay-ai-core/tests/test_mission_runtime.py"
+      - "services/eay-ai-core/tests/test_world_model.py"
+      - "services/eay-ai-core/tests/test_jarvis_benchmark.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
       - "services/eay-ai-core/tests/test_context_provider_registry.py"
       - "services/eay-ai-core/tests/test_context_provider_gateway.py"
@@ -62,7 +78,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Jarvis executive context, finance, commercial, legal, agenda, API discovery and decision contracts
+    name: Jarvis executive context, API learning, supremacy runtime and decision contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -104,6 +120,10 @@ jobs:
             app/api_schema_intelligence.py \
             app/api_action_correlation.py \
             app/browser_api_observer.py \
+            app/intelligence_router.py \
+            app/mission_runtime.py \
+            app/world_model.py \
+            app/jarvis_benchmark.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
             tests/test_context_unicode_intelligence.py \
@@ -133,6 +153,10 @@ jobs:
             tests/test_api_schema_intelligence.py \
             tests/test_api_action_correlation.py \
             tests/test_browser_api_observer.py \
+            tests/test_intelligence_router.py \
+            tests/test_mission_runtime.py \
+            tests/test_world_model.py \
+            tests/test_jarvis_benchmark.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py
@@ -167,6 +191,10 @@ jobs:
             tests/test_api_schema_intelligence.py \
             tests/test_api_action_correlation.py \
             tests/test_browser_api_observer.py \
+            tests/test_intelligence_router.py \
+            tests/test_mission_runtime.py \
+            tests/test_world_model.py \
+            tests/test_jarvis_benchmark.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py

@@ -148,12 +148,29 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/promotion_access.py", "get_promotion_authorization_context"),
 }
 
+# Master 24/60 security review: Store DNA SQL is static text() with bound
+# parameters only. Runtime sessions enter canonical app.tenant_id context,
+# migration 0030 enforces FORCE RLS, approved versions are immutable, lifecycle
+# events are append-only, and maker/checker authority remains server-side.
+PLANOGRAM_SQL_EXECUTION_POINTS = {
+    ("modules/planogram/repository_store_dna.py", "_record_store_dna_event"),
+    ("modules/planogram/repository_store_dna.py", "list_store_dna_versions"),
+    ("modules/planogram/repository_store_dna.py", "create_store_dna_draft"),
+    ("modules/planogram/repository_store_dna.py", "update_store_dna_draft"),
+    ("modules/planogram/repository_store_dna.py", "submit_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "approve_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "reject_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "revise_store_dna"),
+    ("modules/planogram/repository_store_dna.py", "get_approved_store_dna"),
+}
+
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
     | BUDGET_SQL_EXECUTION_POINTS
     | ACADEMY_SQL_EXECUTION_POINTS
     | FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS
+    | PLANOGRAM_SQL_EXECUTION_POINTS
 )
 
 RUNTIME_ENGINE_CREATION = {
@@ -285,7 +302,7 @@ def test_raw_sql_text_must_be_static_literal() -> None:
                 violations.append(f"{relative}:{node.lineno} dynamic text() SQL")
 
     assert not violations, (
-        "DYNAMIC SQL DENIED. All SQLAlchemy text() statements must be static literals "
+        "DYNAMIC SQL DENIED. All SQLAlchemy text() statements must be static literal "
         "with bound parameters:\n" + "\n".join(sorted(violations))
     )
 

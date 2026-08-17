@@ -45,7 +45,12 @@ def _candidate_roots() -> tuple[Path, ...]:
 
 
 def _resolve_engine_root() -> Path:
-    required = ("engine.py", "physical_truth.py", "physical_engine.py")
+    required = (
+        "engine.py",
+        "physical_truth.py",
+        "physical_engine.py",
+        "architecture_truth.py",
+    )
     for root in _candidate_roots():
         if all((root / filename).is_file() for filename in required):
             return root
@@ -87,10 +92,10 @@ def _load_modules() -> tuple[Path, ModuleType, ModuleType, ModuleType]:
 @lru_cache(maxsize=1)
 def _load_optimizer() -> ModuleType:
     root, _, _, _ = _load_modules()
-    optimizer_path = root / "physical_optimizer.py"
+    optimizer_path = root / "physical_optimizer_v2.py"
     if not optimizer_path.is_file():
-        raise PlanogramEngineUnavailable("Canonical Planogram optimizer is unavailable")
-    return _module_from_root("physical_optimizer", root)
+        raise PlanogramEngineUnavailable("Canonical Planogram optimizer V2 is unavailable")
+    return _module_from_root("physical_optimizer_v2", root)
 
 
 def engine_status() -> dict[str, Any]:
@@ -103,10 +108,12 @@ def engine_status() -> dict[str, Any]:
         "library_mode": True,
         "legacy_bridge_enabled": False,
         "production_ai_dimensions_allowed": False,
+        "architecture_contract": "store-architecture-v1",
         "optimizer": {
-            "available": (root / "physical_optimizer.py").is_file(),
-            "contract": "physical-plan-optimizer-v1",
+            "available": (root / "physical_optimizer_v2.py").is_file(),
+            "contract": "physical-plan-optimizer-v2",
             "production_authority": False,
+            "route_objective": "architecture-grid-astar-v1",
         },
         "source_modules": {
             "engine": Path(engine.__file__ or "").name,
@@ -149,7 +156,7 @@ def generate_optimized_preview(
     store_dna: dict[str, Any],
     mode: str,
 ) -> dict[str, Any]:
-    """Run Master-25 optimization without granting production authority.
+    """Run architecture-aware optimization without granting production authority.
 
     The optimizer itself calls the physical production gate for every candidate.
     Core still treats all HTTP request payloads as unattested preview inputs.

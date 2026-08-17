@@ -75,6 +75,7 @@ def resolve_term(
         definition=locale_value(selected.short_definition, locale),
         formula=selected.formula,
         unit=selected.unit,
+        data_source_refs=list(selected.data_source_refs),
         scope=selected.scope,
         version=selected.version,
         authoritative=True,

@@ -74,6 +74,7 @@ class GlossaryAnswer(BaseModel):
     definition: str
     formula: str | None = None
     unit: str | None = None
+    data_source_refs: list[str] = Field(default_factory=list)
     scope: GlossaryScope
     version: int
     authoritative: bool

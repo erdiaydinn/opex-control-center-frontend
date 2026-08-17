@@ -12,6 +12,7 @@ class SemanticConsumer(StrEnum):
     INSIGHT = "insight"
     ACADEMY = "academy"
     HELP = "help"
+    KPI_CATALOG = "kpi_catalog"
 
 
 class SemanticAuthorityUnavailable(LookupError):
@@ -67,3 +68,15 @@ def resolve_for_academy(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
 
 def resolve_for_help(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
     return resolve_for_consumer(terms, consumer=SemanticConsumer.HELP, **kwargs)
+
+
+def resolve_for_kpi_catalog(terms: list[GlossaryTerm], **kwargs) -> GlossaryAnswer:
+    """Resolve a KPI only when formula and source bindings come from one effective version."""
+    answer = resolve_for_consumer(terms, consumer=SemanticConsumer.KPI_CATALOG, **kwargs)
+    if not answer.formula or not answer.formula.strip():
+        raise SemanticAuthorityUnavailable("effective KPI definition has no governed formula")
+    if not answer.data_source_refs:
+        raise SemanticAuthorityUnavailable("effective KPI definition has no governed data source binding")
+    if any(not ref.strip() for ref in answer.data_source_refs):
+        raise SemanticAuthorityUnavailable("effective KPI definition has an invalid data source binding")
+    return answer

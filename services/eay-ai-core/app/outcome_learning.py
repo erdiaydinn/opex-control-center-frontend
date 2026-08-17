@@ -1,11 +1,11 @@
 """Decision-to-outcome learning ledger for Jarvis.
 
 Jarvis should remember whether its recommendations and quantitative expectations
-were borne out.  This module links a decision, any governed action receipt, and
-later measured outcomes.  It computes forecast error and calibration evidence
+were borne out. This module links a decision, any governed action receipt, and
+later measured outcomes. It computes forecast error and calibration evidence
 but never self-modifies production weights, policy, tool permissions, or
-causal claims. Counterfactual evidence is required before attributing an
-observed outcome to an intervention.
+causal claims. Counterfactual evidence may strengthen attribution only after
+the governed action effect itself has been verified.
 """
 
 from __future__ import annotations
@@ -185,6 +185,10 @@ def assess_decision_outcome(
 
     if action is None:
         attribution = AttributionStrength.NONE
+    elif not action.effect_verified:
+        attribution = AttributionStrength.NONE
+        if counterfactual_evidence_ref:
+            blockers.append("outcome_learning_counterfactual_ignored_until_action_effect_verified")
     elif counterfactual_evidence_ref:
         attribution = AttributionStrength.COUNTERFACTUAL_SUPPORTED
         evidence_refs.append(counterfactual_evidence_ref)
@@ -219,7 +223,11 @@ def assess_decision_outcome(
         mean_absolute_error=mean_absolute_error,
         direction_accuracy=direction_accuracy,
         attribution_strength=attribution,
-        counterfactual_evidence_ref=counterfactual_evidence_ref,
+        counterfactual_evidence_ref=(
+            counterfactual_evidence_ref
+            if attribution is AttributionStrength.COUNTERFACTUAL_SUPPORTED
+            else None
+        ),
         learning_evidence_refs=tuple(dict.fromkeys(evidence_refs)),
         suggested_confidence_multiplier=round(multiplier, 6),
         blockers=tuple(dict.fromkeys(blockers)),

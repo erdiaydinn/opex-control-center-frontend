@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated_at": "2026-08-14",
+  "version": 2,
+  "updated_at": "2026-08-18",
   "canonical_source": {
     "repository": "erdiaydinn/Adaronya",
     "path": "governance/repository-intelligence-registry.yaml",
@@ -130,6 +130,24 @@
       "decision": "localization-reference",
       "capabilities": ["analytics", "localization", "turkish"],
       "review": {"ref": null, "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+    },
+    {
+      "id": "yargi-mcp",
+      "classification": "DISCOVERED",
+      "identity": "saidsurucu/yargi-mcp",
+      "canonical_upstream": "saidsurucu/yargi-mcp",
+      "decision": "adopt",
+      "capabilities": ["turkish-law", "case-law-retrieval", "mcp", "legal-source-gateway", "employment-law-research"],
+      "review": {"ref": "main", "commit": "2ead0b455c83c79275f704af7f92ff3392876e71", "license": "MIT", "commercial_use": "permissive-with-notice"}
+    },
+    {
+      "id": "claude-legal-turkish",
+      "classification": "DISCOVERED",
+      "identity": "ZekaiSuni/claude-for-legal-turkish",
+      "canonical_upstream": "ZekaiSuni/claude-for-legal-turkish",
+      "decision": "reference",
+      "capabilities": ["turkish-law", "employment-law", "commercial-law", "corporate-law", "privacy-kvkk", "regulatory-workflows", "legal-skills"],
+      "review": {"ref": "main", "commit": "6ede1c82f3aa6bb36216a961f4ec32c6b9b14362", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
     }
   ],
   "required_discovery_domains": [
@@ -143,6 +161,8 @@
     "workflow-automation",
     "security-and-guardrails",
     "analytics-and-semantic-layer",
-    "fine-tuning-and-lora"
+    "fine-tuning-and-lora",
+    "turkish-legal-retrieval",
+    "external-context-intelligence"
   ]
 }

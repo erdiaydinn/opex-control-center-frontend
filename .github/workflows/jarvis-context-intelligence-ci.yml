@@ -6,12 +6,18 @@ on:
       - product/jarvis-context-intelligence-v1
     paths:
       - "services/eay-ai-core/app/context_intelligence.py"
+      - "services/eay-ai-core/app/enterprise_domain_registry.py"
       - "services/eay-ai-core/tests/test_context_intelligence.py"
+      - "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
+      - "services/eay-ai-core/tests/test_enterprise_economics_domain.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
   pull_request:
     paths:
       - "services/eay-ai-core/app/context_intelligence.py"
+      - "services/eay-ai-core/app/enterprise_domain_registry.py"
       - "services/eay-ai-core/tests/test_context_intelligence.py"
+      - "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
+      - "services/eay-ai-core/tests/test_enterprise_economics_domain.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
   workflow_dispatch:
 
@@ -24,7 +30,7 @@ concurrency:
 
 jobs:
   contract:
-    name: External context to governed operations contract
+    name: External context and economics authority contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -39,7 +45,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "pydantic>=2.9,<3.0" "pytest>=8,<9"
-      - name: Compile context intelligence contract
-        run: python -m compileall -q app/context_intelligence.py tests/test_context_intelligence.py
-      - name: Run context intelligence adversarial tests
-        run: python -m pytest -q tests/test_context_intelligence.py
+      - name: Compile Jarvis context and domain contracts
+        run: |
+          python -m compileall -q \
+            app/context_intelligence.py \
+            app/enterprise_domain_registry.py \
+            tests/test_context_intelligence.py \
+            tests/test_enterprise_domain_registry.py \
+            tests/test_enterprise_economics_domain.py
+      - name: Run context and economics adversarial tests
+        run: |
+          python -m pytest -q \
+            tests/test_context_intelligence.py \
+            tests/test_enterprise_domain_registry.py \
+            tests/test_enterprise_economics_domain.py

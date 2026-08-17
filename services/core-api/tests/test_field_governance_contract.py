@@ -13,7 +13,7 @@ from app.modules.field_intelligence import governance
 
 
 def test_governance_routes_are_on_canonical_core_surface() -> None:
-    paths = {route.path for route in app.routes}
+    paths = set(app.openapi()["paths"])
     expected = {
         "/v1/field/governance/templates/{template_id}/{template_version}/retire",
         "/v1/field/governance/missions/{mission_id}/recurrence",

@@ -1,9 +1,10 @@
 """Task-fit routing across local and frontier intelligence engines.
 
-This module does not call any model provider.  It produces an auditable routing
+This module does not call any model provider. It produces an auditable routing
 plan from registered, verified engines while preserving the EAY privacy and
-safety boundary.  Model quality must be supported by benchmark evidence; task
-routing must never silently send restricted company data to an external model.
+safety boundary. Model quality must be supported by benchmark evidence;
+confidential or restricted company data must never silently leave the local
+boundary without explicit external-processing authorization.
 """
 
 from __future__ import annotations
@@ -135,7 +136,11 @@ def _engine_is_eligible(task: IntelligenceTask, engine: IntelligenceEngine) -> b
         return False
     if task.requires_long_horizon and not engine.supports_long_horizon:
         return False
-    if task.privacy is PrivacyLevel.RESTRICTED and not engine.local_processing and not task.external_processing_authorized:
+    if (
+        task.privacy in {PrivacyLevel.CONFIDENTIAL, PrivacyLevel.RESTRICTED}
+        and not engine.local_processing
+        and not task.external_processing_authorized
+    ):
         return False
     return True
 
@@ -184,7 +189,11 @@ def route_intelligence(
     blockers: list[str] = []
     if critique_required and not critic_ids:
         blockers.append("independent_critic_unavailable")
-    if council_required and len({primary.independent_provider_key, *(e.independent_provider_key for e in ranked if e.engine_id in critic_ids)}) < 2:
+    selected_provider_keys = {primary.independent_provider_key}
+    selected_provider_keys.update(
+        e.independent_provider_key for e in ranked if e.engine_id in critic_ids
+    )
+    if council_required and len(selected_provider_keys) < 2:
         blockers.append("council_provider_diversity_insufficient")
 
     return IntelligenceRoutingPlan(

@@ -11,6 +11,8 @@ import "./planogram-digital-twin.css";
 const SVG_WIDTH = 1000;
 const SVG_MAX_HEIGHT = 620;
 const SVG_MIN_HEIGHT = 360;
+const VISIBLE_ROUTE_PATHS = 3;
+const VISIBLE_ROUTE_ROWS = 5;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -41,6 +43,7 @@ function Twin2D({ model, t, formatNumber }) {
   const offsetX = (SVG_WIDTH - model.floor.widthM * scale) / 2;
   const offsetY = (height - model.floor.depthM * scale) / 2;
   const y = (value, depth = 0) => offsetY + (model.floor.depthM - value - depth) * scale;
+  const routeHotspots = model.route?.available ? model.route.hotspots.slice(0, VISIBLE_ROUTE_PATHS) : [];
 
   return (
     <div className="eay-twin-2d-wrap">
@@ -68,6 +71,30 @@ function Twin2D({ model, t, formatNumber }) {
           );
         })}
 
+        {routeHotspots.map((hotspot) => {
+          const points = hotspot.pathM.map(([xM, yM]) => `${offsetX + xM * scale},${y(yM)}`).join(" ");
+          return points ? (
+            <polyline
+              key={`route-${hotspot.moduleId}`}
+              points={points}
+              className="eay-twin-route-path"
+              data-route-rank={hotspot.rank}
+              vectorEffect="non-scaling-stroke"
+            >
+              <title>{`${hotspot.moduleId} · ${formatNumber(hotspot.distanceM)} m`}</title>
+            </polyline>
+          ) : null;
+        })}
+        {model.route?.pickerEntryM ? (
+          <circle
+            cx={offsetX + model.route.pickerEntryM[0] * scale}
+            cy={y(model.route.pickerEntryM[1])}
+            r="7"
+            className="eay-twin-route-origin"
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : null}
+
         {model.modules.map((module) => {
           const width = Math.max(module.footprintWidthM * scale, 10);
           const depth = Math.max(module.footprintDepthM * scale, 8);
@@ -75,9 +102,18 @@ function Twin2D({ model, t, formatNumber }) {
           const top = y(module.yM, module.footprintDepthM);
           return (
             <g key={module.key}>
-              <rect x={x} y={top} width={width} height={depth} rx="4" className={`eay-twin-module eay-twin-module--${fixtureClass(module.fixtureType)}`} data-coordinate-authority={module.coordinateAuthority} />
+              <rect
+                x={x}
+                y={top}
+                width={width}
+                height={depth}
+                rx="4"
+                className={`eay-twin-module eay-twin-module--${fixtureClass(module.fixtureType)}${module.routeHotspot ? " is-route-hotspot" : ""}`}
+                data-coordinate-authority={module.coordinateAuthority}
+                data-route-rank={module.routeHotspot?.rank || undefined}
+              />
               {width > 54 && depth > 20 ? <text x={x + width / 2} y={top + depth / 2 + 4} className="eay-twin-module-label">{module.aisleId} · {module.moduleId}</text> : null}
-              <title>{`${module.aisleId} / ${module.moduleId} · ${t("products")}: ${formatNumber(module.productCount)}`}</title>
+              <title>{`${module.aisleId} / ${module.moduleId} · ${t("products")}: ${formatNumber(module.productCount)}${module.routeDistanceM != null ? ` · ${formatNumber(module.routeDistanceM)} m` : ""}`}</title>
             </g>
           );
         })}
@@ -120,7 +156,7 @@ function buildProductInstances(THREE, model) {
         const rawH = Number(product?.height_cm || 0) / 100;
         const rawD = Number(product?.depth_cm || 0) / 100;
         const width = clamp(rawW || cellW * 0.72, 0.04, cellW * 0.9);
-        const height = clamp(rawH || levelHeight * 0.56, 0.05, levelHeight * 0.72);
+        const productHeight = clamp(rawH || levelHeight * 0.56, 0.05, levelHeight * 0.72);
         const depth = clamp(rawD || cellD * 0.72, 0.04, cellD * 0.9);
         const localX = -module.widthM / 2 + cellW * (col + 0.5);
         const localZ = -module.depthM / 2 + cellD * (row + 0.5);
@@ -128,14 +164,30 @@ function buildProductInstances(THREE, model) {
         const sin = Math.sin(-rotation);
         const worldX = module.centerXM + localX * cos - localZ * sin;
         const worldZ = module.centerYM + localX * sin + localZ * cos;
-        const worldY = 0.08 + shelfIndex * levelHeight + height / 2;
+        const worldY = 0.08 + shelfIndex * levelHeight + productHeight / 2;
         const matrix = new THREE.Matrix4();
-        matrix.compose(new THREE.Vector3(worldX, worldY, worldZ), quaternion, new THREE.Vector3(width, height, depth));
+        matrix.compose(new THREE.Vector3(worldX, worldY, worldZ), quaternion, new THREE.Vector3(width, productHeight, depth));
         matrices.push(matrix);
       }
     }
   }
   return matrices;
+}
+
+function addRouteLines(THREE, scene, model, disposables) {
+  for (const hotspot of model.route?.hotspots?.slice(0, VISIBLE_ROUTE_PATHS) || []) {
+    if (hotspot.pathM.length < 2) continue;
+    const geometry = new THREE.BufferGeometry().setFromPoints(
+      hotspot.pathM.map(([xM, yM]) => new THREE.Vector3(xM, 0.035 + hotspot.rank * 0.006, yM))
+    );
+    const material = new THREE.LineBasicMaterial({
+      color: 0xdf1067,
+      transparent: true,
+      opacity: clamp(1 - (hotspot.rank - 1) * 0.22, 0.42, 1),
+    });
+    disposables.push(geometry, material);
+    scene.add(new THREE.Line(geometry, material));
+  }
 }
 
 function Twin3D({ model, t, onViewerReady }) {
@@ -188,6 +240,7 @@ function Twin3D({ model, t, onViewerReady }) {
         const grid = new THREE.GridHelper(Math.max(model.floor.widthM, model.floor.depthM), Math.max(10, Math.round(Math.max(model.floor.widthM, model.floor.depthM))), 0x343845, 0x242733);
         grid.position.set(model.floor.widthM / 2, 0.006, model.floor.depthM / 2);
         scene.add(grid);
+        addRouteLines(THREE, scene, model, disposables);
 
         const architectureMaterials = {
           wall: new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.85 }),
@@ -282,9 +335,9 @@ function Twin3D({ model, t, onViewerReady }) {
         const resize = () => {
           if (!renderer) return;
           const width = Math.max(1, host.clientWidth);
-          const height = Math.max(320, host.clientHeight || 520);
-          renderer.setSize(width, height, false);
-          camera.aspect = width / height;
+          const sceneHeight = Math.max(320, host.clientHeight || 520);
+          renderer.setSize(width, sceneHeight, false);
+          camera.aspect = width / sceneHeight;
           camera.updateProjectionMatrix();
         };
         resizeObserver = new ResizeObserver(resize);
@@ -326,6 +379,26 @@ function Twin3D({ model, t, onViewerReady }) {
   );
 }
 
+function RouteHotspots({ model, formatNumber, t }) {
+  const rows = model.route?.available ? model.route.hotspots.slice(0, VISIBLE_ROUTE_ROWS) : [];
+  if (!rows.length) return null;
+  return (
+    <section className="eay-twin-route-hotspots" aria-label={t("route")}>
+      <header><Route size={16} aria-hidden="true" /><strong>{t("route")}</strong></header>
+      <ol>
+        {rows.map((row) => (
+          <li key={row.moduleId}>
+            <span className="eay-twin-route-rank">{row.rank}</span>
+            <code>{row.moduleId}</code>
+            <span>{formatNumber(row.distanceM)} m</span>
+            <strong>Σ {formatNumber(row.weightedCost)}</strong>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export default function PlanogramDigitalTwin({ engineResult, candidate, locale, formatNumber }) {
   const [view, setView] = useState("2d");
   const viewerRef = useRef(null);
@@ -361,6 +434,7 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
         <div><span>{t("coordinates")}</span><strong>{formatNumber(model.stats.measuredCoordinatePct)}%</strong></div>
         <div><span><Route size={15} aria-hidden="true" />{t("route")}</span><strong>{routeText}</strong></div>
       </div>
+      <RouteHotspots model={model} formatNumber={formatNumber} t={t} />
 
       {view === "2d" ? <Twin2D model={model} t={t} formatNumber={formatNumber} /> : null}
       {view === "3d" ? <><div className="eay-twin-camera-bar" aria-label={t("view3d")}>

@@ -321,7 +321,9 @@ def test_execution_sql_sources_are_static_reviewed() -> None:
         if not matched:
             violations.append(f"{relative}:{function} has no SQL execution")
 
-    assert not violations, "STALE/INVALID SQL EXECUTION ALLOWLIST:\n" + "\n".join(sorted(violations))
+    assert not violations, (
+        "STALE/INVALID SQL EXECUTION ALLOWLIST:\n" + "\n".join(sorted(violations))
+    )
 
 
 def test_engine_creation_is_fail_closed() -> None:

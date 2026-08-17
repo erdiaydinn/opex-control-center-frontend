@@ -18,6 +18,7 @@ import { translatePlanogram } from "../../platform/i18n/planogramMessages.js";
 import { translatePlanogramOperations } from "../../platform/i18n/planogramOperationsMessages.js";
 import { translatePlanogramPreview } from "../../platform/i18n/planogramPreviewMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import PlanogramExperience from "./PlanogramExperience.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import "./planogram-native.css";
 import "./planogram-operations.css";
@@ -351,6 +352,7 @@ export default function PlanogramStudio() {
                     <p>{p("noBlockers")}</p>
                   )}
                 </div>
+                <PlanogramExperience result={engineResult} locale={locale} />
               </div>
             ) : null}
           </section>

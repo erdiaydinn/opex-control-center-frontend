@@ -1,0 +1,320 @@
+.eay-planogram-experience {
+  margin-top: 1.25rem;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.28));
+  border-radius: 18px;
+  background: var(--surface-primary, rgba(15, 23, 42, 0.52));
+  overflow: hidden;
+}
+
+.eay-planogram-experience.is-empty {
+  padding: 1.25rem;
+}
+
+.eay-planogram-experience-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  border-bottom: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.22));
+}
+
+.eay-planogram-experience-head h3,
+.eay-planogram-experience-head p {
+  margin: 0;
+}
+
+.eay-planogram-experience-head span {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.eay-planogram-experience-head strong {
+  max-width: 18rem;
+  font-size: 0.78rem;
+  text-align: end;
+}
+
+.eay-planogram-experience-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  min-height: 560px;
+}
+
+.eay-planogram-module-nav {
+  padding: 1rem;
+  border-inline-end: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.22));
+  overflow: auto;
+  max-height: 760px;
+}
+
+.eay-planogram-module-nav h4,
+.eay-planogram-module-nav p {
+  margin-top: 0;
+}
+
+.eay-planogram-module-nav p {
+  font-size: 0.8rem;
+  opacity: 0.78;
+  line-height: 1.45;
+}
+
+.eay-planogram-aisle-group + .eay-planogram-aisle-group {
+  margin-top: 1rem;
+}
+
+.eay-planogram-aisle-group > strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.eay-planogram-aisle-group > div {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.eay-planogram-aisle-group button {
+  min-height: 48px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.25));
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.eay-planogram-aisle-group button.is-selected {
+  border-color: currentColor;
+  box-shadow: inset 3px 0 0 currentColor;
+}
+
+.eay-planogram-aisle-group button span,
+.eay-planogram-aisle-group button small {
+  display: block;
+}
+
+.eay-planogram-aisle-group button small {
+  margin-top: 0.2rem;
+  opacity: 0.72;
+}
+
+.eay-planogram-viewer {
+  min-width: 0;
+  padding: 1rem 1.15rem 1.25rem;
+}
+
+.eay-planogram-viewer-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.eay-planogram-viewer-toolbar > div:first-child strong,
+.eay-planogram-viewer-toolbar > div:first-child span {
+  display: block;
+}
+
+.eay-planogram-viewer-toolbar > div:first-child span {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  opacity: 0.72;
+}
+
+.eay-planogram-mode-switch {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.25));
+  border-radius: 12px;
+}
+
+.eay-planogram-mode-switch button {
+  min-height: 44px;
+  padding: 0.55rem 0.85rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.eay-planogram-mode-switch button[aria-pressed="true"] {
+  background: var(--surface-emphasis, rgba(148, 163, 184, 0.18));
+  font-weight: 700;
+}
+
+.eay-planogram-mode-switch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.eay-planogram-geometry-note,
+.eay-planogram-webgl-note {
+  margin: 0.5rem 0 0.8rem;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.eay-planogram-geometry-blocked {
+  padding: 1rem;
+  border: 1px dashed var(--border-subtle, rgba(148, 163, 184, 0.38));
+  border-radius: 12px;
+}
+
+.eay-planogram-geometry-blocked p {
+  margin-bottom: 0;
+}
+
+.eay-planogram-2d-wrap,
+.eay-planogram-3d {
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.25));
+  border-radius: 14px;
+  background: var(--surface-secondary, rgba(15, 23, 42, 0.34));
+  overflow: hidden;
+}
+
+.eay-planogram-2d-wrap {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.eay-planogram-2d {
+  width: min(100%, 980px);
+  max-height: 520px;
+}
+
+.eay-planogram-2d .fixture-frame {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+}
+
+.eay-planogram-2d .shelf-zone {
+  fill: rgba(148, 163, 184, 0.08);
+  stroke: rgba(148, 163, 184, 0.34);
+  stroke-width: 0.6;
+}
+
+.eay-planogram-2d .shelf-line {
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.eay-planogram-2d .product-face {
+  fill: rgba(37, 99, 235, 0.58);
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 0.45;
+  cursor: pointer;
+  outline: none;
+}
+
+.eay-planogram-2d .product-face:hover,
+.eay-planogram-2d .product-face:focus,
+.eay-planogram-2d .product-face.is-selected {
+  fill: rgba(245, 158, 11, 0.82);
+  stroke-width: 1.4;
+}
+
+.eay-planogram-3d canvas {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  touch-action: none;
+}
+
+.eay-planogram-placement-list {
+  margin-top: 1rem;
+}
+
+.eay-planogram-placement-list h4 {
+  margin: 0 0 0.6rem;
+}
+
+.eay-planogram-placement-list ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.eay-planogram-placement-list button {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.7rem;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.25));
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.eay-planogram-placement-list button.is-selected {
+  border-color: currentColor;
+  box-shadow: inset 3px 0 0 currentColor;
+}
+
+.eay-planogram-placement-list button strong,
+.eay-planogram-placement-list button span {
+  display: block;
+}
+
+.eay-planogram-placement-list button span {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  opacity: 0.76;
+}
+
+@media (max-width: 900px) {
+  .eay-planogram-experience-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .eay-planogram-module-nav {
+    max-height: 300px;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.22));
+  }
+
+  .eay-planogram-viewer-toolbar,
+  .eay-planogram-experience-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eay-planogram-experience-head strong {
+    max-width: none;
+    text-align: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eay-planogram-experience *,
+  .eay-planogram-experience *::before,
+  .eay-planogram-experience *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .eay-planogram-2d .product-face,
+  .eay-planogram-2d .shelf-zone {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+}

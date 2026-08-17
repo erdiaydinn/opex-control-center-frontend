@@ -1,0 +1,22 @@
+name: EAY Master Roadmap 35-38 - Jarvis Production Truth and Insight
+on:
+  push:
+    branches: [agent/master-roadmap-34-38-jarvis-insight-intelligence]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  governed-intelligence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12'}
+      - working-directory: services/core-api
+        run: python -m pip install pytest
+      - run: pytest -q services/core-api/tests/test_master34_operational_tool_authority.py services/core-api/tests/test_master35_38_jarvis_insight.py
+      - name: Orders production truth boundary
+        run: |
+          python - <<'PY'
+          from app.jarvis.orders_v2_production_truth import ProductionEvidence,orders_v2_production_ready
+          assert not orders_v2_production_ready((ProductionEvidence('authorized_readonly_identity','REPOSITORY',True,'ci','bot'),))[0]
+          PY

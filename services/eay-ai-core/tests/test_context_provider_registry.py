@@ -15,6 +15,7 @@ def test_all_registered_providers_are_official_and_production_disabled():
     assert PROVIDERS
     assert all(provider.source_class is ContextSourceClass.OFFICIAL for provider in PROVIDERS.values())
     assert all(provider.production_enabled is False for provider in PROVIDERS.values())
+    assert all(provider.continuous_ingestion_authorized is False for provider in PROVIDERS.values())
     assert_registry_fail_closed()
 
 
@@ -36,6 +37,8 @@ def test_tuik_sdmx_and_tcmb_evds_are_documented_macro_web_service_candidates():
     assert ContextKind.MACRO_ECONOMIC in tuik.context_kinds
     assert ContextKind.MACRO_ECONOMIC in tcmb.context_kinds
     assert tcmb.requires_secret is True
+    assert tuik.continuous_ingestion_authorized is False
+    assert tcmb.continuous_ingestion_authorized is False
     assert tuik.production_enabled is False
     assert tcmb.production_enabled is False
 
@@ -66,8 +69,8 @@ def test_provider_cannot_claim_production_without_verified_adapter():
         )
 
 
-def test_authorization_required_provider_cannot_activate_without_authorization():
-    with pytest.raises(ValueError, match="production_provider_requires_authorization"):
+def test_provider_cannot_activate_continuously_before_access_review():
+    with pytest.raises(ValueError, match="production_provider_requires_continuous_access_review"):
         ContextProviderSpec(
             provider_id="authorized-only",
             display_name="Authorized Only",

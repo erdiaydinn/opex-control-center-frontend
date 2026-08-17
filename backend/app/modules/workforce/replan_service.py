@@ -23,7 +23,7 @@ def compute_and_persist_replan_scenario(
     actor_subject: str,
 ) -> tuple[ReplanScenario, dict[str, object]]:
     tenant_id, baseline = load_latest_replan_baseline(location_id)
-    sensitivities, cost_assumption, model_authority_fingerprint = load_approved_replan_model(
+    sensitivities, cost_assumption, _model_authority_fingerprint = load_approved_replan_model(
         model_version
     )
     request = ReplanScenarioRequest(
@@ -36,9 +36,6 @@ def compute_and_persist_replan_scenario(
         cost_assumption=cost_assumption,
     )
     scenario = build_replan_scenario(request)
-    # Bind the exact approved model authority into persisted assumptions without
-    # changing deterministic domain math.
-    scenario.assumptions["replan_model_authority_fingerprint"] = model_authority_fingerprint
     receipt = persist_replan_scenario_and_proposal(
         scenario,
         baseline=baseline,

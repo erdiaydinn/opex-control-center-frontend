@@ -17,6 +17,8 @@ on:
       - "services/identity-gateway/pyproject.toml"
       - "services/core-api/app/modules/**"
       - "services/core-api/app/intelligence_routes.py"
+      - "services/core-api/app/field_governance_routes.py"
+      - "services/core-api/app/field_evidence_object_routes.py"
       - "backend/app/modules/**"
       - "scripts/security/generate_cyclonedx_sbom.py"
       - "scripts/test-supply-chain-lock-integrity.mjs"
@@ -28,6 +30,7 @@ on:
       - "scripts/test-global-product-quality-v3.mjs"
       - "scripts/test-field-intelligence-ui.mjs"
       - "scripts/test-field-mobile-offline.mjs"
+      - "scripts/test-field-governance-ui.mjs"
       - "scripts/test-no-new-hardcoded-ui-strings.mjs"
       - "src/**"
       - "ops/inventory/**"
@@ -116,6 +119,8 @@ jobs:
         run: node scripts/test-field-intelligence-ui.mjs
       - name: Field Intelligence mobile/offline contract
         run: node scripts/test-field-mobile-offline.mjs
+      - name: Field governance and promotion UI contract
+        run: node scripts/test-field-governance-ui.mjs
       - name: Accessibility focus trap contract
         run: node scripts/test-accessibility-focus-trap.mjs
       - name: Route accessibility contract

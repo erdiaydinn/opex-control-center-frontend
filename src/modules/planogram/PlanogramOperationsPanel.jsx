@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   ClipboardCheck,
+  Eye,
   RefreshCw,
   Send,
   ShieldAlert,
@@ -11,6 +12,9 @@ import {
 
 import { apiGet, apiPost } from "../../api/client.js";
 import { translatePlanogramOperations } from "../../platform/i18n/planogramOperationsMessages.js";
+import { translatePlanogramStatus } from "../../platform/i18n/planogramStatusMessages.js";
+import { translatePlanogramView } from "../../platform/i18n/planogramViewMessages.js";
+import PlanogramExperience from "./PlanogramExperience.jsx";
 import "./planogram-operations.css";
 
 const ACTIVE_ASSIGNMENT_STATUSES = new Set(["assigned", "acknowledged"]);
@@ -30,9 +34,18 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
     () => (key) => translatePlanogramOperations(locale, key),
     [locale]
   );
+  const s = useMemo(
+    () => (value) => translatePlanogramStatus(locale, value),
+    [locale]
+  );
+  const v = useMemo(
+    () => (key) => translatePlanogramView(locale, key),
+    [locale]
+  );
   const canCreate = canAction("planogram", "create");
   const canEdit = canAction("planogram", "edit");
   const canApprove = canAction("planogram", "approve");
+  const canView = canAction("planogram", "view");
 
   const [workspace, setWorkspace] = useState(null);
   const [plans, setPlans] = useState([]);
@@ -44,6 +57,8 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
   const [storeCode, setStoreCode] = useState("");
   const [storeName, setStoreName] = useState("");
   const [notes, setNotes] = useState({});
+  const [selectedPlanView, setSelectedPlanView] = useState(null);
+  const [planViewError, setPlanViewError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,6 +134,22 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
     ));
   }, [mutate]);
 
+  const viewAssignmentPlan = useCallback(async (assignment) => {
+    if (busy || !canView) return;
+    const key = `view:${assignment.id}`;
+    setBusy(key);
+    setPlanViewError("");
+    try {
+      const detail = await apiGet(`/v1/planogram/execution/assignments/${assignment.id}/view`);
+      setSelectedPlanView(detail);
+    } catch {
+      setSelectedPlanView(null);
+      setPlanViewError(v("viewError"));
+    } finally {
+      setBusy("");
+    }
+  }, [busy, canView, v]);
+
   const versions = Array.isArray(workspace?.versions) ? workspace.versions : [];
   const capabilities = workspace?.capabilities || {};
 
@@ -152,6 +183,12 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
         <div className="eay-planogram-operations-state is-success" role="status" aria-live="polite">
           <BadgeCheck size={18} aria-hidden="true" />
           {notice}
+        </div>
+      ) : null}
+      {planViewError ? (
+        <div className="eay-planogram-operations-state is-error" role="alert">
+          <ShieldAlert size={18} aria-hidden="true" />
+          {planViewError}
         </div>
       ) : null}
 
@@ -190,7 +227,7 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
                   <div>
                     <strong>{version.store_code}</strong>
                     <span>{t("version")} {formatNumber(version.version_number)}</span>
-                    <span>{t("status")}: {String(version.status).toUpperCase()}</span>
+                    <span>{t("status")}: {s(version.status)}</span>
                     <span>
                       {t("geometry")}: {version.geometry_attested ? t("attested") : t("notAttested")}
                     </span>
@@ -248,7 +285,7 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
                   <div>
                     <strong>{planVersion.store_code}</strong>
                     <span>{t("plan")} v{formatNumber(planVersion.version_number)}</span>
-                    <span>{t("status")}: {String(planVersion.status).toUpperCase()}</span>
+                    <span>{t("status")}: {s(planVersion.status)}</span>
                     <span>
                       {t("evidence")}: {planVersion.physical_truth_attested ? t("attested") : t("externalRequired")}
                     </span>
@@ -263,13 +300,23 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
                 <div className="eay-planogram-operation-row" key={assignment.id}>
                   <div>
                     <strong>{assignment.store_code}</strong>
-                    <span>{t("status")}: {String(assignment.status).toUpperCase()}</span>
+                    <span>{t("status")}: {s(assignment.status)}</span>
                     <span>{t("observations")}: {formatNumber(assignment.observation_count || 0)}</span>
                     <span>{t("compliant")}: {formatNumber(assignment.compliant_count || 0)}</span>
                     <span>{t("deviations")}: {formatNumber(assignment.deviation_count || 0)}</span>
                     <span>{t("due")}: {readableDate(assignment.due_at, locale)}</span>
                   </div>
                   <div className="eay-planogram-operation-actions">
+                    {canView ? (
+                      <button
+                        type="button"
+                        onClick={() => viewAssignmentPlan(assignment)}
+                        disabled={Boolean(busy)}
+                      >
+                        <Eye size={16} aria-hidden="true" />
+                        {busy === `view:${assignment.id}` ? v("viewLoading") : v("viewAssignedPlan")}
+                      </button>
+                    ) : null}
                     {assignment.status === "assigned" && canEdit ? (
                       <button type="button" onClick={() => runAssignmentAction(assignment, "acknowledge")} disabled={Boolean(busy)}>
                         <BadgeCheck size={16} aria-hidden="true" />{t("acknowledge")}
@@ -286,6 +333,14 @@ export default function PlanogramOperationsPanel({ locale, formatNumber, canActi
             </div>
           </article>
         </div>
+      ) : null}
+
+      {selectedPlanView?.plan_payload ? (
+        <PlanogramExperience
+          result={selectedPlanView.plan_payload}
+          locale={locale}
+          sourceLabel={v("persistedExactPlan")}
+        />
       ) : null}
     </section>
   );

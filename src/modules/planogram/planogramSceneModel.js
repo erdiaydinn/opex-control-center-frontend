@@ -30,12 +30,22 @@ function planogramFrom(source) {
 }
 
 function productGeometry(product, cursorX) {
-  const width = positive(product.width_cm);
+  const sourceWidth = positive(product.width_cm);
+  const sourceDepth = positive(product.depth_cm);
+  const rotated = product.is_rotated === true;
+  const width = positive(product.oriented_width_cm) || (rotated ? sourceDepth : sourceWidth);
+  const depth = positive(product.oriented_depth_cm) || (rotated ? sourceWidth : sourceDepth);
   const height = positive(product.height_cm);
-  const depth = positive(product.depth_cm);
   const facing = Math.max(1, Math.trunc(number(product.facing_count ?? product.facing, 1)));
-  const consumedWidth = positive(product.used_width_cm) || width * facing;
-  const geometryReady = Boolean(width && height && depth && consumedWidth);
+  const faceWidth = width * facing;
+  const consumedWidth = positive(product.used_width_cm) || faceWidth;
+  const geometryReady = Boolean(
+    width &&
+    height &&
+    depth &&
+    consumedWidth &&
+    consumedWidth + EPSILON >= faceWidth
+  );
 
   return {
     key: [
@@ -56,6 +66,7 @@ function productGeometry(product, cursorX) {
     consumedWidthCm: consumedWidth,
     positionOrder: numericOrder(product.position_order, 999999),
     dimensionSource: text(product.dimension_source, "unknown"),
+    rotated,
     geometryReady,
     xCm: cursorX,
     raw: product,
@@ -76,11 +87,16 @@ function shelfGeometry(shelf, shelfIndex, yCm) {
     return normalized;
   });
 
+  const productsFit = placedProducts.every((product) => (
+    product.geometryReady &&
+    product.heightCm <= height + EPSILON &&
+    product.depthCm <= depth + EPSILON
+  ));
   const geometryReady = Boolean(
     width &&
     height &&
     depth &&
-    placedProducts.every((product) => product.geometryReady) &&
+    productsFit &&
     cursorX <= width + EPSILON
   );
 
@@ -122,8 +138,18 @@ function moduleGeometry(aisle, module, moduleIndex) {
   const width = measuredWidth || shelfWidth;
   const height = measuredHeight || shelfHeight;
   const depth = measuredDepth || shelfDepth;
+  const shelvesFitModule = Boolean(
+    shelfWidth <= width + EPSILON &&
+    shelfDepth <= depth + EPSILON &&
+    shelfHeight <= height + EPSILON
+  );
   const geometryReady = Boolean(
-    width && height && depth && shelves.length && shelves.every((shelf) => shelf.geometryReady)
+    width &&
+    height &&
+    depth &&
+    shelves.length &&
+    shelvesFitModule &&
+    shelves.every((shelf) => shelf.geometryReady)
   );
 
   return {

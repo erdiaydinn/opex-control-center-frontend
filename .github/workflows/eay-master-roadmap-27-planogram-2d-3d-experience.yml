@@ -89,6 +89,11 @@ jobs:
                   await c.close()
           asyncio.run(main())
           PY
+      - name: Lint Master 27 read-only boundary
+        run: >-
+          ruff check
+          services/core-api/app/modules/planogram/view_router.py
+          services/core-api/tests/test_planogram_master27_view.py
       - name: Secure SQL data-access boundary
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
       - name: Apply cumulative Core migrations
@@ -107,6 +112,8 @@ jobs:
           services/core-api/tests/test_planogram_master26_execution.py
           services/core-api/tests/test_planogram_master26_handoff.py
           services/core-api/tests/test_planogram_master26_postgres.py
+      - name: Master 27 persisted assignment view contract
+        run: pytest -q services/core-api/tests/test_planogram_master27_view.py
       - name: Master 27 exact geometry view model and localization
         run: node scripts/test-planogram-2d3d-ui.mjs
       - name: Revalidate Planogram product quality contracts
@@ -126,8 +133,10 @@ jobs:
           const fs = require('node:fs');
           const viewer = fs.readFileSync('src/modules/planogram/PlanogramExperience.jsx', 'utf8');
           const model = fs.readFileSync('src/modules/planogram/planogramSceneModel.js', 'utf8');
+          const viewRoute = fs.readFileSync('services/core-api/app/modules/planogram/view_router.py', 'utf8');
           if (/Spline|iframe|postMessage\(|access_token/.test(viewer)) throw new Error('legacy_visual_authority_detected');
           if (!/geometryReady/.test(model)) throw new Error('exact_geometry_gate_missing');
+          if (/\bINSERT\b|\bUPDATE\b|\bDELETE\b/.test(viewRoute)) throw new Error('visualization_route_not_read_only');
           console.log('MASTER_27_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED');
           console.log('MASTER_27_VISUALIZATION_AUTHORITY=READ_ONLY');
           console.log('MASTER_27_INVENTED_GEOMETRY=DENIED');

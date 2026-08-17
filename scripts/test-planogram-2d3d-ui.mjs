@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { planogramExperienceMessageCoverage } from "../src/platform/i18n/planogramExperienceMessages.js";
+import { planogramViewMessageCoverage } from "../src/platform/i18n/planogramViewMessages.js";
 import { buildPlanogramScene } from "../src/modules/planogram/planogramSceneModel.js";
 
 const LOCALES = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"];
-const coverage = planogramExperienceMessageCoverage(LOCALES);
-for (const locale of LOCALES) {
-  assert.deepEqual(coverage.missing[locale], [], `Missing Planogram 2D/3D messages for ${locale}`);
-  assert.deepEqual(coverage.extra[locale], [], `Unexpected Planogram 2D/3D messages for ${locale}`);
+for (const coverage of [
+  planogramExperienceMessageCoverage(LOCALES),
+  planogramViewMessageCoverage(LOCALES),
+]) {
+  for (const locale of LOCALES) {
+    assert.deepEqual(coverage.missing[locale], [], `Missing Planogram 2D/3D messages for ${locale}`);
+    assert.deepEqual(coverage.extra[locale], [], `Unexpected Planogram 2D/3D messages for ${locale}`);
+  }
 }
 
 const fixture = {
@@ -98,19 +103,58 @@ assert.equal(orderedScene.modules[0].shelves[1].yCm, 35);
 
 const missingDepth = structuredClone(fixture);
 delete missingDepth.planogram.aisles[0].modules[0].shelves[0].products[0].depth_cm;
-const blocked = buildPlanogramScene(missingDepth);
-assert.equal(blocked.modules[0].geometryReady, false, "Missing product depth must fail closed");
+assert.equal(
+  buildPlanogramScene(missingDepth).modules[0].geometryReady,
+  false,
+  "Missing product depth must fail closed"
+);
 
 const overflow = structuredClone(fixture);
 overflow.planogram.aisles[0].modules[0].shelves[0].products[1].used_width_cm = 90;
-const overflowScene = buildPlanogramScene(overflow);
-assert.equal(overflowScene.modules[0].geometryReady, false, "Inconsistent used width must fail closed");
+assert.equal(
+  buildPlanogramScene(overflow).modules[0].geometryReady,
+  false,
+  "Inconsistent used width must fail closed"
+);
+
+const tooTall = structuredClone(fixture);
+tooTall.planogram.aisles[0].modules[0].shelves[0].products[0].height_cm = 40;
+assert.equal(
+  buildPlanogramScene(tooTall).modules[0].geometryReady,
+  false,
+  "Product taller than shelf must fail closed"
+);
+
+const tooDeep = structuredClone(fixture);
+tooDeep.planogram.aisles[0].modules[0].shelves[0].products[0].depth_cm = 60;
+assert.equal(
+  buildPlanogramScene(tooDeep).modules[0].geometryReady,
+  false,
+  "Product deeper than shelf must fail closed"
+);
+
+const moduleTooShort = structuredClone(fixture);
+moduleTooShort.planogram.aisles[0].modules[0].module_height_cm = 60;
+assert.equal(
+  buildPlanogramScene(moduleTooShort).modules[0].geometryReady,
+  false,
+  "Shelf stack taller than module must fail closed"
+);
+
+const rotated = structuredClone(fixture);
+rotated.planogram.aisles[0].modules[0].shelves[0].products[0].is_rotated = true;
+rotated.planogram.aisles[0].modules[0].shelves[0].products[0].used_width_cm = 18;
+const rotatedScene = buildPlanogramScene(rotated);
+assert.equal(rotatedScene.modules[0].shelves[0].products[0].widthCm, 8);
+assert.equal(rotatedScene.modules[0].shelves[0].products[0].depthCm, 10);
 
 const noPlan = buildPlanogramScene({ production_ready: false, planogram: null });
 assert.equal(noPlan.renderable, false);
 
 const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
 const experience = fs.readFileSync("src/modules/planogram/PlanogramExperience.jsx", "utf8");
+const operations = fs.readFileSync("src/modules/planogram/PlanogramOperationsPanel.jsx", "utf8");
+const viewRouter = fs.readFileSync("services/core-api/app/modules/planogram/view_router.py", "utf8");
 assert.match(studio, /PlanogramExperience/);
 assert.match(experience, /import\("three"\)/, "Three.js must be lazy-loaded for 3D only");
 assert.match(experience, /OrbitControls/);
@@ -118,10 +162,19 @@ assert.match(experience, /prefers-reduced-motion/);
 assert.match(experience, /productionAuthorityBlocked/);
 assert.doesNotMatch(experience, /^import .* from ["']three["']/m, "Three.js must not be in the eager Planogram bundle");
 assert.doesNotMatch(experience, /Spline|iframe|postMessage\(|access_token/);
+assert.match(operations, /translatePlanogramStatus/);
+assert.doesNotMatch(operations, /String\([^\n]*status[^\n]*\)\.toUpperCase/);
+assert.match(operations, /\/v1\/planogram\/execution\/assignments\/\$\{assignment\.id\}\/view/);
+assert.match(operations, /PlanogramExperience/);
+assert.match(viewRouter, /require_permission\("module:planogram:view"\)/);
+assert.match(viewRouter, /get_assignment_plan/);
+assert.doesNotMatch(viewRouter, /\bINSERT\b|\bUPDATE\b|\bDELETE\b/);
 
 console.log("MASTER_27_SCENE_MODEL=PASS");
 console.log("MASTER_27_SHELF_ORDER=PASS");
-console.log("MASTER_27_EXACT_GEOMETRY_FAIL_CLOSED=PASS");
+console.log("MASTER_27_PHYSICAL_CONSISTENCY=PASS");
+console.log("MASTER_27_ROTATION_EVIDENCE=PASS");
 console.log("MASTER_27_THREE_LAZY_LOAD=PASS");
+console.log("MASTER_27_PERSISTED_ASSIGNMENT_VIEW=PASS");
 console.log("MASTER_27_10_LOCALES=PASS");
 console.log("MASTER_27_NO_LEGACY_VISUAL_AUTHORITY=PASS");

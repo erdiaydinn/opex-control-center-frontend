@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from uuid import UUID
+
+from fastapi import HTTPException
 from sqlalchemy import text
 
 from .permissions import BudgetUnitOfWork
@@ -40,3 +43,20 @@ async def financial_events(uow: BudgetUnitOfWork, limit: int) -> dict[str, objec
     )
     items = [_row(row) for row in result]
     return {"count": len(items), "items": items}
+
+
+async def plan_snapshot(uow: BudgetUnitOfWork, plan_id: UUID) -> dict[str, object]:
+    result = await uow.session.execute(
+        text(
+            """SELECT id,name,fiscal_year,base_currency,status,created_by,activated_by,
+                      created_at,activated_at,planning_snapshot,planning_fingerprint,
+                      planning_snapshot_at
+               FROM budget_plan
+               WHERE tenant_id=:tenant AND id=:plan"""
+        ),
+        {"tenant": uow.tenant_id, "plan": plan_id},
+    )
+    row = result.first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Budget Plan not found")
+    return _row(row)

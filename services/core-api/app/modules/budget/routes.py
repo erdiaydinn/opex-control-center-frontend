@@ -43,7 +43,7 @@ from .planning import (
     create_plan,
 )
 from .procurement import create_po, create_request, decide_request
-from .read_models import financial_events, variance_summary
+from .read_models import financial_events, plan_snapshot, variance_summary
 from .schemas import (
     ApprovalDecision,
     BudgetLineCreate,
@@ -61,6 +61,7 @@ from .schemas import (
 router = APIRouter(prefix="/v1/budget", tags=["budget"])
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=160)]
 ViewSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_VIEW))]
+PlanSnapshotSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_VIEW, all_cost_centers=True))]
 PlanCreateSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_CREATE_PLAN, all_cost_centers=True))]
 PlanActivateSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_ACTIVATE_PLAN, all_cost_centers=True))]
 PeriodSession = Annotated[BudgetUnitOfWork, Depends(require_budget(BUDGET_MANAGE_PERIODS, all_cost_centers=True))]
@@ -91,6 +92,11 @@ async def post_plan(body: PlanCreate, key: IdempotencyKey, uow: PlanCreateSessio
 @router.post("/plans/{plan_id}/activate")
 async def post_plan_activation(plan_id: UUID, key: IdempotencyKey, uow: PlanActivateSession):
     return await run_command(uow, key=key, operation="budget.plan.activate", payload={"plan_id": plan_id}, perform=lambda: activate_plan(uow, plan_id))
+
+
+@router.get("/plans/{plan_id}/snapshot")
+async def get_plan_snapshot(plan_id: UUID, uow: PlanSnapshotSession):
+    return await plan_snapshot(uow, plan_id)
 
 
 @router.post("/periods", status_code=201)

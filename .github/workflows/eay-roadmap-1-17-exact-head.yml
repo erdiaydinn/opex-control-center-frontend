@@ -71,7 +71,7 @@ jobs:
       - name: Run scoped resolver acceptance
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/app/platform/business_glossary/test_item17_scoped_effective_versions.py
+        run: python -m pytest -q backend/tests/test_business_glossary_item17_scoped_effective_versions.py
       - name: Apply canonical glossary persistence
         run: psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -f backend/migrations/007_business_glossary.sql
       - name: Seed RLS identities and scoped effective definitions

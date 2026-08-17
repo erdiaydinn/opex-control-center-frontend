@@ -1,9 +1,8 @@
 """Architecture-aware physical truth and walk-distance primitives for PlanAI.
 
-This module is intentionally dependency-free and deterministic. It introduces the
-first canonical contract for a measured store floorplate, fixed architectural
-obstacles, circulation anchors and module coordinates without weakening the
-existing product/fixture physical-truth gates.
+This module is dependency-free and deterministic. It defines the canonical
+measured floorplate/obstacle contract and produces bounded, explainable picker
+route evidence without weakening existing product/fixture physical-truth gates.
 
 Architecture is opt-in during migration: legacy Store DNA remains readable. Once
 an ``architecture`` object is supplied, however, the contract is fail-closed and
@@ -13,15 +12,16 @@ invalid geometry must never be treated as authoritative physical truth.
 from __future__ import annotations
 
 import hashlib
-import heapq
 import json
-from collections import deque
+from collections import Counter, deque
 from typing import Any, Iterable
 
 ARCHITECTURE_CONTRACT_VERSION = "store-architecture-v1"
 ROUTE_OBJECTIVE_VERSION = "architecture-grid-astar-v1"
 DEFAULT_GRID_RESOLUTION_M = 0.5
 DEFAULT_EGRESS_CLEARANCE_M = 1.0
+MAX_ROUTE_HOTSPOTS = 12
+MAX_ROUTE_PATH_POINTS = 64
 
 ARCHITECTURE_TYPES = {
     "wall",
@@ -63,12 +63,7 @@ def _rect(
     rotation_deg: float = 0.0,
     inflate_m: float = 0.0,
 ) -> tuple[float, float, float, float] | None:
-    """Return an axis-aligned rectangle for orthogonal CAD geometry.
-
-    V1 intentionally accepts only orthogonal rotations. This makes collision and
-    routing semantics deterministic and explainable while leaving a clean path
-    to polygon geometry in a later contract revision.
-    """
+    """Return the backend V1 axis-aligned footprint for orthogonal CAD geometry."""
     rotation = rotation_deg % 360.0
     if min(abs(rotation - allowed) for allowed in (0.0, 90.0, 180.0, 270.0, 360.0)) > 1e-6:
         return None
@@ -94,17 +89,28 @@ def _intersects(
     )
 
 
-def _contains_point(rect: tuple[float, float, float, float], x_m: float, y_m: float) -> bool:
+def _contains_point(
+    rect: tuple[float, float, float, float],
+    x_m: float,
+    y_m: float,
+) -> bool:
     return rect[0] <= x_m <= rect[2] and rect[1] <= y_m <= rect[3]
 
 
-def _element_rect(element: dict[str, Any], *, egress_clearance: bool = False):
+def _element_rect(
+    element: dict[str, Any],
+    *,
+    egress_clearance: bool = False,
+):
     width = _num(element.get("width_m"))
     depth = _num(element.get("depth_m"))
     if width <= 0 or depth <= 0:
         return None
     clearance = 0.0
-    if egress_clearance and _text(element.get("element_type")).lower() == "emergency_exit":
+    if (
+        egress_clearance
+        and _text(element.get("element_type")).lower() == "emergency_exit"
+    ):
         clearance = max(
             DEFAULT_EGRESS_CLEARANCE_M,
             _num(element.get("clearance_m"), DEFAULT_EGRESS_CLEARANCE_M),
@@ -183,11 +189,21 @@ def architecture_truth_report(store_dna: dict[str, Any] | None) -> dict[str, Any
             invalid_elements.append(element_id)
             continue
         if floor_width > 0 and floor_depth > 0:
-            if rect[0] < 0 or rect[1] < 0 or rect[2] > floor_rect[2] or rect[3] > floor_rect[3]:
-                blockers.append(f"architecture_element_outside_floorplate:{element_id}")
+            if (
+                rect[0] < 0
+                or rect[1] < 0
+                or rect[2] > floor_rect[2]
+                or rect[3] > floor_rect[3]
+            ):
+                blockers.append(
+                    f"architecture_element_outside_floorplate:{element_id}"
+                )
 
     if invalid_elements:
-        blockers.append("architecture_invalid_elements:" + ",".join(sorted(invalid_elements)[:20]))
+        blockers.append(
+            "architecture_invalid_elements:"
+            + ",".join(sorted(invalid_elements)[:20])
+        )
     if picker_entries == 0:
         blockers.append("architecture_picker_entry_missing")
     elif picker_entries > 1:
@@ -195,7 +211,12 @@ def architecture_truth_report(store_dna: dict[str, Any] | None) -> dict[str, Any
 
     source = _text(architecture.get("source"))
     source_ref = _text(architecture.get("source_ref"))
-    measured = source in {"manual_survey", "cad_import", "floorplan_import", "lidar_scan"}
+    measured = source in {
+        "manual_survey",
+        "cad_import",
+        "floorplan_import",
+        "lidar_scan",
+    }
     if not measured:
         blockers.append("architecture_source_not_measured")
     if not source_ref:
@@ -257,6 +278,14 @@ def iter_layout_modules(layout: dict[str, Any] | None):
             yield aisle, module
 
 
+def _spatial_module_id(aisle: dict[str, Any], module: dict[str, Any]) -> str:
+    module_id = _text(module.get("module_id"))
+    if "::" in module_id:
+        return module_id
+    aisle_id = _text(aisle.get("aisle_id"))
+    return f"{aisle_id}::{module_id}" if aisle_id else module_id
+
+
 def layout_architecture_report(
     layout: dict[str, Any] | None,
     store_dna: dict[str, Any] | None,
@@ -291,19 +320,30 @@ def layout_architecture_report(
             continue
         rect = _element_rect(element, egress_clearance=True)
         if rect is not None:
-            obstacles.append((element_type, _text(element.get("element_id")), rect))
+            obstacles.append(
+                (element_type, _text(element.get("element_id")), rect)
+            )
 
     coordinate_count = 0
     violations: list[dict[str, Any]] = []
-    for _, module in modules:
-        module_id = _text(module.get("module_id"))
+    for aisle, module in modules:
+        module_id = _spatial_module_id(aisle, module)
         rect = _module_rect(module)
         if rect is None:
-            violations.append({"type": "module_geometry_missing", "module_id": module_id})
+            violations.append(
+                {"type": "module_geometry_missing", "module_id": module_id}
+            )
             continue
         coordinate_count += 1
-        if rect[0] < 0 or rect[1] < 0 or rect[2] > floor[2] or rect[3] > floor[3]:
-            violations.append({"type": "module_outside_floorplate", "module_id": module_id})
+        if (
+            rect[0] < 0
+            or rect[1] < 0
+            or rect[2] > floor[2]
+            or rect[3] > floor[3]
+        ):
+            violations.append(
+                {"type": "module_outside_floorplate", "module_id": module_id}
+            )
         for element_type, element_id, obstacle in obstacles:
             if _intersects(rect, obstacle):
                 violations.append(
@@ -350,7 +390,9 @@ def _module_center(module: dict[str, Any]) -> tuple[float, float] | None:
     return ((rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0)
 
 
-def _walk_obstacles(architecture: dict[str, Any]) -> list[tuple[float, float, float, float]]:
+def _walk_obstacles(
+    architecture: dict[str, Any],
+) -> list[tuple[float, float, float, float]]:
     obstacles = []
     for element in architecture.get("elements") or []:
         if _text(element.get("element_type")).lower() not in WALK_BLOCKING_TYPES:
@@ -365,7 +407,11 @@ def _distance_field(
     architecture: dict[str, Any],
     *,
     resolution_m: float,
-) -> tuple[dict[tuple[int, int], float], tuple[int, int]] | None:
+) -> tuple[
+    dict[tuple[int, int], float],
+    tuple[int, int],
+    dict[tuple[int, int], tuple[int, int]],
+] | None:
     width = _num(architecture.get("floor_width_m"))
     depth = _num(architecture.get("floor_depth_m"))
     start = _picker_entry(architecture)
@@ -392,6 +438,7 @@ def _distance_field(
         return None
 
     distances = {start_cell: 0.0}
+    parents: dict[tuple[int, int], tuple[int, int]] = {}
     queue: deque[tuple[int, int]] = deque([start_cell])
     while queue:
         cell = queue.popleft()
@@ -403,12 +450,77 @@ def _distance_field(
             if nxt in distances or blocked(nxt):
                 continue
             distances[nxt] = next_distance
+            parents[nxt] = cell
             queue.append(nxt)
-    return distances, start_cell
+    return distances, start_cell, parents
+
+
+def _grid_path(
+    start: tuple[int, int],
+    target: tuple[int, int],
+    parents: dict[tuple[int, int], tuple[int, int]],
+) -> list[tuple[int, int]]:
+    if target == start:
+        return [start]
+    if target not in parents:
+        return []
+    path = [target]
+    cursor = target
+    while cursor != start:
+        cursor = parents.get(cursor)
+        if cursor is None:
+            return []
+        path.append(cursor)
+    path.reverse()
+    return path
+
+
+def _simplify_path(path: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    if len(path) <= 2:
+        return path
+    simplified = [path[0]]
+    previous_direction = (
+        path[1][0] - path[0][0],
+        path[1][1] - path[0][1],
+    )
+    for index in range(1, len(path) - 1):
+        next_direction = (
+            path[index + 1][0] - path[index][0],
+            path[index + 1][1] - path[index][1],
+        )
+        if next_direction != previous_direction:
+            simplified.append(path[index])
+            previous_direction = next_direction
+    simplified.append(path[-1])
+    if len(simplified) <= MAX_ROUTE_PATH_POINTS:
+        return simplified
+    last_index = len(simplified) - 1
+    denominator = MAX_ROUTE_PATH_POINTS - 1
+    sampled = [
+        simplified[min(last_index, round(index * last_index / denominator))]
+        for index in range(MAX_ROUTE_PATH_POINTS)
+    ]
+    return list(dict.fromkeys(sampled))
+
+
+def _path_points_m(
+    path: list[tuple[int, int]],
+    resolution_m: float,
+) -> list[list[float]]:
+    return [
+        [round(cell[0] * resolution_m, 3), round(cell[1] * resolution_m, 3)]
+        for cell in _simplify_path(path)
+    ]
 
 
 def _sales(row: dict[str, Any]) -> float:
-    for field in ("sales_qty_7d", "sales_7d", "qty_7d", "weekly_sales", "sales_qty"):
+    for field in (
+        "sales_qty_7d",
+        "sales_7d",
+        "qty_7d",
+        "weekly_sales",
+        "sales_qty",
+    ):
         value = _num(row.get(field), -1.0)
         if value >= 0:
             return value
@@ -435,29 +547,40 @@ def architecture_route_objective(
     *,
     resolution_m: float = DEFAULT_GRID_RESOLUTION_M,
 ) -> dict[str, Any]:
-    """Return obstacle-aware, sales-weighted walk distance when geometry permits.
+    """Return obstacle-aware walk cost plus bounded route explainability.
 
-    This is a single-origin travel objective, not yet a multi-order picker-tour
-    simulation. It is nevertheless physical: distances are measured in metres on
-    the approved floorplate while walls/columns/no-go/technical areas are blocked.
+    This remains a single-origin travel objective, not a multi-order picker-tour
+    simulation. Distances are real metres on the measured floorplate. The output
+    also identifies the highest sales-weighted route-cost fixtures and includes
+    compact shortest-path polylines for at most ``MAX_ROUTE_HOTSPOTS`` modules.
     """
     truth = architecture_truth_report(store_dna)
     layout_report = layout_architecture_report(layout, store_dna)
     if not truth["present"]:
-        return {"available": False, "basis": "legacy_rank_v1", "reason": "architecture_missing"}
+        return {
+            "available": False,
+            "basis": "legacy_rank_v1",
+            "reason": "architecture_missing",
+        }
     if not truth["valid"] or not layout_report["valid"]:
         return {
             "available": False,
             "basis": "legacy_rank_v1",
             "reason": "architecture_truth_invalid",
-            "blockers": list(truth.get("blockers") or []) + list(layout_report.get("blockers") or []),
+            "blockers": list(truth.get("blockers") or [])
+            + list(layout_report.get("blockers") or []),
         }
 
     architecture = (store_dna or {})["architecture"]
     field = _distance_field(architecture, resolution_m=resolution_m)
     if field is None:
-        return {"available": False, "basis": "legacy_rank_v1", "reason": "picker_route_origin_unreachable"}
-    distances, _ = field
+        return {
+            "available": False,
+            "basis": "legacy_rank_v1",
+            "reason": "picker_route_origin_unreachable",
+        }
+    distances, start_cell, parents = field
+    picker_entry = _picker_entry(architecture)
     width = _num(architecture.get("floor_width_m"))
     depth = _num(architecture.get("floor_depth_m"))
     cols = max(1, int(width / resolution_m) + 1)
@@ -471,25 +594,36 @@ def architecture_route_objective(
 
     source_sales = {_sku(row): _sales(row) for row in source_products}
     layout_modules = {
-        _text(module.get("module_id")): module for _, module in iter_layout_modules(layout)
+        _spatial_module_id(aisle, module): module
+        for aisle, module in iter_layout_modules(layout)
     }
     distance_cache: dict[str, float | None] = {}
+    cell_cache: dict[str, tuple[int, int] | None] = {}
+    module_sales: Counter[str] = Counter()
+    module_products: Counter[str] = Counter()
     unreachable: set[str] = set()
     weighted_cost = 0.0
     placed_count = 0
 
-    for _, placed_module, _, product in _iter_placed(result.get("planogram")):
-        module_id = _text(placed_module.get("module_id"))
+    for placed_aisle, placed_module, _, product in _iter_placed(
+        result.get("planogram")
+    ):
+        module_id = _spatial_module_id(placed_aisle, placed_module)
         module = layout_modules.get(module_id, placed_module)
         if module_id not in distance_cache:
             center = _module_center(module)
-            distance_cache[module_id] = None if center is None else distances.get(to_cell(center))
+            cell = None if center is None else to_cell(center)
+            cell_cache[module_id] = cell
+            distance_cache[module_id] = None if cell is None else distances.get(cell)
         distance = distance_cache[module_id]
         placed_count += 1
+        sales_weight = max(1.0, source_sales.get(_sku(product), _sales(product)))
+        module_sales[module_id] += sales_weight
+        module_products[module_id] += 1
         if distance is None:
             unreachable.add(module_id)
             continue
-        weighted_cost += distance * max(1.0, source_sales.get(_sku(product), _sales(product)))
+        weighted_cost += distance * sales_weight
 
     if unreachable:
         return {
@@ -499,6 +633,36 @@ def architecture_route_objective(
             "unreachable_module_ids": sorted(unreachable),
         }
 
+    module_rows = []
+    for module_id in sorted(distance_cache):
+        distance = float(distance_cache[module_id] or 0.0)
+        sales_weight = float(module_sales[module_id])
+        module_rows.append(
+            {
+                "module_id": module_id,
+                "distance_m": round(distance, 3),
+                "sales_weight": round(sales_weight, 3),
+                "placed_product_count": int(module_products[module_id]),
+                "weighted_cost": round(distance * sales_weight, 3),
+            }
+        )
+    module_rows.sort(key=lambda row: (-row["weighted_cost"], row["module_id"]))
+
+    hotspots = []
+    for row in module_rows[:MAX_ROUTE_HOTSPOTS]:
+        target = cell_cache.get(row["module_id"])
+        path = [] if target is None else _grid_path(start_cell, target, parents)
+        hotspots.append(
+            {
+                **row,
+                "path_m": _path_points_m(path, resolution_m),
+            }
+        )
+
+    module_distances = {
+        row["module_id"]: row["distance_m"]
+        for row in sorted(module_rows, key=lambda item: item["module_id"])
+    }
     return {
         "available": True,
         "basis": ROUTE_OBJECTIVE_VERSION,
@@ -507,5 +671,13 @@ def architecture_route_objective(
         "grid_resolution_m": resolution_m,
         "placed_product_count": placed_count,
         "module_distance_count": len(distance_cache),
+        "module_distances_m": module_distances,
+        "route_hotspots": hotspots,
+        "route_hotspot_limit": MAX_ROUTE_HOTSPOTS,
+        "picker_entry_m": (
+            [round(picker_entry[0], 3), round(picker_entry[1], 3)]
+            if picker_entry is not None
+            else None
+        ),
         "architecture_fingerprint": truth["fingerprint"],
     }

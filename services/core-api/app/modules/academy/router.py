@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import require_permission
+from app.core.localization import RTL_LOCALES, SUPPORTED_LOCALES
 from app.core.security import Principal
 from app.db.session import get_tenant_session
 from app.modules.academy.admin_router import router as admin_router
@@ -77,8 +78,6 @@ RevokeCompletion = Annotated[
     Principal, Depends(require_permission("action:academy:revokeCompletion"))
 ]
 
-SUPPORTED_LOCALES = ("tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR")
-
 
 def _request_id(request: Request) -> str:
     return str(getattr(request.state, "request_id", "academy-untracked"))
@@ -93,7 +92,7 @@ async def academy_home(session: TenantSession, principal: Viewer) -> dict[str, o
         "subject": principal.subject,
         "locales": list(SUPPORTED_LOCALES),
         "direction_by_locale": {
-            locale: ("rtl" if locale == "ar" else "ltr")
+            locale: ("rtl" if locale in RTL_LOCALES else "ltr")
             for locale in SUPPORTED_LOCALES
         },
         "enrollments": await list_enrollments(session, principal),

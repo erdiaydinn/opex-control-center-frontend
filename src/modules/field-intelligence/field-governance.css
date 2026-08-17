@@ -1,0 +1,151 @@
+.eay-field-governance-shell {
+  display: grid;
+  gap: 20px;
+  padding: clamp(16px, 2.5vw, 32px);
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.eay-field-governance-header,
+.eay-field-governance-card {
+  border: 1px solid var(--eay-border, rgba(127, 127, 127, 0.28));
+  border-radius: 18px;
+  background: var(--eay-surface, rgba(255, 255, 255, 0.04));
+}
+
+.eay-field-governance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 22px;
+}
+
+.eay-field-governance-header h1,
+.eay-field-governance-card h2 {
+  margin: 4px 0 8px;
+}
+
+.eay-field-governance-eyebrow,
+.eay-field-governance-card h2,
+.eay-field-governance-header-actions,
+.eay-field-governance-card button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eay-field-governance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.eay-field-governance-card {
+  padding: 20px;
+}
+
+.eay-field-governance-card form,
+.eay-field-governance-card label {
+  display: grid;
+  gap: 8px;
+}
+
+.eay-field-governance-card form {
+  gap: 14px;
+}
+
+.eay-field-governance-card input,
+.eay-field-governance-card select,
+.eay-field-governance-card textarea,
+.eay-field-governance-card button,
+.eay-field-governance-header button {
+  min-height: 48px;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.eay-field-governance-card input,
+.eay-field-governance-card select,
+.eay-field-governance-card textarea {
+  width: 100%;
+  padding: 10px 12px;
+}
+
+.eay-field-governance-card button,
+.eay-field-governance-header button {
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.eay-field-governance-card button:disabled,
+.eay-field-governance-header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.eay-field-governance-card :focus-visible,
+.eay-field-governance-header :focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}
+
+.eay-field-governance-success,
+.eay-field-governance-boundary {
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+
+.eay-field-governance-promotions {
+  display: grid;
+  gap: 10px;
+}
+
+.eay-field-governance-promotions article {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(160px, 2fr) minmax(120px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--eay-border, rgba(127, 127, 127, 0.28));
+  border-radius: 10px;
+}
+
+[dir="rtl"] .eay-field-governance-header,
+[dir="rtl"] .eay-field-governance-card {
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .eay-field-governance-header {
+    flex-direction: column;
+  }
+
+  .eay-field-governance-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .eay-field-governance-promotions article {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eay-field-governance-shell *,
+  .eay-field-governance-shell *::before,
+  .eay-field-governance-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .eay-field-governance-header,
+  .eay-field-governance-card,
+  .eay-field-governance-promotions article {
+    border: 1px solid CanvasText;
+  }
+}

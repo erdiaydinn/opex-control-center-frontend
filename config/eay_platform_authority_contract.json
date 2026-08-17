@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "production_ready": false,
+  "principles": {
+    "browser_is_never_authority": true,
+    "module_may_not_reconstruct_tenant_authority": true,
+    "module_may_not_reconstruct_role_permission_scope": true,
+    "identity_authentication_is_not_tenant_authorization": true,
+    "notification_transport_is_shared": true,
+    "audit_sink_is_shared": true,
+    "locale_contract_is_shared": true
+  },
+  "authorities": {
+    "authenticated_identity": {
+      "entrypoints": [
+        "services/identity-gateway",
+        "services/core-api/app/core/security.py"
+      ],
+      "rule": "External identity may authenticate a subject, but final tenant membership, roles and permissions are resolved by Platform Core."
+    },
+    "tenant_membership_roles_permissions": {
+      "canonical": "services/core-api/app/core/security.py:get_current_principal",
+      "database_resolution": "services/core-api/app/core/resources.py:resolve_principal_access",
+      "rule": "tenant_id, membership status, roles and permissions used by product routes come only from the verified principal plus Core DB authority."
+    },
+    "permission_scope": {
+      "canonical": "services/core-api/app/core/authorization.py:resolve_permission_scope",
+      "rule": "Modules may map canonical scope dimensions to domain names but may not inspect raw permission assignments or invent unrestricted semantics."
+    },
+    "locale": {
+      "canonical": "services/core-api/app/core/localization.py",
+      "supported": ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"],
+      "rtl": ["ar"],
+      "rule": "Modules consume the shared locale set and direction contract instead of defining a competing language matrix."
+    },
+    "notification_transport": {
+      "canonical": "services/platform-alerts/app/main.py",
+      "rule": "Product modules create governed notification intent; SMTP/push/provider transport is shared infrastructure and not embedded per module."
+    },
+    "audit": {
+      "canonical": [
+        "services/core-api/app/core/audit.py",
+        "services/core-api/app/core/resources.py:write_audit_event"
+      ],
+      "rule": "HTTP authority audit binds verified tenant/actor/request context in Core. Modules may emit domain events but must not create a competing platform audit sink."
+    }
+  },
+  "browser_forbidden_authority_inputs": [
+    "tenant_id",
+    "tenant",
+    "roles",
+    "permissions",
+    "permission_scope",
+    "authorization_fingerprint"
+  ],
+  "module_transport_forbidden_imports": [
+    "smtplib",
+    "sendgrid",
+    "firebase_admin.messaging"
+  ],
+  "truth_boundary": {
+    "repository_contract_is_production_identity_evidence": false,
+    "corporate_oidc_is_still_external": true,
+    "real_notification_delivery_is_still_external": true,
+    "production_activation_permitted": false
+  }
+}

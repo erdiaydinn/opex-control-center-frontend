@@ -1,0 +1,83 @@
+name: EAY Portfolio Category Leadership Gate
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+    paths:
+      - "config/eay_portfolio_category_leadership.json"
+      - "config/eay_category_leadership_gates.json"
+      - "scripts/validate_portfolio_category_leadership.py"
+      - "scripts/score_portfolio_readiness.py"
+      - "backend/tests/test_portfolio_category_leadership.py"
+      - "docs/EAY_PORTFOLIO_CATEGORY_LEADERSHIP_GATE.md"
+      - ".github/workflows/eay-portfolio-category-leadership-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-portfolio-category-leadership-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portfolio-gate:
+    name: P0 P1 P2 portfolio truth and modularity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install test dependency
+        run: python -m pip install "pytest>=8,<9"
+      - name: Compile portfolio validators
+        run: python -m py_compile scripts/validate_portfolio_category_leadership.py scripts/score_portfolio_readiness.py
+      - name: Validate portfolio P0 P1 P2 contract
+        run: python scripts/validate_portfolio_category_leadership.py
+      - name: Calculate repository and production readiness separately
+        run: python scripts/score_portfolio_readiness.py > /tmp/eay-portfolio-readiness.json
+      - name: Fail if production score exceeds repository score
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/eay-portfolio-readiness.json').read_text())
+          for item in result['modules']:
+              assert item['production_readiness_percent'] <= item['repository_readiness_percent'], item
+              if item['p0_external_blocked']:
+                  assert item['production_ready_claim_permitted'] is False, item
+          assert result['portfolio']['production_readiness_percent'] <= result['portfolio']['repository_readiness_percent']
+          print('Repository/production readiness separation: PASS')
+          PY
+      - name: Run adversarial portfolio gate tests
+        run: python -m pytest -q backend/tests/test_portfolio_category_leadership.py
+      - name: Publish machine-readable gate summary
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import importlib.util
+          import json
+          from pathlib import Path
+
+          script = Path("scripts/validate_portfolio_category_leadership.py")
+          spec = importlib.util.spec_from_file_location("portfolio_gate", script)
+          module = importlib.util.module_from_spec(spec)
+          assert spec and spec.loader
+          spec.loader.exec_module(module)
+          manifest = module.validate_portfolio(Path.cwd())
+          summary = manifest["_validation_summary"]
+          readiness = json.loads(Path('/tmp/eay-portfolio-readiness.json').read_text())
+          print("## EAY Portfolio Category Leadership Gate")
+          print()
+          print(f"- Modules: {summary['modules']}")
+          print(f"- Commercial modules: {summary['commercial_modules']}")
+          print(f"- P0/P1/P2 gates: {summary['gates']}")
+          print(f"- External evidence gates still unresolved: {summary['unresolved_external_evidence_gates']}")
+          print(f"- Repository readiness: {readiness['portfolio']['repository_readiness_percent']}%")
+          print(f"- Production readiness: {readiness['portfolio']['production_readiness_percent']}%")
+          print("- Category parity claim: BLOCKED")
+          print("- Category leadership claim: BLOCKED")
+          print("- Production-ready claim: BLOCKED")
+          PY

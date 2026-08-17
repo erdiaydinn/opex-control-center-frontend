@@ -1,0 +1,171 @@
+name: EAY Workflow Policy Activation Gate
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+    paths:
+      - "backend/app/platform/workflow_policy/**"
+      - "backend/migrations/009_workflow_policy_engine.sql"
+      - "backend/migrations/010_workflow_policy_activation_evidence.sql"
+      - "backend/tests/test_workflow_policy_*.py"
+      - "docs/EAY_CONFIGURABLE_WORKFLOW_POLICY_ENGINE.md"
+      - ".github/workflows/eay-workflow-policy-activation-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-workflow-policy-activation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  activation-evidence:
+    name: Simulation-gated activation, RLS and DR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_workflow_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_workflow_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Apply workflow engine foundation
+        run: psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 -f backend/migrations/009_workflow_policy_engine.sql
+
+      - name: Seed pre-gate effective baselines
+        run: |
+          psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE workflow_a LOGIN PASSWORD 'runtime_a';
+          CREATE ROLE workflow_b LOGIN PASSWORD 'runtime_b';
+          INSERT INTO workflow_policy_tenant_bindings(role_name, tenant_id)
+          VALUES ('workflow_a','tenant-a'),('workflow_b','tenant-b');
+
+          INSERT INTO workflow_policy_definitions(
+            tenant_id,workflow_id,version,source_module,event_type,scope_json,effective_from,
+            content_fingerprint,created_by,created_at
+          ) VALUES
+            ('tenant-a','pressure-policy',1,'workforce','depot_pressure_changed','{"country":"TR"}',now()-interval '1 minute',repeat('a',64),'author-a',now()),
+            ('tenant-b','pressure-policy',1,'workforce','depot_pressure_changed','{"country":"TR"}',now()-interval '1 minute',repeat('b',64),'author-b',now());
+
+          INSERT INTO workflow_policy_governance_events(
+            tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at
+          ) VALUES
+            ('tenant-a','10000000-0000-0000-0000-000000000001','pressure-policy',1,'draft','approved','approver-a',now()+interval '1 second'),
+            ('tenant-b','20000000-0000-0000-0000-000000000001','pressure-policy',1,'draft','approved','approver-b',now()+interval '1 second');
+          INSERT INTO workflow_policy_governance_events(
+            tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at
+          ) VALUES
+            ('tenant-a','10000000-0000-0000-0000-000000000002','pressure-policy',1,'approved','effective','releaser-a',now()+interval '2 seconds'),
+            ('tenant-b','20000000-0000-0000-0000-000000000002','pressure-policy',1,'approved','effective','releaser-b',now()+interval '2 seconds');
+          SQL
+
+      - name: Apply simulation activation gate
+        run: psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 -f backend/migrations/010_workflow_policy_activation_evidence.sql
+
+      - name: Create candidate versions and approvals
+        run: |
+          psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT SELECT, INSERT, UPDATE ON workflow_policy_definitions, workflow_policy_governance_events, workflow_policy_simulation_reviews TO workflow_a, workflow_b;
+          GRANT SELECT ON workflow_policy_current_status TO workflow_a, workflow_b;
+
+          INSERT INTO workflow_policy_definitions(
+            tenant_id,workflow_id,version,supersedes_version,source_module,event_type,scope_json,effective_from,
+            content_fingerprint,created_by,created_at
+          ) VALUES
+            ('tenant-a','pressure-policy',2,1,'workforce','depot_pressure_changed','{"country":"TR"}',now()-interval '1 minute',repeat('c',64),'author-a',now()),
+            ('tenant-b','pressure-policy',2,1,'workforce','depot_pressure_changed','{"country":"TR"}',now()-interval '1 minute',repeat('d',64),'author-b',now());
+
+          INSERT INTO workflow_policy_governance_events(
+            tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at
+          ) VALUES
+            ('tenant-a','10000000-0000-0000-0000-000000000003','pressure-policy',2,'draft','approved','approver-a',now()+interval '1 second'),
+            ('tenant-b','20000000-0000-0000-0000-000000000003','pressure-policy',2,'draft','approved','approver-b',now()+interval '1 second');
+          SQL
+
+      - name: Prove activation fails closed without reviewed simulation
+        run: |
+          set +e
+          psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_governance_events(tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at) VALUES ('tenant-a','10000000-0000-0000-0000-000000000004','pressure-policy',2,'approved','effective','releaser-a',now()+interval '3 seconds');"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          psql -h localhost -U postgres -d eay_workflow_ci -Atc "SELECT status FROM workflow_policy_current_status WHERE tenant_id='tenant-a' AND workflow_id='pressure-policy' AND workflow_version=2;" | grep -qx 'approved'
+
+      - name: Prove high-risk review cannot omit acknowledgment
+        run: |
+          set +e
+          psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_simulation_reviews(tenant_id,simulation_review_id,workflow_id,baseline_version,candidate_version,impact_fingerprint,simulated_event_count,changed_event_count,high_risk_changed_events,high_risk_acknowledged,reviewed_by,reviewed_at) VALUES ('tenant-a','10000000-0000-0000-0000-000000000005','pressure-policy',1,2,repeat('e',64),100,8,2,false,'reviewer-a',now()+interval '2 seconds');"
+          status=$?
+          set -e
+          test "$status" -ne 0
+
+      - name: Store reviewed simulations for both tenants
+        run: |
+          psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO workflow_policy_simulation_reviews(
+            tenant_id,simulation_review_id,workflow_id,baseline_version,candidate_version,impact_fingerprint,
+            simulated_event_count,changed_event_count,high_risk_changed_events,high_risk_acknowledged,reviewed_by,reviewed_at
+          ) VALUES
+            ('tenant-a','10000000-0000-0000-0000-000000000006','pressure-policy',1,2,repeat('f',64),100,8,2,true,'reviewer-a',now()+interval '2 seconds'),
+            ('tenant-b','20000000-0000-0000-0000-000000000006','pressure-policy',1,2,repeat('1',64),100,0,0,false,'reviewer-b',now()+interval '2 seconds');
+          SQL
+
+      - name: Prove simulation review tenant isolation and append-only behavior
+        run: |
+          PGPASSWORD=runtime_a psql -h localhost -U workflow_a -d eay_workflow_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM workflow_policy_simulation_reviews;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U workflow_b -d eay_workflow_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM workflow_policy_simulation_reviews;" | grep -qx 'tenant-b'
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U workflow_a -d eay_workflow_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_simulation_reviews(tenant_id,simulation_review_id,workflow_id,baseline_version,candidate_version,impact_fingerprint,simulated_event_count,changed_event_count,high_risk_changed_events,high_risk_acknowledged,reviewed_by,reviewed_at) VALUES ('tenant-b','10000000-0000-0000-0000-000000000007','pressure-policy',1,2,repeat('2',64),10,0,0,false,'attacker',now()+interval '2 seconds');"
+          cross_tenant_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U workflow_a -d eay_workflow_ci -v ON_ERROR_STOP=1 -c "UPDATE workflow_policy_simulation_reviews SET reviewed_by='mutated' WHERE tenant_id='tenant-a';"
+          mutation_status=$?
+          set -e
+          test "$cross_tenant_status" -ne 0
+          test "$mutation_status" -ne 0
+
+      - name: Prove reviewed simulation permits effective activation
+        run: |
+          psql -h localhost -U postgres -d eay_workflow_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO workflow_policy_governance_events(
+            tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at
+          ) VALUES
+            ('tenant-a','10000000-0000-0000-0000-000000000008','pressure-policy',2,'approved','effective','releaser-a',now()+interval '3 seconds'),
+            ('tenant-b','20000000-0000-0000-0000-000000000008','pressure-policy',2,'approved','effective','releaser-b',now()+interval '3 seconds');
+          SQL
+          psql -h localhost -U postgres -d eay_workflow_ci -Atc "SELECT status FROM workflow_policy_current_status WHERE tenant_id='tenant-a' AND workflow_id='pressure-policy' AND workflow_version=2;" | grep -qx 'effective'
+          psql -h localhost -U postgres -d eay_workflow_ci -Atc "SELECT status FROM workflow_policy_current_status WHERE tenant_id='tenant-b' AND workflow_id='pressure-policy' AND workflow_version=2;" | grep -qx 'effective'
+
+      - name: Database restart durability
+        run: |
+          docker restart ${{ job.services.postgres.id }}
+          for attempt in {1..30}; do pg_isready -h localhost -U postgres -d eay_workflow_ci && break; sleep 1; done
+          psql -h localhost -U postgres -d eay_workflow_ci -Atc "SELECT count(*) FROM workflow_policy_simulation_reviews;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_workflow_ci -Atc "SELECT count(*) FROM workflow_policy_current_status WHERE workflow_version=2 AND status='effective';" | grep -qx '2'
+
+      - name: Backup and isolated restore rehearsal
+        run: |
+          pg_dump -h localhost -U postgres -Fc -f /tmp/eay_workflow_ci.dump eay_workflow_ci
+          dropdb -h localhost -U postgres --if-exists eay_workflow_restore_ci
+          createdb -h localhost -U postgres eay_workflow_restore_ci
+          pg_restore -h localhost -U postgres -d eay_workflow_restore_ci /tmp/eay_workflow_ci.dump
+          psql -h localhost -U postgres -d eay_workflow_restore_ci -Atc "SELECT count(*) FROM workflow_policy_simulation_reviews;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_workflow_restore_ci -Atc "SELECT count(*) FROM workflow_policy_current_status WHERE workflow_version=2 AND status='effective';" | grep -qx '2'
+
+      - name: Preserve production truth boundary
+        run: |
+          ! grep -RniE 'production_ready[[:space:]]*=[[:space:]]*True|"production_ready"[[:space:]]*:[[:space:]]*true' backend/app/platform/workflow_policy docs/EAY_CONFIGURABLE_WORKFLOW_POLICY_ENGINE.md

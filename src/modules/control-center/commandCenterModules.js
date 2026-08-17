@@ -1,6 +1,16 @@
+import { translateField } from "../field-intelligence/fieldMessages.js";
+
 export const commandModules = [
   {
     id: "planogram", moduleKey: "planogram", titleKey: "modulePlanogramTitle", descriptionKey: "modulePlanogramDescription", route: "/planogram", enabled: true, health: "healthy", healthLabelKey: "ready", groupKey: "groupStoreIntelligence", shortcut: "P", icon: "layout", tone: "primary", metaKey: "modulePlanogramMeta", lastUsedKey: "opex_last_planogram",
+  },
+  {
+    id: "field-intelligence", moduleKey: "field_intelligence", titleKey: null, descriptionKey: null, route: "/field-intelligence", enabled: true, health: "governed", healthLabelKey: "governed", groupKey: "groupStoreIntelligence", shortcut: "F", icon: "cycle", tone: "emerald", metaKey: null, lastUsedKey: "eay_last_field_intelligence",
+    localize: (locale) => ({
+      title: translateField(locale, "moduleTitle"),
+      description: translateField(locale, "moduleDescription"),
+      meta: translateField(locale, "capture"),
+    }),
   },
   {
     id: "dockos", moduleKey: "dockos", titleKey: "moduleDockosTitle", descriptionKey: "moduleDockosDescription", route: "/dockos", enabled: true, health: "healthy", healthLabelKey: "ready", groupKey: "groupInboundControl", shortcut: "D", icon: "dock", tone: "cyan", metaKey: "moduleDockosMeta", lastUsedKey: "opex_last_dockos",

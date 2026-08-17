@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_transactional_audit_event
 from app.core.security import Principal
 from app.modules.academy.repository_admin import (
     academy_admin_summary,
@@ -145,23 +146,13 @@ async def record_platform_audit(
     resource_id: str | None,
     data: dict[str, object] | None = None,
 ) -> None:
-    await session.execute(
-        text("""
-        INSERT INTO audit_events (
-            tenant_id, actor_subject, action, resource_type,
-            resource_id, decision, request_id, data
-        ) VALUES (
-            :tenant_id, :actor_subject, :action, :resource_type,
-            :resource_id, 'allowed', :request_id, CAST(:data AS jsonb)
-        )
-    """),
-        {
-            "tenant_id": principal.tenant_id,
-            "actor_subject": principal.subject,
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "request_id": request_id,
-            "data": json_text(data or {}),
-        },
+    await write_transactional_audit_event(
+        session,
+        tenant_id=principal.tenant_id,
+        actor_subject=principal.subject,
+        request_id=request_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        data=data,
     )

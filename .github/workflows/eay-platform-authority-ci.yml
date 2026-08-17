@@ -1,0 +1,85 @@
+name: EAY Platform Core Authority
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+    paths:
+      - "services/core-api/app/core/authorization.py"
+      - "services/core-api/app/core/audit.py"
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/core/security.py"
+      - "services/core-api/app/core/resources.py"
+      - "services/core-api/app/modules/**"
+      - "services/platform-alerts/**"
+      - "config/eay_platform_authority_contract.json"
+      - "scripts/validate_platform_authority.py"
+      - "services/core-api/tests/test_platform_authority_*.py"
+      - "services/core-api/tests/test_academy_contracts.py"
+      - "services/core-api/tests/test_budget_domain.py"
+      - ".github/workflows/eay-platform-authority-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-platform-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authority-contract:
+    name: Principal tenant scope locale notification and audit authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install Core API with test dependencies
+        run: python -m pip install -e './services/core-api[dev]'
+      - name: Compile authority boundary
+        run: |
+          python -m py_compile \
+            services/core-api/app/core/authorization.py \
+            services/core-api/app/core/audit.py \
+            services/core-api/app/core/localization.py \
+            services/core-api/app/modules/field_intelligence/authorization.py \
+            services/core-api/app/modules/field_intelligence/schemas.py \
+            services/core-api/app/modules/academy/repository.py \
+            services/core-api/app/modules/academy/router.py \
+            services/core-api/app/modules/academy/schemas.py \
+            services/core-api/app/modules/budget/permissions.py \
+            scripts/validate_platform_authority.py
+      - name: Validate single authority ownership
+        run: python scripts/validate_platform_authority.py
+      - name: Run Core authority and adversarial validator tests
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_platform_authority_contract.py \
+            services/core-api/tests/test_platform_authority_validator.py
+      - name: Run Academy and Budget authority regression contracts
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_academy_contracts.py \
+            services/core-api/tests/test_budget_domain.py
+      - name: Preserve production truth boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          contract = json.loads(Path('config/eay_platform_authority_contract.json').read_text())
+          assert contract['production_ready'] is False
+          truth = contract['truth_boundary']
+          assert truth['repository_contract_is_production_identity_evidence'] is False
+          assert truth['corporate_oidc_is_still_external'] is True
+          assert truth['real_notification_delivery_is_still_external'] is True
+          assert truth['production_activation_permitted'] is False
+          print('Platform authority truth boundary preserved')
+          PY

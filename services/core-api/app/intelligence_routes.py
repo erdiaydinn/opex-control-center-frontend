@@ -2,19 +2,53 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
 from app.core.ai_tool_authorization import SCOPE_PERMISSION_KEYS, TOOL_REQUIRED_SCOPES
 from app.core.authorization import require_control_plane_admin, require_permission
 from app.core.security import Principal
+from app.modules.field_intelligence.authorization import require_field_permission
+from app.modules.field_intelligence.mobile_offline import (
+    FieldOfflineSyncError,
+    set_template_evidence_policy,
+    sync_offline_batch,
+)
+from app.modules.field_intelligence.repository import (
+    FieldRepositoryError,
+    create_mission,
+    create_template,
+    field_analytics,
+    get_mission_detail,
+    list_evidence,
+    list_locations,
+    list_missions,
+    list_templates,
+    queue_notification_intents,
+    review_evidence,
+    set_mission_status,
+    submit_evidence,
+    upsert_location,
+)
+from app.modules.field_intelligence.schemas import (
+    EvidencePolicy,
+    EvidenceReview,
+    EvidenceSubmit,
+    LocationUpsert,
+    MissionCreate,
+    NotificationIntentCreate,
+    OfflineSyncBatch,
+    TemplateCreate,
+)
 
 router = APIRouter(prefix="/v1", tags=["intelligence"])
 
 jarvis_view_guard = require_permission("module:jarvis:view")
 insight_view_guard = require_permission("module:insight:view")
+field_view_guard = require_permission("module:field_intelligence:view")
 JarvisViewer = Annotated[Principal, Depends(jarvis_view_guard)]
 InsightViewer = Annotated[Principal, Depends(insight_view_guard)]
+FieldViewer = Annotated[Principal, Depends(field_view_guard)]
 ControlPlaneAdmin = Annotated[Principal, Depends(require_control_plane_admin)]
 
 PLANOGRAM_REQUIRED_EVIDENCE = (
@@ -273,3 +307,266 @@ async def get_insight_metrics(principal: InsightViewer) -> dict[str, Any]:
 @router.get("/platform/security-guardian/workspace")
 async def get_security_guardian_workspace(principal: ControlPlaneAdmin) -> dict[str, Any]:
     return build_security_guardian_workspace(principal)
+
+
+def _field_bad_request(exc: ValueError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+def _field_not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Field resource not found in authorized scope",
+    )
+
+
+@router.get("/field/bootstrap")
+async def field_bootstrap(principal: FieldViewer) -> dict[str, object]:
+    scope = require_field_permission(principal, "module:field_intelligence:view")
+    tenant_id = str(principal.tenant_id)
+    locations = await list_locations(tenant_id, scope)
+    templates = await list_templates(tenant_id)
+    missions = await list_missions(tenant_id, scope)
+    return {
+        "tenant_id": tenant_id,
+        "scope": scope.model_dump(mode="json"),
+        "locations": locations,
+        "templates": templates,
+        "missions": missions,
+    }
+
+
+@router.get("/field/missions")
+async def field_missions(
+    principal: FieldViewer,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "module:field_intelligence:view")
+    items = await list_missions(str(principal.tenant_id), scope, limit=limit)
+    return {"count": len(items), "items": items}
+
+
+@router.get("/field/missions/{mission_id}")
+async def field_mission_detail(
+    mission_id: str,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "module:field_intelligence:view")
+    item = await get_mission_detail(str(principal.tenant_id), scope, mission_id)
+    if item is None:
+        raise _field_not_found()
+    return item
+
+
+@router.post("/field/missions", status_code=status.HTTP_201_CREATED)
+async def post_field_mission(payload: MissionCreate, principal: FieldViewer) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:createMission")
+    if payload.activate:
+        require_field_permission(principal, "action:field_intelligence:activateMission")
+    try:
+        return await create_mission(str(principal.tenant_id), principal.subject, payload, scope)
+    except FieldRepositoryError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.post("/field/missions/{mission_id}/activate")
+async def activate_field_mission(
+    mission_id: str,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:activateMission")
+    try:
+        return await set_mission_status(
+            str(principal.tenant_id), scope, mission_id, transition="activate"
+        )
+    except FieldRepositoryError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.post("/field/missions/{mission_id}/cancel")
+async def cancel_field_mission(
+    mission_id: str,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:cancelMission")
+    try:
+        return await set_mission_status(
+            str(principal.tenant_id), scope, mission_id, transition="cancel"
+        )
+    except FieldRepositoryError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.post(
+    "/field/missions/{mission_id}/targets/{location_id}/evidence",
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_field_evidence(
+    mission_id: str,
+    location_id: str,
+    payload: EvidenceSubmit,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:submitEvidence")
+    try:
+        return await submit_evidence(
+            str(principal.tenant_id),
+            principal.subject,
+            scope,
+            mission_id,
+            location_id,
+            payload,
+        )
+    except FieldRepositoryError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.post("/field/offline-sync")
+async def post_field_offline_sync(
+    payload: OfflineSyncBatch,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:submitEvidence")
+    try:
+        # Browser device_id/capture attributes are replay metadata only. Until
+        # canonical App Attest/Play Integrity/camera attestation providers are
+        # connected, policy-restricted evidence fails closed through empty
+        # authoritative attestation sets.
+        return await sync_offline_batch(
+            tenant_id=str(principal.tenant_id),
+            actor_subject=principal.subject,
+            scope=scope,
+            batch=payload,
+        )
+    except FieldOfflineSyncError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+@router.get("/field/evidence")
+async def field_evidence(
+    principal: FieldViewer,
+    mission_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:viewEvidence")
+    items = await list_evidence(
+        str(principal.tenant_id),
+        scope,
+        mission_id=mission_id,
+        limit=limit,
+    )
+    return {"count": len(items), "items": items}
+
+
+@router.post("/field/evidence/{evidence_id}/review")
+async def post_field_evidence_review(
+    evidence_id: str,
+    payload: EvidenceReview,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:reviewEvidence")
+    try:
+        return await review_evidence(
+            str(principal.tenant_id),
+            principal.subject,
+            scope,
+            evidence_id,
+            payload,
+        )
+    except FieldRepositoryError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.post(
+    "/field/missions/{mission_id}/notification-intents",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def post_field_notification_intents(
+    mission_id: str,
+    payload: NotificationIntentCreate,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:sendReminder")
+    try:
+        return await queue_notification_intents(
+            str(principal.tenant_id),
+            principal.subject,
+            scope,
+            mission_id,
+            payload,
+        )
+    except FieldRepositoryError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.get("/field/analytics")
+async def get_field_analytics(principal: FieldViewer) -> dict[str, object]:
+    scope = require_field_permission(principal, "feature:field_intelligence:analytics")
+    return await field_analytics(str(principal.tenant_id), scope)
+
+
+@router.get("/field/locations")
+async def field_locations(principal: FieldViewer) -> dict[str, object]:
+    scope = require_field_permission(principal, "module:field_intelligence:view")
+    items = await list_locations(str(principal.tenant_id), scope)
+    return {"count": len(items), "items": items}
+
+
+@router.put("/field/locations/{location_id}")
+async def put_field_location(
+    location_id: str,
+    payload: LocationUpsert,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    scope = require_field_permission(principal, "action:field_intelligence:manageLocations")
+    if location_id != payload.location_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="location path/body identity mismatch",
+        )
+    if not scope.unrestricted:
+        allowed = location_id in scope.location_ids or (
+            payload.region is not None and payload.region in scope.regions
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="location is outside Field Intelligence scope",
+            )
+    return await upsert_location(str(principal.tenant_id), payload)
+
+
+@router.get("/field/templates")
+async def field_templates(principal: FieldViewer) -> dict[str, object]:
+    require_field_permission(principal, "module:field_intelligence:view")
+    items = await list_templates(str(principal.tenant_id))
+    return {"count": len(items), "items": items}
+
+
+@router.post("/field/templates", status_code=status.HTTP_201_CREATED)
+async def post_field_template(payload: TemplateCreate, principal: FieldViewer) -> dict[str, object]:
+    require_field_permission(principal, "action:field_intelligence:manageTemplates")
+    try:
+        return await create_template(str(principal.tenant_id), principal.subject, payload)
+    except ValueError as exc:
+        raise _field_bad_request(exc) from exc
+
+
+@router.put("/field/templates/{template_id}/{template_version}/evidence-policy")
+async def put_field_template_evidence_policy(
+    template_id: str,
+    template_version: int,
+    payload: EvidencePolicy,
+    principal: FieldViewer,
+) -> dict[str, object]:
+    require_field_permission(principal, "action:field_intelligence:manageTemplates")
+    try:
+        return await set_template_evidence_policy(
+            tenant_id=str(principal.tenant_id),
+            actor_subject=principal.subject,
+            template_id=template_id,
+            template_version=template_version,
+            policy=payload,
+        )
+    except FieldOfflineSyncError as exc:
+        raise _field_bad_request(exc) from exc

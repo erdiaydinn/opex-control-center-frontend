@@ -1,5 +1,5 @@
 {
-  "contract_version": 2,
+  "contract_version": 3,
   "brand": "EAY",
   "release_policy": {
     "repository_ready_is_not_production_ready": true,
@@ -7,7 +7,10 @@
     "critical_flow_may_not_depend_on_placeholder_or_demo_data": true,
     "frontend_may_not_duplicate_authoritative_backend_or_kpi_truth": true,
     "accessibility_is_a_platform_requirement_not_an_optional_theme": true,
-    "accessibility_preferences_must_not_require_disability_or_health_diagnosis": true
+    "accessibility_preferences_must_not_require_disability_or_health_diagnosis": true,
+    "global_product_quality_gate_required_for_all_product_surfaces": true,
+    "product_surface_may_not_claim_release_eligible_with_untracked_ui_states": true,
+    "repository_quality_evidence_is_not_field_or_production_acceptance": true
   },
   "global_dimensions": [
     "functional_correctness",
@@ -42,6 +45,10 @@
     ],
     "supported_locales": ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"],
     "rtl_locales": ["ar"],
+    "required_user_states": ["loading", "error", "empty", "offline", "retry"],
+    "localized_system_states": true,
+    "rtl_requires_document_direction": true,
+    "text_scaling_without_loss_percent": 200,
     "mobile_terminal_min_touch_target_dp": 48,
     "critical_task_success_rate_percent": 98,
     "usability_sus_target": 85,
@@ -93,7 +100,46 @@
       "no_required_parallax_or_motion_to_understand_content"
     ]
   },
+  "product_surface_standard": {
+    "required_surface_keys": [
+      "control_center",
+      "workforce",
+      "hiring",
+      "inventory",
+      "planogram",
+      "dockos",
+      "budget",
+      "academy",
+      "jarvis",
+      "insight_kpi",
+      "field_intelligence"
+    ],
+    "inherits_global_locale_set": true,
+    "arabic_rtl_required": true,
+    "wcag_2_2_aa_required": true,
+    "keyboard_only_required": true,
+    "visible_focus_required": true,
+    "screen_reader_semantics_required": true,
+    "reduced_motion_required": true,
+    "text_scaling_required": true,
+    "state_copy_must_be_localized": true,
+    "offline_behavior_must_be_explicit": true
+  },
+  "surface_ux_state_coverage": {
+    "control_center": ["loading", "error", "empty", "offline", "retry"],
+    "workforce": ["loading", "error", "empty", "offline", "retry"],
+    "hiring": ["loading", "error", "empty", "offline", "retry"],
+    "inventory": ["loading", "error", "empty", "offline", "retry"],
+    "planogram": ["loading", "error", "empty", "offline", "retry"],
+    "dockos": ["loading", "error", "empty", "offline", "retry"],
+    "budget": ["loading", "error", "empty", "offline", "retry"],
+    "academy": ["loading", "error", "empty", "offline", "retry"],
+    "jarvis": ["loading", "error", "empty", "offline", "retry"],
+    "insight_kpi": ["loading", "error", "empty", "offline", "retry"],
+    "field_intelligence": ["loading", "error", "empty", "offline", "retry"]
+  },
   "commercial_module_coverage": [
+    "field_intelligence",
     "workforce",
     "inventory",
     "planogram",
@@ -103,6 +149,12 @@
     "jarvis"
   ],
   "surfaces": {
+    "control_center": {
+      "owner": "platform_core",
+      "channels": ["web"],
+      "priority_flows": ["navigation", "module_discovery", "global_preferences", "network_status", "route_error_recovery"],
+      "field_evidence": ["browser_matrix", "assistive_technology_uat", "arabic_rtl_visual_uat"]
+    },
     "workforce": {
       "owner": "workforce",
       "channels": ["web", "mobile", "terminal", "api"],
@@ -113,7 +165,8 @@
       "owner": "workforce",
       "separate_employee_master_forbidden": true,
       "channels": ["web", "api", "email"],
-      "priority_flows": ["norm", "vacancy", "candidate", "evidence", "approval_reject", "notification", "hire", "first_shift", "exit"]
+      "priority_flows": ["norm", "vacancy", "candidate", "evidence", "approval_reject", "notification", "hire", "first_shift", "exit"],
+      "field_evidence": ["real_candidate_inputs", "corporate_identity", "email_delivery", "hr_owner_uat"]
     },
     "inventory": {
       "owner": "inventory",
@@ -160,6 +213,28 @@
       "channels": ["web", "api"],
       "priority_flows": ["canonical_metric", "provenance", "tenant_scope", "drilldown", "trend", "export"],
       "field_evidence": ["promoted_kpi_contracts", "live_schema_evidence", "analytics_uat"]
+    },
+    "field_intelligence": {
+      "owner": "field_intelligence",
+      "channels": ["web", "mobile", "api"],
+      "priority_flows": [
+        "mission_builder",
+        "targeting",
+        "capture",
+        "offline_queue",
+        "reconnect_replay",
+        "attachment_retry",
+        "stale_assignment",
+        "device_sequence_conflict",
+        "evidence",
+        "review",
+        "rework",
+        "reminder",
+        "escalation",
+        "verification",
+        "results"
+      ],
+      "field_evidence": ["real_device", "barcode_camera", "gps_when_policy_requires", "offline_sync", "pilot_locations", "assistive_technology_uat"]
     }
   },
   "next_phase_reserved": {

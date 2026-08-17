@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "master_plan_item": "10/60",
+  "source_module": "field_intelligence",
+  "production_ready": false,
+  "automatic_truth_promotion_permitted": false,
+  "browser_candidate_authority_permitted": false,
+  "required_stages": [
+    "accepted_or_verified_field_evidence",
+    "server_derived_adapter_candidate",
+    "immutable_field_promotion_request",
+    "independent_field_approval",
+    "destination_permission_and_scope_check",
+    "independent_destination_acceptance_receipt",
+    "separate_destination_truth_workflow"
+  ],
+  "separation_of_duties": {
+    "proposer_may_field_approve": false,
+    "proposer_may_destination_accept": false,
+    "field_approver_may_destination_accept": false
+  },
+  "adapters": {
+    "planogram.fixture_measurement.v1": {
+      "consumer_module": "planogram",
+      "consumer_permission": "action:planogram:acceptFieldEvidence",
+      "candidate_only": true,
+      "direct_physical_master_write": false,
+      "destination_requirement": "Planogram validation and approval"
+    },
+    "inventory.count_observation.v1": {
+      "consumer_module": "inventory",
+      "consumer_permission": "action:inventory:acceptFieldEvidence",
+      "candidate_only": true,
+      "direct_inventory_truth_write": false,
+      "destination_requirement": "Inventory reconciliation and approval"
+    },
+    "budget.supporting_evidence.v1": {
+      "consumer_module": "budget",
+      "consumer_permission": "action:budget:acceptFieldEvidence",
+      "candidate_only": true,
+      "direct_financial_posting": false,
+      "destination_requirement": "Finance reconciliation and approval"
+    }
+  },
+  "repository_evidence": [
+    "services/core-api/alembic/versions/0023_field_governed_promotion.py",
+    "services/core-api/alembic/versions/0028_field_promotion_consumer_separation.py",
+    "services/core-api/app/modules/field_intelligence/promotion.py",
+    "services/core-api/app/field_promotion_routes.py",
+    "services/core-api/tests/test_field_governed_promotion.py"
+  ],
+  "external_acceptance_still_required": [
+    "real customer Field use case",
+    "real destination-module owner UAT",
+    "real private evidence storage",
+    "real corporate identity and approval identities",
+    "staging reconciliation against destination authoritative data"
+  ]
+}

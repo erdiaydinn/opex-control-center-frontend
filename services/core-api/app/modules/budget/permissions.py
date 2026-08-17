@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import Principal, get_current_principal, normalize_principal_roles
+from app.core.authorization import resolve_permission_scope
+from app.core.security import Principal, get_current_principal
 from app.db.session import TenantSessionFactory, apply_tenant_context
 
 BUDGET_VIEW = "module:budget:view"
@@ -51,27 +52,15 @@ class BudgetUnitOfWork:
 
 
 def _resolve_scope(principal: Principal, permission: str) -> BudgetScope:
-    if "super_admin" in normalize_principal_roles(principal):
-        return BudgetScope(True, frozenset())
-    if permission not in principal.permissions:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Budget permission required")
-    all_centers = False
+    authority = resolve_permission_scope(principal, permission)
     centers: set[UUID] = set()
-    for assignment in principal.permission_assignments:
-        if assignment.key != permission:
-            continue
-        raw_scope = assignment.scope
-        if raw_scope.get("all_cost_centers") is True:
-            all_centers = True
-        raw_centers = raw_scope.get("cost_center_ids", [])
-        if not isinstance(raw_centers, list):
-            raise HTTPException(status_code=403, detail="Invalid Budget cost-center scope")
-        for raw in raw_centers:
-            try:
-                centers.add(UUID(str(raw)))
-            except (TypeError, ValueError) as exc:
-                raise HTTPException(status_code=403, detail="Invalid Budget cost-center scope") from exc
-    scope = BudgetScope(all_centers, frozenset(centers))
+    for raw in authority.values("cost_center_ids") | authority.values("cost_centers"):
+        try:
+            centers.add(UUID(raw))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Invalid Budget cost-center authority") from exc
+
+    scope = BudgetScope(authority.unrestricted, frozenset(centers))
     if not scope.all_cost_centers and not scope.cost_center_ids:
         raise HTTPException(status_code=403, detail="Budget cost-center scope required")
     return scope

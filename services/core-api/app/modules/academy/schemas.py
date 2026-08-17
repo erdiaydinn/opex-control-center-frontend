@@ -1,10 +1,20 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
-Locale = Literal["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"]
+from app.core.localization import SUPPORTED_LOCALE_SET, canonicalize_locale
+
+
+def _validate_locale(value: str) -> str:
+    canonical = canonicalize_locale(value)
+    if canonical is None:
+        raise ValueError("Unsupported locale")
+    return canonical
+
+
+Locale = Annotated[str, AfterValidator(_validate_locale)]
 ContentType = Literal[
     "document",
     "video",
@@ -16,11 +26,10 @@ ContentType = Literal[
     "survey",
 ]
 PublicationStatus = Literal["draft", "published", "retired"]
-SUPPORTED_LOCALES = {"tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"}
 
 
 def _validate_i18n(value: dict[str, str], *, required: bool = True) -> dict[str, str]:
-    invalid = set(value) - SUPPORTED_LOCALES
+    invalid = set(value) - SUPPORTED_LOCALE_SET
     if invalid:
         raise ValueError(f"Unsupported locales: {', '.join(sorted(invalid))}")
     normalized = {

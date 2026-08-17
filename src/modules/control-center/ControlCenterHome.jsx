@@ -29,13 +29,14 @@ function greetingKey() {
 
 function localizeModule(module, locale) {
   const text = (key) => translateControlCenter(locale, key);
+  const owned = typeof module.localize === "function" ? module.localize(locale) : {};
   return {
     ...module,
-    title: text(module.titleKey),
-    description: text(module.descriptionKey),
-    group: text(module.groupKey),
-    meta: text(module.metaKey),
-    healthLabel: text(module.healthLabelKey),
+    title: owned.title ?? text(module.titleKey),
+    description: owned.description ?? text(module.descriptionKey),
+    group: owned.group ?? text(module.groupKey),
+    meta: owned.meta ?? text(module.metaKey),
+    healthLabel: owned.healthLabel ?? text(module.healthLabelKey),
   };
 }
 

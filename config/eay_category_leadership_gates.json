@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "truth_boundary": {
+    "repository_green_is_production_ready": false,
+    "synthetic_evidence_is_field_evidence": false,
+    "production_activation_requires_external_evidence": true
+  },
+  "modules": {
+    "platform_core": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Enterprise platforms expose service ownership, runtime SLOs, incident/DR state and dependency maps instead of static navigation only.",
+        "rule": "Every production-facing service/module must have owner, SLO, dependency, deployment, DR and runtime readiness metadata before production promotion.",
+        "acceptance": "CI rejects missing owner/SLO/DR metadata; staging acceptance must prove runtime health and backup freshness.",
+        "external_dependency": "managed staging topology and operator DR rehearsal",
+        "evidence_type": "external_staging"
+      }
+    ],
+    "security": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Leading IAM stacks provide corporate OIDC, device posture, phishing-resistant auth, SCIM/lifecycle and access review evidence.",
+        "rule": "No module may claim production security without corporate OIDC/workload identity, device trust where required, lifecycle revocation and access-review evidence.",
+        "acceptance": "Repository guards keep browser authority denied; production gate requires real issuer/JWKS/audience/claims and stale-token revocation proof.",
+        "external_dependency": "corporate identity provider, device attestation service, SCIM/lifecycle source",
+        "evidence_type": "external_production_identity"
+      }
+    ],
+    "eay_ai_core": [
+      {
+        "priority": "P1",
+        "competitor_gap": "Enterprise AI platforms expose evals, model registry, observability, canary/promotion and rollback evidence at runtime.",
+        "rule": "AI behaviors must be source-grounded, eval-gated, observable and promotion-controlled; no model/tool production claim without runtime evidence.",
+        "acceptance": "CI verifies no ungoverned tool or model promotion; staging requires signed eval, canary and rollback evidence.",
+        "external_dependency": "model/runtime observability environment",
+        "evidence_type": "external_staging"
+      }
+    ],
+    "jarvis": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Governed conversational BI products answer from semantic/live data authority and expose traceable queries and action workflows.",
+        "rule": "Jarvis KPI answers must use approved tenant semantic definitions and governed data sources; missing live evidence must fail closed.",
+        "acceptance": "Orders V2 remains blocked until authorized production BigQuery identity, INFORMATION_SCHEMA, tenant discriminator and live zero-leak proof pass.",
+        "external_dependency": "read-only production BigQuery execution identity",
+        "evidence_type": "external_production_data"
+      }
+    ],
+    "repository_intelligence": [
+      {
+        "priority": "P1",
+        "competitor_gap": "Code intelligence leaders provide instant code graph, ownership, impact analysis and dependency/license visibility.",
+        "rule": "Repository adoption requires exact upstream/ref/commit/tree/blob/license provenance and owner/impact metadata; unresolved archives stay PENDING.",
+        "acceptance": "CI rejects invented repo identities, SPDX-less external verified licenses and unresolved-source ADOPT decisions.",
+        "external_dependency": "exact archive hashes and license review",
+        "evidence_type": "repository_plus_human_review"
+      }
+    ],
+    "kpi_insight_analytics": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Modern metric layers provide proactive anomaly/root-cause/subscription/action flows, not frontend-computed dashboard truth.",
+        "rule": "KPI surfaces must consume server-authoritative metric contracts and tenant glossary semantics; no frontend formula truth.",
+        "acceptance": "CI rejects frontend-owned KPI formulas; production activation requires live governed data proof for each metric family.",
+        "external_dependency": "governed data source activation per KPI family",
+        "evidence_type": "external_production_data"
+      }
+    ],
+    "planogram": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Space-planning leaders optimize store-specific assortment, financial space, execution compliance and physical layout evidence.",
+        "rule": "Planogram optimizer cannot publish production placement until approved dimensions, images, Store DNA, fixture geometry/capacity and aisle evidence exist.",
+        "acceptance": "CI must fail closed on estimated dimensions; field acceptance requires measured physical master and execution-compliance sample.",
+        "external_dependency": "approved SKU dimensions and measured Store DNA/fixtures",
+        "evidence_type": "external_physical_field"
+      }
+    ],
+    "workforce": [
+      {
+        "priority": "P0",
+        "competitor_gap": "WFM leaders combine demand forecasting, skill-aware scheduling, preferences, fairness, compliance, live attendance and intraday replanning.",
+        "rule": "Workforce scheduling must separate demand truth from assignment and compare required work to effective skill capacity plus KPI/backlog pressure.",
+        "acceptance": "CI proves bad KPI with enough capacity does not recommend more labor; field gate requires real OIDC/device/GPS/attendance pilot.",
+        "external_dependency": "corporate OIDC, physical devices, real roster/attendance files",
+        "evidence_type": "repository_plus_external_field"
+      }
+    ],
+    "hiring_recruitment": [
+      {
+        "priority": "P1",
+        "competitor_gap": "ATS leaders include CRM, structured scorecards, interview scheduling, candidate experience and funnel/quality-of-hire analytics.",
+        "rule": "Hiring must remain one Employee Master lifecycle and measure hire quality through first roster, Academy and operational retention/performance where available.",
+        "acceptance": "CI preserves Norm→Candidate→Approval→Hire→Employee Master→Roster and exit revocation; pilot requires real HR files and notification delivery.",
+        "external_dependency": "HR/3rd-party recruitment workflow and real notification channel",
+        "evidence_type": "external_uat"
+      }
+    ],
+    "inventory": [
+      {
+        "priority": "P0",
+        "competitor_gap": "WMS/handheld leaders provide managed scanners, offline queues, directed tasks, replenishment, exception handling and device fleet controls.",
+        "rule": "Inventory production acceptance requires native managed terminal, signed build, MDM, OIDC, Zebra/DataWedge and offline/replay proof; web is not a terminal substitute.",
+        "acceptance": "CI rejects managed-release without signing secrets; field gate requires real Zebra scanner and MDM deployment evidence.",
+        "external_dependency": "corporate keystore, MDM, Zebra/DataWedge, production TLS endpoint",
+        "evidence_type": "external_device_field"
+      }
+    ],
+    "dockos": [
+      {
+        "priority": "P1",
+        "competitor_gap": "Dock/yard leaders offer carrier self-service, gate/driver flows, yard map, dwell clocks, scorecards and ETA-driven dock assignment.",
+        "rule": "DockOS must remain standalone but require corporate OIDC, signed gateway, real PO source, SMTP and supplier/DC pilot before production readiness.",
+        "acceptance": "CI keeps concurrency/replay/DR green; staging gate requires real gateway rotation, BigQuery PO identity and SMTP retry/dead-letter evidence.",
+        "external_dependency": "corporate gateway, BigQuery PO identity, SMTP and supplier pilot",
+        "evidence_type": "external_staging_pilot"
+      }
+    ],
+    "budget_intelligence": [
+      {
+        "priority": "P1",
+        "competitor_gap": "Enterprise planning leaders provide driver-based budgeting, rolling forecasts, scenarios, allocations, SoD and reconciliation workflows.",
+        "rule": "Budget can run standalone from finance authority; operational modules may enrich drivers but cannot replace finance-owner source-of-truth and reconciliation.",
+        "acceptance": "CI keeps RLS/SoD contracts; production gate requires finance-source mapping, reconciliation and finance-owner UAT sign-off.",
+        "external_dependency": "real finance source and finance owner UAT",
+        "evidence_type": "external_uat"
+      }
+    ],
+    "academy": [
+      {
+        "priority": "P1",
+        "competitor_gap": "Learning leaders provide skills graph, proficiency, recommendations, labs/simulations, collaborative authoring and outcome analytics.",
+        "rule": "Academy must remain standalone and evolve to role→skill→proficiency→learning→assessment→operational outcome feedback without weakening media integrity.",
+        "acceptance": "CI keeps watched-time/checkpoint/media-token isolation; production gate requires storage/transcode/HLS/CDN and 1200-concurrent delivery evidence.",
+        "external_dependency": "real media plane, CDN, content, OIDC and load test",
+        "evidence_type": "external_staging_load"
+      }
+    ],
+    "field_intelligence": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Field execution/form leaders support smart targeting, missions, offline capture, barcode/photo/GPS evidence, reminders, rework and command-center completion.",
+        "rule": "Field Intelligence must ask the physical world questions through server-authoritative targeting, evidence, reminder/escalation and verified truth, not generic form storage.",
+        "acceptance": "CI proves tenant/location scope, frozen target snapshots, evidence state machine, offline replay protection, reminder routing and Core API surface.",
+        "external_dependency": "managed mobile/scanner devices and pilot locations for field evidence",
+        "evidence_type": "repository_plus_external_field"
+      }
+    ],
+    "audit": [
+      {
+        "priority": "P1",
+        "competitor_gap": "Audit/execution tools offer configurable inspections, scoring, corrective actions, evidence, scheduling, follow-up and immutable history.",
+        "rule": "Audit module will reuse Field targeting/evidence/reminders and platform audit primitives; detailed question model remains deferred until discovery, no guessed workflow.",
+        "acceptance": "No Audit production feature may be admitted without approved question taxonomy, scoring, corrective-action and evidence governance contract.",
+        "external_dependency": "AuditNow-style product discovery and customer audit templates",
+        "evidence_type": "discovery_required"
+      }
+    ],
+    "shared_services": [
+      {
+        "priority": "P0",
+        "competitor_gap": "Best enterprise SaaS platforms enforce localization, accessibility, notifications, audit, universal search, preferences and operability consistently.",
+        "rule": "Every module surface must keep 10-language/RTL/accessibility/error-empty-offline semantics and use shared notification/audit/identity services.",
+        "acceptance": "CI rejects route/catalog/i18n/accessibility coverage gaps; production gate requires real-user/device acceptance for critical workflows.",
+        "external_dependency": "real user/device acceptance",
+        "evidence_type": "repository_plus_external_uat"
+      }
+    ]
+  }
+}

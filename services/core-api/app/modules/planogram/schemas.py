@@ -29,6 +29,63 @@ class FixtureMeasurement(BaseModel):
     max_weight_kg: float | None = Field(default=None, gt=0, le=5000)
 
 
+class PlanogramArchitectureElement(BaseModel):
+    """Measured orthogonal architectural primitive in metres.
+
+    V1 deliberately uses deterministic rectangular primitives. This is enough to
+    represent walls, columns, doors, exits and operational no-go zones today and
+    creates a stable import target for CAD/floor-plan/LiDAR adapters later.
+    """
+
+    element_id: str = Field(min_length=2, max_length=80, pattern=r"^[A-Za-z0-9._:-]+$")
+    element_type: Literal[
+        "wall",
+        "column",
+        "door",
+        "emergency_exit",
+        "no_go",
+        "technical",
+        "inbound",
+        "dispatch",
+        "picker_entry",
+        "picker_exit",
+        "chiller",
+        "freezer",
+    ]
+    x_m: float = Field(ge=0, le=500)
+    y_m: float = Field(ge=0, le=500)
+    width_m: float = Field(gt=0, le=500)
+    depth_m: float = Field(gt=0, le=500)
+    rotation_deg: Literal[0, 90, 180, 270] = 0
+    clearance_m: float = Field(default=0, ge=0, le=20)
+    label: str | None = Field(default=None, max_length=160)
+
+
+class PlanogramArchitectureDraft(BaseModel):
+    """Measured store architecture carried inside versioned Store DNA."""
+
+    schema_version: Literal[1] = 1
+    coordinate_system: Literal["cartesian_m"] = "cartesian_m"
+    source: Literal["manual_survey", "cad_import", "floorplan_import", "lidar_scan"]
+    source_ref: str = Field(min_length=3, max_length=500)
+    floor_width_m: float = Field(gt=0, le=500)
+    floor_depth_m: float = Field(gt=0, le=500)
+    elements: list[PlanogramArchitectureElement] = Field(min_length=1, max_length=2000)
+
+    @field_validator("elements")
+    @classmethod
+    def validate_architecture_elements(
+        cls, value: list[PlanogramArchitectureElement]
+    ) -> list[PlanogramArchitectureElement]:
+        ids = [item.element_id for item in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate architecture element id")
+        picker_entries = [item for item in value if item.element_type == "picker_entry"]
+        if len(picker_entries) != 1:
+            raise ValueError("Architecture requires exactly one picker_entry")
+        return value
+
+
 class PlanogramStoreDnaDraftRequest(BaseModel):
     store_code: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
     store_name: str | None = Field(default=None, min_length=1, max_length=160)
@@ -42,6 +99,7 @@ class PlanogramStoreDnaDraftRequest(BaseModel):
     aisle_widths_m: dict[str, float] = Field(default_factory=dict)
     fixture_measurements: list[FixtureMeasurement] = Field(default_factory=list, max_length=2000)
     fixture_inventory: list[FixtureInventorySeed] = Field(default_factory=list, max_length=200)
+    architecture: PlanogramArchitectureDraft | None = None
     notes: str | None = Field(default=None, max_length=2000)
 
     @field_validator("aisle_widths_m")

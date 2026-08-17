@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.authorization import require_permission, resolve_permission_scope
 from app.core.security import Principal, get_current_principal
 from app.field_evidence_object_routes import router as evidence_object_router
+from app.field_governance_routes import router as governance_router
 from app.modules.field_intelligence.authorization import require_field_permission
 from app.modules.field_intelligence.promotion import (
     FieldPromotionError,
@@ -208,3 +209,4 @@ async def post_field_promotion_consumer_receipt(
 
 router.include_router(promotion_router)
 router.include_router(evidence_object_router)
+router.include_router(governance_router)

@@ -213,6 +213,31 @@ FIELD_MANAGER_PERMISSIONS = frozenset(
     }
 )
 
+PLANOGRAM_EDITOR_PERMISSIONS = frozenset(
+    {
+        module_permission("planogram"),
+        feature_permission("planogram", "layoutView"),
+        feature_permission("planogram", "layoutEdit"),
+        feature_permission("planogram", "fixtureEdit"),
+        action_permission("planogram", "view"),
+        action_permission("planogram", "create"),
+        action_permission("planogram", "edit"),
+        action_permission("planogram", "export"),
+    }
+)
+PLANOGRAM_ADMIN_PERMISSIONS = frozenset(
+    set(PLANOGRAM_EDITOR_PERMISSIONS)
+    | {
+        module_permission("planogram", "admin"),
+        feature_permission("planogram", "ruleEdit"),
+        feature_permission("planogram", "productAssign"),
+        feature_permission("planogram", "aiRecommend"),
+        action_permission("planogram", "approve"),
+        action_permission("planogram", "delete"),
+        action_permission("planogram", "acceptFieldEvidence"),
+    }
+)
+
 SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
     {
         "super_admin": ALL_PERMISSION_KEYS,
@@ -224,6 +249,8 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "academy_admin": ACADEMY_ADMIN_PERMISSIONS,
         "field_worker": FIELD_WORKER_PERMISSIONS,
         "field_manager": FIELD_MANAGER_PERMISSIONS,
+        "planogram_editor": PLANOGRAM_EDITOR_PERMISSIONS,
+        "planogram_admin": PLANOGRAM_ADMIN_PERMISSIONS,
     }
 )
 

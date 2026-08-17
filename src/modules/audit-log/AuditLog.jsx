@@ -91,6 +91,7 @@ export default function AuditLog() {
 
       {loading ? <div role="status" aria-live="polite" aria-atomic="true">{t("loading")}</div> : null}
       {!loading && error ? <div className="audit-log__error" role="alert" aria-atomic="true">{error} <button type="button" onClick={() => loadEvents()}>{t("retry")}</button></div> : null}
+      {!loading && !error ? <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a("total")}: {summary.total}</p> : null}
 
       {!loading && !error ? (
         <div className="audit-log__table-wrap">

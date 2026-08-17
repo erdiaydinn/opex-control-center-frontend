@@ -1,0 +1,9 @@
+{
+  "schema_version":1,
+  "frozen_baseline":{"pull_request":15,"mutable":false},
+  "capabilities":[
+    "regulatory_ingestion_watch","legal_temporal_resolution","company_law_conflict","grounded_rag","local_model_router","evaluation","learning","vision_provenance","safety","model_registry","canary","observability","promotion_gate"
+  ],
+  "consumer_modules":["jarvis","insight","field_intelligence","workforce","inventory","planogram","dockos","budget","academy","audit"],
+  "truth_boundaries":{"self_modify_production_weights":false,"synthetic_is_production_evidence":false,"promotion_requires_eval":true,"promotion_requires_human_approval":true,"source_provenance_required":true,"tenant_authorization_required":true}
+}

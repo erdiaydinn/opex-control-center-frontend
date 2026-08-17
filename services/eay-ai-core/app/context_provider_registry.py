@@ -55,8 +55,10 @@ class ContextProviderSpec(BaseModel):
         if self.production_enabled:
             if not self.exact_adapter_verified:
                 raise ValueError("production_provider_requires_verified_adapter")
-            if self.access_mode is ProviderAccessMode.AUTHORIZATION_REQUIRED and not self.continuous_ingestion_authorized:
-                raise ValueError("production_provider_requires_authorization")
+            if not self.continuous_ingestion_authorized:
+                raise ValueError("production_provider_requires_continuous_access_review")
+            if self.access_mode is ProviderAccessMode.AUTHORIZATION_REQUIRED and not self.requires_secret:
+                raise ValueError("authorized_provider_secret_contract_required")
             if self.readiness is not ProviderReadiness.PRODUCTION_READY:
                 raise ValueError("production_provider_requires_production_ready_state")
         if self.readiness is ProviderReadiness.PRODUCTION_READY and not self.exact_adapter_verified:
@@ -90,12 +92,16 @@ PROVIDERS: dict[str, ContextProviderSpec] = {
         source_class=ContextSourceClass.OFFICIAL,
         access_mode=ProviderAccessMode.DOCUMENTED_WEB_SERVICE,
         context_kinds=(ContextKind.MACRO_ECONOMIC,),
-        continuous_ingestion_authorized=True,
+        continuous_ingestion_authorized=False,
         exact_adapter_verified=False,
         production_enabled=False,
         readiness=ProviderReadiness.ADAPTER_READY_TO_BUILD,
         evidence_refs=("official://tuik/sdmx-web-service",),
-        notes=("sdmx_service_documented", "bulk_csv_xml_json_documented"),
+        notes=(
+            "sdmx_service_documented",
+            "bulk_csv_xml_json_documented",
+            "continuous_use_terms_must_be_verified_before_scheduler_activation",
+        ),
     ),
     "tr-tcmb-evds": ContextProviderSpec(
         provider_id="tr-tcmb-evds",
@@ -105,12 +111,16 @@ PROVIDERS: dict[str, ContextProviderSpec] = {
         access_mode=ProviderAccessMode.DOCUMENTED_WEB_SERVICE,
         context_kinds=(ContextKind.MACRO_ECONOMIC,),
         requires_secret=True,
-        continuous_ingestion_authorized=True,
+        continuous_ingestion_authorized=False,
         exact_adapter_verified=False,
         production_enabled=False,
         readiness=ProviderReadiness.ADAPTER_READY_TO_BUILD,
         evidence_refs=("official://tcmb/evds-web-service-guide",),
-        notes=("web_service_guide_verified", "runtime_secret_required_before_live_calls"),
+        notes=(
+            "web_service_guide_verified",
+            "runtime_secret_required_before_live_calls",
+            "continuous_use_terms_must_be_verified_before_scheduler_activation",
+        ),
     ),
     "istanbul-ibb-uym": ContextProviderSpec(
         provider_id="istanbul-ibb-uym",

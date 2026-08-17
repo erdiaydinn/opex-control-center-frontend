@@ -17,6 +17,7 @@ on:
       - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/test-github-action-pinning.mjs"
       - "scripts/test-platform-load-governance.mjs"
+      - "scripts/test-route-code-splitting.mjs"
       - "scripts/test-route-split-bundle-budget.mjs"
       - "scripts/test-dockos-product-state.mjs"
       - "scripts/validate_product_quality_contract.py"
@@ -107,6 +108,8 @@ jobs:
         run: node scripts/test-skip-navigation.mjs
       - name: Route error boundary contract
         run: node scripts/test-route-error-boundary.mjs
+      - name: Route code-splitting source contract
+        run: node scripts/test-route-code-splitting.mjs
       - name: Intelligence product-state contract
         run: node scripts/test-intelligence-product-states.mjs
       - name: DockOS fail-closed product-state contract

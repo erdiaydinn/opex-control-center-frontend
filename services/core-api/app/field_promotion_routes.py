@@ -13,6 +13,8 @@ from app.field_governance_routes import router as governance_router
 from app.modules.field_intelligence.authorization import require_field_permission
 from app.modules.field_intelligence.planogram_compliance_promotion import (
     ADAPTER_KEY as PLANOGRAM_COMPLIANCE_ADAPTER,
+)
+from app.modules.field_intelligence.planogram_compliance_promotion import (
     create_planogram_compliance_promotion,
 )
 from app.modules.field_intelligence.promotion import (

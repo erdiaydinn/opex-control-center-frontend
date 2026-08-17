@@ -1,6 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { translatePlanogramExperience } from "../../platform/i18n/planogramExperienceMessages.js";
 import { buildPlanogramScene, moduleByKey } from "./planogramSceneModel.js";
@@ -104,129 +102,153 @@ function Module3D({ module, selectedProductKey, onUnavailable }) {
     const host = hostRef.current;
     if (!host || !module?.geometryReady) return undefined;
 
-    let renderer;
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    } catch {
-      onUnavailable();
-      return undefined;
-    }
+    let cancelled = false;
+    let teardown = () => {};
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    host.replaceChildren(renderer.domElement);
+    const mount = async () => {
+      try {
+        const [THREE, controlsModule] = await Promise.all([
+          import("three"),
+          import("three/examples/jsm/controls/OrbitControls.js"),
+        ]);
+        if (cancelled) return;
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1000);
-    const scale = 0.02;
-    const width = module.widthCm * scale;
-    const height = module.heightCm * scale;
-    const depth = module.depthCm * scale;
-    camera.position.set(width * 1.25, height * 0.9, Math.max(depth * 3.2, width * 1.6));
-    camera.lookAt(0, height * 0.45, 0);
+        const { OrbitControls } = controlsModule;
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        host.replaceChildren(renderer.domElement);
 
-    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = !reducedMotion;
-    controls.enablePan = false;
-    controls.minDistance = Math.max(width, height) * 0.8;
-    controls.maxDistance = Math.max(width, height) * 6;
-    controls.target.set(0, height * 0.45, 0);
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1000);
+        const scale = 0.02;
+        const width = module.widthCm * scale;
+        const height = module.heightCm * scale;
+        const depth = module.depthCm * scale;
+        camera.position.set(width * 1.25, height * 0.9, Math.max(depth * 3.2, width * 1.6));
+        camera.lookAt(0, height * 0.45, 0);
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x4b5563, 1.6));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    keyLight.position.set(width, height * 1.6, depth * 2);
-    scene.add(keyLight);
+        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = !reducedMotion;
+        controls.enablePan = false;
+        controls.minDistance = Math.max(width, height) * 0.8;
+        controls.maxDistance = Math.max(width, height) * 6;
+        controls.target.set(0, height * 0.45, 0);
 
-    const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.72, metalness: 0.08 });
-    const shelfMaterial = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.72, metalness: 0.08 });
-    const productMaterial = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.56 });
-    const selectedMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 });
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x4b5563, 1.6));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+        keyLight.position.set(width, height * 1.6, depth * 2);
+        scene.add(keyLight);
 
-    const frameThickness = Math.max(0.025, width * 0.01);
-    const sideGeometry = new THREE.BoxGeometry(frameThickness, height, depth);
-    const leftSide = new THREE.Mesh(sideGeometry, frameMaterial);
-    leftSide.position.set(-width / 2, height / 2, 0);
-    const rightSide = new THREE.Mesh(sideGeometry.clone(), frameMaterial.clone());
-    rightSide.position.set(width / 2, height / 2, 0);
-    scene.add(leftSide, rightSide);
+        const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.72, metalness: 0.08 });
+        const shelfMaterial = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.72, metalness: 0.08 });
+        const productMaterial = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.56 });
+        const selectedMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.5 });
 
-    module.shelves.forEach((shelf) => {
-      const shelfDepth = shelf.depthCm * scale;
-      const shelfWidth = shelf.widthCm * scale;
-      const shelfY = shelf.yCm * scale;
-      const boardThickness = Math.max(0.025, height * 0.007);
-      const board = new THREE.Mesh(
-        new THREE.BoxGeometry(shelfWidth, boardThickness, shelfDepth),
-        shelfMaterial.clone()
-      );
-      board.position.set(-width / 2 + shelfWidth / 2, shelfY, 0);
-      scene.add(board);
+        const frameThickness = Math.max(0.025, width * 0.01);
+        const sideGeometry = new THREE.BoxGeometry(frameThickness, height, depth);
+        const leftSide = new THREE.Mesh(sideGeometry, frameMaterial);
+        leftSide.position.set(-width / 2, height / 2, 0);
+        const rightSide = new THREE.Mesh(sideGeometry.clone(), frameMaterial.clone());
+        rightSide.position.set(width / 2, height / 2, 0);
+        scene.add(leftSide, rightSide);
 
-      shelf.products.forEach((product) => {
-        const faceWidth = product.widthCm * scale;
-        const productHeight = product.heightCm * scale;
-        const productDepth = product.depthCm * scale;
-        for (let face = 0; face < product.facing; face += 1) {
-          const box = new THREE.Mesh(
-            new THREE.BoxGeometry(faceWidth, productHeight, productDepth),
-            (selectedProductKey === product.key ? selectedMaterial : productMaterial).clone()
+        module.shelves.forEach((shelf) => {
+          const shelfDepth = shelf.depthCm * scale;
+          const shelfWidth = shelf.widthCm * scale;
+          const shelfY = shelf.yCm * scale;
+          const boardThickness = Math.max(0.025, height * 0.007);
+          const board = new THREE.Mesh(
+            new THREE.BoxGeometry(shelfWidth, boardThickness, shelfDepth),
+            shelfMaterial.clone()
           );
-          box.position.set(
-            -width / 2 + (product.xCm + product.widthCm * face + product.widthCm / 2) * scale,
-            shelfY + boardThickness / 2 + productHeight / 2,
-            -shelfDepth / 2 + productDepth / 2
-          );
-          scene.add(box);
+          board.position.set(-width / 2 + shelfWidth / 2, shelfY, 0);
+          scene.add(board);
+
+          shelf.products.forEach((product) => {
+            const faceWidth = product.widthCm * scale;
+            const productHeight = product.heightCm * scale;
+            const productDepth = product.depthCm * scale;
+            for (let face = 0; face < product.facing; face += 1) {
+              const box = new THREE.Mesh(
+                new THREE.BoxGeometry(faceWidth, productHeight, productDepth),
+                (selectedProductKey === product.key ? selectedMaterial : productMaterial).clone()
+              );
+              box.position.set(
+                -width / 2 + (product.xCm + product.widthCm * face + product.widthCm / 2) * scale,
+                shelfY + boardThickness / 2 + productHeight / 2,
+                -shelfDepth / 2 + productDepth / 2
+              );
+              scene.add(box);
+            }
+          });
+        });
+
+        const resize = () => {
+          const bounds = host.getBoundingClientRect();
+          const nextWidth = Math.max(280, bounds.width || 280);
+          const nextHeight = Math.max(320, bounds.height || 320);
+          renderer.setSize(nextWidth, nextHeight, false);
+          camera.aspect = nextWidth / nextHeight;
+          camera.updateProjectionMatrix();
+          renderer.render(scene, camera);
+        };
+        resize();
+
+        let observer = null;
+        if (typeof ResizeObserver !== "undefined") {
+          observer = new ResizeObserver(resize);
+          observer.observe(host);
+        } else {
+          window.addEventListener("resize", resize);
         }
-      });
-    });
 
-    const resize = () => {
-      const bounds = host.getBoundingClientRect();
-      const nextWidth = Math.max(280, bounds.width || 280);
-      const nextHeight = Math.max(320, bounds.height || 320);
-      renderer.setSize(nextWidth, nextHeight, false);
-      camera.aspect = nextWidth / nextHeight;
-      camera.updateProjectionMatrix();
-      renderer.render(scene, camera);
-    };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(host);
+        let frame = 0;
+        const drawOnce = () => {
+          controls.update();
+          renderer.render(scene, camera);
+        };
+        const animate = () => {
+          drawOnce();
+          frame = window.requestAnimationFrame(animate);
+        };
+        const onControlChange = () => {
+          if (reducedMotion) renderer.render(scene, camera);
+        };
 
-    let frame = 0;
-    const drawOnce = () => {
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    const animate = () => {
-      drawOnce();
-      frame = window.requestAnimationFrame(animate);
-    };
-    const onControlChange = () => {
-      if (reducedMotion) renderer.render(scene, camera);
+        if (reducedMotion) {
+          controls.addEventListener("change", onControlChange);
+          drawOnce();
+        } else {
+          animate();
+        }
+
+        teardown = () => {
+          if (frame) window.cancelAnimationFrame(frame);
+          observer?.disconnect();
+          window.removeEventListener("resize", resize);
+          controls.removeEventListener("change", onControlChange);
+          controls.dispose();
+          disposeObject(scene);
+          frameMaterial.dispose();
+          shelfMaterial.dispose();
+          productMaterial.dispose();
+          selectedMaterial.dispose();
+          renderer.dispose();
+          host.replaceChildren();
+        };
+
+        if (cancelled) teardown();
+      } catch {
+        if (!cancelled) onUnavailable();
+      }
     };
 
-    if (reducedMotion) {
-      controls.addEventListener("change", onControlChange);
-      drawOnce();
-    } else {
-      animate();
-    }
-
+    mount();
     return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      observer.disconnect();
-      controls.removeEventListener("change", onControlChange);
-      controls.dispose();
-      disposeObject(scene);
-      frameMaterial.dispose();
-      shelfMaterial.dispose();
-      productMaterial.dispose();
-      selectedMaterial.dispose();
-      renderer.dispose();
-      host.replaceChildren();
+      cancelled = true;
+      teardown();
     };
   }, [module, onUnavailable, selectedProductKey]);
 

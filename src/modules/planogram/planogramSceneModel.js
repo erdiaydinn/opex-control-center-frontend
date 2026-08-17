@@ -100,14 +100,15 @@ function shelfGeometry(shelf, shelfIndex, yCm) {
 
 function moduleGeometry(aisle, module, moduleIndex) {
   const rawShelves = Array.isArray(module.shelves) ? module.shelves : [];
+  const orderedShelves = [...rawShelves].sort((left, right) => (
+    numericOrder(left.shelf_no, 999999) - numericOrder(right.shelf_no, 999999)
+  ));
   let yCm = 0;
-  const shelves = rawShelves
-    .map((shelf, shelfIndex) => {
-      const normalized = shelfGeometry(shelf, shelfIndex, yCm);
-      yCm += normalized.heightCm;
-      return normalized;
-    })
-    .sort((left, right) => numericOrder(left.shelfNo, 999999) - numericOrder(right.shelfNo, 999999));
+  const shelves = orderedShelves.map((shelf, shelfIndex) => {
+    const normalized = shelfGeometry(shelf, shelfIndex, yCm);
+    yCm += normalized.heightCm;
+    return normalized;
+  });
 
   const measuredWidth = positive(module.module_width_cm ?? module.width_cm);
   const measuredHeight = positive(module.module_height_cm ?? module.height_cm);

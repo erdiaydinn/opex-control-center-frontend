@@ -85,6 +85,17 @@ assert.equal(scene.modules[0].shelves[0].products[0].xCm, 0);
 assert.equal(scene.modules[0].shelves[0].products[1].xCm, 22);
 assert.equal(scene.modules[0].shelves[0].products[0].facing, 2);
 
+const shuffledShelves = structuredClone(fixture);
+shuffledShelves.planogram.aisles[0].modules[0].shelves.reverse();
+const orderedScene = buildPlanogramScene(shuffledShelves);
+assert.deepEqual(
+  orderedScene.modules[0].shelves.map((shelf) => shelf.shelfNo),
+  [1, 2],
+  "Shelf rendering order must be deterministic by shelf_no"
+);
+assert.equal(orderedScene.modules[0].shelves[0].yCm, 0);
+assert.equal(orderedScene.modules[0].shelves[1].yCm, 35);
+
 const missingDepth = structuredClone(fixture);
 delete missingDepth.planogram.aisles[0].modules[0].shelves[0].products[0].depth_cm;
 const blocked = buildPlanogramScene(missingDepth);
@@ -101,12 +112,16 @@ assert.equal(noPlan.renderable, false);
 const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
 const experience = fs.readFileSync("src/modules/planogram/PlanogramExperience.jsx", "utf8");
 assert.match(studio, /PlanogramExperience/);
+assert.match(experience, /import\("three"\)/, "Three.js must be lazy-loaded for 3D only");
 assert.match(experience, /OrbitControls/);
 assert.match(experience, /prefers-reduced-motion/);
 assert.match(experience, /productionAuthorityBlocked/);
+assert.doesNotMatch(experience, /^import .* from ["']three["']/m, "Three.js must not be in the eager Planogram bundle");
 assert.doesNotMatch(experience, /Spline|iframe|postMessage\(|access_token/);
 
 console.log("MASTER_27_SCENE_MODEL=PASS");
+console.log("MASTER_27_SHELF_ORDER=PASS");
 console.log("MASTER_27_EXACT_GEOMETRY_FAIL_CLOSED=PASS");
+console.log("MASTER_27_THREE_LAZY_LOAD=PASS");
 console.log("MASTER_27_10_LOCALES=PASS");
 console.log("MASTER_27_NO_LEGACY_VISUAL_AUTHORITY=PASS");

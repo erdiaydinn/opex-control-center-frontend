@@ -84,12 +84,15 @@ jobs:
             app/hypothesis_intelligence.py \
             app/geospatial_intelligence.py \
             app/proactive_intelligence.py \
+            app/alert_intelligence.py \
+            app/blind_spot_intelligence.py \
             app/outcome_calibration.py \
             app/decision_intelligence.py \
             app/enterprise_domain_registry.py \
             app/finance_intelligence.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
+            tests/test_context_unicode_intelligence.py \
             tests/test_context_anomaly_guard.py \
             tests/test_context_taxonomy.py \
             tests/test_context_provider_registry.py \
@@ -100,6 +103,8 @@ jobs:
             tests/test_hypothesis_intelligence.py \
             tests/test_geospatial_intelligence.py \
             tests/test_proactive_intelligence.py \
+            tests/test_alert_intelligence.py \
+            tests/test_blind_spot_intelligence.py \
             tests/test_outcome_calibration.py \
             tests/test_decision_intelligence.py \
             tests/test_enterprise_domain_registry.py \
@@ -111,6 +116,7 @@ jobs:
         run: |
           python -m pytest -q \
             tests/test_context_intelligence.py \
+            tests/test_context_unicode_intelligence.py \
             tests/test_context_anomaly_guard.py \
             tests/test_context_taxonomy.py \
             tests/test_context_provider_registry.py \
@@ -121,6 +127,8 @@ jobs:
             tests/test_hypothesis_intelligence.py \
             tests/test_geospatial_intelligence.py \
             tests/test_proactive_intelligence.py \
+            tests/test_alert_intelligence.py \
+            tests/test_blind_spot_intelligence.py \
             tests/test_outcome_calibration.py \
             tests/test_decision_intelligence.py \
             tests/test_enterprise_domain_registry.py \

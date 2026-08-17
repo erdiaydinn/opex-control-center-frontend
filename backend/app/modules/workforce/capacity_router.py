@@ -18,6 +18,7 @@ from .capacity_authority import (
 from .capacity_repository import get_latest_capacity_snapshot, persist_capacity_snapshot
 from .dpi_router import router as dpi_router
 from .optimizer_router import router as optimizer_router
+from .replan_router import router as replan_router
 from .skill_capacity import SkillDemand
 
 
@@ -146,3 +147,4 @@ def latest_capacity_snapshot(
 
 router.include_router(dpi_router)
 router.include_router(optimizer_router)
+router.include_router(replan_router)

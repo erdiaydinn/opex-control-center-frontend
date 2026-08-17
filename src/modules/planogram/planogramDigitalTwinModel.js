@@ -17,6 +17,11 @@ function text(value) {
   return String(value ?? "").trim();
 }
 
+function hasFiniteCoordinate(value) {
+  if (value === null || value === undefined || value === "") return false;
+  return Number.isFinite(Number(value));
+}
+
 function moduleKey(aisleId, moduleId) {
   return `${text(aisleId)}::${text(moduleId)}`;
 }
@@ -133,7 +138,7 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
       const merged = { ...sourceModule, ...outputModule };
       const geometry = shelfGeometry(merged);
       const hasCoordinates =
-        Number.isFinite(Number(merged?.x_m)) && Number.isFinite(Number(merged?.y_m));
+        hasFiniteCoordinate(merged?.x_m) && hasFiniteCoordinate(merged?.y_m);
       const fallback = inferTopologyPosition(
         aisleIndex,
         moduleIndex,

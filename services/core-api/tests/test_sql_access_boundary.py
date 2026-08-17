@@ -149,14 +149,23 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     # Master 26/60: Planogram compliance uses the same governed Field promotion
     # tables. New adapter SQL is static/bound, latest accepted evidence only,
     # and transaction-local consumer receipt preserves atomic handoff.
-    ("modules/field_intelligence/planogram_compliance_promotion.py", "create_planogram_compliance_promotion"),
-    ("modules/field_intelligence/promotion_consumer_session.py", "get_promotion_context_in_session"),
-    ("modules/field_intelligence/promotion_consumer_session.py", "record_consumer_receipt_in_session"),
+    (
+        "modules/field_intelligence/planogram_compliance_promotion.py",
+        "create_planogram_compliance_promotion",
+    ),
+    (
+        "modules/field_intelligence/promotion_consumer_session.py",
+        "get_promotion_context_in_session",
+    ),
+    (
+        "modules/field_intelligence/promotion_consumer_session.py",
+        "record_consumer_receipt_in_session",
+    ),
 }
 
 # Master 24-26/60 security review: Planogram SQL is static text() with bound
 # parameters only. Runtime sessions enter canonical app.tenant_id context.
-# 0030-0032 enforce FORCE RLS, immutable approved plan/Store DNA history,
+# 0030-0035 enforce FORCE RLS, immutable approved plan/Store DNA history,
 # append-only compliance evidence, runtime attestation denial and immutable
 # assignment identity. Cross-module compliance handoff is transaction-bound.
 PLANOGRAM_SQL_EXECUTION_POINTS = {

@@ -56,7 +56,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Jarvis executive context, finance, legal, agenda and decision contracts
+    name: Jarvis executive context, finance, commercial, legal, agenda and decision contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -92,6 +92,7 @@ jobs:
             app/decision_intelligence.py \
             app/enterprise_domain_registry.py \
             app/finance_intelligence.py \
+            app/commercial_intelligence.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
             tests/test_context_unicode_intelligence.py \
@@ -115,6 +116,7 @@ jobs:
             tests/test_enterprise_domain_registry.py \
             tests/test_enterprise_economics_domain.py \
             tests/test_finance_intelligence.py \
+            tests/test_commercial_intelligence.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py
       - name: Run Jarvis executive-intelligence adversarial tests
@@ -142,5 +144,6 @@ jobs:
             tests/test_enterprise_domain_registry.py \
             tests/test_enterprise_economics_domain.py \
             tests/test_finance_intelligence.py \
+            tests/test_commercial_intelligence.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py

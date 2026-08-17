@@ -258,3 +258,26 @@ async def test_transport_rejects_evidence_count_above_requested_limit():
                 limit=1,
                 client=client,
             )
+
+
+@pytest.mark.asyncio
+async def test_transport_rejects_evidence_outside_requested_layers():
+    unexpected = {
+        **VALID_EVIDENCE,
+        "layer": "operational",
+        "authority_level": "operational",
+    }
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"evidence": [unexpected]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(retrieval.AIGroundedRetrievalUnavailable, match="unavailable"):
+            await retrieval.retrieve_tenant_grounded_evidence(
+                base_url="http://eay-ai-core:8000",
+                tenant_context_assertion="signed.tenant.context",
+                message="legal requirements",
+                as_of=date(2026, 8, 16),
+                layers=("legal",),
+                client=client,
+            )

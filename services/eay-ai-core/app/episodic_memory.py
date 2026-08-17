@@ -73,6 +73,8 @@ class MemoryEpisode(BaseModel):
                 raise ValueError("episode_retain_until_requires_timezone")
             if self.retain_until <= self.recorded_at:
                 raise ValueError("episode_retention_must_extend_past_recording")
+        if self.retention_class is RetentionClass.TRANSIENT and self.retain_until is None:
+            raise ValueError("transient_episode_requires_expiry")
         if self.retention_class is RetentionClass.LEGAL_HOLD and self.retain_until is not None:
             raise ValueError("legal_hold_episode_must_not_have_automatic_expiry")
         if self.model_summary_is_truth:

@@ -125,6 +125,11 @@ def build_store_dna_configuration(
         "aisles": aisles,
         "pallets": pallets,
         "fixture_inventory": _inventory_rows(payload.fixture_inventory),
+        "architecture": (
+            payload.architecture.model_dump(exclude_none=True)
+            if payload.architecture is not None
+            else None
+        ),
         "notes": payload.notes,
     }
 
@@ -137,11 +142,13 @@ def summarize_store_dna(configuration: dict[str, Any]) -> dict[str, int]:
         for side in ("left_modules", "right_modules")
         for module in aisle.get(side, [])
     ]
+    architecture = configuration.get("architecture") or {}
     return {
         "aisles": len(aisles),
         "modules": len(modules),
         "shelves": sum(int(module.get("shelf_count", 0)) for module in modules),
         "pallets": len(configuration.get("pallets", [])),
+        "architecture_elements": len(architecture.get("elements") or []),
     }
 
 
@@ -172,6 +179,32 @@ def geometry_attested(configuration: dict[str, Any]) -> bool:
     return True
 
 
+def architecture_attested(configuration: dict[str, Any]) -> bool:
+    """Return whether versioned Store DNA carries measured architecture truth."""
+    architecture = configuration.get("architecture") or {}
+    if not architecture:
+        return False
+    if architecture.get("coordinate_system") != "cartesian_m":
+        return False
+    if not architecture.get("source_ref"):
+        return False
+    if architecture.get("source") not in {
+        "manual_survey",
+        "cad_import",
+        "floorplan_import",
+        "lidar_scan",
+    }:
+        return False
+    if not architecture.get("floor_width_m") or not architecture.get("floor_depth_m"):
+        return False
+    entries = [
+        row
+        for row in architecture.get("elements") or []
+        if row.get("element_type") == "picker_entry"
+    ]
+    return len(entries) == 1
+
+
 def configuration_fingerprint(configuration: dict[str, Any]) -> str:
     payload = json.dumps(
         configuration,
@@ -195,6 +228,9 @@ def approved_store_dna_to_engine_contract(
 
     This helper intentionally does not invent missing geometry. The caller must
     still check geometry_attested before treating the result as physical truth.
+    Measured architecture, when present, is preserved verbatim so the canonical
+    engine can validate collisions and real walk distance against the same
+    versioned Store DNA fingerprint.
     """
     widths = [aisle.get("width_m") for aisle in configuration.get("aisles", [])]
     measured_widths = [float(width) for width in widths if width is not None]
@@ -229,4 +265,5 @@ def approved_store_dna_to_engine_contract(
         "pallet_fixture_ids": [
             pallet.get("pallet_id") for pallet in configuration.get("pallets", [])
         ],
+        "architecture": deepcopy(configuration.get("architecture")),
     }

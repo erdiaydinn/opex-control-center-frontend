@@ -31,12 +31,7 @@ def validate_photo_receipt_binding(
     payload: dict[str, object],
     claims: tuple[EvidenceObjectClaim, ...],
 ) -> tuple[EvidenceObjectClaim, ...]:
-    """Bind photo fields to opaque server-issued receipt UUIDs only.
-
-    Raw URLs, data URLs, base64 media and arbitrary client object references never
-    satisfy this contract. A photo payload value must equal the receipt UUID that
-    the server-side object authority later verifies.
-    """
+    """Bind photo fields to opaque server-issued receipt UUIDs only."""
     fields = template_schema.get("fields") or []
     photo_keys = {
         str(field.get("key"))
@@ -157,15 +152,22 @@ async def verify_evidence_authority(
                 FROM field_evidence_object_receipts
                 WHERE tenant_id=CAST(:tenant_id AS UUID)
                   AND receipt_id=CAST(:receipt_id AS UUID)
+                  AND client_submission_id=CAST(:client_submission_id AS UUID)
+                  AND field_key=:field_key
                   AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
                 """
             ),
-            {"tenant_id": tenant_id, "receipt_id": str(claim.receipt_id)},
+            {
+                "tenant_id": tenant_id,
+                "receipt_id": str(claim.receipt_id),
+                "client_submission_id": client_submission_id,
+                "field_key": claim.field_key,
+            },
         )
         receipt = receipt_result.mappings().first()
         if receipt is None:
             raise FieldEvidenceIntegrityError(
-                f"server evidence object receipt missing or expired for {claim.field_key}"
+                f"server evidence object receipt missing, expired or misbound for {claim.field_key}"
             )
         if str(receipt["sha256"]) != claim.sha256:
             raise FieldEvidenceIntegrityError(

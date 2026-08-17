@@ -237,7 +237,9 @@ def approved_store_dna_to_engine_contract(
     picker_width = min(measured_widths) if measured_widths else None
 
     return {
-        "source": "server_approved_store_dna",
+        # Must match the canonical physical_truth approved-source vocabulary.
+        # Server-side approval is the authority that permits this translation.
+        "source": "approved_store_dna",
         "store_code": configuration.get("store_code"),
         "picker_aisle_width_m": picker_width,
         "aisle_module_config": [

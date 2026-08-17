@@ -1,0 +1,48 @@
+name: EAY Master Roadmap 31 - Academy Learning OS
+
+on:
+  push:
+    branches: [agent/master-roadmap-31-33-academy-learning-os]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: eay-master-31-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  academy-learning-os:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_DB: opex_test, POSTGRES_USER: opex_migrator, POSTGRES_PASSWORD: opex_migrator}
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test" --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: '3.12', cache: pip}
+      - working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - run: ruff check --ignore E501 services/core-api/app/modules/academy/learning_os.py services/core-api/tests/test_academy_master31_learning_os.py
+      - run: pytest -q services/core-api/tests/test_academy_master31_learning_os.py
+      - name: Isolated migration compile
+        run: python -m py_compile services/core-api/alembic/versions/0040_academy_learning_os.py
+      - name: Truth boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('services/core-api/alembic/versions/0040_academy_learning_os.py').read_text()
+          assert 'manager_verified' in text and 'external_verified' in text
+          assert 'AUTO_PROFICIENCY' not in text
+          PY

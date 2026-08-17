@@ -15,7 +15,7 @@ def test_path_recommendation_covers_gap_without_role_database_dependency():
     assert recommend_learning_paths(gaps,outcomes) == ('path-both',)
 
 
-def test_learning_os_migration_is_tenant_isolated_and_append_only_evidence():
+def test_learning_os_migration_is_tenant_isolated_append_only_and_view_keeps_rls():
     text=(Path(__file__).resolve().parents[1]/'alembic/versions/0040_academy_learning_os.py').read_text()
-    for token in ('academy_skills','academy_role_skill_requirement','academy_path_skill_outcome','academy_skill_evidence','FORCE ROW LEVEL SECURITY','REVOKE UPDATE,DELETE ON academy_skill_evidence'):
+    for token in ('academy_skills','academy_role_skill_requirement','academy_path_skill_outcome','academy_skill_evidence','FORCE ROW LEVEL SECURITY','REVOKE UPDATE,DELETE ON academy_skill_evidence','security_invoker = true'):
         assert token in text

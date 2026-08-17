@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from architecture_truth import (
+    MAX_ROUTE_HOTSPOTS,
     ROUTE_OBJECTIVE_VERSION,
     architecture_route_objective,
     architecture_truth_report,
@@ -112,6 +113,68 @@ def result() -> dict[str, object]:
     }
 
 
+def duplicate_layout() -> dict[str, object]:
+    return {
+        "aisles": [
+            {
+                "aisle_id": "A",
+                "modules": [
+                    {
+                        "module_id": 1,
+                        "side": "L",
+                        "x_m": 2.0,
+                        "y_m": 1.0,
+                        "width_m": 1.0,
+                        "depth_m": 0.5,
+                        "shelves": [{"shelf_width_cm": 100, "shelf_depth_cm": 50}],
+                    }
+                ],
+            },
+            {
+                "aisle_id": "B",
+                "modules": [
+                    {
+                        "module_id": 1,
+                        "side": "L",
+                        "x_m": 6.0,
+                        "y_m": 1.0,
+                        "width_m": 1.0,
+                        "depth_m": 0.5,
+                        "shelves": [{"shelf_width_cm": 100, "shelf_depth_cm": 50}],
+                    }
+                ],
+            },
+        ]
+    }
+
+
+def duplicate_result() -> dict[str, object]:
+    return {
+        "planogram": {
+            "aisles": [
+                {
+                    "aisle_id": "A",
+                    "modules": [
+                        {
+                            "module_id": 1,
+                            "shelves": [{"products": [{"sku": "A-SKU"}]}],
+                        }
+                    ],
+                },
+                {
+                    "aisle_id": "B",
+                    "modules": [
+                        {
+                            "module_id": 1,
+                            "shelves": [{"products": [{"sku": "B-SKU"}]}],
+                        }
+                    ],
+                },
+            ]
+        }
+    }
+
+
 def test_measured_architecture_is_authoritative() -> None:
     report = architecture_truth_report(architecture())
     assert report["present"] is True
@@ -141,7 +204,7 @@ def test_module_cannot_occupy_emergency_exit_clearance() -> None:
     )
 
 
-def test_route_objective_uses_obstacle_aware_metres() -> None:
+def test_route_objective_uses_obstacle_aware_metres_and_explains_hotspots() -> None:
     products = [{"sku": "FAST-SKU", "sales_qty_7d": 10}]
     routed = architecture_route_objective(
         result(),
@@ -163,3 +226,34 @@ def test_route_objective_uses_obstacle_aware_metres() -> None:
     assert routed["metric"] == "sales_weighted_single_origin_walk_m"
     assert routed["value"] > direct["value"]
     assert routed["architecture_fingerprint"] != direct["architecture_fingerprint"]
+    assert routed["picker_entry_m"] == [0.5, 0.5]
+    assert routed["module_distance_count"] == 1
+    assert routed["module_distances_m"]["A01::A01-L01"] > 0
+    assert routed["route_hotspot_limit"] == MAX_ROUTE_HOTSPOTS
+    assert len(routed["route_hotspots"]) == 1
+    hotspot = routed["route_hotspots"][0]
+    assert hotspot["module_id"] == "A01::A01-L01"
+    assert hotspot["sales_weight"] == 10
+    assert hotspot["weighted_cost"] == routed["value"]
+    assert hotspot["path_m"][0] == [0.5, 0.5]
+    assert len(hotspot["path_m"]) >= 2
+
+
+def test_route_primitive_scopes_duplicate_module_ids_by_aisle() -> None:
+    routed = architecture_route_objective(
+        duplicate_result(),
+        [
+            {"sku": "A-SKU", "sales_qty_7d": 10},
+            {"sku": "B-SKU", "sales_qty_7d": 20},
+        ],
+        duplicate_layout(),
+        architecture(),
+        resolution_m=0.5,
+    )
+
+    assert routed["available"] is True
+    assert routed["module_distance_count"] == 2
+    assert set(routed["module_distances_m"]) == {"A::1", "B::1"}
+    assert routed["module_distances_m"]["B::1"] > routed["module_distances_m"]["A::1"]
+    assert routed["route_hotspots"][0]["module_id"] == "B::1"
+    assert len(routed["route_hotspots"]) <= MAX_ROUTE_HOTSPOTS

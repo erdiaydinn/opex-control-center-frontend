@@ -13,11 +13,7 @@ from app.modules.field_intelligence.promotion import FieldPromotionError, get_ad
 
 
 def test_item10_routes_are_registered_on_canonical_core_api() -> None:
-    paths = {
-        path
-        for route in app.routes
-        if (path := getattr(route, "path", None)) is not None
-    }
+    paths = set(app.openapi()["paths"])
     assert "/v1/field/promotions" in paths
     assert "/v1/field/promotions/{promotion_id}/decision" in paths
     assert "/v1/field/promotions/{promotion_id}/consumer-receipt" in paths

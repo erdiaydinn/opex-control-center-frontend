@@ -46,6 +46,8 @@ jobs:
           --health-retries 12
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
       - name: Prove exact checkout
         run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -126,7 +128,10 @@ jobs:
       - name: Master 26 PostgreSQL adversarial acceptance
         run: pytest -q services/core-api/tests/test_planogram_master26_postgres.py
       - name: Planogram global operations UI contract
-        run: node scripts/test-planogram-operations-ui.mjs
+        run: |
+          node scripts/test-planogram-operations-ui.mjs
+          node scripts/test-planogram-product-states.mjs
+          node scripts/test-no-new-hardcoded-ui-strings.mjs
       - name: Install reviewed frontend dependency closure
         run: |
           node scripts/ci/materialize-sheetjs.mjs

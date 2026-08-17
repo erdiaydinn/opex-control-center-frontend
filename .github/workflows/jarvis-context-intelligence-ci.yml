@@ -97,6 +97,8 @@ jobs:
             app/commercial_intelligence.py \
             app/api_discovery_intelligence.py \
             app/api_capability_intelligence.py \
+            app/api_schema_intelligence.py \
+            app/api_action_correlation.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
             tests/test_context_unicode_intelligence.py \
@@ -123,6 +125,8 @@ jobs:
             tests/test_commercial_intelligence.py \
             tests/test_api_discovery_intelligence.py \
             tests/test_api_capability_intelligence.py \
+            tests/test_api_schema_intelligence.py \
+            tests/test_api_action_correlation.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py
@@ -154,6 +158,8 @@ jobs:
             tests/test_commercial_intelligence.py \
             tests/test_api_discovery_intelligence.py \
             tests/test_api_capability_intelligence.py \
+            tests/test_api_schema_intelligence.py \
+            tests/test_api_action_correlation.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py

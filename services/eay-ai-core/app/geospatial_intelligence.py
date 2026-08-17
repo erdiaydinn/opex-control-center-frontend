@@ -8,6 +8,7 @@ without relying on brittle free-text equality.
 
 from __future__ import annotations
 
+import unicodedata
 from math import asin, cos, isfinite, radians, sin, sqrt
 
 from pydantic import BaseModel, Field, model_validator
@@ -19,7 +20,10 @@ EARTH_RADIUS_KM = 6371.0088
 def _norm(value: str | None) -> str | None:
     if value is None:
         return None
-    return " ".join(value.casefold().replace("ı", "i").split())
+    folded = value.casefold().replace("ı", "i")
+    decomposed = unicodedata.normalize("NFKD", folded)
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_marks.split())
 
 
 class GeoScope(BaseModel):

@@ -60,6 +60,14 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
         )
         await connection.execute(
             """
+            INSERT INTO field_locations (tenant_id, location_id, name, active)
+            VALUES ($1, $2, 'Photo Store', TRUE)
+            """,
+            tenant_id,
+            location_id,
+        )
+        await connection.execute(
+            """
             INSERT INTO field_templates (
                 tenant_id, template_id, version, name_i18n, schema, status, created_by
             ) VALUES ($1, 'photo-check', 1, '{"en":"Photo check"}'::jsonb, $2::jsonb, 'active', 'author')
@@ -71,13 +79,13 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
             """
             INSERT INTO field_missions (
                 tenant_id, id, template_id, template_version, title_i18n, instructions_i18n,
-                priority, status, assigned_at, deadline_at, target_selector,
-                target_fingerprint, created_by
+                priority, status, assigned_at, deadline_at, selector,
+                target_fingerprint, target_count, created_by
             ) VALUES (
                 $1, $2, 'photo-check', 1, '{"en":"Photo check"}'::jsonb, '{}'::jsonb,
                 'normal', 'active', CURRENT_TIMESTAMP - interval '1 hour',
                 CURRENT_TIMESTAMP + interval '1 hour', '{"all_active_locations":true}'::jsonb,
-                repeat('c',64), 'mission-author'
+                repeat('c',64), 1, 'mission-author'
             )
             """,
             tenant_id,
@@ -86,8 +94,8 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
         await connection.execute(
             """
             INSERT INTO field_mission_targets (
-                tenant_id, mission_id, location_id, location_name, status
-            ) VALUES ($1, $2, $3, 'Photo Store', 'unseen')
+                tenant_id, mission_id, location_id, status
+            ) VALUES ($1, $2, $3, 'unseen')
             """,
             tenant_id,
             mission_id,

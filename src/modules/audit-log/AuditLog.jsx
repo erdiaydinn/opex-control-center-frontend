@@ -5,6 +5,8 @@ import { usePlatformPreferences } from "../../platform/preferences/PlatformPrefe
 import "./audit-log.css";
 import { fetchAuditEvents } from "./auditLogApi";
 
+const EMPTY_FILTERS = Object.freeze({ actor: "", decision: "", action: "" });
+
 function decisionLabel(decision, a) {
   const labels = { allowed: a("allowed"), denied: a("denied"), error: a("error") };
   return labels[decision] || decision;
@@ -17,10 +19,11 @@ export default function AuditLog() {
   const [actor, setActor] = useState("");
   const [decision, setDecision] = useState("");
   const [action, setAction] = useState("");
+  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadEvents(filters = { actor, decision, action }) {
+  async function loadEvents(filters) {
     setLoading(true);
     setError("");
     try {
@@ -34,7 +37,7 @@ export default function AuditLog() {
   }
 
   useEffect(() => {
-    loadEvents({ actor: "", decision: "", action: "" });
+    loadEvents(EMPTY_FILTERS);
     // Initial authoritative load only; filters are explicitly submitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -47,15 +50,17 @@ export default function AuditLog() {
 
   function handleSubmit(event) {
     event.preventDefault();
-    loadEvents();
+    const nextFilters = { actor, decision, action };
+    setAppliedFilters(nextFilters);
+    loadEvents(nextFilters);
   }
 
   function handleReset() {
-    const cleared = { actor: "", decision: "", action: "" };
-    setActor(cleared.actor);
-    setDecision(cleared.decision);
-    setAction(cleared.action);
-    loadEvents(cleared);
+    setActor(EMPTY_FILTERS.actor);
+    setDecision(EMPTY_FILTERS.decision);
+    setAction(EMPTY_FILTERS.action);
+    setAppliedFilters(EMPTY_FILTERS);
+    loadEvents(EMPTY_FILTERS);
   }
 
   const productState = loading ? "loading" : error ? "error" : items.length ? "ready" : "empty";
@@ -68,7 +73,7 @@ export default function AuditLog() {
           <h1>{a("title")}</h1>
           <p>{a("subtitle")}</p>
         </div>
-        <button className="audit-log__refresh" type="button" onClick={() => loadEvents()} disabled={loading}>
+        <button className="audit-log__refresh" type="button" onClick={() => loadEvents(appliedFilters)} disabled={loading}>
           {loading ? t("loading") : t("refresh")}
         </button>
       </header>
@@ -90,7 +95,7 @@ export default function AuditLog() {
       </form>
 
       {loading ? <div role="status" aria-live="polite" aria-atomic="true">{t("loading")}</div> : null}
-      {!loading && error ? <div className="audit-log__error" role="alert" aria-atomic="true">{error} <button type="button" onClick={() => loadEvents()}>{t("retry")}</button></div> : null}
+      {!loading && error ? <div className="audit-log__error" role="alert" aria-atomic="true">{error} <button type="button" onClick={() => loadEvents(appliedFilters)}>{t("retry")}</button></div> : null}
       {!loading && !error ? <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a("total")}: {summary.total}</p> : null}
 
       {!loading && !error ? (

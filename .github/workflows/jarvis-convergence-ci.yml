@@ -5,9 +5,23 @@ on:
     branches:
       - release/platform-convergence-jarvis-v0.1
       - release/platform-convergence-v0.1
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/core/ai_*.py"
+      - "services/core-api/tests/test_ai_*.py"
+      - "services/eay-ai-core/**"
+      - ".github/workflows/jarvis-convergence-ci.yml"
   pull_request:
     branches:
       - release/platform-convergence-v0.1
+      - product/eay-product-completion-v1
+    paths:
+      - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/core/ai_*.py"
+      - "services/core-api/tests/test_ai_*.py"
+      - "services/eay-ai-core/**"
+      - ".github/workflows/jarvis-convergence-ci.yml"
 
 permissions:
   contents: read
@@ -132,3 +146,49 @@ jobs:
           services/core-api/app/core/ai_orders_v2_live_cross_tenant_runner.py
           services/core-api/app/core/ai_orders_v2_policy_transition.py
           services/core-api/app/core/ai_orders_v2_policy_transition_guard.py
+
+  grounded-decision-quality:
+    name: Grounded answer evidence and confidence authority
+    runs-on: ubuntu-latest
+    env:
+      EAY_ENVIRONMENT: test
+      EAY_AI_DB_PATH: /tmp/eay-ai-ci.db
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install EAY AI Core focused test surface
+        run: python -m pip install -e './services/eay-ai-core[dev]'
+      - name: Compile grounded reasoning boundary
+        run: >-
+          python -m compileall -q
+          services/eay-ai-core/app/grounded_reasoning.py
+          services/eay-ai-core/app/grounded_chat.py
+      - name: Run deterministic decision-quality adversarial tests
+        working-directory: services/eay-ai-core
+        run: pytest -q tests/test_grounded_reasoning.py tests/test_grounded_chat.py
+      - name: Prove no private chain-of-thought contract is exposed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('services/eay-ai-core/app/grounded_reasoning.py').read_text(encoding='utf-8').lower()
+          assert 'chain_of_thought' not in text
+          assert 'private reasoning' in text
+          print('JARVIS_DECISION_QUALITY_OBSERVABLE_ONLY=PASS')
+          PY
+      - name: Prove calibrated confidence is persisted before learning threshold
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('services/eay-ai-core/app/grounded_chat.py').read_text(encoding='utf-8')
+          calibrate=text.index('decision_quality = assess_and_calibrate_grounded_answer')
+          save=text.index('store.save_interaction', calibrate)
+          threshold=text.index('if answer.confidence < settings.low_confidence_threshold', save)
+          assert calibrate < save < threshold
+          print('JARVIS_CALIBRATED_CONFIDENCE_PERSISTENCE=PASS')
+          PY

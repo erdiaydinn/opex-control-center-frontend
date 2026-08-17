@@ -4,6 +4,8 @@
 
 Roadmap items 1–10 remain cumulative prerequisites. Item 11 adds versioned Workforce demand and labor-standard authority without replacing the existing deterministic `demand_model.py` math kernel.
 
+The controlling repository gate is **EAY Roadmap 1-11 Exact-Head Acceptance**. It must pass on the actual PR head SHA; a prior SHA or GitHub synthetic merge ref is not sufficient.
+
 ## Item 11 — Versioned demand → man-hour → required people
 
 Repository/software acceptance requires:

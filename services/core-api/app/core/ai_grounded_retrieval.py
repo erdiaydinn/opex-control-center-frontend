@@ -7,6 +7,7 @@ Identity Gateway assertion supplied by trusted server-side orchestration.
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from ipaddress import ip_address
 from urllib.parse import urlsplit
@@ -82,6 +83,36 @@ def _validated_assertion(assertion: str) -> str:
     return assertion
 
 
+def _validated_source_url(value: object) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str) or not value or len(value) > 2048:
+        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+
+
+def _validated_effective_date(value: object) -> date | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) != 10:
+        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable") from exc
+    if parsed.isoformat() != value:
+        raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+    return parsed
+
+
 def _validated_evidence_response(
     body: object,
     *,
@@ -100,8 +131,16 @@ def _validated_evidence_response(
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
         if item["authority_level"] not in ALLOWED_AUTHORITY_LEVELS:
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
-        if not isinstance(item["score"], (int, float)) or isinstance(item["score"], bool):
+
+        score = item["score"]
+        if (
+            not isinstance(score, (int, float))
+            or isinstance(score, bool)
+            or not math.isfinite(score)
+            or not 0.0 <= float(score) <= 1.0
+        ):
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+
         for field, maximum in (
             ("id", 180),
             ("title", 500),
@@ -111,17 +150,17 @@ def _validated_evidence_response(
             value = item[field]
             if not isinstance(value, str) or not value or len(value) > maximum:
                 raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
-        source_url = item["source_url"]
-        if source_url is not None and (
-            not isinstance(source_url, str) or len(source_url) > 2048
+
+        _validated_source_url(item["source_url"])
+        effective_from = _validated_effective_date(item["effective_from"])
+        effective_to = _validated_effective_date(item["effective_to"])
+        if (
+            effective_from is not None
+            and effective_to is not None
+            and effective_from > effective_to
         ):
             raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
-        for field in ("effective_from", "effective_to"):
-            value = item[field]
-            if value is not None and (
-                not isinstance(value, str) or len(value) != 10
-            ):
-                raise AIGroundedRetrievalUnavailable("AI grounded retrieval unavailable")
+
         validated.append(item)
     return validated
 

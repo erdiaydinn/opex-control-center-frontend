@@ -127,6 +127,17 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/evidence_object_upload.py", "_authorize_upload"),
     ("modules/field_intelligence/evidence_object_upload.py", "_existing_receipt"),
     ("modules/field_intelligence/evidence_object_upload.py", "upload_private_evidence_object"),
+    # Items 7-10/60 governance security review: exact functions only. Every SQL
+    # statement is a static text() literal with bound parameters, each transaction
+    # enters canonical app.tenant_id context, and governed tables are FORCE-RLS.
+    # Recurrence/exemption/export evidence is append-only and export is maker-checker.
+    ("modules/field_intelligence/governance.py", "retire_template_version"),
+    ("modules/field_intelligence/governance.py", "create_recurrence_rule"),
+    ("modules/field_intelligence/governance.py", "list_recurrence_rules"),
+    ("modules/field_intelligence/governance.py", "exempt_target"),
+    ("modules/field_intelligence/governance.py", "preview_server_targeting"),
+    ("modules/field_intelligence/governance.py", "request_export"),
+    ("modules/field_intelligence/governance.py", "decide_export"),
     # Item 10/60 security review: Field promotion tables are RLS-bound and
     # append-only. These paths emit immutable candidate/decision/receipt evidence
     # and never update Inventory, Planogram or Budget authority tables.

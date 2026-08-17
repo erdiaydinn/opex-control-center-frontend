@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Camera, MapPin, RefreshCw, Send, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import { apiGet, apiPost } from "../../api/client.js";
+import { apiFetch, apiGet, apiPost } from "../../api/client.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import { translateField } from "./fieldMessages.js";
 import { translateFieldMobile } from "./fieldMobileMessages.js";
@@ -27,6 +27,29 @@ function queueStateLabel(t, state) {
   if (state === "conflict") return t("conflict");
   if (state === "stale_assignment") return t("staleAssignment");
   return t("queued");
+}
+
+async function uploadPrivateFieldAttachment({
+  blob,
+  fingerprint,
+  fieldKey,
+  clientSubmissionId,
+  missionId,
+  locationId,
+}) {
+  const query = new URLSearchParams({
+    mission_id: missionId,
+    location_id: locationId,
+    client_submission_id: clientSubmissionId,
+  });
+  return apiFetch(`/v1/field/evidence-objects/${encodeURIComponent(fieldKey)}?${query.toString()}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": blob.type,
+      "X-EAY-Content-SHA256": fingerprint,
+    },
+    body: blob,
+  });
 }
 
 export default function FieldMobileCapture() {
@@ -75,9 +98,7 @@ export default function FieldMobileCapture() {
     try {
       await drainFieldOfflineQueue({
         syncBatch: (body) => apiPost("/v1/field/offline-sync", body),
-        uploadAttachment: async () => {
-          throw new Error("private_evidence_transport_unavailable");
-        },
+        uploadAttachment: uploadPrivateFieldAttachment,
       });
       await refreshQueue();
     } catch (syncError) {
@@ -277,7 +298,7 @@ export default function FieldMobileCapture() {
       <p className="eay-field-mobile-boundary">{m("deviceTrustBoundary")}</p>
       <p className="eay-field-mobile-boundary">{m("cameraTrustBoundary")}</p>
       {loading ? <section role="status" aria-busy="true">{f("loading")}</section> : null}
-      {error ? <section role="alert" className="eay-field-mobile-error">{error === "private_evidence_transport_unavailable" ? m("privateUploadUnavailable") : error}</section> : null}
+      {error ? <section role="alert" className="eay-field-mobile-error">{error}</section> : null}
       {message ? <section role="status" className="eay-field-mobile-success">{message}</section> : null}
 
       {!loading ? (
@@ -325,7 +346,7 @@ export default function FieldMobileCapture() {
                 <dl>
                   <dt>{m("sequence")}</dt><dd>{item.deviceSequence}</dd>
                   <dt>{m("status")}</dt><dd>{item.state}</dd>
-                  {item.lastError ? <><dt>{m("lastError")}</dt><dd>{item.lastError === "private_evidence_transport_unavailable" ? m("privateUploadUnavailable") : item.lastError}</dd></> : null}
+                  {item.lastError ? <><dt>{m("lastError")}</dt><dd>{item.lastError}</dd></> : null}
                 </dl>
                 {item.state === "blocked" ? <button type="button" className="eay-field-mobile-secondary" onClick={() => retryItem(item)}>{m("retry")}</button> : null}
               </article>

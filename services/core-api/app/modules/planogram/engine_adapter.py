@@ -84,9 +84,18 @@ def _load_modules() -> tuple[Path, ModuleType, ModuleType, ModuleType]:
     return root, engine, physical_truth, physical_engine
 
 
+@lru_cache(maxsize=1)
+def _load_optimizer() -> ModuleType:
+    root, _, _, _ = _load_modules()
+    optimizer_path = root / "physical_optimizer.py"
+    if not optimizer_path.is_file():
+        raise PlanogramEngineUnavailable("Canonical Planogram optimizer is unavailable")
+    return _module_from_root("physical_optimizer", root)
+
+
 def engine_status() -> dict[str, Any]:
     """Return non-sensitive deployment status for the canonical library."""
-    _, engine, physical_truth, physical_engine = _load_modules()
+    root, engine, physical_truth, physical_engine = _load_modules()
     return {
         "available": True,
         "contract": "physical-truth-gated-deterministic-v1",
@@ -94,6 +103,11 @@ def engine_status() -> dict[str, Any]:
         "library_mode": True,
         "legacy_bridge_enabled": False,
         "production_ai_dimensions_allowed": False,
+        "optimizer": {
+            "available": (root / "physical_optimizer.py").is_file(),
+            "contract": "physical-plan-optimizer-v1",
+            "production_authority": False,
+        },
         "source_modules": {
             "engine": Path(engine.__file__ or "").name,
             "physical_truth": Path(physical_truth.__file__ or "").name,
@@ -125,4 +139,28 @@ def generate_preview(
     result = generator(products, layout, store_dna, mode=mode)
     if not isinstance(result, dict):
         raise PlanogramEngineUnavailable("Canonical Planogram engine returned an invalid result")
+    return result
+
+
+def generate_optimized_preview(
+    *,
+    products: list[dict[str, Any]],
+    layout: dict[str, Any],
+    store_dna: dict[str, Any],
+    mode: str,
+) -> dict[str, Any]:
+    """Run Master-25 optimization without granting production authority.
+
+    The optimizer itself calls the physical production gate for every candidate.
+    Core still treats all HTTP request payloads as unattested preview inputs.
+    """
+    optimizer = _load_optimizer()
+    optimize = getattr(optimizer, "optimize_production_plan", None)
+    if not callable(optimize):
+        raise PlanogramEngineUnavailable(
+            "Canonical Planogram optimizer entrypoint is unavailable"
+        )
+    result = optimize(products, layout, store_dna, mode=mode)
+    if not isinstance(result, dict) or not isinstance(result.get("optimizer"), dict):
+        raise PlanogramEngineUnavailable("Canonical Planogram optimizer returned an invalid result")
     return result

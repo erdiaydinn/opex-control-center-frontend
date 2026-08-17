@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from .models import GlossaryAnswer, GlossaryTerm
+from .models import GlossaryAmbiguityCandidate, GlossaryAnswer, GlossaryTerm
 from .resolver import GlossaryResolutionError, resolve_term
 
 
@@ -16,7 +16,9 @@ class SemanticConsumer(StrEnum):
 
 
 class SemanticAuthorityUnavailable(LookupError):
-    pass
+    def __init__(self, message: str, *, candidates: list[GlossaryAmbiguityCandidate] | None = None) -> None:
+        super().__init__(message)
+        self.candidates = list(candidates or [])
 
 
 def resolve_for_consumer(
@@ -46,6 +48,11 @@ def resolve_for_consumer(
             at=at,
         )
     except GlossaryResolutionError as exc:
+        if exc.candidates:
+            raise SemanticAuthorityUnavailable(
+                f"semantic scope context is required for {consumer.value}",
+                candidates=exc.candidates,
+            ) from exc
         raise SemanticAuthorityUnavailable(
             f"no approved effective semantic definition is available for {consumer.value}"
         ) from exc

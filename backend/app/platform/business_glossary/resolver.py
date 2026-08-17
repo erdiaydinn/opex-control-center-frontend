@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .models import GlossaryAnswer, GlossaryStatus, GlossaryTerm, locale_value
+from .models import (
+    GlossaryAmbiguityCandidate,
+    GlossaryAnswer,
+    GlossaryStatus,
+    GlossaryTerm,
+    locale_value,
+)
 
 
 class GlossaryResolutionError(LookupError):
-    pass
+    def __init__(self, message: str, *, candidates: list[GlossaryAmbiguityCandidate] | None = None) -> None:
+        super().__init__(message)
+        self.candidates = list(candidates or [])
 
 
 def _scope_matches(term: GlossaryTerm, tenant_id: str, country: str | None, region: str | None, business_unit: str | None, domain: str | None) -> bool:
@@ -17,6 +25,14 @@ def _scope_matches(term: GlossaryTerm, tenant_id: str, country: str | None, regi
     return all(expected is None or expected == actual for expected, actual in dimensions)
 
 
+def _scope_compatible_for_discovery(term: GlossaryTerm, tenant_id: str, country: str | None, region: str | None, business_unit: str | None, domain: str | None) -> bool:
+    scope = term.scope
+    if scope.tenant_id != tenant_id:
+        return False
+    dimensions = ((scope.country, country), (scope.region, region), (scope.business_unit, business_unit), (scope.domain, domain))
+    return all(actual is None or expected is None or expected == actual for expected, actual in dimensions)
+
+
 def _specificity(term: GlossaryTerm) -> int:
     scope = term.scope
     return sum(value is not None for value in (scope.country, scope.region, scope.business_unit, scope.domain))
@@ -24,6 +40,40 @@ def _specificity(term: GlossaryTerm) -> int:
 
 def _authority_rank(term: GlossaryTerm) -> tuple[int, int]:
     return (_specificity(term), term.version)
+
+
+def _is_effective_at(term: GlossaryTerm, at: datetime) -> bool:
+    if term.status != GlossaryStatus.EFFECTIVE:
+        return False
+    if term.effective_from and term.effective_from > at:
+        return False
+    if term.effective_to and term.effective_to <= at:
+        return False
+    return True
+
+
+def _query_matches(term: GlossaryTerm, normalized: str) -> bool:
+    names = {
+        term.canonical_key.casefold(),
+        *(alias.casefold() for alias in term.aliases),
+        *(binding.value.casefold() for binding in term.alias_bindings),
+    }
+    names.update(value.casefold() for value in term.display_name.values.values())
+    return normalized in names
+
+
+def _candidate_contexts(terms: list[GlossaryTerm], locale: str) -> list[GlossaryAmbiguityCandidate]:
+    ordered = sorted(terms, key=lambda item: (_authority_rank(item), item.concept_id), reverse=True)
+    return [
+        GlossaryAmbiguityCandidate(
+            concept_id=item.concept_id,
+            canonical_key=item.canonical_key,
+            display_name=locale_value(item.display_name, locale),
+            scope=item.scope,
+            version=item.version,
+        )
+        for item in ordered
+    ]
 
 
 def resolve_term(
@@ -40,22 +90,24 @@ def resolve_term(
 ) -> GlossaryAnswer:
     now = at or datetime.now(timezone.utc)
     normalized = query.strip().casefold()
-    candidates: list[GlossaryTerm] = []
-    for term in terms:
-        if term.status != GlossaryStatus.EFFECTIVE:
-            continue
-        if not _scope_matches(term, tenant_id, country, region, business_unit, domain):
-            continue
-        if term.effective_from and term.effective_from > now:
-            continue
-        if term.effective_to and term.effective_to <= now:
-            continue
-        names = {term.canonical_key.casefold(), *(alias.casefold() for alias in term.aliases)}
-        names.update(value.casefold() for value in term.display_name.values.values())
-        if normalized in names:
-            candidates.append(term)
+    active_matches = [term for term in terms if _is_effective_at(term, now) and _query_matches(term, normalized)]
+    candidates = [
+        term
+        for term in active_matches
+        if _scope_matches(term, tenant_id, country, region, business_unit, domain)
+    ]
 
     if not candidates:
+        discoverable = [
+            term
+            for term in active_matches
+            if _scope_compatible_for_discovery(term, tenant_id, country, region, business_unit, domain)
+        ]
+        if discoverable:
+            raise GlossaryResolutionError(
+                "semantic scope context is required to resolve this tenant glossary term",
+                candidates=_candidate_contexts(discoverable, locale),
+            )
         raise GlossaryResolutionError("no approved effective tenant glossary definition")
 
     candidates.sort(key=_authority_rank, reverse=True)
@@ -65,7 +117,10 @@ def resolve_term(
     if len(equally_authoritative) > 1:
         identities = {(item.concept_id, item.canonical_key) for item in equally_authoritative}
         if len(identities) > 1:
-            raise GlossaryResolutionError("ambiguous equally authoritative tenant glossary definitions")
+            raise GlossaryResolutionError(
+                "ambiguous equally authoritative tenant glossary definitions",
+                candidates=_candidate_contexts(equally_authoritative, locale),
+            )
 
     return GlossaryAnswer(
         concept_id=selected.concept_id,
@@ -76,6 +131,8 @@ def resolve_term(
         formula=selected.formula,
         unit=selected.unit,
         data_source_refs=list(selected.data_source_refs),
+        alias_bindings=list(selected.alias_bindings),
+        concept_relations=list(selected.concept_relations),
         scope=selected.scope,
         version=selected.version,
         authoritative=True,

@@ -17,6 +17,16 @@ class GlossaryStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class GlossaryAliasKind(StrEnum):
+    SYNONYM = "synonym"
+    ACRONYM = "acronym"
+
+
+class GlossaryRelationKind(StrEnum):
+    PARENT = "parent"
+    RELATED = "related"
+
+
 class GlossaryScope(BaseModel):
     tenant_id: str = Field(min_length=1)
     country: str | None = None
@@ -38,6 +48,28 @@ class LocalizedText(BaseModel):
         return self
 
 
+class GlossaryAliasBinding(BaseModel):
+    kind: GlossaryAliasKind
+    value: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_value(self) -> "GlossaryAliasBinding":
+        if not self.value.strip():
+            raise ValueError("glossary alias binding must not be blank")
+        return self
+
+
+class GlossaryConceptRelation(BaseModel):
+    kind: GlossaryRelationKind
+    target_concept_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "GlossaryConceptRelation":
+        if not self.target_concept_id.strip():
+            raise ValueError("glossary concept relation target must not be blank")
+        return self
+
+
 class GlossaryTerm(BaseModel):
     concept_id: str = Field(min_length=1)
     canonical_key: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]*$")
@@ -50,10 +82,12 @@ class GlossaryTerm(BaseModel):
     short_definition: LocalizedText
     detailed_definition: LocalizedText | None = None
     aliases: list[str] = Field(default_factory=list)
+    alias_bindings: list[GlossaryAliasBinding] = Field(default_factory=list)
     formula: str | None = None
     unit: str | None = None
     data_source_refs: list[str] = Field(default_factory=list)
     related_concepts: list[str] = Field(default_factory=list)
+    concept_relations: list[GlossaryConceptRelation] = Field(default_factory=list)
     owner: str = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -66,6 +100,14 @@ class GlossaryTerm(BaseModel):
         return self
 
 
+class GlossaryAmbiguityCandidate(BaseModel):
+    concept_id: str
+    canonical_key: str
+    display_name: str
+    scope: GlossaryScope
+    version: int
+
+
 class GlossaryAnswer(BaseModel):
     concept_id: str
     canonical_key: str
@@ -75,6 +117,8 @@ class GlossaryAnswer(BaseModel):
     formula: str | None = None
     unit: str | None = None
     data_source_refs: list[str] = Field(default_factory=list)
+    alias_bindings: list[GlossaryAliasBinding] = Field(default_factory=list)
+    concept_relations: list[GlossaryConceptRelation] = Field(default_factory=list)
     scope: GlossaryScope
     version: int
     authoritative: bool

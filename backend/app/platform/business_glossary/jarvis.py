@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .models import GlossaryAnswer, GlossaryTerm
+from .models import GlossaryAmbiguityCandidate, GlossaryAnswer, GlossaryTerm
 from .semantic_consumers import SemanticAuthorityUnavailable, resolve_for_jarvis
 
 
 class JarvisGlossaryAnswerUnavailable(LookupError):
     """Raised when Jarvis has no approved company definition to cite."""
+
+    def __init__(self, message: str, *, candidates: list[GlossaryAmbiguityCandidate] | None = None) -> None:
+        super().__init__(message)
+        self.candidates = list(candidates or [])
 
 
 def answer_business_term(
@@ -36,6 +40,11 @@ def answer_business_term(
             at=at,
         )
     except SemanticAuthorityUnavailable as exc:
+        if exc.candidates:
+            raise JarvisGlossaryAnswerUnavailable(
+                "company term is ambiguous; semantic scope context is required",
+                candidates=exc.candidates,
+            ) from exc
         raise JarvisGlossaryAnswerUnavailable(
             "no approved effective company definition is available"
         ) from exc

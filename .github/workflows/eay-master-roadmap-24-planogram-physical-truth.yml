@@ -69,7 +69,7 @@ jobs:
                   await c.close()
           asyncio.run(main())
           PY
-      - name: Lint Store DNA authority
+      - name: Lint Store DNA authority and security review
         run: >-
           ruff check
           services/core-api/app/modules/planogram/store_dna.py
@@ -77,6 +77,9 @@ jobs:
           services/core-api/app/modules/planogram/router.py
           services/core-api/app/modules/planogram/schemas.py
           services/core-api/tests/test_planogram_master24_store_dna.py
+          services/core-api/tests/test_sql_access_boundary.py
+      - name: Secure SQL data-access boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
       - name: Apply cumulative Core migrations
         working-directory: services/core-api
         run: alembic upgrade head

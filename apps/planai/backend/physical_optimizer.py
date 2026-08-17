@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
 from physical_engine import generate_production_plan
 
@@ -19,7 +20,7 @@ OPTIMIZER_VERSION = "physical-plan-optimizer-v1"
 
 # Candidate order is part of the deterministic contract. Baseline is always
 # candidate zero and wins exact objective ties.
-STRATEGIES: tuple[tuple[str, Optional[dict[str, float]]], ...] = (
+STRATEGIES: tuple[tuple[str, dict[str, float] | None], ...] = (
     ("baseline", None),
     (
         "route_focus",
@@ -79,11 +80,11 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _sku(row: Dict[str, Any]) -> str:
+def _sku(row: dict[str, Any]) -> str:
     return str(row.get("sku") or row.get("SKU") or "").strip()
 
 
-def _sales(row: Dict[str, Any]) -> float:
+def _sales(row: dict[str, Any]) -> float:
     for field in (
         "sales_qty_7d",
         "sales_7d",
@@ -97,14 +98,21 @@ def _sales(row: Dict[str, Any]) -> float:
     return 0.0
 
 
-def _iter_shelves(planogram: Optional[Dict[str, Any]]):
-    for aisle_index, aisle in enumerate((planogram or {}).get("aisles", []) or [], start=1):
-        for module_index, module in enumerate(aisle.get("modules", []) or [], start=1):
-            for shelf_index, shelf in enumerate(module.get("shelves", []) or [], start=1):
+def _iter_shelves(planogram: dict[str, Any] | None):
+    aisles = (planogram or {}).get("aisles", []) or []
+    for aisle_index, aisle in enumerate(aisles, start=1):
+        for module_index, module in enumerate(
+            aisle.get("modules", []) or [],
+            start=1,
+        ):
+            for shelf_index, shelf in enumerate(
+                module.get("shelves", []) or [],
+                start=1,
+            ):
                 yield aisle_index, module_index, shelf_index, aisle, module, shelf
 
 
-def _iter_placed(planogram: Optional[Dict[str, Any]]):
+def _iter_placed(planogram: dict[str, Any] | None):
     for aisle_index, module_index, shelf_index, aisle, module, shelf in _iter_shelves(
         planogram
     ):
@@ -112,14 +120,16 @@ def _iter_placed(planogram: Optional[Dict[str, Any]]):
             yield aisle_index, module_index, shelf_index, aisle, module, shelf, product
 
 
-def _hard_violations(result: Dict[str, Any]) -> int:
+def _hard_violations(result: dict[str, Any]) -> int:
     diagnostics = result.get("diagnostics") or {}
     strict = int(
         _num((diagnostics.get("summary") or {}).get("strict_rule_violation_count"), 0)
     )
     operational = int(
         _num(
-            (result.get("operational_physical_validation") or {}).get("violation_count"),
+            (result.get("operational_physical_validation") or {}).get(
+                "violation_count"
+            ),
             0,
         )
     )
@@ -128,17 +138,20 @@ def _hard_violations(result: Dict[str, Any]) -> int:
 
 
 def _weighted_unplaced_sales(
-    result: Dict[str, Any],
-    source_products: Iterable[Dict[str, Any]],
+    result: dict[str, Any],
+    source_products: Iterable[dict[str, Any]],
 ) -> float:
     sales_by_sku = {_sku(row): _sales(row) for row in source_products}
     return round(
-        sum(sales_by_sku.get(_sku(row), 0.0) for row in result.get("unplaced") or []),
+        sum(
+            sales_by_sku.get(_sku(row), 0.0)
+            for row in result.get("unplaced") or []
+        ),
         6,
     )
 
 
-def _coverage_shortfall(result: Dict[str, Any]) -> float:
+def _coverage_shortfall(result: dict[str, Any]) -> float:
     shortfall = 0.0
     for *_, product in _iter_placed(result.get("planogram")):
         coverage = product.get("coverage_days")
@@ -148,11 +161,17 @@ def _coverage_shortfall(result: Dict[str, Any]) -> float:
     return round(shortfall, 6)
 
 
-def _picking_route_cost(result: Dict[str, Any]) -> float:
+def _picking_route_cost(result: dict[str, Any]) -> float:
     cost = 0.0
-    for aisle_index, module_index, shelf_index, aisle, module, _, product in _iter_placed(
-        result.get("planogram")
-    ):
+    for (
+        aisle_index,
+        module_index,
+        shelf_index,
+        aisle,
+        module,
+        _,
+        product,
+    ) in _iter_placed(result.get("planogram")):
         aisle_rank = _num(aisle.get("row"), float(aisle_index))
         aisle_position = _num(aisle.get("position"), 0.0)
         module_position = _num(module.get("position"), float(module_index))
@@ -166,10 +185,12 @@ def _picking_route_cost(result: Dict[str, Any]) -> float:
     return round(cost, 6)
 
 
-def _brand_fragmentation(result: Dict[str, Any]) -> int:
-    locations: dict[str, set[Tuple[str, str]]] = {}
+def _brand_fragmentation(result: dict[str, Any]) -> int:
+    locations: dict[str, set[tuple[str, str]]] = {}
     for _, _, _, aisle, module, _, product in _iter_placed(result.get("planogram")):
-        brand = str(product.get("brand") or product.get("brand_name") or "").strip().lower()
+        brand = str(
+            product.get("brand") or product.get("brand_name") or ""
+        ).strip().lower()
         if not brand:
             continue
         location = (str(aisle.get("aisle_id")), str(module.get("module_id")))
@@ -177,7 +198,7 @@ def _brand_fragmentation(result: Dict[str, Any]) -> int:
     return sum(max(0, len(items) - 1) for items in locations.values())
 
 
-def _capacity_pressure(result: Dict[str, Any]) -> float:
+def _capacity_pressure(result: dict[str, Any]) -> float:
     pressure = 0.0
     for *_, shelf in _iter_shelves(result.get("planogram")):
         width = max(1.0, _num(shelf.get("shelf_width_cm"), 100.0))
@@ -185,14 +206,16 @@ def _capacity_pressure(result: Dict[str, Any]) -> float:
         utilization = used / width
         pressure += max(0.0, utilization - 0.90) * 100.0
         pressure += sum(
-            1.0 for product in shelf.get("products", []) or [] if product.get("facing_reduced")
+            1.0
+            for product in shelf.get("products", []) or []
+            if product.get("facing_reduced")
         )
     return round(pressure, 6)
 
 
 def objective_components(
-    result: Dict[str, Any],
-    source_products: Iterable[Dict[str, Any]],
+    result: dict[str, Any],
+    source_products: Iterable[dict[str, Any]],
 ) -> dict[str, float | int]:
     """Return the hard-first objective used for deterministic candidate ranking."""
     return {
@@ -212,7 +235,7 @@ def objective_key(components: dict[str, float | int]) -> tuple[float, ...]:
 
 def _candidate_summary(
     strategy: str,
-    result: Dict[str, Any],
+    result: dict[str, Any],
     objective: dict[str, float | int],
 ) -> dict[str, Any]:
     summary = result.get("summary") or {}
@@ -226,16 +249,20 @@ def _candidate_summary(
     }
 
 
-def _plan_fingerprint(result: Dict[str, Any]) -> str:
+def _plan_fingerprint(result: dict[str, Any]) -> str:
     placements = []
-    for _, _, _, aisle, module, shelf, product in _iter_placed(result.get("planogram")):
+    for _, _, _, aisle, module, shelf, product in _iter_placed(
+        result.get("planogram")
+    ):
         placements.append(
             {
                 "sku": _sku(product),
                 "aisle_id": str(aisle.get("aisle_id")),
                 "module_id": str(module.get("module_id")),
                 "shelf_no": str(shelf.get("shelf_no")),
-                "facing": int(_num(product.get("facing_count", product.get("facing")), 0)),
+                "facing": int(
+                    _num(product.get("facing_count", product.get("facing")), 0)
+                ),
             }
         )
     placements.sort(
@@ -247,14 +274,18 @@ def _plan_fingerprint(result: Dict[str, Any]) -> str:
             row["facing"],
         )
     )
-    payload = json.dumps(placements, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(
+        placements,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
 def _optimizer_fingerprint(
     selected_strategy: str,
     selected_objective: dict[str, float | int],
-    selected_result: Dict[str, Any],
+    selected_result: dict[str, Any],
 ) -> str:
     payload = {
         "optimizer_version": OPTIMIZER_VERSION,
@@ -277,14 +308,14 @@ def _objective_delta(
 
 
 def optimize_production_plan(
-    products: List[Dict[str, Any]],
-    layout: Optional[Dict[str, Any]],
-    store_dna: Optional[Dict[str, Any]],
+    products: list[dict[str, Any]],
+    layout: dict[str, Any] | None,
+    store_dna: dict[str, Any] | None,
     *,
     mode: str = "HYBRID",
-    brand_side_rules: Optional[Dict[str, str]] = None,
+    brand_side_rules: dict[str, str] | None = None,
     require_images: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Select the best deterministic candidate without ever degrading baseline.
 
     If physical truth is incomplete, no alternative candidate is generated. The
@@ -315,18 +346,23 @@ def optimize_production_plan(
             "selected_strategy": "baseline",
             "baseline_objective": baseline_objective,
             "selected_objective": baseline_objective,
-            "objective_delta": _objective_delta(baseline_objective, baseline_objective),
+            "objective_delta": _objective_delta(
+                baseline_objective,
+                baseline_objective,
+            ),
             "candidate_count": 1,
             "candidates": [baseline_summary],
             "fingerprint": _optimizer_fingerprint(
-                "baseline", baseline_objective, baseline
+                "baseline",
+                baseline_objective,
+                baseline,
             ),
         }
         return result
 
-    candidates: list[tuple[int, str, Dict[str, Any], dict[str, float | int]]] = [
-        (0, "baseline", baseline, baseline_objective)
-    ]
+    candidates: list[
+        tuple[int, str, dict[str, Any], dict[str, float | int]]
+    ] = [(0, "baseline", baseline, baseline_objective)]
     for order, (strategy, scoring_config) in enumerate(STRATEGIES[1:], start=1):
         candidate = generate_production_plan(
             products=deepcopy(source_products),
@@ -338,7 +374,12 @@ def optimize_production_plan(
             require_images=require_images,
         )
         candidates.append(
-            (order, strategy, candidate, objective_components(candidate, source_products))
+            (
+                order,
+                strategy,
+                candidate,
+                objective_components(candidate, source_products),
+            )
         )
 
     selected = min(candidates, key=lambda item: (objective_key(item[3]), item[0]))
@@ -370,7 +411,9 @@ def optimize_production_plan(
             for _, strategy, candidate, objective in candidates
         ],
         "fingerprint": _optimizer_fingerprint(
-            selected_strategy, selected_objective, selected_result
+            selected_strategy,
+            selected_objective,
+            selected_result,
         ),
     }
     return result

@@ -17,6 +17,7 @@ on:
       - "scripts/test-supply-chain-lock-integrity.mjs"
       - "scripts/test-github-action-pinning.mjs"
       - "scripts/test-platform-load-governance.mjs"
+      - "scripts/test-route-split-bundle-budget.mjs"
       - "scripts/test-dockos-product-state.mjs"
       - "scripts/validate_product_quality_contract.py"
       - "scripts/test-platform-inclusion.mjs"
@@ -113,6 +114,8 @@ jobs:
       - name: Repository Intelligence registry contract
         run: node scripts/test-repository-intelligence-registry.mjs
       - run: npm run build
+      - name: Route-split bundle performance budget
+        run: node scripts/test-route-split-bundle-budget.mjs
 
   terminal-production-guard:
     name: Inventory terminal production guard

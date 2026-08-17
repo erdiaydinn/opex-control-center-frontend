@@ -13,6 +13,8 @@ on:
       - "services/eay-ai-core/app/jarvis_benchmark.py"
       - "services/eay-ai-core/app/procedural_memory.py"
       - "services/eay-ai-core/app/effect_attribution.py"
+      - "services/eay-ai-core/app/research_engine.py"
+      - "services/eay-ai-core/app/digital_twin.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_gateway.py"
@@ -28,6 +30,8 @@ on:
       - "services/eay-ai-core/tests/test_jarvis_benchmark.py"
       - "services/eay-ai-core/tests/test_procedural_memory.py"
       - "services/eay-ai-core/tests/test_effect_attribution.py"
+      - "services/eay-ai-core/tests/test_research_engine.py"
+      - "services/eay-ai-core/tests/test_digital_twin.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
       - "services/eay-ai-core/tests/test_context_provider_registry.py"
       - "services/eay-ai-core/tests/test_context_provider_gateway.py"
@@ -49,6 +53,8 @@ on:
       - "services/eay-ai-core/app/jarvis_benchmark.py"
       - "services/eay-ai-core/app/procedural_memory.py"
       - "services/eay-ai-core/app/effect_attribution.py"
+      - "services/eay-ai-core/app/research_engine.py"
+      - "services/eay-ai-core/app/digital_twin.py"
       - "services/eay-ai-core/app/context_taxonomy.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_gateway.py"
@@ -64,6 +70,8 @@ on:
       - "services/eay-ai-core/tests/test_jarvis_benchmark.py"
       - "services/eay-ai-core/tests/test_procedural_memory.py"
       - "services/eay-ai-core/tests/test_effect_attribution.py"
+      - "services/eay-ai-core/tests/test_research_engine.py"
+      - "services/eay-ai-core/tests/test_digital_twin.py"
       - "services/eay-ai-core/tests/test_context_taxonomy.py"
       - "services/eay-ai-core/tests/test_context_provider_registry.py"
       - "services/eay-ai-core/tests/test_context_provider_gateway.py"
@@ -134,6 +142,8 @@ jobs:
             app/jarvis_benchmark.py \
             app/procedural_memory.py \
             app/effect_attribution.py \
+            app/research_engine.py \
+            app/digital_twin.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
             tests/test_context_unicode_intelligence.py \
@@ -169,6 +179,8 @@ jobs:
             tests/test_jarvis_benchmark.py \
             tests/test_procedural_memory.py \
             tests/test_effect_attribution.py \
+            tests/test_research_engine.py \
+            tests/test_digital_twin.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py
@@ -209,6 +221,8 @@ jobs:
             tests/test_jarvis_benchmark.py \
             tests/test_procedural_memory.py \
             tests/test_effect_attribution.py \
+            tests/test_research_engine.py \
+            tests/test_digital_twin.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py

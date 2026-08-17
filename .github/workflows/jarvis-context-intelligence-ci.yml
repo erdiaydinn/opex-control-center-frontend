@@ -7,12 +7,14 @@ on:
     paths:
       - "services/eay-ai-core/app/context_intelligence.py"
       - "services/eay-ai-core/app/enterprise_domain_registry.py"
+      - "services/eay-ai-core/app/finance_intelligence.py"
       - "services/eay-ai-core/app/repository_intelligence.py"
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/eay-ai-core/tests/test_context_intelligence.py"
       - "services/eay-ai-core/tests/test_context_anomaly_guard.py"
       - "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
       - "services/eay-ai-core/tests/test_enterprise_economics_domain.py"
+      - "services/eay-ai-core/tests/test_finance_intelligence.py"
       - "services/eay-ai-core/tests/test_repository_intelligence.py"
       - "services/eay-ai-core/tests/test_repository_intelligence_legal_sources.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
@@ -20,12 +22,14 @@ on:
     paths:
       - "services/eay-ai-core/app/context_intelligence.py"
       - "services/eay-ai-core/app/enterprise_domain_registry.py"
+      - "services/eay-ai-core/app/finance_intelligence.py"
       - "services/eay-ai-core/app/repository_intelligence.py"
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/eay-ai-core/tests/test_context_intelligence.py"
       - "services/eay-ai-core/tests/test_context_anomaly_guard.py"
       - "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
       - "services/eay-ai-core/tests/test_enterprise_economics_domain.py"
+      - "services/eay-ai-core/tests/test_finance_intelligence.py"
       - "services/eay-ai-core/tests/test_repository_intelligence.py"
       - "services/eay-ai-core/tests/test_repository_intelligence_legal_sources.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
@@ -40,7 +44,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Context, economics and Turkish legal source contracts
+    name: Context, economics, finance and Turkish legal source contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -55,24 +59,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "pydantic>=2.9,<3.0" "pytest>=8,<9"
-      - name: Compile Jarvis context, domain and repository contracts
+      - name: Compile Jarvis context, domain, finance and repository contracts
         run: |
           python -m compileall -q \
             app/context_intelligence.py \
             app/enterprise_domain_registry.py \
+            app/finance_intelligence.py \
             app/repository_intelligence.py \
             tests/test_context_intelligence.py \
             tests/test_context_anomaly_guard.py \
             tests/test_enterprise_domain_registry.py \
             tests/test_enterprise_economics_domain.py \
+            tests/test_finance_intelligence.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py
-      - name: Run context, economics and legal-source adversarial tests
+      - name: Run Jarvis executive-intelligence adversarial tests
         run: |
           python -m pytest -q \
             tests/test_context_intelligence.py \
             tests/test_context_anomaly_guard.py \
             tests/test_enterprise_domain_registry.py \
             tests/test_enterprise_economics_domain.py \
+            tests/test_finance_intelligence.py \
             tests/test_repository_intelligence.py \
             tests/test_repository_intelligence_legal_sources.py

@@ -4,7 +4,8 @@ The research engine does not browse the web itself. It creates a bounded,
 auditable search mission and evaluates collected evidence. High-stakes or
 executive conclusions require primary-source coverage, independent
 corroboration, contradiction search, freshness, and explicit unresolved gaps.
-A large number of search results is never treated as proof by itself.
+Evidence published after the requested as-of boundary cannot leak backward
+into a historical conclusion. A large result count is never proof by itself.
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ class ResearchQuestion(BaseModel):
     as_of: datetime
     decision_deadline: datetime | None = None
     requires_current_information: bool = True
+    enforce_as_of_information_boundary: bool = True
     minimum_independent_sources: int = Field(default=2, ge=1, le=10)
 
     @model_validator(mode="after")
@@ -125,7 +127,9 @@ class ResearchAssessment(BaseModel):
     independent_contradiction_count: int
     primary_source_present: bool
     stale_evidence_count: int
+    temporally_unavailable_evidence_count: int = Field(ge=0)
     evidence_refs: tuple[str, ...]
+    excluded_evidence_refs: tuple[str, ...] = ()
     confidence_cap: float = Field(ge=0.0, le=1.0)
     blockers: tuple[str, ...] = ()
     unresolved_gaps: tuple[str, ...] = ()
@@ -168,7 +172,7 @@ def plan_research(question: ResearchQuestion) -> ResearchMission:
             ResearchTask(
                 task_id=f"{question.question_id}:current",
                 role=ResearchRole.TEMPORAL_UPDATE,
-                query_intent=f"Find the most recent authoritative update as of {question.as_of.isoformat()}: {question.question}",
+                query_intent=f"Find the most recent authoritative update available as of {question.as_of.isoformat()}: {question.question}",
                 preferred_source_tiers=(SourceTier.PRIMARY, SourceTier.AUTHORITATIVE_SECONDARY),
             )
         )
@@ -214,8 +218,19 @@ def assess_research(
     evidence: list[ResearchEvidence],
     freshness_window: timedelta = timedelta(days=30),
 ) -> ResearchAssessment:
-    current = [item for item in evidence if item.claim_key == claim_key]
+    claim_evidence = [item for item in evidence if item.claim_key == claim_key]
+    temporally_unavailable = [
+        item
+        for item in claim_evidence
+        if question.enforce_as_of_information_boundary
+        and item.published_at is not None
+        and item.published_at > question.as_of
+    ]
+    unavailable_ids = {item.evidence_id for item in temporally_unavailable}
+    current = [item for item in claim_evidence if item.evidence_id not in unavailable_ids]
+
     evidence_refs = tuple(sorted({item.evidence_ref for item in current}))
+    excluded_refs = tuple(sorted({item.evidence_ref for item in temporally_unavailable}))
     support = [item for item in current if item.supports_claim]
     contradict = [item for item in current if item.contradicts_claim]
 
@@ -231,6 +246,9 @@ def assess_research(
     blockers: list[str] = []
     gaps: list[str] = []
     high_stakes = question.risk in {ResearchRisk.HIGH, ResearchRisk.CRITICAL}
+    if temporally_unavailable:
+        blockers.append("research_evidence_not_available_as_of")
+        gaps.append("replace_future_published_evidence")
     if high_stakes and not primary_present:
         blockers.append("research_primary_source_missing")
         gaps.append("obtain_primary_source")
@@ -238,7 +256,7 @@ def assess_research(
         blockers.append("research_independent_support_quorum_missing")
         gaps.append("find_independent_corroboration")
     if question.risk is not ResearchRisk.LOW and not current:
-        blockers.append("research_no_evidence")
+        blockers.append("research_no_eligible_evidence")
     if stale and len(stale) == len(current):
         blockers.append("research_evidence_stale_only")
         gaps.append("refresh_evidence")
@@ -267,7 +285,9 @@ def assess_research(
         independent_contradiction_count=len(contradict_publishers),
         primary_source_present=primary_present,
         stale_evidence_count=len(stale),
+        temporally_unavailable_evidence_count=len(temporally_unavailable),
         evidence_refs=evidence_refs,
+        excluded_evidence_refs=excluded_refs,
         confidence_cap=confidence_cap,
         blockers=tuple(dict.fromkeys(blockers)),
         unresolved_gaps=tuple(dict.fromkeys(gaps)),

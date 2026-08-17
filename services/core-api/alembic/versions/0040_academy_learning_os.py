@@ -54,7 +54,7 @@ def upgrade() -> None:
       UNIQUE(tenant_id,subject,skill_id,evidence_type,evidence_ref), UNIQUE(tenant_id,id))
     """)
     op.execute("""
-    CREATE VIEW academy_subject_skill_proficiency AS
+    CREATE VIEW academy_subject_skill_proficiency WITH (security_invoker = true) AS
     SELECT DISTINCT ON (tenant_id,subject,skill_id)
       tenant_id,subject,skill_id,observed_level,evidence_type,evidence_ref,observed_at
     FROM academy_skill_evidence

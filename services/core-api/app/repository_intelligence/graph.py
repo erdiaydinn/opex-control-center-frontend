@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
+APPROVED_LICENSE_STATUSES=frozenset({'REPOSITORY_BOUND','REVIEWED','APPROVED'})
+
 @dataclass(frozen=True)
 class RepoSnapshot:
     registry_id:str; repository:str; commit_sha:str; branch_or_tag:str; paths:tuple[str,...]; symbols:tuple[str,...]; contracts:tuple[str,...]; owners:tuple[str,...]; license_status:str
@@ -13,8 +15,8 @@ class ImpactEdge:
 def validate_snapshot(snapshot:RepoSnapshot)->None:
     if not snapshot.repository or len(snapshot.commit_sha)!=40 or any(c not in '0123456789abcdef' for c in snapshot.commit_sha.lower()):
         raise ValueError('repository snapshot requires exact repository and commit SHA')
-    if snapshot.license_status.startswith('BLOCKED_'):
-        raise ValueError('license-blocked repository cannot become analysis source')
+    if snapshot.license_status not in APPROVED_LICENSE_STATUSES:
+        raise ValueError('repository license must be reviewed before analysis use')
 
 
 def build_impact_edges(snapshots:Iterable[RepoSnapshot])->tuple[ImpactEdge,...]:

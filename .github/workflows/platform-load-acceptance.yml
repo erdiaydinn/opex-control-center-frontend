@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       target_vus:
-        description: Synthetic virtual users for the tenant-isolation burst
+        description: Synthetic virtual users for the tenant-isolation burst (minimum 1000)
         required: false
         default: "1000"
 
@@ -153,9 +153,21 @@ jobs:
         run: sleep 2
 
       - name: Run 1000-VU tenant isolation saturation gate
+        id: burst_gate
+        continue-on-error: true
         env:
           TARGET_VUS: ${{ github.event_name == 'workflow_dispatch' && inputs.target_vus || '1000' }}
         run: |
+          case "$TARGET_VUS" in
+            ''|*[!0-9]*)
+              echo "TARGET_VUS must be an integer >= 1000; got '$TARGET_VUS'." >&2
+              exit 1
+              ;;
+          esac
+          if [ "$TARGET_VUS" -lt 1000 ]; then
+            echo "TARGET_VUS=$TARGET_VUS would weaken the canonical 1000-VU hard gate." >&2
+            exit 1
+          fi
           echo "$TARGET_VUS" > /tmp/eay-burst-target-vus
           docker run --rm --network host \
             -v "$PWD:/work" -w /work \
@@ -170,6 +182,7 @@ jobs:
             run ops/load/k6-platform-core-tenant-burst.js
 
       - name: Verify tenant and audit correctness after load
+        if: always() && steps.burst_gate.outcome != 'skipped'
         working-directory: services/core-api
         run: |
           export BURST_TARGET_VUS="$(cat /tmp/eay-burst-target-vus)"
@@ -257,7 +270,18 @@ jobs:
           asyncio.run(main())
           PY
 
+      - name: Enforce 1000-VU saturation result
+        if: always() && steps.burst_gate.outcome != 'skipped'
+        env:
+          BURST_OUTCOME: ${{ steps.burst_gate.outcome }}
+        run: |
+          if [ "$BURST_OUTCOME" != "success" ]; then
+            echo "1000-VU saturation gate failed; post-load correctness evidence was still collected." >&2
+            exit 1
+          fi
+
       - name: Record synthetic evidence boundary
+        if: success()
         run: |
           cat <<'EOF'
           This workflow is synthetic CI evidence only.

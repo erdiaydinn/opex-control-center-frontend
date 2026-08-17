@@ -65,12 +65,19 @@ def _route_objective(
     layout: dict[str, Any] | None,
     store_dna: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    routed = architecture_route_objective(
-        result,
-        source_products,
-        layout,
-        store_dna,
-    )
+    # The production wrapper scopes module identity by aisle before routing and
+    # stores the resulting evidence on every generated candidate. Reuse that
+    # canonical evidence so duplicate legacy module ids cannot be remapped here.
+    precomputed = result.get("architecture_route_objective")
+    if isinstance(precomputed, dict):
+        routed = deepcopy(precomputed)
+    else:
+        routed = architecture_route_objective(
+            result,
+            source_products,
+            layout,
+            store_dna,
+        )
     if routed.get("available"):
         return routed
     return {

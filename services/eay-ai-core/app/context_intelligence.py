@@ -12,6 +12,7 @@ existing tenant-safe data/tool path.
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime
 from enum import Enum
 from urllib.parse import urlparse
@@ -77,7 +78,10 @@ def _aware(value: datetime) -> bool:
 
 
 def _norm_location(value: str) -> str:
-    return " ".join(value.casefold().replace("ı", "i").split())
+    folded = value.casefold().replace("ı", "i")
+    decomposed = unicodedata.normalize("NFKD", folded)
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_marks.split())
 
 
 def _https_source(url: str) -> None:

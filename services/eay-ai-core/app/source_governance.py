@@ -8,6 +8,7 @@ not fetch the network and it never promotes context into binding legal truth.
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timedelta
 from enum import Enum
 from urllib.parse import urlparse
@@ -63,7 +64,10 @@ def _domain(url: str) -> str:
 
 
 def _normalize_claim(value: str) -> str:
-    return " ".join(value.casefold().replace("ı", "i").split())
+    folded = value.casefold().replace("ı", "i")
+    decomposed = unicodedata.normalize("NFKD", folded)
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_marks.split())
 
 
 class SourceEvidence(BaseModel):

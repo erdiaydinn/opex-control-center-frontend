@@ -53,7 +53,7 @@ FEATURES = MappingProxyType(
         "field_intelligence": frozenset(
             {
                 "commandCenter", "missionBuilder", "missions", "capture",
-                "evidenceReview", "targeting", "templates", "analytics",
+                "evidenceReview", "targeting", "templates", "analytics", "promotions",
             }
         ),
         "insight": frozenset(
@@ -93,7 +93,7 @@ ACTIONS = MappingProxyType(
                 "createPlan", "activatePlan", "managePeriods", "manageCostCenters",
                 "manageBudgetLines", "createRequest", "approveRequest", "createPO",
                 "postInvoice", "createForecast", "import", "resolveReconciliation",
-                "closePeriod", "export", "viewAudit",
+                "closePeriod", "export", "viewAudit", "acceptFieldEvidence",
             }
         ),
         "dockos": frozenset({"view", "create", "edit", "approve", "export", "delete"}),
@@ -101,12 +101,14 @@ ACTIONS = MappingProxyType(
             {
                 "createMission", "activateMission", "cancelMission", "submitEvidence",
                 "sendReminder", "reviewEvidence", "manageTemplates", "manageLocations",
-                "exportResults", "viewEvidence",
+                "exportResults", "viewEvidence", "proposePromotion", "approvePromotion",
+                "viewPromotions",
             }
         ),
         "insight": frozenset({"view", "drilldown", "export"}),
+        "inventory": frozenset({"acceptFieldEvidence"}),
         "jarvis": frozenset({"ask", "proposeAction", "approveAction", "viewSources", "viewHistory"}),
-        "planogram": frozenset({"view", "create", "edit", "approve", "export", "delete"}),
+        "planogram": frozenset({"view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"}),
         "recruitment": frozenset({"approveRecruitmentRequest"}),
         "workforce": frozenset(
             {
@@ -190,6 +192,7 @@ FIELD_MANAGER_PERMISSIONS = frozenset(
         feature_permission("field_intelligence", "targeting"),
         feature_permission("field_intelligence", "templates"),
         feature_permission("field_intelligence", "analytics"),
+        feature_permission("field_intelligence", "promotions"),
         action_permission("field_intelligence", "createMission"),
         action_permission("field_intelligence", "activateMission"),
         action_permission("field_intelligence", "cancelMission"),
@@ -199,6 +202,9 @@ FIELD_MANAGER_PERMISSIONS = frozenset(
         action_permission("field_intelligence", "manageLocations"),
         action_permission("field_intelligence", "exportResults"),
         action_permission("field_intelligence", "viewEvidence"),
+        action_permission("field_intelligence", "proposePromotion"),
+        action_permission("field_intelligence", "approvePromotion"),
+        action_permission("field_intelligence", "viewPromotions"),
     }
 )
 

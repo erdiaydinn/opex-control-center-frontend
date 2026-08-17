@@ -8,7 +8,7 @@ from .authorization import is_action_allowed
 from .dpi_repository import get_latest_dpi_snapshot
 
 
-router = APIRouter(prefix="/workforce", tags=["Workforce DPI"])
+router = APIRouter(tags=["Workforce DPI"])
 
 
 def _require_read(role: str, permissions: str) -> None:

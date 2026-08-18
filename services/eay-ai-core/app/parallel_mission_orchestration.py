@@ -7,7 +7,8 @@ research, company observation, simulation and execution lanes concurrently.
 Parallelism never creates shared authority. Every lane keeps its own live-truth,
 authorization, capability and checkpoint boundaries. Lanes that can mutate the
 same exclusive resource, or reuse the same side-effect idempotency key, are
-serialized rather than raced.
+serialized rather than raced. Unexpected failure in one selected lane is also
+contained to that lane so unrelated work can finish.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ PARALLEL_MISSION_ORCHESTRATION_CONTRACT = "eay-parallel-mission-orchestration-v1
 
 class ParallelLaneDisposition(str, Enum):
     EXECUTED = "executed"
+    FAILED = "failed"
     DEFERRED = "deferred"
     TERMINAL = "terminal"
 
@@ -69,7 +71,8 @@ class ParallelMissionLane(BaseModel):
         states = {item.step_id: item for item in self.checkpoint.steps}
         return any(
             step.side_effect
-            and states[step.step_id].status in {StepStatus.PENDING, StepStatus.RUNNING, StepStatus.FAILED}
+            and states[step.step_id].status
+            in {StepStatus.PENDING, StepStatus.RUNNING, StepStatus.FAILED}
             for step in self.definition.steps
         )
 
@@ -80,7 +83,8 @@ class ParallelMissionLane(BaseModel):
             for step in self.definition.steps
             if step.side_effect
             and step.idempotency_key
-            and states[step.step_id].status in {StepStatus.PENDING, StepStatus.RUNNING, StepStatus.FAILED}
+            and states[step.step_id].status
+            in {StepStatus.PENDING, StepStatus.RUNNING, StepStatus.FAILED}
         )
 
 
@@ -169,9 +173,10 @@ def select_parallel_wave(
         lane_keys = set(lane.pending_idempotency_keys())
         blockers: list[str] = []
         for other in selected:
-            other_resources = set(other.exclusive_resource_refs)
-            shared_resources = lane_resources & other_resources
-            if shared_resources and (lane.has_pending_side_effect() or other.has_pending_side_effect()):
+            shared_resources = lane_resources & set(other.exclusive_resource_refs)
+            if shared_resources and (
+                lane.has_pending_side_effect() or other.has_pending_side_effect()
+            ):
                 blockers.append("parallel_resource_conflict")
             if lane_keys & set(other.pending_idempotency_keys()):
                 blockers.append("parallel_idempotency_conflict")
@@ -195,22 +200,31 @@ async def execute_parallel_mission_round(
     lane_map = {item.lane_id: item for item in plan.lanes}
     missing_bindings = set(selected_ids) - set(bindings)
     if missing_bindings:
-        raise ValueError("parallel_selected_lane_binding_missing:" + ",".join(sorted(missing_bindings)))
+        raise ValueError(
+            "parallel_selected_lane_binding_missing:" + ",".join(sorted(missing_bindings))
+        )
 
     async def run_lane(lane_id: str) -> ParallelLaneResult:
         lane = lane_map[lane_id]
         runtime = bindings[lane_id]
-        summary = await execute_mission_until_blocked(
-            definition=lane.definition,
-            checkpoint=lane.checkpoint,
-            specs=lane.specs,
-            gateway=runtime.gateway,
-            reasoning_evidence_writer=runtime.reasoning_evidence_writer,
-            capability_handlers=runtime.capability_handlers,
-            authorization_checker=runtime.authorization_checker,
-            decision_truth_receipts=runtime.decision_truth_receipts,
-            max_transitions=max_transitions_per_lane,
-        )
+        try:
+            summary = await execute_mission_until_blocked(
+                definition=lane.definition,
+                checkpoint=lane.checkpoint,
+                specs=lane.specs,
+                gateway=runtime.gateway,
+                reasoning_evidence_writer=runtime.reasoning_evidence_writer,
+                capability_handlers=runtime.capability_handlers,
+                authorization_checker=runtime.authorization_checker,
+                decision_truth_receipts=runtime.decision_truth_receipts,
+                max_transitions=max_transitions_per_lane,
+            )
+        except Exception as exc:  # sanitize and contain lane-local runtime failures
+            return ParallelLaneResult(
+                lane_id=lane_id,
+                disposition=ParallelLaneDisposition.FAILED,
+                blockers=(f"parallel_lane_execution_failed:{type(exc).__name__}",),
+            )
         return ParallelLaneResult(
             lane_id=lane_id,
             disposition=ParallelLaneDisposition.EXECUTED,

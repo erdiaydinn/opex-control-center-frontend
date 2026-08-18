@@ -19,6 +19,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 import java.time.Instant
 import java.util.UUID
 
@@ -120,14 +121,15 @@ class InventorySyncWorker(
                 )
                 .build()
 
-            val response = runCatching {
+            val response = try {
                 PinnedApi.client.newCall(request).execute()
-            }.getOrElse {
+            } catch (_: IOException) {
                 if (scheduleRetry(dao, event, "NETWORK_EXCEPTION")) {
                     return@withContext Result.retry()
                 }
-                continue
+                null
             }
+            if (response == null) continue
 
             response.use {
                 val body = it.body?.string().orEmpty()

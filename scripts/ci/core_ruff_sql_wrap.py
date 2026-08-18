@@ -72,7 +72,11 @@ def wrap_content_line(line: str, max_len: int = 96) -> str:
         before = [position for position in positions if position <= max_len]
         split_at = max(before) if before else (min(positions) if positions else None)
         if split_at is None:
-            output.append(current)
+            compact = "    " + current.lstrip()
+            if len(indent) > 4 and len(compact) <= max_len:
+                output.append(compact)
+            else:
+                output.append(current)
             continue
         output.append(current[:split_at].rstrip())
         pending.insert(0, indent + current[split_at:].lstrip())

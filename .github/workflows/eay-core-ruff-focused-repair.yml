@@ -1,4 +1,4 @@
-# Branch-only one-shot focused Ruff repair v4 targeted-E501
+# Branch-only one-shot focused Ruff repair v5 string-processing
 name: EAY Core Ruff Focused Repair
 
 on:
@@ -25,10 +25,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install focused repair tooling
-        run: python -m pip install 'ruff>=0.8,<1' 'autopep8>=2.3,<3'
+        run: python -m pip install 'ruff>=0.8,<1' 'black==25.1.0'
       - name: Apply Ruff safe fixes only
         run: ruff check services/core-api --fix || true
-      - name: Format only files that still report E501
+      - name: Process long strings only in files still reporting E501
         run: |
           ruff check services/core-api --output-format=json > /tmp/core-ruff.json || true
           python - <<'PY'
@@ -40,9 +40,9 @@ jobs:
           files = sorted({item['filename'] for item in diagnostics if item.get('code') == 'E501'})
           print(f'E501_FILES={len(files)}')
           if files:
-              subprocess.run(['ruff', 'format', *files], check=True)
               subprocess.run([
-                  'autopep8', '--in-place', '--select=E501', '--max-line-length=100', *files
+                  'black', '--line-length', '100', '--preview',
+                  '--enable-unstable-feature', 'string_processing', *files
               ], check=True)
           PY
       - name: Capture residual strict Ruff debt
@@ -51,7 +51,7 @@ jobs:
           {
             echo "HEAD=${GITHUB_SHA}"
             echo "RUFF_VERSION=$(ruff --version)"
-            echo "AUTOPEP8_VERSION=$(autopep8 --version)"
+            echo "BLACK_VERSION=$(black --version | head -1)"
             echo "---"
             ruff check services/core-api --output-format=concise || true
           } > .eay/ci/core-ruff-focused-remaining.txt
@@ -64,5 +64,5 @@ jobs:
           git config user.name 'eay-ci-repair-bot'
           git config user.email 'eay-ci-repair-bot@users.noreply.github.com'
           git add services/core-api .eay/ci/core-ruff-focused-remaining.txt
-          git commit -m 'style(core): repair residual E501 only'
+          git commit -m 'style(core): process residual long strings safely'
           git push origin HEAD:agent/core-ruff-focused-repair-v2

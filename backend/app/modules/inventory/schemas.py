@@ -35,17 +35,33 @@ class LocationLockCreate(BaseModel):
     ttl_seconds: int = Field(default=900, ge=60, le=3600)
 
 
+class TerminalMissionClaimCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str
+    location_id: str = Field(min_length=1, max_length=120)
+    payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
+
+
+class TerminalMissionReassignCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=500)
+
+
 class TerminalEventCreate(BaseModel):
     # Production terminal identity is authoritative from verified OIDC + managed
     # device headers. Never silently accept tenant/employee/device authority from
     # an offline JSON payload, including stale or malicious queued events.
-    # active_shift_id is server-issued mission provenance, not client authority;
-    # it is cryptographically bound into payload_hash and re-attested by Workforce.
+    # Mission/shift identifiers are server-issued provenance and are all bound
+    # into the device-signed canonical payload before historical re-attestation.
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
     document_id: str
     active_shift_id: str = Field(min_length=1, max_length=128)
+    attempt_id: str
+    lease_id: str
     device_sequence: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)
     barcode: str = Field(min_length=1, max_length=120)
@@ -58,13 +74,15 @@ class TerminalEventCreate(BaseModel):
 class LocationCompletionCreate(BaseModel):
     # Location completion is a distinct signed terminal event. It carries no
     # barcode, SKU, expected stock or stock quantity truth. confirmed_line_count
-    # is only the number of blind-count evidence events the device says belong
-    # to the completed location; the server independently counts committed rows.
+    # is only the number of blind-count evidence events in this mission attempt;
+    # the server independently counts committed rows for the same attempt.
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
     document_id: str
     active_shift_id: str = Field(min_length=1, max_length=128)
+    attempt_id: str
+    lease_id: str
     confirmed_line_count: int = Field(ge=0, le=1_000_000)
     device_sequence: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)

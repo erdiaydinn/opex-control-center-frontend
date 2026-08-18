@@ -1,4 +1,4 @@
-# Branch-only one-shot focused Ruff repair v5 string-processing
+# Branch-only one-shot focused Ruff repair v6 preview-string-processing
 name: EAY Core Ruff Focused Repair
 
 on:
@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install focused repair tooling
-        run: python -m pip install 'ruff>=0.8,<1' 'black==25.1.0'
+        run: python -m pip install 'ruff>=0.8,<1' 'black==26.3.0'
       - name: Apply Ruff safe fixes only
         run: ruff check services/core-api --fix || true
       - name: Process long strings only in files still reporting E501
@@ -41,8 +41,7 @@ jobs:
           print(f'E501_FILES={len(files)}')
           if files:
               subprocess.run([
-                  'black', '--line-length', '100', '--preview',
-                  '--enable-unstable-feature', 'string_processing', *files
+                  'black', '--line-length', '100', '--preview', *files
               ], check=True)
           PY
       - name: Capture residual strict Ruff debt

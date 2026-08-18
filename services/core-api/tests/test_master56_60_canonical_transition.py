@@ -87,7 +87,11 @@ def _source_ref(kind: str, item: int) -> str:
     return f"{kind}-sha256:{_digest(f'{kind}:{item}')}"
 
 
-def _patch_current_authority(monkeypatch: pytest.MonkeyPatch, *, missing: int | None = None) -> None:
+def _patch_current_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    missing: int | None = None,
+) -> None:
     sre = {item: _source_ref("sre", item) for item in REQUIRED_SRE}
     external = {
         item: _source_ref("ledger", item)

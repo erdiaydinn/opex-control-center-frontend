@@ -60,6 +60,51 @@ class BlindCountTerminalControllerTest {
     }
 
     @Test
+    fun `retryable count identity created before lease expiry survives a later retry`() = runBlocking {
+        val sink = RecordingSink(retryableLineFailuresRemaining = 1)
+        var currentOccurredAt = "2026-08-18T15:14:59Z"
+        val controller = BlindCountTerminalController(
+            target = BlindCountTarget(
+                missionId = "mission-1",
+                locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
+            ),
+            eventContext = context(),
+            leaseValidUntil = LEASE_VALID_UNTIL,
+            eventSink = sink,
+            eventIdFactory = { "11111111-1111-4111-8111-111111111111" },
+            occurredAtFactory = { currentOccurredAt },
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+
+        val first = controller.confirmItem()
+        assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
+        currentOccurredAt = "2026-08-18T15:16:00Z"
+
+        val second = controller.confirmItem()
+        assertTrue(second.accepted)
+        assertEquals(2, sink.lineAttempts.size)
+        assertEquals(sink.lineAttempts[0], sink.lineAttempts[1])
+        assertEquals("2026-08-18T15:14:59Z", sink.lineAttempts[1].second)
+    }
+
+    @Test
+    fun `event exactly at lease expiry is still eligible for historical attestation`() = runBlocking {
+        val sink = RecordingSink()
+        val controller = controller(
+            sink = sink,
+            occurredAt = LEASE_VALID_UNTIL,
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+
+        assertTrue(controller.confirmItem().accepted)
+        assertEquals(1, sink.lineAttempts.size)
+    }
+
+    @Test
     fun `expired lease blocks count before durable queue write`() = runBlocking {
         val sink = RecordingSink()
         val controller = controller(
@@ -98,6 +143,34 @@ class BlindCountTerminalControllerTest {
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":0"))
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
+    }
+
+    @Test
+    fun `retryable completion identity created before lease expiry survives a later retry`() = runBlocking {
+        val sink = RecordingSink(retryableCompletionFailuresRemaining = 1)
+        var currentOccurredAt = "2026-08-18T15:14:59Z"
+        val controller = BlindCountTerminalController(
+            target = BlindCountTarget(
+                missionId = "mission-1",
+                locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
+            ),
+            eventContext = context(),
+            leaseValidUntil = LEASE_VALID_UNTIL,
+            eventSink = sink,
+            eventIdFactory = { "33333333-3333-4333-8333-333333333333" },
+            occurredAtFactory = { currentOccurredAt },
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+
+        val first = controller.completeLocation()
+        assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
+        currentOccurredAt = "2026-08-18T15:16:00Z"
+
+        val second = controller.completeLocation()
+        assertTrue(second.accepted)
+        assertEquals(2, sink.completionAttempts.size)
+        assertEquals(sink.completionAttempts[0], sink.completionAttempts[1])
+        assertEquals("2026-08-18T15:14:59Z", sink.completionAttempts[1].second)
     }
 
     @Test

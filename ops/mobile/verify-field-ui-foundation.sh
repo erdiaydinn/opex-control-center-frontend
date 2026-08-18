@@ -5,6 +5,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 UI="$ROOT/android-field-ui/field-ui/src/main/java/com/eay/mobile/fieldui"
 RES="$ROOT/android-field-ui/field-ui/src/main/res"
 LOCALE_CONTRACT="$ROOT/config/eay_localization.json"
+MOBILE_CONFIG="$ROOT/config/eay_mobile_platform.json"
 
 required="
 $ROOT/android-field-ui/settings.gradle.kts
@@ -14,6 +15,7 @@ $UI/FieldUiModels.kt
 $UI/EayFieldTheme.kt
 $UI/EayTerminalShell.kt
 $LOCALE_CONTRACT
+$MOBILE_CONFIG
 "
 
 for file in $required; do
@@ -55,7 +57,7 @@ if grep -R -n -E 'LayoutDirection\.Ltr|TextDirection\.Ltr|supportsRtl="false"' "
   exit 1
 fi
 
-python3 - "$RES" "$LOCALE_CONTRACT" <<'PY'
+python3 - "$RES" "$LOCALE_CONTRACT" "$MOBILE_CONFIG" <<'PY'
 from pathlib import Path
 import json
 import sys
@@ -63,7 +65,9 @@ import xml.etree.ElementTree as ET
 
 res = Path(sys.argv[1])
 contract_path = Path(sys.argv[2])
+mobile_config_path = Path(sys.argv[3])
 contract = json.loads(contract_path.read_text(encoding="utf-8"))
+mobile_config = json.loads(mobile_config_path.read_text(encoding="utf-8"))
 
 if contract.get("capability") != "LOC":
     raise SystemExit("localization contract must be owned by LOC capability")
@@ -73,6 +77,18 @@ if contract.get("default_locale") != "en" or contract.get("fallback_locale") != 
     raise SystemExit("localization fallback/default must remain explicit English")
 if contract.get("english_only_production_exception_allowed") is not False:
     raise SystemExit("English-only production exception must remain disabled")
+
+mobile_localization = mobile_config.get("localization") or {}
+if mobile_localization.get("contract") != "config/eay_localization.json":
+    raise SystemExit("mobile localization contract path drifted from canonical config/eay_localization.json")
+if mobile_localization.get("authority") != "platform_core":
+    raise SystemExit("mobile localization authority must remain Platform Core")
+if mobile_localization.get("mandatory_locale_parity") is not True:
+    raise SystemExit("mobile mandatory locale parity must remain enabled")
+if mobile_localization.get("english_first_production_exception") is not False:
+    raise SystemExit("mobile English-first production exception must remain disabled")
+if mobile_localization.get("rtl_locale_driven") is not True:
+    raise SystemExit("mobile RTL must remain locale-driven")
 
 required_locales = contract.get("required_locales") or []
 if len(required_locales) != 10 or len(required_locales) != len(set(required_locales)):
@@ -148,7 +164,7 @@ for locale, path in locales.items():
 
 print(
     "EAY Field UI locale parity: PASS "
-    f"({len(required_locales)} required locales; RTL={sorted(rtl_locales)}; CLDR categories enforced)"
+    f"({len(required_locales)} required locales; RTL={sorted(rtl_locales)}; CLDR categories enforced; mobile binding canonical)"
 )
 PY
 

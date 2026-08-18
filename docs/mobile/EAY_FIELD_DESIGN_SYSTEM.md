@@ -40,7 +40,7 @@ The queue may rank work for UX, but ranking never grants authority. Launch alway
 
 ## Localization contract
 
-Localization belongs to **Platform Core**, not to individual modules or mobile surfaces. EAY One, EAY Terminal and every module consume `config/eay_localization_contract.json` as the shared contract.
+Localization belongs to **Platform Core**, not to individual modules or mobile surfaces. EAY One, EAY Terminal and every module consume `config/eay_localization.json` as the shared contract.
 
 Production parity is mandatory for **TR, EN, DE, AR, FR, ES, IT, NL, PL and PT-BR**. A new feature cannot ship to production as an English-first exception. Resource keys must remain in parity, plural forms must satisfy the locale's CLDR cardinal categories and Android lint, and RTL must be locale-driven rather than forced by feature code. Arabic is the current mandatory RTL locale.
 

@@ -16,7 +16,7 @@
     }
   },
   "localization": {
-    "contract": "config/eay_localization_contract.json",
+    "contract": "config/eay_localization.json",
     "authority": "platform_core",
     "mandatory_locale_parity": true,
     "english_first_production_exception": false,

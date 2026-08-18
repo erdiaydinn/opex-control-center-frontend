@@ -7,7 +7,7 @@ import java.util.UUID
 
 /**
  * Location-bound COUNT mission returned by the production terminal task API.
- * Expected/system stock, cost, SKU universe and variance are intentionally absent.
+ * Authoritative inventory truth inputs are intentionally absent from this field contract.
  * activeShiftId is server-issued provenance; it never grants authority by itself.
  */
 data class InventoryTerminalCountTask(

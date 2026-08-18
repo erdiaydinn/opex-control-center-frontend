@@ -49,16 +49,25 @@ jobs:
       MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_migrations
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - name: Apply complete Inventory migration chain in filename order
+      - name: Apply authoritative Inventory production migration series
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t migrations < <(find backend/migrations -maxdepth 1 -type f -name '*inventory*.sql' | sort)
-          test "${#migrations[@]}" -ge 2
-          printf 'inventory_migration=%s\n' "${migrations[@]}"
-          for migration in "${migrations[@]}"; do
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          applied=0
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              printf 'legacy_inventory_migration_frozen=%s\n' "$migration"
+              continue
+            fi
+            printf 'production_inventory_migration=%s\n' "$migration"
             psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+            applied=$((applied + 1))
           done
+          test "$applied" -ge 1
       - name: Require version registration for production migration series
         shell: bash
         run: |

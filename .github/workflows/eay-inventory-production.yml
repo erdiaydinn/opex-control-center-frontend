@@ -125,6 +125,7 @@ jobs:
           fi
           if test -f backend/migrations/005_inventory_mission_attempt_lease.sql; then
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_mission_event_v5_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_mission_leases_immutable' AND NOT tgisinternal")" = "1"
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_mission_attempt_one_active_idx'")" = "1"
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('inventory_mission_attempts','inventory_mission_leases','inventory_mission_lease_closures') AND c.relrowsecurity AND c.relforcerowsecurity")" = "3"
           fi
@@ -140,6 +141,7 @@ jobs:
           GRANT SELECT,INSERT,UPDATE ON inventory_devices,inventory_device_activation_codes,inventory_device_nonces,inventory_documents,inventory_document_locations,inventory_expected_stock,inventory_events,inventory_event_responses,inventory_revisions,inventory_audit,inventory_outbox TO inventory_runtime;
           GRANT SELECT,INSERT,UPDATE ON inventory_mission_attempts TO inventory_runtime;
           GRANT SELECT,INSERT ON inventory_mission_leases,inventory_mission_lease_closures TO inventory_runtime;
+          GRANT UPDATE (lease_id) ON inventory_mission_leases TO inventory_runtime;
           GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO inventory_runtime;
           GRANT EXECUTE ON FUNCTION inventory_current_tenant() TO inventory_runtime;
           INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');

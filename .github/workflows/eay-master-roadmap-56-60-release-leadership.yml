@@ -10,8 +10,18 @@ on:
       - product/eay-category-leadership-v1
     paths:
       - 'docs/governance/eay_release_category_leadership_policy.json'
+      - 'docs/governance/eay_observability_contract.json'
+      - 'docs/governance/eay_sre_service_registry.json'
+      - 'docs/governance/eay_chaos_dr_acceptance.json'
+      - 'docs/governance/eay_external_acceptance_requirements.json'
+      - 'services/core-api/app/acceptance/external_evidence.py'
+      - 'services/core-api/app/sre/observability.py'
+      - 'services/core-api/app/sre/governance.py'
+      - 'services/core-api/app/sre/chaos_dr.py'
       - 'services/core-api/app/release/category_leadership.py'
+      - 'services/core-api/app/release/canonical_evidence_bridge.py'
       - 'services/core-api/tests/test_master56_60_release_leadership.py'
+      - 'services/core-api/tests/test_master56_60_canonical_evidence_bridge.py'
       - '.github/workflows/eay-master-roadmap-56-60-release-leadership.yml'
   workflow_dispatch:
 
@@ -42,13 +52,20 @@ jobs:
         run: |
           ruff check \
             services/core-api/app/release/category_leadership.py \
-            services/core-api/tests/test_master56_60_release_leadership.py
+            services/core-api/app/release/canonical_evidence_bridge.py \
+            services/core-api/tests/test_master56_60_release_leadership.py \
+            services/core-api/tests/test_master56_60_canonical_evidence_bridge.py
           python -m py_compile \
             services/core-api/app/release/category_leadership.py \
-            services/core-api/tests/test_master56_60_release_leadership.py
+            services/core-api/app/release/canonical_evidence_bridge.py \
+            services/core-api/tests/test_master56_60_release_leadership.py \
+            services/core-api/tests/test_master56_60_canonical_evidence_bridge.py
           python -m json.tool docs/governance/eay_release_category_leadership_policy.json >/dev/null
       - name: Run Master 56-60 release authority contracts
-        run: pytest -q services/core-api/tests/test_master56_60_release_leadership.py
+        run: |
+          pytest -q \
+            services/core-api/tests/test_master56_60_release_leadership.py \
+            services/core-api/tests/test_master56_60_canonical_evidence_bridge.py
       - name: Preserve production truth and governed state transitions
         run: |
           python - <<'PY'

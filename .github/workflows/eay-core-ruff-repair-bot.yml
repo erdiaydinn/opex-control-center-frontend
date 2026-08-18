@@ -1,3 +1,4 @@
+# One-shot repair workflow v1
 name: EAY Core Ruff Safe Repair Bot
 
 on:

@@ -1,35 +1,49 @@
-name: EAY Mobile Ruff Import Diagnostic
+name: EAY Mobile Ruff Exact Fix
 
 on:
   pull_request:
     branches:
       - product/eay-category-leadership-v1
     paths:
-      - "backend/app/modules/inventory/mission_lease.py"
       - ".github/workflows/eay-mobile-ruff-diagnostic.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: eay-mobile-ruff-diagnostic-${{ github.event.pull_request.number }}
+  group: eay-mobile-ruff-exact-fix-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  import-diff:
+  exact-fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Install exact CI Ruff
-        run: python -m pip install 'ruff==0.16.3'
-      - name: Print exact import fix without mutating checkout
+      - name: Apply exact CI Ruff fix
         run: |
-          set +e
-          ruff check --select I001 --diff backend/app/modules/inventory/mission_lease.py
-          code=$?
-          echo "RUFF_DIFF_EXIT=${code}"
-          exit 0
+          set -euo pipefail
+          python -m pip install 'ruff==0.16.3'
+          ruff check --select I001 --fix backend/app/modules/inventory/mission_lease.py
+          ruff check --select I001 backend/app/modules/inventory/mission_lease.py
+          rm .github/workflows/eay-mobile-ruff-diagnostic.yml
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf 'EXPECTED_FIX_FILE=%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = '.github/workflows/eay-mobile-ruff-diagnostic.yml'
+          test "${changed[1]}" = 'backend/app/modules/inventory/mission_lease.py'
+      - name: Commit exact fix without rewriting history
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'style(inventory): apply exact Ruff import formatting'
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"

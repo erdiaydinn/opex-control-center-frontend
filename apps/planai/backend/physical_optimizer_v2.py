@@ -128,7 +128,7 @@ def _optimizer_fingerprint(
     import hashlib
 
     return hashlib.sha256(
-        f"{OPTIMIZER_VERSION}:{base}:{architecture}:{route.get('basis')}".encode("utf-8")
+        f"{OPTIMIZER_VERSION}:{base}:{architecture}:{route.get('basis')}".encode()
     ).hexdigest()
 
 

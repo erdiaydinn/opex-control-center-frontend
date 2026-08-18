@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
     paths:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
@@ -28,14 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
       - name: Prove exact checkout
         run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-      - uses: actions/setup-node@1e60f620b9541d00f47ce3d3e2e1ed8bd9d1df6c
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '22'
           cache: npm
       - name: Install locked frontend dependencies
         run: npm ci
+      - name: Reject new hard-coded Planogram UI strings
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
       - name: Verify Master Roadmap item 27 authority
         run: |
           node --input-type=module <<'NODE'
@@ -60,16 +65,23 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const manifest=JSON.parse(fs.readFileSync('dist/.vite/manifest.json','utf8'));
-          const entries=Object.values(manifest);
-          const main=entries.find((row)=>row.src==='src/main.jsx');
-          if (!main?.file) throw new Error('Vite main manifest entry missing');
+          const entries=Object.entries(manifest);
+          const main=manifest['index.html'] ?? entries.map(([,row])=>row).find((row)=>row.isEntry === true);
+          if (!main?.file) throw new Error('Vite application entry missing');
           const mainText=fs.readFileSync(`dist/${main.file}`,'utf8');
           if (mainText.includes('WebGLRenderer') || mainText.includes('OrbitControls')) {
             throw new Error('Three.js leaked into the eager main entry');
           }
-          const assets=fs.readdirSync('dist/assets');
-          if (!assets.some((name)=>name.endsWith('.js'))) throw new Error('No JavaScript build assets found');
+          const dynamicThree=entries.filter(([key,row]) => {
+            const identity=`${key} ${row.src ?? ''} ${row.name ?? ''} ${row.file ?? ''}`;
+            return row.isDynamicEntry === true && /three\.module|OrbitControls|node_modules\/three\//i.test(identity);
+          });
+          if (!dynamicThree.length) throw new Error('No dynamic Three.js manifest entry found');
+          for (const [,row] of dynamicThree) {
+            if (!row.file || row.file === main.file) throw new Error('Three.js dynamic entry collapsed into eager main entry');
+          }
           console.log(`MASTER_27_MAIN_ENTRY=${main.file}`);
+          console.log(`MASTER_27_DYNAMIC_THREE_ENTRIES=${dynamicThree.map(([,row])=>row.file).join(',')}`);
           console.log('MASTER_27_DYNAMIC_THREE_BOUNDARY=PASS');
           NODE
       - name: Preserve accessibility and localization product gate

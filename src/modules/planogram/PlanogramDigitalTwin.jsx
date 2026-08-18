@@ -119,10 +119,10 @@ function Twin2D({ model, t, formatNumber }) {
         })}
       </svg>
       <div className="eay-twin-legend" aria-label={t("fixture")}>
-        <span><i className="regular" />REGULAR_SHELF</span>
-        <span><i className="chilled" />CHILLED +4</span>
-        <span><i className="frozen" />FROZEN -18</span>
-        <span><i className="pallet" />PALLET</span>
+        <span><i className="regular" />{t("fixtureRegular")}</span>
+        <span><i className="chilled" />{t("fixtureChilled")}</span>
+        <span><i className="frozen" />{t("fixtureFrozen")}</span>
+        <span><i className="pallet" />{t("fixturePallet")}</span>
       </div>
     </div>
   );

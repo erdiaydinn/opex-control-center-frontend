@@ -9,9 +9,11 @@ on measured Store DNA. It never invents orders or fills missing SKU locations.
 from __future__ import annotations
 
 from collections import Counter, deque
+from collections.abc import Iterable
 from dataclasses import dataclass
+from itertools import pairwise
 from math import ceil
-from typing import Any, Iterable
+from typing import Any
 
 from architecture_truth import (
     DEFAULT_GRID_RESOLUTION_M,
@@ -101,14 +103,14 @@ class MeasuredGridRouter:
                 0,
                 min(
                     self.shape.columns - 1,
-                    int(round(point[0] / self.shape.resolution_m)),
+                    round(point[0] / self.shape.resolution_m),
                 ),
             ),
             max(
                 0,
                 min(
                     self.shape.rows - 1,
-                    int(round(point[1] / self.shape.resolution_m)),
+                    round(point[1] / self.shape.resolution_m),
                 ),
             ),
         )
@@ -299,7 +301,7 @@ def _tour_distance(
     cells: list[tuple[int, int]],
 ) -> float | None:
     distance = 0.0
-    for source, target in zip(cells, cells[1:]):
+    for source, target in pairwise(cells):
         segment = router.distance(source, target)
         if segment is None:
             return None
@@ -461,7 +463,7 @@ def simulate_picker_tours(
         if len(explained_orders) < MAX_EXPLAINED_ORDERS:
             segments = []
             labels = ["picker_entry"] + [stop[0] for stop in optimized] + ["picker_exit"]
-            for segment_index, (source, target) in enumerate(zip(cells, cells[1:])):
+            for segment_index, (source, target) in enumerate(pairwise(cells)):
                 segments.append(
                     {
                         "from": labels[segment_index],

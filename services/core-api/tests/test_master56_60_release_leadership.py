@@ -21,6 +21,8 @@ from app.release.category_leadership import (
     ReleaseState,
     ReleaseTruth,
     StabilizationIssue,
+    bind_authority_ref,
+    bind_release_evidence_ref,
     build_chaos_item_ref,
     build_dr_item_ref,
     build_observability_item_ref,
@@ -42,13 +44,21 @@ NOW = datetime(2026, 8, 18, 18, 0, tzinfo=UTC)
 CHAOS_SCENARIOS = tuple(f"scenario-{index}" for index in range(1, 15))
 
 
-def _ref(prefix: str, value: object) -> str:
-    digest = sha256(str(value).encode()).hexdigest()
-    return f"{prefix}-sha256:{digest}"
-
-
 def _artifact(value: object) -> str:
     return sha256(str(value).encode()).hexdigest()
+
+
+def _raw_ref(prefix: str, value: object) -> str:
+    return f"{prefix}-sha256:{_artifact(value)}"
+
+
+def _bound_ref(prefix: str, value: object) -> str:
+    return bind_release_evidence_ref(
+        prefix,
+        release_id=RELEASE,
+        candidate_sha=CANDIDATE,
+        artifact_sha256=_artifact(value),
+    )
 
 
 def _observability_contract() -> dict[str, object]:
@@ -145,7 +155,7 @@ def _dr_result() -> DrResult:
     )
 
 
-def _sre_refs() -> dict[int, str]:
+def _raw_sre_refs() -> dict[int, str]:
     return {
         45: build_observability_item_ref(
             _observability_contract(),
@@ -210,7 +220,7 @@ def _external_records() -> tuple[EvidenceRecord, ...]:
     return tuple(records)
 
 
-def _external_refs() -> dict[int, str]:
+def _raw_external_refs() -> dict[int, str]:
     return build_external_item_refs(
         _external_requirements(),
         _external_records(),
@@ -221,17 +231,29 @@ def _external_refs() -> dict[int, str]:
     )
 
 
+def _bound_authority_refs(kind: str, refs: dict[int, str]) -> dict[int, str]:
+    return {
+        item: bind_authority_ref(
+            kind,
+            source_ref,
+            release_id=RELEASE,
+            candidate_sha=CANDIDATE,
+        )
+        for item, source_ref in refs.items()
+    }
+
+
 def full_truth() -> ReleaseTruth:
     pilot_scope = ReleaseScope(
         tenant_ids=(TENANT,),
         modules=("workforce", "inventory"),
-        evidence_ref=_ref("scope", "pilot"),
+        evidence_ref=_bound_ref("scope", "pilot"),
         owner="pilot-owner",
     )
     activation_scope = ReleaseScope(
         tenant_ids=(TENANT,),
         modules=("workforce", "inventory"),
-        evidence_ref=_ref("scope", "activation"),
+        evidence_ref=_bound_ref("scope", "activation"),
         owner="release-owner",
     )
     return ReleaseTruth(
@@ -240,33 +262,38 @@ def full_truth() -> ReleaseTruth:
         repository_green=True,
         repository_evidence_ref=f"github-status:{CANDIDATE}",
         sre_items={item: True for item in REQUIRED_SRE},
-        sre_evidence_refs=_sre_refs(),
+        sre_evidence_refs=_bound_authority_refs("sre", _raw_sre_refs()),
         external_items={item: True for item in REQUIRED_EXTERNAL},
-        external_evidence_refs=_external_refs(),
+        external_evidence_refs=_bound_authority_refs("ledger", _raw_external_refs()),
         pilot_scope=pilot_scope,
-        pilot_plan_ref=_ref("plan", "pilot-plan"),
-        pilot_rollback_ref=_ref("rollback", "pilot-rollback"),
+        pilot_plan_ref=_bound_ref("plan", "pilot-plan"),
+        pilot_rollback_ref=_bound_ref("rollback", "pilot-rollback"),
         pilot_metrics={key: True for key in PILOT_METRICS},
-        pilot_evidence_refs={key: _ref("pilot", key) for key in PILOT_METRICS},
+        pilot_evidence_refs={key: _bound_ref("pilot", key) for key in PILOT_METRICS},
         activation_scope=activation_scope,
-        activation_plan_ref=_ref("plan", "activation-plan"),
-        activation_rollback_ref=_ref("rollback", "activation-rollback"),
+        activation_plan_ref=_bound_ref("plan", "activation-plan"),
+        activation_rollback_ref=_bound_ref("rollback", "activation-rollback"),
         signoffs={key: True for key in PROD_SIGNOFFS},
-        signoff_evidence_refs={key: _ref("signoff", key) for key in PROD_SIGNOFFS},
+        signoff_evidence_refs={key: _bound_ref("signoff", key) for key in PROD_SIGNOFFS},
         stabilization_metrics={key: True for key in STABILIZATION_METRICS},
         stabilization_evidence_refs={
-            key: _ref("stabilization", key) for key in STABILIZATION_METRICS
+            key: _bound_ref("stabilization", key) for key in STABILIZATION_METRICS
         },
     )
 
 
 def test_canonical_45_55_bridges_produce_release_fingerprints() -> None:
-    sre_refs = _sre_refs()
-    external_refs = _external_refs()
+    sre_refs = _raw_sre_refs()
+    external_refs = _raw_external_refs()
     assert set(sre_refs) == set(REQUIRED_SRE)
     assert set(external_refs) == set(REQUIRED_EXTERNAL)
     assert all(value.startswith("sre-sha256:") for value in sre_refs.values())
     assert all(value.startswith("ledger-sha256:") for value in external_refs.values())
+
+    bound_sre = _bound_authority_refs("sre", sre_refs)
+    bound_external = _bound_authority_refs("ledger", external_refs)
+    assert all(CANDIDATE in value for value in bound_sre.values())
+    assert all(CANDIDATE in value for value in bound_external.values())
 
 
 def test_canonical_sre_bridge_rejects_incomplete_or_synthetic_evidence() -> None:
@@ -333,6 +360,37 @@ def test_boolean_only_external_or_sre_truth_cannot_create_rc() -> None:
         next_state(ReleaseState.DEVELOPMENT, truth)
 
 
+def test_old_release_or_other_candidate_evidence_cannot_be_reused() -> None:
+    truth = full_truth()
+    stale_external = dict(truth.external_evidence_refs)
+    stale_external[49] = bind_authority_ref(
+        "ledger",
+        _raw_external_refs()[49],
+        release_id="old-release",
+        candidate_sha=CANDIDATE,
+    )
+    with pytest.raises(ValueError):
+        next_state(
+            ReleaseState.DEVELOPMENT,
+            replace(truth, external_evidence_refs=stale_external),
+        )
+
+    other_candidate_signoffs = dict(truth.signoff_evidence_refs)
+    other_candidate_signoffs["security"] = bind_release_evidence_ref(
+        "signoff",
+        release_id=RELEASE,
+        candidate_sha="b" * 40,
+        artifact_sha256=_artifact("security"),
+    )
+    with pytest.raises(ValueError):
+        next_state(
+            ReleaseState.PILOT_ACCEPTED,
+            replace(truth, signoff_evidence_refs=other_candidate_signoffs),
+            tenant_ids=(TENANT,),
+            modules=("inventory",),
+        )
+
+
 def test_release_chain_requires_scoped_pilot_activation_and_stabilization() -> None:
     truth = full_truth()
     assert next_state(ReleaseState.DEVELOPMENT, truth) == ReleaseState.PRODUCTION_CANDIDATE
@@ -382,10 +440,10 @@ def test_pilot_requires_bounded_scope_plan_and_rollback() -> None:
         )
 
 
-def test_pilot_signoff_and_external_refs_are_hash_bound() -> None:
+def test_pilot_signoff_and_external_refs_are_release_bound() -> None:
     truth = full_truth()
     bad_external = dict(truth.external_evidence_refs)
-    bad_external[54] = "ledger:plain-text"
+    bad_external[54] = _raw_external_refs()[54]
     with pytest.raises(ValueError):
         next_state(
             ReleaseState.DEVELOPMENT,
@@ -397,7 +455,7 @@ def test_pilot_signoff_and_external_refs_are_hash_bound() -> None:
         next_state(ReleaseState.PILOT, missing_pilot_ref)
 
     bad_signoff = dict(truth.signoff_evidence_refs)
-    bad_signoff["security"] = "signoff:plain-text"
+    bad_signoff["security"] = _raw_ref("signoff", "security")
     with pytest.raises(ValueError):
         next_state(
             ReleaseState.PILOT_ACCEPTED,
@@ -429,7 +487,7 @@ def test_evidence_revocation_blocks_category_leadership_after_activation() -> No
         )
 
 
-def test_stabilization_acceptance_requires_all_hash_bound_metrics() -> None:
+def test_stabilization_acceptance_requires_all_release_bound_metrics() -> None:
     truth = full_truth()
     refs = dict(truth.stabilization_evidence_refs)
     refs.pop("no_open_p0")
@@ -446,14 +504,14 @@ def test_stabilization_prioritizes_verified_p0_p1() -> None:
             "support",
             "friction",
             "slow approval",
-            _ref("stabilization", "ticket:2"),
+            _raw_ref("stabilization", "ticket:2"),
             "P1",
         ),
         StabilizationIssue(
             "monitoring",
             "slow_queries",
             "timeout",
-            _ref("stabilization", "trace:1"),
+            _raw_ref("stabilization", "trace:1"),
             "P0",
         ),
         StabilizationIssue("rumor", "bugs", "unknown", "ticket:plain-text", "P0"),
@@ -471,7 +529,7 @@ def test_category_leadership_backlog_is_verified_evidence_bound() -> None:
             "competitor",
             "planogram",
             "new solver",
-            _ref("benchmark", "release:1"),
+            _raw_ref("benchmark", "release:1"),
         ),
         BenchmarkSignal("rumor", "jarvis", "unverified", "release:plain-text"),
     )

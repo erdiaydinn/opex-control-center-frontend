@@ -112,8 +112,6 @@ class CouncilExecutionResult(BaseModel):
 
 
 def _provider_key(receipt: EngineInvocationReceipt) -> str:
-    # Provider enum intentionally collapses multiple models from one provider
-    # into one independence family for council quorum purposes.
     return receipt.provider.value
 
 
@@ -274,6 +272,17 @@ async def execute_reasoning_council(
                     answer_ref=f"engine-output://{receipt.engine_id}",
                     claims=tuple(supported_claims),
                 )
+            )
+
+    supported_claim_keys = {
+        claim.claim_key
+        for proposal in proposals
+        for claim in proposal.claims
+    }
+    for claim in payload.claims:
+        if claim.claim_key not in supported_claim_keys:
+            blockers.append(
+                f"council_executor_claim_without_supported_proposal:{claim.claim_key}"
             )
 
     synthesis = synthesize_council(

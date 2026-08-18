@@ -62,11 +62,13 @@ class InventoryOfflineQueue(
 
     override suspend fun enqueueLocationCompletion(
         context: InventoryCountEventContext,
+        confirmedLineCount: Int,
         eventId: String,
         occurredAt: String,
     ): OfflineEvent = persistWithAllocatedSequence(eventId) { sequence, binding ->
         InventoryLocationCompletionEventFactory.create(
             context = context,
+            confirmedLineCount = confirmedLineCount,
             deviceSequence = sequence,
             eventId = eventId,
             occurredAt = occurredAt,

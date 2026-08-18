@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+import io
+import tokenize
 from uuid import UUID
 
 import pytest
@@ -111,8 +113,13 @@ def test_terminal_task_mission_id_is_stable_and_tenant_bound() -> None:
 
 def test_terminal_task_function_does_not_query_stock_truth_tables() -> None:
     rendered = inspect.getsource(production.list_terminal_tasks)
-    assert "inventory_expected_stock" not in rendered
-    assert "inventory_events" not in rendered
-    assert "expected_quantity" not in rendered
-    assert "unit_cost" not in rendered
-    assert "variance" not in rendered
+    executable_source = tokenize.untokenize(
+        token
+        for token in tokenize.generate_tokens(io.StringIO(rendered).readline)
+        if token.type != tokenize.COMMENT
+    )
+    assert "inventory_expected_stock" not in executable_source
+    assert "inventory_events" not in executable_source
+    assert "expected_quantity" not in executable_source
+    assert "unit_cost" not in executable_source
+    assert "variance" not in executable_source

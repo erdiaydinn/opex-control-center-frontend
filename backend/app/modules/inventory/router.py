@@ -117,6 +117,13 @@ def run(action, *args, **kwargs):
         raise HTTPException(status_code=403, detail=str(error)) from error
     except InventoryRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except RuntimeError as error:
+        if isinstance(error.__cause__, ActiveShiftAuthorityError):
+            raise HTTPException(
+                status_code=503,
+                detail="Workforce event vardiya doğrulaması geçici olarak kullanılamıyor.",
+            ) from error
+        raise
 
 
 @router.get("/health")

@@ -8,6 +8,8 @@
     <string name="terminal_task_loading">Ładowanie autoryzowanych misji liczenia…</string>
     <string name="terminal_no_tasks">Do tego urządzenia nie przypisano aktywnej misji liczenia.</string>
     <string name="terminal_task_label">%1$s · %2$s</string>
+    <string name="terminal_task_pending_server">%1$s · %2$s · oczekiwanie na akceptację serwera</string>
+    <string name="terminal_task_requires_review">%1$s · %2$s · wymagana weryfikacja</string>
     <string name="terminal_scan_location">Zeskanuj lokalizację %1$s</string>
     <string name="terminal_scan_item">Zeskanuj następny produkt</string>
     <string name="terminal_enter_quantity">Wprowadź policzoną ilość</string>

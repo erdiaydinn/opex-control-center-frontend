@@ -8,6 +8,8 @@
     <string name="terminal_task_loading">Chargement des missions de comptage autorisées…</string>
     <string name="terminal_no_tasks">Aucune mission de comptage active n’est affectée à cet appareil.</string>
     <string name="terminal_task_label">%1$s · %2$s</string>
+    <string name="terminal_task_pending_server">%1$s · %2$s · en attente de l’acceptation du serveur</string>
+    <string name="terminal_task_requires_review">%1$s · %2$s · vérification requise</string>
     <string name="terminal_scan_location">Scanner l’emplacement %1$s</string>
     <string name="terminal_scan_item">Scanner le produit suivant</string>
     <string name="terminal_enter_quantity">Saisir la quantité comptée</string>

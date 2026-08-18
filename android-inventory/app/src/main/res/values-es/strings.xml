@@ -8,6 +8,8 @@
     <string name="terminal_task_loading">Cargando misiones de conteo autorizadas…</string>
     <string name="terminal_no_tasks">No hay una misión de conteo activa asignada a este dispositivo.</string>
     <string name="terminal_task_label">%1$s · %2$s</string>
+    <string name="terminal_task_pending_server">%1$s · %2$s · esperando aceptación del servidor</string>
+    <string name="terminal_task_requires_review">%1$s · %2$s · requiere revisión</string>
     <string name="terminal_scan_location">Escanea la ubicación %1$s</string>
     <string name="terminal_scan_item">Escanea el siguiente producto</string>
     <string name="terminal_enter_quantity">Introduce la cantidad contada</string>

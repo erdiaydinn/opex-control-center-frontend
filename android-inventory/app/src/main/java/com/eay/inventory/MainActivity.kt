@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var dataWedgeSession: DataWedge.Session? = null
     private var scannerReceiverRegistered = false
     private var loadedTasks: List<InventoryTerminalCountTask> = emptyList()
+    private var localMissionTruth: Map<String, InventoryLocalCompletionState> = emptyMap()
     private var activeTask: InventoryTerminalCountTask? = null
     private var activeController: BlindCountTerminalController? = null
 
@@ -141,6 +142,13 @@ class MainActivity : AppCompatActivity() {
         if (intent?.action == ACTION_OIDC_COMPLETE) consumeOidc(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (AccessTokenMemory.freshOrNull() != null && loadedTasks.isNotEmpty()) {
+            loadTerminalTasks()
+        }
+    }
+
     private fun startScannerSession() {
         check(!scannerReceiverRegistered) { "Scanner receiver already registered" }
         val session = DataWedge.startSession(this)
@@ -234,16 +242,34 @@ class MainActivity : AppCompatActivity() {
         status.text = getString(R.string.terminal_task_loading)
         taskList.removeAllViews()
         loadedTasks = emptyList()
+        localMissionTruth = emptyMap()
         activeTask = null
         activeController = null
         hideExecutionControls()
         Thread {
             val result = taskClient.fetch()
+            val localTruthResult = if (result.accepted) {
+                runCatching {
+                    runBlocking {
+                        val unsettled = InventoryDatabase.get(this@MainActivity)
+                            .events()
+                            .unsettledBefore(Long.MAX_VALUE)
+                        InventoryLocalMissionTruth.classify(result.tasks, unsettled)
+                    }
+                }
+            } else {
+                Result.success(emptyMap())
+            }
             runOnUiThread {
                 if (!result.accepted) {
                     status.text = getString(R.string.terminal_task_fetch_failed, result.code.name)
                     return@runOnUiThread
                 }
+                val truth = localTruthResult.getOrElse {
+                    status.text = getString(R.string.terminal_contract_blocked)
+                    return@runOnUiThread
+                }
+                localMissionTruth = truth
                 renderTasks(result.tasks)
             }
         }.start()
@@ -258,12 +284,33 @@ class MainActivity : AppCompatActivity() {
         }
         status.text = getString(R.string.terminal_no_mission)
         tasks.forEach { task ->
+            val localState = localMissionTruth[task.missionId]
+                ?: InventoryLocalCompletionState.OPEN
             taskList.addView(
                 Button(this).apply {
-                    text = getString(R.string.terminal_task_label, task.name, task.locationId.trim())
+                    text = when (localState) {
+                        InventoryLocalCompletionState.OPEN -> getString(
+                            R.string.terminal_task_label,
+                            task.name,
+                            task.locationId.trim(),
+                        )
+                        InventoryLocalCompletionState.AWAITING_SERVER -> getString(
+                            R.string.terminal_task_pending_server,
+                            task.name,
+                            task.locationId.trim(),
+                        )
+                        InventoryLocalCompletionState.REQUIRES_REVIEW -> getString(
+                            R.string.terminal_task_requires_review,
+                            task.name,
+                            task.locationId.trim(),
+                        )
+                    }
                     minimumHeight = dp(56)
                     isAllCaps = false
-                    setOnClickListener { selectTask(task) }
+                    isEnabled = localState == InventoryLocalCompletionState.OPEN
+                    setOnClickListener {
+                        if (localState == InventoryLocalCompletionState.OPEN) selectTask(task)
+                    }
                 },
             )
         }
@@ -403,8 +450,10 @@ class MainActivity : AppCompatActivity() {
                             activeTask = null
                             activeController = null
                             hideExecutionControls()
-                            setTaskSelectionEnabled(true)
-                            renderTasks(loadedTasks.filterNot { it.missionId == task.missionId })
+                            localMissionTruth = localMissionTruth + (
+                                task.missionId to InventoryLocalCompletionState.AWAITING_SERVER
+                            )
+                            renderTasks(loadedTasks)
                             status.text = getString(R.string.terminal_location_complete_queued)
                         }
                         BlindCountControllerCode.PERSIST_RETRY -> {
@@ -424,7 +473,7 @@ class MainActivity : AppCompatActivity() {
         activeTask = null
         activeController = null
         hideExecutionControls()
-        setTaskSelectionEnabled(true)
+        renderTasks(loadedTasks)
         status.text = getString(R.string.terminal_contract_blocked)
     }
 

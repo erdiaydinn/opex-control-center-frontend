@@ -8,6 +8,8 @@
     <string name="terminal_task_loading">جارٍ تحميل مهام الجرد المصرح بها…</string>
     <string name="terminal_no_tasks">لا توجد مهمة جرد نشطة مخصصة لهذا الجهاز.</string>
     <string name="terminal_task_label">%1$s · %2$s</string>
+    <string name="terminal_task_pending_server">%1$s · %2$s · بانتظار قبول الخادم</string>
+    <string name="terminal_task_requires_review">%1$s · %2$s · يتطلب مراجعة</string>
     <string name="terminal_scan_location">امسح الموقع %1$s</string>
     <string name="terminal_scan_item">امسح المنتج التالي</string>
     <string name="terminal_enter_quantity">أدخل الكمية المعدودة</string>

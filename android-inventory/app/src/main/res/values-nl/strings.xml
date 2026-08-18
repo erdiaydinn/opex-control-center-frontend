@@ -8,6 +8,8 @@
     <string name="terminal_task_loading">Geautoriseerde telmissies worden geladen…</string>
     <string name="terminal_no_tasks">Er is geen actieve telmissie aan dit apparaat toegewezen.</string>
     <string name="terminal_task_label">%1$s · %2$s</string>
+    <string name="terminal_task_pending_server">%1$s · %2$s · wacht op serveracceptatie</string>
+    <string name="terminal_task_requires_review">%1$s · %2$s · controle vereist</string>
     <string name="terminal_scan_location">Scan locatie %1$s</string>
     <string name="terminal_scan_item">Scan het volgende product</string>
     <string name="terminal_enter_quantity">Voer de getelde hoeveelheid in</string>

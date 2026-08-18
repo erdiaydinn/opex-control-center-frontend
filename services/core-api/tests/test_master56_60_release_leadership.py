@@ -177,6 +177,17 @@ def test_evidence_revocation_blocks_pilot_start_after_rc() -> None:
         )
 
 
+def test_evidence_revocation_blocks_category_leadership_after_activation() -> None:
+    truth = full_truth()
+    external_items = dict(truth.external_items)
+    external_items[54] = False
+    with pytest.raises(ValueError):
+        next_state(
+            ReleaseState.STABILIZING,
+            replace(truth, external_items=external_items),
+        )
+
+
 def test_stabilization_acceptance_requires_all_hash_bound_metrics() -> None:
     truth = full_truth()
     refs = dict(truth.stabilization_evidence_refs)

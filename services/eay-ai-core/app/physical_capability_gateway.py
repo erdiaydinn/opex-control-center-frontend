@@ -54,7 +54,7 @@ _ACTION_CAPABILITY = {
     PhysicalAction.DISPLAY_ARTIFACT: DeviceCapability.DISPLAY_ARTIFACT,
     PhysicalAction.PRINT_DOCUMENT: DeviceCapability.PRINT,
     PhysicalAction.CAPTURE_CAMERA_OBSERVATION: DeviceCapability.CAMERA_OBSERVATION,
-    PhysicalAction.IOT_SETPOINT: DeviceCapability.POINTER_INPUT,
+    PhysicalAction.IOT_SETPOINT: DeviceCapability.IOT_SETPOINT,
     PhysicalAction.ROBOTIC_ACTUATION: DeviceCapability.ROBOTIC_ACTUATION,
 }
 

@@ -44,6 +44,21 @@ def _observation(state: CredentialState, *, vault_ref=None, evidence=None):
     )
 
 
+def _receipt(**updates):
+    payload = dict(
+        application_id="carsi-portal",
+        principal_ref="principal:erdi",
+        credential_scope_ref="credential-scope:carsi-portal:erdi",
+        credential_kind=CredentialKind.PASSWORD,
+        vault_provider_ref="vault:eay-enterprise-credentials",
+        vault_ref="vault-item:carsi:erdi",
+        enrolled_at=NOW,
+        enrollment_evidence_ref="evidence://vault/enrollment/1",
+    )
+    payload.update(updates)
+    return VaultEnrollmentReceipt(**payload)
+
+
 def test_missing_password_prompts_once_and_explains_future_reuse():
     plan = plan_credential_acquisition(
         observation=_observation(CredentialState.MISSING),
@@ -55,7 +70,8 @@ def test_missing_password_prompts_once_and_explains_future_reuse():
     assert "ÇarşıPortal şifre istedi" in plan.user_prompt
     assert "tekrar sormayacağım" in plan.user_prompt
     assert plan.remember_after_capture is True
-    assert "secret" not in plan.model_dump_json().casefold()
+    assert plan.vault_ref is None
+    assert plan.secret_value_retained is False
 
 
 def test_available_managed_password_is_reused_without_prompt():
@@ -100,21 +116,30 @@ def test_transient_secret_never_serializes_and_valid_enrollment_returns_referenc
     assert "THIS-MUST-NEVER-LEAK" not in serialized
     assert "secret_value" not in serialized
 
-    receipt = VaultEnrollmentReceipt(
-        application_id="carsi-portal",
-        principal_ref="principal:erdi",
-        credential_scope_ref="credential-scope:carsi-portal:erdi",
-        credential_kind=CredentialKind.PASSWORD,
-        vault_ref="vault-item:carsi:erdi",
-        enrolled_at=NOW,
-        enrollment_evidence_ref="evidence://vault/enrollment/1",
-    )
+    receipt = _receipt()
     assert validate_vault_enrollment(
         transient_secret=transient,
         receipt=receipt,
         policy=_policy(),
     ) == "vault-item:carsi:erdi"
     assert "THIS-MUST-NEVER-LEAK" not in receipt.model_dump_json()
+
+
+def test_vault_enrollment_must_use_exact_approved_provider():
+    transient = TransientUserSecret(
+        application_id="carsi-portal",
+        principal_ref="principal:erdi",
+        credential_scope_ref="credential-scope:carsi-portal:erdi",
+        credential_kind=CredentialKind.PASSWORD,
+        secret_value="TRANSIENT",
+        captured_at=NOW,
+    )
+    with pytest.raises(ValueError, match="vault_enrollment_provider_not_approved"):
+        validate_vault_enrollment(
+            transient_secret=transient,
+            receipt=_receipt(vault_provider_ref="vault:unapproved"),
+            policy=_policy(),
+        )
 
 
 def test_persistent_enrollment_requires_explicit_user_authorization():
@@ -126,18 +151,21 @@ def test_persistent_enrollment_requires_explicit_user_authorization():
         secret_value="TRANSIENT",
         captured_at=NOW,
     )
-    receipt = VaultEnrollmentReceipt(
-        application_id="carsi-portal",
-        principal_ref="principal:erdi",
-        credential_scope_ref="credential-scope:carsi-portal:erdi",
-        credential_kind=CredentialKind.PASSWORD,
-        vault_ref="vault-item:carsi:erdi",
-        enrolled_at=NOW,
-        enrollment_evidence_ref="evidence://vault/enrollment/1",
-    )
     with pytest.raises(ValueError, match="persistent_credential_enrollment_not_authorized"):
         validate_vault_enrollment(
             transient_secret=transient,
-            receipt=receipt,
+            receipt=_receipt(),
             policy=_policy(user_authorized_persistent_enrollment=False),
+        )
+
+
+def test_blank_secret_is_rejected_before_vault_enrollment():
+    with pytest.raises(ValueError, match="transient_user_secret_cannot_be_blank"):
+        TransientUserSecret(
+            application_id="carsi-portal",
+            principal_ref="principal:erdi",
+            credential_scope_ref="credential-scope:carsi-portal:erdi",
+            credential_kind=CredentialKind.PASSWORD,
+            secret_value="   ",
+            captured_at=NOW,
         )

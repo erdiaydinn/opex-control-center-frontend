@@ -1,0 +1,46 @@
+# Temporary branch-only repair harness; remove before canonical composition.
+name: EAY Roadmap Cumulative Gate Repair Bot
+
+on:
+  push:
+    branches:
+      - agent/cumulative-migration-gate-repair
+    paths:
+      - "scripts/ci/repair_roadmap_legacy_migration_gates.py"
+      - ".github/workflows/eay-roadmap-cumulative-gate-repair-bot.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: eay-roadmap-cumulative-gate-repair
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: agent/cumulative-migration-gate-repair
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Apply assertion-bounded legacy gate repair
+        run: python scripts/ci/repair_roadmap_legacy_migration_gates.py
+      - name: Commit only targeted roadmap workflow repairs
+        run: |
+          git config user.name 'eay-ci-repair-bot'
+          git config user.email 'eay-ci-repair-bot@users.noreply.github.com'
+          git add \
+            .github/workflows/eay-roadmap-1-11-exact-head.yml \
+            .github/workflows/eay-roadmap-1-12-exact-head.yml \
+            .github/workflows/eay-roadmap-1-13-exact-head.yml \
+            .github/workflows/eay-roadmap-1-14-exact-head.yml
+          if git diff --cached --quiet; then
+            echo 'ROADMAP_LEGACY_GATE_CHANGES=NONE'
+            exit 0
+          fi
+          git commit -m 'ci(roadmap): future-proof exact-head migration lineage gates'
+          git push origin HEAD:agent/cumulative-migration-gate-repair

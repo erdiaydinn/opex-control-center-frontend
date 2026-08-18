@@ -89,7 +89,6 @@ jobs:
       - name: Lint optimizer V2 and Core boundary
         run: >-
           ruff check
-          --extend-ignore UP006,UP012,UP035,UP045,PLR0124,RUF046,SIM102
           apps/planai/backend/physical_optimizer.py
           apps/planai/backend/physical_optimizer_v2.py
           apps/planai/backend/architecture_truth.py
@@ -103,7 +102,7 @@ jobs:
           services/core-api/tests/test_planogram_master25_optimizer_core.py
       - name: Core optimizer preview and Master 24 native regression
         run: >-
-          pytest -q
+          python -m pytest -q
           services/core-api/tests/test_planogram_master25_optimizer_core.py
           services/core-api/tests/test_planogram_native_core.py
           services/core-api/tests/test_planogram_master24_store_dna.py

@@ -92,10 +92,12 @@ class InventoryLocalMissionTruthTest {
         val canonical = LocationCompletionCanonical.body(
             LocationCompletionInput(
                 activeShiftId = "shift-1",
+                attemptId = ATTEMPT_ID,
                 confirmedLineCount = 2,
                 deviceSequence = sequence,
                 documentId = task.documentId,
                 eventId = "11111111-1111-4111-8111-${sequence.toString().padStart(12, '0')}",
+                leaseId = LEASE_ID,
                 locationId = locationId,
                 occurredAt = "2026-08-18T15:00:00Z",
             ),
@@ -108,5 +110,10 @@ class InventoryLocalMissionTruthTest {
             authBindingId = "binding-1",
             state = state,
         )
+    }
+
+    companion object {
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     }
 }

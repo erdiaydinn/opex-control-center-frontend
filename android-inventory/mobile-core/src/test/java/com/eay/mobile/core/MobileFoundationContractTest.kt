@@ -31,9 +31,21 @@ class MobileFoundationContractTest {
         policyFingerprint = "a".repeat(64),
     )
 
+    private fun operationPolicy(
+        operation: String = "inventory.count.capture",
+        risk: OperationRisk = OperationRisk.MEDIUM,
+        offlineAllowed: Boolean = true,
+        requiresActiveShift: Boolean = true,
+    ) = MobileOperationPolicy(
+        operation = operation,
+        risk = risk,
+        offlineAllowed = offlineAllowed,
+        requiresActiveShift = requiresActiveShift,
+    )
+
     private fun snapshot(
         tenantId: String = "tenant-a",
-        offlineAllowed: Set<String> = setOf("inventory.count.capture"),
+        policy: MobileOperationPolicy = operationPolicy(),
     ) = MobileAuthorizationSnapshot(
         tenantId = tenantId,
         actorId = "actor-a",
@@ -41,9 +53,7 @@ class MobileFoundationContractTest {
         locationId = "store-1",
         authBindingId = "auth-1",
         policyFingerprint = "a".repeat(64),
-        allowedOperations = setOf("inventory.count.capture", "inventory.count.approve"),
-        offlineAllowedOperations = offlineAllowed,
-        requireActiveShift = true,
+        operationPolicies = mapOf(policy.operation to policy),
         issuedAtEpochMs = now - 1_000,
         expiresAtEpochMs = now + 60_000,
     )
@@ -51,7 +61,7 @@ class MobileFoundationContractTest {
     @Test
     fun `missing server policy denies by default`() {
         val decision = MobileOperationAdmission.evaluate(
-            context(), null, "inventory.count.capture", OperationRisk.MEDIUM, now,
+            context(), null, "inventory.count.capture", now,
         )
         assertFalse(decision.allowed)
         assertEquals(AdmissionCode.DENY_MISSING_POLICY, decision.code)
@@ -60,15 +70,27 @@ class MobileFoundationContractTest {
     @Test
     fun `tenant or auth binding mismatch is denied`() {
         val decision = MobileOperationAdmission.evaluate(
-            context(), snapshot(tenantId = "tenant-b"), "inventory.count.capture", OperationRisk.MEDIUM, now,
+            context(), snapshot(tenantId = "tenant-b"), "inventory.count.capture", now,
         )
         assertEquals(AdmissionCode.DENY_BINDING_MISMATCH, decision.code)
     }
 
     @Test
-    fun `high risk operation requires verified integrity`() {
+    fun `server policy owns operation risk so caller cannot downgrade it`() {
+        val highRisk = operationPolicy(risk = OperationRisk.HIGH)
         val decision = MobileOperationAdmission.evaluate(
-            context(integrity = IntegrityVerdict.UNKNOWN), snapshot(), "inventory.count.approve", OperationRisk.HIGH, now,
+            context(trust = DeviceTrustLevel.MANAGED), snapshot(policy = highRisk),
+            highRisk.operation, now,
+        )
+        assertEquals(AdmissionCode.DENY_DEVICE_TRUST, decision.code)
+    }
+
+    @Test
+    fun `high risk operation requires verified integrity`() {
+        val highRisk = operationPolicy(risk = OperationRisk.HIGH)
+        val decision = MobileOperationAdmission.evaluate(
+            context(integrity = IntegrityVerdict.UNKNOWN), snapshot(policy = highRisk),
+            highRisk.operation, now,
         )
         assertEquals(AdmissionCode.DENY_INTEGRITY, decision.code)
     }
@@ -76,29 +98,47 @@ class MobileFoundationContractTest {
     @Test
     fun `medium risk operation requires managed device`() {
         val decision = MobileOperationAdmission.evaluate(
-            context(trust = DeviceTrustLevel.REGISTERED), snapshot(), "inventory.count.capture", OperationRisk.MEDIUM, now,
+            context(trust = DeviceTrustLevel.REGISTERED), snapshot(),
+            "inventory.count.capture", now,
         )
         assertEquals(AdmissionCode.DENY_DEVICE_TRUST, decision.code)
     }
 
     @Test
-    fun `active shift is mandatory when policy requires it`() {
+    fun `active shift is operation specific and mandatory when required`() {
         val decision = MobileOperationAdmission.evaluate(
-            context(shiftId = null), snapshot(), "inventory.count.capture", OperationRisk.MEDIUM, now,
+            context(shiftId = null), snapshot(), "inventory.count.capture", now,
         )
         assertEquals(AdmissionCode.DENY_SHIFT, decision.code)
+
+        val noShiftPolicy = operationPolicy(
+            operation = "jarvis.ask",
+            risk = OperationRisk.LOW,
+            offlineAllowed = false,
+            requiresActiveShift = false,
+        )
+        val jarvis = MobileOperationAdmission.evaluate(
+            context(shiftId = null), snapshot(policy = noShiftPolicy), "jarvis.ask", now,
+        )
+        assertTrue(jarvis.allowed)
     }
 
     @Test
-    fun `offline execution is explicit allowlist and critical actions stay online only`() {
+    fun `offline execution is server policy and critical actions stay online only`() {
         val capture = MobileOperationAdmission.evaluate(
-            context(connectivity = ConnectivityState.OFFLINE), snapshot(), "inventory.count.capture", OperationRisk.MEDIUM, now,
+            context(connectivity = ConnectivityState.OFFLINE), snapshot(),
+            "inventory.count.capture", now,
         )
         assertTrue(capture.allowed)
 
+        val critical = operationPolicy(
+            operation = "inventory.count.approve",
+            risk = OperationRisk.CRITICAL,
+            offlineAllowed = true,
+        )
         val approval = MobileOperationAdmission.evaluate(
-            context(connectivity = ConnectivityState.OFFLINE), snapshot(offlineAllowed = setOf("inventory.count.approve")),
-            "inventory.count.approve", OperationRisk.CRITICAL, now,
+            context(connectivity = ConnectivityState.OFFLINE), snapshot(policy = critical),
+            critical.operation, now,
         )
         assertEquals(AdmissionCode.DENY_OFFLINE, approval.code)
     }

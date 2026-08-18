@@ -23,7 +23,6 @@ object MobileOperationAdmission {
         context: MobileExecutionContext,
         snapshot: MobileAuthorizationSnapshot?,
         operation: String,
-        risk: OperationRisk,
         nowEpochMs: Long,
     ): AdmissionDecision {
         if (snapshot == null) return deny(AdmissionCode.DENY_MISSING_POLICY)
@@ -34,23 +33,29 @@ object MobileOperationAdmission {
         if (context.policyFingerprint.isBlank() || context.policyFingerprint != snapshot.policyFingerprint) {
             return deny(AdmissionCode.DENY_POLICY_FINGERPRINT)
         }
-        if (operation.isBlank() || operation !in snapshot.allowedOperations) {
+
+        val policy = snapshot.operationPolicies[operation]
+            ?: return deny(AdmissionCode.DENY_OPERATION)
+        if (policy.operation != operation || operation.isBlank()) {
             return deny(AdmissionCode.DENY_OPERATION)
         }
         if (context.deviceTrust == DeviceTrustLevel.UNVERIFIED) {
             return deny(AdmissionCode.DENY_DEVICE_TRUST)
         }
-        if (risk >= OperationRisk.MEDIUM && context.deviceTrust < DeviceTrustLevel.MANAGED) {
+        if (policy.risk >= OperationRisk.MEDIUM && context.deviceTrust < DeviceTrustLevel.MANAGED) {
             return deny(AdmissionCode.DENY_DEVICE_TRUST)
         }
-        if (risk >= OperationRisk.HIGH && context.integrityVerdict != IntegrityVerdict.PASS) {
+        if (policy.risk >= OperationRisk.HIGH && context.deviceTrust < DeviceTrustLevel.HARDWARE_BOUND) {
+            return deny(AdmissionCode.DENY_DEVICE_TRUST)
+        }
+        if (policy.risk >= OperationRisk.HIGH && context.integrityVerdict != IntegrityVerdict.PASS) {
             return deny(AdmissionCode.DENY_INTEGRITY)
         }
-        if (snapshot.requireActiveShift && context.shiftId.isNullOrBlank()) {
+        if (policy.requiresActiveShift && context.shiftId.isNullOrBlank()) {
             return deny(AdmissionCode.DENY_SHIFT)
         }
         if (context.connectivity == ConnectivityState.OFFLINE) {
-            if (risk == OperationRisk.CRITICAL || operation !in snapshot.offlineAllowedOperations) {
+            if (policy.risk == OperationRisk.CRITICAL || !policy.offlineAllowed) {
                 return deny(AdmissionCode.DENY_OFFLINE)
             }
         }

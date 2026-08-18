@@ -10,6 +10,8 @@ on:
       - "docs/mobile/**"
       - "mobile/**"
       - "ops/mobile/**"
+      - "services/core-api/app/core/mobile_policy.py"
+      - "services/core-api/tests/test_mobile_policy.py"
       - ".github/workflows/eay-mobile-foundation.yml"
   push:
     branches:
@@ -29,6 +31,27 @@ jobs:
         run: sh ops/mobile/verify-mobile-foundation.sh
       - name: Preserve canonical Inventory Android hardening
         run: sh ops/inventory/verify-android-production.sh
+
+  mobile-core-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Core API test surface
+        working-directory: services/core-api
+        run: python -m pip install -e '.[dev]'
+      - name: Lint mobile authority resolver
+        run: >-
+          ruff check
+          services/core-api/app/core/mobile_policy.py
+          services/core-api/tests/test_mobile_policy.py
+      - name: Prove mobile policy fail-closed behavior
+        working-directory: services/core-api
+        run: pytest -q tests/test_mobile_policy.py
 
   android-mobile-core:
     runs-on: ubuntu-latest

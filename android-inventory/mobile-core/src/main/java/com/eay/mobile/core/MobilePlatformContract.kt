@@ -47,6 +47,13 @@ data class MobileExecutionContext(
     val policyFingerprint: String,
 )
 
+data class MobileOperationPolicy(
+    val operation: String,
+    val risk: OperationRisk,
+    val offlineAllowed: Boolean,
+    val requiresActiveShift: Boolean,
+)
+
 data class MobileAuthorizationSnapshot(
     val tenantId: String,
     val actorId: String,
@@ -54,9 +61,7 @@ data class MobileAuthorizationSnapshot(
     val locationId: String,
     val authBindingId: String,
     val policyFingerprint: String,
-    val allowedOperations: Set<String>,
-    val offlineAllowedOperations: Set<String>,
-    val requireActiveShift: Boolean,
+    val operationPolicies: Map<String, MobileOperationPolicy>,
     val issuedAtEpochMs: Long,
     val expiresAtEpochMs: Long,
 )

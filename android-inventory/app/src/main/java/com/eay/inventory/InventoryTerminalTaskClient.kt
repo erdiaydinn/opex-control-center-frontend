@@ -11,6 +11,7 @@ import java.util.Locale
 data class InventoryTerminalTaskWire(
     val missionId: String,
     val documentId: String,
+    val activeShiftId: String,
     val warehouseId: String,
     val locationId: String,
     val name: String,
@@ -67,12 +68,16 @@ object InventoryTerminalTaskContract {
             require(row.runtimeProfile == MobileRuntimeProfile.EAY_TERMINAL.name) {
                 "Unsupported terminal runtime profile"
             }
+            require(row.activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$"))) {
+                "Missing or invalid server-issued active shift"
+            }
             require(missionIds.add(row.missionId)) { "Duplicate terminal mission ID" }
             val binding = "${row.documentId}:${row.locationId.trim().uppercase(Locale.ROOT)}"
             require(locationBindings.add(binding)) { "Duplicate document/location mission" }
             InventoryTerminalCountTask(
                 missionId = row.missionId,
                 documentId = row.documentId,
+                activeShiftId = row.activeShiftId,
                 warehouseId = row.warehouseId,
                 locationId = row.locationId,
                 name = row.name,
@@ -156,6 +161,7 @@ class InventoryTerminalTaskClient(context: Context) {
             wireRows += InventoryTerminalTaskWire(
                 missionId = row.getString("mission_id"),
                 documentId = row.getString("id"),
+                activeShiftId = row.getString("active_shift_id"),
                 warehouseId = row.getString("warehouse_id"),
                 locationId = row.getString("location_id"),
                 name = row.getString("name"),

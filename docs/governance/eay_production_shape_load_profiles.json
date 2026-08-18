@@ -1,0 +1,12 @@
+{
+  "schema_version":1,
+  "profiles":[
+    {"key":"portal_3000","workload":"portal","concurrency":3000,"evidence_class":"MANAGED_STAGING"},
+    {"key":"inventory_400_terminals","workload":"inventory_terminal","concurrency":400,"evidence_class":"MANAGED_STAGING"},
+    {"key":"field_mission_burst","workload":"field_submission","concurrency":500,"evidence_class":"MANAGED_STAGING"},
+    {"key":"workforce_import","workload":"workforce_bulk_import","rows":100000,"evidence_class":"MANAGED_STAGING"},
+    {"key":"dock_booking","workload":"dock_booking","concurrency":250,"evidence_class":"MANAGED_STAGING"},
+    {"key":"academy_1200_media","workload":"academy_media","concurrency":1200,"evidence_class":"REAL_MEDIA_ENVIRONMENT"},
+    {"key":"ai_query","workload":"jarvis_governed_query","concurrency":100,"evidence_class":"MANAGED_STAGING"}
+  ]
+}

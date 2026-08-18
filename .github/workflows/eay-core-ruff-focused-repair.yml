@@ -1,4 +1,4 @@
-# Branch-only one-shot focused Ruff repair
+# Branch-only one-shot focused Ruff repair v2 activation
 name: EAY Core Ruff Focused Repair
 
 on:

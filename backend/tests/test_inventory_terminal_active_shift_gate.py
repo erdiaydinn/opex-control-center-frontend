@@ -21,7 +21,9 @@ def test_active_shift_principal_uses_server_workforce_authority_and_narrows_ware
     assert "principal.tenant_id" in rendered
     assert "principal.employee_id" in rendered
     assert "principal.warehouse_scope" in rendered
-    assert "warehouse_scope=frozenset({attestation.warehouse_id})" in rendered
+    assert "canonical_warehouse" in rendered
+    assert "str(warehouse).strip().lower() == str(attestation.warehouse_id).strip().lower()" in rendered
+    assert "warehouse_scope=frozenset({canonical_warehouse})" in rendered
     assert "attestation.shift_id" in rendered
     assert "status_code=503" in rendered
     assert "status_code=403" in rendered

@@ -2,9 +2,9 @@
 
 This module is an ingestion gate, not a second source of truth. A live source may
 only create a ``WorldAssertion`` when its tenant, source identity, schema,
-authority, freshness and evidence all match an explicit runtime policy.
-Repository fixtures, synthetic proof and model-derived content can never be
-promoted to live company truth by this layer.
+authority, freshness, verifier and evidence all match an explicit runtime
+policy. Repository fixtures, synthetic proof and model-derived content can
+never be promoted to live company truth by this layer.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import hashlib
 import json
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Collection
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -66,8 +66,11 @@ class LiveSourceBindingPolicy(BaseModel):
     source_ref: str = Field(min_length=1)
     schema_contract: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
+    environment_ref: str = Field(min_length=1)
+    verifier_ref: str = Field(min_length=1)
     truth_class: TruthClass
     max_observation_age_seconds: int = Field(gt=0)
+    max_attestation_age_seconds: int = Field(gt=0)
     allowed_fields: tuple[str, ...] = ()
     allowed_field_prefixes: tuple[str, ...] = ()
     required: bool = True
@@ -80,6 +83,32 @@ class LiveSourceBindingPolicy(BaseModel):
             raise ValueError("live_binding_requires_field_namespace")
         if any(not item for item in (*self.allowed_fields, *self.allowed_field_prefixes)):
             raise ValueError("live_binding_field_namespace_must_be_nonempty")
+        return self
+
+
+class LiveSourceAttestation(BaseModel):
+    binding_id: str = Field(min_length=1)
+    tenant_id: str = Field(min_length=1)
+    source_kind: LiveSourceKind
+    source_ref: str = Field(min_length=1)
+    schema_contract: str = Field(min_length=1)
+    schema_version: str = Field(min_length=1)
+    environment_ref: str = Field(min_length=1)
+    execution_identity_ref: str = Field(min_length=1)
+    verifier_ref: str = Field(min_length=1)
+    verified_at: datetime
+    evidence_ref: str = Field(min_length=1)
+    source_receipt_ref: str = Field(min_length=1)
+    evidence_class: LiveEvidenceClass
+    field_production_verified: bool = False
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def integrity_contract(self) -> "LiveSourceAttestation":
+        _require_aware(self.verified_at, "live_attestation_verified_at_requires_timezone")
+        expected = _attestation_fingerprint(self.model_dump(exclude={"fingerprint"}, mode="json"))
+        if self.fingerprint != expected:
+            raise ValueError("live_attestation_fingerprint_mismatch")
         return self
 
 
@@ -96,11 +125,8 @@ class LiveFactObservation(BaseModel):
     valid_from: datetime
     valid_to: datetime | None = None
     observed_at: datetime
-    evidence_ref: str = Field(min_length=1)
-    source_receipt_ref: str = Field(min_length=1)
-    evidence_class: LiveEvidenceClass
-    live_source_verified: bool = False
     confidence: float = Field(ge=0.0, le=1.0)
+    attestation: LiveSourceAttestation
 
     @model_validator(mode="after")
     def temporal_contract(self) -> "LiveFactObservation":
@@ -125,6 +151,7 @@ class LiveBindingReceipt(BaseModel):
     observed_at: datetime | None = None
     evidence_ref: str | None = None
     source_receipt_ref: str | None = None
+    attestation_fingerprint: str | None = None
     assertion_id: str | None = None
     reasons: tuple[str, ...] = ()
 
@@ -150,6 +177,57 @@ def _require_aware(value: datetime, error: str) -> None:
         raise ValueError(error)
 
 
+def _canonical_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _attestation_fingerprint(payload: dict[str, Any]) -> str:
+    return _canonical_hash(payload)
+
+
+def build_live_source_attestation(
+    *,
+    binding_id: str,
+    tenant_id: str,
+    source_kind: LiveSourceKind,
+    source_ref: str,
+    schema_contract: str,
+    schema_version: str,
+    environment_ref: str,
+    execution_identity_ref: str,
+    verifier_ref: str,
+    verified_at: datetime,
+    evidence_ref: str,
+    source_receipt_ref: str,
+    evidence_class: LiveEvidenceClass,
+    field_production_verified: bool,
+) -> LiveSourceAttestation:
+    payload = {
+        "binding_id": binding_id,
+        "tenant_id": tenant_id,
+        "source_kind": source_kind.value,
+        "source_ref": source_ref,
+        "schema_contract": schema_contract,
+        "schema_version": schema_version,
+        "environment_ref": environment_ref,
+        "execution_identity_ref": execution_identity_ref,
+        "verifier_ref": verifier_ref,
+        "verified_at": verified_at.isoformat(),
+        "evidence_ref": evidence_ref,
+        "source_receipt_ref": source_receipt_ref,
+        "evidence_class": evidence_class.value,
+        "field_production_verified": field_production_verified,
+    }
+    return LiveSourceAttestation(**payload, fingerprint=_attestation_fingerprint(payload))
+
+
 def _field_allowed(policy: LiveSourceBindingPolicy, field_name: str) -> bool:
     return field_name in policy.allowed_fields or any(
         field_name.startswith(prefix) for prefix in policy.allowed_field_prefixes
@@ -169,11 +247,9 @@ def _assertion_id(policy: LiveSourceBindingPolicy, observation: LiveFactObservat
         "valid_from": observation.valid_from.isoformat(),
         "valid_to": observation.valid_to.isoformat() if observation.valid_to else None,
         "observed_at": observation.observed_at.isoformat(),
-        "evidence_ref": observation.evidence_ref,
-        "source_receipt_ref": observation.source_receipt_ref,
+        "attestation_fingerprint": observation.attestation.fingerprint,
     }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
-    return "live:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return "live:" + _canonical_hash(payload)
 
 
 def bind_live_observation(
@@ -181,17 +257,19 @@ def bind_live_observation(
     policy: LiveSourceBindingPolicy,
     observation: LiveFactObservation,
     as_of: datetime,
+    known_entity_ids: Collection[str],
 ) -> LiveBindingOutcome:
     """Validate one observation and convert it to existing world-model truth."""
 
     _require_aware(as_of, "live_binding_as_of_requires_timezone")
+    attestation = observation.attestation
     reasons: list[str] = []
 
     if observation.binding_id != policy.binding_id:
         reasons.append("binding_id_mismatch")
     if observation.tenant_id != policy.tenant_id:
         reasons.append("tenant_mismatch")
-    if observation.source_kind is not policy.source_kind:
+    if observation.source_kind != policy.source_kind:
         reasons.append("source_kind_mismatch")
     if observation.source_ref != policy.source_ref:
         reasons.append("source_ref_mismatch")
@@ -199,24 +277,51 @@ def bind_live_observation(
         reasons.append("schema_contract_mismatch")
     if observation.schema_version != policy.schema_version:
         reasons.append("schema_version_mismatch")
+    if observation.entity_id not in known_entity_ids:
+        reasons.append("entity_unknown_for_tenant")
     if not _field_allowed(policy, observation.field_name):
         reasons.append("field_namespace_not_allowed")
-    if observation.evidence_class is not LiveEvidenceClass.AUTHORITATIVE_LIVE:
+
+    if attestation.binding_id != policy.binding_id or attestation.binding_id != observation.binding_id:
+        reasons.append("attestation_binding_mismatch")
+    if attestation.tenant_id != policy.tenant_id or attestation.tenant_id != observation.tenant_id:
+        reasons.append("attestation_tenant_mismatch")
+    if attestation.source_kind != policy.source_kind or attestation.source_kind != observation.source_kind:
+        reasons.append("attestation_source_kind_mismatch")
+    if attestation.source_ref != policy.source_ref or attestation.source_ref != observation.source_ref:
+        reasons.append("attestation_source_ref_mismatch")
+    if attestation.schema_contract != policy.schema_contract:
+        reasons.append("attestation_schema_contract_mismatch")
+    if attestation.schema_version != policy.schema_version:
+        reasons.append("attestation_schema_version_mismatch")
+    if attestation.environment_ref != policy.environment_ref:
+        reasons.append("attestation_environment_mismatch")
+    if attestation.verifier_ref != policy.verifier_ref:
+        reasons.append("attestation_verifier_mismatch")
+    if attestation.evidence_class != LiveEvidenceClass.AUTHORITATIVE_LIVE:
         reasons.append("evidence_not_authoritative_live")
-    if not observation.live_source_verified:
-        reasons.append("live_source_not_verified")
+    if not attestation.field_production_verified:
+        reasons.append("field_production_not_verified")
     if observation.observed_at > as_of:
         reasons.append("observation_from_future")
+    if attestation.verified_at > as_of:
+        reasons.append("attestation_from_future")
 
     if reasons:
         return LiveBindingOutcome(
             receipt=_receipt(policy, observation, LiveBindingStatus.REJECTED, tuple(sorted(set(reasons))))
         )
 
-    age_seconds = (as_of - observation.observed_at).total_seconds()
-    if age_seconds > policy.max_observation_age_seconds:
+    observation_age = (as_of - observation.observed_at).total_seconds()
+    attestation_age = (as_of - attestation.verified_at).total_seconds()
+    stale_reasons: list[str] = []
+    if observation_age > policy.max_observation_age_seconds:
+        stale_reasons.append("observation_stale")
+    if attestation_age > policy.max_attestation_age_seconds:
+        stale_reasons.append("attestation_stale")
+    if stale_reasons:
         return LiveBindingOutcome(
-            receipt=_receipt(policy, observation, LiveBindingStatus.STALE, ("observation_stale",))
+            receipt=_receipt(policy, observation, LiveBindingStatus.STALE, tuple(stale_reasons))
         )
 
     assertion_id = _assertion_id(policy, observation)
@@ -231,7 +336,7 @@ def bind_live_observation(
         valid_to=observation.valid_to,
         observed_at=observation.observed_at,
         source_ref=observation.source_ref,
-        evidence_ref=observation.evidence_ref,
+        evidence_ref=attestation.evidence_ref,
         confidence=observation.confidence,
     )
     return LiveBindingOutcome(
@@ -254,6 +359,7 @@ def _receipt(
     *,
     assertion_id: str | None = None,
 ) -> LiveBindingReceipt:
+    attestation = observation.attestation
     return LiveBindingReceipt(
         binding_id=policy.binding_id,
         tenant_id=policy.tenant_id,
@@ -263,8 +369,9 @@ def _receipt(
         entity_id=observation.entity_id,
         field_name=observation.field_name,
         observed_at=observation.observed_at,
-        evidence_ref=observation.evidence_ref,
-        source_receipt_ref=observation.source_receipt_ref,
+        evidence_ref=attestation.evidence_ref,
+        source_receipt_ref=attestation.source_receipt_ref,
+        attestation_fingerprint=attestation.fingerprint,
         assertion_id=assertion_id,
         reasons=reasons,
     )
@@ -280,9 +387,9 @@ def build_live_company_reality_snapshot(
 ) -> LiveCompanyRealitySnapshot:
     """Build a world snapshot from explicitly governed live-source policies.
 
-    A required binding with no accepted current observation makes the live
-    reality unavailable. Rejected/stale observations never enter the world
-    model. Existing equal-authority world-model conflicts remain fail-closed.
+    A required binding with no accepted current observation makes live reality
+    unavailable. Rejected/stale observations never enter the world model.
+    Existing equal-authority world-model conflicts remain fail-closed.
     """
 
     _require_aware(as_of, "live_reality_as_of_requires_timezone")
@@ -293,6 +400,7 @@ def build_live_company_reality_snapshot(
     if len(policy_by_id) != len(policies):
         raise ValueError("live_reality_duplicate_binding_id")
 
+    tenant_entity_ids = {entity.entity_id for entity in entities if entity.tenant_id == tenant_id}
     outcomes: list[LiveBindingOutcome] = []
     observations_by_binding: dict[str, list[LiveFactObservation]] = {}
     for observation in observations:
@@ -311,6 +419,7 @@ def build_live_company_reality_snapshot(
         if not items:
             if policy.required:
                 unavailable.append(policy.binding_id)
+            reason = "required_source_observation_missing" if policy.required else "optional_source_observation_missing"
             outcomes.append(
                 LiveBindingOutcome(
                     receipt=LiveBindingReceipt(
@@ -319,7 +428,7 @@ def build_live_company_reality_snapshot(
                         source_kind=policy.source_kind,
                         source_ref=policy.source_ref,
                         status=LiveBindingStatus.SOURCE_UNAVAILABLE,
-                        reasons=("required_source_observation_missing",) if policy.required else ("optional_source_observation_missing",),
+                        reasons=(reason,),
                     )
                 )
             )
@@ -328,7 +437,12 @@ def build_live_company_reality_snapshot(
         accepted_for_binding = 0
         nonaccepted_for_binding = False
         for observation in items:
-            outcome = bind_live_observation(policy=policy, observation=observation, as_of=as_of)
+            outcome = bind_live_observation(
+                policy=policy,
+                observation=observation,
+                as_of=as_of,
+                known_entity_ids=tenant_entity_ids,
+            )
             outcomes.append(outcome)
             if outcome.assertion is not None:
                 assertions.append(outcome.assertion)

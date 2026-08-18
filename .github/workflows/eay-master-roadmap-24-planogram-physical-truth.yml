@@ -8,9 +8,26 @@ on:
   pull_request:
     branches:
       - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/**"
+      - "services/core-api/app/modules/planogram/**"
+      - "services/core-api/tests/test_planogram*.py"
+      - "services/core-api/alembic/versions/*planogram*.py"
+      - "services/core-api/app/budget_main.py"
+      - "config/eay_master_roadmap_60.json"
+      - "src/**/*planogram*"
+      - "src/**/Planogram/**"
+      - ".github/workflows/eay-master-roadmap-24-planogram-physical-truth.yml"
+      - ".github/workflows/eay-master-roadmap-25-planogram-optimizer.yml"
+      - ".github/workflows/eay-master-roadmap-26-planogram-execution-compliance.yml"
+      - ".github/workflows/eay-master-roadmap-24-27-cumulative-exact-head.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   physical-truth-authority:

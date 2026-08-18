@@ -3,3 +3,4 @@ Purpose: trigger the same-repository, base-owned EAY exact-head header migration
 This file carries no product authority and may be deleted with the trigger PR.
 Target base: fix/ci-admission-control-v1
 Policy: header-only migration; exact-head checkout semantics preserved; fail closed on drift.
+Runner lane: temporary macOS migration lane to avoid Linux backlog; permanent gates remain standard Linux.

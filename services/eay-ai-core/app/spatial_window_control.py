@@ -3,6 +3,7 @@
 This is deliberately limited to reversible local UI actions. A hand gesture can
 move the currently focused window between monitors, but it cannot authorize a
 portal/API/business mutation, send messages, approve finance, or submit forms.
+A CANCEL gesture is observable but performs no OS window movement.
 """
 
 from __future__ import annotations
@@ -31,13 +32,19 @@ class SpatialWindowControlReceipt(BaseModel):
     principal_ref: str = Field(min_length=1)
     gesture_evidence_ref: str = Field(min_length=1)
     command: SpatialGestureCommand
-    move: WindowMoveReceipt
+    move: WindowMoveReceipt | None = None
+    cancelled: bool = False
     local_ui_side_effect_only: bool = True
     business_side_effects_authorized: bool = False
     raw_hand_data_retained: bool = False
 
     @model_validator(mode="after")
     def receipt_preserves_spatial_boundary(self) -> "SpatialWindowControlReceipt":
+        if self.command is SpatialGestureCommand.CANCEL:
+            if self.move is not None or not self.cancelled:
+                raise ValueError("spatial_window_cancel_must_not_move_window")
+        elif self.move is None or self.cancelled:
+            raise ValueError("spatial_window_move_command_requires_move_receipt")
         if not self.local_ui_side_effect_only:
             raise ValueError("spatial_window_control_must_remain_local_ui_only")
         if self.business_side_effects_authorized:
@@ -64,11 +71,21 @@ def execute_spatial_window_intent(
     if intent.emitted_at < session.armed_at or intent.emitted_at > session.expires_at:
         raise ValueError("spatial_intent_outside_session_window")
 
+    if intent.command is SpatialGestureCommand.CANCEL:
+        return SpatialWindowControlReceipt(
+            session_id=session.session_id,
+            principal_ref=session.principal_ref,
+            gesture_evidence_ref=intent.source_evidence_ref,
+            command=intent.command,
+            move=None,
+            cancelled=True,
+        )
+
     if intent.command is SpatialGestureCommand.MOVE_ACTIVE_WINDOW_RIGHT:
         direction = MonitorDirection.RIGHT
     elif intent.command is SpatialGestureCommand.MOVE_ACTIVE_WINDOW_LEFT:
         direction = MonitorDirection.LEFT
-    else:  # pragma: no cover - current enum exhaustiveness
+    else:  # pragma: no cover - enum exhaustiveness after CANCEL branch
         raise ValueError("spatial_window_command_unsupported")
 
     move = move_active_window_to_adjacent_monitor(backend=backend, direction=direction)
@@ -78,4 +95,5 @@ def execute_spatial_window_intent(
         gesture_evidence_ref=intent.source_evidence_ref,
         command=intent.command,
         move=move,
+        cancelled=False,
     )

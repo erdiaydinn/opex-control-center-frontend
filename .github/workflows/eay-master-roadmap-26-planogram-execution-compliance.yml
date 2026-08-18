@@ -127,11 +127,12 @@ jobs:
           services/core-api/tests/test_planogram_master26_handoff.py
       - name: Master 26 PostgreSQL adversarial acceptance
         run: pytest -q services/core-api/tests/test_planogram_master26_postgres.py
-      - name: Planogram global operations UI contract
-        run: |
-          node scripts/test-planogram-operations-ui.mjs
-          node scripts/test-planogram-product-states.mjs
-          node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Planogram operations UI contract
+        run: node scripts/test-planogram-operations-ui.mjs
+      - name: Planogram product-state UI contract
+        run: node scripts/test-planogram-product-states.mjs
+      - name: Global hardcoded UI string guard
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
       - name: Install reviewed frontend dependency closure
         run: |
           node scripts/ci/materialize-sheetjs.mjs

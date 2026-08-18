@@ -70,7 +70,11 @@ def explanation_context(
         ).fetchall()
 
         variance = db.execute(
-            """WITH counted AS (
+            """WITH expected AS (
+                 SELECT barcode,expected_quantity,unit_cost
+                 FROM inventory_expected_stock
+                 WHERE tenant_id=%s AND document_id=%s
+               ), counted AS (
                  SELECT barcode,sum(quantity) AS counted_quantity
                  FROM inventory_events
                  WHERE tenant_id=%s AND document_id=%s
@@ -81,9 +85,8 @@ def explanation_context(
                  SELECT COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0) AS variance,
                         (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*COALESCE(s.unit_cost,0)
                           AS variance_value
-                 FROM inventory_expected_stock s
+                 FROM expected s
                  FULL OUTER JOIN counted c ON c.barcode=s.barcode
-                 WHERE (s.tenant_id=%s AND s.document_id=%s) OR s.document_id IS NULL
                )
                SELECT count(*) FILTER (WHERE variance<>0)::integer AS variance_line_count,
                       count(*) FILTER (WHERE variance>0)::integer AS positive_line_count,
@@ -91,7 +94,12 @@ def explanation_context(
                       COALESCE(sum(abs(variance)),0) AS absolute_quantity_variance,
                       COALESCE(sum(abs(variance_value)),0) AS absolute_value_variance
                FROM joined""",
-            (principal.tenant_id, document_id, principal.tenant_id, document_id),
+            (
+                principal.tenant_id,
+                document_id,
+                principal.tenant_id,
+                document_id,
+            ),
         ).fetchone()
 
     evidence = {
@@ -109,7 +117,9 @@ def explanation_context(
         },
         "events": [dict(row) for row in event_rows],
         "revisions": [dict(row) for row in revision_rows],
-        "audit_chain": [dict(row) for row in audit_rows],
+        "audit_entries": [dict(row) for row in audit_rows],
+        "audit_chain_scope": "tenant_global_filtered_to_document",
+        "audit_chain_verified_in_context": False,
         "variance_summary": dict(variance or {}),
     }
     return {

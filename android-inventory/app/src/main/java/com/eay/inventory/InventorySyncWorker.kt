@@ -164,7 +164,7 @@ class InventorySyncWorker(
                         SyncQuarantineReason.SERVER_CONTRACT_MISMATCH.name,
                         "SHIFT_ATTESTATION_MISMATCH",
                     )
-                    continue
+                    return@use
                 }
                 val verdict = InventorySyncClassifier.classify(
                     it.code,

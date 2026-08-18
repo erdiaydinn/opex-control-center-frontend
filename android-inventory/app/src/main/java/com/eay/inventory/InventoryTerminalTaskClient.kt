@@ -18,6 +18,7 @@ data class InventoryTerminalTaskWire(
     val state: String,
     val revision: Int,
     val locationCount: Int,
+    val claimRequired: Boolean,
     val operation: String,
     val runtimeProfile: String,
 )
@@ -71,6 +72,7 @@ object InventoryTerminalTaskContract {
             require(row.activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$"))) {
                 "Missing or invalid server-issued active shift"
             }
+            require(row.claimRequired) { "Production count task must require a server mission claim" }
             require(missionIds.add(row.missionId)) { "Duplicate terminal mission ID" }
             val binding = "${row.documentId}:${row.locationId.trim().uppercase(Locale.ROOT)}"
             require(locationBindings.add(binding)) { "Duplicate document/location mission" }
@@ -84,6 +86,7 @@ object InventoryTerminalTaskContract {
                 state = row.state,
                 revision = row.revision,
                 locationCount = row.locationCount,
+                claimRequired = row.claimRequired,
                 operation = row.operation,
                 runtimeProfile = MobileRuntimeProfile.valueOf(row.runtimeProfile),
             )
@@ -100,11 +103,7 @@ object InventoryTerminalTaskContract {
     }
 }
 
-/**
- * Read-only production COUNT-mission client. It deliberately reuses PinnedApi,
- * the in-memory OIDC access token and the MDM-provided device identity. There is
- * no anonymous fallback, secondary HTTP stack or client-owned permission truth.
- */
+/** Read-only production COUNT-mission client. Mutation authority requires a later signed claim. */
 class InventoryTerminalTaskClient(context: Context) {
     private val appContext = context.applicationContext
 
@@ -168,6 +167,7 @@ class InventoryTerminalTaskClient(context: Context) {
                 state = row.getString("state"),
                 revision = row.getInt("revision"),
                 locationCount = row.getInt("location_count"),
+                claimRequired = row.getBoolean("claim_required"),
                 operation = row.getString("operation"),
                 runtimeProfile = row.getString("runtime_profile"),
             )

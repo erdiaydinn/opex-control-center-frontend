@@ -1,17 +1,18 @@
 """End-to-end mission execution fabric for Jarvis.
 
 This layer composes the existing durable mission state machine with the real
-engine gateway and capability handlers.  It is intentionally small and strict:
+engine gateway and capability handlers. It is intentionally small and strict:
 - reasoning steps use the router-backed EngineGateway;
 - permissioned actions require authorization evidence;
+- live-company-dependent steps require a matching DecisionTruthReceipt;
 - side effects are never marked successful without authoritative effect
   verification;
 - ambiguous write outcomes halt the mission instead of retrying blindly;
 - checkpoints remain the durable source of resume truth.
 
 The fabric does not expose provider-native tools. Enterprise actions remain EAY
-capabilities behind EAY authorization, idempotency, effect verification and
-audit evidence.
+capabilities behind EAY authorization, live-truth readiness, idempotency,
+effect verification and audit evidence.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .engine_gateway import EngineGateway, EngineInvocationReceipt
 from .intelligence_router import IntelligenceTask
+from .live_company_readiness import DecisionTruthReceipt, DecisionTruthStatus
 from .mission_runtime import (
     MissionCheckpoint,
     MissionDefinition,
@@ -47,6 +49,8 @@ class MissionExecutionSpec(BaseModel):
     intelligence_task: IntelligenceTask | None = None
     prompt: str | None = None
     capability_ref: str | None = None
+    decision_truth_requirement_id: str | None = None
+    requires_firm_company_truth: bool = False
 
     @model_validator(mode="after")
     def kind_contract(self) -> "MissionExecutionSpec":
@@ -60,6 +64,8 @@ class MissionExecutionSpec(BaseModel):
                 raise ValueError("capability_step_requires_capability_ref")
             if self.intelligence_task is not None or self.prompt is not None:
                 raise ValueError("capability_step_cannot_define_reasoning_payload")
+        if self.requires_firm_company_truth and not self.decision_truth_requirement_id:
+            raise ValueError("firm_company_truth_requires_truth_requirement_id")
         return self
 
 
@@ -117,6 +123,39 @@ def _state_map(checkpoint: MissionCheckpoint) -> dict[str, StepCheckpoint]:
     return {item.step_id: item for item in checkpoint.steps}
 
 
+def _truth_receipt_ref(receipt: DecisionTruthReceipt) -> str:
+    return (
+        "live-truth-readiness://"
+        + receipt.tenant_id
+        + "/"
+        + receipt.requirement_id
+        + "/"
+        + receipt.status.value
+    )
+
+
+def _truth_gate_blocker(
+    *,
+    definition: MissionDefinition,
+    spec: MissionExecutionSpec,
+    receipts: Mapping[str, DecisionTruthReceipt],
+) -> tuple[str | None, str | None]:
+    requirement_id = spec.decision_truth_requirement_id
+    if not requirement_id:
+        return None, None
+
+    receipt = receipts.get(requirement_id)
+    if receipt is None:
+        return "live_company_truth_receipt_missing", None
+    if receipt.tenant_id != definition.tenant_id:
+        return "live_company_truth_tenant_mismatch", None
+    if receipt.status is DecisionTruthStatus.BLOCKED:
+        return "live_company_truth_blocked", None
+    if spec.requires_firm_company_truth and not receipt.firm_claim_authorized:
+        return "live_company_firm_claim_not_authorized", None
+    return None, _truth_receipt_ref(receipt)
+
+
 async def execute_mission_until_blocked(
     *,
     definition: MissionDefinition,
@@ -126,6 +165,7 @@ async def execute_mission_until_blocked(
     reasoning_evidence_writer: ReasoningEvidenceWriter,
     capability_handlers: Mapping[str, CapabilityHandler],
     authorization_checker: AuthorizationChecker | None = None,
+    decision_truth_receipts: Mapping[str, DecisionTruthReceipt] | None = None,
     max_transitions: int = 100,
 ) -> MissionExecutionSummary:
     if max_transitions < 1:
@@ -138,6 +178,7 @@ async def execute_mission_until_blocked(
     if set(spec_map) != expected_steps:
         raise ValueError("mission_execution_specs_must_cover_definition_exactly")
 
+    truth_receipts = decision_truth_receipts or {}
     current = checkpoint
     steps = _step_map(definition)
     transitions = 0
@@ -153,6 +194,16 @@ async def execute_mission_until_blocked(
         step = steps[step_id]
         state = _state_map(current)[step_id]
         spec = spec_map[step_id]
+
+        truth_blocker, truth_receipt_ref = _truth_gate_blocker(
+            definition=definition,
+            spec=spec,
+            receipts=truth_receipts,
+        )
+        if truth_blocker is not None:
+            blockers.append(truth_blocker + ":" + step_id)
+            break
+        truth_evidence = (() if truth_receipt_ref is None else (truth_receipt_ref,))
 
         if spec.kind is MissionExecutionKind.REASONING:
             if step.side_effect:
@@ -190,7 +241,7 @@ async def execute_mission_until_blocked(
                     current,
                     step_id=step_id,
                     succeeded=True,
-                    evidence_refs=(evidence_ref,),
+                    evidence_refs=tuple(dict.fromkeys((*truth_evidence, evidence_ref))),
                 )
                 reasoning_engines.append(receipt.engine_id)
             transitions += 1
@@ -211,7 +262,7 @@ async def execute_mission_until_blocked(
             transitions += 1
             continue
 
-        authorization_evidence: tuple[str, ...] = ()
+        authorization_evidence: tuple[str, ...] = truth_evidence
         if step.required_permission:
             if authorization_checker is None:
                 decision = AuthorizationDecision(
@@ -233,7 +284,9 @@ async def execute_mission_until_blocked(
                 )
                 transitions += 1
                 continue
-            authorization_evidence = (decision.evidence_ref or "",)
+            authorization_evidence = tuple(
+                dict.fromkeys((*truth_evidence, decision.evidence_ref or ""))
+            )
 
         try:
             outcome = await handler(

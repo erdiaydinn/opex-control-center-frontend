@@ -4,7 +4,8 @@
 The policy separates workstream PR checks from cumulative canonical/release
 acceptance. Historical Roadmap 1-10..1-14 gates remain versioned for audit but
 must not stay active under .github/workflows. Heavy domain gates must be
-path-scoped on PRs and use stable concurrency so superseded commits can cancel.
+path-scoped on PRs and use non-SHA stable concurrency so superseded commits can
+cancel.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
 ARCHIVE = ROOT / "docs" / "ci" / "historical-workflows"
-STABLE = "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
 CATEGORY = "product/eay-category-leadership-v1"
 
 HISTORICAL = (
@@ -45,6 +45,16 @@ def header(source: str) -> str:
     return source.split("jobs:", 1)[0]
 
 
+def require_stable_concurrency(name: str, head: str) -> None:
+    assert "concurrency:" in head, f"{name}: concurrency block missing"
+    assert "cancel-in-progress: true" in head, f"{name}: superseded-run cancellation missing"
+    assert "head.sha" not in head, f"{name}: PR head SHA used as concurrency identity"
+    assert "github.sha" not in head, f"{name}: commit SHA used as concurrency identity"
+    assert (
+        "github.event.pull_request.number" in head or "github.ref" in head
+    ), f"{name}: concurrency is not bound to a stable PR/ref identity"
+
+
 def require_pr_paths(name: str, *, required_fragment: str | None = None) -> None:
     source = text(name)
     head = header(source)
@@ -55,7 +65,7 @@ def require_pr_paths(name: str, *, required_fragment: str | None = None) -> None
     if "workflow_dispatch:" in pr:
         pr = pr.split("workflow_dispatch:", 1)[0]
     assert "paths:" in pr, f"{name}: PR path scope missing"
-    assert STABLE in head, f"{name}: stable concurrency missing"
+    require_stable_concurrency(name, head)
     if required_fragment:
         assert required_fragment in pr, f"{name}: expected scoped path missing: {required_fragment}"
 
@@ -82,9 +92,9 @@ def main() -> None:
     inventory_head = header(inventory)
     assert CATEGORY in inventory_head, "Inventory production gate missing category PR admission"
     assert "paths:" in inventory_head, "Inventory production PR path scope missing"
-    assert STABLE in inventory_head, "Inventory production stable concurrency missing"
+    require_stable_concurrency("eay-inventory-production.yml", inventory_head)
     android = text("opex-inventory-android.yml")
-    assert STABLE in header(android), "Inventory Android stable concurrency missing"
+    require_stable_concurrency("opex-inventory-android.yml", header(android))
 
     # Planogram and Budget workstream PRs run only their relevant delta gates.
     for name in PLANOGRAM:
@@ -96,7 +106,7 @@ def main() -> None:
     jarvis_head = header(jarvis)
     assert "pull_request:" in jarvis_head and "paths:" in jarvis_head, "Jarvis PR path scope missing"
     assert '"services/core-api/**"' not in jarvis_head, "Jarvis gate still consumes the whole Core API tree"
-    assert STABLE in jarvis_head, "Jarvis stable concurrency missing"
+    require_stable_concurrency("jarvis-convergence-ci.yml", jarvis_head)
 
     # Final release authority remains active and is not replaced by this guard.
     release = WF / "eay-master-roadmap-56-60-release-leadership.yml"
@@ -105,7 +115,7 @@ def main() -> None:
     print("EAY_CI_ADMISSION_POLICY=PASS")
     print("historical_1_10_1_14=archived_inert")
     print("domain_pr_gates=path_scoped")
-    print("superseded_pr_runs=stable_concurrency")
+    print("superseded_pr_runs=stable_non_sha_concurrency")
     print("release_authority=preserved")
 
 

@@ -3,7 +3,6 @@ package com.eay.inventory
 import com.eay.mobile.core.AcceptedScan
 import com.eay.mobile.core.BlindCountLineEvidence
 import java.math.BigDecimal
-import java.time.OffsetDateTime
 import java.util.UUID
 
 data class InventoryCountEventContext(
@@ -12,7 +11,6 @@ data class InventoryCountEventContext(
     val activeShiftId: String,
     val attemptId: String,
     val leaseId: String,
-    val leaseValidUntil: String,
     val locationId: String,
 ) {
     init {
@@ -21,7 +19,6 @@ data class InventoryCountEventContext(
         require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
         UUID.fromString(attemptId)
         UUID.fromString(leaseId)
-        OffsetDateTime.parse(leaseValidUntil)
         require(locationId.isNotBlank())
     }
 }

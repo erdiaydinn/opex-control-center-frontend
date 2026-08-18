@@ -24,6 +24,24 @@ from .spatial_multimodal_fusion import SpatialFusionCommand, SpatialFusionIntent
 SPATIAL_TARGET_BINDING_CONTRACT = "eay-spatial-target-binding-v1"
 
 
+class _TargetWinRect(ctypes.Structure):
+    _fields_ = [
+        ("left", ctypes.c_long),
+        ("top", ctypes.c_long),
+        ("right", ctypes.c_long),
+        ("bottom", ctypes.c_long),
+    ]
+
+
+class _TargetWinMonitorInfo(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", _TargetWinRect),
+        ("rcWork", _TargetWinRect),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
 class WindowInventoryProvider(Protocol):
     def windows(self) -> tuple[WindowGeometry, ...]: ...
     def monitors(self) -> tuple[MonitorGeometry, ...]: ...
@@ -78,7 +96,8 @@ def _source_monitor(window: WindowGeometry, monitors: tuple[MonitorGeometry, ...
     cx = window.rect.center_x
     cy = window.rect.center_y
     containing = [
-        monitor for monitor in monitors
+        monitor
+        for monitor in monitors
         if monitor.work_area.left <= cx < monitor.work_area.right
         and monitor.work_area.top <= cy < monitor.work_area.bottom
     ]
@@ -93,17 +112,33 @@ def _source_monitor(window: WindowGeometry, monitors: tuple[MonitorGeometry, ...
     )
 
 
-def _adjacent(source: MonitorGeometry, monitors: tuple[MonitorGeometry, ...], direction: MonitorDirection) -> MonitorGeometry:
+def _adjacent(
+    source: MonitorGeometry,
+    monitors: tuple[MonitorGeometry, ...],
+    direction: MonitorDirection,
+) -> MonitorGeometry:
     others = [item for item in monitors if item.monitor_id != source.monitor_id]
     if direction is MonitorDirection.RIGHT:
         eligible = [item for item in others if item.work_area.center_x > source.work_area.center_x]
         if not eligible:
             raise ValueError("spatial_target_no_monitor_to_right")
-        return min(eligible, key=lambda item: (item.work_area.center_x - source.work_area.center_x, abs(item.work_area.center_y - source.work_area.center_y)))
+        return min(
+            eligible,
+            key=lambda item: (
+                item.work_area.center_x - source.work_area.center_x,
+                abs(item.work_area.center_y - source.work_area.center_y),
+            ),
+        )
     eligible = [item for item in others if item.work_area.center_x < source.work_area.center_x]
     if not eligible:
         raise ValueError("spatial_target_no_monitor_to_left")
-    return min(eligible, key=lambda item: (source.work_area.center_x - item.work_area.center_x, abs(item.work_area.center_y - source.work_area.center_y)))
+    return min(
+        eligible,
+        key=lambda item: (
+            source.work_area.center_x - item.work_area.center_x,
+            abs(item.work_area.center_y - source.work_area.center_y),
+        ),
+    )
 
 
 def _project(window: WindowGeometry, source: MonitorGeometry, target: MonitorGeometry) -> DesktopRect:
@@ -130,18 +165,16 @@ def gaze_candidates(snapshot: WindowInventorySnapshot) -> tuple[GazeTargetCandid
     width = max(1, right - left)
     height = max(1, bottom - top)
 
-    candidates: list[GazeTargetCandidate] = []
-    for window in snapshot.windows:
-        candidates.append(
-            GazeTargetCandidate(
-                target_ref=window.window_ref,
-                left=max(0.0, min(1.0, (window.rect.left - left) / width)),
-                top=max(0.0, min(1.0, (window.rect.top - top) / height)),
-                right=max(0.0, min(1.0, (window.rect.right - left) / width)),
-                bottom=max(0.0, min(1.0, (window.rect.bottom - top) / height)),
-            )
+    return tuple(
+        GazeTargetCandidate(
+            target_ref=window.window_ref,
+            left=max(0.0, min(1.0, (window.rect.left - left) / width)),
+            top=max(0.0, min(1.0, (window.rect.top - top) / height)),
+            right=max(0.0, min(1.0, (window.rect.right - left) / width)),
+            bottom=max(0.0, min(1.0, (window.rect.bottom - top) / height)),
         )
-    return tuple(candidates)
+        for window in snapshot.windows
+    )
 
 
 def bind_exact_window(*, intent: SpatialFusionIntent, snapshot: WindowInventorySnapshot) -> BoundWindowTarget:
@@ -211,20 +244,35 @@ class WindowsNativeTargetBackend:
     SWP_NOACTIVATE = 0x0010
     MONITORINFOF_PRIMARY = 0x00000001
 
-    class _Rect(ctypes.Structure):
-        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
-
-    class _MonitorInfo(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", _Rect), ("rcWork", _Rect), ("dwFlags", wintypes.DWORD)]
-
     def __init__(self) -> None:
         if platform.system() != "Windows":
             raise RuntimeError("windows_spatial_target_backend_requires_windows")
         self._user32 = ctypes.windll.user32
         self._handles: dict[str, int] = {}
 
-    @classmethod
-    def _rect(cls, value: "WindowsNativeTargetBackend._Rect") -> DesktopRect:
+        self._user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(_TargetWinRect)]
+        self._user32.GetWindowRect.restype = wintypes.BOOL
+        self._user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        self._user32.IsWindowVisible.restype = wintypes.BOOL
+        self._user32.IsZoomed.argtypes = [wintypes.HWND]
+        self._user32.IsZoomed.restype = wintypes.BOOL
+        self._user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(_TargetWinMonitorInfo)]
+        self._user32.GetMonitorInfoW.restype = wintypes.BOOL
+        self._user32.SetWindowPos.argtypes = [
+            wintypes.HWND,
+            wintypes.HWND,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        self._user32.SetWindowPos.restype = wintypes.BOOL
+        self._user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        self._user32.ShowWindow.restype = wintypes.BOOL
+
+    @staticmethod
+    def _rect(value: _TargetWinRect) -> DesktopRect:
         return DesktopRect(left=value.left, top=value.top, right=value.right, bottom=value.bottom)
 
     def windows(self) -> tuple[WindowGeometry, ...]:
@@ -234,7 +282,7 @@ class WindowsNativeTargetBackend:
         def callback(hwnd, _lparam):
             if not self._user32.IsWindowVisible(hwnd):
                 return True
-            rect = self._Rect()
+            rect = _TargetWinRect()
             if not self._user32.GetWindowRect(hwnd, ctypes.byref(rect)):
                 return True
             if rect.right <= rect.left or rect.bottom <= rect.top:
@@ -244,28 +292,56 @@ class WindowsNativeTargetBackend:
                 return True
             ref = _opaque_ref("window", handle)
             self._handles[ref] = handle
-            found.append(WindowGeometry(window_ref=ref, rect=self._rect(rect), maximized=bool(self._user32.IsZoomed(hwnd))))
+            found.append(
+                WindowGeometry(
+                    window_ref=ref,
+                    rect=self._rect(rect),
+                    maximized=bool(self._user32.IsZoomed(hwnd)),
+                )
+            )
             return True
 
         callback_ref = callback_type(callback)
+        self._user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+        self._user32.EnumWindows.restype = wintypes.BOOL
         if not self._user32.EnumWindows(callback_ref, 0):
             raise RuntimeError("windows_enum_windows_failed")
         return tuple(found)
 
     def monitors(self) -> tuple[MonitorGeometry, ...]:
         found: list[MonitorGeometry] = []
-        callback_type = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(self._Rect), wintypes.LPARAM)
+        callback_type = ctypes.WINFUNCTYPE(
+            ctypes.c_int,
+            wintypes.HMONITOR,
+            wintypes.HDC,
+            ctypes.POINTER(_TargetWinRect),
+            wintypes.LPARAM,
+        )
 
         def callback(hmonitor, _hdc, _rect, _data):
-            info = self._MonitorInfo()
-            info.cbSize = ctypes.sizeof(self._MonitorInfo)
+            info = _TargetWinMonitorInfo()
+            info.cbSize = ctypes.sizeof(_TargetWinMonitorInfo)
             if not self._user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
                 return 1
             handle = int(ctypes.cast(hmonitor, ctypes.c_void_p).value or 0)
-            found.append(MonitorGeometry(monitor_id=_opaque_ref("monitor", handle), bounds=self._rect(info.rcMonitor), work_area=self._rect(info.rcWork), primary=bool(info.dwFlags & self.MONITORINFOF_PRIMARY)))
+            found.append(
+                MonitorGeometry(
+                    monitor_id=_opaque_ref("monitor", handle),
+                    bounds=self._rect(info.rcMonitor),
+                    work_area=self._rect(info.rcWork),
+                    primary=bool(info.dwFlags & self.MONITORINFOF_PRIMARY),
+                )
+            )
             return 1
 
         callback_ref = callback_type(callback)
+        self._user32.EnumDisplayMonitors.argtypes = [
+            wintypes.HDC,
+            ctypes.POINTER(_TargetWinRect),
+            callback_type,
+            wintypes.LPARAM,
+        ]
+        self._user32.EnumDisplayMonitors.restype = wintypes.BOOL
         if not self._user32.EnumDisplayMonitors(0, None, callback_ref, 0):
             raise RuntimeError("windows_enum_display_monitors_failed")
         return tuple(found)
@@ -278,7 +354,15 @@ class WindowsNativeTargetBackend:
         if restore_maximized:
             self._user32.ShowWindow(hwnd_value, self.SW_RESTORE)
         flags = self.SWP_NOZORDER | self.SWP_NOACTIVATE
-        if not self._user32.SetWindowPos(hwnd_value, 0, rect.left, rect.top, rect.width, rect.height, flags):
+        if not self._user32.SetWindowPos(
+            hwnd_value,
+            0,
+            rect.left,
+            rect.top,
+            rect.width,
+            rect.height,
+            flags,
+        ):
             raise RuntimeError("windows_spatial_target_move_failed")
         if restore_maximized:
             self._user32.ShowWindow(hwnd_value, self.SW_MAXIMIZE)

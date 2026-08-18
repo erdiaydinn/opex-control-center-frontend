@@ -17,10 +17,10 @@ from .production import (
     enroll_device,
     list_terminal_tasks as production_list_terminal_tasks,
     readiness as production_readiness,
-    reconciliation,
     record_event as production_record_event,
     transition as production_transition,
 )
+from .reconciliation import reconciliation as read_reconciliation
 from .schemas import (
     DecisionCreate,
     DeviceEnrollCreate,
@@ -356,7 +356,7 @@ def production_reconciliation(
         parsed = UUID(document_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail="Geçerli document UUID zorunludur.") from error
-    return run(reconciliation, production_principal(request, x_eay_device_id), parsed)
+    return run(read_reconciliation, production_principal(request, x_eay_device_id), parsed)
 
 
 @router.get("/v1/documents/{document_id}/explanation-context")

@@ -39,10 +39,13 @@ class TerminalEventCreate(BaseModel):
     # Production terminal identity is authoritative from verified OIDC + managed
     # device headers. Never silently accept tenant/employee/device authority from
     # an offline JSON payload, including stale or malicious queued events.
+    # active_shift_id is server-issued mission provenance, not client authority;
+    # it is cryptographically bound into payload_hash and re-attested by Workforce.
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
     document_id: str
+    active_shift_id: str = Field(min_length=1, max_length=128)
     device_sequence: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)
     barcode: str = Field(min_length=1, max_length=120)

@@ -22,7 +22,29 @@ concurrency:
 jobs:
   academy-tutor-media:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Prove exact checkout
@@ -34,6 +56,19 @@ jobs:
       - name: Install Core API test surface
         working-directory: services/core-api
         run: python -m pip install -e '.[dev,bigquery]'
+      - name: Create non-superuser runtime role
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime') THEN
+              CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            END IF;
+          END
+          $$;
+          SQL
       - name: Strict Ruff and compile gate
         run: |
           ruff check \
@@ -46,6 +81,13 @@ jobs:
             services/core-api/app/modules/academy/learning_os.py \
             services/core-api/app/modules/academy/tutor.py \
             services/core-api/app/modules/academy/media_plane.py
+      - name: Apply cumulative Academy database authority
+        working-directory: services/core-api
+        run: |
+          alembic heads | tee /tmp/academy-heads.txt
+          test "$(grep -c '(head)' /tmp/academy-heads.txt)" -eq 1
+          grep -q '0041_academy_learning_os' /tmp/academy-heads.txt
+          alembic upgrade head
       - name: Run Tutor, media and current Academy regression contracts
         run: |
           pytest -q \

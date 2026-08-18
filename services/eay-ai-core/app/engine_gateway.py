@@ -14,7 +14,9 @@ Supported adapters in v1:
 Frontier adapters are pure reasoning/text adapters in this layer: provider
 built-in tools are not enabled, secrets and prompts are not returned in
 receipts, and sensitive external processing still requires the EAY router's
-explicit authorization boundary.
+explicit authorization boundary. Provider HTTP/transport errors are reduced to
+status/type-only EAY errors so request headers, prompts and secrets cannot leak
+through exception objects or chained HTTPX request state.
 """
 
 from __future__ import annotations
@@ -85,6 +87,8 @@ class EngineEndpoint(BaseModel):
                 raise ValueError("frontier_endpoint_https_required")
             expected_host = _OFFICIAL_FRONTIER_HOSTS[self.provider]
             if host != expected_host:
+                if self.provider is EngineProvider.OPENAI_RESPONSES:
+                    raise ValueError("openai_endpoint_host_must_be_official")
                 raise ValueError(f"{self.provider.value}_endpoint_host_must_be_official")
             if parsed.path not in {"", "/"}:
                 raise ValueError("frontier_endpoint_base_path_must_be_root")
@@ -196,6 +200,35 @@ def _safe_usage_int(payload: dict[str, Any], key: str, *, container: str = "usag
     return value if isinstance(value, int) and value >= 0 else None
 
 
+async def _post_json_safely(
+    *,
+    provider: EngineProvider,
+    url: str,
+    headers: dict[str, str] | None,
+    payload: dict[str, Any],
+    timeout_seconds: float,
+    transport: httpx.AsyncBaseTransport | None,
+) -> Any:
+    """POST JSON while severing HTTPX request/secret state from raised errors."""
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds, transport=transport) as client:
+            response = await client.post(url, headers=headers, json=payload)
+    except httpx.HTTPError as exc:
+        raise EngineGatewayError(
+            f"{provider.value}_transport_error:{type(exc).__name__}"
+        ) from None
+
+    if not response.is_success:
+        raise EngineGatewayError(
+            f"{provider.value}_http_status:{response.status_code}"
+        ) from None
+    try:
+        return response.json()
+    except (ValueError, TypeError):
+        raise EngineGatewayError(f"{provider.value}_response_json_invalid") from None
+
+
 class EngineGateway:
     def __init__(
         self,
@@ -290,10 +323,14 @@ class EngineGateway:
             "stream": False,
             "options": {"temperature": 0.2},
         }
-        async with httpx.AsyncClient(timeout=endpoint.timeout_seconds, transport=self._transport(endpoint)) as client:
-            response = await client.post(endpoint.base_url.rstrip("/") + "/api/chat", json=payload)
-            response.raise_for_status()
-            raw = response.json()
+        raw = await _post_json_safely(
+            provider=endpoint.provider,
+            url=endpoint.base_url.rstrip("/") + "/api/chat",
+            headers=None,
+            payload=payload,
+            timeout_seconds=endpoint.timeout_seconds,
+            transport=self._transport(endpoint),
+        )
         text = raw.get("message", {}).get("content", "") if isinstance(raw, dict) else ""
         if not isinstance(text, str) or not text.strip():
             raise EngineGatewayError("ollama_response_text_missing")
@@ -328,10 +365,14 @@ class EngineGateway:
             "max_output_tokens": endpoint.max_output_tokens,
         }
         headers = {"Authorization": f"Bearer {secret}", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=endpoint.timeout_seconds, transport=self._transport(endpoint)) as client:
-            response = await client.post(endpoint.base_url.rstrip("/") + "/v1/responses", headers=headers, json=payload)
-            response.raise_for_status()
-            raw = response.json()
+        raw = await _post_json_safely(
+            provider=endpoint.provider,
+            url=endpoint.base_url.rstrip("/") + "/v1/responses",
+            headers=headers,
+            payload=payload,
+            timeout_seconds=endpoint.timeout_seconds,
+            transport=self._transport(endpoint),
+        )
         if not isinstance(raw, dict):
             raise EngineGatewayError("openai_response_not_object")
         text = _extract_openai_text(raw)
@@ -370,10 +411,14 @@ class EngineGateway:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=endpoint.timeout_seconds, transport=self._transport(endpoint)) as client:
-            response = await client.post(endpoint.base_url.rstrip("/") + "/v1/messages", headers=headers, json=payload)
-            response.raise_for_status()
-            raw = response.json()
+        raw = await _post_json_safely(
+            provider=endpoint.provider,
+            url=endpoint.base_url.rstrip("/") + "/v1/messages",
+            headers=headers,
+            payload=payload,
+            timeout_seconds=endpoint.timeout_seconds,
+            transport=self._transport(endpoint),
+        )
         if not isinstance(raw, dict):
             raise EngineGatewayError("anthropic_response_not_object")
         text = _extract_anthropic_text(raw)
@@ -408,11 +453,14 @@ class EngineGateway:
             "generationConfig": {"maxOutputTokens": endpoint.max_output_tokens},
         }
         headers = {"x-goog-api-key": secret, "content-type": "application/json"}
-        url = endpoint.base_url.rstrip("/") + f"/v1beta/models/{model_path}:generateContent"
-        async with httpx.AsyncClient(timeout=endpoint.timeout_seconds, transport=self._transport(endpoint)) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            raw = response.json()
+        raw = await _post_json_safely(
+            provider=endpoint.provider,
+            url=endpoint.base_url.rstrip("/") + f"/v1beta/models/{model_path}:generateContent",
+            headers=headers,
+            payload=payload,
+            timeout_seconds=endpoint.timeout_seconds,
+            transport=self._transport(endpoint),
+        )
         if not isinstance(raw, dict):
             raise EngineGatewayError("gemini_response_not_object")
         text = _extract_gemini_text(raw)

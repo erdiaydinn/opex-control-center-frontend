@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var finishLocation: Button
     private val auth by lazy { AuthorizationService(this) }
     private val taskClient by lazy { InventoryTerminalTaskClient(this) }
+    private val missionAttemptClient by lazy { InventoryMissionAttemptClient(this) }
     private val offlineQueue by lazy { InventoryOfflineQueue(InventoryDatabase.get(this)) }
     private var dataWedgeSession: DataWedge.Session? = null
     private var scannerReceiverRegistered = false
@@ -317,15 +318,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectTask(task: InventoryTerminalCountTask) {
-        activeTask = task
-        activeController = BlindCountTerminalController(
-            target = task.blindCountTarget(),
-            eventContext = task.eventContext(),
-            eventSink = offlineQueue,
-        )
         setTaskSelectionEnabled(false)
         hideExecutionControls()
-        renderStep(BlindCountStep.SCAN_LOCATION)
+        status.text = getString(R.string.terminal_saving)
+        Thread {
+            val claimResult = missionAttemptClient.claim(task)
+            runOnUiThread {
+                val claim = claimResult.claim
+                if (!claimResult.accepted || claim == null) {
+                    setTaskSelectionEnabled(true)
+                    status.text = getString(R.string.terminal_task_fetch_failed, claimResult.code.name)
+                    return@runOnUiThread
+                }
+                val controller = runCatching {
+                    BlindCountTerminalController(
+                        target = task.blindCountTarget(),
+                        eventContext = task.eventContext(claim),
+                        eventSink = offlineQueue,
+                    )
+                }.getOrElse {
+                    setTaskSelectionEnabled(true)
+                    status.text = getString(R.string.terminal_contract_blocked)
+                    return@runOnUiThread
+                }
+                activeTask = task
+                activeController = controller
+                renderStep(BlindCountStep.SCAN_LOCATION)
+            }
+        }.start()
     }
 
     private fun renderStep(step: BlindCountStep) {

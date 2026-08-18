@@ -52,6 +52,7 @@ jobs:
             tests/test_browser_api_observer.py \
             tests/test_playwright_computer_runtime.py \
             tests/test_engine_gateway.py \
+            tests/test_benchmark_promotion.py \
             tests/test_intelligence_router.py \
             tests/test_mission_runtime.py \
             tests/test_world_model.py \

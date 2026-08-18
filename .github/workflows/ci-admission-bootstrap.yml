@@ -33,7 +33,7 @@ jobs:
         run: python scripts/ci/apply_ci_admission_control.py --check
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check
-      - name: Commit verified workflow admission changes
+      - name: Commit verified workflow admission changes and remove bootstrap
         shell: bash
         run: |
           set -euo pipefail
@@ -53,9 +53,7 @@ jobs:
             .github/workflows/eay-master-roadmap-28-budget-planning-engine.yml \
             .github/workflows/dockos-full-stack.yml \
             .github/workflows/jarvis-convergence-ci.yml
-          if git diff --cached --quiet; then
-            echo "CI_ADMISSION_TREE_ALREADY_CURRENT=true"
-            exit 0
-          fi
+          git rm .github/workflows/ci-admission-bootstrap.yml
+          git diff --cached --check
           git commit -m "ci: scope heavy PR gates and cancel superseded runs"
           git push origin HEAD:fix/ci-admission-control-v1

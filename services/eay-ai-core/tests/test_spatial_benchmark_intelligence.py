@@ -18,11 +18,22 @@ ENV_FP = environment_fingerprint(
 )
 
 
-def _case(index, *, candidate=True, wrong=0, duplicate=0, cancel_calls=0, leakage=False):
+def _case(
+    index,
+    *,
+    candidate=True,
+    wrong=0,
+    duplicate=0,
+    cancel_calls=0,
+    leakage=False,
+    completed=None,
+):
+    if completed is None:
+        completed = wrong == 0
     return SpatialCaseResult(
         case_id=f"case:{index}",
         correct_target=wrong == 0,
-        intended_action_completed=wrong == 0,
+        intended_action_completed=completed,
         duplicate_move_count=duplicate,
         wrong_window_move_count=wrong,
         cancel_backend_call_count=cancel_calls,
@@ -36,6 +47,10 @@ def _case(index, *, candidate=True, wrong=0, duplicate=0, cancel_calls=0, leakag
 
 def _run(*, candidate=True, tier=SpatialEvidenceTier.SYNTHETIC, case_override=None):
     cases = [_case(i, candidate=candidate) for i in range(24)]
+    # The comparison fixture must be objectively weaker, not merely slower.
+    # Keep safety clean while one baseline task fails to complete.
+    if not candidate:
+        cases[0] = _case(0, candidate=False, completed=False)
     if case_override is not None:
         index, item = case_override
         cases[index] = item

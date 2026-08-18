@@ -58,6 +58,8 @@ def _record(*, mutating: bool = False, lifecycle: AgentResourceLifecycle = Agent
 
 
 def test_resource_identity_requires_pinned_commit() -> None:
+    # Use a 40-character non-hex value so field-length validation passes and
+    # the domain-specific pinned-SHA validator is exercised deterministically.
     with pytest.raises(ValueError, match="agent_resource_source_commit_must_be_pinned_sha"):
         AgentResourceRecord(
             namespace="eay",
@@ -65,7 +67,7 @@ def test_resource_identity_requires_pinned_commit() -> None:
             version="latest",
             kind=AgentResourceKind.A2A_AGENT,
             source_ref="https://example.invalid/agent",
-            source_commit="main",
+            source_commit="g" * 40,
             content_digest="c" * 64,
             capabilities=frozenset({"research"}),
             protocols=frozenset({"a2a"}),

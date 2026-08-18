@@ -55,13 +55,23 @@ jobs:
               finally: await c.close()
           asyncio.run(main())
           PY
-      - name: Lint and unit contracts
+      - name: Strict lint and unit contracts
         run: |
-          ruff check --ignore E501 services/core-api/app/modules/budget/planning_engine.py services/core-api/app/modules/budget/planning_engine_routes.py services/core-api/app/modules/budget/planning_engine_schemas.py services/core-api/app/modules/budget/intelligence.py services/core-api/tests/test_budget_master28_planning.py services/core-api/tests/test_budget_master28_hardening.py services/core-api/tests/test_budget_master29_30_controls.py
+          ruff check services/core-api/app/modules/budget/planning_engine.py services/core-api/app/modules/budget/planning_engine_routes.py services/core-api/app/modules/budget/planning_engine_schemas.py services/core-api/app/modules/budget/intelligence.py services/core-api/tests/test_budget_master28_planning.py services/core-api/tests/test_budget_master28_hardening.py services/core-api/tests/test_budget_master29_30_controls.py
           pytest -q services/core-api/tests/test_budget_domain.py services/core-api/tests/test_budget_master28_planning.py services/core-api/tests/test_budget_master28_hardening.py services/core-api/tests/test_budget_master29_30_controls.py services/core-api/tests/test_sql_access_boundary.py
-      - name: Apply cumulative migrations
+      - name: Apply cumulative migrations and preserve Budget 0040 milestone
         working-directory: services/core-api
-        run: alembic upgrade head
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0040_budget_planning_hardening' /tmp/eay-alembic-history.txt
+          alembic upgrade head
+          current="$(alembic current | awk '/\(head\)/ {print $1}')"
+          test "$current" = "${heads[0]}"
       - name: Assert planning and finance truth schema
         run: |
           python - <<'PY'
@@ -69,7 +79,7 @@ jobs:
           async def main():
               c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
               try:
-                  assert await c.fetchval('SELECT version_num FROM alembic_version') == '0040_budget_planning_hardening'
+                  assert await c.fetchval('SELECT count(*) FROM alembic_version') == 1
                   for t in ('budget_plan_snapshot','budget_scenario','budget_scenario_assumption','budget_scenario_line','budget_allocation_rule','budget_ai_recommendation','budget_export_request','budget_import_version','budget_finance_uat_attestation'):
                       r=await c.fetchrow('SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname=$1',t)
                       assert r and r['relrowsecurity'] and r['relforcerowsecurity'],t

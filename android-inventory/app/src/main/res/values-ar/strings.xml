@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">الموقع: %1$s\nإدخالات الجرد المحفوظة: %2$d\nسيتم وضع حدث إكمال موقّع في قائمة الانتظار الآمنة.</string>
     <string name="terminal_cancel">إلغاء</string>
     <string name="terminal_finish_location_confirm">إكمال الموقع</string>
-    <string name="terminal_location_complete_queued">اكتمل الموقع · تمت إضافة المزامنة الآمنة إلى قائمة الانتظار</string>
+    <string name="terminal_location_complete_queued">تم الحفظ بأمان على الجهاز · بانتظار قبول الخادم</string>
     <string name="terminal_completion_retry">قائمة الانتظار الآمنة غير متاحة · أعد محاولة إكمال الموقع</string>
 </resources>

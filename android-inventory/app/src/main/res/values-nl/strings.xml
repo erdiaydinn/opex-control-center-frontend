@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Locatie: %1$s\nOpgeslagen telregistraties: %2$d\nEen ondertekend voltooiingsevenement wordt veilig in de wachtrij geplaatst.</string>
     <string name="terminal_cancel">Annuleren</string>
     <string name="terminal_finish_location_confirm">Locatie afronden</string>
-    <string name="terminal_location_complete_queued">Locatie afgerond · veilige synchronisatie in wachtrij</string>
+    <string name="terminal_location_complete_queued">Veilig op het apparaat opgeslagen · wacht op serveracceptatie</string>
     <string name="terminal_completion_retry">Veilige wachtrij niet beschikbaar · probeer locatieafronding opnieuw</string>
 </resources>

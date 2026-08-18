@@ -24,6 +24,7 @@ on:
       - "backend/tests/test_inventory_terminal_event_hash_contract.py"
       - "backend/tests/test_inventory_terminal_task_contract.py"
       - "backend/tests/test_inventory_location_completion_contract.py"
+      - "backend/tests/test_inventory_reconciliation_event_scope.py"
       - "backend/tests/test_workforce_active_shift_authority.py"
       - "services/core-api/app/core/mobile_device_trust.py"
       - "services/core-api/app/core/mobile_policy.py"
@@ -81,6 +82,7 @@ jobs:
           backend/tests/test_inventory_terminal_event_hash_contract.py
           backend/tests/test_inventory_terminal_task_contract.py
           backend/tests/test_inventory_location_completion_contract.py
+          backend/tests/test_inventory_reconciliation_event_scope.py
       - name: Prove mobile authority fail-closed behavior
         working-directory: services/core-api
         run: >-
@@ -97,6 +99,7 @@ jobs:
           backend/tests/test_inventory_terminal_event_hash_contract.py
           backend/tests/test_inventory_terminal_task_contract.py
           backend/tests/test_inventory_location_completion_contract.py
+          backend/tests/test_inventory_reconciliation_event_scope.py
 
   android-mobile-core:
     runs-on: ubuntu-latest

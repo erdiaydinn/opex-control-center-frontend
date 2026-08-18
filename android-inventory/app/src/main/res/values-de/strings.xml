@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Standort: %1$s\nGespeicherte Zähleinträge: %2$d\nEin signiertes Abschlussereignis wird sicher in die Warteschlange gestellt.</string>
     <string name="terminal_cancel">Abbrechen</string>
     <string name="terminal_finish_location_confirm">Standort abschließen</string>
-    <string name="terminal_location_complete_queued">Standort abgeschlossen · sichere Synchronisierung eingereiht</string>
+    <string name="terminal_location_complete_queued">Sicher auf dem Gerät gespeichert · Serverbestätigung ausstehend</string>
     <string name="terminal_completion_retry">Sichere Warteschlange nicht verfügbar · Standortabschluss erneut versuchen</string>
 </resources>

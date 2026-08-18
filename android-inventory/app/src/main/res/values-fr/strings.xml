@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Emplacement : %1$s\nEntrées de comptage enregistrées : %2$d\nUn événement de fin signé sera placé dans la file sécurisée.</string>
     <string name="terminal_cancel">Annuler</string>
     <string name="terminal_finish_location_confirm">Terminer l’emplacement</string>
-    <string name="terminal_location_complete_queued">Emplacement terminé · synchronisation sécurisée mise en file</string>
+    <string name="terminal_location_complete_queued">Enregistré en sécurité sur l’appareil · en attente de l’acceptation du serveur</string>
     <string name="terminal_completion_retry">File sécurisée indisponible · réessayer la fin de l’emplacement</string>
 </resources>

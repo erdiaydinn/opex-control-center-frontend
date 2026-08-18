@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Posizione: %1$s\nRegistrazioni di conteggio salvate: %2$d\nVerrà messo in coda un evento di completamento firmato.</string>
     <string name="terminal_cancel">Annulla</string>
     <string name="terminal_finish_location_confirm">Completa posizione</string>
-    <string name="terminal_location_complete_queued">Posizione completata · sincronizzazione sicura in coda</string>
+    <string name="terminal_location_complete_queued">Salvato in sicurezza sul dispositivo · in attesa dell’accettazione del server</string>
     <string name="terminal_completion_retry">Coda sicura non disponibile · riprova il completamento della posizione</string>
 </resources>

@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Location: %1$s\nRecorded count entries: %2$d\nA signed completion event will be queued.</string>
     <string name="terminal_cancel">Cancel</string>
     <string name="terminal_finish_location_confirm">Complete location</string>
-    <string name="terminal_location_complete_queued">Location complete · secure sync queued</string>
+    <string name="terminal_location_complete_queued">Saved securely on device · awaiting server acceptance</string>
     <string name="terminal_completion_retry">Secure queue unavailable · retry location completion</string>
 </resources>

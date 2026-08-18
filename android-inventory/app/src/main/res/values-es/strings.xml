@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Ubicación: %1$s\nRegistros de conteo guardados: %2$d\nSe pondrá en cola un evento de finalización firmado.</string>
     <string name="terminal_cancel">Cancelar</string>
     <string name="terminal_finish_location_confirm">Finalizar ubicación</string>
-    <string name="terminal_location_complete_queued">Ubicación finalizada · sincronización segura en cola</string>
+    <string name="terminal_location_complete_queued">Guardado de forma segura en el dispositivo · esperando aceptación del servidor</string>
     <string name="terminal_completion_retry">Cola segura no disponible · vuelve a intentar finalizar la ubicación</string>
 </resources>

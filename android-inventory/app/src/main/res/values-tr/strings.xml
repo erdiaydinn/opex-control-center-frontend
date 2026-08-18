@@ -33,6 +33,6 @@
     <string name="terminal_finish_location_message">Lokasyon: %1$s\nKaydedilen sayım girdisi: %2$d\nİmzalı tamamlama olayı güvenli kuyruğa eklenecek.</string>
     <string name="terminal_cancel">Vazgeç</string>
     <string name="terminal_finish_location_confirm">Lokasyonu Tamamla</string>
-    <string name="terminal_location_complete_queued">Lokasyon tamamlandı · güvenli senkron kuyruğa alındı</string>
+    <string name="terminal_location_complete_queued">Cihazda güvenli kaydedildi · sunucu kabulü bekleniyor</string>
     <string name="terminal_completion_retry">Güvenli kuyruk kullanılamıyor · lokasyon tamamlamayı yeniden dene</string>
 </resources>

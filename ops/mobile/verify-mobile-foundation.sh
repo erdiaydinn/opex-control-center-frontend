@@ -3,6 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 CORE="$ROOT/android-inventory/mobile-core/src/main/java/com/eay/mobile/core"
+ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapter.kt"
+PRESENTATION="$ROOT/mobile-presentation-contracts/src/main/kotlin/com/eay/mobile/presentation/FieldPresentationModels.kt"
 CONFIG="$ROOT/config/eay_mobile_platform.json"
 PY_CORE="$ROOT/services/core-api/app/core"
 
@@ -22,6 +24,9 @@ $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/MobileSync
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FieldMissionTest.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FleetHealthTest.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/RuntimeControlTest.kt
+$ADAPTER
+$PRESENTATION
+$ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapterTest.kt
 $PY_CORE/mobile_policy.py
 $PY_CORE/mobile_policy_signing.py
 $PY_CORE/mobile_device_trust.py
@@ -51,6 +56,8 @@ grep -q 'actor_id' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'canonical_payload' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'barcode' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'biometric' "$CORE/MobileTelemetryPolicy.kt"
+grep -q 'MissionGate.evaluate' "$ADAPTER"
+grep -q 'MobileOperationAdmission' "$CORE/FieldMission.kt"
 grep -q 'MOBILE_POLICY_ALGORITHM = "ES256"' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MAX_SIGNED_POLICY_LIFETIME_SECONDS = 300' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MobileDeviceState.REPLACED' "$ROOT/services/core-api/tests/test_mobile_device_trust.py"
@@ -68,6 +75,16 @@ fi
 
 if grep -n -E 'def (create_production_document|production_reconciliation|transition_document).*x_opex_(role|permissions)' "$ROOT/backend/app/modules/inventory/router.py"; then
   echo "production Inventory route exposes client-facing role/permission authority" >&2
+  exit 1
+fi
+
+if grep -n -E 'tenant(Id)?|actor(Id)?|employee(Id)?|installation(Id)?|authBinding(Id)?|payloadHash|currentItemHash|expectedStock|systemStock|rawBarcode|latitude|longitude' "$PRESENTATION"; then
+  echo "presentation contract leaked authority, hash, stock-truth or precise-location state" >&2
+  exit 1
+fi
+
+if grep -n -E 'enabled[[:space:]]*=[[:space:]]*(true|false)' "$ADAPTER"; then
+  echo "presentation adapter hard-codes mission enablement instead of using MissionGate" >&2
   exit 1
 fi
 

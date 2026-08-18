@@ -6,6 +6,7 @@ on:
       - product/eay-category-leadership-v1
     paths:
       - "android-field-ui/**"
+      - "mobile-presentation-contracts/**"
       - "ops/mobile/verify-field-ui-foundation.sh"
       - "config/eay_localization.json"
       - ".github/workflows/eay-mobile-field-ui.yml"

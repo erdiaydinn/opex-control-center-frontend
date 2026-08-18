@@ -15,4 +15,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "EayFieldUiCompatibility"
+include(":mobile-presentation-contracts")
+project(":mobile-presentation-contracts").projectDir = file("../mobile-presentation-contracts")
 include(":field-ui")

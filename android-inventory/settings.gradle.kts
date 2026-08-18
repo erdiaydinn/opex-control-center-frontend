@@ -15,5 +15,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "EayInventory"
-include(":app")
+include(":mobile-presentation-contracts")
+project(":mobile-presentation-contracts").projectDir = file("../mobile-presentation-contracts")
 include(":mobile-core")
+include(":field-presentation-adapter")
+include(":app")

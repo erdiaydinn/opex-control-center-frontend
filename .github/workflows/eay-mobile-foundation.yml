@@ -6,6 +6,7 @@ on:
       - product/eay-category-leadership-v1
     paths:
       - "android-inventory/**"
+      - "mobile-presentation-contracts/**"
       - "config/eay_mobile_platform.json"
       - "docs/mobile/**"
       - "mobile/**"
@@ -86,5 +87,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
         with:
           gradle-version: "8.9"
-      - name: Unit, lint and executable terminal regression
-        run: gradle --no-daemon clean :mobile-core:testDebugUnitTest :mobile-core:lintDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - name: Unit, lint, typed presentation adapter and executable terminal regression
+        run: >-
+          gradle --no-daemon clean
+          :mobile-core:testDebugUnitTest
+          :mobile-core:lintDebug
+          :field-presentation-adapter:testDebugUnitTest
+          :field-presentation-adapter:lintDebug
+          :field-presentation-adapter:assembleDebug
+          :app:testDebugUnitTest
+          :app:lintDebug
+          :app:assembleDebug

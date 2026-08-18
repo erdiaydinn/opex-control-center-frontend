@@ -5,6 +5,9 @@ This intentionally does not touch jobs or exact-head checkout semantics. It
 removes the category-leadership PR trigger from historical gates and replaces
 SHA-keyed concurrency with a stable workflow+PR key so superseded runs can be
 cancelled. Every rewrite is exact-match and fail-closed.
+
+This file is intentionally versioned so the one-shot migration can be safely
+retriggered without changing product code when runner capacity recovers.
 """
 
 from __future__ import annotations

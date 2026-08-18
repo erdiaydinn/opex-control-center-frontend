@@ -71,16 +71,26 @@ object InventorySyncContract {
         JSONObject(canonicalPayload).optString("event_kind") == "LOCATION_COMPLETE"
     }.getOrDefault(false)
 
-    fun responseMatchesSignedShift(
+    fun responseMatchesSignedAuthority(
         canonicalPayload: String,
         serverShiftId: String?,
+        serverAttemptId: String?,
+        serverLeaseId: String?,
     ): Boolean {
-        val normalizedServerShift = serverShiftId?.trim().orEmpty()
-        if (normalizedServerShift.isBlank()) return false
+        val normalizedShift = serverShiftId?.trim().orEmpty()
+        val normalizedAttempt = serverAttemptId?.trim().orEmpty()
+        val normalizedLease = serverLeaseId?.trim().orEmpty()
+        if (normalizedShift.isBlank() || normalizedAttempt.isBlank() || normalizedLease.isBlank()) {
+            return false
+        }
         return runCatching {
-            JSONObject(canonicalPayload)
-                .getString("active_shift_id")
-                .trim() == normalizedServerShift
+            val json = JSONObject(canonicalPayload)
+            val signedShift = json.getString("active_shift_id").trim()
+            val signedAttempt = UUID.fromString(json.getString("attempt_id").trim()).toString()
+            val signedLease = UUID.fromString(json.getString("lease_id").trim()).toString()
+            signedShift == normalizedShift &&
+                signedAttempt == UUID.fromString(normalizedAttempt).toString() &&
+                signedLease == UUID.fromString(normalizedLease).toString()
         }.getOrDefault(false)
     }
 }
@@ -197,15 +207,17 @@ class InventorySyncWorker(
                 if (
                     it.code in 200..299 &&
                     accepted == true &&
-                    !InventorySyncContract.responseMatchesSignedShift(
+                    !InventorySyncContract.responseMatchesSignedAuthority(
                         event.canonicalPayload,
                         json?.optString("active_shift_id")?.takeIf { value -> value.isNotBlank() },
+                        json?.optString("attempt_id")?.takeIf { value -> value.isNotBlank() },
+                        json?.optString("lease_id")?.takeIf { value -> value.isNotBlank() },
                     )
                 ) {
                     dao.quarantine(
                         event.eventId,
                         SyncQuarantineReason.SERVER_CONTRACT_MISMATCH.name,
-                        "SHIFT_ATTESTATION_MISMATCH",
+                        "MISSION_AUTHORITY_ATTESTATION_MISMATCH",
                     )
                     return@use
                 }

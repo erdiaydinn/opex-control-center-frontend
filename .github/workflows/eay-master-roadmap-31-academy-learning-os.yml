@@ -86,8 +86,10 @@ jobs:
         run: |
           alembic heads | tee /tmp/academy-heads.txt
           test "$(grep -c '(head)' /tmp/academy-heads.txt)" -eq 1
-          grep -q '0041_academy_learning_os' /tmp/academy-heads.txt
+          grep -q '0043_shared_platform_delivery_search' /tmp/academy-heads.txt
           alembic history | tee /tmp/academy-history.txt
+          grep -q '0042_shared_platform_authorities' /tmp/academy-history.txt
+          grep -q '0041_academy_learning_os' /tmp/academy-history.txt
           grep -q '0040_budget_planning_hardening' /tmp/academy-history.txt
           grep -q '0015_academy_foundation' /tmp/academy-history.txt
       - name: Apply cumulative migrations

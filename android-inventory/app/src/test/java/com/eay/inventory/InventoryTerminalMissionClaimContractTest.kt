@@ -62,6 +62,25 @@ class InventoryTerminalMissionClaimContractTest {
     }
 
     @Test
+    fun `claim response from stale shift fails closed`() {
+        val source = availableTask()
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryMissionClaimContract.bindResponse(
+                source,
+                JSONObject()
+                    .put("mission_id", source.missionId)
+                    .put("document_id", DOCUMENT_ID)
+                    .put("location_id", source.locationId)
+                    .put("attempt_id", ATTEMPT_ID)
+                    .put("lease_id", LEASE_ID)
+                    .put("active_shift_id", "SHIFT-STALE")
+                    .put("lease_valid_until", "2026-08-18T15:15:00Z")
+                    .put("claim_status", "OWNED"),
+            )
+        }
+    }
+
+    @Test
     fun `http claim classification distinguishes conflict from retry`() {
         assertEquals(
             InventoryMissionClaimCode.BUSINESS_CONFLICT,

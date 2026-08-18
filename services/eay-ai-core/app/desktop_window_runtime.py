@@ -22,6 +22,24 @@ from pydantic import BaseModel, Field, model_validator
 DESKTOP_WINDOW_RUNTIME_CONTRACT = "eay-desktop-window-runtime-v1"
 
 
+class _WinRect(ctypes.Structure):
+    _fields_ = [
+        ("left", ctypes.c_long),
+        ("top", ctypes.c_long),
+        ("right", ctypes.c_long),
+        ("bottom", ctypes.c_long),
+    ]
+
+
+class _WinMonitorInfo(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", _WinRect),
+        ("rcWork", _WinRect),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
 class MonitorDirection(str, Enum):
     LEFT = "left"
     RIGHT = "right"
@@ -213,22 +231,6 @@ class WindowsNativeWindowBackend:
     SWP_NOACTIVATE = 0x0010
     MONITORINFOF_PRIMARY = 0x00000001
 
-    class _RECT(ctypes.Structure):
-        _fields_ = [
-            ("left", ctypes.c_long),
-            ("top", ctypes.c_long),
-            ("right", ctypes.c_long),
-            ("bottom", ctypes.c_long),
-        ]
-
-    class _MONITORINFO(ctypes.Structure):
-        _fields_ = [
-            ("cbSize", wintypes.DWORD),
-            ("rcMonitor", _RECT),
-            ("rcWork", _RECT),
-            ("dwFlags", wintypes.DWORD),
-        ]
-
     def __init__(self) -> None:
         if platform.system() != "Windows":
             raise RuntimeError("windows_native_window_backend_requires_windows")
@@ -236,14 +238,14 @@ class WindowsNativeWindowBackend:
         self._window_handles: dict[str, int] = {}
 
     @staticmethod
-    def _rect(value: _RECT) -> DesktopRect:
+    def _rect(value: _WinRect) -> DesktopRect:
         return DesktopRect(left=value.left, top=value.top, right=value.right, bottom=value.bottom)
 
     def active_window(self) -> WindowGeometry:
         hwnd = int(self._user32.GetForegroundWindow())
         if not hwnd:
             raise RuntimeError("windows_active_window_missing")
-        rect = self._RECT()
+        rect = _WinRect()
         if not self._user32.GetWindowRect(hwnd, ctypes.byref(rect)):
             raise RuntimeError("windows_get_window_rect_failed")
         ref = _opaque_ref("window", hwnd)
@@ -260,13 +262,13 @@ class WindowsNativeWindowBackend:
             ctypes.c_int,
             wintypes.HMONITOR,
             wintypes.HDC,
-            ctypes.POINTER(self._RECT),
+            ctypes.POINTER(_WinRect),
             wintypes.LPARAM,
         )
 
         def callback(hmonitor, _hdc, _rect, _data):
-            info = self._MONITORINFO()
-            info.cbSize = ctypes.sizeof(self._MONITORINFO)
+            info = _WinMonitorInfo()
+            info.cbSize = ctypes.sizeof(_WinMonitorInfo)
             if not self._user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
                 return 1
             found.append(

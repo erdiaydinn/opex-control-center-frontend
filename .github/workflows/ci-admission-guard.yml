@@ -8,6 +8,7 @@ on:
       - ".github/workflows/**"
       - "scripts/ci/apply_ci_admission_control.py"
       - "scripts/ci/apply_exact_head_concurrency.py"
+      - "scripts/ci/apply_inventory_admission_control.py"
   push:
     branches:
       - product/eay-category-leadership-v1
@@ -15,6 +16,7 @@ on:
       - ".github/workflows/**"
       - "scripts/ci/apply_ci_admission_control.py"
       - "scripts/ci/apply_exact_head_concurrency.py"
+      - "scripts/ci/apply_inventory_admission_control.py"
   workflow_dispatch:
 
 permissions:
@@ -38,5 +40,7 @@ jobs:
         run: python scripts/ci/apply_ci_admission_control.py --check
       - name: Verify exact-head concurrency policy through Roadmap 25
         run: python scripts/ci/apply_exact_head_concurrency.py --check
+      - name: Verify Inventory and DockOS admission separation
+        run: python scripts/ci/apply_inventory_admission_control.py --check
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check

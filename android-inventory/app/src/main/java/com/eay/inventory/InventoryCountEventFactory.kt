@@ -8,11 +8,13 @@ import java.util.UUID
 data class InventoryCountEventContext(
     val missionId: String,
     val documentId: String,
+    val activeShiftId: String,
     val locationId: String,
 ) {
     init {
         require(missionId.isNotBlank())
         require(documentId.isNotBlank())
+        require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
         require(locationId.isNotBlank())
     }
 }
@@ -44,6 +46,7 @@ object InventoryCountEventFactory {
         val normalizedEventId = UUID.fromString(eventId.trim()).toString()
         val canonicalBody = TerminalEventCanonical.body(
             TerminalEventInput(
+                activeShiftId = context.activeShiftId,
                 barcode = acceptedScan.value,
                 deviceSequence = deviceSequence,
                 documentId = context.documentId,

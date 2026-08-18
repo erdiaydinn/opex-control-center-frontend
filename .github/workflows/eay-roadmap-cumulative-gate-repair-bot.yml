@@ -1,4 +1,4 @@
-# Temporary branch-only repair harness v2 activation; remove before canonical composition.
+# Temporary branch-only repair harness v3 PR-observable; remove before canonical composition.
 name: EAY Roadmap Cumulative Gate Repair Bot
 
 on:
@@ -8,16 +8,23 @@ on:
     paths:
       - "scripts/ci/repair_roadmap_legacy_migration_gates.py"
       - ".github/workflows/eay-roadmap-cumulative-gate-repair-bot.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "scripts/ci/repair_roadmap_legacy_migration_gates.py"
+      - ".github/workflows/eay-roadmap-cumulative-gate-repair-bot.yml"
 
 permissions:
   contents: write
 
 concurrency:
-  group: eay-roadmap-cumulative-gate-repair
+  group: eay-roadmap-cumulative-gate-repair-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

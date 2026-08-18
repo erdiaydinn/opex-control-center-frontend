@@ -42,12 +42,12 @@ def load_acceptance_matrix(path: Path) -> dict[str, object]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("schema_version") != 1:
         raise ValueError("unsupported acceptance matrix")
-    if not REQUIRED_MODULES <= set(data["module_uat"]):
+    if not set(data["module_uat"]) >= REQUIRED_MODULES:
         raise ValueError("standalone module UAT matrix incomplete")
-    if not REQUIRED_CROSS <= set(data["cross_module_uat"]):
+    if not set(data["cross_module_uat"]) >= REQUIRED_CROSS:
         raise ValueError("cross-module UAT matrix incomplete")
-    if not REQUIRED_PEN <= set(data["security_penetration"]):
+    if not set(data["security_penetration"]) >= REQUIRED_PEN:
         raise ValueError("security penetration matrix incomplete")
-    if not REQUIRED_LANGS <= set(data["accessibility_language"]):
+    if not set(data["accessibility_language"]) >= REQUIRED_LANGS:
         raise ValueError("ten-language field acceptance incomplete")
     return data

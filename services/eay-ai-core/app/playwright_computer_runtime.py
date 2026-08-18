@@ -1,28 +1,18 @@
 """Live Playwright computer-use runtime for authorized managed browser sessions.
 
-This is the first concrete browser executor behind Jarvis' computer-learning
-stack. It can attach to an existing Chromium session over local CDP, execute
-bounded DOM actions with accessibility-first locators, and capture the
-allowlisted XHR/fetch traffic emitted during that action. Captured traffic is
-immediately reduced through ``browser_api_observer`` so raw cookies, bearer
-tokens and payload values never enter the returned receipt.
-
-Security/truth boundaries:
-- CDP is loopback-only by default; remote debugging requires explicit opt-in.
-- navigation and captured API hosts are exact-allowlisted HTTPS hosts.
-- raw action input values are never included in receipts.
-- response/request JSON is parsed only under a strict transient size cap.
-- this runtime executes only the requested browser action; discovery does not
-  promote an API candidate or authorize later direct API execution.
+This is the concrete browser executor behind Jarvis' computer-learning stack.
+It can attach to an existing Chromium session over local CDP, execute bounded
+DOM actions with accessibility-first locators, and capture allowlisted XHR/fetch
+traffic. Raw cookies, bearer tokens, payload values and page query parameters
+never enter returned receipts.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from enum import Enum
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -110,6 +100,7 @@ class BrowserActionReceipt(BaseModel):
     action_id: str
     application_id: str
     tenant_scope_ref: str
+    auth_context_ref: str = Field(min_length=1)
     locator_kind: LocatorKind
     action_kind: BrowserActionKind
     input_value_retained: bool = False
@@ -121,17 +112,35 @@ class BrowserActionReceipt(BaseModel):
     direct_api_execution_authorized: bool = False
 
     @model_validator(mode="after")
-    def runtime_receipt_never_promotes_api(self) -> "BrowserActionReceipt":
+    def runtime_receipt_preserves_boundaries(self) -> "BrowserActionReceipt":
         if self.input_value_retained:
             raise ValueError("playwright_runtime_must_not_retain_action_input_value")
         if self.direct_api_execution_authorized:
             raise ValueError("playwright_runtime_never_authorizes_direct_api_execution")
+        if self.page_url_after:
+            parsed = urlparse(self.page_url_after)
+            if parsed.query or parsed.fragment or parsed.username or parsed.password:
+                raise ValueError("playwright_receipt_page_url_must_be_sanitized")
         return self
 
 
 def _host_is_allowed(url: str, allowed_hosts: frozenset[str]) -> bool:
     parsed = urlparse(url)
     return parsed.scheme == "https" and (parsed.hostname or "").casefold().rstrip(".") in allowed_hosts
+
+
+def _sanitized_page_url(url: str | None) -> str | None:
+    if not url or url == "about:blank":
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return None
+    host = parsed.hostname.casefold().rstrip(".")
+    if parsed.port and parsed.port != 443:
+        netloc = f"{host}:{parsed.port}"
+    else:
+        netloc = host
+    return urlunparse(("https", netloc, parsed.path or "/", "", "", ""))
 
 
 def _content_type(headers: dict[str, str]) -> str | None:
@@ -204,7 +213,7 @@ def _execute_action(page: Any, action: BrowserAction) -> None:
         locator.press(action.key, timeout=action.timeout_ms)
     elif action.kind is BrowserActionKind.SELECT_OPTION:
         locator.select_option(action.input_value, timeout=action.timeout_ms)
-    else:  # pragma: no cover - Enum exhaustiveness guard
+    else:  # pragma: no cover
         raise ValueError("playwright_action_kind_unsupported")
 
 
@@ -217,8 +226,6 @@ def _capture_response(
     request = response.request
     request_headers = request.all_headers()
     response_headers = response.all_headers()
-    request_content_type = _content_type(request_headers)
-    response_content_type = _content_type(response_headers)
     return observe_browser_exchange(
         application_id=config.application_id,
         capture_source=CaptureSource.PLAYWRIGHT_NETWORK,
@@ -229,8 +236,8 @@ def _capture_response(
         resource_type=request.resource_type,
         request_headers=request_headers,
         response_headers=response_headers,
-        request_content_type=request_content_type,
-        response_content_type=response_content_type,
+        request_content_type=_content_type(request_headers),
+        response_content_type=_content_type(response_headers),
         request_payload=_safe_request_payload(request, config.maximum_json_bytes),
         response_payload=_safe_response_payload(response, response_headers, config.maximum_json_bytes),
         user_action_ref=action_ref,
@@ -253,7 +260,7 @@ class ManagedPlaywrightSession:
     def connect(cls, config: PlaywrightSessionConfig) -> "ManagedPlaywrightSession":
         try:
             from playwright.sync_api import sync_playwright
-        except ImportError as exc:  # pragma: no cover - exercised only with optional dependency absent
+        except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright_optional_dependency_not_installed") from exc
 
         manager = sync_playwright().start()
@@ -297,9 +304,7 @@ class ManagedPlaywrightSession:
             if str(request_type).casefold() not in {"xhr", "fetch"}:
                 return
             try:
-                observations.append(
-                    _capture_response(response, config=self.config, action_ref=action_ref)
-                )
+                observations.append(_capture_response(response, config=self.config, action_ref=action_ref))
             except Exception as exc:
                 capture_errors.append(type(exc).__name__)
 
@@ -317,17 +322,18 @@ class ManagedPlaywrightSession:
             except Exception:
                 pass
 
-        page_url_after = self._page.url
-        if page_url_after and page_url_after != "about:blank" and not _host_is_allowed(page_url_after, self.config.allowed_hosts):
+        raw_page_url_after = self._page.url
+        if raw_page_url_after and raw_page_url_after != "about:blank" and not _host_is_allowed(raw_page_url_after, self.config.allowed_hosts):
             raise RuntimeError("playwright_action_navigated_outside_allowlist")
         return BrowserActionReceipt(
             action_id=action.action_id,
             application_id=self.config.application_id,
             tenant_scope_ref=self.config.tenant_scope_ref,
+            auth_context_ref=self.config.auth_context_ref,
             locator_kind=action.locator.kind,
             action_kind=action.kind,
             completed=completed,
-            page_url_after=page_url_after,
+            page_url_after=_sanitized_page_url(raw_page_url_after),
             observations=tuple(observations),
             ignored_non_allowlisted_response_count=ignored,
             capture_errors=tuple(capture_errors),

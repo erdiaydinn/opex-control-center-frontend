@@ -49,6 +49,11 @@ class ProcedureStep(BaseModel):
     )
     side_effect: bool = False
 
+    @property
+    def effect_verifier_ref(self) -> str | None:
+        """Compatibility read alias for newer write-execution components."""
+        return self.verifier_ref
+
     @model_validator(mode="after")
     def writes_require_effect_contract(self) -> "ProcedureStep":
         if self.side_effect and (not self.expected_effect_ref or not self.verifier_ref):

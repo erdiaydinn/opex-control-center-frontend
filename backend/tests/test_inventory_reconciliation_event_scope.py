@@ -3,7 +3,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-RECONCILIATION = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "reconciliation.py"
+RECONCILIATION = (
+    Path(__file__).parents[1]
+    / "app"
+    / "modules"
+    / "inventory"
+    / "reconciliation.py"
+)
 
 
 def _reconciliation_source() -> str:

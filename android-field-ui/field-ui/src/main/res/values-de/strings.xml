@@ -1,0 +1,12 @@
+<resources>
+    <string name="field_next_missions">Nächste Aufgaben</string>
+    <string name="field_sync_synced">Synchronisiert</string>
+    <string name="field_sync_offline">Offline</string>
+    <string name="field_sync_pending">%1$d ausstehend</string>
+    <string name="field_sync_quarantined">Prüfung erforderlich</string>
+    <string name="field_sync_description">Synchronisierungsstatus: %1$s</string>
+    <string name="blind_count_observed_quantity">Gezählte Menge</string>
+    <string name="blind_count_completed_lines">%1$d Positionen abgeschlossen</string>
+    <string name="blind_count_progress">%1$d / %2$d</string>
+    <string name="blind_count_confirm">Menge bestätigen</string>
+</resources>

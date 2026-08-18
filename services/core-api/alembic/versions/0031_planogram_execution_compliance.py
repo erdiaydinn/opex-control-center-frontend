@@ -289,8 +289,8 @@ def upgrade() -> None:
         "planogram_compliance_observations",
     ):
         op.execute(
-            f'''CREATE OR REPLACE FUNCTION {table_name}_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN RAISE EXCEPTION '{table_name} is append-only'; END; $$'''
+            f"""CREATE OR REPLACE FUNCTION {table_name}_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION '{table_name} is append-only'; END; $$"""
         )
         op.execute(
             f"CREATE TRIGGER trg_{table_name}_append_only BEFORE UPDATE OR DELETE ON {table_name} "
@@ -321,11 +321,15 @@ def downgrade() -> None:
     ):
         op.execute(f"DROP TRIGGER IF EXISTS trg_{table_name}_append_only ON {table_name}")
         op.execute(f"DROP FUNCTION IF EXISTS {table_name}_append_only()")
-    op.execute("DROP TRIGGER IF EXISTS trg_planogram_assignment_approved_plan ON planogram_execution_assignments")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_planogram_assignment_approved_plan ON planogram_execution_assignments"
+    )
     op.execute("DROP FUNCTION IF EXISTS planogram_assignment_approved_plan_guard()")
     op.execute("DROP TRIGGER IF EXISTS trg_planogram_plan_lifecycle ON planogram_plan_versions")
     op.execute("DROP FUNCTION IF EXISTS planogram_plan_lifecycle_guard()")
-    op.execute("DROP TRIGGER IF EXISTS trg_planogram_plan_runtime_attestation ON planogram_plan_versions")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_planogram_plan_runtime_attestation ON planogram_plan_versions"
+    )
     op.execute("DROP FUNCTION IF EXISTS planogram_plan_runtime_attestation_guard()")
     op.execute("DROP TABLE planogram_compliance_observations")
     op.execute("DROP TABLE planogram_execution_events")

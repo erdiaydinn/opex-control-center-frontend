@@ -59,9 +59,15 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE UNIQUE INDEX uq_planogram_store_dna_active_edit ON planogram_store_dna_versions (tenant_id, store_code) WHERE status IN ('draft','submitted')")
-    op.execute("CREATE UNIQUE INDEX uq_planogram_store_dna_approved ON planogram_store_dna_versions (tenant_id, store_code) WHERE status='approved'")
-    op.execute("CREATE INDEX ix_planogram_store_dna_store_status ON planogram_store_dna_versions (tenant_id, store_code, status, version_number DESC)")
+    op.execute(
+        "CREATE UNIQUE INDEX uq_planogram_store_dna_active_edit ON planogram_store_dna_versions (tenant_id, store_code) WHERE status IN ('draft','submitted')"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX uq_planogram_store_dna_approved ON planogram_store_dna_versions (tenant_id, store_code) WHERE status='approved'"
+    )
+    op.execute(
+        "CREATE INDEX ix_planogram_store_dna_store_status ON planogram_store_dna_versions (tenant_id, store_code, status, version_number DESC)"
+    )
     op.execute(
         """
         CREATE TABLE planogram_store_dna_events (
@@ -78,7 +84,9 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE INDEX ix_planogram_store_dna_events_version ON planogram_store_dna_events (tenant_id, store_dna_version_id, created_at)")
+    op.execute(
+        "CREATE INDEX ix_planogram_store_dna_events_version ON planogram_store_dna_events (tenant_id, store_dna_version_id, created_at)"
+    )
     _tenant_policy("planogram_store_dna_versions")
     _tenant_policy("planogram_store_dna_events")
     op.execute(
@@ -117,13 +125,17 @@ def upgrade() -> None:
         END; $$
         """
     )
-    op.execute("CREATE TRIGGER trg_planogram_store_dna_immutable_history BEFORE UPDATE ON planogram_store_dna_versions FOR EACH ROW EXECUTE FUNCTION planogram_store_dna_immutable_history()")
+    op.execute(
+        "CREATE TRIGGER trg_planogram_store_dna_immutable_history BEFORE UPDATE ON planogram_store_dna_versions FOR EACH ROW EXECUTE FUNCTION planogram_store_dna_immutable_history()"
+    )
     op.execute(f"GRANT SELECT, INSERT, UPDATE ON planogram_store_dna_versions TO {RUNTIME_ROLE}")
     op.execute(f"GRANT SELECT, INSERT ON planogram_store_dna_events TO {RUNTIME_ROLE}")
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS trg_planogram_store_dna_immutable_history ON planogram_store_dna_versions")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_planogram_store_dna_immutable_history ON planogram_store_dna_versions"
+    )
     op.execute("DROP FUNCTION IF EXISTS planogram_store_dna_immutable_history()")
     op.execute("DROP TABLE planogram_store_dna_events")
     op.execute("DROP TABLE planogram_store_dna_versions")

@@ -78,7 +78,9 @@ def resolve_target_ids(
 
     result = tuple(sorted(selected))
     if not result:
-        raise FieldRepositoryError("mission target selector resolved to zero authorized active locations")
+        raise FieldRepositoryError(
+            "mission target selector resolved to zero authorized active locations"
+        )
     return result
 
 
@@ -111,7 +113,9 @@ def _validate_numeric(value: object, field_key: str, config: dict[str, object]) 
         raise FieldRepositoryError(f"field {field_key} exceeds configured maximum")
 
 
-def _validate_evidence_payload(template_schema: dict[str, object], payload: dict[str, object]) -> None:
+def _validate_evidence_payload(
+    template_schema: dict[str, object], payload: dict[str, object]
+) -> None:
     raw_fields = template_schema.get("fields")
     if not isinstance(raw_fields, list):
         raise FieldRepositoryError("template schema is missing governed fields")
@@ -124,7 +128,9 @@ def _validate_evidence_payload(template_schema: dict[str, object], payload: dict
 
     unknown = set(payload) - set(field_definitions)
     if unknown:
-        raise FieldRepositoryError(f"evidence contains unknown fields: {', '.join(sorted(unknown))}")
+        raise FieldRepositoryError(
+            f"evidence contains unknown fields: {', '.join(sorted(unknown))}"
+        )
 
     for key, definition in field_definitions.items():
         required = bool(definition.get("required"))
@@ -164,7 +170,10 @@ def _validate_evidence_payload(template_schema: dict[str, object], payload: dict
             latitude = value.get("latitude")
             longitude = value.get("longitude")
             accuracy = value.get("accuracy_m")
-            if any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in (latitude, longitude, accuracy)):
+            if any(
+                isinstance(item, bool) or not isinstance(item, (int, float))
+                for item in (latitude, longitude, accuracy)
+            ):
                 raise FieldRepositoryError(f"field {key} GPS coordinates are invalid")
             if not -90 <= latitude <= 90 or not -180 <= longitude <= 180 or accuracy < 0:
                 raise FieldRepositoryError(f"field {key} GPS coordinates are out of range")
@@ -186,7 +195,11 @@ def _validate_evidence_payload(template_schema: dict[str, object], payload: dict
             fingerprint = value.get("fingerprint")
             if not isinstance(evidence_reference, str) or not evidence_reference.strip():
                 raise FieldRepositoryError(f"field {key} requires a private evidence reference")
-            if not isinstance(fingerprint, str) or len(fingerprint) != 64 or any(character not in "0123456789abcdef" for character in fingerprint):
+            if (
+                not isinstance(fingerprint, str)
+                or len(fingerprint) != 64
+                or any(character not in "0123456789abcdef" for character in fingerprint)
+            ):
                 raise FieldRepositoryError(f"field {key} evidence fingerprint is invalid")
         else:
             raise FieldRepositoryError(f"template field type is unsupported: {field_type}")
@@ -302,7 +315,11 @@ async def create_mission(
                 WHERE tenant_id=CAST(:tenant_id AS UUID) AND template_id=:template_id AND version=:version
                 """
             ),
-            {"tenant_id": tenant_id, "template_id": payload.template_id, "version": payload.template_version},
+            {
+                "tenant_id": tenant_id,
+                "template_id": payload.template_id,
+                "version": payload.template_version,
+            },
         )
         template_row = template.mappings().first()
         if template_row is None or template_row["status"] != "active":
@@ -344,7 +361,9 @@ async def create_mission(
                 "template_id": payload.template_id,
                 "template_version": payload.template_version,
                 "title_i18n": json.dumps(payload.title.values, ensure_ascii=False),
-                "instructions_i18n": json.dumps(payload.instructions.values if payload.instructions else {}, ensure_ascii=False),
+                "instructions_i18n": json.dumps(
+                    payload.instructions.values if payload.instructions else {}, ensure_ascii=False
+                ),
                 "status": status_value,
                 "priority": payload.priority,
                 "selector": payload.target_selector.model_dump_json(),
@@ -374,7 +393,9 @@ async def create_mission(
     return mission
 
 
-async def list_missions(tenant_id: str, scope: FieldScope, limit: int = 100) -> list[dict[str, object]]:
+async def list_missions(
+    tenant_id: str, scope: FieldScope, limit: int = 100
+) -> list[dict[str, object]]:
     allowed_locations = await list_locations(tenant_id, scope)
     allowed_ids = {str(item["location_id"]) for item in allowed_locations}
     if not allowed_ids:
@@ -418,7 +439,9 @@ async def list_missions(tenant_id: str, scope: FieldScope, limit: int = 100) -> 
         return rows
 
 
-async def get_mission_detail(tenant_id: str, scope: FieldScope, mission_id: str) -> dict[str, object] | None:
+async def get_mission_detail(
+    tenant_id: str, scope: FieldScope, mission_id: str
+) -> dict[str, object] | None:
     allowed_locations = await list_locations(tenant_id, scope)
     allowed_ids = {str(item["location_id"]) for item in allowed_locations}
     if not allowed_ids:
@@ -647,7 +670,9 @@ async def submit_evidence(
                 },
             )
         except IntegrityError as exc:
-            raise FieldRepositoryError("evidence submission collided with a concurrent replay; retry safely") from exc
+            raise FieldRepositoryError(
+                "evidence submission collided with a concurrent replay; retry safely"
+            ) from exc
 
         await connection.execute(
             text(
@@ -663,7 +688,9 @@ async def submit_evidence(
         evidence["target_status"] = "submitted"
         evidence["idempotent_replay"] = False
         evidence["observed_at"] = payload.observed_at
-        evidence["device_trust"] = "unverified_client_claim" if payload.device_id else "not_supplied"
+        evidence["device_trust"] = (
+            "unverified_client_claim" if payload.device_id else "not_supplied"
+        )
         return evidence
 
 
@@ -757,7 +784,11 @@ async def review_evidence(
                 FOR UPDATE OF t
                 """
             ),
-            {"tenant_id": tenant_id, "evidence_id": evidence_id, "allowed_ids": sorted(allowed_ids)},
+            {
+                "tenant_id": tenant_id,
+                "evidence_id": evidence_id,
+                "allowed_ids": sorted(allowed_ids),
+            },
         )
         evidence = evidence_result.mappings().first()
         if evidence is None:
@@ -851,7 +882,11 @@ async def queue_notification_intents(
         if any(target["mission_status"] != "active" for target in targets):
             raise FieldRepositoryError("notifications can only be queued for an active mission")
 
-        selected = [target for target in targets if not requested_ids or target["location_id"] in requested_ids]
+        selected = [
+            target
+            for target in targets
+            if not requested_ids or target["location_id"] in requested_ids
+        ]
         if requested_ids and len(selected) != len(requested_ids):
             raise FieldRepositoryError("notification target is not actionable for this mission")
 
@@ -956,13 +991,25 @@ async def field_analytics(tenant_id: str, scope: FieldScope) -> dict[str, object
         exempt = int(row.get("exempt") or 0)
         status_counts = {
             status: int(row.get(status) or 0)
-            for status in ("unseen", "seen", "started", "partial", "submitted", "rework", "verified", "overdue", "exempt")
+            for status in (
+                "unseen",
+                "seen",
+                "started",
+                "partial",
+                "submitted",
+                "rework",
+                "verified",
+                "overdue",
+                "exempt",
+            )
         }
         return {
             "mission_count": int(row.get("mission_count") or 0),
             "active_mission_count": int(row.get("active_mission_count") or 0),
             "target_count": target_count,
             "status_counts": status_counts,
-            "completion_percent": round(((verified + exempt) / target_count * 100.0), 2) if target_count else 0.0,
+            "completion_percent": round(((verified + exempt) / target_count * 100.0), 2)
+            if target_count
+            else 0.0,
             "deadline_overdue_targets": int(row.get("deadline_overdue_targets") or 0),
         }

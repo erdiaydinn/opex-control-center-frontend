@@ -52,7 +52,9 @@ def _read_token_file(path_value: str | None) -> str | None:
     try:
         token = path.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        raise FieldEvidenceStoreUnavailable("private Field evidence store credential is unavailable") from exc
+        raise FieldEvidenceStoreUnavailable(
+            "private Field evidence store credential is unavailable"
+        ) from exc
     if not token or len(token) > 8192 or any(character.isspace() for character in token):
         raise FieldEvidenceStoreUnavailable("private Field evidence store credential is invalid")
     return token
@@ -118,7 +120,9 @@ async def _authorize_upload(
             },
         )
         if result.first() is None:
-            raise FieldEvidenceUploadError("photo upload is not authorized for this active Field target")
+            raise FieldEvidenceUploadError(
+                "photo upload is not authorized for this active Field target"
+            )
 
 
 async def _existing_receipt(
@@ -248,7 +252,9 @@ async def upload_private_evidence_object(
     try:
         storage_body = response.json()
     except ValueError as exc:
-        raise FieldEvidenceStoreUnavailable("private Field evidence store returned invalid receipt") from exc
+        raise FieldEvidenceStoreUnavailable(
+            "private Field evidence store returned invalid receipt"
+        ) from exc
     storage_receipt = storage_body.get("receipt") if isinstance(storage_body, dict) else None
     if not isinstance(storage_receipt, str) or not storage_receipt or len(storage_receipt) > 1000:
         raise FieldEvidenceStoreUnavailable("private Field evidence store returned invalid receipt")

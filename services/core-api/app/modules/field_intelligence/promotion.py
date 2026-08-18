@@ -65,7 +65,9 @@ def _positive_decimal(payload: dict[str, object], key: str, *, allow_zero: bool 
     return format(parsed.normalize(), "f")
 
 
-def _build_planogram_fixture_candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
+def _build_planogram_fixture_candidate(
+    payload: dict[str, object], location_id: str
+) -> dict[str, object]:
     candidate: dict[str, object] = {
         "candidate_type": "planogram_fixture_measurement",
         "location_id": location_id,
@@ -87,7 +89,9 @@ def _build_planogram_fixture_candidate(payload: dict[str, object], location_id: 
     return candidate
 
 
-def _build_inventory_count_candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
+def _build_inventory_count_candidate(
+    payload: dict[str, object], location_id: str
+) -> dict[str, object]:
     sku = payload.get("sku")
     pallet_id = payload.get("pallet_id")
     if not isinstance(sku, str) or not sku.strip():
@@ -112,7 +116,9 @@ def _build_inventory_count_candidate(payload: dict[str, object], location_id: st
     }
 
 
-def _build_budget_support_candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
+def _build_budget_support_candidate(
+    payload: dict[str, object], location_id: str
+) -> dict[str, object]:
     currency = _required_text(payload, "currency").upper()
     if len(currency) != 3 or not currency.isalpha():
         raise FieldPromotionError("budget promotion currency must be an ISO-like three-letter code")
@@ -417,7 +423,9 @@ async def decide_promotion_request(
         if request["existing_decision_id"] is not None:
             raise FieldPromotionError("promotion request already has an immutable decision")
         if str(request["requested_by"]) == actor_subject:
-            raise FieldPromotionError("promotion proposer cannot approve or reject their own proposal")
+            raise FieldPromotionError(
+                "promotion proposer cannot approve or reject their own proposal"
+            )
 
         decision_fingerprint = _canonical_fingerprint(
             {
@@ -452,7 +460,9 @@ async def decide_promotion_request(
                 },
             )
         except IntegrityError as exc:
-            raise FieldPromotionError("promotion decision collided with a concurrent reviewer") from exc
+            raise FieldPromotionError(
+                "promotion decision collided with a concurrent reviewer"
+            ) from exc
         row = decision_result.mappings().one()
         return {
             "id": str(row["id"]),
@@ -460,7 +470,9 @@ async def decide_promotion_request(
             "decision": decision,
             "decision_fingerprint": decision_fingerprint,
             "decided_at": row["decided_at"],
-            "state": "field_approved_pending_consumer" if decision == "approve" else "field_rejected",
+            "state": "field_approved_pending_consumer"
+            if decision == "approve"
+            else "field_rejected",
             "truth_mutation_permitted": False,
         }
 
@@ -478,7 +490,9 @@ async def record_consumer_receipt(
     normalized_reason = (reason or "").strip() or None
     normalized_ref = (destination_candidate_ref or "").strip() or None
     if decision == "accept" and normalized_ref is None:
-        raise FieldPromotionError("consumer acceptance requires an opaque destination candidate reference")
+        raise FieldPromotionError(
+            "consumer acceptance requires an opaque destination candidate reference"
+        )
     if decision == "reject" and normalized_reason is None:
         raise FieldPromotionError("consumer rejection requires a reason")
     if decision == "reject":
@@ -561,7 +575,9 @@ async def record_consumer_receipt(
                 },
             )
         except IntegrityError as exc:
-            raise FieldPromotionError("consumer receipt collided with a concurrent acceptance") from exc
+            raise FieldPromotionError(
+                "consumer receipt collided with a concurrent acceptance"
+            ) from exc
         row = receipt_result.mappings().one()
         return {
             "id": str(row["id"]),

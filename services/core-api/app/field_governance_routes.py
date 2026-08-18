@@ -127,7 +127,9 @@ async def post_recurrence_rule(
         raise _bad_request(exc) from exc
 
 
-@router.post("/missions/{mission_id}/targets/{location_id}/exempt", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/missions/{mission_id}/targets/{location_id}/exempt", status_code=status.HTTP_201_CREATED
+)
 async def post_target_exemption(
     mission_id: UUID,
     location_id: str,

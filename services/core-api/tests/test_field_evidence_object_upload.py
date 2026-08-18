@@ -130,7 +130,9 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
             )
 
         assert observed["body"] == photo_bytes
-        assert str(observed["url"]).startswith("http://field-evidence-store/v1/private/field-evidence/")
+        assert str(observed["url"]).startswith(
+            "http://field-evidence-store/v1/private/field-evidence/"
+        )
         assert observed["headers"]["x-eay-field-object-sha256"] == sha256
         assert receipt["sha256"] == sha256
         assert receipt["media_type"] == "image/jpeg"
@@ -179,7 +181,9 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
         await close_resources()
 
 
-def test_production_private_storage_config_fails_closed_without_runtime_endpoint(monkeypatch) -> None:
+def test_production_private_storage_config_fails_closed_without_runtime_endpoint(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("OPEX_ENVIRONMENT", "production")
     monkeypatch.delenv("OPEX_FIELD_EVIDENCE_STORE_URL", raising=False)
     monkeypatch.delenv("OPEX_FIELD_EVIDENCE_STORE_TOKEN_FILE", raising=False)

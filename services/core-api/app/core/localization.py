@@ -75,4 +75,8 @@ def resolve_accept_language(value: str | None, *, default: str = DEFAULT_LOCALE)
             candidates.append((quality, -index, locale))
 
     locale = max(candidates)[2] if candidates else default_locale
-    return LocaleContext(locale=locale, rtl=locale in RTL_LOCALES, source="accept-language" if candidates else "default")
+    return LocaleContext(
+        locale=locale,
+        rtl=locale in RTL_LOCALES,
+        source="accept-language" if candidates else "default",
+    )

@@ -1,4 +1,4 @@
-HEAD=9e2a25c8d32aabfce8a3d3e291aabf962b5b2ac4
+HEAD=44d1e2a5a19fc95661b2a58a97a027a891214748
 RUFF_VERSION=ruff 0.16.3
 ---
 All checks passed!

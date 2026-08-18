@@ -1,3 +1,5 @@
+# Canonical exact-head proof activation marker: v1
+
 import asyncio
 from types import SimpleNamespace
 from uuid import UUID

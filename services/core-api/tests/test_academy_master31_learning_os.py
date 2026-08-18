@@ -1,3 +1,5 @@
+# Canonical exact-head proof activation marker: v1
+
 from pathlib import Path
 
 from app.modules.academy.learning_os import (

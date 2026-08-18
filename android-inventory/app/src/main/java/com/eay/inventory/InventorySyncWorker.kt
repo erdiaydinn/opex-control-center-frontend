@@ -54,6 +54,21 @@ object InventorySyncClassifier {
     }
 }
 
+object InventorySyncContract {
+    fun responseMatchesSignedShift(
+        canonicalPayload: String,
+        serverShiftId: String?,
+    ): Boolean {
+        val normalizedServerShift = serverShiftId?.trim().orEmpty()
+        if (normalizedServerShift.isBlank()) return false
+        return runCatching {
+            JSONObject(canonicalPayload)
+                .getString("active_shift_id")
+                .trim() == normalizedServerShift
+        }.getOrDefault(false)
+    }
+}
+
 class InventorySyncWorker(
     context: Context,
     parameters: WorkerParameters,
@@ -136,6 +151,21 @@ class InventorySyncWorker(
                 val json = runCatching { JSONObject(body) }.getOrNull()
                 val accepted = json?.optBoolean("accepted")
                 val replay = json?.optBoolean("idempotent_replay")
+                if (
+                    it.code in 200..299 &&
+                    accepted == true &&
+                    !InventorySyncContract.responseMatchesSignedShift(
+                        event.canonicalPayload,
+                        json?.optString("active_shift_id")?.takeIf { value -> value.isNotBlank() },
+                    )
+                ) {
+                    dao.quarantine(
+                        event.eventId,
+                        SyncQuarantineReason.SERVER_CONTRACT_MISMATCH.name,
+                        "SHIFT_ATTESTATION_MISMATCH",
+                    )
+                    continue
+                }
                 val verdict = InventorySyncClassifier.classify(
                     it.code,
                     accepted,

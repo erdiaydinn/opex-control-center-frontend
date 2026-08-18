@@ -3,7 +3,7 @@
   "architecture_version": 2,
   "canonical_parent": {
     "branch": "product/eay-category-leadership-v1",
-    "sha": "f6b75d8720d2c6e09c93333063116395661faae5"
+    "sha": "0816e1f50d89684f367efd126ac94679f0aaa072"
   },
   "runtime_surfaces": {
     "eay_one": {

@@ -224,6 +224,8 @@ def test_wrong_ledger_identity_is_rejected_and_usage_receipt_retains_no_prompt_o
         output_tokens=1,
         settled_at=NOW + timedelta(seconds=1),
     )
-    serialized = usage.model_dump_json().casefold()
-    assert "prompt" not in serialized
-    assert "secret" not in serialized
+    serialized = usage.model_dump_json()
+    assert usage.raw_prompt_retained is False
+    assert usage.provider_secret_retained is False
+    assert "THIS-IS-A-RAW-PROMPT" not in serialized
+    assert "sk-secret" not in serialized

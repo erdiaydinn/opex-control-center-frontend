@@ -64,7 +64,7 @@ jobs:
       - name: Architecture truth and route hard-gate acceptance
         working-directory: apps/planai/backend
         run: >-
-          pytest -q
+          python -m pytest -q
           tests/test_architecture_truth.py
           tests/test_architecture_route_gate.py
       - name: Master 25 optimizer adversarial acceptance
@@ -102,7 +102,7 @@ jobs:
           services/core-api/tests/test_planogram_master25_optimizer_core.py
       - name: Core optimizer preview and Master 24 native regression
         run: >-
-          pytest -q
+          python -m pytest -q
           services/core-api/tests/test_planogram_master25_optimizer_core.py
           services/core-api/tests/test_planogram_native_core.py
           services/core-api/tests/test_planogram_master24_store_dna.py

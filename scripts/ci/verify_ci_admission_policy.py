@@ -125,7 +125,9 @@ def main() -> None:
         stable_non_sha("dockos-full-stack.yml", source)
     check(dockos_check)
 
-    # Inventory owns its focused backend/DB/Android proof.
+    # Inventory owns its focused backend/DB/Android proof. Generic identity
+    # authority remains in the dedicated Security/Platform gates rather than
+    # requiring Inventory to fabricate a local JWT test environment.
     def inventory_check() -> None:
         source = read("eay-inventory-production.yml")
         block = pull_request_block(source)
@@ -135,6 +137,8 @@ def main() -> None:
             raise AssertionError("Inventory Production Gate missing inventory path scope")
         if "find backend/app -type f -name 'test_*.py'" in source:
             raise AssertionError("Inventory gate still executes every backend domain test")
+        if "backend.app.test_security" in source:
+            raise AssertionError("Inventory gate still owns generic identity/security tests")
         stable_non_sha("eay-inventory-production.yml", source)
         android = read("opex-inventory-android.yml")
         if '"android-inventory/**"' not in pull_request_block(android):

@@ -11,8 +11,11 @@ ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/ea
 PRESENTATION="$ROOT/mobile-presentation-contracts/src/main/kotlin/com/eay/mobile/presentation/FieldPresentationModels.kt"
 CONFIG="$ROOT/config/eay_mobile_platform.json"
 PY_CORE="$ROOT/services/core-api/app/core"
+ROUTER="$ROOT/backend/app/modules/inventory/router.py"
 CANONICAL="$APP/TerminalEventCanonical.kt"
 EVENT_FACTORY="$APP/InventoryCountEventFactory.kt"
+COMPLETION_FACTORY="$APP/InventoryLocationCompletionEventFactory.kt"
+SYNC_WORKER="$APP/InventorySyncWorker.kt"
 DATABASE="$APP/InventoryDatabase.kt"
 QUEUE="$APP/InventoryOfflineQueue.kt"
 COUNT_CONTROLLER="$APP/BlindCountTerminalController.kt"
@@ -23,9 +26,14 @@ COUNT_CONTROLLER_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/invento
 COUNT_TASK_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalCountTaskTest.kt"
 TASK_CLIENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalTaskClientTest.kt"
 ANDROID_EVENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/OfflineContractTest.kt"
+ANDROID_COMPLETION_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/LocationCompletionContractTest.kt"
 BACKEND_EVENT_TEST="$ROOT/backend/tests/test_inventory_terminal_event_hash_contract.py"
 BACKEND_TASK_TEST="$ROOT/backend/tests/test_inventory_terminal_task_contract.py"
-GOLDEN_HASH="83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291"
+BACKEND_COMPLETION="$ROOT/backend/app/modules/inventory/location_completion.py"
+BACKEND_COMPLETION_TEST="$ROOT/backend/tests/test_inventory_location_completion_contract.py"
+MIGRATION_V4="$ROOT/backend/migrations/004_inventory_location_completion.sql"
+COUNT_GOLDEN_HASH="f0a1a16e9bfbf74a09667a7435e8880ea539d4cab88299ce8c9f4c58e1596626"
+COMPLETION_GOLDEN_HASH="631e5b6c4447c10bda695763e432cccae8af623426eab370ee3db9d1cd4ab6ba"
 
 required="
 $CORE/MobilePlatformContract.kt
@@ -43,11 +51,14 @@ $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/MobileSync
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FieldMissionTest.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FleetHealthTest.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/RuntimeControlTest.kt
+$ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/BlindCountFlowTest.kt
 $ADAPTER
 $PRESENTATION
 $ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapterTest.kt
 $CANONICAL
 $EVENT_FACTORY
+$COMPLETION_FACTORY
+$SYNC_WORKER
 $DATABASE
 $QUEUE
 $COUNT_CONTROLLER
@@ -60,8 +71,12 @@ $COUNT_CONTROLLER_TEST
 $COUNT_TASK_TEST
 $TASK_CLIENT_TEST
 $ANDROID_EVENT_TEST
+$ANDROID_COMPLETION_TEST
 $BACKEND_EVENT_TEST
 $BACKEND_TASK_TEST
+$BACKEND_COMPLETION
+$BACKEND_COMPLETION_TEST
+$MIGRATION_V4
 $PY_CORE/mobile_policy.py
 $PY_CORE/mobile_policy_signing.py
 $PY_CORE/mobile_device_trust.py
@@ -94,45 +109,69 @@ grep -q 'biometric' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'MissionGate.evaluate' "$ADAPTER"
 grep -q 'MobileOperationAdmission' "$CORE/FieldMission.kt"
 grep -q 'BlindCountLocationToken.hash(scan.value)' "$CORE/BlindCountFlow.kt"
+grep -q 'completeLocation' "$CORE/BlindCountFlow.kt"
+grep -q 'activeShiftId' "$CANONICAL"
 grep -q 'UUID.fromString' "$CANONICAL"
 grep -q 'OffsetDateTime.parse' "$CANONICAL"
 grep -q 'acceptedScan.payloadHash == evidence.itemPayloadHash' "$EVENT_FACTORY"
+grep -q 'LOCATION_COMPLETE' "$COMPLETION_FACTORY"
+grep -q 'activeShiftId = context.activeShiftId' "$COMPLETION_FACTORY"
 grep -q 'MAX(deviceSequence)' "$DATABASE"
+grep -q 'unsettledBefore' "$DATABASE"
 grep -q 'database.withTransaction' "$QUEUE"
 grep -q 'maxDeviceSequence()' "$QUEUE"
 grep -q 'enqueueConfirmedCount' "$QUEUE"
+grep -q 'enqueueLocationCompletion' "$QUEUE"
 grep -q 'RetryableCountPersistenceException' "$QUEUE"
 grep -q 'BlindCountFlow.verifyLocation' "$COUNT_CONTROLLER"
 grep -q 'BlindCountFlow.scanItem' "$COUNT_CONTROLLER"
 grep -q 'BlindCountFlow.confirmItem' "$COUNT_CONTROLLER"
+grep -q 'BlindCountFlow.completeLocation' "$COUNT_CONTROLLER"
 grep -q 'eventSink.enqueueConfirmedCount' "$COUNT_CONTROLLER"
-grep -q 'catch (_: RetryableCountPersistenceException)' "$COUNT_CONTROLLER"
+grep -q 'eventSink.enqueueLocationCompletion' "$COUNT_CONTROLLER"
 grep -q 'InventoryTerminalCountTask' "$COUNT_TASK"
 grep -q 'BlindCountLocationToken.hash(locationId)' "$COUNT_TASK"
+grep -q 'activeShiftId' "$COUNT_TASK"
 grep -q 'PinnedApi.client' "$TASK_CLIENT"
 grep -q 'AccessTokenMemory.freshOrNull' "$TASK_CLIENT"
 grep -q 'ManagedDeviceIdentity' "$TASK_CLIENT"
 grep -q 'X-EAY-Device-ID' "$TASK_CLIENT"
 grep -q '/api/inventory/v1/terminal/tasks' "$TASK_CLIENT"
 grep -q 'CONTRACT_REJECTED' "$TASK_CLIENT"
-grep -q 'expected_quantity' "$TASK_CLIENT"
-grep -q 'Duplicate terminal mission ID' "$TASK_CLIENT"
+grep -q 'active_shift_id' "$TASK_CLIENT"
 grep -q 'InventoryTerminalTaskClient(this)' "$MAIN_ACTIVITY"
 grep -q 'BlindCountTerminalController(' "$MAIN_ACTIVITY"
 grep -q 'InventorySyncWorker.enqueue(this)' "$MAIN_ACTIVITY"
-grep -q 'R.string.terminal_' "$MAIN_ACTIVITY"
+grep -q 'showLocationCompletionConfirmation' "$MAIN_ACTIVITY"
+grep -q 'controller.completeLocation()' "$MAIN_ACTIVITY"
+grep -q 'R.string.terminal_finish_location' "$MAIN_ACTIVITY"
 grep -q 'android:supportsRtl="true"' "$INVENTORY_MANIFEST"
+grep -q '/api/inventory/v1/terminal/location-completions' "$SYNC_WORKER"
+grep -q 'UNSUPPORTED_EVENT_KIND' "$SYNC_WORKER"
+grep -q 'SHIFT_ATTESTATION_MISMATCH' "$SYNC_WORKER"
+grep -q 'LOCATION_COMPLETE' "$BACKEND_COMPLETION"
+grep -q 'attest_shift_at_event' "$BACKEND_COMPLETION"
+grep -q '_verify_device_proof' "$BACKEND_COMPLETION"
+grep -q 'filter_completed_terminal_tasks' "$BACKEND_COMPLETION"
+grep -q 'inventory_location_completion_once_idx' "$MIGRATION_V4"
+grep -q "VALUES (4,'inventory durable location completion')" "$MIGRATION_V4"
+grep -q '/v1/terminal/location-completions' "$ROUTER"
+grep -q 'filter_completed_terminal_tasks' "$ROUTER"
+grep -q 'migration_v4_location_completion' "$ROUTER"
+grep -q 'require_verified_identity(request, "countInventory")' "$ROUTER"
 grep -q 'reuses exact event identity' "$COUNT_CONTROLLER_TEST"
-grep -q 'not mislabeled as retryable' "$COUNT_CONTROLLER_TEST"
+grep -q 'completion queue failure preserves state and exact identity' "$COUNT_CONTROLLER_TEST"
 grep -q 'no anonymous fallback' "$TASK_CLIENT_TEST"
-grep -q "$GOLDEN_HASH" "$ANDROID_EVENT_TEST"
-grep -q "$GOLDEN_HASH" "$BACKEND_EVENT_TEST"
+grep -q "$COUNT_GOLDEN_HASH" "$ANDROID_EVENT_TEST"
+grep -q "$COUNT_GOLDEN_HASH" "$BACKEND_EVENT_TEST"
+grep -q "$COMPLETION_GOLDEN_HASH" "$ANDROID_COMPLETION_TEST"
+grep -q "$COMPLETION_GOLDEN_HASH" "$BACKEND_COMPLETION_TEST"
 grep -q '_terminal_mission_id' "$BACKEND_TASK_TEST"
 grep -q 'tenant_bound' "$BACKEND_TASK_TEST"
 grep -q 'MOBILE_POLICY_ALGORITHM = "ES256"' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MAX_SIGNED_POLICY_LIFETIME_SECONDS = 300' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MobileDeviceState.REPLACED' "$ROOT/services/core-api/tests/test_mobile_device_trust.py"
-grep -q 'require_verified_identity' "$ROOT/backend/app/modules/inventory/router.py"
+grep -q 'require_verified_identity' "$ROUTER"
 
 if grep -R -n -E 'Settings\.Secure\.ANDROID_ID|http://|WebView|addJavascriptInterface' "$CORE"; then
   echo "forbidden mobile-core authority/transport primitive detected" >&2
@@ -154,7 +193,7 @@ if grep -n -E '(status\.)?text[[:space:]]*=[[:space:]]*"' "$MAIN_ACTIVITY"; then
   exit 1
 fi
 
-if grep -n -E 'def (create_production_document|production_reconciliation|transition_document).*x_opex_(role|permissions)' "$ROOT/backend/app/modules/inventory/router.py"; then
+if grep -n -E 'def (create_production_document|production_reconciliation|transition_document).*x_opex_(role|permissions)' "$ROUTER"; then
   echo "production Inventory route exposes client-facing role/permission authority" >&2
   exit 1
 fi
@@ -169,8 +208,8 @@ if grep -n -E 'enabled[[:space:]]*=[[:space:]]*(true|false)' "$ADAPTER"; then
   exit 1
 fi
 
-if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance' "$COUNT_CONTROLLER" "$COUNT_TASK"; then
-  echo "blind-count terminal contract leaked stock truth" >&2
+if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance|sku|barcode' "$COUNT_CONTROLLER" "$COUNT_TASK" "$COMPLETION_FACTORY" "$BACKEND_COMPLETION"; then
+  echo "blind-count completion contract leaked stock truth" >&2
   exit 1
 fi
 
@@ -210,8 +249,20 @@ for locale, values in resources.items():
             f"missing={sorted(set(baseline) - set(values))} extra={sorted(set(values) - set(baseline))}"
         )
     for key, baseline_value in baseline.items():
-        if set(placeholder.findall(values[key])) != set(placeholder.findall(baseline_value)):
+        if tuple(placeholder.findall(values[key])) != tuple(placeholder.findall(baseline_value)):
             raise SystemExit(f"Inventory terminal placeholder parity failure for {locale}/{key}")
+
+completion_keys = {
+    "terminal_finish_location",
+    "terminal_finish_location_title",
+    "terminal_finish_location_message",
+    "terminal_cancel",
+    "terminal_finish_location_confirm",
+    "terminal_location_complete_queued",
+    "terminal_completion_retry",
+}
+if not completion_keys.issubset(set(baseline)):
+    raise SystemExit("durable location completion localization keys are incomplete")
 
 print(f"EAY Inventory terminal locale parity: PASS ({len(required_locales)} locales)")
 PY

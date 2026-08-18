@@ -14,17 +14,147 @@ from app.release.category_leadership import (
     ReleaseState,
     ReleaseTruth,
     StabilizationIssue,
+    build_chaos_item_ref,
+    build_dr_item_ref,
+    build_observability_item_ref,
+    build_scale_item_ref,
     category_leadership_backlog,
     next_state,
     stabilization_backlog,
 )
+from app.sre.chaos_dr import ChaosResult, DrResult
+from app.sre.governance import AcceptanceEvidence
+from app.sre.observability import TelemetryEvent
 
 CANDIDATE = "a" * 40
+CHAOS_SCENARIOS = tuple(f"scenario-{index}" for index in range(1, 15))
 
 
 def _ref(prefix: str, value: object) -> str:
     digest = sha256(str(value).encode()).hexdigest()
     return f"{prefix}-sha256:{digest}"
+
+
+def _artifact(value: object) -> str:
+    return sha256(str(value).encode()).hexdigest()
+
+
+def _observability_contract() -> dict[str, object]:
+    return {
+        "required_signals": ["logs", "traces"],
+        "required_dimensions": [
+            "service",
+            "tenant_safe_hash",
+            "environment",
+            "workflow",
+            "operation",
+            "result",
+        ],
+        "forbidden_dimensions": ["raw_secret"],
+    }
+
+
+def _telemetry_events() -> tuple[TelemetryEvent, ...]:
+    return tuple(
+        TelemetryEvent(
+            signal=signal,
+            service="platform-core",
+            environment="managed-staging",
+            workflow="release",
+            operation="verify",
+            result="ok",
+            dimensions={"tenant_safe_hash": "tenant-safe"},
+        )
+        for signal in ("logs", "traces")
+    )
+
+
+def _scale_registry() -> dict[str, object]:
+    return {
+        "production_shape_tests": [
+            {
+                "key": "portal_3000_users",
+                "required_evidence": "MANAGED_STAGING_LOAD",
+            },
+            {
+                "key": "academy_1200_media_concurrency",
+                "required_evidence": "REAL_MEDIA_ENVIRONMENT_LOAD",
+            },
+        ]
+    }
+
+
+def _scale_evidence() -> dict[str, AcceptanceEvidence]:
+    return {
+        "portal_3000_users": AcceptanceEvidence(
+            "portal_3000_users",
+            "MANAGED_STAGING",
+            "managed-staging",
+            True,
+            "load-report:portal",
+        ),
+        "academy_1200_media_concurrency": AcceptanceEvidence(
+            "academy_1200_media_concurrency",
+            "REAL_MEDIA_ENVIRONMENT",
+            "media-production-shape",
+            True,
+            "load-report:academy",
+        ),
+    }
+
+
+def _chaos_contract() -> dict[str, object]:
+    return {
+        "chaos_scenarios": list(CHAOS_SCENARIOS),
+        "required_invariants": ["tenant_isolation", "idempotency"],
+    }
+
+
+def _chaos_results() -> tuple[ChaosResult, ...]:
+    return tuple(
+        ChaosResult(
+            scenario,
+            "managed-staging",
+            True,
+            ("tenant_isolation", "idempotency"),
+            f"chaos-run:{scenario}",
+        )
+        for scenario in CHAOS_SCENARIOS
+    )
+
+
+def _dr_result() -> DrResult:
+    return DrResult(
+        environment="managed-staging",
+        restore_passed=True,
+        rpo_seconds=120,
+        rto_seconds=300,
+        provenance="restore-report:1",
+    )
+
+
+def _sre_refs() -> dict[int, str]:
+    return {
+        45: build_observability_item_ref(
+            _observability_contract(),
+            _telemetry_events(),
+            artifact_sha256=_artifact("observability-report"),
+        ),
+        46: build_scale_item_ref(
+            _scale_registry(),
+            _scale_evidence(),
+            artifact_sha256=_artifact("load-report"),
+        ),
+        47: build_chaos_item_ref(
+            _chaos_contract(),
+            _chaos_results(),
+            artifact_sha256=_artifact("chaos-report"),
+        ),
+        48: build_dr_item_ref(
+            _dr_result(),
+            artifact_sha256=_artifact("dr-report"),
+        ),
+    }
 
 
 def full_truth() -> ReleaseTruth:
@@ -46,7 +176,7 @@ def full_truth() -> ReleaseTruth:
         repository_green=True,
         repository_evidence_ref=f"github-status:{CANDIDATE}",
         sre_items={item: True for item in REQUIRED_SRE},
-        sre_evidence_refs={item: _ref("sre", item) for item in REQUIRED_SRE},
+        sre_evidence_refs=_sre_refs(),
         external_items={item: True for item in REQUIRED_EXTERNAL},
         external_evidence_refs={item: _ref("ledger", item) for item in REQUIRED_EXTERNAL},
         pilot_scope=pilot_scope,
@@ -64,6 +194,48 @@ def full_truth() -> ReleaseTruth:
             key: _ref("stabilization", key) for key in STABILIZATION_METRICS
         },
     )
+
+
+def test_canonical_sre_bridge_requires_real_complete_authority_evidence() -> None:
+    refs = _sre_refs()
+    assert set(refs) == set(REQUIRED_SRE)
+    assert all(value.startswith("sre-sha256:") for value in refs.values())
+
+    incomplete_events = _telemetry_events()[:1]
+    with pytest.raises(ValueError, match="every required signal"):
+        build_observability_item_ref(
+            _observability_contract(),
+            incomplete_events,
+            artifact_sha256=_artifact("observability-report"),
+        )
+
+    synthetic_scale = dict(_scale_evidence())
+    synthetic_scale["portal_3000_users"] = AcceptanceEvidence(
+        "portal_3000_users",
+        "SYNTHETIC",
+        "ci",
+        True,
+        "ci:load",
+    )
+    with pytest.raises(ValueError, match="production-shape evidence failed"):
+        build_scale_item_ref(
+            _scale_registry(),
+            synthetic_scale,
+            artifact_sha256=_artifact("load-report"),
+        )
+
+    with pytest.raises(ValueError, match="each governed scenario"):
+        build_chaos_item_ref(
+            _chaos_contract(),
+            _chaos_results()[:-1],
+            artifact_sha256=_artifact("chaos-report"),
+        )
+
+    with pytest.raises(ValueError, match="DR evidence is not accepted"):
+        build_dr_item_ref(
+            replace(_dr_result(), environment="ci"),
+            artifact_sha256=_artifact("dr-report"),
+        )
 
 
 def test_repository_green_alone_can_never_create_rc() -> None:

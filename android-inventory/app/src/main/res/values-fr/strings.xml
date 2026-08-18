@@ -28,4 +28,11 @@
     <string name="terminal_sign_in_cancelled">Connexion d’entreprise annulée</string>
     <string name="terminal_invalid_quantity">Saisir une quantité valide et non négative</string>
     <string name="terminal_complete">Mission de comptage terminée</string>
+    <string name="terminal_finish_location">Terminer l’emplacement</string>
+    <string name="terminal_finish_location_title">Terminer cet emplacement ?</string>
+    <string name="terminal_finish_location_message">Emplacement : %1$s\nEntrées de comptage enregistrées : %2$d\nUn événement de fin signé sera placé dans la file sécurisée.</string>
+    <string name="terminal_cancel">Annuler</string>
+    <string name="terminal_finish_location_confirm">Terminer l’emplacement</string>
+    <string name="terminal_location_complete_queued">Emplacement terminé · synchronisation sécurisée mise en file</string>
+    <string name="terminal_completion_retry">File sécurisée indisponible · réessayer la fin de l’emplacement</string>
 </resources>

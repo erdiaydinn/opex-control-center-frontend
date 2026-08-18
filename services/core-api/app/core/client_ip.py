@@ -20,13 +20,7 @@ def _trusted_proxy_addresses(
     except OSError:
         return set()
 
-    return {
-        record[4][0]
-        for record in records
-        if record
-        and len(record) >= 5
-        and record[4]
-    }
+    return {record[4][0] for record in records if record and len(record) >= 5 and record[4]}
 
 
 def _valid_single_ip(value: str) -> str | None:
@@ -37,9 +31,7 @@ def _valid_single_ip(value: str) -> str | None:
         return None
 
     try:
-        return str(
-            ipaddress.ip_address(candidate)
-        )
+        return str(ipaddress.ip_address(candidate))
     except ValueError:
         return None
 
@@ -65,8 +57,6 @@ def resolve_client_ip(request: Request) -> str | None:
     if peer not in trusted:
         return peer
 
-    forwarded = _valid_single_ip(
-        request.headers.get("X-Real-IP", "")
-    )
+    forwarded = _valid_single_ip(request.headers.get("X-Real-IP", ""))
 
     return forwarded or peer

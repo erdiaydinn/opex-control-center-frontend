@@ -8,21 +8,16 @@ from redis.exceptions import RedisError
 INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS = 120
 INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS = 10
 
-class InternalServiceReplayError(
-    PermissionError
-):
+
+class InternalServiceReplayError(PermissionError):
     """Base denial for internal service assertion replay controls."""
 
 
-class InternalServiceReplayDetected(
-    InternalServiceReplayError
-):
+class InternalServiceReplayDetected(InternalServiceReplayError):
     """The service assertion identifier has already been consumed."""
 
 
-class InternalServiceReplayUnavailable(
-    InternalServiceReplayError
-):
+class InternalServiceReplayUnavailable(InternalServiceReplayError):
     """The distributed replay authority cannot be reached safely."""
 
 
@@ -37,9 +32,7 @@ class RedisInternalServiceReplayGuard:
         self,
         redis_client: Redis,
         *,
-        key_prefix: str = (
-            "opex:{identity}:service-replay"
-        ),
+        key_prefix: str = ("opex:{identity}:service-replay"),
     ) -> None:
         if (
             not isinstance(
@@ -49,13 +42,10 @@ class RedisInternalServiceReplayGuard:
             or not key_prefix
             or len(key_prefix) > 128
         ):
-            raise ValueError(
-                "Internal service replay key prefix is invalid"
-            )
+            raise ValueError("Internal service replay key prefix is invalid")
 
         self._redis = redis_client
         self._key_prefix = key_prefix
-
 
     def _key(
         self,
@@ -69,22 +59,11 @@ class RedisInternalServiceReplayGuard:
             or not assertion_id
             or len(assertion_id) > 128
         ):
-            raise ValueError(
-                "Internal service assertion identifier is invalid"
-            )
+            raise ValueError("Internal service assertion identifier is invalid")
 
-        digest = hashlib.sha256(
-            assertion_id.encode(
-                "utf-8"
-            )
-        ).hexdigest()
+        digest = hashlib.sha256(assertion_id.encode("utf-8")).hexdigest()
 
-        return (
-            self._key_prefix
-            + ":"
-            + digest
-        )
-
+        return self._key_prefix + ":" + digest
 
     async def consume(
         self,
@@ -101,36 +80,23 @@ class RedisInternalServiceReplayGuard:
                 ttl_seconds,
                 int,
             )
-            or not (
-                1
-                <= ttl_seconds
-                <= INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS
-            )
+            or not (1 <= ttl_seconds <= INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS)
         ):
-            raise ValueError(
-                "Internal service replay TTL is invalid"
-            )
+            raise ValueError("Internal service replay TTL is invalid")
 
-        key = self._key(
-            assertion_id
-        )
+        key = self._key(assertion_id)
 
         try:
-            consumed = (
-                await self._redis.set(
-                    key,
-                    "1",
-                    ex=ttl_seconds,
-                    nx=True,
-                )
+            consumed = await self._redis.set(
+                key,
+                "1",
+                ex=ttl_seconds,
+                nx=True,
             )
 
         except RedisError as exc:
             raise (
-                InternalServiceReplayUnavailable(
-                    "Internal service replay authority "
-                    "is unavailable"
-                )
+                InternalServiceReplayUnavailable("Internal service replay authority is unavailable")
             ) from exc
 
         # redis-py returns True only when SET NX succeeded.
@@ -138,7 +104,6 @@ class RedisInternalServiceReplayGuard:
         if consumed is not True:
             raise (
                 InternalServiceReplayDetected(
-                    "Internal service assertion "
-                    "has already been consumed"
+                    "Internal service assertion has already been consumed"
                 )
             )

@@ -16,9 +16,7 @@ def _request(
     headers = []
 
     if real_ip:
-        headers.append(
-            (b"x-real-ip", real_ip.encode())
-        )
+        headers.append((b"x-real-ip", real_ip.encode()))
 
     if forwarded_for:
         headers.append(
@@ -56,10 +54,7 @@ def test_direct_peer_cannot_spoof_real_ip(
         forwarded_for="198.51.100.20",
     )
 
-    assert (
-        client_ip.resolve_client_ip(request)
-        == "172.30.0.55"
-    )
+    assert client_ip.resolve_client_ip(request) == "172.30.0.55"
 
 
 def test_gateway_may_supply_single_valid_real_ip(
@@ -76,10 +71,7 @@ def test_gateway_may_supply_single_valid_real_ip(
         real_ip="203.0.113.10",
     )
 
-    assert (
-        client_ip.resolve_client_ip(request)
-        == "203.0.113.10"
-    )
+    assert client_ip.resolve_client_ip(request) == "203.0.113.10"
 
 
 def test_gateway_cannot_supply_ip_chain(
@@ -93,16 +85,10 @@ def test_gateway_cannot_supply_ip_chain(
 
     request = _request(
         "172.30.0.10",
-        real_ip=(
-            "203.0.113.10, "
-            "198.51.100.20"
-        ),
+        real_ip=("203.0.113.10, 198.51.100.20"),
     )
 
-    assert (
-        client_ip.resolve_client_ip(request)
-        == "172.30.0.10"
-    )
+    assert client_ip.resolve_client_ip(request) == "172.30.0.10"
 
 
 def test_gateway_cannot_supply_invalid_real_ip(
@@ -119,17 +105,11 @@ def test_gateway_cannot_supply_invalid_real_ip(
         real_ip="attacker-controlled",
     )
 
-    assert (
-        client_ip.resolve_client_ip(request)
-        == "172.30.0.10"
-    )
+    assert client_ip.resolve_client_ip(request) == "172.30.0.10"
 
 
 def test_uvicorn_does_not_trust_forwarded_headers_globally() -> None:
-    text = (
-        REPO_ROOT
-        / "services/core-api/Dockerfile"
-    ).read_text(
+    text = (REPO_ROOT / "services/core-api/Dockerfile").read_text(
         encoding="utf-8-sig",
         errors="strict",
     )
@@ -140,43 +120,22 @@ def test_uvicorn_does_not_trust_forwarded_headers_globally() -> None:
 
 
 def test_nginx_discards_incoming_xff_chain() -> None:
-    text = (
-        REPO_ROOT
-        / "infra/nginx/platform.conf"
-    ).read_text(
+    text = (REPO_ROOT / "infra/nginx/platform.conf").read_text(
         encoding="utf-8-sig",
         errors="strict",
     )
 
-    assert (
-        "$proxy_add_x_forwarded_for"
-        not in text
-    )
+    assert "$proxy_add_x_forwarded_for" not in text
 
-    assert (
-        text.count(
-            "proxy_set_header "
-            "X-Forwarded-For $remote_addr;"
-        )
-        == 2
-    )
+    assert text.count("proxy_set_header X-Forwarded-For $remote_addr;") == 2
 
 
 def test_audit_uses_resolved_client_ip() -> None:
-    text = (
-        REPO_ROOT
-        / "services/core-api/app/main.py"
-    ).read_text(
+    text = (REPO_ROOT / "services/core-api/app/main.py").read_text(
         encoding="utf-8-sig",
         errors="strict",
     )
 
-    assert (
-        "resolve_client_ip(request)"
-        in text
-    )
+    assert "resolve_client_ip(request)" in text
 
-    assert (
-        '"client_host": getattr('
-        in text
-    )
+    assert '"client_host": getattr(' in text

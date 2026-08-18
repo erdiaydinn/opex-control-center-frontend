@@ -55,9 +55,7 @@ class FakeConnection:
             )
         )
 
-        return FakeResult(
-            self.rows
-        )
+        return FakeResult(self.rows)
 
 
 class FakeConnectionContext:
@@ -87,17 +85,13 @@ class FakeEngine:
         self.connection = connection
 
     def connect(self):
-        return FakeConnectionContext(
-            self.connection
-        )
+        return FakeConnectionContext(self.connection)
 
 
 def run(
     coroutine,
 ):
-    return asyncio.run(
-        coroutine
-    )
+    return asyncio.run(coroutine)
 
 
 def test_wrapper_uses_only_security_definer_function(
@@ -106,28 +100,17 @@ def test_wrapper_uses_only_security_definer_function(
     connection = FakeConnection(
         [
             {
-                "tenant_id":
-                    "00000000-0000-0000-0000-00000000ab01",
-                "tenant_slug":
-                    "tenant-a",
-                "provider_id":
-                    "00000000-0000-0000-0000-00000000ab11",
-                "provider_key":
-                    "primary",
-                "protocol":
-                    "oidc",
-                "provider_display_name":
-                    "Primary OIDC",
-                "issuer":
-                    "https://idp.example.test",
-                "client_id":
-                    "opex-client",
-                "audiences":
-                    ["opex-core-api"],
-                "scopes":
-                    ["openid", "profile"],
-                "allowed_algorithms":
-                    ["ES256"],
+                "tenant_id": "00000000-0000-0000-0000-00000000ab01",
+                "tenant_slug": "tenant-a",
+                "provider_id": "00000000-0000-0000-0000-00000000ab11",
+                "provider_key": "primary",
+                "protocol": "oidc",
+                "provider_display_name": "Primary OIDC",
+                "issuer": "https://idp.example.test",
+                "client_id": "opex-client",
+                "audiences": ["opex-core-api"],
+                "scopes": ["openid", "profile"],
+                "allowed_algorithms": ["ES256"],
             }
         ]
     )
@@ -135,40 +118,22 @@ def test_wrapper_uses_only_security_definer_function(
     monkeypatch.setattr(
         resources,
         "engine",
-        FakeEngine(
-            connection
-        ),
+        FakeEngine(connection),
     )
 
-    items = run(
-        resources.resolve_preauth_oidc_providers(
-            hostname="tenant.example.test"
-        )
-    )
+    items = run(resources.resolve_preauth_oidc_providers(hostname="tenant.example.test"))
 
     assert len(items) == 1
 
-    assert (
-        set(items[0])
-        == SAFE_FIELDS
-    )
+    assert set(items[0]) == SAFE_FIELDS
 
-    assert len(
-        connection.calls
-    ) == 1
+    assert len(connection.calls) == 1
 
-    sql, parameters = (
-        connection.calls[0]
-    )
+    sql, parameters = connection.calls[0]
 
-    normalized_sql = " ".join(
-        sql.lower().split()
-    )
+    normalized_sql = " ".join(sql.lower().split())
 
-    assert (
-        "public.resolve_preauth_oidc_providers"
-        in normalized_sql
-    )
+    assert "public.resolve_preauth_oidc_providers" in normalized_sql
 
     for forbidden_relation in (
         " from tenants ",
@@ -180,19 +145,9 @@ def test_wrapper_uses_only_security_definer_function(
         " join identity_providers ",
         " join oidc_provider_configs ",
     ):
-        assert (
-            forbidden_relation
-            not in (
-                " "
-                + normalized_sql
-                + " "
-            )
-        )
+        assert forbidden_relation not in (" " + normalized_sql + " ")
 
-    assert parameters == {
-        "hostname":
-            "tenant.example.test"
-    }
+    assert parameters == {"hostname": "tenant.example.test"}
 
 
 def test_wrapper_does_not_expose_secret_or_authority_fields(
@@ -201,39 +156,23 @@ def test_wrapper_does_not_expose_secret_or_authority_fields(
     connection = FakeConnection(
         [
             {
-                "tenant_id":
-                    "00000000-0000-0000-0000-00000000ab01",
-                "tenant_slug":
-                    "tenant-a",
-                "provider_id":
-                    "00000000-0000-0000-0000-00000000ab11",
-                "provider_key":
-                    "primary",
-                "protocol":
-                    "oidc",
-                "provider_display_name":
-                    "Primary OIDC",
-                "issuer":
-                    "https://idp.example.test",
-                "client_id":
-                    "opex-client",
-                "audiences":
-                    [],
-                "scopes":
-                    ["openid"],
-                "allowed_algorithms":
-                    ["ES256"],
-
+                "tenant_id": "00000000-0000-0000-0000-00000000ab01",
+                "tenant_slug": "tenant-a",
+                "provider_id": "00000000-0000-0000-0000-00000000ab11",
+                "provider_key": "primary",
+                "protocol": "oidc",
+                "provider_display_name": "Primary OIDC",
+                "issuer": "https://idp.example.test",
+                "client_id": "opex-client",
+                "audiences": [],
+                "scopes": ["openid"],
+                "allowed_algorithms": ["ES256"],
                 # Simulate extra attacker-interesting columns
                 # appearing in a driver/result implementation.
-                "credential_ref":
-                    "SECRET-CANARY",
-                "token_endpoint_auth_method":
-                    "client_secret_basic",
-                "roles":
-                    ["super_admin"],
-                "permissions":
-                    ["*"],
+                "credential_ref": "SECRET-CANARY",
+                "token_endpoint_auth_method": "client_secret_basic",
+                "roles": ["super_admin"],
+                "permissions": ["*"],
             }
         ]
     )
@@ -241,30 +180,16 @@ def test_wrapper_does_not_expose_secret_or_authority_fields(
     monkeypatch.setattr(
         resources,
         "engine",
-        FakeEngine(
-            connection
-        ),
+        FakeEngine(connection),
     )
 
-    item = run(
-        resources.resolve_preauth_oidc_providers(
-            hostname="tenant.example.test"
-        )
-    )[0]
+    item = run(resources.resolve_preauth_oidc_providers(hostname="tenant.example.test"))[0]
 
-    assert (
-        set(item)
-        == SAFE_FIELDS
-    )
+    assert set(item) == SAFE_FIELDS
 
-    serialized = repr(
-        item
-    )
+    serialized = repr(item)
 
-    assert (
-        "SECRET-CANARY"
-        not in serialized
-    )
+    assert "SECRET-CANARY" not in serialized
 
     for forbidden in (
         "credential_ref",
@@ -272,10 +197,7 @@ def test_wrapper_does_not_expose_secret_or_authority_fields(
         "roles",
         "permissions",
     ):
-        assert (
-            forbidden
-            not in item
-        )
+        assert forbidden not in item
 
 
 @pytest.mark.parametrize(
@@ -297,61 +219,36 @@ def test_wrapper_rejects_noncanonical_hostname_before_database(
     monkeypatch,
     hostname,
 ) -> None:
-    connection = FakeConnection(
-        []
-    )
+    connection = FakeConnection([])
 
     monkeypatch.setattr(
         resources,
         "engine",
-        FakeEngine(
-            connection
-        ),
+        FakeEngine(connection),
     )
 
     with pytest.raises(
         ValueError,
-        match=(
-            "Pre-auth hostname is invalid"
-        ),
+        match=("Pre-auth hostname is invalid"),
     ):
-        run(
-            resources.resolve_preauth_oidc_providers(
-                hostname=hostname
-            )
-        )
+        run(resources.resolve_preauth_oidc_providers(hostname=hostname))
 
-    assert (
-        connection.calls
-        == []
-    )
+    assert connection.calls == []
 
 
 def test_wrapper_accepts_punycode_ascii_hostname(
     monkeypatch,
 ) -> None:
-    connection = FakeConnection(
-        []
-    )
+    connection = FakeConnection([])
 
     monkeypatch.setattr(
         resources,
         "engine",
-        FakeEngine(
-            connection
-        ),
+        FakeEngine(connection),
     )
 
-    result = run(
-        resources.resolve_preauth_oidc_providers(
-            hostname=(
-                "xn--rnek-4qa.example.test"
-            )
-        )
-    )
+    result = run(resources.resolve_preauth_oidc_providers(hostname=("xn--rnek-4qa.example.test")))
 
     assert result == ()
 
-    assert len(
-        connection.calls
-    ) == 1
+    assert len(connection.calls) == 1

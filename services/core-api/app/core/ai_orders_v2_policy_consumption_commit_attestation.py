@@ -67,10 +67,7 @@ def attest_orders_v2_policy_consumption_commit_candidate(
         raise ValueError("consumption patch validation did not pass")
     if patch.manual_version_control_commit_required is not True:
         raise ValueError("consumption patch commit state is invalid")
-    if (
-        patch.ledger_mutation_permitted is not False
-        or patch.policy_mutation_permitted is not False
-    ):
+    if patch.ledger_mutation_permitted is not False or patch.policy_mutation_permitted is not False:
         raise ValueError("consumption patch mutation state is invalid")
     if patch.execution_enable_permitted is not False:
         raise ValueError("consumption patch execution state is invalid")

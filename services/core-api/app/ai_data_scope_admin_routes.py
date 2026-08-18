@@ -53,9 +53,7 @@ class AiDataScopeAssignmentListResponse(BaseModel):
 class UpdateAiDataScopeAssignmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_record_fingerprint: str = Field(
-        pattern=SHA256_PATTERN
-    )
+    expected_record_fingerprint: str = Field(pattern=SHA256_PATTERN)
     data_scope: AiDataScope
 
 
@@ -158,9 +156,7 @@ async def put_ai_data_scope_assignment(
             tenant_id=str(principal.tenant_id),
             role_key=role_key,
             permission_key=permission_key,
-            expected_record_fingerprint=(
-                payload.expected_record_fingerprint
-            ),
+            expected_record_fingerprint=(payload.expected_record_fingerprint),
             data_scope=payload.data_scope,
             actor_subject=principal.subject,
             request_id=request.state.request_id,

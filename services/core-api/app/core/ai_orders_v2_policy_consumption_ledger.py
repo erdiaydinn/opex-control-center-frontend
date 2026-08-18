@@ -115,9 +115,7 @@ def build_next_orders_v2_policy_consumption_entry(
     if proposal_fingerprint in ledger.consumed_proposal_fingerprints:
         raise ValueError("policy proposal already consumed")
     previous = (
-        ledger.entries[-1].entry_fingerprint
-        if ledger.entries
-        else LEDGER_GENESIS_FINGERPRINT
+        ledger.entries[-1].entry_fingerprint if ledger.entries else LEDGER_GENESIS_FINGERPRINT
     )
     return OrdersV2PolicyConsumptionEntry(
         sequence=len(ledger.entries) + 1,

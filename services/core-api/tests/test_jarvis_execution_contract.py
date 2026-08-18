@@ -51,16 +51,10 @@ def test_mutating_internal_ai_routes_require_fresh_jarvis_identity() -> None:
             if not (internal_ai_route and mutating):
                 continue
 
-            referenced_names = {
-                child.id
-                for child in ast.walk(node)
-                if isinstance(child, ast.Name)
-            }
+            referenced_names = {child.id for child in ast.walk(node) if isinstance(child, ast.Name)}
 
             if "require_fresh_jarvis_service" not in referenced_names:
-                violations.append(
-                    f"{path.relative_to(APP_ROOT)}:{node.lineno}:{node.name}"
-                )
+                violations.append(f"{path.relative_to(APP_ROOT)}:{node.lineno}:{node.name}")
 
             if (
                 "require_jarvis_service" in referenced_names

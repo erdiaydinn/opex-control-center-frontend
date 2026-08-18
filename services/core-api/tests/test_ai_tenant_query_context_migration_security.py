@@ -17,18 +17,22 @@ async def test_tenant_query_context_schema_is_force_rls_and_least_privilege() ->
     try:
         async with engine.connect() as connection:
             relation = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT
                             relrowsecurity,
                             relforcerowsecurity
                         FROM pg_class
                         WHERE oid = 'ai_tenant_query_contexts'::regclass
                         """
+                        )
                     )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
             fk_delete_action = await connection.scalar(
                 text(
@@ -45,9 +49,10 @@ async def test_tenant_query_context_schema_is_force_rls_and_least_privilege() ->
                 fk_delete_action = fk_delete_action.decode("ascii")
 
             privileges = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT
                             has_table_privilege(
                                 'opex_runtime',
@@ -70,23 +75,30 @@ async def test_tenant_query_context_schema_is_force_rls_and_least_privilege() ->
                                 'DELETE'
                             ) AS can_delete
                         """
+                        )
                     )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
             policy = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT qual, with_check
                         FROM pg_policies
                         WHERE schemaname = 'public'
                           AND tablename = 'ai_tenant_query_contexts'
                           AND policyname = 'ai_tenant_query_context_isolation'
                         """
+                        )
                     )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
         assert relation["relrowsecurity"] is True
         assert relation["relforcerowsecurity"] is True

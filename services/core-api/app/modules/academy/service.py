@@ -153,9 +153,7 @@ async def update_progress(
     required_watch_percent = _required_watch_percent(target)
     watched_requirement_met = watched_percent >= required_watch_percent
     completed = bool(
-        payload.complete_requested
-        and progress_percent >= 90.0
-        and watched_requirement_met
+        payload.complete_requested and progress_percent >= 90.0 and watched_requirement_met
     )
     progress_status = "completed" if completed else "in_progress"
     row = await save_progress(

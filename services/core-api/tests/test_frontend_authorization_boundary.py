@@ -5,9 +5,7 @@ FRONTEND_ROOT = REPO_ROOT / "src"
 
 
 def _read(relative: str) -> str:
-    return (
-        FRONTEND_ROOT / relative
-    ).read_text(
+    return (FRONTEND_ROOT / relative).read_text(
         encoding="utf-8-sig",
         errors="strict",
     )
@@ -15,19 +13,12 @@ def _read(relative: str) -> str:
 
 def _frontend_sources():
     for path in FRONTEND_ROOT.rglob("*"):
-        if (
-            path.is_file()
-            and path.suffix
-            in {".js", ".jsx", ".ts", ".tsx"}
-        ):
+        if path.is_file() and path.suffix in {".js", ".jsx", ".ts", ".tsx"}:
             yield path
 
 
 def test_legacy_access_config_is_deleted() -> None:
-    assert not (
-        FRONTEND_ROOT /
-        "auth/accessConfig.js"
-    ).exists()
+    assert not (FRONTEND_ROOT / "auth/accessConfig.js").exists()
 
 
 def test_no_persistent_access_token_storage() -> None:
@@ -43,10 +34,7 @@ def test_no_persistent_access_token_storage() -> None:
         )
 
         for needle in forbidden:
-            assert needle not in text, (
-                f"{needle} reintroduced in "
-                f"{path.relative_to(REPO_ROOT)}"
-            )
+            assert needle not in text, f"{needle} reintroduced in {path.relative_to(REPO_ROOT)}"
 
 
 def test_token_store_is_memory_only() -> None:
@@ -68,10 +56,7 @@ def test_oidc_uses_code_flow_and_memory_user_store() -> None:
 
     # sessionStorage is allowed only for OIDC
     # transient PKCE/state correlation.
-    assert (
-        "new WebStorageStateStore"
-        in text
-    )
+    assert "new WebStorageStateStore" in text
 
 
 def test_frontend_cannot_generate_dev_tokens() -> None:
@@ -87,26 +72,16 @@ def test_frontend_cannot_generate_dev_tokens() -> None:
 def test_api_identity_is_bearer_only() -> None:
     text = _read("api/client.js")
 
-    assert (
-        'headers.set(\n'
-        '    "Authorization",'
-        in text
-    )
+    assert 'headers.set(\n    "Authorization",' in text
 
     for header in (
         "X-User-Email",
         "X-OPEX-User",
         "X-OPEX-Role",
     ):
-        assert (
-            f'headers.delete("{header}")'
-            in text
-        )
+        assert f'headers.delete("{header}")' in text
 
-        assert (
-            f'headers.set("{header}"'
-            not in text
-        )
+        assert f'headers.set("{header}"' not in text
 
 
 def test_protected_route_has_no_role_bypass() -> None:
@@ -134,10 +109,7 @@ def test_login_has_no_local_password_authority() -> None:
 
 
 def test_planogram_does_not_read_persistent_tokens() -> None:
-    text = _read(
-        "modules/planogram/"
-        "PlanogramStudio.jsx"
-    )
+    text = _read("modules/planogram/PlanogramStudio.jsx")
 
     # Non-sensitive UI preferences such as theme may use
     # localStorage. Authentication material may not.
@@ -159,10 +131,7 @@ def test_planogram_does_not_read_persistent_tokens() -> None:
 
 
 def test_dockos_has_no_local_identity_authority() -> None:
-    text = _read(
-        "modules/DockOS/"
-        "dockosPermissions.js"
-    )
+    text = _read("modules/DockOS/dockosPermissions.js")
 
     forbidden = (
         "accessConfig",
@@ -180,33 +149,16 @@ def test_dockos_has_no_local_identity_authority() -> None:
 
 
 def test_dockos_unknown_permissions_fail_closed() -> None:
-    text = _read(
-        "modules/DockOS/"
-        "dockosPermissions.js"
-    )
+    text = _read("modules/DockOS/dockosPermissions.js")
 
-    assert (
-        "Object.values(DOCKOS_FEATURES)"
-        in text
-    )
-    assert (
-        "Object.values(DOCKOS_ACTIONS)"
-        in text
-    )
-    assert (
-        "`feature:dockos:${featureKey}`"
-        in text
-    )
-    assert (
-        "`action:dockos:${actionKey}`"
-        in text
-    )
+    assert "Object.values(DOCKOS_FEATURES)" in text
+    assert "Object.values(DOCKOS_ACTIONS)" in text
+    assert "`feature:dockos:${featureKey}`" in text
+    assert "`action:dockos:${actionKey}`" in text
 
 
 def test_dockos_never_bypasses_gateway() -> None:
-    text = _read(
-        "modules/DockOS/dockosApi.js"
-    )
+    text = _read("modules/DockOS/dockosApi.js")
 
     assert ":8000" not in text
     assert "127.0.0.1" not in text
@@ -215,30 +167,19 @@ def test_dockos_never_bypasses_gateway() -> None:
     assert "X-OPEX-Role" not in text
     assert "scope_type" not in text
 
-    assert (
-        "authenticatedApiFetch"
-        in text
-    )
+    assert "authenticatedApiFetch" in text
 
 
 def test_browser_cannot_authorize_dockos_scope() -> None:
-    text = _read(
-        "modules/DockOS/dockosApi.js"
-    )
+    text = _read("modules/DockOS/dockosApi.js")
 
     # Browser may send ordinary business filters,
     # but not an authorization scope claim.
-    assert (
-        'params.set("scope_type"'
-        not in text
-    )
+    assert 'params.set("scope_type"' not in text
 
 
 def test_access_control_local_editor_is_removed() -> None:
-    text = _read(
-        "modules/access-control/"
-        "AccessControl.jsx"
-    )
+    text = _read("modules/access-control/AccessControl.jsx")
 
     forbidden = (
         "updateAccessConfig",
@@ -251,10 +192,7 @@ def test_access_control_local_editor_is_removed() -> None:
     for needle in forbidden:
         assert needle not in text
 
-    assert (
-        "Veritaban? Yetki Otoritesi"
-        in text
-    )
+    assert "Veritaban? Yetki Otoritesi" in text
 
 
 def test_spoofable_identity_headers_are_never_created() -> None:
@@ -264,9 +202,7 @@ def test_spoofable_identity_headers_are_never_created() -> None:
             errors="ignore",
         )
 
-        relative = path.relative_to(
-            REPO_ROOT
-        ).as_posix()
+        relative = path.relative_to(REPO_ROOT).as_posix()
 
         for header in (
             "X-User-Email",
@@ -278,27 +214,15 @@ def test_spoofable_identity_headers_are_never_created() -> None:
 
             # Only the central API client's
             # explicit deletion is permitted.
-            assert relative == (
-                "src/api/client.js"
-            )
+            assert relative == ("src/api/client.js")
 
-            assert (
-                f'headers.delete("{header}")'
-                in text
-            )
-
+            assert f'headers.delete("{header}")' in text
 
 
 def test_budget_intelligence_uses_authenticated_api_client() -> None:
-    text = _read(
-        "modules/budget-intelligence/"
-        "BudgetIntelligence.jsx"
-    )
+    text = _read("modules/budget-intelligence/BudgetIntelligence.jsx")
 
-    assert (
-        'from"../../api/client.js"'
-        in text
-    )
+    assert 'from"../../api/client.js"' in text
     assert "apiGet" in text
 
     forbidden = (
@@ -314,26 +238,16 @@ def test_budget_intelligence_uses_authenticated_api_client() -> None:
     )
 
     for needle in forbidden:
-        assert needle not in text, (
-            f"Budget frontend security bypass "
-            f"reintroduced: {needle}"
-        )
+        assert needle not in text, f"Budget frontend security bypass reintroduced: {needle}"
 
     assert "EMPTY_DATA" in text
     assert "setApiError" in text
 
 
-
 def test_dockos_has_no_synthetic_admin_authority() -> None:
-    permissions = _read(
-        "modules/DockOS/dockosPermissions.js"
-    )
-    dashboard = _read(
-        "modules/DockOS/DockOSDashboardBase.jsx"
-    )
-    banner = _read(
-        "modules/DockOS/DockOSPermissionBanner.jsx"
-    )
+    permissions = _read("modules/DockOS/dockosPermissions.js")
+    dashboard = _read("modules/DockOS/DockOSDashboardBase.jsx")
+    banner = _read("modules/DockOS/DockOSPermissionBanner.jsx")
 
     for text in (
         permissions,
@@ -342,16 +256,11 @@ def test_dockos_has_no_synthetic_admin_authority() -> None:
     ):
         assert "isAdmin" not in text
 
-    assert (
-        'canDockOSAction("approve") ||'
-        not in permissions
-    )
+    assert 'canDockOSAction("approve") ||' not in permissions
 
 
 def test_dockos_uncatalogued_privileged_screens_are_quarantined() -> None:
-    dashboard = _read(
-        "modules/DockOS/DockOSDashboardBase.jsx"
-    )
+    dashboard = _read("modules/DockOS/DockOSDashboardBase.jsx")
 
     components = (
         "PlanningPoUpload",
@@ -377,9 +286,7 @@ def test_dockos_uncatalogued_privileged_screens_are_quarantined() -> None:
 
 
 def test_dockos_remaining_tabs_use_exact_db_permissions() -> None:
-    dashboard = _read(
-        "modules/DockOS/DockOSDashboardBase.jsx"
-    )
+    dashboard = _read("modules/DockOS/DockOSDashboardBase.jsx")
 
     required = (
         'canDockOSFeature("supplierAppointments")',
@@ -397,11 +304,8 @@ def test_dockos_remaining_tabs_use_exact_db_permissions() -> None:
     assert "Gateway API" in dashboard
 
 
-
 def test_planogram_legacy_iframe_is_phase1_quarantined() -> None:
-    studio = _read(
-        "modules/planogram/PlanogramStudio.jsx"
-    )
+    studio = _read("modules/planogram/PlanogramStudio.jsx")
 
     forbidden = (
         "VITE_PLANAI_LEGACY_URL",
@@ -421,10 +325,7 @@ def test_planogram_legacy_iframe_is_phase1_quarantined() -> None:
     for value in forbidden:
         assert value not in studio
 
-    assert (
-        "Phase 1 Security Quarantine"
-        in studio
-    )
+    assert "Phase 1 Security Quarantine" in studio
 
 
 def test_frontend_never_posts_provider_bearer_to_child_window() -> None:
@@ -439,33 +340,20 @@ def test_frontend_never_posts_provider_bearer_to_child_window() -> None:
         if "postmessage" not in lowered:
             continue
 
-        assert (
-            "accesstoken" not in lowered
-        ), (
-            "Access token exposed through "
-            f"postMessage in {path.relative_to(REPO_ROOT)}"
+        assert "accesstoken" not in lowered, (
+            f"Access token exposed through postMessage in {path.relative_to(REPO_ROOT)}"
         )
 
-        assert (
-            "bearer" not in lowered
-        ), (
-            "Bearer credential exposed through "
-            f"postMessage in {path.relative_to(REPO_ROOT)}"
+        assert "bearer" not in lowered, (
+            f"Bearer credential exposed through postMessage in {path.relative_to(REPO_ROOT)}"
         )
 
 
 def test_planogram_has_no_legacy_cross_origin_auth_bridge() -> None:
-    module_root = (
-        FRONTEND_ROOT /
-        "modules/planogram"
-    )
+    module_root = FRONTEND_ROOT / "modules/planogram"
 
     for path in module_root.rglob("*"):
-        if (
-            not path.is_file()
-            or path.suffix
-            not in {".js", ".jsx", ".ts", ".tsx"}
-        ):
+        if not path.is_file() or path.suffix not in {".js", ".jsx", ".ts", ".tsx"}:
             continue
 
         text = path.read_text(

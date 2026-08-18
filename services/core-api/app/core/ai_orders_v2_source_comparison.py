@@ -60,9 +60,7 @@ FROM expected
 LEFT JOIN directive USING (field_path)
 ORDER BY source_table, field_path
 """.strip()
-SOURCE_COMPARISON_QUERY_SHA256 = hashlib.sha256(
-    SOURCE_COMPARISON_QUERY.encode("utf-8")
-).hexdigest()
+SOURCE_COMPARISON_QUERY_SHA256 = hashlib.sha256(SOURCE_COMPARISON_QUERY.encode("utf-8")).hexdigest()
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -117,18 +115,14 @@ class OrdersV2SourceComparisonObservation(BaseModel):
     observed_at: datetime
     collector_query_sha256: str = Field(pattern=SHA256_PATTERN)
     fields: tuple[OrdersV2SourceFieldObservation, ...]
-    candidate_source: Literal[
-        "curated_data_shared_coredata_business.orders"
-    ]
+    candidate_source: Literal["curated_data_shared_coredata_business.orders"]
     directive_source: Literal["curated_data_shared.orders"]
     live_bigquery_run_claimed: Literal[True]
     source_authority_decided: Literal[False]
     candidate_mutation_permitted: Literal[False]
     promotion_eligible: Literal[False]
     production_ready: Literal[False]
-    production_blocker: Literal[
-        "orders_v2_source_authority_review_required"
-    ]
+    production_blocker: Literal["orders_v2_source_authority_review_required"]
 
     @field_validator("observed_at")
     @classmethod
@@ -198,9 +192,7 @@ def collect_orders_v2_source_comparison(
             job_config=job_config,
             location=config.location,
         )
-        rows = tuple(
-            job.result(timeout=SOURCE_COMPARISON_TIMEOUT_SECONDS)
-        )
+        rows = tuple(job.result(timeout=SOURCE_COMPARISON_TIMEOUT_SECONDS))
     except Exception as exc:
         raise OrdersV2LiveSchemaCollectorResultError(
             "BigQuery Orders source comparison failed"
@@ -234,6 +226,4 @@ def collect_orders_v2_source_comparison(
             production_blocker=SOURCE_AUTHORITY_REVIEW_BLOCKER,
         )
     except ValueError as exc:
-        raise OrdersV2LiveSchemaCollectorResultError(
-            "source comparison matrix is invalid"
-        ) from exc
+        raise OrdersV2LiveSchemaCollectorResultError("source comparison matrix is invalid") from exc

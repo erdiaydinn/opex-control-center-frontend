@@ -62,9 +62,7 @@ async def load_query_context(
     return AiTenantQueryContextRecord(
         tenant_id=tenant_id,
         context=context,
-        record_fingerprint=(
-            ai_tenant_query_context_fingerprint(context)
-        ),
+        record_fingerprint=(ai_tenant_query_context_fingerprint(context)),
         updated_by="security-admin",
     )
 
@@ -156,9 +154,7 @@ async def test_production_not_ready_contract_blocks_before_any_authority_write(
         )
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "AI tool execution contract is not ready"
-    )
+    assert exc_info.value.detail == ("AI tool execution contract is not ready")
     assert redis.set_calls == 0
     assert redis.values == {}
 
@@ -214,9 +210,7 @@ async def test_readiness_withdrawal_burns_outstanding_v4_grant(
         )
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "AI tool execution contract is not ready"
-    )
+    assert exc_info.value.detail == ("AI tool execution contract is not ready")
     assert redis.values == {}
 
     monkeypatch.setattr(
@@ -233,6 +227,4 @@ async def test_readiness_withdrawal_burns_outstanding_v4_grant(
         )
 
     assert replay_info.value.status_code == 401
-    assert replay_info.value.detail == (
-        "AI tool grant authentication failed"
-    )
+    assert replay_info.value.detail == ("AI tool grant authentication failed")

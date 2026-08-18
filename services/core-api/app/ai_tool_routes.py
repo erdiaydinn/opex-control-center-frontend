@@ -41,9 +41,7 @@ router = APIRouter()
 router.include_router(ai_data_scope_admin_router)
 router.include_router(ai_tenant_query_context_router)
 
-_ai_tool_grant_store = RedisAiToolGrantStore(
-    redis_client
-)
+_ai_tool_grant_store = RedisAiToolGrantStore(redis_client)
 
 
 class AiToolGrantIssueRequest(BaseModel):
@@ -197,22 +195,12 @@ async def issue_ai_tool_grant(
         grant_token=issued.token.get_secret_value(),
         expires_in_seconds=issued.expires_in_seconds,
         tool=capability.tool,
-        data_scope_fingerprint=(
-            capability.data_scope_fingerprint
-        ),
-        tenant_query_context_fingerprint=(
-            binding.tenant_query_context_fingerprint
-        ),
+        data_scope_fingerprint=(capability.data_scope_fingerprint),
+        tenant_query_context_fingerprint=(binding.tenant_query_context_fingerprint),
         query_contract_id=binding.query_contract_id,
-        query_contract_revision=(
-            binding.query_contract_revision
-        ),
-        query_contract_fingerprint=(
-            binding.query_contract_fingerprint
-        ),
-        execution_scope_fingerprint=(
-            binding.execution_scope_fingerprint
-        ),
+        query_contract_revision=(binding.query_contract_revision),
+        query_contract_fingerprint=(binding.query_contract_fingerprint),
+        execution_scope_fingerprint=(binding.execution_scope_fingerprint),
     )
 
 
@@ -232,13 +220,11 @@ async def authorize_internal_ai_tool_execution(
     """Consume a user grant and return one trusted execution context."""
 
     try:
-        authorization = await (
-            _ai_tool_grant_store.consume_authorized_invocation(
-                token=payload.grant_token,
-                tool=payload.tool,
-                arguments=payload.arguments,
-                reason=payload.reason,
-            )
+        authorization = await _ai_tool_grant_store.consume_authorized_invocation(
+            token=payload.grant_token,
+            tool=payload.tool,
+            arguments=payload.arguments,
+            reason=payload.reason,
         )
     except (
         AiToolGrantInvalid,
@@ -275,41 +261,19 @@ async def authorize_internal_ai_tool_execution(
         status_code=status.HTTP_200_OK,
         action="ai_tool_execution_authorized",
         metadata={
-            "service_subject": (
-                jarvis_service.service_subject
-            ),
+            "service_subject": (jarvis_service.service_subject),
             "tool": binding.tool,
-            "arguments_sha256": (
-                binding.arguments_sha256
-            ),
+            "arguments_sha256": (binding.arguments_sha256),
             "reason_sha256": binding.reason_sha256,
-            "authorization_fingerprint": (
-                binding.authorization_fingerprint
-            ),
-            "data_scope_fingerprint": (
-                binding.data_scope_fingerprint
-            ),
-            "data_scope_store_count": len(
-                binding.data_scope.store_names
-            ),
-            "tenant_query_context_fingerprint": (
-                binding.tenant_query_context_fingerprint
-            ),
-            "tenant_entity_count": len(
-                authorization.tenant_entity_ids
-            ),
-            "query_contract_id": (
-                binding.query_contract_id
-            ),
-            "query_contract_revision": (
-                binding.query_contract_revision
-            ),
-            "query_contract_fingerprint": (
-                binding.query_contract_fingerprint
-            ),
-            "execution_scope_fingerprint": (
-                binding.execution_scope_fingerprint
-            ),
+            "authorization_fingerprint": (binding.authorization_fingerprint),
+            "data_scope_fingerprint": (binding.data_scope_fingerprint),
+            "data_scope_store_count": len(binding.data_scope.store_names),
+            "tenant_query_context_fingerprint": (binding.tenant_query_context_fingerprint),
+            "tenant_entity_count": len(authorization.tenant_entity_ids),
+            "query_contract_id": (binding.query_contract_id),
+            "query_contract_revision": (binding.query_contract_revision),
+            "query_contract_fingerprint": (binding.query_contract_fingerprint),
+            "execution_scope_fingerprint": (binding.execution_scope_fingerprint),
         },
     )
 
@@ -330,28 +294,14 @@ async def authorize_internal_ai_tool_execution(
         tool=binding.tool,
         granted_scopes=tuple(sorted(scopes)),
         data_scope=binding.data_scope,
-        data_scope_fingerprint=(
-            binding.data_scope_fingerprint
-        ),
-        tenant_entity_ids=(
-            authorization.tenant_entity_ids
-        ),
-        tenant_query_context_fingerprint=(
-            binding.tenant_query_context_fingerprint
-        ),
+        data_scope_fingerprint=(binding.data_scope_fingerprint),
+        tenant_entity_ids=(authorization.tenant_entity_ids),
+        tenant_query_context_fingerprint=(binding.tenant_query_context_fingerprint),
         query_contract_id=binding.query_contract_id,
-        query_contract_revision=(
-            binding.query_contract_revision
-        ),
-        query_contract_fingerprint=(
-            binding.query_contract_fingerprint
-        ),
-        execution_scope_fingerprint=(
-            binding.execution_scope_fingerprint
-        ),
-        authorization_fingerprint=(
-            binding.authorization_fingerprint
-        ),
+        query_contract_revision=(binding.query_contract_revision),
+        query_contract_fingerprint=(binding.query_contract_fingerprint),
+        execution_scope_fingerprint=(binding.execution_scope_fingerprint),
+        authorization_fingerprint=(binding.authorization_fingerprint),
         arguments_sha256=binding.arguments_sha256,
         reason_sha256=binding.reason_sha256,
     )

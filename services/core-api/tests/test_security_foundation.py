@@ -39,9 +39,7 @@ def test_runtime_and_migration_credentials_must_differ() -> None:
 
 
 def test_development_token_carries_tenant_context() -> None:
-    principal = _decode_development_token(
-        f"dev.user-1.{TENANT_ID}.inventory_admin,viewer"
-    )
+    principal = _decode_development_token(f"dev.user-1.{TENANT_ID}.inventory_admin,viewer")
 
     assert principal.subject == "user-1"
     assert principal.tenant_id == TENANT_ID
@@ -178,7 +176,6 @@ async def test_suspended_tenant_is_denied(monkeypatch) -> None:
     assert exc_info.value.status_code == 403
 
 
-
 def test_production_requires_database_secret_file(monkeypatch) -> None:
     monkeypatch.delenv("OPEX_DATABASE_URL", raising=False)
     monkeypatch.delenv("OPEX_MIGRATION_DATABASE_URL", raising=False)
@@ -219,9 +216,7 @@ def test_production_reads_runtime_database_secret_file(
         database_url_file=str(secret_file),
     )
 
-    assert settings.database_url.startswith(
-        "postgresql+asyncpg://runtime:"
-    )
+    assert settings.database_url.startswith("postgresql+asyncpg://runtime:")
 
 
 def test_production_rejects_database_credentials_in_environment(
@@ -256,7 +251,6 @@ def test_production_rejects_database_credentials_in_environment(
         )
 
 
-
 @pytest.mark.asyncio
 async def test_database_permissions_are_authoritative_and_fail_closed(
     monkeypatch,
@@ -264,9 +258,7 @@ async def test_database_permissions_are_authoritative_and_fail_closed(
     async def fake_resolve_principal_access(**kwargs):
         return {
             "tenant_status": "active",
-            "membership_id": (
-                "00000000-0000-0000-0000-000000000099"
-            ),
+            "membership_id": ("00000000-0000-0000-0000-000000000099"),
             "membership_status": "active",
             "roles": ("viewer",),
             "permission_assignments": (
@@ -320,9 +312,7 @@ async def test_database_permissions_are_authoritative_and_fail_closed(
     assert "super_admin" not in principal.roles
 
     # Only the known DB permission survives.
-    assert principal.permissions == (
-        "module:admin_access:view",
-    )
+    assert principal.permissions == ("module:admin_access:view",)
 
     # Unknown permission and malformed scope are fail-closed.
     assert len(principal.permission_assignments) == 2
@@ -348,9 +338,7 @@ async def test_context_returns_only_db_authoritative_permissions(
     async def fake_resolve_principal_access(**kwargs):
         return {
             "tenant_status": "active",
-            "membership_id": (
-                "00000000-0000-0000-0000-000000000099"
-            ),
+            "membership_id": ("00000000-0000-0000-0000-000000000099"),
             "membership_status": "active",
             "roles": ("viewer",),
             "permission_assignments": (
@@ -400,9 +388,7 @@ async def test_context_returns_only_db_authoritative_permissions(
 
     assert payload["roles"] == ("viewer",)
 
-    assert payload["permissions"] == (
-        "module:admin_access:view",
-    )
+    assert payload["permissions"] == ("module:admin_access:view",)
 
     assert payload["permission_assignments"] == [
         {
@@ -418,9 +404,7 @@ async def test_context_returns_only_db_authoritative_permissions(
 
 
 def test_principal_starts_without_token_permissions() -> None:
-    principal = security._decode_development_token(
-        f"dev.user-1.{TENANT_ID}.super_admin"
-    )
+    principal = security._decode_development_token(f"dev.user-1.{TENANT_ID}.super_admin")
 
     # Authentication token may provide an initial role claim in
     # development mode, but it can never manufacture application

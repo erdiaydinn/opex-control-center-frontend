@@ -130,10 +130,7 @@ def test_context_fingerprint_is_stable_and_sensitive() -> None:
 
 def test_query_context_routes_require_super_admin() -> None:
     for route in query_routes.router.routes:
-        dependencies = {
-            dependency.call
-            for dependency in route.dependant.dependencies
-        }
+        dependencies = {dependency.call for dependency in route.dependant.dependencies}
         assert require_super_admin in dependencies
 
 
@@ -170,15 +167,11 @@ async def test_get_absent_context_returns_cas_fingerprint(
         fake_get,
     )
 
-    response = await query_routes.get_tenant_query_context(
-        principal()
-    )
+    response = await query_routes.get_tenant_query_context(principal())
 
     assert response.configured is False
     assert response.context is None
-    assert response.record_fingerprint == (
-        ABSENT_QUERY_CONTEXT_FINGERPRINT
-    )
+    assert response.record_fingerprint == (ABSENT_QUERY_CONTEXT_FINGERPRINT)
 
 
 @pytest.mark.asyncio
@@ -195,9 +188,7 @@ async def test_get_invalid_persisted_context_fails_closed(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await query_routes.get_tenant_query_context(
-            principal()
-        )
+        await query_routes.get_tenant_query_context(principal())
 
     assert exc_info.value.status_code == 503
 
@@ -233,9 +224,7 @@ async def test_put_uses_principal_tenant_and_actor_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected_context = context()
-    expected_fingerprint = ai_tenant_query_context_fingerprint(
-        expected_context
-    )
+    expected_fingerprint = ai_tenant_query_context_fingerprint(expected_context)
 
     async def fake_put(**kwargs: object):
         assert kwargs["tenant_id"] == str(TENANT)
@@ -257,9 +246,7 @@ async def test_put_uses_principal_tenant_and_actor_only(
 
     response = await query_routes.put_tenant_query_context(
         query_routes.PutAiTenantQueryContextRequest(
-            expected_record_fingerprint=(
-                ABSENT_QUERY_CONTEXT_FINGERPRINT
-            ),
+            expected_record_fingerprint=(ABSENT_QUERY_CONTEXT_FINGERPRINT),
             context=expected_context,
         ),
         request(),

@@ -38,11 +38,7 @@ def _service_block(text: str, service: str) -> str:
     collected = []
 
     for line in lines[start:]:
-        if (
-            line.startswith("  ")
-            and not line.startswith("    ")
-            and line.rstrip().endswith(":")
-        ):
+        if line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
             break
 
         collected.append(line)
@@ -72,10 +68,7 @@ def test_internal_services_are_never_host_published() -> None:
             if not block:
                 continue
 
-            assert not any(
-                line.strip() == "ports:"
-                for line in block.splitlines()
-            ), (
+            assert not any(line.strip() == "ports:" for line in block.splitlines()), (
                 f"{service} must not publish host ports "
                 f"in {compose_name}; use Docker internal "
                 f"network + gateway only"
@@ -83,9 +76,7 @@ def test_internal_services_are_never_host_published() -> None:
 
 
 def test_core_api_is_internal_only() -> None:
-    text = _read(
-        "docker-compose.platform.yml"
-    )
+    text = _read("docker-compose.platform.yml")
 
     block = _service_block(
         text,
@@ -98,9 +89,7 @@ def test_core_api_is_internal_only() -> None:
 
 
 def test_gateway_is_the_platform_ingress() -> None:
-    text = _read(
-        "docker-compose.platform.yml"
-    )
+    text = _read("docker-compose.platform.yml")
 
     gateway = _service_block(
         text,
@@ -110,21 +99,13 @@ def test_gateway_is_the_platform_ingress() -> None:
     assert gateway
     assert "ports:" in gateway
 
-    assert (
-        '${OPEX_GATEWAY_PORT:-8080}:80'
-        in gateway
-    )
+    assert "${OPEX_GATEWAY_PORT:-8080}:80" in gateway
 
 
 def test_nginx_api_proxy_targets_internal_core_api() -> None:
-    nginx = _read(
-        "infra/nginx/platform.conf"
-    )
+    nginx = _read("infra/nginx/platform.conf")
 
-    assert (
-        "proxy_pass http://core-api:8000/;"
-        in nginx
-    )
+    assert "proxy_pass http://core-api:8000/;" in nginx
 
     forbidden = (
         "proxy_pass http://127.0.0.1:8000",
@@ -139,11 +120,7 @@ def test_frontend_source_cannot_target_core_api_port() -> None:
     src_root = REPO_ROOT / "src"
 
     for path in src_root.rglob("*"):
-        if (
-            not path.is_file()
-            or path.suffix
-            not in {".js", ".jsx", ".ts", ".tsx"}
-        ):
+        if not path.is_file() or path.suffix not in {".js", ".jsx", ".ts", ".tsx"}:
             continue
 
         text = path.read_text(
@@ -152,15 +129,12 @@ def test_frontend_source_cannot_target_core_api_port() -> None:
         )
 
         assert ":8000" not in text, (
-            "Frontend must never bypass gateway: "
-            f"{path.relative_to(REPO_ROOT)}"
+            f"Frontend must never bypass gateway: {path.relative_to(REPO_ROOT)}"
         )
 
 
 def test_database_and_redis_are_not_host_published() -> None:
-    text = _read(
-        "docker-compose.platform.yml"
-    )
+    text = _read("docker-compose.platform.yml")
 
     for service in (
         "postgres",

@@ -51,9 +51,7 @@ async def test_first_write_database_failure_is_not_misreported_as_conflict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connection = FailingConnection()
-    fake_engine = SimpleNamespace(
-        begin=lambda: BeginContext(connection)
-    )
+    fake_engine = SimpleNamespace(begin=lambda: BeginContext(connection))
     monkeypatch.setattr(query_store, "engine", fake_engine)
 
     context = AiTenantQueryContext(
@@ -65,9 +63,7 @@ async def test_first_write_database_failure_is_not_misreported_as_conflict(
     with pytest.raises(RuntimeError, match="database unavailable"):
         await put_ai_tenant_query_context(
             tenant_id="11111111-1111-4111-8111-111111111111",
-            expected_record_fingerprint=(
-                ABSENT_QUERY_CONTEXT_FINGERPRINT
-            ),
+            expected_record_fingerprint=(ABSENT_QUERY_CONTEXT_FINGERPRINT),
             context=context,
             actor_subject="admin-1",
             request_id="db-failure-test",

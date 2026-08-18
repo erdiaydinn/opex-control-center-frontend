@@ -17,9 +17,7 @@ from app.core.ai_orders_v2_schema_attestation import (
     build_orders_v2_schema_attestation_candidate,
 )
 
-EAY_BQ_SCHEMA_ATTESTATION_ENABLED_ENV = (
-    "EAY_BQ_SCHEMA_ATTESTATION_ENABLED"
-)
+EAY_BQ_SCHEMA_ATTESTATION_ENABLED_ENV = "EAY_BQ_SCHEMA_ATTESTATION_ENABLED"
 
 
 class OrdersV2SchemaAttestationDisabled(RuntimeError):
@@ -30,12 +28,7 @@ def run_orders_v2_schema_attestation(
     environ: Mapping[str, str] | None = None,
 ) -> OrdersV2SchemaAttestationArtifact:
     source = os.environ if environ is None else environ
-    if (
-        source.get(EAY_BQ_SCHEMA_ATTESTATION_ENABLED_ENV, "")
-        .strip()
-        .lower()
-        != "true"
-    ):
+    if source.get(EAY_BQ_SCHEMA_ATTESTATION_ENABLED_ENV, "").strip().lower() != "true":
         raise OrdersV2SchemaAttestationDisabled(
             "live orders schema attestation is not explicitly enabled"
         )
@@ -46,9 +39,7 @@ def run_orders_v2_schema_attestation(
         client=client,
         config=config,
     )
-    return build_orders_v2_schema_attestation_candidate(
-        observation
-    )
+    return build_orders_v2_schema_attestation_candidate(observation)
 
 
 def render_orders_v2_schema_attestation(

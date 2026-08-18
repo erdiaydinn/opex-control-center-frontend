@@ -68,7 +68,9 @@ def upgrade() -> None:
             f"WITH CHECK (budget_tenant_allows(tenant_id) AND budget_scope_allows({column}))"
         )
     op.execute(f"GRANT USAGE ON SCHEMA public TO {RUNTIME_ROLE}")
-    op.execute("GRANT SELECT,INSERT,UPDATE ON TABLE " + ",".join(ALL_TABLES) + f" TO {RUNTIME_ROLE}")
+    op.execute(
+        "GRANT SELECT,INSERT,UPDATE ON TABLE " + ",".join(ALL_TABLES) + f" TO {RUNTIME_ROLE}"
+    )
     op.execute("REVOKE DELETE ON TABLE " + ",".join(ALL_TABLES) + f" FROM {RUNTIME_ROLE}")
     op.execute(f"REVOKE UPDATE ON TABLE approval,actual,financial_event FROM {RUNTIME_ROLE}")
 

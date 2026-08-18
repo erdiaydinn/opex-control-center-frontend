@@ -53,9 +53,7 @@ def _normalized_base_url(
     value = base_url.strip().rstrip("/")
     parsed = urlsplit(value)
     hostname = (parsed.hostname or "").lower()
-    normalized_trusted_hosts = {
-        host.strip().lower() for host in trusted_hosts if host.strip()
-    }
+    normalized_trusted_hosts = {host.strip().lower() for host in trusted_hosts if host.strip()}
 
     if (
         parsed.scheme not in {"http", "https"}

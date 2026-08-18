@@ -53,17 +53,28 @@ def upgrade() -> None:
         sa.Column("requested_by", sa.String(length=255), nullable=False),
         sa.Column("idempotency_key", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False, server_default="queued"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "mission_id", "location_id"],
-            ["field_mission_targets.tenant_id", "field_mission_targets.mission_id", "field_mission_targets.location_id"],
+            [
+                "field_mission_targets.tenant_id",
+                "field_mission_targets.mission_id",
+                "field_mission_targets.location_id",
+            ],
             ondelete="RESTRICT",
             name="fk_field_notification_target",
         ),
         sa.CheckConstraint("kind IN ('reminder','escalation')", name="ck_field_notification_kind"),
         sa.CheckConstraint("status = 'queued'", name="ck_field_notification_status"),
         sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_field_notification_intents"),
-        sa.UniqueConstraint("tenant_id", "idempotency_key", name="uq_field_notification_intent_idempotency"),
+        sa.UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_field_notification_intent_idempotency"
+        ),
     )
     op.create_index(
         "ix_field_notification_mission_created",
@@ -80,13 +91,13 @@ def upgrade() -> None:
         "FOR EACH ROW EXECUTE FUNCTION prevent_field_evidence_mutation()"
     )
 
-    op.execute(
-        "GRANT SELECT, INSERT ON TABLE field_notification_intents TO " + RUNTIME_ROLE
-    )
+    op.execute("GRANT SELECT, INSERT ON TABLE field_notification_intents TO " + RUNTIME_ROLE)
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS field_notification_intents_append_only ON field_notification_intents")
+    op.execute(
+        "DROP TRIGGER IF EXISTS field_notification_intents_append_only ON field_notification_intents"
+    )
     op.drop_table("field_notification_intents")
     op.drop_constraint(
         "uq_field_evidence_client_submission",

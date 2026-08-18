@@ -104,9 +104,7 @@ def _validate_project(value: str) -> None:
         or any(char.isspace() for char in value)
         or any(char in value for char in ("`", ";", "/", "\\"))
     ):
-        raise OrdersV2LiveSchemaCollectorConfigError(
-            "EAY_BQ_PROJECT is missing or unsafe"
-        )
+        raise OrdersV2LiveSchemaCollectorConfigError("EAY_BQ_PROJECT is missing or unsafe")
 
 
 def _validate_location(value: str) -> None:
@@ -117,9 +115,7 @@ def _validate_location(value: str) -> None:
         or any(char.isspace() for char in value)
         or any(char in value for char in ("`", ";", "/", "\\"))
     ):
-        raise OrdersV2LiveSchemaCollectorConfigError(
-            "EAY_BQ_LOCATION is unsafe"
-        )
+        raise OrdersV2LiveSchemaCollectorConfigError("EAY_BQ_LOCATION is unsafe")
 
 
 def _load_bigquery_module() -> Any:
@@ -172,16 +168,12 @@ def _row_to_mapping(row: Any) -> dict[str, Any]:
     if callable(items):
         return dict(items())
 
-    raise OrdersV2LiveSchemaCollectorResultError(
-        "BigQuery metadata row is not mapping-compatible"
-    )
+    raise OrdersV2LiveSchemaCollectorResultError("BigQuery metadata row is not mapping-compatible")
 
 
 def _materialize_rows(result: Any) -> tuple[Any, ...]:
     if isinstance(result, (str, bytes, bytearray)):
-        raise OrdersV2LiveSchemaCollectorResultError(
-            "BigQuery metadata result is not row-iterable"
-        )
+        raise OrdersV2LiveSchemaCollectorResultError("BigQuery metadata result is not row-iterable")
 
     if not isinstance(result, Sequence):
         try:
@@ -213,11 +205,7 @@ def collect_orders_v2_schema_observation(
         )
 
     client_location_raw = getattr(client, "location", None)
-    client_location = (
-        str(client_location_raw).strip()
-        if client_location_raw is not None
-        else None
-    )
+    client_location = str(client_location_raw).strip() if client_location_raw is not None else None
     if client_location != config.location:
         raise OrdersV2LiveSchemaCollectorConfigError(
             "BigQuery client location does not match EAY_BQ_LOCATION"
@@ -232,9 +220,7 @@ def collect_orders_v2_schema_observation(
             job_config=job_config,
             location=config.location,
         )
-        rows = _materialize_rows(
-            job.result(timeout=SCHEMA_COLLECTOR_TIMEOUT_SECONDS)
-        )
+        rows = _materialize_rows(job.result(timeout=SCHEMA_COLLECTOR_TIMEOUT_SECONDS))
     except OrdersV2LiveSchemaCollectorError:
         raise
     except Exception as exc:

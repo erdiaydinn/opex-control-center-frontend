@@ -65,15 +65,9 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(
-        f"GRANT USAGE ON SCHEMA public TO {BACKUP_ROLE}"
-    )
-    op.execute(
-        f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {BACKUP_ROLE}"
-    )
-    op.execute(
-        f"GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO {BACKUP_ROLE}"
-    )
+    op.execute(f"GRANT USAGE ON SCHEMA public TO {BACKUP_ROLE}")
+    op.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {BACKUP_ROLE}")
+    op.execute(f"GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO {BACKUP_ROLE}")
 
     op.execute(
         f"""
@@ -113,15 +107,9 @@ def downgrade() -> None:
         """
     )
 
-    op.execute(
-        f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {BACKUP_ROLE}"
-    )
-    op.execute(
-        f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {BACKUP_ROLE}"
-    )
-    op.execute(
-        f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {BACKUP_ROLE}"
-    )
+    op.execute(f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {BACKUP_ROLE}")
+    op.execute(f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {BACKUP_ROLE}")
+    op.execute(f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {BACKUP_ROLE}")
 
     op.execute(
         f"""

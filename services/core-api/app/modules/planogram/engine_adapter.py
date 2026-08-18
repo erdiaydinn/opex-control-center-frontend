@@ -29,9 +29,7 @@ def _candidate_roots() -> tuple[Path, ...]:
 
     # Source checkout: services/core-api/app/modules/planogram -> repository root.
     with suppress(IndexError):
-        candidates.append(
-            Path(__file__).resolve().parents[5] / "apps" / "planai" / "backend"
-        )
+        candidates.append(Path(__file__).resolve().parents[5] / "apps" / "planai" / "backend")
 
     # Immutable Core API image target.
     candidates.append(Path("/opt/eay/planai"))
@@ -139,9 +137,7 @@ def generate_preview(
     _, _, _, physical_engine = _load_modules()
     generator = getattr(physical_engine, "generate_production_plan", None)
     if not callable(generator):
-        raise PlanogramEngineUnavailable(
-            "Canonical production Planogram entrypoint is unavailable"
-        )
+        raise PlanogramEngineUnavailable("Canonical production Planogram entrypoint is unavailable")
 
     result = generator(products, layout, store_dna, mode=mode)
     if not isinstance(result, dict):
@@ -164,9 +160,7 @@ def generate_optimized_preview(
     optimizer = _load_optimizer()
     optimize = getattr(optimizer, "optimize_production_plan", None)
     if not callable(optimize):
-        raise PlanogramEngineUnavailable(
-            "Canonical Planogram optimizer entrypoint is unavailable"
-        )
+        raise PlanogramEngineUnavailable("Canonical Planogram optimizer entrypoint is unavailable")
     result = optimize(products, layout, store_dna, mode=mode)
     if not isinstance(result, dict) or not isinstance(result.get("optimizer"), dict):
         raise PlanogramEngineUnavailable("Canonical Planogram optimizer returned an invalid result")

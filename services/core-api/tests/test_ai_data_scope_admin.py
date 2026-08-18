@@ -64,10 +64,7 @@ def test_admin_routes_require_super_admin() -> None:
     assert admin_routes.router.routes
 
     for route in admin_routes.router.routes:
-        dependencies = {
-            dependency.call
-            for dependency in route.dependant.dependencies
-        }
+        dependencies = {dependency.call for dependency in route.dependant.dependencies}
         assert require_super_admin in dependencies
 
 
@@ -103,9 +100,7 @@ def test_update_model_rejects_invalid_fingerprint_and_scope() -> None:
         },
     ):
         with pytest.raises(ValidationError):
-            admin_routes.UpdateAiDataScopeAssignmentRequest.model_validate(
-                payload
-            )
+            admin_routes.UpdateAiDataScopeAssignmentRequest.model_validate(payload)
 
 
 @pytest.mark.asyncio
@@ -128,9 +123,7 @@ async def test_listing_does_not_trust_legacy_empty_scope(
                 is_system=True,
                 permission_key=OPS_PERMISSION,
                 raw_scope=empty_raw,
-                record_fingerprint=permission_scope_record_fingerprint(
-                    empty_raw
-                ),
+                record_fingerprint=permission_scope_record_fingerprint(empty_raw),
             ),
             AiDataScopeAssignmentRecord(
                 role_key="ops_admin",
@@ -138,9 +131,7 @@ async def test_listing_does_not_trust_legacy_empty_scope(
                 is_system=False,
                 permission_key=OPS_PERMISSION,
                 raw_scope=valid_raw,
-                record_fingerprint=permission_scope_record_fingerprint(
-                    valid_raw
-                ),
+                record_fingerprint=permission_scope_record_fingerprint(valid_raw),
             ),
         )
 
@@ -150,9 +141,7 @@ async def test_listing_does_not_trust_legacy_empty_scope(
         fake_list,
     )
 
-    response = await admin_routes.get_ai_data_scope_assignments(
-        principal()
-    )
+    response = await admin_routes.get_ai_data_scope_assignments(principal())
 
     assert response.count == 2
     assert response.items[0].status == "unconfigured"

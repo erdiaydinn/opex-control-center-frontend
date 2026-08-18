@@ -37,8 +37,7 @@ def validate_external_identity(
     required = required_by_entity.get(entity_type, ())
     missing = [field for field in required if not normalized.get(field)]
     if missing:
-        return (
-            f"{source_system} {entity_type} requires canonical external identity: "
-            + ", ".join(missing)
+        return f"{source_system} {entity_type} requires canonical external identity: " + ", ".join(
+            missing
         )
     return None

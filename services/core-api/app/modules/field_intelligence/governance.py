@@ -4,7 +4,6 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -19,7 +18,9 @@ class FieldGovernanceError(ValueError):
 
 
 def _fingerprint(value: object) -> str:
-    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    payload = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -57,7 +58,9 @@ async def retire_template_version(
             },
         )
         if active:
-            raise FieldGovernanceError("template version cannot retire while an active mission uses it")
+            raise FieldGovernanceError(
+                "template version cannot retire while an active mission uses it"
+            )
         result = await connection.execute(
             text(
                 """
@@ -130,8 +133,12 @@ async def create_recurrence_rule(
             {"tenant_id": tenant_id, "mission_id": mission_id, "allowed_ids": allowed},
         )
         mission_row = mission.mappings().first()
-        if mission_row is None or int(mission_row["total_targets"]) != int(mission_row["authorized_targets"]):
-            raise FieldGovernanceError("recurrence requires authority over every frozen mission target")
+        if mission_row is None or int(mission_row["total_targets"]) != int(
+            mission_row["authorized_targets"]
+        ):
+            raise FieldGovernanceError(
+                "recurrence requires authority over every frozen mission target"
+            )
 
         await connection.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
@@ -250,7 +257,11 @@ async def exempt_target(
     normalized_reason = reason.strip()
     if not normalized_reason:
         raise FieldGovernanceError("target exemption requires a reason")
-    evidence_hash = hashlib.sha256(evidence_ref.strip().encode("utf-8")).hexdigest() if evidence_ref and evidence_ref.strip() else None
+    evidence_hash = (
+        hashlib.sha256(evidence_ref.strip().encode("utf-8")).hexdigest()
+        if evidence_ref and evidence_ref.strip()
+        else None
+    )
     fingerprint = _fingerprint(
         {
             "tenant_id": tenant_id,

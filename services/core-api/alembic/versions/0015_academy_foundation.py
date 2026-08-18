@@ -558,7 +558,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS academy_learning_events_append_only ON academy_learning_events")
+    op.execute(
+        "DROP TRIGGER IF EXISTS academy_learning_events_append_only ON academy_learning_events"
+    )
     op.execute("DROP FUNCTION IF EXISTS prevent_academy_learning_event_mutation()")
     for table_name in reversed(ACADEMY_TABLES):
         op.execute(f'DROP TABLE IF EXISTS "{table_name}" CASCADE')

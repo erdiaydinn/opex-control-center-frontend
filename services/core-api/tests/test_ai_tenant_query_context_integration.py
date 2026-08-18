@@ -105,9 +105,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
                 slug=f"query-context-b-{tenant_b.hex}",
             )
 
-        assert await get_ai_tenant_query_context(
-            tenant_id=str(tenant_a)
-        ) is None
+        assert await get_ai_tenant_query_context(tenant_id=str(tenant_a)) is None
 
         with pytest.raises(AiTenantQueryContextConflict):
             await put_ai_tenant_query_context(
@@ -123,9 +121,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
 
         created_a = await put_ai_tenant_query_context(
             tenant_id=str(tenant_a),
-            expected_record_fingerprint=(
-                ABSENT_QUERY_CONTEXT_FINGERPRINT
-            ),
+            expected_record_fingerprint=(ABSENT_QUERY_CONTEXT_FINGERPRINT),
             context=context(
                 entity_a,
                 source_reference=source_a,
@@ -135,9 +131,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         )
         created_b = await put_ai_tenant_query_context(
             tenant_id=str(tenant_b),
-            expected_record_fingerprint=(
-                ABSENT_QUERY_CONTEXT_FINGERPRINT
-            ),
+            expected_record_fingerprint=(ABSENT_QUERY_CONTEXT_FINGERPRINT),
             context=context(
                 entity_b,
                 source_reference=source_b,
@@ -149,12 +143,8 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         assert created_a.changed is True
         assert created_b.changed is True
 
-        record_a = await get_ai_tenant_query_context(
-            tenant_id=str(tenant_a)
-        )
-        record_b = await get_ai_tenant_query_context(
-            tenant_id=str(tenant_b)
-        )
+        record_a = await get_ai_tenant_query_context(tenant_id=str(tenant_a))
+        record_b = await get_ai_tenant_query_context(tenant_id=str(tenant_b))
         assert record_a is not None
         assert record_b is not None
         assert record_a.context.entity_ids == (entity_a,)
@@ -163,21 +153,26 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         async with runtime_engine.begin() as connection:
             await set_tenant_context(connection, tenant_a)
             visible = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT tenant_id, entity_ids
                         FROM ai_tenant_query_contexts
                         ORDER BY tenant_id
                         """
+                        )
                     )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
             audit = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT data
                         FROM audit_events
                         WHERE tenant_id = :tenant_id
@@ -185,10 +180,13 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
                         ORDER BY created_at DESC
                         LIMIT 1
                         """
-                    ),
-                    {"tenant_id": tenant_a},
+                        ),
+                        {"tenant_id": tenant_a},
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
 
         assert len(visible) == 1
         assert visible[0]["tenant_id"] == tenant_a
@@ -208,9 +206,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         with pytest.raises(AiTenantQueryContextConflict):
             await put_ai_tenant_query_context(
                 tenant_id=str(tenant_a),
-                expected_record_fingerprint=(
-                    ABSENT_QUERY_CONTEXT_FINGERPRINT
-                ),
+                expected_record_fingerprint=(ABSENT_QUERY_CONTEXT_FINGERPRINT),
                 context=context(
                     entity_a,
                     source_reference=source_a,
@@ -221,9 +217,7 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
 
         no_op = await put_ai_tenant_query_context(
             tenant_id=str(tenant_a),
-            expected_record_fingerprint=(
-                record_a.record_fingerprint
-            ),
+            expected_record_fingerprint=(record_a.record_fingerprint),
             context=record_a.context,
             actor_subject="admin-a",
             request_id="query-context-noop",
@@ -262,21 +256,15 @@ async def test_query_context_is_rls_bound_concurrency_safe_and_audited(
         with pytest.raises(RuntimeError, match="audit unavailable"):
             await put_ai_tenant_query_context(
                 tenant_id=str(tenant_a),
-                expected_record_fingerprint=(
-                    record_a.record_fingerprint
-                ),
+                expected_record_fingerprint=(record_a.record_fingerprint),
                 context=changed_context,
                 actor_subject="admin-a",
                 request_id="query-context-audit-fail",
             )
 
-        after_failure = await get_ai_tenant_query_context(
-            tenant_id=str(tenant_a)
-        )
+        after_failure = await get_ai_tenant_query_context(tenant_id=str(tenant_a))
         assert after_failure is not None
-        assert after_failure.record_fingerprint == (
-            record_a.record_fingerprint
-        )
+        assert after_failure.record_fingerprint == (record_a.record_fingerprint)
         assert after_failure.context == record_a.context
 
         # The runtime role intentionally has no DELETE on the authority table.

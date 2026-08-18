@@ -28,12 +28,8 @@ from app.core.ai_tool_grants import (
     canonical_arguments_sha256,
 )
 
-TENANT_A = UUID(
-    "11111111-1111-4111-8111-111111111111"
-)
-TENANT_B = UUID(
-    "22222222-2222-4222-8222-222222222222"
-)
+TENANT_A = UUID("11111111-1111-4111-8111-111111111111")
+TENANT_B = UUID("22222222-2222-4222-8222-222222222222")
 
 
 class FakeRedis:
@@ -118,9 +114,7 @@ def query_context_record(
     return AiTenantQueryContextRecord(
         tenant_id=str(tenant_id),
         context=context,
-        record_fingerprint=(
-            ai_tenant_query_context_fingerprint(context)
-        ),
+        record_fingerprint=(ai_tenant_query_context_fingerprint(context)),
         updated_by="security-admin",
     )
 
@@ -149,9 +143,7 @@ def grant_store(
 ) -> RedisAiToolGrantStore:
     return RedisAiToolGrantStore(
         redis,  # type: ignore[arg-type]
-        tenant_query_context_loader=(
-            authority or default_authority()
-        ),
+        tenant_query_context_loader=(authority or default_authority()),
     )
 
 
@@ -171,14 +163,10 @@ def capability(
         actor_subject=actor_subject,
         tool="ops_kpi_query",
         granted_scopes=("ops:read",),
-        permission_keys=(
-            "action:ai_assistant:executeOpsRead",
-        ),
+        permission_keys=("action:ai_assistant:executeOpsRead",),
         authorizing_roles=("super_admin",),
         data_scope=data_scope,
-        data_scope_fingerprint=(
-            ai_data_scope_fingerprint(data_scope)
-        ),
+        data_scope_fingerprint=(ai_data_scope_fingerprint(data_scope)),
         authorization_fingerprint=fingerprint,
     )
 
@@ -225,15 +213,11 @@ def test_arguments_reject_ambiguous_or_nonfinite_json() -> None:
         canonical_arguments_sha256({1: "ambiguous"})
 
     with pytest.raises(AiToolGrantInvalid):
-        canonical_arguments_sha256(
-            {"value": float("nan")}
-        )
+        canonical_arguments_sha256({"value": float("nan")})
 
 
 def test_internal_consume_accepts_no_caller_authority_context() -> None:
-    signature = inspect.signature(
-        RedisAiToolGrantStore.consume_authorized_invocation
-    )
+    signature = inspect.signature(RedisAiToolGrantStore.consume_authorized_invocation)
 
     for forbidden in (
         "capability",
@@ -274,9 +258,7 @@ async def test_issue_stores_minimal_binding_without_raw_tenant_entities() -> Non
     assert "Fulya" in stored_payload
     assert token not in repr(issued)
     assert issued.binding.version == 4
-    assert len(
-        issued.binding.tenant_query_context_fingerprint
-    ) == 64
+    assert len(issued.binding.tenant_query_context_fingerprint) == 64
 
 
 @pytest.mark.asyncio
@@ -399,9 +381,7 @@ async def test_internal_consume_recovers_fresh_tenant_entities() -> None:
         "Anka",
         "Fulya",
     )
-    assert authorization.tenant_entity_ids == (
-        "TEST_ENTITY_B",
-    )
+    assert authorization.tenant_entity_ids == ("TEST_ENTITY_B",)
     assert authority.calls == [str(TENANT_B), str(TENANT_B)]
 
 
@@ -520,9 +500,7 @@ async def test_source_reference_changes_binding_but_is_never_disclosed() -> None
         arguments=ops_arguments(),
         reason="read KPI",
     )
-    original_fingerprint = (
-        issued.binding.tenant_query_context_fingerprint
-    )
+    original_fingerprint = issued.binding.tenant_query_context_fingerprint
     stored_payload = next(iter(redis.values.values()))
     assert "data-catalog:test-a" not in stored_payload
 
@@ -531,10 +509,7 @@ async def test_source_reference_changes_binding_but_is_never_disclosed() -> None
         entity_ids=("TEST_ENTITY_A",),
         source_reference="data-catalog:test-a-reviewed-again",
     )
-    assert (
-        authority.records[str(TENANT_A)].record_fingerprint
-        != original_fingerprint
-    )
+    assert authority.records[str(TENANT_A)].record_fingerprint != original_fingerprint
 
     with pytest.raises(AiToolGrantBindingMismatch):
         await store.consume_authorized_invocation(
@@ -655,9 +630,7 @@ async def test_grant_is_bound_to_actor_tenant_authorization_and_data_scope(
         reason="read KPI",
     )
 
-    with pytest.raises(
-        (AiToolGrantBindingMismatch, AiToolGrantInvalid)
-    ):
+    with pytest.raises((AiToolGrantBindingMismatch, AiToolGrantInvalid)):
         await store.consume(
             token=issued.token.get_secret_value(),
             capability=changed,

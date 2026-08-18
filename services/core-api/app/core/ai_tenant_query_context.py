@@ -17,9 +17,7 @@ from app.core.resources import engine
 QUERY_CONTEXT_VERSION = 1
 MAX_ENTITY_IDS = 16
 MAX_ENTITY_ID_LENGTH = 64
-ABSENT_QUERY_CONTEXT_FINGERPRINT = hashlib.sha256(
-    b'{"state":"absent"}'
-).hexdigest()
+ABSENT_QUERY_CONTEXT_FINGERPRINT = hashlib.sha256(b'{"state":"absent"}').hexdigest()
 
 _BLOCKED_ENTITY_IDS = frozenset(
     {
@@ -61,9 +59,7 @@ class AiTenantQueryContext(BaseModel):
             or isinstance(value, (str, bytes, bytearray))
             or not 1 <= len(value) <= MAX_ENTITY_IDS
         ):
-            raise ValueError(
-                "entity_ids must be a bounded non-empty list"
-            )
+            raise ValueError("entity_ids must be a bounded non-empty list")
 
         normalized: list[str] = []
         seen: dict[str, str] = {}
@@ -89,9 +85,7 @@ class AiTenantQueryContext(BaseModel):
             key = entity_id.casefold()
             previous = seen.get(key)
             if previous is not None:
-                raise ValueError(
-                    "entity_ids contain duplicate or case-ambiguous values"
-                )
+                raise ValueError("entity_ids contain duplicate or case-ambiguous values")
 
             seen[key] = entity_id
             normalized.append(entity_id)
@@ -148,9 +142,7 @@ def ai_tenant_query_context_fingerprint(
 
 
 def _source_reference_sha256(source_reference: str) -> str:
-    return hashlib.sha256(
-        source_reference.encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(source_reference.encode("utf-8")).hexdigest()
 
 
 async def get_ai_tenant_query_context(
@@ -198,16 +190,12 @@ async def get_ai_tenant_query_context(
             source_reference=str(row["source_reference"]),
         )
     except (ValueError, TypeError) as exc:
-        raise AiTenantQueryContextInvalid(
-            "Persisted tenant query context is invalid"
-        ) from exc
+        raise AiTenantQueryContextInvalid("Persisted tenant query context is invalid") from exc
 
     return AiTenantQueryContextRecord(
         tenant_id=tenant_id,
         context=context,
-        record_fingerprint=(
-            ai_tenant_query_context_fingerprint(context)
-        ),
+        record_fingerprint=(ai_tenant_query_context_fingerprint(context)),
         updated_by=str(row["updated_by"]),
     )
 
@@ -283,20 +271,12 @@ async def put_ai_tenant_query_context(
     actor_subject: str,
     request_id: str,
 ) -> AiTenantQueryContextUpdate:
-    if (
-        len(expected_record_fingerprint) != 64
-        or any(
-            char not in "0123456789abcdef"
-            for char in expected_record_fingerprint
-        )
+    if len(expected_record_fingerprint) != 64 or any(
+        char not in "0123456789abcdef" for char in expected_record_fingerprint
     ):
-        raise ValueError(
-            "expected_record_fingerprint must be lowercase SHA-256"
-        )
+        raise ValueError("expected_record_fingerprint must be lowercase SHA-256")
 
-    new_record_fingerprint = (
-        ai_tenant_query_context_fingerprint(context)
-    )
+    new_record_fingerprint = ai_tenant_query_context_fingerprint(context)
 
     async with engine.begin() as connection:
         await connection.execute(
@@ -330,13 +310,8 @@ async def put_ai_tenant_query_context(
         row = result.mappings().first()
 
         if row is None:
-            if (
-                expected_record_fingerprint
-                != ABSENT_QUERY_CONTEXT_FINGERPRINT
-            ):
-                raise AiTenantQueryContextConflict(
-                    "Tenant query context changed"
-                )
+            if expected_record_fingerprint != ABSENT_QUERY_CONTEXT_FINGERPRINT:
+                raise AiTenantQueryContextConflict("Tenant query context changed")
 
             insert_result = await connection.execute(
                 text(
@@ -373,13 +348,9 @@ async def put_ai_tenant_query_context(
             if insert_result.scalar_one_or_none() is None:
                 # Only a genuine concurrent first writer maps to a refreshable
                 # CAS conflict. DB, permission and audit failures remain 5xx.
-                raise AiTenantQueryContextConflict(
-                    "Tenant query context changed"
-                )
+                raise AiTenantQueryContextConflict("Tenant query context changed")
 
-            old_record_fingerprint = (
-                ABSENT_QUERY_CONTEXT_FINGERPRINT
-            )
+            old_record_fingerprint = ABSENT_QUERY_CONTEXT_FINGERPRINT
             old_entity_count = 0
         else:
             try:
@@ -393,15 +364,11 @@ async def put_ai_tenant_query_context(
                     "Persisted tenant query context is invalid"
                 ) from exc
 
-            old_record_fingerprint = (
-                ai_tenant_query_context_fingerprint(old_context)
-            )
+            old_record_fingerprint = ai_tenant_query_context_fingerprint(old_context)
             old_entity_count = len(old_context.entity_ids)
 
             if old_record_fingerprint != expected_record_fingerprint:
-                raise AiTenantQueryContextConflict(
-                    "Tenant query context changed"
-                )
+                raise AiTenantQueryContextConflict("Tenant query context changed")
 
             if old_record_fingerprint == new_record_fingerprint:
                 return AiTenantQueryContextUpdate(
@@ -445,11 +412,7 @@ async def put_ai_tenant_query_context(
             new_record_fingerprint=new_record_fingerprint,
             old_entity_count=old_entity_count,
             new_entity_count=len(context.entity_ids),
-            source_reference_sha256=(
-                _source_reference_sha256(
-                    context.source_reference
-                )
-            ),
+            source_reference_sha256=(_source_reference_sha256(context.source_reference)),
         )
 
     return AiTenantQueryContextUpdate(

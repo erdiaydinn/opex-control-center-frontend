@@ -178,7 +178,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError(
-        "0006_system_role_integrity is an irreversible "
-        "security-integrity migration"
-    )
+    raise RuntimeError("0006_system_role_integrity is an irreversible security-integrity migration")

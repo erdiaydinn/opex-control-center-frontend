@@ -83,13 +83,11 @@ async def test_matching_binding_reaches_transport(
         return [{"id": "evidence-a"}]
 
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration."
-        "resolve_authorized_ai_retrieval_identity",
+        "app.core.ai_grounded_orchestration.resolve_authorized_ai_retrieval_identity",
         resolve,
     )
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration."
-        "retrieve_tenant_grounded_evidence",
+        "app.core.ai_grounded_orchestration.retrieve_tenant_grounded_evidence",
         retrieve,
     )
 
@@ -135,18 +133,14 @@ async def test_binding_mismatch_fails_before_transport(
         )
 
     async def retrieve(**_kwargs):
-        raise AssertionError(
-            "transport must not run for a mismatched binding"
-        )
+        raise AssertionError("transport must not run for a mismatched binding")
 
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration."
-        "resolve_authorized_ai_retrieval_identity",
+        "app.core.ai_grounded_orchestration.resolve_authorized_ai_retrieval_identity",
         resolve,
     )
     monkeypatch.setattr(
-        "app.core.ai_grounded_orchestration."
-        "retrieve_tenant_grounded_evidence",
+        "app.core.ai_grounded_orchestration.retrieve_tenant_grounded_evidence",
         retrieve,
     )
 

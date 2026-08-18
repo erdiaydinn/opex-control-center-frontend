@@ -24,11 +24,7 @@ def amount_mismatch(
     observed_d = money(observed)
     allowed = max(
         money(absolute),
-        (
-            abs(expected_d)
-            * Decimal(tolerance_bps)
-            / Decimal(10000)
-        ).quantize(MONEY),
+        (abs(expected_d) * Decimal(tolerance_bps) / Decimal(10000)).quantize(MONEY),
     )
     return abs(expected_d - observed_d) > allowed
 

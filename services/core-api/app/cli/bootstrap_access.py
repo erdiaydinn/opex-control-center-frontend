@@ -20,9 +20,7 @@ SYSTEM_ROLE_NAMES = {
 }
 
 if set(SYSTEM_ROLE_NAMES) != set(SYSTEM_ROLE_PERMISSIONS):
-    raise RuntimeError(
-        "System role names and permission policy are out of sync"
-    )
+    raise RuntimeError("System role names and permission policy are out of sync")
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,9 +51,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                 "permission_key": permission_key,
             }
             for role_key in sorted(SYSTEM_ROLE_PERMISSIONS)
-            for permission_key in sorted(
-                SYSTEM_ROLE_PERMISSIONS[role_key]
-            )
+            for permission_key in sorted(SYSTEM_ROLE_PERMISSIONS[role_key])
         ],
         separators=(",", ":"),
     )
@@ -65,17 +61,21 @@ async def bootstrap(args: argparse.Namespace) -> None:
     try:
         async with engine.begin() as connection:
             tenant = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT slug, status
                         FROM tenants
                         WHERE id = CAST(:tenant_id AS UUID)
                         """
-                    ),
-                    {"tenant_id": tenant_id},
+                        ),
+                        {"tenant_id": tenant_id},
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
 
             if tenant is None:
                 await connection.execute(
@@ -103,14 +103,10 @@ async def bootstrap(args: argparse.Namespace) -> None:
                 )
             else:
                 if tenant["slug"] != args.tenant_slug:
-                    raise RuntimeError(
-                        "Tenant ID already exists with a different slug"
-                    )
+                    raise RuntimeError("Tenant ID already exists with a different slug")
 
                 if tenant["status"] != "active":
-                    raise RuntimeError(
-                        "Bootstrap refuses to reactivate a non-active tenant"
-                    )
+                    raise RuntimeError("Bootstrap refuses to reactivate a non-active tenant")
 
             for role_key in role_keys:
                 role_name = SYSTEM_ROLE_NAMES[role_key]
@@ -145,10 +141,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                 )
 
                 if role_result.scalar_one_or_none() is not True:
-                    raise RuntimeError(
-                        "Bootstrap refuses canonical role collision: "
-                        f"{role_key}"
-                    )
+                    raise RuntimeError(f"Bootstrap refuses canonical role collision: {role_key}")
 
             # Canonical system-role permissions are authoritative.
             # Unexpected permissions are removed, missing permissions inserted,
@@ -222,21 +215,25 @@ async def bootstrap(args: argparse.Namespace) -> None:
             )
 
             membership = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT id, status
                         FROM memberships
                         WHERE tenant_id = CAST(:tenant_id AS UUID)
                           AND external_subject = :subject
                         """
-                    ),
-                    {
-                        "tenant_id": tenant_id,
-                        "subject": args.admin_subject,
-                    },
+                        ),
+                        {
+                            "tenant_id": tenant_id,
+                            "subject": args.admin_subject,
+                        },
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
 
             if membership is None:
                 membership_id = await connection.scalar(
@@ -262,9 +259,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                 )
             else:
                 if membership["status"] != "active":
-                    raise RuntimeError(
-                        "Bootstrap refuses to reactivate a non-active membership"
-                    )
+                    raise RuntimeError("Bootstrap refuses to reactivate a non-active membership")
 
                 membership_id = membership["id"]
 
@@ -293,11 +288,7 @@ async def bootstrap(args: argparse.Namespace) -> None:
                 },
             )
 
-        print(
-            "Bootstrap complete: "
-            f"tenant={args.tenant_slug} "
-            f"admin_subject={args.admin_subject}"
-        )
+        print(f"Bootstrap complete: tenant={args.tenant_slug} admin_subject={args.admin_subject}")
     finally:
         await engine.dispose()
 

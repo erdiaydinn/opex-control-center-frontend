@@ -32,20 +32,24 @@ def full_measurements() -> list[FixtureMeasurement]:
     for aisle in range(1, 12):
         for side in ("L", "R"):
             for module in range(1, 7):
-                items.append(FixtureMeasurement(
-                    fixture_id=f"A{aisle:02d}-{side}{module:02d}",
-                    width_cm=100,
-                    height_cm=210,
-                    depth_cm=50,
-                    max_weight_kg=270,
-                ))
+                items.append(
+                    FixtureMeasurement(
+                        fixture_id=f"A{aisle:02d}-{side}{module:02d}",
+                        width_cm=100,
+                        height_cm=210,
+                        depth_cm=50,
+                        max_weight_kg=270,
+                    )
+                )
     for pallet in range(1, 7):
-        items.append(FixtureMeasurement(
-            fixture_id=f"P{pallet:02d}",
-            width_cm=120,
-            depth_cm=100,
-            max_weight_kg=800,
-        ))
+        items.append(
+            FixtureMeasurement(
+                fixture_id=f"P{pallet:02d}",
+                width_cm=120,
+                depth_cm=100,
+                max_weight_kg=800,
+            )
+        )
     return items
 
 
@@ -116,18 +120,18 @@ def test_default_bootstrap_is_topology_only_and_matches_warehouse_assumption() -
 
 def test_complete_measurements_can_attest_geometry_without_inventing_values() -> None:
     widths = {f"A{aisle:02d}": 1.2 for aisle in range(1, 12)}
-    configuration = build_store_dna_configuration(request(
-        aisle_widths_m=widths,
-        fixture_measurements=full_measurements(),
-    ))
+    configuration = build_store_dna_configuration(
+        request(
+            aisle_widths_m=widths,
+            fixture_measurements=full_measurements(),
+        )
+    )
     assert geometry_attested(configuration) is True
     assert summarize_store_dna(configuration)["shelves"] == 792
 
 
 def test_measured_architecture_is_versioned_and_reaches_engine_contract() -> None:
-    configuration = build_store_dna_configuration(
-        request(architecture=measured_architecture())
-    )
+    configuration = build_store_dna_configuration(request(architecture=measured_architecture()))
     assert architecture_attested(configuration) is True
     assert summarize_store_dna(configuration)["architecture_elements"] == 3
     assert configuration["architecture"]["coordinate_system"] == "cartesian_m"
@@ -158,9 +162,19 @@ def test_architecture_requires_exactly_one_picker_entry() -> None:
 
 def test_unknown_fixture_or_aisle_measurement_fails_closed() -> None:
     with pytest.raises(ValueError, match="Unknown fixture measurement ids"):
-        build_store_dna_configuration(request(fixture_measurements=[FixtureMeasurement(
-            fixture_id="A99-L01", width_cm=100, height_cm=200, depth_cm=50, max_weight_kg=200,
-        )]))
+        build_store_dna_configuration(
+            request(
+                fixture_measurements=[
+                    FixtureMeasurement(
+                        fixture_id="A99-L01",
+                        width_cm=100,
+                        height_cm=200,
+                        depth_cm=50,
+                        max_weight_kg=200,
+                    )
+                ]
+            )
+        )
     with pytest.raises(ValueError, match="Unknown aisle width ids"):
         build_store_dna_configuration(request(aisle_widths_m={"A99": 1.2}))
 

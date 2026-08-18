@@ -141,9 +141,7 @@ def valid_parameters() -> dict[str, object]:
 
 
 def test_runtime_preflight_requires_nonempty_bounded_authority_arrays() -> None:
-    validated = validate_orders_v2_runtime_parameters(
-        valid_parameters()
-    )
+    validated = validate_orders_v2_runtime_parameters(valid_parameters())
 
     assert validated == {
         "start_date": date(2026, 8, 1),
@@ -216,18 +214,12 @@ def test_runtime_preflight_keeps_frozen_window_and_store_bounds() -> None:
         validate_orders_v2_runtime_parameters(too_long)
 
     too_many_stores = valid_parameters()
-    too_many_stores["stores"] = [
-        f"Store-{index}"
-        for index in range(201)
-    ]
+    too_many_stores["stores"] = [f"Store-{index}" for index in range(201)]
     with pytest.raises(OrdersV2QueryContractError):
         validate_orders_v2_runtime_parameters(too_many_stores)
 
     too_many_entities = valid_parameters()
-    too_many_entities["entity_ids"] = [
-        f"ENTITY_{index}"
-        for index in range(17)
-    ]
+    too_many_entities["entity_ids"] = [f"ENTITY_{index}" for index in range(17)]
     with pytest.raises(OrdersV2QueryContractError):
         validate_orders_v2_runtime_parameters(too_many_entities)
 

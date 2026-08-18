@@ -33,18 +33,12 @@ def upgrade() -> None:
         + ", ".join(MUTABLE_TABLES)
         + f" TO {RUNTIME_ROLE}"
     )
-    op.execute(
-        f"GRANT SELECT, INSERT ON TABLE audit_events TO {RUNTIME_ROLE}"
-    )
+    op.execute(f"GRANT SELECT, INSERT ON TABLE audit_events TO {RUNTIME_ROLE}")
 
 
 def downgrade() -> None:
+    op.execute(f"REVOKE ALL PRIVILEGES ON TABLE audit_events FROM {RUNTIME_ROLE}")
     op.execute(
-        f"REVOKE ALL PRIVILEGES ON TABLE audit_events FROM {RUNTIME_ROLE}"
-    )
-    op.execute(
-        "REVOKE ALL PRIVILEGES ON TABLE "
-        + ", ".join(MUTABLE_TABLES)
-        + f" FROM {RUNTIME_ROLE}"
+        "REVOKE ALL PRIVILEGES ON TABLE " + ", ".join(MUTABLE_TABLES) + f" FROM {RUNTIME_ROLE}"
     )
     op.execute(f"REVOKE USAGE ON SCHEMA public FROM {RUNTIME_ROLE}")

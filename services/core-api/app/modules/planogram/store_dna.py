@@ -101,15 +101,11 @@ def build_store_dna_configuration(
 
     unknown_measurements = sorted(set(measurements) - known_fixture_ids)
     if unknown_measurements:
-        raise ValueError(
-            "Unknown fixture measurement ids: " + ", ".join(unknown_measurements[:10])
-        )
+        raise ValueError("Unknown fixture measurement ids: " + ", ".join(unknown_measurements[:10]))
 
     unknown_aisle_widths = sorted(set(payload.aisle_widths_m) - known_aisle_ids)
     if unknown_aisle_widths:
-        raise ValueError(
-            "Unknown aisle width ids: " + ", ".join(unknown_aisle_widths[:10])
-        )
+        raise ValueError("Unknown aisle width ids: " + ", ".join(unknown_aisle_widths[:10]))
 
     return {
         "schema_version": 1,
@@ -170,10 +166,7 @@ def geometry_attested(configuration: dict[str, Any]) -> bool:
                     return False
 
     for pallet in configuration.get("pallets", []):
-        if any(
-            pallet.get(key) is None
-            for key in ("width_cm", "depth_cm", "max_weight_kg")
-        ):
+        if any(pallet.get(key) is None for key in ("width_cm", "depth_cm", "max_weight_kg")):
             return False
 
     return True

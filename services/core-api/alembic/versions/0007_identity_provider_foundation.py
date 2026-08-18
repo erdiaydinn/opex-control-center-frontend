@@ -37,15 +37,9 @@ IDENTITY_TABLES = (
 
 
 def _tenant_policy(table_name: str) -> None:
-    op.execute(
-        f'ALTER TABLE "{table_name}" '
-        "ENABLE ROW LEVEL SECURITY"
-    )
+    op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
 
-    op.execute(
-        f'ALTER TABLE "{table_name}" '
-        "FORCE ROW LEVEL SECURITY"
-    )
+    op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
 
     op.execute(
         f"""
@@ -83,16 +77,12 @@ def upgrade() -> None:
 
     op.create_table(
         "identity_providers",
-
         sa.Column(
             "id",
             UUID,
             primary_key=True,
-            server_default=sa.text(
-                "gen_random_uuid()"
-            ),
+            server_default=sa.text("gen_random_uuid()"),
         ),
-
         sa.Column(
             "tenant_id",
             UUID,
@@ -102,78 +92,61 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-
         sa.Column(
             "provider_key",
             sa.String(length=80),
             nullable=False,
         ),
-
         sa.Column(
             "protocol",
             sa.String(length=20),
             nullable=False,
         ),
-
         sa.Column(
             "display_name",
             sa.String(length=200),
             nullable=False,
         ),
-
         sa.Column(
             "status",
             sa.String(length=20),
             nullable=False,
             server_default="disabled",
         ),
-
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text(
-                "CURRENT_TIMESTAMP"
-            ),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text(
-                "CURRENT_TIMESTAMP"
-            ),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-
         sa.UniqueConstraint(
             "tenant_id",
             "id",
             name="uq_identity_providers_tenant_id_id",
         ),
-
         sa.UniqueConstraint(
             "tenant_id",
             "provider_key",
             name="uq_identity_providers_tenant_key",
         ),
-
         sa.CheckConstraint(
             "protocol IN ('oidc')",
             name="ck_identity_providers_protocol",
         ),
-
         sa.CheckConstraint(
             "status IN ('disabled', 'active')",
             name="ck_identity_providers_status",
         ),
-
         sa.CheckConstraint(
-            "provider_key ~ "
-            "'^[a-z0-9][a-z0-9._-]{0,79}$'",
+            "provider_key ~ '^[a-z0-9][a-z0-9._-]{0,79}$'",
             name="ck_identity_providers_key_format",
         ),
-
         sa.CheckConstraint(
             "length(trim(display_name)) > 0",
             name="ck_identity_providers_display_name",
@@ -186,7 +159,6 @@ def upgrade() -> None:
         ["tenant_id"],
     )
 
-
     # ============================================================
     # OIDC protocol configuration
     #
@@ -196,86 +168,66 @@ def upgrade() -> None:
 
     op.create_table(
         "oidc_provider_configs",
-
         sa.Column(
             "provider_id",
             UUID,
             primary_key=True,
         ),
-
         sa.Column(
             "tenant_id",
             UUID,
             nullable=False,
         ),
-
         sa.Column(
             "issuer",
             sa.String(length=2048),
             nullable=False,
         ),
-
         sa.Column(
             "client_id",
             sa.String(length=512),
             nullable=False,
         ),
-
         sa.Column(
             "audiences",
             TEXT_ARRAY,
             nullable=False,
         ),
-
         sa.Column(
             "scopes",
             TEXT_ARRAY,
             nullable=False,
-            server_default=sa.text(
-                "ARRAY['openid']::text[]"
-            ),
+            server_default=sa.text("ARRAY['openid']::text[]"),
         ),
-
         sa.Column(
             "allowed_algorithms",
             TEXT_ARRAY,
             nullable=False,
-            server_default=sa.text(
-                "ARRAY['RS256']::text[]"
-            ),
+            server_default=sa.text("ARRAY['RS256']::text[]"),
         ),
-
         sa.Column(
             "token_endpoint_auth_method",
             sa.String(length=40),
             nullable=False,
             server_default="none",
         ),
-
         sa.Column(
             "credential_ref",
             sa.String(length=512),
             nullable=True,
         ),
-
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text(
-                "CURRENT_TIMESTAMP"
-            ),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text(
-                "CURRENT_TIMESTAMP"
-            ),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-
         sa.ForeignKeyConstraint(
             [
                 "tenant_id",
@@ -286,21 +238,13 @@ def upgrade() -> None:
                 "identity_providers.id",
             ],
             ondelete="CASCADE",
-            name=(
-                "fk_oidc_provider_configs_"
-                "provider_tenant"
-            ),
+            name=("fk_oidc_provider_configs_provider_tenant"),
         ),
-
         sa.UniqueConstraint(
             "tenant_id",
             "issuer",
-            name=(
-                "uq_oidc_provider_configs_"
-                "tenant_issuer"
-            ),
+            name=("uq_oidc_provider_configs_tenant_issuer"),
         ),
-
         # Commercial identity providers must use TLS.
         # Query strings and fragments are invalid as durable
         # issuer identifiers.
@@ -308,47 +252,30 @@ def upgrade() -> None:
             "issuer ~ '^https://[^?#]+$'",
             name="ck_oidc_provider_configs_https_issuer",
         ),
-
         sa.CheckConstraint(
             "length(trim(client_id)) > 0",
             name="ck_oidc_provider_configs_client_id",
         ),
-
         sa.CheckConstraint(
-            "cardinality(audiences) > 0 "
-            "AND array_position(audiences, '') IS NULL",
+            "cardinality(audiences) > 0 AND array_position(audiences, '') IS NULL",
             name="ck_oidc_provider_configs_audiences",
         ),
-
         sa.CheckConstraint(
             "cardinality(scopes) > 0 "
             "AND 'openid' = ANY(scopes) "
             "AND array_position(scopes, '') IS NULL",
             name="ck_oidc_provider_configs_scopes",
         ),
-
         sa.CheckConstraint(
             "cardinality(allowed_algorithms) > 0 "
             "AND allowed_algorithms "
             "<@ ARRAY['RS256','ES256']::text[]",
-            name=(
-                "ck_oidc_provider_configs_"
-                "algorithms"
-            ),
+            name=("ck_oidc_provider_configs_algorithms"),
         ),
-
         sa.CheckConstraint(
-            "token_endpoint_auth_method IN ("
-            "'none',"
-            "'client_secret_basic',"
-            "'private_key_jwt'"
-            ")",
-            name=(
-                "ck_oidc_provider_configs_"
-                "client_auth_method"
-            ),
+            "token_endpoint_auth_method IN ('none','client_secret_basic','private_key_jwt')",
+            name=("ck_oidc_provider_configs_client_auth_method"),
         ),
-
         sa.CheckConstraint(
             "("
             "token_endpoint_auth_method = 'none' "
@@ -361,10 +288,7 @@ def upgrade() -> None:
             "AND credential_ref IS NOT NULL "
             "AND length(trim(credential_ref)) > 0"
             ")",
-            name=(
-                "ck_oidc_provider_configs_"
-                "credential_reference"
-            ),
+            name=("ck_oidc_provider_configs_credential_reference"),
         ),
     )
 
@@ -373,7 +297,6 @@ def upgrade() -> None:
         "oidc_provider_configs",
         ["tenant_id"],
     )
-
 
     # ============================================================
     # External identity -> internal membership mapping
@@ -384,71 +307,55 @@ def upgrade() -> None:
 
     op.create_table(
         "external_identities",
-
         sa.Column(
             "id",
             UUID,
             primary_key=True,
-            server_default=sa.text(
-                "gen_random_uuid()"
-            ),
+            server_default=sa.text("gen_random_uuid()"),
         ),
-
         sa.Column(
             "tenant_id",
             UUID,
             nullable=False,
         ),
-
         sa.Column(
             "provider_id",
             UUID,
             nullable=False,
         ),
-
         sa.Column(
             "membership_id",
             UUID,
             nullable=False,
         ),
-
         sa.Column(
             "subject",
             sa.String(length=512),
             nullable=False,
         ),
-
         sa.Column(
             "status",
             sa.String(length=20),
             nullable=False,
             server_default="active",
         ),
-
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text(
-                "CURRENT_TIMESTAMP"
-            ),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text(
-                "CURRENT_TIMESTAMP"
-            ),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-
         sa.Column(
             "last_seen_at",
             sa.DateTime(timezone=True),
             nullable=True,
         ),
-
         sa.ForeignKeyConstraint(
             [
                 "tenant_id",
@@ -459,12 +366,8 @@ def upgrade() -> None:
                 "identity_providers.id",
             ],
             ondelete="CASCADE",
-            name=(
-                "fk_external_identities_"
-                "provider_tenant"
-            ),
+            name=("fk_external_identities_provider_tenant"),
         ),
-
         sa.ForeignKeyConstraint(
             [
                 "tenant_id",
@@ -475,57 +378,35 @@ def upgrade() -> None:
                 "memberships.id",
             ],
             ondelete="CASCADE",
-            name=(
-                "fk_external_identities_"
-                "membership_tenant"
-            ),
+            name=("fk_external_identities_membership_tenant"),
         ),
-
         # A verified subject from one provider maps to exactly
         # one OPEX membership.
         sa.UniqueConstraint(
             "tenant_id",
             "provider_id",
             "subject",
-            name=(
-                "uq_external_identities_"
-                "provider_subject"
-            ),
+            name=("uq_external_identities_provider_subject"),
         ),
-
         # Prevent silent account merging/re-linking.
         sa.UniqueConstraint(
             "tenant_id",
             "provider_id",
             "membership_id",
-            name=(
-                "uq_external_identities_"
-                "provider_membership"
-            ),
+            name=("uq_external_identities_provider_membership"),
         ),
-
         sa.UniqueConstraint(
             "tenant_id",
             "id",
-            name=(
-                "uq_external_identities_"
-                "tenant_id_id"
-            ),
+            name=("uq_external_identities_tenant_id_id"),
         ),
-
         sa.CheckConstraint(
             "length(trim(subject)) > 0",
-            name=(
-                "ck_external_identities_"
-                "subject_nonempty"
-            ),
+            name=("ck_external_identities_subject_nonempty"),
         ),
-
         sa.CheckConstraint(
             "status IN ('active', 'disabled')",
-            name=(
-                "ck_external_identities_status"
-            ),
+            name=("ck_external_identities_status"),
         ),
     )
 
@@ -544,7 +425,6 @@ def upgrade() -> None:
         ],
     )
 
-
     # ============================================================
     # Tenant isolation
     # ============================================================
@@ -552,40 +432,27 @@ def upgrade() -> None:
     for table_name in IDENTITY_TABLES:
         _tenant_policy(table_name)
 
-
     # ============================================================
     # Least privilege
     # ============================================================
 
     # Runtime may resolve identity, but cannot manage providers
     # or identity mappings yet.
-    op.execute(
-        "GRANT SELECT ON TABLE "
-        + ", ".join(IDENTITY_TABLES)
-        + f" TO {RUNTIME_ROLE}"
-    )
+    op.execute("GRANT SELECT ON TABLE " + ", ".join(IDENTITY_TABLES) + f" TO {RUNTIME_ROLE}")
 
     # Backup role is read-only and intentionally captures the
     # complete identity mapping/configuration metadata.
-    op.execute(
-        "GRANT SELECT ON TABLE "
-        + ", ".join(IDENTITY_TABLES)
-        + f" TO {BACKUP_ROLE}"
-    )
+    op.execute("GRANT SELECT ON TABLE " + ", ".join(IDENTITY_TABLES) + f" TO {BACKUP_ROLE}")
 
 
 def downgrade() -> None:
 
     op.execute(
-        "REVOKE ALL PRIVILEGES ON TABLE "
-        + ", ".join(IDENTITY_TABLES)
-        + f" FROM {RUNTIME_ROLE}"
+        "REVOKE ALL PRIVILEGES ON TABLE " + ", ".join(IDENTITY_TABLES) + f" FROM {RUNTIME_ROLE}"
     )
 
     op.execute(
-        "REVOKE ALL PRIVILEGES ON TABLE "
-        + ", ".join(IDENTITY_TABLES)
-        + f" FROM {BACKUP_ROLE}"
+        "REVOKE ALL PRIVILEGES ON TABLE " + ", ".join(IDENTITY_TABLES) + f" FROM {BACKUP_ROLE}"
     )
 
     op.drop_index(
@@ -598,24 +465,18 @@ def downgrade() -> None:
         table_name="external_identities",
     )
 
-    op.drop_table(
-        "external_identities"
-    )
+    op.drop_table("external_identities")
 
     op.drop_index(
         "ix_oidc_provider_configs_tenant_id",
         table_name="oidc_provider_configs",
     )
 
-    op.drop_table(
-        "oidc_provider_configs"
-    )
+    op.drop_table("oidc_provider_configs")
 
     op.drop_index(
         "ix_identity_providers_tenant_id",
         table_name="identity_providers",
     )
 
-    op.drop_table(
-        "identity_providers"
-    )
+    op.drop_table("identity_providers")

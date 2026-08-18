@@ -28,9 +28,7 @@ async def create_learning_path(
             .scalars()
             .all()
         )
-        authenticated_role_keys = {
-            role.strip().lower() for role in principal.roles if role.strip()
-        }
+        authenticated_role_keys = {role.strip().lower() for role in principal.roles if role.strip()}
         known_role_keys = registered_role_keys | authenticated_role_keys
         if set(role_keys) - known_role_keys:
             raise ValueError("Learning path contains unknown role assignment")

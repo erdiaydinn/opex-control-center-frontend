@@ -50,9 +50,7 @@ def _load_bigquery_module() -> _BigQueryModule:
         "QueryJobConfig",
     ):
         if not hasattr(module, required):
-            raise OrdersV2BigQuerySdkUnavailable(
-                "google-cloud-bigquery SDK surface is incomplete"
-            )
+            raise OrdersV2BigQuerySdkUnavailable("google-cloud-bigquery SDK surface is incomplete")
 
     return module  # type: ignore[return-value]
 
@@ -63,9 +61,7 @@ def orders_v2_bigquery_sdk_adapter_fingerprint() -> str:
     payload = {
         "adapter": "google-cloud-bigquery-query-parameters-v1",
         "sdk_version_spec": BIGQUERY_SDK_VERSION_SPEC,
-        "parameter_contract_fingerprint": (
-            orders_v2_bigquery_parameter_contract_fingerprint()
-        ),
+        "parameter_contract_fingerprint": (orders_v2_bigquery_parameter_contract_fingerprint()),
         "scalar_class": "google.cloud.bigquery.ScalarQueryParameter",
         "array_class": "google.cloud.bigquery.ArrayQueryParameter",
         "job_config_class": "google.cloud.bigquery.QueryJobConfig",
@@ -92,18 +88,14 @@ def _sdk_parameter_from_plan(
 
     if parameter.mode == "ARRAY" and parameter.value_type == "STRING":
         if not isinstance(parameter.value, tuple) or not parameter.value:
-            raise OrdersV2BigQuerySdkAdapterError(
-                "invalid ARRAY<STRING> parameter plan"
-            )
+            raise OrdersV2BigQuerySdkAdapterError("invalid ARRAY<STRING> parameter plan")
         return bigquery.ArrayQueryParameter(
             parameter.name,
             "STRING",
             list(parameter.value),
         )
 
-    raise OrdersV2BigQuerySdkAdapterError(
-        "unsupported BigQuery parameter plan"
-    )
+    raise OrdersV2BigQuerySdkAdapterError("unsupported BigQuery parameter plan")
 
 
 def build_orders_v2_bigquery_sdk_parameters(
@@ -113,10 +105,7 @@ def build_orders_v2_bigquery_sdk_parameters(
 
     bigquery = _load_bigquery_module()
     plan = plan_orders_v2_bigquery_parameters(parameters)
-    return tuple(
-        _sdk_parameter_from_plan(bigquery, parameter)
-        for parameter in plan
-    )
+    return tuple(_sdk_parameter_from_plan(bigquery, parameter) for parameter in plan)
 
 
 def build_orders_v2_bigquery_job_config(
@@ -126,10 +115,7 @@ def build_orders_v2_bigquery_job_config(
 
     bigquery = _load_bigquery_module()
     plan = plan_orders_v2_bigquery_parameters(parameters)
-    query_parameters = [
-        _sdk_parameter_from_plan(bigquery, parameter)
-        for parameter in plan
-    ]
+    query_parameters = [_sdk_parameter_from_plan(bigquery, parameter) for parameter in plan]
     return bigquery.QueryJobConfig(
         use_legacy_sql=False,
         query_parameters=query_parameters,

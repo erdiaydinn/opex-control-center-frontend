@@ -19,9 +19,7 @@ from app.core.ai_tool_grants import RedisAiToolGrantStore
 
 
 def test_registry_covers_every_reviewed_tool_without_default_allow() -> None:
-    assert set(AI_QUERY_CONTRACT_POLICIES) == set(
-        TOOL_REQUIRED_SCOPES
-    )
+    assert set(AI_QUERY_CONTRACT_POLICIES) == set(TOOL_REQUIRED_SCOPES)
 
     for tool, policy in AI_QUERY_CONTRACT_POLICIES.items():
         assert policy.tool == tool
@@ -86,9 +84,7 @@ def test_review_and_execution_fingerprints_bind_all_security_fields() -> None:
         production_ready=False,
         blockers=("pending_review",),
     )
-    expected_review = expected_query_contract_review_fingerprint(
-        review_candidate
-    )
+    expected_review = expected_query_contract_review_fingerprint(review_candidate)
 
     ready = AiQueryContractPolicy(
         tool="ops_kpi_query",
@@ -133,9 +129,7 @@ def test_grant_store_accepts_no_caller_selected_query_or_tenant_authority() -> N
         "consume",
         "consume_authorized_invocation",
     ):
-        parameters = inspect.signature(
-            getattr(RedisAiToolGrantStore, method_name)
-        ).parameters
+        parameters = inspect.signature(getattr(RedisAiToolGrantStore, method_name)).parameters
         assert "query_policy" not in parameters
         assert "query_contract_fingerprint" not in parameters
         assert "query_template_sha256" not in parameters

@@ -30,9 +30,7 @@ def principal() -> Principal:
 
 
 def test_resolver_signature_accepts_no_client_tenant_or_membership_override() -> None:
-    parameters = inspect.signature(
-        resolve_authorized_ai_retrieval_identity
-    ).parameters
+    parameters = inspect.signature(resolve_authorized_ai_retrieval_identity).parameters
     assert tuple(parameters) == ("principal",)
 
 

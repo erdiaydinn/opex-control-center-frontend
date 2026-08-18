@@ -52,12 +52,8 @@ SCOPE_PERMISSION_KEYS = MappingProxyType(
 
 TOOL_REQUIRED_SCOPES = MappingProxyType(
     {
-        "ops_kpi_query": (
-            "ops:read",
-        ),
-        "catalog_query": (
-            "catalog:read",
-        ),
+        "ops_kpi_query": ("ops:read",),
+        "catalog_query": ("catalog:read",),
         "regulatory_impact_query": (
             "catalog:read",
             "legal:read",
@@ -96,9 +92,7 @@ class AiToolAccessDenied(AiToolAuthorizationError):
         super().__init__("ai_tool_access_denied")
 
 
-class AiToolPermissionScopeUnsupported(
-    AiToolAuthorizationError
-):
+class AiToolPermissionScopeUnsupported(AiToolAuthorizationError):
     """A DB grant has no safely interpretable explicit AI data scope."""
 
 
@@ -135,14 +129,9 @@ def _required_permission_keys(
     if scopes is None:
         # Runtime callers may bypass static typing. Never infer a
         # capability for an unknown model/tool name.
-        raise AiToolAuthorizationError(
-            "unsupported_ai_tool"
-        )
+        raise AiToolAuthorizationError("unsupported_ai_tool")
 
-    return tuple(
-        SCOPE_PERMISSION_KEYS[scope]
-        for scope in scopes
-    )
+    return tuple(SCOPE_PERMISSION_KEYS[scope] for scope in scopes)
 
 
 def derive_ai_tool_capability(
@@ -166,26 +155,19 @@ def derive_ai_tool_capability(
     required_scopes = TOOL_REQUIRED_SCOPES.get(tool)
 
     if required_scopes is None:
-        raise AiToolAuthorizationError(
-            "unsupported_ai_tool"
-        )
+        raise AiToolAuthorizationError("unsupported_ai_tool")
 
-    required_permissions = (
-        _required_permission_keys(tool)
-    )
+    required_permissions = _required_permission_keys(tool)
 
     principal_permissions = {
-        str(permission).strip()
-        for permission in principal.permissions
-        if str(permission).strip()
+        str(permission).strip() for permission in principal.permissions if str(permission).strip()
     }
 
     missing = tuple(
         sorted(
             permission
             for permission in required_permissions
-            if permission
-            not in principal_permissions
+            if permission not in principal_permissions
         )
     )
 
@@ -199,9 +181,7 @@ def derive_ai_tool_capability(
         list[PermissionAssignmentLike],
     ] = {}
 
-    for assignment in (
-        principal.permission_assignments
-    ):
+    for assignment in principal.permission_assignments:
         assignments_by_key.setdefault(
             assignment.key,
             [],
@@ -220,29 +200,19 @@ def derive_ai_tool_capability(
             # principal.permissions is a convenience projection only.
             # Authorization is anchored to resolved DB assignments.
             raise AiToolAccessDenied(
-                missing_permissions=(
-                    permission,
-                ),
+                missing_permissions=(permission,),
             )
 
         assignment_scopes: list[AiDataScope] = []
 
         for assignment in assignments:
-            role_key = str(
-                assignment.role_key
-            ).strip()
+            role_key = str(assignment.role_key).strip()
 
             if not role_key:
-                raise AiToolAuthorizationError(
-                    "invalid_ai_tool_authorizing_role"
-                )
+                raise AiToolAuthorizationError("invalid_ai_tool_authorizing_role")
 
             try:
-                assignment_scopes.append(
-                    parse_ai_data_scope(
-                        assignment.scope
-                    )
-                )
+                assignment_scopes.append(parse_ai_data_scope(assignment.scope))
             except AiDataScopeError as exc:
                 # The persisted assignment is server-authoritative. A bad
                 # record is an authorization denial, never a widening default.
@@ -253,40 +223,22 @@ def derive_ai_tool_capability(
             authorizing_roles.add(role_key)
 
         try:
-            permission_data_scopes.append(
-                union_ai_data_scopes(
-                    assignment_scopes
-                )
-            )
+            permission_data_scopes.append(union_ai_data_scopes(assignment_scopes))
         except AiDataScopeError as exc:
-            raise AiToolPermissionScopeUnsupported(
-                "scoped_ai_tool_permission_unsupported"
-            ) from exc
+            raise AiToolPermissionScopeUnsupported("scoped_ai_tool_permission_unsupported") from exc
 
     try:
-        data_scope = intersect_ai_data_scopes(
-            permission_data_scopes
-        )
+        data_scope = intersect_ai_data_scopes(permission_data_scopes)
     except AiDataScopeError as exc:
-        raise AiToolPermissionScopeUnsupported(
-            "scoped_ai_tool_permission_unsupported"
-        ) from exc
+        raise AiToolPermissionScopeUnsupported("scoped_ai_tool_permission_unsupported") from exc
 
-    data_scope_fingerprint = (
-        ai_data_scope_fingerprint(data_scope)
-    )
+    data_scope_fingerprint = ai_data_scope_fingerprint(data_scope)
 
-    granted_scopes = tuple(
-        sorted(required_scopes)
-    )
+    granted_scopes = tuple(sorted(required_scopes))
 
-    permission_keys = tuple(
-        sorted(required_permissions)
-    )
+    permission_keys = tuple(sorted(required_permissions))
 
-    roles = tuple(
-        sorted(authorizing_roles)
-    )
+    roles = tuple(sorted(authorizing_roles))
 
     fingerprint_payload: dict[str, object] = {
         "tenant_id": str(principal.tenant_id),
@@ -295,12 +247,8 @@ def derive_ai_tool_capability(
         "granted_scopes": granted_scopes,
         "permission_keys": permission_keys,
         "authorizing_roles": roles,
-        "data_scope": data_scope.model_dump(
-            mode="json"
-        ),
-        "data_scope_fingerprint": (
-            data_scope_fingerprint
-        ),
+        "data_scope": data_scope.model_dump(mode="json"),
+        "data_scope_fingerprint": (data_scope_fingerprint),
     }
 
     return AiToolCapability(
@@ -311,12 +259,6 @@ def derive_ai_tool_capability(
         permission_keys=permission_keys,
         authorizing_roles=roles,
         data_scope=data_scope,
-        data_scope_fingerprint=(
-            data_scope_fingerprint
-        ),
-        authorization_fingerprint=(
-            _fingerprint(
-                fingerprint_payload
-            )
-        ),
+        data_scope_fingerprint=(data_scope_fingerprint),
+        authorization_fingerprint=(_fingerprint(fingerprint_payload)),
     )

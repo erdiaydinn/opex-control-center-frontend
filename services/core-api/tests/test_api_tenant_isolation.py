@@ -188,12 +188,8 @@ async def test_api_blocks_cross_tenant_member_access() -> None:
                 role_key="viewer",
             )
 
-        tenant_a_token = (
-            f"dev.tenant-a-admin.{TENANT_A}.super_admin"
-        )
-        tenant_b_token = (
-            f"dev.tenant-b-user.{TENANT_B}.viewer"
-        )
+        tenant_a_token = f"dev.tenant-a-admin.{TENANT_A}.super_admin"
+        tenant_b_token = f"dev.tenant-b-user.{TENANT_B}.viewer"
 
         transport = ASGITransport(app=app)
 
@@ -203,9 +199,7 @@ async def test_api_blocks_cross_tenant_member_access() -> None:
         ) as client:
             members_response = await client.get(
                 "/v1/admin/members",
-                headers={
-                    "Authorization": f"Bearer {tenant_a_token}"
-                },
+                headers={"Authorization": f"Bearer {tenant_a_token}"},
             )
 
             assert members_response.status_code == 200
@@ -214,9 +208,7 @@ async def test_api_blocks_cross_tenant_member_access() -> None:
 
             cross_tenant_patch = await client.patch(
                 f"/v1/admin/members/{tenant_b_member_id}",
-                headers={
-                    "Authorization": f"Bearer {tenant_a_token}"
-                },
+                headers={"Authorization": f"Bearer {tenant_a_token}"},
                 json={
                     "status": "suspended",
                     "roles": ["viewer"],
@@ -227,9 +219,7 @@ async def test_api_blocks_cross_tenant_member_access() -> None:
 
             tenant_b_context = await client.get(
                 "/v1/context",
-                headers={
-                    "Authorization": f"Bearer {tenant_b_token}"
-                },
+                headers={"Authorization": f"Bearer {tenant_b_token}"},
             )
 
             assert tenant_b_context.status_code == 200
@@ -253,8 +243,6 @@ async def test_api_blocks_cross_tenant_member_access() -> None:
 
     finally:
         await engine.dispose()
-
-
 
 
 @pytest.mark.asyncio
@@ -299,9 +287,7 @@ async def test_denied_authenticated_request_keeps_actor_in_audit() -> None:
         ) as client:
             response = await client.get(
                 "/v1/context",
-                headers={
-                    "Authorization": f"Bearer {token}"
-                },
+                headers={"Authorization": f"Bearer {token}"},
             )
 
         assert response.status_code == 403
@@ -310,9 +296,10 @@ async def test_denied_authenticated_request_keeps_actor_in_audit() -> None:
             await set_tenant_context(connection, tenant_id)
 
             audit_row = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT
                             actor_subject,
                             tenant_id,
@@ -325,13 +312,16 @@ async def test_denied_authenticated_request_keeps_actor_in_audit() -> None:
                         ORDER BY created_at DESC
                         LIMIT 1
                         """
-                    ),
-                    {
-                        "tenant_id": tenant_id,
-                        "subject": subject,
-                    },
+                        ),
+                        {
+                            "tenant_id": tenant_id,
+                            "subject": subject,
+                        },
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
 
             assert audit_row is not None
             assert audit_row["actor_subject"] == subject
@@ -340,7 +330,6 @@ async def test_denied_authenticated_request_keeps_actor_in_audit() -> None:
 
     finally:
         await engine.dispose()
-
 
 
 @pytest.mark.asyncio

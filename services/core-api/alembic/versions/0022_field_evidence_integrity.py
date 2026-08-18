@@ -49,17 +49,30 @@ def upgrade() -> None:
         sa.Column("sha256", sa.String(length=64), nullable=False),
         sa.Column("media_type", sa.String(length=80), nullable=False),
         sa.Column("byte_size", sa.BigInteger(), nullable=False),
-        sa.Column("received_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "received_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.CheckConstraint("receipt_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_field_object_receipt_fingerprint"),
+        sa.CheckConstraint(
+            "receipt_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_field_object_receipt_fingerprint"
+        ),
         sa.CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="ck_field_object_sha256"),
-        sa.CheckConstraint("byte_size > 0 AND byte_size <= 26214400", name="ck_field_object_byte_size"),
+        sa.CheckConstraint(
+            "byte_size > 0 AND byte_size <= 26214400", name="ck_field_object_byte_size"
+        ),
         sa.CheckConstraint(
             "media_type IN ('image/jpeg','image/png','image/heic','image/webp')",
             name="ck_field_object_media_type",
         ),
-        sa.PrimaryKeyConstraint("tenant_id", "receipt_id", name="pk_field_evidence_object_receipts"),
-        sa.UniqueConstraint("tenant_id", "receipt_fingerprint", name="uq_field_object_receipt_fingerprint"),
+        sa.PrimaryKeyConstraint(
+            "tenant_id", "receipt_id", name="pk_field_evidence_object_receipts"
+        ),
+        sa.UniqueConstraint(
+            "tenant_id", "receipt_fingerprint", name="uq_field_object_receipt_fingerprint"
+        ),
     )
     _tenant_policy("field_evidence_object_receipts")
     _append_only("field_evidence_object_receipts")
@@ -75,11 +88,23 @@ def upgrade() -> None:
         sa.Column("attestation_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.CheckConstraint("verdict IN ('trusted','rejected')", name="ck_field_device_attestation_verdict"),
-        sa.CheckConstraint("attestation_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_field_device_attestation_fingerprint"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.CheckConstraint(
+            "verdict IN ('trusted','rejected')", name="ck_field_device_attestation_verdict"
+        ),
+        sa.CheckConstraint(
+            "attestation_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_field_device_attestation_fingerprint",
+        ),
         sa.PrimaryKeyConstraint(
-            "tenant_id", "device_id", "attestation_fingerprint",
+            "tenant_id",
+            "device_id",
+            "attestation_fingerprint",
             name="pk_field_device_attestations",
         ),
     )
@@ -104,18 +129,35 @@ def upgrade() -> None:
         sa.Column("attestation_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "receipt_id"],
-            ["field_evidence_object_receipts.tenant_id", "field_evidence_object_receipts.receipt_id"],
+            [
+                "field_evidence_object_receipts.tenant_id",
+                "field_evidence_object_receipts.receipt_id",
+            ],
             ondelete="RESTRICT",
             name="fk_field_capture_attestation_receipt",
         ),
-        sa.CheckConstraint("verdict IN ('trusted','rejected')", name="ck_field_capture_attestation_verdict"),
-        sa.CheckConstraint("attestation_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_field_capture_attestation_fingerprint"),
+        sa.CheckConstraint(
+            "verdict IN ('trusted','rejected')", name="ck_field_capture_attestation_verdict"
+        ),
+        sa.CheckConstraint(
+            "attestation_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_field_capture_attestation_fingerprint",
+        ),
         sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_field_capture_attestations"),
         sa.UniqueConstraint(
-            "tenant_id", "receipt_id", "capture_session_id", "device_id", "attestation_fingerprint",
+            "tenant_id",
+            "receipt_id",
+            "capture_session_id",
+            "device_id",
+            "attestation_fingerprint",
             name="uq_field_capture_attestation_identity",
         ),
     )
@@ -147,9 +189,15 @@ def downgrade() -> None:
     )
     op.drop_column("field_offline_receipts", "authority_fingerprint")
 
-    op.execute("DROP TRIGGER IF EXISTS field_capture_attestations_append_only ON field_capture_attestations")
+    op.execute(
+        "DROP TRIGGER IF EXISTS field_capture_attestations_append_only ON field_capture_attestations"
+    )
     op.drop_table("field_capture_attestations")
-    op.execute("DROP TRIGGER IF EXISTS field_device_attestations_append_only ON field_device_attestations")
+    op.execute(
+        "DROP TRIGGER IF EXISTS field_device_attestations_append_only ON field_device_attestations"
+    )
     op.drop_table("field_device_attestations")
-    op.execute("DROP TRIGGER IF EXISTS field_evidence_object_receipts_append_only ON field_evidence_object_receipts")
+    op.execute(
+        "DROP TRIGGER IF EXISTS field_evidence_object_receipts_append_only ON field_evidence_object_receipts"
+    )
     op.drop_table("field_evidence_object_receipts")

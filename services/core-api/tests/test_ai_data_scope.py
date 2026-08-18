@@ -101,9 +101,7 @@ def test_empty_unversioned_unknown_and_wildcard_scope_fail_closed() -> None:
     )
 
     for value in invalid:
-        with pytest.raises(
-            (AiDataScopeInvalid, AiDataScopeEmpty)
-        ):
+        with pytest.raises((AiDataScopeInvalid, AiDataScopeEmpty)):
             parse_ai_data_scope(value)
 
 
@@ -120,12 +118,8 @@ def test_duplicate_store_names_after_normalization_are_rejected() -> None:
 def test_same_permission_role_scopes_union_without_widening_sentinel() -> None:
     combined = union_ai_data_scopes(
         (
-            parse_ai_data_scope(
-                raw_scope("Fulya", "Anka")
-            ),
-            parse_ai_data_scope(
-                raw_scope("Dicle")
-            ),
+            parse_ai_data_scope(raw_scope("Fulya", "Anka")),
+            parse_ai_data_scope(raw_scope("Dicle")),
         )
     )
 
@@ -139,12 +133,8 @@ def test_same_permission_role_scopes_union_without_widening_sentinel() -> None:
 def test_independently_required_permissions_intersect() -> None:
     effective = intersect_ai_data_scopes(
         (
-            parse_ai_data_scope(
-                raw_scope("Fulya", "Anka")
-            ),
-            parse_ai_data_scope(
-                raw_scope("Fulya", "Dicle")
-            ),
+            parse_ai_data_scope(raw_scope("Fulya", "Anka")),
+            parse_ai_data_scope(raw_scope("Fulya", "Dicle")),
         )
     )
 
@@ -155,20 +145,14 @@ def test_nonoverlapping_required_permissions_fail_closed() -> None:
     with pytest.raises(AiDataScopeEmpty):
         intersect_ai_data_scopes(
             (
-                parse_ai_data_scope(
-                    raw_scope("Fulya")
-                ),
-                parse_ai_data_scope(
-                    raw_scope("Dicle")
-                ),
+                parse_ai_data_scope(raw_scope("Fulya")),
+                parse_ai_data_scope(raw_scope("Dicle")),
             )
         )
 
 
 def test_ops_invocation_requires_explicit_canonical_store_subset() -> None:
-    scope = parse_ai_data_scope(
-        raw_scope("Anka", "Fulya")
-    )
+    scope = parse_ai_data_scope(raw_scope("Anka", "Fulya"))
 
     accepted = validate_ai_data_scope_invocation(
         tool="ops_kpi_query",
@@ -196,9 +180,7 @@ def test_ops_invocation_requires_explicit_canonical_store_subset() -> None:
 
 
 def test_tools_without_reviewed_data_scope_adapter_fail_closed() -> None:
-    scope = parse_ai_data_scope(
-        raw_scope("Fulya")
-    )
+    scope = parse_ai_data_scope(raw_scope("Fulya"))
 
     for tool in (
         "catalog_query",
@@ -213,22 +195,12 @@ def test_tools_without_reviewed_data_scope_adapter_fail_closed() -> None:
 
 
 def test_data_scope_fingerprint_is_stable_and_scope_sensitive() -> None:
-    first = parse_ai_data_scope(
-        raw_scope("Fulya", "Anka")
-    )
-    reordered = parse_ai_data_scope(
-        raw_scope("Anka", "Fulya")
-    )
-    changed = parse_ai_data_scope(
-        raw_scope("Anka")
-    )
+    first = parse_ai_data_scope(raw_scope("Fulya", "Anka"))
+    reordered = parse_ai_data_scope(raw_scope("Anka", "Fulya"))
+    changed = parse_ai_data_scope(raw_scope("Anka"))
 
-    assert ai_data_scope_fingerprint(first) == (
-        ai_data_scope_fingerprint(reordered)
-    )
-    assert ai_data_scope_fingerprint(first) != (
-        ai_data_scope_fingerprint(changed)
-    )
+    assert ai_data_scope_fingerprint(first) == (ai_data_scope_fingerprint(reordered))
+    assert ai_data_scope_fingerprint(first) != (ai_data_scope_fingerprint(changed))
 
     fingerprint = ai_data_scope_fingerprint(first)
     assert len(fingerprint) == 64

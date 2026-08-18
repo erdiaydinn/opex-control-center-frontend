@@ -59,9 +59,7 @@ async def resolve_authorized_ai_retrieval_identity(
             subject=actor_subject,
         )
     except Exception as exc:
-        raise AIRetrievalAuthorityUnavailable(
-            "AI retrieval authority unavailable"
-        ) from exc
+        raise AIRetrievalAuthorityUnavailable("AI retrieval authority unavailable") from exc
 
     if (
         access is None
@@ -81,9 +79,7 @@ async def resolve_authorized_ai_retrieval_identity(
     try:
         membership_id = UUID(str(access.get("membership_id", "")))
     except (TypeError, ValueError) as exc:
-        raise AIRetrievalAuthorityUnavailable(
-            "AI retrieval authority unavailable"
-        ) from exc
+        raise AIRetrievalAuthorityUnavailable("AI retrieval authority unavailable") from exc
 
     return AuthorizedAIRetrievalIdentity(
         tenant_id=principal.tenant_id,

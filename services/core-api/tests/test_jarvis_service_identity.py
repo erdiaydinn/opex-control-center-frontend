@@ -32,15 +32,9 @@ def verification_material(
     ec.EllipticCurvePrivateKey,
     JarvisServiceSettings,
 ]:
-    private_key = ec.generate_private_key(
-        ec.SECP256R1()
-    )
+    private_key = ec.generate_private_key(ec.SECP256R1())
 
-    public_jwk = json.loads(
-        ECAlgorithm.to_jwk(
-            private_key.public_key()
-        )
-    )
+    public_jwk = json.loads(ECAlgorithm.to_jwk(private_key.public_key()))
     public_jwk.update(
         {
             "kid": KID,
@@ -148,9 +142,7 @@ def test_foreign_signing_key_is_not_trusted(
     tmp_path: Path,
 ) -> None:
     _, settings = verification_material(tmp_path)
-    foreign_key = ec.generate_private_key(
-        ec.SECP256R1()
-    )
+    foreign_key = ec.generate_private_key(ec.SECP256R1())
 
     with pytest.raises(InternalAssertionInvalid):
         verify_jarvis_service_assertion(
@@ -265,9 +257,7 @@ def test_lifetime_is_independently_bounded(
         verify_jarvis_service_assertion(
             token_for(
                 private_key,
-                lifetime=(
-                    settings.assertion_max_lifetime_seconds + 1
-                ),
+                lifetime=(settings.assertion_max_lifetime_seconds + 1),
             ),
             settings,
         )

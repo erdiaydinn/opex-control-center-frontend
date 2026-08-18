@@ -105,9 +105,7 @@ def test_commit_attestation_accepts_only_exact_reviewed_single_append() -> None:
 
 def test_commit_attestation_rejects_resulting_ledger_mismatch() -> None:
     previous, candidate, patch = _fixture()
-    drifted_patch = patch.model_copy(
-        update={"resulting_ledger_fingerprint": "f" * 64}
-    )
+    drifted_patch = patch.model_copy(update={"resulting_ledger_fingerprint": "f" * 64})
 
     with pytest.raises(ValueError, match="resulting ledger fingerprint mismatch"):
         attest_orders_v2_policy_consumption_commit_candidate(
@@ -131,9 +129,7 @@ def test_commit_attestation_rejects_extra_append() -> None:
         kind="orders_v2_policy_consumption_ledger",
         entries=(first, second),
     )
-    patched = patch.model_copy(
-        update={"resulting_ledger_fingerprint": extra.ledger_fingerprint}
-    )
+    patched = patch.model_copy(update={"resulting_ledger_fingerprint": extra.ledger_fingerprint})
 
     with pytest.raises(ValueError, match="exactly one appended entry"):
         attest_orders_v2_policy_consumption_commit_candidate(

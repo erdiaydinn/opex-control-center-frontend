@@ -143,9 +143,7 @@ def test_human_review_rejects_evidence_from_different_attestation() -> None:
     evidence = live_evidence(attestation)
     evidence_payload = evidence.model_dump(mode="python")
     evidence_payload["schema_attestation_fingerprint"] = "f" * 64
-    foreign_evidence = OrdersV2LiveCrossTenantEvidence.model_construct(
-        **evidence_payload
-    )
+    foreign_evidence = OrdersV2LiveCrossTenantEvidence.model_construct(**evidence_payload)
 
     with pytest.raises(ValueError, match="not bound"):
         build_orders_v2_human_promotion_review(

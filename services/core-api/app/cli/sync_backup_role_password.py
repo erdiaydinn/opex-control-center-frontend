@@ -11,10 +11,14 @@ BACKUP_ROLE = "opex_backup"
 
 
 def read_backup_password() -> str:
-    environment = os.getenv(
-        "OPEX_ENVIRONMENT",
-        "development",
-    ).strip().lower()
+    environment = (
+        os.getenv(
+            "OPEX_ENVIRONMENT",
+            "development",
+        )
+        .strip()
+        .lower()
+    )
 
     direct_value = os.getenv(
         "OPEX_POSTGRES_BACKUP_PASSWORD",
@@ -27,38 +31,26 @@ def read_backup_password() -> str:
     ).strip()
 
     if direct_value and secret_file:
-        raise RuntimeError(
-            "Backup database password and password file "
-            "cannot both be configured"
-        )
+        raise RuntimeError("Backup database password and password file cannot both be configured")
 
     if environment in {"staging", "production"} and direct_value:
         raise RuntimeError(
-            "Backup database password must use a secret file "
-            "in staging and production"
+            "Backup database password must use a secret file in staging and production"
         )
 
     if secret_file:
         try:
-            value = Path(secret_file).read_text(
-                encoding="utf-8"
-            ).strip()
+            value = Path(secret_file).read_text(encoding="utf-8").strip()
         except OSError as exc:
-            raise RuntimeError(
-                "Backup database password secret file cannot be read"
-            ) from exc
+            raise RuntimeError("Backup database password secret file cannot be read") from exc
 
         if not value:
-            raise RuntimeError(
-                "Backup database password secret file is empty"
-            )
+            raise RuntimeError("Backup database password secret file is empty")
 
         return value
 
     if not direct_value:
-        raise RuntimeError(
-            "Backup database password is not configured"
-        )
+        raise RuntimeError("Backup database password is not configured")
 
     return direct_value
 
@@ -89,9 +81,7 @@ async def synchronize() -> None:
             )
 
             if not role_exists:
-                raise RuntimeError(
-                    "Backup database role does not exist"
-                )
+                raise RuntimeError("Backup database role does not exist")
 
             # Keep the credential out of SQL text and tracebacks.
             # The custom setting is transaction-local and disappears

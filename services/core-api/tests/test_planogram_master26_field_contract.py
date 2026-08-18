@@ -35,8 +35,7 @@ async def test_field_promotion_schema_does_not_reject_compliance_adapter() -> No
                 adapter_allowlists.append(definition)
         for definition in adapter_allowlists:
             assert ADAPTER_KEY in definition, (
-                "Field promotion adapter CHECK constraint rejects Master-26 adapter: "
-                f"{definition}"
+                f"Field promotion adapter CHECK constraint rejects Master-26 adapter: {definition}"
             )
 
         primary_key = await connection.fetchval(

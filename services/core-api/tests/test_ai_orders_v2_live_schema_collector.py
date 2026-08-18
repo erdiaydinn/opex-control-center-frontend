@@ -114,9 +114,7 @@ def test_config_reuses_frozen_eay_bigquery_environment_names() -> None:
 
 
 def test_public_collector_api_exposes_no_query_shape_override() -> None:
-    parameters = inspect.signature(
-        collect_orders_v2_schema_observation
-    ).parameters
+    parameters = inspect.signature(collect_orders_v2_schema_observation).parameters
     assert tuple(parameters) == ("client", "config", "observed_at")
 
     for forbidden in (
@@ -148,10 +146,7 @@ def test_collector_submits_one_exact_read_only_metadata_query() -> None:
     job_config = call["job_config"]
     assert isinstance(job_config, bigquery.QueryJobConfig)
     assert job_config.use_legacy_sql is False
-    assert [
-        parameter.to_api_repr()
-        for parameter in job_config.query_parameters
-    ] == [
+    assert [parameter.to_api_repr() for parameter in job_config.query_parameters] == [
         {
             "name": "table_name",
             "parameterType": {"type": "STRING"},
@@ -168,9 +163,7 @@ def test_collector_submits_one_exact_read_only_metadata_query() -> None:
     assert observation.attested_live_run is False
     assert observation.metadata_row_count == 1
     assert observation.evidence.table_catalog == "example-project"
-    assert observation.evidence.collector_query_sha256 == (
-        ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256
-    )
+    assert observation.evidence.collector_query_sha256 == (ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256)
     assert observation.evidence.observed_at == timestamp
 
 
@@ -204,9 +197,7 @@ def test_collector_binds_client_metadata_project_and_location() -> None:
         match="table_catalog",
     ):
         collect_orders_v2_schema_observation(
-            client=FakeClient(
-                rows=[metadata_row(project="other-project")]
-            ),
+            client=FakeClient(rows=[metadata_row(project="other-project")]),
             config=config(),
         )
 

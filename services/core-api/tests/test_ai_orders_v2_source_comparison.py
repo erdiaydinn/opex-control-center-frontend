@@ -40,9 +40,7 @@ class FakeClient:
         self.calls: list[dict[str, Any]] = []
 
     def query(self, query, *, job_config, location=None):
-        self.calls.append(
-            {"query": query, "job_config": job_config, "location": location}
-        )
+        self.calls.append({"query": query, "job_config": job_config, "location": location})
         return self.job
 
 
@@ -101,9 +99,7 @@ def test_source_comparison_records_missing_field_without_selecting_source() -> N
     )
 
     item = next(
-        field
-        for field in artifact.fields
-        if (field.source_table, field.field_path) == missing
+        field for field in artifact.fields if (field.source_table, field.field_path) == missing
     )
     assert item.present is False
     assert item.data_type is None

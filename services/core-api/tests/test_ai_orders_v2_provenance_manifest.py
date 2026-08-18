@@ -57,9 +57,7 @@ def _chain():
         proposal_fingerprint="6" * 64,
         human_review_fingerprint=human.review_fingerprint,
         release_gate_fingerprint=release.release_gate_fingerprint,
-        deployment_authorization_fingerprint=(
-            deployment.deployment_authorization_fingerprint
-        ),
+        deployment_authorization_fingerprint=(deployment.deployment_authorization_fingerprint),
         target_query_template_sha256=template,
         promotion_eligible=False,
         production_ready=False,
@@ -145,18 +143,14 @@ def test_provenance_manifest_rejects_substitution_and_ledger_drift() -> None:
         _build(tuple(chain))
 
     chain = list(_chain())
-    chain[9] = _artifact(
-        **vars(chain[9]) | {"resulting_ledger_fingerprint": "e" * 64}
-    )
+    chain[9] = _artifact(**vars(chain[9]) | {"resulting_ledger_fingerprint": "e" * 64})
     with pytest.raises(ValueError, match="resulting ledger mismatch"):
         _build(tuple(chain))
 
 
 def test_provenance_manifest_rejects_template_or_promoting_state() -> None:
     chain = list(_chain())
-    chain[4] = _artifact(
-        **vars(chain[4]) | {"candidate_template_fingerprint": "f" * 64}
-    )
+    chain[4] = _artifact(**vars(chain[4]) | {"candidate_template_fingerprint": "f" * 64})
     with pytest.raises(ValueError, match="template provenance drift"):
         _build(tuple(chain))
 

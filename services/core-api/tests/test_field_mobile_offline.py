@@ -160,9 +160,7 @@ def test_offline_batch_rejects_browser_authority_and_duplicate_sequence() -> Non
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         OfflineEvidenceEvent(**first.model_dump(mode="python"), trusted_device=True)
     with pytest.raises(ValidationError, match="duplicate device sequence"):
-        OfflineSyncBatch(
-            events=(first, first.model_copy(update={"client_submission_id": uuid4()}))
-        )
+        OfflineSyncBatch(events=(first, first.model_copy(update={"client_submission_id": uuid4()})))
 
 
 @pytest.mark.asyncio

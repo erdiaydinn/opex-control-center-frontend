@@ -27,15 +27,9 @@ from app.core.resources import redis_client, resolve_principal_access
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
-_internal_service_replay_guard = (
-    RedisInternalServiceReplayGuard(
-        redis_client
-    )
-)
+_internal_service_replay_guard = RedisInternalServiceReplayGuard(redis_client)
 
-INTERNAL_SERVICE_ASSERTION_HEADER = (
-    "X-OPEX-Internal-Service-Assertion"
-)
+INTERNAL_SERVICE_ASSERTION_HEADER = "X-OPEX-Internal-Service-Assertion"
 AUTHORIZATION_HEADER = "Authorization"
 MAX_BEARER_TOKEN_CHARACTERS = 16384
 
@@ -69,9 +63,7 @@ def _validated_bearer_token(
     ambiguity, and parser disagreement from silently selecting one credential.
     """
 
-    header_values = request.headers.getlist(
-        AUTHORIZATION_HEADER
-    )
+    header_values = request.headers.getlist(AUTHORIZATION_HEADER)
 
     if header_values:
         if len(header_values) != 1:
@@ -81,10 +73,7 @@ def _validated_bearer_token(
 
         if (
             not raw_header
-            or len(raw_header) > (
-                MAX_BEARER_TOKEN_CHARACTERS
-                + len("Bearer ")
-            )
+            or len(raw_header) > (MAX_BEARER_TOKEN_CHARACTERS + len("Bearer "))
             or raw_header != raw_header.strip()
             or "," in raw_header
             or "\t" in raw_header
@@ -99,11 +88,7 @@ def _validated_bearer_token(
             or not token
             or len(token) > MAX_BEARER_TOKEN_CHARACTERS
             or token != token.strip()
-            or any(
-                ord(character) < 33
-                or ord(character) == 127
-                for character in token
-            )
+            or any(ord(character) < 33 or ord(character) == 127 for character in token)
         ):
             raise _bearer_authentication_failed()
 
@@ -120,13 +105,8 @@ def _validated_bearer_token(
     # without an ASGI header. Production HTTP cannot produce credentials here
     # without an Authorization header, so this keeps existing unit ergonomics
     # without relaxing the network trust boundary above.
-    if (
-        credentials is None
-        or credentials.scheme.lower() != "bearer"
-    ):
-        raise _bearer_authentication_failed(
-            "Bearer access token is required"
-        )
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _bearer_authentication_failed("Bearer access token is required")
 
     token = credentials.credentials
 
@@ -135,11 +115,7 @@ def _validated_bearer_token(
         or len(token) > MAX_BEARER_TOKEN_CHARACTERS
         or token != token.strip()
         or "," in token
-        or any(
-            ord(character) < 33
-            or ord(character) == 127
-            for character in token
-        )
+        or any(ord(character) < 33 or ord(character) == 127 for character in token)
     ):
         raise _bearer_authentication_failed()
 
@@ -159,9 +135,7 @@ async def require_internal_service(
     This deliberately does not consume Authorization/Bearer.
     """
 
-    header_values = request.headers.getlist(
-        INTERNAL_SERVICE_ASSERTION_HEADER
-    )
+    header_values = request.headers.getlist(INTERNAL_SERVICE_ASSERTION_HEADER)
 
     # Fail closed for:
     # - missing header
@@ -170,9 +144,7 @@ async def require_internal_service(
     # A reverse proxy can also coalesce duplicate fields into
     # one comma-separated field, handled below.
     if len(header_values) != 1:
-        raise (
-            _internal_service_authentication_failed()
-        )
+        raise (_internal_service_authentication_failed())
 
     token = header_values[0]
 
@@ -181,40 +153,27 @@ async def require_internal_service(
         or len(token) > 8192
         or token != token.strip()
         or "," in token
-        or any(
-            character.isspace()
-            for character in token
-        )
+        or any(character.isspace() for character in token)
     ):
-        raise (
-            _internal_service_authentication_failed()
-        )
+        raise (_internal_service_authentication_failed())
 
     try:
-        verified = (
-            verify_internal_service_assertion(
-                token,
-                settings,
-            )
+        verified = verify_internal_service_assertion(
+            token,
+            settings,
         )
 
     except InternalAssertionInvalid as exc:
         # Never expose verifier internals as an authentication
         # oracle to an untrusted caller.
-        raise (
-            _internal_service_authentication_failed()
-        ) from exc
+        raise (_internal_service_authentication_failed()) from exc
 
     except InternalAssertionUnavailable as exc:
         # Trusted key material/configuration being unavailable
         # is an infrastructure failure, not an auth bypass.
         raise HTTPException(
-            status_code=(
-                status.HTTP_503_SERVICE_UNAVAILABLE
-            ),
-            detail=(
-                "Internal service authentication unavailable"
-            ),
+            status_code=(status.HTTP_503_SERVICE_UNAVAILABLE),
+            detail=("Internal service authentication unavailable"),
         ) from exc
 
     request.state.internal_service = verified
@@ -245,19 +204,13 @@ async def require_fresh_internal_service(
     # Keep the replay tombstone slightly longer than the
     # maximum acceptance window, including verifier clock skew.
     ttl_seconds = (
-        settings.
-        internal_assertion_max_lifetime_seconds
-        + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
+        settings.internal_assertion_max_lifetime_seconds + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
     )
 
     try:
-        await (
-            _internal_service_replay_guard.consume(
-                assertion_id=(
-                    verified.assertion_id
-                ),
-                ttl_seconds=ttl_seconds,
-            )
+        await _internal_service_replay_guard.consume(
+            assertion_id=(verified.assertion_id),
+            ttl_seconds=ttl_seconds,
         )
 
     except InternalServiceReplayDetected as exc:
@@ -267,9 +220,7 @@ async def require_fresh_internal_service(
 
         # Deliberately indistinguishable from all other
         # authentication failures.
-        raise (
-            _internal_service_authentication_failed()
-        ) from exc
+        raise (_internal_service_authentication_failed()) from exc
 
     except InternalServiceReplayUnavailable as exc:
         request.state.internal_service = None
@@ -277,12 +228,8 @@ async def require_fresh_internal_service(
         # Redis is part of the authentication authority here.
         # Never degrade to "accept without replay checking".
         raise HTTPException(
-            status_code=(
-                status.HTTP_503_SERVICE_UNAVAILABLE
-            ),
-            detail=(
-                "Internal service authentication unavailable"
-            ),
+            status_code=(status.HTTP_503_SERVICE_UNAVAILABLE),
+            detail=("Internal service authentication unavailable"),
         ) from exc
 
     return verified
@@ -443,13 +390,9 @@ async def get_current_principal(
         if not isinstance(item, dict):
             continue
 
-        permission_key = str(
-            item.get("key", "")
-        ).strip()
+        permission_key = str(item.get("key", "")).strip()
 
-        role_key = str(
-            item.get("role_key", "")
-        ).strip()
+        role_key = str(item.get("role_key", "")).strip()
 
         scope = item.get("scope")
 
@@ -479,26 +422,9 @@ async def get_current_principal(
 
     principal = principal.model_copy(
         update={
-            "roles": tuple(
-                sorted(
-                    {
-                        str(role)
-                        for role in access["roles"]
-                        if str(role).strip()
-                    }
-                )
-            ),
-            "permissions": tuple(
-                sorted(
-                    {
-                        item.key
-                        for item in permission_assignments
-                    }
-                )
-            ),
-            "permission_assignments": tuple(
-                permission_assignments
-            ),
+            "roles": tuple(sorted({str(role) for role in access["roles"] if str(role).strip()})),
+            "permissions": tuple(sorted({item.key for item in permission_assignments})),
+            "permission_assignments": tuple(permission_assignments),
         }
     )
 
@@ -532,8 +458,7 @@ def normalize_principal_roles(principal: Principal) -> set[str]:
 
 def require_roles(*allowed_roles: str):
     normalized_allowed = {
-        ROLE_ALIASES.get(role.strip().lower(), role.strip().lower())
-        for role in allowed_roles
+        ROLE_ALIASES.get(role.strip().lower(), role.strip().lower()) for role in allowed_roles
     }
 
     async def dependency(

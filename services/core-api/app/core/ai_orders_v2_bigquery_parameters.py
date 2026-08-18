@@ -72,12 +72,7 @@ class PlannedBigQueryParameter:
                 "type": "ARRAY",
                 "arrayType": {"type": "STRING"},
             },
-            "parameterValue": {
-                "arrayValues": [
-                    {"value": item}
-                    for item in self.value
-                ]
-            },
+            "parameterValue": {"arrayValues": [{"value": item} for item in self.value]},
         }
 
 
@@ -136,10 +131,10 @@ def plan_orders_v2_bigquery_parameters(
     validate_orders_v2_query_candidate()
     validated = validate_orders_v2_runtime_parameters(parameters)
 
-    if tuple(
-        entry.name
-        for entry in ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT
-    ) != ORDERS_V2_PARAMETER_NAMES:
+    if (
+        tuple(entry.name for entry in ORDERS_V2_BIGQUERY_PARAMETER_CONTRACT)
+        != ORDERS_V2_PARAMETER_NAMES
+    ):
         raise RuntimeError("orders_v2_parameter_contract_drift")
 
     start_date = validated["start_date"]
@@ -191,6 +186,5 @@ def orders_v2_bigquery_rest_parameters(
     """Render the typed plan without performing any network/client action."""
 
     return tuple(
-        parameter.rest_spec()
-        for parameter in plan_orders_v2_bigquery_parameters(parameters)
+        parameter.rest_spec() for parameter in plan_orders_v2_bigquery_parameters(parameters)
     )

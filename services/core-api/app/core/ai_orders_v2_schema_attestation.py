@@ -32,9 +32,7 @@ from app.core.ai_orders_v2_schema_evidence import (
 )
 
 SCHEMA_ATTESTATION_VERSION = 1
-SCHEMA_ATTESTATION_PROMOTION_BLOCKER = (
-    "orders_v2_human_promotion_review_required"
-)
+SCHEMA_ATTESTATION_PROMOTION_BLOCKER = "orders_v2_human_promotion_review_required"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -88,56 +86,34 @@ class OrdersV2SchemaAttestationArtifact(BaseModel):
     cryptographically_attested: Literal[False]
     promotion_eligible: Literal[False]
     human_review_required: Literal[True]
-    production_blocker: Literal[
-        "orders_v2_human_promotion_review_required"
-    ]
+    production_blocker: Literal["orders_v2_human_promotion_review_required"]
 
     @model_validator(mode="after")
     def validate_embedded_evidence_binding(
         self,
     ) -> OrdersV2SchemaAttestationArtifact:
-        evidence_fingerprint = validate_orders_v2_schema_evidence(
-            self.evidence
-        )
+        evidence_fingerprint = validate_orders_v2_schema_evidence(self.evidence)
         if self.project != self.evidence.table_catalog:
-            raise ValueError(
-                "attestation project does not match embedded evidence"
-            )
+            raise ValueError("attestation project does not match embedded evidence")
         if self.observed_at != self.evidence.observed_at.isoformat():
-            raise ValueError(
-                "attestation timestamp does not match embedded evidence"
-            )
+            raise ValueError("attestation timestamp does not match embedded evidence")
         if self.schema_evidence_fingerprint != evidence_fingerprint:
             raise ValueError("schema evidence fingerprint mismatch")
-        if (
-            self.collector_query_sha256
-            != ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256
-        ):
+        if self.collector_query_sha256 != ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256:
             raise ValueError("collector query fingerprint mismatch")
-        if (
-            self.candidate_template_fingerprint
-            != ORDERS_V2_CANDIDATE.template_fingerprint
-        ):
+        if self.candidate_template_fingerprint != ORDERS_V2_CANDIDATE.template_fingerprint:
             raise ValueError("candidate template fingerprint mismatch")
         if (
             self.parameter_contract_fingerprint
             != orders_v2_bigquery_parameter_contract_fingerprint()
         ):
             raise ValueError("parameter contract fingerprint mismatch")
-        if (
-            self.sdk_adapter_fingerprint
-            != orders_v2_bigquery_sdk_adapter_fingerprint()
-        ):
+        if self.sdk_adapter_fingerprint != orders_v2_bigquery_sdk_adapter_fingerprint():
             raise ValueError("SDK adapter fingerprint mismatch")
-        expected_observation_fingerprint = (
-            _collector_observation_payload_fingerprint(
-                _collector_observation_payload_from_artifact(self)
-            )
+        expected_observation_fingerprint = _collector_observation_payload_fingerprint(
+            _collector_observation_payload_from_artifact(self)
         )
-        if (
-            self.collector_observation_fingerprint
-            != expected_observation_fingerprint
-        ):
+        if self.collector_observation_fingerprint != expected_observation_fingerprint:
             raise ValueError("collector observation fingerprint mismatch")
         return self
 
@@ -155,9 +131,7 @@ class OrdersV2SchemaAttestationArtifact(BaseModel):
 def orders_v2_collector_observation_fingerprint(
     observation: OrdersV2CollectedSchemaObservation,
 ) -> str:
-    return _collector_observation_payload_fingerprint(
-        observation.model_dump(mode="json")
-    )
+    return _collector_observation_payload_fingerprint(observation.model_dump(mode="json"))
 
 
 def build_orders_v2_schema_attestation_candidate(
@@ -166,17 +140,13 @@ def build_orders_v2_schema_attestation_candidate(
     """Bind one collector observation to the exact reviewed code contracts."""
 
     if observation.attested_live_run is not False:
-        raise ValueError(
-            "collector observation attestation state is invalid"
-        )
+        raise ValueError("collector observation attestation state is invalid")
     if observation.production_blocker != UNATTESTED_COLLECTOR_BLOCKER:
         raise ValueError("collector observation blocker is invalid")
     if observation.metadata_row_count != 1:
         raise ValueError("collector observation row count is invalid")
 
-    evidence_fingerprint = validate_orders_v2_schema_evidence(
-        observation.evidence
-    )
+    evidence_fingerprint = validate_orders_v2_schema_evidence(observation.evidence)
     if observation.evidence.table_catalog != observation.client_project:
         raise ValueError("collector observation project binding mismatch")
 
@@ -189,15 +159,9 @@ def build_orders_v2_schema_attestation_candidate(
         evidence=observation.evidence,
         schema_evidence_fingerprint=evidence_fingerprint,
         collector_query_sha256=ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256,
-        candidate_template_fingerprint=(
-            ORDERS_V2_CANDIDATE.template_fingerprint
-        ),
-        parameter_contract_fingerprint=(
-            orders_v2_bigquery_parameter_contract_fingerprint()
-        ),
-        sdk_adapter_fingerprint=(
-            orders_v2_bigquery_sdk_adapter_fingerprint()
-        ),
+        candidate_template_fingerprint=(ORDERS_V2_CANDIDATE.template_fingerprint),
+        parameter_contract_fingerprint=(orders_v2_bigquery_parameter_contract_fingerprint()),
+        sdk_adapter_fingerprint=(orders_v2_bigquery_sdk_adapter_fingerprint()),
         collector_observation_fingerprint=(
             orders_v2_collector_observation_fingerprint(observation)
         ),

@@ -42,12 +42,20 @@ async def run_command(
         ON CONFLICT (tenant_id,idempotency_key) DO NOTHING
         RETURNING id
         """),
-        {"tenant": uow.tenant_id, "key": key, "operation": operation, "hash": request_hash, "actor": uow.actor},
+        {
+            "tenant": uow.tenant_id,
+            "key": key,
+            "operation": operation,
+            "hash": request_hash,
+            "actor": uow.actor,
+        },
     )
     inserted = result.first()
     if inserted is None:
         existing = await uow.session.execute(
-            text("SELECT * FROM budget_command WHERE tenant_id=:tenant AND idempotency_key=:key FOR UPDATE"),
+            text(
+                "SELECT * FROM budget_command WHERE tenant_id=:tenant AND idempotency_key=:key FOR UPDATE"
+            ),
             {"tenant": uow.tenant_id, "key": key},
         )
         command = existing.first()
@@ -69,7 +77,13 @@ async def run_command(
     response = await perform()
     encoded = jsonable_encoder(response)
     await uow.session.execute(
-        text("UPDATE budget_command SET status='COMPLETED',response=CAST(:response AS jsonb),completed_at=now() WHERE tenant_id=:tenant AND idempotency_key=:key"),
-        {"response": json.dumps(encoded, ensure_ascii=False, sort_keys=True), "tenant": uow.tenant_id, "key": key},
+        text(
+            "UPDATE budget_command SET status='COMPLETED',response=CAST(:response AS jsonb),completed_at=now() WHERE tenant_id=:tenant AND idempotency_key=:key"
+        ),
+        {
+            "response": json.dumps(encoded, ensure_ascii=False, sort_keys=True),
+            "tenant": uow.tenant_id,
+            "key": key,
+        },
     )
     return encoded

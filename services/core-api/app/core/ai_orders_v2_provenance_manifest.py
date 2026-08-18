@@ -73,9 +73,7 @@ class OrdersV2ProvenanceManifest(BaseModel):
     execution_enable_permitted: Literal[False]
     promotion_eligible: Literal[False]
     production_ready: Literal[False]
-    production_blocker: Literal[
-        "orders_v2_manual_production_activation_required"
-    ]
+    production_blocker: Literal["orders_v2_manual_production_activation_required"]
 
     @property
     def manifest_fingerprint(self) -> str:

@@ -162,9 +162,7 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
                 "title_i18n": {"en": "Picker cold chain"},
                 "certificate_enabled": True,
                 "items": [{"content_version_id": version_id, "required": True}],
-                "role_assignments": [
-                    {"role_key": " PICKER ", "required": True, "due_days": 5}
-                ],
+                "role_assignments": [{"role_key": " PICKER ", "required": True, "due_days": 5}],
                 "status": "published",
             },
         )
@@ -284,6 +282,5 @@ async def test_authoring_options_and_role_targeting_are_tenant_authoritative():
         tenant_d_home = await client.get("/v1/academy/me", headers={"X-Test-Tenant": "d"})
         assert tenant_d_home.status_code == 200, tenant_d_home.text
         assert all(
-            item["key"] != "picker-cold-chain"
-            for item in tenant_d_home.json()["enrollments"]
+            item["key"] != "picker-cold-chain" for item in tenant_d_home.json()["enrollments"]
         )

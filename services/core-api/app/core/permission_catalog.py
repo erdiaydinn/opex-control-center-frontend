@@ -31,29 +31,63 @@ FEATURES = MappingProxyType(
     {
         "academy": frozenset(
             {
-                "home", "catalog", "learningPaths", "player", "quizzes",
-                "assignments", "certificates", "jarvisTutor", "contentStudio",
-                "audiences", "analytics", "liveLearning",
+                "home",
+                "catalog",
+                "learningPaths",
+                "player",
+                "quizzes",
+                "assignments",
+                "certificates",
+                "jarvisTutor",
+                "contentStudio",
+                "audiences",
+                "analytics",
+                "liveLearning",
             }
         ),
         "budget": frozenset(
             {
-                "summary", "plans", "periods", "costCenters", "budgetLines",
-                "purchaseRequests", "approvals", "purchaseOrders", "invoices",
-                "commitments", "actuals", "forecasts", "variance", "reconciliation",
-                "imports", "audit", "exports",
+                "summary",
+                "plans",
+                "periods",
+                "costCenters",
+                "budgetLines",
+                "purchaseRequests",
+                "approvals",
+                "purchaseOrders",
+                "invoices",
+                "commitments",
+                "actuals",
+                "forecasts",
+                "variance",
+                "reconciliation",
+                "imports",
+                "audit",
+                "exports",
             }
         ),
         "dockos": frozenset(
             {
-                "dashboard", "livePurchaseOrders", "supplierAppointments",
-                "shipmentDetails", "vehicleTracking", "excelUpload", "duplicateResolution",
+                "dashboard",
+                "livePurchaseOrders",
+                "supplierAppointments",
+                "shipmentDetails",
+                "vehicleTracking",
+                "excelUpload",
+                "duplicateResolution",
             }
         ),
         "field_intelligence": frozenset(
             {
-                "commandCenter", "missionBuilder", "missions", "capture",
-                "evidenceReview", "targeting", "templates", "analytics", "promotions",
+                "commandCenter",
+                "missionBuilder",
+                "missions",
+                "capture",
+                "evidenceReview",
+                "targeting",
+                "templates",
+                "analytics",
+                "promotions",
                 "governance",
             }
         ),
@@ -61,16 +95,37 @@ FEATURES = MappingProxyType(
             {"overview", "canonicalMetrics", "trends", "drilldown", "provenance", "exports"}
         ),
         "jarvis": frozenset(
-            {"assistant", "operations", "academyTutor", "sources", "missions", "approvals", "history"}
+            {
+                "assistant",
+                "operations",
+                "academyTutor",
+                "sources",
+                "missions",
+                "approvals",
+                "history",
+            }
         ),
         "planogram": frozenset(
             {"layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"}
         ),
         "workforce": frozenset(
             {
-                "dashboard", "attendance", "timesheet", "periodClose", "opexLab",
-                "shifts", "approvals", "managerTasks", "communications", "systemConfig",
-                "leaves", "warehouses", "rules", "devices", "audit", "pickerApp",
+                "dashboard",
+                "attendance",
+                "timesheet",
+                "periodClose",
+                "opexLab",
+                "shifts",
+                "approvals",
+                "managerTasks",
+                "communications",
+                "systemConfig",
+                "leaves",
+                "warehouses",
+                "rules",
+                "devices",
+                "audit",
+                "pickerApp",
             }
         ),
     }
@@ -81,45 +136,95 @@ ACTIONS = MappingProxyType(
     {
         "academy": frozenset(
             {
-                "manageContent", "managePaths", "manageQuizzes", "manageEntitlements",
-                "assignEnrollment", "ingestDocuments", "revokeCompletion",
-                "manageLiveLearning", "viewAnalytics",
+                "manageContent",
+                "managePaths",
+                "manageQuizzes",
+                "manageEntitlements",
+                "assignEnrollment",
+                "ingestDocuments",
+                "revokeCompletion",
+                "manageLiveLearning",
+                "viewAnalytics",
             }
         ),
-        "ai_assistant": frozenset(
-            {"executeOpsRead", "executeCatalogRead", "executeLegalRead"}
-        ),
+        "ai_assistant": frozenset({"executeOpsRead", "executeCatalogRead", "executeLegalRead"}),
         "budget": frozenset(
             {
-                "createPlan", "activatePlan", "managePeriods", "manageCostCenters",
-                "manageBudgetLines", "createRequest", "approveRequest", "createPO",
-                "postInvoice", "createForecast", "import", "resolveReconciliation",
-                "closePeriod", "export", "viewAudit", "acceptFieldEvidence",
+                "createPlan",
+                "activatePlan",
+                "managePeriods",
+                "manageCostCenters",
+                "manageBudgetLines",
+                "createRequest",
+                "approveRequest",
+                "createPO",
+                "postInvoice",
+                "createForecast",
+                "import",
+                "resolveReconciliation",
+                "closePeriod",
+                "export",
+                "viewAudit",
+                "acceptFieldEvidence",
             }
         ),
         "dockos": frozenset({"view", "create", "edit", "approve", "export", "delete"}),
         "field_intelligence": frozenset(
             {
-                "createMission", "activateMission", "cancelMission", "submitEvidence",
-                "sendReminder", "reviewEvidence", "manageTemplates", "manageLocations",
-                "exportResults", "viewEvidence", "proposePromotion", "approvePromotion",
-                "viewPromotions", "manageRecurrence", "exemptTarget", "approveExport",
+                "createMission",
+                "activateMission",
+                "cancelMission",
+                "submitEvidence",
+                "sendReminder",
+                "reviewEvidence",
+                "manageTemplates",
+                "manageLocations",
+                "exportResults",
+                "viewEvidence",
+                "proposePromotion",
+                "approvePromotion",
+                "viewPromotions",
+                "manageRecurrence",
+                "exemptTarget",
+                "approveExport",
             }
         ),
         "insight": frozenset({"view", "drilldown", "export"}),
         "inventory": frozenset({"acceptFieldEvidence"}),
-        "jarvis": frozenset({"ask", "proposeAction", "approveAction", "viewSources", "viewHistory"}),
-        "planogram": frozenset({"view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"}),
+        "jarvis": frozenset(
+            {"ask", "proposeAction", "approveAction", "viewSources", "viewHistory"}
+        ),
+        "planogram": frozenset(
+            {"view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"}
+        ),
         "recruitment": frozenset({"approveRecruitmentRequest"}),
         "workforce": frozenset(
             {
-                "manualCorrection", "approveAttendance", "bulkApprove", "createShift",
-                "bulkShiftUpload", "export", "printAttendance", "manageWarehouses",
-                "manageRules", "manageHolidays", "manageLeaves", "manageDevices",
-                "viewFullNationalId", "manageEmployees", "importTimeOff", "runPayrollClose",
-                "importRoster", "overrideRoster", "assignRosterTask", "resolveManagerTasks",
-                "manageAnnouncements", "manageNotifications", "manageSystemConfig",
-                "manageStaffingNorms", "viewAuditLog",
+                "manualCorrection",
+                "approveAttendance",
+                "bulkApprove",
+                "createShift",
+                "bulkShiftUpload",
+                "export",
+                "printAttendance",
+                "manageWarehouses",
+                "manageRules",
+                "manageHolidays",
+                "manageLeaves",
+                "manageDevices",
+                "viewFullNationalId",
+                "manageEmployees",
+                "importTimeOff",
+                "runPayrollClose",
+                "importRoster",
+                "overrideRoster",
+                "assignRosterTask",
+                "resolveManagerTasks",
+                "manageAnnouncements",
+                "manageNotifications",
+                "manageSystemConfig",
+                "manageStaffingNorms",
+                "viewAuditLog",
             }
         ),
     }
@@ -149,28 +254,38 @@ ALL_PERMISSION_KEYS = frozenset(_permission_keys)
 
 ACADEMY_LEARNER_PERMISSIONS = frozenset(
     {
-        module_permission("academy"), feature_permission("academy", "home"),
-        feature_permission("academy", "catalog"), feature_permission("academy", "learningPaths"),
-        feature_permission("academy", "player"), feature_permission("academy", "quizzes"),
-        feature_permission("academy", "assignments"), feature_permission("academy", "certificates"),
+        module_permission("academy"),
+        feature_permission("academy", "home"),
+        feature_permission("academy", "catalog"),
+        feature_permission("academy", "learningPaths"),
+        feature_permission("academy", "player"),
+        feature_permission("academy", "quizzes"),
+        feature_permission("academy", "assignments"),
+        feature_permission("academy", "certificates"),
         feature_permission("academy", "jarvisTutor"),
     }
 )
 ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
     set(ACADEMY_LEARNER_PERMISSIONS)
     | {
-        feature_permission("academy", "contentStudio"), feature_permission("academy", "liveLearning"),
-        action_permission("academy", "manageContent"), action_permission("academy", "managePaths"),
-        action_permission("academy", "manageQuizzes"), action_permission("academy", "ingestDocuments"),
+        feature_permission("academy", "contentStudio"),
+        feature_permission("academy", "liveLearning"),
+        action_permission("academy", "manageContent"),
+        action_permission("academy", "managePaths"),
+        action_permission("academy", "manageQuizzes"),
+        action_permission("academy", "ingestDocuments"),
         action_permission("academy", "manageLiveLearning"),
     }
 )
 ACADEMY_ADMIN_PERMISSIONS = frozenset(
     set(ACADEMY_INSTRUCTOR_PERMISSIONS)
     | {
-        module_permission("academy", "admin"), feature_permission("academy", "audiences"),
-        feature_permission("academy", "analytics"), action_permission("academy", "manageEntitlements"),
-        action_permission("academy", "assignEnrollment"), action_permission("academy", "revokeCompletion"),
+        module_permission("academy", "admin"),
+        feature_permission("academy", "audiences"),
+        feature_permission("academy", "analytics"),
+        action_permission("academy", "manageEntitlements"),
+        action_permission("academy", "assignEnrollment"),
+        action_permission("academy", "revokeCompletion"),
         action_permission("academy", "viewAnalytics"),
     }
 )

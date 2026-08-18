@@ -52,9 +52,7 @@ def test_synthetic_metadata_row_can_validate_contract_consistency_only() -> None
     fingerprint = validate_orders_v2_schema_evidence(evidence)
 
     assert evidence.source_view == "INFORMATION_SCHEMA.COLUMN_FIELD_PATHS"
-    assert evidence.field_path == (
-        ORDERS_V2_CANDIDATE.tenant_discriminator_expression
-    )
+    assert evidence.field_path == (ORDERS_V2_CANDIDATE.tenant_discriminator_expression)
     assert evidence.data_type == "STRING"
     assert len(evidence.result_row_sha256) == 64
     assert len(evidence.evidence_fingerprint) == 64

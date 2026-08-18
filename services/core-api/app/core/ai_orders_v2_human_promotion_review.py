@@ -65,20 +65,14 @@ class OrdersV2HumanPromotionReviewArtifact(BaseModel):
     def validate_review_bindings(self) -> OrdersV2HumanPromotionReviewArtifact:
         if self.reviewed_at.tzinfo is None or self.reviewed_at.utcoffset() is None:
             raise ValueError("review timestamp must be timezone-aware")
-        if (
-            self.candidate_template_fingerprint
-            != ORDERS_V2_CANDIDATE.template_fingerprint
-        ):
+        if self.candidate_template_fingerprint != ORDERS_V2_CANDIDATE.template_fingerprint:
             raise ValueError("candidate template fingerprint mismatch")
         if (
             self.parameter_contract_fingerprint
             != orders_v2_bigquery_parameter_contract_fingerprint()
         ):
             raise ValueError("parameter contract fingerprint mismatch")
-        if (
-            self.sdk_adapter_fingerprint
-            != orders_v2_bigquery_sdk_adapter_fingerprint()
-        ):
+        if self.sdk_adapter_fingerprint != orders_v2_bigquery_sdk_adapter_fingerprint():
             raise ValueError("SDK adapter fingerprint mismatch")
         return self
 
@@ -121,20 +115,14 @@ class OrdersV2ReleaseGateArtifact(BaseModel):
     def validate_release_bindings(self) -> OrdersV2ReleaseGateArtifact:
         if self.released_at.tzinfo is None or self.released_at.utcoffset() is None:
             raise ValueError("release timestamp must be timezone-aware")
-        if (
-            self.candidate_template_fingerprint
-            != ORDERS_V2_CANDIDATE.template_fingerprint
-        ):
+        if self.candidate_template_fingerprint != ORDERS_V2_CANDIDATE.template_fingerprint:
             raise ValueError("candidate template fingerprint mismatch")
         if (
             self.parameter_contract_fingerprint
             != orders_v2_bigquery_parameter_contract_fingerprint()
         ):
             raise ValueError("parameter contract fingerprint mismatch")
-        if (
-            self.sdk_adapter_fingerprint
-            != orders_v2_bigquery_sdk_adapter_fingerprint()
-        ):
+        if self.sdk_adapter_fingerprint != orders_v2_bigquery_sdk_adapter_fingerprint():
             raise ValueError("SDK adapter fingerprint mismatch")
         return self
 
@@ -171,10 +159,7 @@ def build_orders_v2_human_promotion_review(
         raise ValueError("live evidence review state is invalid")
     if live_evidence.foreign_sentinel_match_count != 0:
         raise ValueError("live evidence contains foreign sentinel leakage")
-    if (
-        live_evidence.schema_attestation_fingerprint
-        != schema_attestation.artifact_fingerprint
-    ):
+    if live_evidence.schema_attestation_fingerprint != schema_attestation.artifact_fingerprint:
         raise ValueError("live evidence is not bound to schema attestation")
     if live_evidence.project != schema_attestation.project:
         raise ValueError("project binding mismatch")

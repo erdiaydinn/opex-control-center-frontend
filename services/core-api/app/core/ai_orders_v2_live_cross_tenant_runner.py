@@ -88,9 +88,7 @@ def _validate_authority(
     if capability.data_scope_fingerprint != expected_scope_fingerprint:
         raise OrdersV2LiveProofError("data scope authority fingerprint mismatch")
 
-    expected_context_fingerprint = ai_tenant_query_context_fingerprint(
-        tenant_query_context.context
-    )
+    expected_context_fingerprint = ai_tenant_query_context_fingerprint(tenant_query_context.context)
     if tenant_query_context.record_fingerprint != expected_context_fingerprint:
         raise OrdersV2LiveProofError("tenant query context fingerprint mismatch")
 
@@ -145,9 +143,7 @@ def _canonical_rows(rows: Any) -> tuple[dict[str, object], ...]:
             raise OrdersV2LiveProofError("unexpected Orders V2 store value")
         if not isinstance(orders, int) or isinstance(orders, bool) or orders < 0:
             raise OrdersV2LiveProofError("unexpected Orders V2 order count")
-        canonical.append(
-            {"date": day.isoformat(), "vendor_name": vendor, "orders": orders}
-        )
+        canonical.append({"date": day.isoformat(), "vendor_name": vendor, "orders": orders})
     canonical.sort(key=lambda item: (str(item["date"]), str(item["vendor_name"])))
     return tuple(canonical)
 
@@ -227,8 +223,7 @@ def run_orders_v2_live_cross_tenant_proof(
     if not positive_rows:
         raise OrdersV2LiveProofError("authorized positive control is empty")
     if any(
-        str(row["vendor_name"]).casefold()
-        not in {store.casefold() for store in authorized_stores}
+        str(row["vendor_name"]).casefold() not in {store.casefold() for store in authorized_stores}
         for row in positive_rows
     ):
         raise OrdersV2LiveProofError("authorized control returned foreign store")

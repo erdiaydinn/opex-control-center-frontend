@@ -111,9 +111,7 @@ def test_rest_parameter_shape_is_explicit_and_nonempty() -> None:
                 "type": "ARRAY",
                 "arrayType": {"type": "STRING"},
             },
-            "parameterValue": {
-                "arrayValues": [{"value": "TEST_ENTITY_TR"}]
-            },
+            "parameterValue": {"arrayValues": [{"value": "TEST_ENTITY_TR"}]},
         },
         {
             "name": "stores",
@@ -132,9 +130,7 @@ def test_rest_parameter_shape_is_explicit_and_nonempty() -> None:
 
 
 def test_planner_api_exposes_no_caller_selected_type_contract() -> None:
-    parameters = inspect.signature(
-        plan_orders_v2_bigquery_parameters
-    ).parameters
+    parameters = inspect.signature(plan_orders_v2_bigquery_parameters).parameters
     assert tuple(parameters) == ("parameters",)
 
     for forbidden in (
@@ -211,9 +207,7 @@ def test_parameter_contract_fingerprint_changes_when_schema_changes() -> None:
     encoded = json.dumps(
         {
             "query_id": ORDERS_V2_CANDIDATE.query_id,
-            "template_fingerprint": (
-                ORDERS_V2_CANDIDATE.template_fingerprint
-            ),
+            "template_fingerprint": (ORDERS_V2_CANDIDATE.template_fingerprint),
             "parameters": [
                 {
                     "name": entry.name,

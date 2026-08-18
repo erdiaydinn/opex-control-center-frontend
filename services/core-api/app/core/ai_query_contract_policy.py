@@ -75,9 +75,7 @@ class AiQueryContractPolicy(BaseModel):
                 name
                 for name, value in {
                     "data_scope_argument": self.data_scope_argument,
-                    "tenant_discriminator_parameter": (
-                        self.tenant_discriminator_parameter
-                    ),
+                    "tenant_discriminator_parameter": (self.tenant_discriminator_parameter),
                     "query_template_sha256": self.query_template_sha256,
                     "review_fingerprint": self.review_fingerprint,
                 }.items()
@@ -85,22 +83,15 @@ class AiQueryContractPolicy(BaseModel):
             ]
             if missing:
                 raise ValueError(
-                    "Production-ready AI query contract is incomplete: "
-                    + ", ".join(missing)
+                    "Production-ready AI query contract is incomplete: " + ", ".join(missing)
                 )
             if self.blockers:
-                raise ValueError(
-                    "Production-ready AI query contract cannot have blockers"
-                )
+                raise ValueError("Production-ready AI query contract cannot have blockers")
         elif not self.blockers:
-            raise ValueError(
-                "Blocked AI query contract must explain its blockers"
-            )
+            raise ValueError("Blocked AI query contract must explain its blockers")
 
         if len(set(self.blockers)) != len(self.blockers):
-            raise ValueError(
-                "AI query contract blockers must be unique"
-            )
+            raise ValueError("AI query contract blockers must be unique")
 
         return self
 
@@ -113,9 +104,7 @@ def _review_fingerprint_payload(
         "contract_id": policy.contract_id,
         "contract_revision": policy.contract_revision,
         "data_scope_argument": policy.data_scope_argument,
-        "tenant_discriminator_parameter": (
-            policy.tenant_discriminator_parameter
-        ),
+        "tenant_discriminator_parameter": (policy.tenant_discriminator_parameter),
         "query_template_sha256": policy.query_template_sha256,
     }
 
@@ -159,15 +148,10 @@ def ai_execution_scope_fingerprint(
     fields = {
         "query_contract_fingerprint": query_contract_fingerprint,
         "data_scope_fingerprint": data_scope_fingerprint,
-        "tenant_query_context_fingerprint": (
-            tenant_query_context_fingerprint
-        ),
+        "tenant_query_context_fingerprint": (tenant_query_context_fingerprint),
     }
     for name, value in fields.items():
-        if (
-            len(value) != 64
-            or any(char not in "0123456789abcdef" for char in value)
-        ):
+        if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
             raise ValueError(f"{name} must be lowercase SHA-256")
 
     encoded = json.dumps(
@@ -239,9 +223,7 @@ def get_ai_query_contract_policy(
     try:
         return AI_QUERY_CONTRACT_POLICIES[tool]
     except KeyError as exc:
-        raise AiQueryContractPolicyError(
-            "unsupported_ai_query_contract"
-        ) from exc
+        raise AiQueryContractPolicyError("unsupported_ai_query_contract") from exc
 
 
 def require_ai_query_contract_ready(
@@ -255,16 +237,10 @@ def require_ai_query_contract_ready(
 
     if environment in {"staging", "production"}:
         if not policy.production_ready:
-            raise AiQueryContractNotReady(
-                "ai_query_contract_not_ready"
-            )
+            raise AiQueryContractNotReady("ai_query_contract_not_ready")
 
-        expected_review = expected_query_contract_review_fingerprint(
-            policy
-        )
+        expected_review = expected_query_contract_review_fingerprint(policy)
         if policy.review_fingerprint != expected_review:
-            raise AiQueryContractNotReady(
-                "ai_query_contract_review_fingerprint_mismatch"
-            )
+            raise AiQueryContractNotReady("ai_query_contract_review_fingerprint_mismatch")
 
     return policy

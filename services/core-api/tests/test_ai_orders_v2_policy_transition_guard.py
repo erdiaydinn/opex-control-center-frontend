@@ -161,9 +161,7 @@ def test_consumption_ledger_is_hash_chained_and_rejects_tamper() -> None:
 
 def test_transition_guard_rejects_policy_drift() -> None:
     proposal = _proposal()
-    stale = proposal.model_copy(
-        update={"current_policy_fingerprint": "f" * 64}
-    )
+    stale = proposal.model_copy(update={"current_policy_fingerprint": "f" * 64})
 
     with pytest.raises(ValueError, match="drift"):
         build_orders_v2_policy_transition_guard(

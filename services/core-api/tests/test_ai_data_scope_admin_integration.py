@@ -195,9 +195,10 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
                 },
             )
             audit = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT
                             action,
                             resource_type,
@@ -210,10 +211,13 @@ async def test_scope_update_is_tenant_bound_concurrency_safe_and_audited(
                         ORDER BY created_at DESC
                         LIMIT 1
                         """
-                    ),
-                    {"tenant_id": tenant_a},
+                        ),
+                        {"tenant_id": tenant_a},
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
 
         async with engine.begin() as connection:
             await set_tenant_context(connection, tenant_b)

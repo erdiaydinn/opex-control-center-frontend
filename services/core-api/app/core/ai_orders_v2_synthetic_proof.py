@@ -268,10 +268,7 @@ def aggregate_orders_v2_synthetic_scope(
         ):
             grouped[(row.partition_date_local, row.vendor_name)].add(row.order_id)
 
-    result = [
-        (row_date, store, len(order_ids))
-        for (row_date, store), order_ids in grouped.items()
-    ]
+    result = [(row_date, store, len(order_ids)) for (row_date, store), order_ids in grouped.items()]
     return tuple(
         sorted(
             result,
@@ -297,22 +294,14 @@ def run_orders_v2_synthetic_cross_tenant_proof() -> OrdersV2SyntheticProofArtifa
             stores=case.stores,
         )
         if actual != case.expected_order_ids:
-            raise OrdersV2SyntheticProofError(
-                f"synthetic proof failed: {case.case_id}"
-            )
+            raise OrdersV2SyntheticProofError(f"synthetic proof failed: {case.case_id}")
         passed.append(case.case_id)
 
     return OrdersV2SyntheticProofArtifact(
         proof_kind="synthetic_semantics_only",
-        candidate_template_fingerprint=(
-            ORDERS_V2_CANDIDATE.template_fingerprint
-        ),
-        parameter_contract_fingerprint=(
-            orders_v2_bigquery_parameter_contract_fingerprint()
-        ),
-        sdk_adapter_fingerprint=(
-            orders_v2_bigquery_sdk_adapter_fingerprint()
-        ),
+        candidate_template_fingerprint=(ORDERS_V2_CANDIDATE.template_fingerprint),
+        parameter_contract_fingerprint=(orders_v2_bigquery_parameter_contract_fingerprint()),
+        sdk_adapter_fingerprint=(orders_v2_bigquery_sdk_adapter_fingerprint()),
         fixture_fingerprint=_fixture_fingerprint(rows),
         case_count=len(cases),
         passed_case_ids=tuple(passed),

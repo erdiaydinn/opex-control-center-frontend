@@ -56,15 +56,9 @@ router.include_router(admin_router)
 
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 Viewer = Annotated[Principal, Depends(require_permission("module:academy:view"))]
-ManageContent = Annotated[
-    Principal, Depends(require_permission("action:academy:manageContent"))
-]
-ManagePaths = Annotated[
-    Principal, Depends(require_permission("action:academy:managePaths"))
-]
-ManageQuizzes = Annotated[
-    Principal, Depends(require_permission("action:academy:manageQuizzes"))
-]
+ManageContent = Annotated[Principal, Depends(require_permission("action:academy:manageContent"))]
+ManagePaths = Annotated[Principal, Depends(require_permission("action:academy:managePaths"))]
+ManageQuizzes = Annotated[Principal, Depends(require_permission("action:academy:manageQuizzes"))]
 ManageEntitlements = Annotated[
     Principal, Depends(require_permission("action:academy:manageEntitlements"))
 ]
@@ -92,8 +86,7 @@ async def academy_home(session: TenantSession, principal: Viewer) -> dict[str, o
         "subject": principal.subject,
         "locales": list(SUPPORTED_LOCALES),
         "direction_by_locale": {
-            locale: ("rtl" if locale in RTL_LOCALES else "ltr")
-            for locale in SUPPORTED_LOCALES
+            locale: ("rtl" if locale in RTL_LOCALES else "ltr") for locale in SUPPORTED_LOCALES
         },
         "enrollments": await list_enrollments(session, principal),
         "content": await list_entitled_content(session, principal),

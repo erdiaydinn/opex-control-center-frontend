@@ -280,16 +280,10 @@ asyncio.run(run())
 def test_actual_production_app_cors_runtime_boundary(
     tmp_path,
 ) -> None:
-    runtime_secret = (
-        tmp_path /
-        "runtime-database-url"
-    )
+    runtime_secret = tmp_path / "runtime-database-url"
 
     runtime_secret.write_text(
-        (
-            "postgresql+asyncpg://"
-            "runtime:test@postgres:5432/opex"
-        ),
+        ("postgresql+asyncpg://runtime:test@postgres:5432/opex"),
         encoding="utf-8",
     )
 
@@ -300,25 +294,15 @@ def test_actual_production_app_cors_runtime_boundary(
         {
             "OPEX_ENVIRONMENT": "production",
             "OPEX_AUTH_MODE": "oidc",
-            "OPEX_OIDC_ISSUER":
-                "https://identity.example.com",
-            "OPEX_OIDC_AUDIENCE":
-                "opex-core-api",
-            "OPEX_OIDC_JWKS_URL":
-                "https://identity.example.com/"
-                ".well-known/jwks.json",
-            "OPEX_ALLOWED_HOSTS":
-                "app.example.com",
-            "OPEX_CORS_ORIGINS":
-                "https://app.example.com",
-            "OPEX_DATABASE_URL":
-                "",
-            "OPEX_DATABASE_URL_FILE":
-                str(runtime_secret),
-            "OPEX_MIGRATION_DATABASE_URL":
-                "",
-            "OPEX_MIGRATION_DATABASE_URL_FILE":
-                "",
+            "OPEX_OIDC_ISSUER": "https://identity.example.com",
+            "OPEX_OIDC_AUDIENCE": "opex-core-api",
+            "OPEX_OIDC_JWKS_URL": "https://identity.example.com/.well-known/jwks.json",
+            "OPEX_ALLOWED_HOSTS": "app.example.com",
+            "OPEX_CORS_ORIGINS": "https://app.example.com",
+            "OPEX_DATABASE_URL": "",
+            "OPEX_DATABASE_URL_FILE": str(runtime_secret),
+            "OPEX_MIGRATION_DATABASE_URL": "",
+            "OPEX_MIGRATION_DATABASE_URL_FILE": "",
         }
     )
 
@@ -326,15 +310,9 @@ def test_actual_production_app_cors_runtime_boundary(
         [
             sys.executable,
             "-c",
-            textwrap.dedent(
-                RUNTIME_SCRIPT
-            ),
+            textwrap.dedent(RUNTIME_SCRIPT),
         ],
-        cwd=str(
-            Path(__file__)
-            .resolve()
-            .parents[1]
-        ),
+        cwd=str(Path(__file__).resolve().parents[1]),
         env=env,
         capture_output=True,
         text=True,
@@ -343,14 +321,7 @@ def test_actual_production_app_cors_runtime_boundary(
     )
 
     assert result.returncode == 0, (
-        "\nPRODUCTION CORS RUNTIME FAILURE\n\n"
-        "STDOUT:\n"
-        f"{result.stdout}\n\n"
-        "STDERR:\n"
-        f"{result.stderr}"
+        f"\nPRODUCTION CORS RUNTIME FAILURE\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
     )
 
-    assert (
-        "PRODUCTION_CORS_RUNTIME_GATE=PASS"
-        in result.stdout
-    )
+    assert "PRODUCTION_CORS_RUNTIME_GATE=PASS" in result.stdout

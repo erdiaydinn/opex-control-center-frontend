@@ -47,9 +47,7 @@ def validate_photo_receipt_binding(
         )
 
     populated_photo_keys = {
-        key
-        for key in photo_keys
-        if key in payload and payload[key] not in (None, "", [])
+        key for key in photo_keys if key in payload and payload[key] not in (None, "", [])
     }
     if populated_photo_keys != set(by_field):
         missing = sorted(populated_photo_keys - set(by_field))

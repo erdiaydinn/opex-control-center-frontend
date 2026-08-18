@@ -24,17 +24,11 @@ from app.core.jarvis_service_identity import (
 )
 from app.core.resources import redis_client
 
-JARVIS_SERVICE_ASSERTION_HEADER = (
-    "X-OPEX-Jarvis-Service-Assertion"
-)
+JARVIS_SERVICE_ASSERTION_HEADER = "X-OPEX-Jarvis-Service-Assertion"
 
-_jarvis_service_replay_guard = (
-    RedisInternalServiceReplayGuard(
-        redis_client,
-        key_prefix=(
-            "opex:{identity}:jarvis-service-replay"
-        ),
-    )
+_jarvis_service_replay_guard = RedisInternalServiceReplayGuard(
+    redis_client,
+    key_prefix=("opex:{identity}:jarvis-service-replay"),
 )
 
 
@@ -48,9 +42,7 @@ def _jarvis_service_authentication_failed() -> HTTPException:
 def _extract_single_assertion_header(
     request: Request,
 ) -> str:
-    header_values = request.headers.getlist(
-        JARVIS_SERVICE_ASSERTION_HEADER
-    )
+    header_values = request.headers.getlist(JARVIS_SERVICE_ASSERTION_HEADER)
 
     if len(header_values) != 1:
         raise _jarvis_service_authentication_failed()
@@ -62,10 +54,7 @@ def _extract_single_assertion_header(
         or len(token) > 8192
         or token != token.strip()
         or "," in token
-        or any(
-            character.isspace()
-            for character in token
-        )
+        or any(character.isspace() for character in token)
     ):
         raise _jarvis_service_authentication_failed()
 
@@ -120,10 +109,7 @@ async def require_fresh_jarvis_service(
         settings,
     )
 
-    ttl_seconds = (
-        settings.assertion_max_lifetime_seconds
-        + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
-    )
+    ttl_seconds = settings.assertion_max_lifetime_seconds + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
 
     try:
         await _jarvis_service_replay_guard.consume(

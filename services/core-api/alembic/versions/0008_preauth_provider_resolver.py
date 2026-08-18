@@ -23,9 +23,7 @@ RUNTIME_ROLE = "opex_runtime"
 MIGRATOR_ROLE = "opex_migrator"
 OWNER_ROLE = "opex_preauth_resolver_owner"
 
-FUNCTION_SIGNATURE = (
-    "public.resolve_preauth_oidc_providers(text)"
-)
+FUNCTION_SIGNATURE = "public.resolve_preauth_oidc_providers(text)"
 
 
 def upgrade() -> None:

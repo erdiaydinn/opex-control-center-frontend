@@ -87,9 +87,7 @@ def test_consumption_proposal_rejects_timestamp_before_guard() -> None:
 
 
 def test_consumption_proposal_rejects_ledger_drift() -> None:
-    guard = _guard().model_copy(
-        update={"consumption_ledger_fingerprint": "f" * 64}
-    )
+    guard = _guard().model_copy(update={"consumption_ledger_fingerprint": "f" * 64})
     with pytest.raises(ValueError, match="ledger drift"):
         build_orders_v2_policy_consumption_proposal(
             guard=guard,

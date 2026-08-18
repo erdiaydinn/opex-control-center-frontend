@@ -13,21 +13,15 @@ from app.core.internal_service_replay import (
     RedisInternalServiceReplayGuard,
 )
 
-ASSERTION_ID = (
-    "service-assertion-replay-test-0001"
-)
+ASSERTION_ID = "service-assertion-replay-test-0001"
 
 
 def test_raw_assertion_identifier_is_not_exposed_in_redis_key() -> None:
     redis = AsyncMock()
 
-    guard = RedisInternalServiceReplayGuard(
-        redis
-    )
+    guard = RedisInternalServiceReplayGuard(redis)
 
-    key = guard._key(
-        ASSERTION_ID
-    )
+    key = guard._key(ASSERTION_ID)
 
     assert ASSERTION_ID not in key
 
@@ -38,11 +32,7 @@ def test_raw_assertion_identifier_is_not_exposed_in_redis_key() -> None:
 
     assert len(digest) == 64
 
-    assert all(
-        character
-        in "0123456789abcdef"
-        for character in digest
-    )
+    assert all(character in "0123456789abcdef" for character in digest)
 
 
 @pytest.mark.asyncio
@@ -51,9 +41,7 @@ async def test_first_consume_uses_atomic_set_nx_ex() -> None:
 
     redis.set.return_value = True
 
-    guard = RedisInternalServiceReplayGuard(
-        redis
-    )
+    guard = RedisInternalServiceReplayGuard(redis)
 
     await guard.consume(
         assertion_id=ASSERTION_ID,
@@ -62,9 +50,7 @@ async def test_first_consume_uses_atomic_set_nx_ex() -> None:
 
     redis.set.assert_awaited_once()
 
-    args, kwargs = (
-        redis.set.await_args
-    )
+    args, kwargs = redis.set.await_args
 
     assert len(args) == 2
     assert args[1] == "1"
@@ -83,13 +69,9 @@ async def test_second_consume_is_rejected_as_replay() -> None:
 
     redis.set.return_value = None
 
-    guard = RedisInternalServiceReplayGuard(
-        redis
-    )
+    guard = RedisInternalServiceReplayGuard(redis)
 
-    with pytest.raises(
-        InternalServiceReplayDetected
-    ):
+    with pytest.raises(InternalServiceReplayDetected):
         await guard.consume(
             assertion_id=ASSERTION_ID,
             ttl_seconds=70,
@@ -100,19 +82,11 @@ async def test_second_consume_is_rejected_as_replay() -> None:
 async def test_redis_failure_is_fail_closed() -> None:
     redis = AsyncMock()
 
-    redis.set.side_effect = (
-        RedisConnectionError(
-            "simulated outage"
-        )
-    )
+    redis.set.side_effect = RedisConnectionError("simulated outage")
 
-    guard = RedisInternalServiceReplayGuard(
-        redis
-    )
+    guard = RedisInternalServiceReplayGuard(redis)
 
-    with pytest.raises(
-        InternalServiceReplayUnavailable
-    ):
+    with pytest.raises(InternalServiceReplayUnavailable):
         await guard.consume(
             assertion_id=ASSERTION_ID,
             ttl_seconds=70,
@@ -135,9 +109,7 @@ async def test_invalid_replay_ttl_is_rejected_before_redis(
 ) -> None:
     redis = AsyncMock()
 
-    guard = RedisInternalServiceReplayGuard(
-        redis
-    )
+    guard = RedisInternalServiceReplayGuard(redis)
 
     with pytest.raises(
         ValueError,

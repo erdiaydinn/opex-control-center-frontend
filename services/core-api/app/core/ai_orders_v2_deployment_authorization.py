@@ -29,9 +29,7 @@ from app.core.ai_orders_v2_live_cross_tenant_evidence import sha256_text
 from app.core.ai_orders_v2_query_contract import ORDERS_V2_CANDIDATE
 
 ORDERS_V2_DEPLOYMENT_AUTHORIZATION_VERSION = 1
-ORDERS_V2_MANUAL_POLICY_PROMOTION_BLOCKER = (
-    "orders_v2_manual_policy_promotion_required"
-)
+ORDERS_V2_MANUAL_POLICY_PROMOTION_BLOCKER = "orders_v2_manual_policy_promotion_required"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -58,28 +56,20 @@ class OrdersV2DeploymentAuthorizationArtifact(BaseModel):
     execution_enable_permitted: Literal[False]
     promotion_eligible: Literal[False]
     production_ready: Literal[False]
-    production_blocker: Literal[
-        "orders_v2_manual_policy_promotion_required"
-    ]
+    production_blocker: Literal["orders_v2_manual_policy_promotion_required"]
 
     @model_validator(mode="after")
     def validate_deployment_bindings(self) -> OrdersV2DeploymentAuthorizationArtifact:
         if self.authorized_at.tzinfo is None or self.authorized_at.utcoffset() is None:
             raise ValueError("deployment authorization timestamp must be timezone-aware")
-        if (
-            self.candidate_template_fingerprint
-            != ORDERS_V2_CANDIDATE.template_fingerprint
-        ):
+        if self.candidate_template_fingerprint != ORDERS_V2_CANDIDATE.template_fingerprint:
             raise ValueError("candidate template fingerprint mismatch")
         if (
             self.parameter_contract_fingerprint
             != orders_v2_bigquery_parameter_contract_fingerprint()
         ):
             raise ValueError("parameter contract fingerprint mismatch")
-        if (
-            self.sdk_adapter_fingerprint
-            != orders_v2_bigquery_sdk_adapter_fingerprint()
-        ):
+        if self.sdk_adapter_fingerprint != orders_v2_bigquery_sdk_adapter_fingerprint():
             raise ValueError("SDK adapter fingerprint mismatch")
         return self
 
@@ -129,10 +119,7 @@ def build_orders_v2_deployment_authorization(
         raise ValueError("release gate production state is invalid")
     if release_gate.human_review_fingerprint != human_review.review_fingerprint:
         raise ValueError("release gate is not bound to human review")
-    if (
-        release_gate.release_approver_identity_sha256
-        == human_review.reviewer_identity_sha256
-    ):
+    if release_gate.release_approver_identity_sha256 == human_review.reviewer_identity_sha256:
         raise ValueError("release approver must differ from human reviewer")
 
     expected_template = ORDERS_V2_CANDIDATE.template_fingerprint

@@ -28,9 +28,7 @@ from app.core.ai_orders_v2_schema_attestation import (
 )
 
 LIVE_CROSS_TENANT_EVIDENCE_VERSION = 1
-LIVE_CROSS_TENANT_REVIEW_BLOCKER = (
-    "orders_v2_live_cross_tenant_evidence_human_review_required"
-)
+LIVE_CROSS_TENANT_REVIEW_BLOCKER = "orders_v2_live_cross_tenant_evidence_human_review_required"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -57,26 +55,18 @@ class OrdersV2LiveCrossTenantEvidence(BaseModel):
     cryptographically_attested: Literal[False]
     promotion_eligible: Literal[False]
     human_review_required: Literal[True]
-    production_blocker: Literal[
-        "orders_v2_live_cross_tenant_evidence_human_review_required"
-    ]
+    production_blocker: Literal["orders_v2_live_cross_tenant_evidence_human_review_required"]
 
     @model_validator(mode="after")
     def validate_review_contract(self) -> OrdersV2LiveCrossTenantEvidence:
-        if (
-            self.candidate_template_fingerprint
-            != ORDERS_V2_CANDIDATE.template_fingerprint
-        ):
+        if self.candidate_template_fingerprint != ORDERS_V2_CANDIDATE.template_fingerprint:
             raise ValueError("candidate template fingerprint mismatch")
         if (
             self.parameter_contract_fingerprint
             != orders_v2_bigquery_parameter_contract_fingerprint()
         ):
             raise ValueError("parameter contract fingerprint mismatch")
-        if (
-            self.sdk_adapter_fingerprint
-            != orders_v2_bigquery_sdk_adapter_fingerprint()
-        ):
+        if self.sdk_adapter_fingerprint != orders_v2_bigquery_sdk_adapter_fingerprint():
             raise ValueError("SDK adapter fingerprint mismatch")
         if self.authorized_scope_sha256 == self.foreign_sentinel_scope_sha256:
             raise ValueError("authorized and foreign scopes must be distinct")
@@ -126,17 +116,11 @@ def build_orders_v2_live_cross_tenant_evidence_candidate(
         executed_at=executed_at,
         query_job_id_sha256=sha256_text(query_job_id),
         authorized_scope_sha256=sha256_text(authorized_scope_descriptor),
-        foreign_sentinel_scope_sha256=sha256_text(
-            foreign_sentinel_scope_descriptor
-        ),
+        foreign_sentinel_scope_sha256=sha256_text(foreign_sentinel_scope_descriptor),
         returned_rowset_sha256=sha256_text(canonical_returned_rowset),
         foreign_sentinel_match_count=0,
-        candidate_template_fingerprint=(
-            schema_attestation.candidate_template_fingerprint
-        ),
-        parameter_contract_fingerprint=(
-            schema_attestation.parameter_contract_fingerprint
-        ),
+        candidate_template_fingerprint=(schema_attestation.candidate_template_fingerprint),
+        parameter_contract_fingerprint=(schema_attestation.parameter_contract_fingerprint),
         sdk_adapter_fingerprint=schema_attestation.sdk_adapter_fingerprint,
         schema_attestation_fingerprint=schema_attestation.artifact_fingerprint,
         live_bigquery_run_claimed=True,

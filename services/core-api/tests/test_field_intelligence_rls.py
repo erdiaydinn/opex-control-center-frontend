@@ -75,20 +75,14 @@ async def test_field_locations_rls_blocks_cross_tenant_reads_and_writes() -> Non
 
         async with engine.begin() as connection:
             await set_tenant_context(connection, TENANT_A)
-            tenant_a_count = await connection.scalar(
-                text("SELECT count(*) FROM field_locations")
-            )
+            tenant_a_count = await connection.scalar(text("SELECT count(*) FROM field_locations"))
 
         async with engine.begin() as connection:
             await set_tenant_context(connection, TENANT_B)
-            tenant_b_count = await connection.scalar(
-                text("SELECT count(*) FROM field_locations")
-            )
+            tenant_b_count = await connection.scalar(text("SELECT count(*) FROM field_locations"))
 
         async with engine.begin() as connection:
-            no_context_count = await connection.scalar(
-                text("SELECT count(*) FROM field_locations")
-            )
+            no_context_count = await connection.scalar(text("SELECT count(*) FROM field_locations"))
 
         assert tenant_a_count == 1
         assert tenant_b_count == 0

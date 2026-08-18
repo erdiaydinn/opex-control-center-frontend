@@ -69,28 +69,16 @@ class JarvisServiceSettings(BaseSettings):
         jwks_file = self.assertion_jwks_file.strip()
 
         if not issuer or len(issuer) > 200:
-            raise ValueError(
-                "Jarvis service assertion issuer is invalid"
-            )
+            raise ValueError("Jarvis service assertion issuer is invalid")
 
         if issuer == "opex-identity-gateway":
-            raise ValueError(
-                "Jarvis service must not reuse Identity Gateway issuer"
-            )
+            raise ValueError("Jarvis service must not reuse Identity Gateway issuer")
 
-        if (
-            not audience
-            or len(audience) > 200
-            or audience in RESERVED_PLATFORM_AUDIENCES
-        ):
-            raise ValueError(
-                "Jarvis service assertion audience is invalid"
-            )
+        if not audience or len(audience) > 200 or audience in RESERVED_PLATFORM_AUDIENCES:
+            raise ValueError("Jarvis service assertion audience is invalid")
 
         if self.enabled and not jwks_file:
-            raise ValueError(
-                "Jarvis service JWKS file is required when enabled"
-            )
+            raise ValueError("Jarvis service JWKS file is required when enabled")
 
         object.__setattr__(
             self,
@@ -127,37 +115,25 @@ def _load_jarvis_jwks(
     jwks_file: str,
 ) -> dict[str, object]:
     if not jwks_file:
-        raise InternalAssertionUnavailable(
-            "Jarvis service JWKS file is not configured"
-        )
+        raise InternalAssertionUnavailable("Jarvis service JWKS file is not configured")
 
     path = Path(jwks_file)
 
     try:
-        raw = json.loads(
-            path.read_text(encoding="utf-8")
-        )
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise InternalAssertionUnavailable(
-            "Jarvis service JWKS cannot be loaded"
-        ) from exc
+        raise InternalAssertionUnavailable("Jarvis service JWKS cannot be loaded") from exc
 
     if not isinstance(raw, dict):
-        raise InternalAssertionUnavailable(
-            "Jarvis service JWKS root is invalid"
-        )
+        raise InternalAssertionUnavailable("Jarvis service JWKS root is invalid")
 
     keys = raw.get("keys")
 
     if not isinstance(keys, list) or not keys:
-        raise InternalAssertionUnavailable(
-            "Jarvis service JWKS has no verification keys"
-        )
+        raise InternalAssertionUnavailable("Jarvis service JWKS has no verification keys")
 
     if len(keys) > 16:
-        raise InternalAssertionUnavailable(
-            "Jarvis service JWKS has too many keys"
-        )
+        raise InternalAssertionUnavailable("Jarvis service JWKS has too many keys")
 
     return raw
 
@@ -168,9 +144,7 @@ def _select_jarvis_verification_key(
     kid: str,
     algorithm: str,
 ):
-    jwks = _load_jarvis_jwks(
-        settings.assertion_jwks_file
-    )
+    jwks = _load_jarvis_jwks(settings.assertion_jwks_file)
     matches: list[dict[str, object]] = []
 
     for item in jwks["keys"]:
@@ -186,28 +160,20 @@ def _select_jarvis_verification_key(
             or item.get("alg") != algorithm
             or item.get("use") != "sig"
         ):
-            raise InternalAssertionInvalid(
-                "Jarvis service verification key contract is invalid"
-            )
+            raise InternalAssertionInvalid("Jarvis service verification key contract is invalid")
 
         if "d" in item:
-            raise InternalAssertionInvalid(
-                "Jarvis service JWKS contains private key material"
-            )
+            raise InternalAssertionInvalid("Jarvis service JWKS contains private key material")
 
         matches.append(item)
 
     if len(matches) != 1:
-        raise InternalAssertionInvalid(
-            "Jarvis service verification key is ambiguous or missing"
-        )
+        raise InternalAssertionInvalid("Jarvis service verification key is ambiguous or missing")
 
     try:
         return ECAlgorithm.from_jwk(matches[0])
     except (TypeError, ValueError, jwt.PyJWTError) as exc:
-        raise InternalAssertionInvalid(
-            "Jarvis service verification key is invalid"
-        ) from exc
+        raise InternalAssertionInvalid("Jarvis service verification key is invalid") from exc
 
 
 def verify_jarvis_service_assertion(
@@ -217,56 +183,35 @@ def verify_jarvis_service_assertion(
     """Verify an independently signed EAY AI Core service assertion."""
 
     if not settings.enabled:
-        raise InternalAssertionUnavailable(
-            "Jarvis service identity is disabled"
-        )
+        raise InternalAssertionUnavailable("Jarvis service identity is disabled")
 
-    if (
-        not isinstance(token, str)
-        or not token
-        or len(token) > 8192
-    ):
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion is invalid"
-        )
+    if not isinstance(token, str) or not token or len(token) > 8192:
+        raise InternalAssertionInvalid("Jarvis service assertion is invalid")
 
     try:
         header = jwt.get_unverified_header(token)
     except jwt.PyJWTError as exc:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion header is invalid"
-        ) from exc
+        raise InternalAssertionInvalid("Jarvis service assertion header is invalid") from exc
 
     if set(header) != {
         "alg",
         "kid",
         "typ",
     }:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion header contract is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion header contract is invalid")
 
     algorithm = header.get("alg")
     kid = header.get("kid")
     token_type = header.get("typ")
 
     if algorithm != JARVIS_SERVICE_ALGORITHM:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion algorithm is not allowed"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion algorithm is not allowed")
 
-    if (
-        not isinstance(kid, str)
-        or not KID_PATTERN.fullmatch(kid)
-    ):
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion kid is invalid"
-        )
+    if not isinstance(kid, str) or not KID_PATTERN.fullmatch(kid):
+        raise InternalAssertionInvalid("Jarvis service assertion kid is invalid")
 
     if token_type != JARVIS_SERVICE_ASSERTION_TYP:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion type is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion type is invalid")
 
     verification_key = _select_jarvis_verification_key(
         settings=settings,
@@ -301,34 +246,21 @@ def verify_jarvis_service_assertion(
         ) from exc
 
     if set(claims) != JARVIS_SERVICE_ALLOWED_CLAIMS:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion claim contract is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion claim contract is invalid")
 
     if claims.get("aud") != settings.assertion_audience:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion audience is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion audience is invalid")
 
     if claims.get("sub") != JARVIS_SERVICE_SUBJECT:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion subject is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion subject is invalid")
 
     if claims.get("purpose") != JARVIS_SERVICE_PURPOSE:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion purpose is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion purpose is invalid")
 
     assertion_id = claims["jti"]
 
-    if (
-        not isinstance(assertion_id, str)
-        or not JTI_PATTERN.fullmatch(assertion_id)
-    ):
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion identifier is invalid"
-        )
+    if not isinstance(assertion_id, str) or not JTI_PATTERN.fullmatch(assertion_id):
+        raise InternalAssertionInvalid("Jarvis service assertion identifier is invalid")
 
     for claim_name in (
         "iat",
@@ -337,38 +269,23 @@ def verify_jarvis_service_assertion(
     ):
         value = claims[claim_name]
 
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-        ):
-            raise InternalAssertionInvalid(
-                "Jarvis service assertion timestamps are invalid"
-            )
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise InternalAssertionInvalid("Jarvis service assertion timestamps are invalid")
 
     issued_at = float(claims["iat"])
     not_before = float(claims["nbf"])
     expires_at = float(claims["exp"])
 
     if not_before != issued_at:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion nbf must equal iat"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion nbf must equal iat")
 
     lifetime = expires_at - issued_at
 
-    if (
-        lifetime <= 0
-        or lifetime
-        > settings.assertion_max_lifetime_seconds
-    ):
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion lifetime is invalid"
-        )
+    if lifetime <= 0 or lifetime > settings.assertion_max_lifetime_seconds:
+        raise InternalAssertionInvalid("Jarvis service assertion lifetime is invalid")
 
     if issued_at > time.time() + 5:
-        raise InternalAssertionInvalid(
-            "Jarvis service assertion issue time is invalid"
-        )
+        raise InternalAssertionInvalid("Jarvis service assertion issue time is invalid")
 
     return VerifiedJarvisService(
         service_subject=JARVIS_SERVICE_SUBJECT,

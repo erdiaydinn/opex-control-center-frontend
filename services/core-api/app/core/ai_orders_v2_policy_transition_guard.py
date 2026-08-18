@@ -64,10 +64,7 @@ class OrdersV2PolicyTransitionGuardArtifact(BaseModel):
     def validate_guard_snapshot(self) -> OrdersV2PolicyTransitionGuardArtifact:
         if self.evaluated_at.tzinfo is None or self.evaluated_at.utcoffset() is None:
             raise ValueError("transition evaluation timestamp must be timezone-aware")
-        if (
-            self.proposal_current_policy_fingerprint
-            != self.observed_current_policy_fingerprint
-        ):
+        if self.proposal_current_policy_fingerprint != self.observed_current_policy_fingerprint:
             raise ValueError("policy drift detected")
         if self.proposal_age_seconds > self.proposal_max_age_seconds:
             raise ValueError("policy proposal expired")

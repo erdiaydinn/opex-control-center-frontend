@@ -47,9 +47,7 @@ def observation() -> OrdersV2CollectedSchemaObservation:
 
 
 def test_attestation_candidate_is_reviewable_but_never_self_promoting() -> None:
-    artifact = build_orders_v2_schema_attestation_candidate(
-        observation()
-    )
+    artifact = build_orders_v2_schema_attestation_candidate(observation())
 
     assert artifact.kind == "live_bigquery_schema_attestation_candidate"
     assert artifact.project == "example-project"
@@ -60,9 +58,7 @@ def test_attestation_candidate_is_reviewable_but_never_self_promoting() -> None:
     assert artifact.cryptographically_attested is False
     assert artifact.promotion_eligible is False
     assert artifact.human_review_required is True
-    assert artifact.production_blocker == (
-        SCHEMA_ATTESTATION_PROMOTION_BLOCKER
-    )
+    assert artifact.production_blocker == (SCHEMA_ATTESTATION_PROMOTION_BLOCKER)
     assert len(artifact.schema_evidence_fingerprint) == 64
     assert len(artifact.collector_observation_fingerprint) == 64
     assert len(artifact.artifact_fingerprint) == 64
@@ -74,9 +70,7 @@ def test_attestation_candidate_is_reviewable_but_never_self_promoting() -> None:
 
 
 def test_attestation_rejects_promotion_and_embedded_evidence_tamper() -> None:
-    artifact = build_orders_v2_schema_attestation_candidate(
-        observation()
-    )
+    artifact = build_orders_v2_schema_attestation_candidate(observation())
 
     for field, value in (
         ("promotion_eligible", True),

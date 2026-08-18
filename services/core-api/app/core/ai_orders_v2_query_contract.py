@@ -92,19 +92,13 @@ class OrdersV2QueryCandidate:
             "query_id": self.query_id,
             "source_table": self.source_table,
             "template_fingerprint": self.template_fingerprint,
-            "tenant_discriminator_expression": (
-                self.tenant_discriminator_expression
-            ),
+            "tenant_discriminator_expression": (self.tenant_discriminator_expression),
             "tenant_parameter": self.tenant_parameter,
             "store_expression": self.store_expression,
             "store_parameter": self.store_parameter,
             "schema_evidence_fingerprint": self.schema_evidence_fingerprint,
-            "array_parameter_adapter_fingerprint": (
-                self.array_parameter_adapter_fingerprint
-            ),
-            "cross_tenant_proof_fingerprint": (
-                self.cross_tenant_proof_fingerprint
-            ),
+            "array_parameter_adapter_fingerprint": (self.array_parameter_adapter_fingerprint),
+            "cross_tenant_proof_fingerprint": (self.cross_tenant_proof_fingerprint),
             "blockers": list(self.blockers),
         }
         encoded = json.dumps(
@@ -158,9 +152,7 @@ def validate_orders_v2_query_candidate(
     if candidate.parameter_names != ORDERS_V2_PARAMETER_NAMES:
         raise OrdersV2QueryContractError("unexpected_parameter_contract")
     if not candidate.blockers:
-        raise OrdersV2QueryContractError(
-            "candidate_must_remain_blocked_without_review_evidence"
-        )
+        raise OrdersV2QueryContractError("candidate_must_remain_blocked_without_review_evidence")
     if any(
         value is not None
         for value in (
@@ -169,9 +161,7 @@ def validate_orders_v2_query_candidate(
             candidate.cross_tenant_proof_fingerprint,
         )
     ):
-        raise OrdersV2QueryContractError(
-            "candidate_review_evidence_must_be_promoted_separately"
-        )
+        raise OrdersV2QueryContractError("candidate_review_evidence_must_be_promoted_separately")
 
     sql = candidate.sql
     normalized = _normalized_sql(sql)
@@ -194,10 +184,7 @@ def validate_orders_v2_query_candidate(
     if tree.find(exp.Star) is not None:
         raise OrdersV2QueryContractError("select_star_forbidden")
 
-    tables = {
-        _normalized_table_name(table)
-        for table in tree.find_all(exp.Table)
-    }
+    tables = {_normalized_table_name(table) for table in tree.find_all(exp.Table)}
     if tables != {ORDERS_SOURCE_TABLE.lower()}:
         raise OrdersV2QueryContractError("source_table_mismatch")
 

@@ -33,9 +33,7 @@ def test_synthetic_matrix_proves_expected_scope_separation() -> None:
     assert artifact.production_blocker == SYNTHETIC_PROOF_BLOCKER
     assert len(artifact.fixture_fingerprint) == 64
     assert len(artifact.proof_fingerprint) == 64
-    assert artifact.candidate_template_fingerprint == (
-        ORDERS_V2_CANDIDATE.template_fingerprint
-    )
+    assert artifact.candidate_template_fingerprint == (ORDERS_V2_CANDIDATE.template_fingerprint)
 
 
 def test_synthetic_proof_cannot_be_relabelled_as_live_bigquery_evidence() -> None:
@@ -104,9 +102,7 @@ def test_synthetic_aggregation_mirrors_distinct_order_semantics() -> None:
         stores=("Fulya",),
     )
 
-    assert aggregated == (
-        (date(2026, 8, 10), "Fulya", 2),
-    )
+    assert aggregated == ((date(2026, 8, 10), "Fulya", 2),)
 
 
 def test_runtime_scope_bypass_values_are_still_rejected() -> None:

@@ -33,9 +33,7 @@ def _human_review(identity: str) -> OrdersV2HumanPromotionReviewArtifact:
         schema_attestation_fingerprint="a" * 64,
         live_cross_tenant_evidence_fingerprint="b" * 64,
         candidate_template_fingerprint=ORDERS_V2_CANDIDATE.template_fingerprint,
-        parameter_contract_fingerprint=(
-            orders_v2_bigquery_parameter_contract_fingerprint()
-        ),
+        parameter_contract_fingerprint=(orders_v2_bigquery_parameter_contract_fingerprint()),
         sdk_adapter_fingerprint=orders_v2_bigquery_sdk_adapter_fingerprint(),
         review_decision="APPROVE_FOR_RELEASE_GATE",
         human_review_completed=True,
@@ -60,9 +58,7 @@ def _release_gate(
         release_approver_identity_sha256=sha256_text(identity),
         human_review_fingerprint=review.review_fingerprint,
         candidate_template_fingerprint=ORDERS_V2_CANDIDATE.template_fingerprint,
-        parameter_contract_fingerprint=(
-            orders_v2_bigquery_parameter_contract_fingerprint()
-        ),
+        parameter_contract_fingerprint=(orders_v2_bigquery_parameter_contract_fingerprint()),
         sdk_adapter_fingerprint=orders_v2_bigquery_sdk_adapter_fingerprint(),
         release_decision="APPROVE_FOR_DEPLOYMENT_GATE",
         release_gate_completed=True,

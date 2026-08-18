@@ -29,8 +29,7 @@ def run_migrations_offline() -> None:
     )
 
     context.execute(
-        "ALTER TABLE IF EXISTS alembic_version "
-        "ALTER COLUMN version_num TYPE VARCHAR(128)"
+        "ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -38,10 +37,7 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     connection.execute(
-        text(
-            "ALTER TABLE IF EXISTS alembic_version "
-            "ALTER COLUMN version_num TYPE VARCHAR(128)"
-        )
+        text("ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
     )
     connection.commit()
 

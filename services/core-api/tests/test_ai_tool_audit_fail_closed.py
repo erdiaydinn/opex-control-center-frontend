@@ -151,9 +151,7 @@ async def test_audit_failure_burns_consumed_tool_grant(
         )
 
     assert first_error.value.status_code == 503
-    assert first_error.value.detail == (
-        "AI tool execution audit is unavailable"
-    )
+    assert first_error.value.detail == ("AI tool execution audit is unavailable")
     assert redis.values == {}
 
     with pytest.raises(HTTPException) as replay_error:
@@ -164,6 +162,4 @@ async def test_audit_failure_burns_consumed_tool_grant(
         )
 
     assert replay_error.value.status_code == 401
-    assert replay_error.value.detail == (
-        "AI tool grant authentication failed"
-    )
+    assert replay_error.value.detail == ("AI tool grant authentication failed")

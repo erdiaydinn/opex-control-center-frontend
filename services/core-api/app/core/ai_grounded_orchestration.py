@@ -78,9 +78,7 @@ def _inspect_assertion_binding(assertion: str) -> tuple[UUID, UUID, str]:
             algorithms=["ES256"],
         )
     except jwt.PyJWTError as exc:
-        raise AITenantContextBindingDenied(
-            "AI tenant-context binding denied"
-        ) from exc
+        raise AITenantContextBindingDenied("AI tenant-context binding denied") from exc
 
     if (
         set(header) != {"alg", "kid", "typ"}
@@ -106,9 +104,7 @@ def _inspect_assertion_binding(assertion: str) -> tuple[UUID, UUID, str]:
         tenant_id = UUID(str(claims["tenant_id"]))
         membership_id = UUID(str(claims["membership_id"]))
     except (TypeError, ValueError) as exc:
-        raise AITenantContextBindingDenied(
-            "AI tenant-context binding denied"
-        ) from exc
+        raise AITenantContextBindingDenied("AI tenant-context binding denied") from exc
 
     return tenant_id, membership_id, actor.strip()
 
@@ -127,8 +123,8 @@ async def retrieve_authorized_tenant_grounded_evidence(
     """Freshly bind Core authorization to a session-issued AI assertion."""
 
     identity = await resolve_authorized_ai_retrieval_identity(principal)
-    asserted_tenant, asserted_membership, asserted_actor = (
-        _inspect_assertion_binding(tenant_context_assertion)
+    asserted_tenant, asserted_membership, asserted_actor = _inspect_assertion_binding(
+        tenant_context_assertion
     )
 
     if (

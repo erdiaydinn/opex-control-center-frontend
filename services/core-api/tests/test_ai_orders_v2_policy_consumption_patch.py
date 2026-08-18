@@ -107,9 +107,7 @@ def test_patch_candidate_rejects_review_entry_or_sequence_substitution() -> None
     with pytest.raises(ValueError, match="entry fingerprint"):
         build_orders_v2_policy_consumption_patch_candidate(
             ledger=ledger,
-            review=review.model_copy(
-                update={"proposed_entry_fingerprint": "f" * 64}
-            ),
+            review=review.model_copy(update={"proposed_entry_fingerprint": "f" * 64}),
         )
 
     with pytest.raises(ValueError, match="sequence mismatch"):

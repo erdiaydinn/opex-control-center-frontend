@@ -23,9 +23,7 @@ def principal(*, tenant_id: UUID, roles: tuple[str, ...]) -> Principal:
 
 
 def test_platform_authority_and_health_routes_use_control_plane_authority() -> None:
-    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(
-        encoding="utf-8"
-    )
+    source = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
 
     authority_block = source.split('@app.get("/v1/platform/authority"', maxsplit=1)[1]
     authority_signature = authority_block.split("@app.get", maxsplit=1)[0]
@@ -70,9 +68,7 @@ async def test_control_tenant_without_platform_role_is_denied(monkeypatch) -> No
     monkeypatch.setenv("OPEX_PLATFORM_CONTROL_TENANT_ID", str(CONTROL_TENANT_ID))
 
     with pytest.raises(HTTPException) as exc_info:
-        await require_control_plane_admin(
-            principal(tenant_id=CONTROL_TENANT_ID, roles=("viewer",))
-        )
+        await require_control_plane_admin(principal(tenant_id=CONTROL_TENANT_ID, roles=("viewer",)))
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "EAY platform administrator authority is required"

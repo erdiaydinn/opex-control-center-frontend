@@ -58,7 +58,9 @@ def _resolve_scope(principal: Principal, permission: str) -> BudgetScope:
         try:
             centers.add(UUID(raw))
         except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=503, detail="Invalid Budget cost-center authority") from exc
+            raise HTTPException(
+                status_code=503, detail="Invalid Budget cost-center authority"
+            ) from exc
 
     scope = BudgetScope(authority.unrestricted, frozenset(centers))
     if not scope.all_cost_centers and not scope.cost_center_ids:
@@ -71,9 +73,17 @@ def require_budget(permission: str, *, all_cost_centers: bool = False):
         scope = _resolve_scope(principal, permission)
         if all_cost_centers and not scope.all_cost_centers:
             raise HTTPException(status_code=403, detail="All-cost-center Budget scope required")
-        encoded_scope = "__all__" if scope.all_cost_centers else ",".join(sorted(str(item) for item in scope.cost_center_ids))
+        encoded_scope = (
+            "__all__"
+            if scope.all_cost_centers
+            else ",".join(sorted(str(item) for item in scope.cost_center_ids))
+        )
         async with TenantSessionFactory() as session, session.begin():
             await apply_tenant_context(session, principal)
-            await session.execute(text("SELECT set_config('app.budget_cost_center_ids', :scope, true)"), {"scope": encoded_scope})
+            await session.execute(
+                text("SELECT set_config('app.budget_cost_center_ids', :scope, true)"),
+                {"scope": encoded_scope},
+            )
             yield BudgetUnitOfWork(principal=principal, scope=scope, session=session)
+
     return dependency

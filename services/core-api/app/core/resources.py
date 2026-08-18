@@ -292,16 +292,10 @@ async def resolve_principal_access(
 
     return {
         "tenant_status": row["tenant_status"],
-        "membership_id": (
-            str(row["membership_id"])
-            if row["membership_id"] is not None
-            else None
-        ),
+        "membership_id": (str(row["membership_id"]) if row["membership_id"] is not None else None),
         "membership_status": row["membership_status"],
         "roles": tuple(row["roles"] or ()),
-        "permission_assignments": tuple(
-            row["permission_assignments"] or ()
-        ),
+        "permission_assignments": tuple(row["permission_assignments"] or ()),
     }
 
 
@@ -399,18 +393,10 @@ async def resolve_membership_access(
 
     return {
         "tenant_status": row["tenant_status"],
-        "membership_id": (
-            str(row["membership_id"])
-            if row["membership_id"] is not None
-            else None
-        ),
+        "membership_id": (str(row["membership_id"]) if row["membership_id"] is not None else None),
         "membership_status": row["membership_status"],
-        "roles": tuple(
-            row["roles"] or ()
-        ),
-        "permission_assignments": tuple(
-            row["permission_assignments"] or ()
-        ),
+        "roles": tuple(row["roles"] or ()),
+        "permission_assignments": tuple(row["permission_assignments"] or ()),
     }
 
 
@@ -462,11 +448,7 @@ async def resolve_external_identity_membership(
             },
         )
 
-    return (
-        str(membership_id)
-        if membership_id is not None
-        else None
-    )
+    return str(membership_id) if membership_id is not None else None
 
 
 async def update_tenant_display_name(
@@ -635,15 +617,7 @@ async def create_tenant_member(
     display_name: str | None,
     roles: tuple[str, ...],
 ) -> dict[str, object]:
-    requested_roles = tuple(
-        sorted(
-            {
-                role.strip().lower()
-                for role in roles
-                if role.strip()
-            }
-        )
-    )
+    requested_roles = tuple(sorted({role.strip().lower() for role in roles if role.strip()}))
 
     if not requested_roles:
         raise ValueError("At least one role is required")
@@ -679,20 +653,12 @@ async def create_tenant_member(
         )
 
         role_rows = role_result.mappings().all()
-        resolved_roles = {
-            row["key"]: row["id"]
-            for row in role_rows
-        }
+        resolved_roles = {row["key"]: row["id"] for row in role_rows}
 
-        missing_roles = sorted(
-            set(requested_roles) - set(resolved_roles)
-        )
+        missing_roles = sorted(set(requested_roles) - set(resolved_roles))
 
         if missing_roles:
-            raise ValueError(
-                "Unknown or non-system roles: "
-                + ", ".join(missing_roles)
-            )
+            raise ValueError("Unknown or non-system roles: " + ", ".join(missing_roles))
 
         membership_id = await connection.scalar(
             text(
@@ -725,9 +691,7 @@ async def create_tenant_member(
         )
 
         if membership_id is None:
-            raise ValueError(
-                "Membership already exists for this subject"
-            )
+            raise ValueError("Membership already exists for this subject")
 
         for role_key in requested_roles:
             await connection.execute(
@@ -774,15 +738,7 @@ async def update_tenant_member_access(
     if requested_status not in {"active", "suspended"}:
         raise ValueError("Membership status must be active or suspended")
 
-    requested_roles = tuple(
-        sorted(
-            {
-                role.strip().lower()
-                for role in roles
-                if role.strip()
-            }
-        )
-    )
+    requested_roles = tuple(sorted({role.strip().lower() for role in roles if role.strip()}))
 
     if not requested_roles:
         raise ValueError("At least one role is required")
@@ -815,9 +771,10 @@ async def update_tenant_member_access(
         )
 
         membership = (
-            await connection.execute(
-                text(
-                    """
+            (
+                await connection.execute(
+                    text(
+                        """
                     SELECT
                         id,
                         external_subject,
@@ -828,13 +785,16 @@ async def update_tenant_member_access(
                     WHERE tenant_id = CAST(:tenant_id AS UUID)
                       AND id = CAST(:membership_id AS UUID)
                     """
-                ),
-                {
-                    "tenant_id": tenant_id,
-                    "membership_id": membership_id,
-                },
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "membership_id": membership_id,
+                    },
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
 
         if membership is None:
             raise ValueError("Membership not found")
@@ -855,20 +815,12 @@ async def update_tenant_member_access(
             },
         )
 
-        resolved_roles = {
-            row["key"]: row["id"]
-            for row in role_result.mappings()
-        }
+        resolved_roles = {row["key"]: row["id"] for row in role_result.mappings()}
 
-        missing_roles = sorted(
-            set(requested_roles) - set(resolved_roles)
-        )
+        missing_roles = sorted(set(requested_roles) - set(resolved_roles))
 
         if missing_roles:
-            raise ValueError(
-                "Unknown or non-system roles: "
-                + ", ".join(missing_roles)
-            )
+            raise ValueError("Unknown or non-system roles: " + ", ".join(missing_roles))
 
         currently_super_admin = bool(
             await connection.scalar(
@@ -896,10 +848,7 @@ async def update_tenant_member_access(
         removes_active_super_admin = (
             membership["status"] == "active"
             and currently_super_admin
-            and (
-                requested_status != "active"
-                or "super_admin" not in requested_roles
-            )
+            and (requested_status != "active" or "super_admin" not in requested_roles)
         )
 
         if removes_active_super_admin:
@@ -930,9 +879,7 @@ async def update_tenant_member_access(
             )
 
             if other_active_super_admins == 0:
-                raise ValueError(
-                    "Cannot remove or suspend the last active super admin"
-                )
+                raise ValueError("Cannot remove or suspend the last active super admin")
 
         await connection.execute(
             text(
@@ -1067,9 +1014,7 @@ async def list_tenant_members(
                 "roles": list(row["roles"] or ()),
                 "created_at": row["created_at"].isoformat(),
                 "updated_at": (
-                    row["updated_at"].isoformat()
-                    if row["updated_at"] is not None
-                    else None
+                    row["updated_at"].isoformat() if row["updated_at"] is not None else None
                 ),
             }
             for row in result.mappings()
@@ -1100,9 +1045,7 @@ def _require_canonical_preauth_hostname(
     hostname: str,
 ) -> str:
     if not isinstance(hostname, str):
-        raise ValueError(
-            "Pre-auth hostname is invalid"
-        )
+        raise ValueError("Pre-auth hostname is invalid")
 
     if (
         not hostname
@@ -1113,9 +1056,7 @@ def _require_canonical_preauth_hostname(
         or hostname.endswith(".")
         or ".." in hostname
     ):
-        raise ValueError(
-            "Pre-auth hostname is invalid"
-        )
+        raise ValueError("Pre-auth hostname is invalid")
 
     try:
         hostname.encode(
@@ -1123,21 +1064,13 @@ def _require_canonical_preauth_hostname(
             errors="strict",
         )
     except UnicodeEncodeError as exc:
-        raise ValueError(
-            "Pre-auth hostname is invalid"
-        ) from exc
+        raise ValueError("Pre-auth hostname is invalid") from exc
 
     if any(
-        not (
-            character.isdigit()
-            or "a" <= character <= "z"
-            or character in ".-"
-        )
+        not (character.isdigit() or "a" <= character <= "z" or character in ".-")
         for character in hostname
     ):
-        raise ValueError(
-            "Pre-auth hostname is invalid"
-        )
+        raise ValueError("Pre-auth hostname is invalid")
 
     return hostname
 
@@ -1154,11 +1087,7 @@ async def resolve_preauth_oidc_providers(
     receive direct pre-auth table access.
     """
 
-    canonical_hostname = (
-        _require_canonical_preauth_hostname(
-            hostname
-        )
-    )
+    canonical_hostname = _require_canonical_preauth_hostname(hostname)
 
     statement = text(
         """
@@ -1184,8 +1113,7 @@ async def resolve_preauth_oidc_providers(
         result = await connection.execute(
             statement,
             {
-                "hostname":
-                    canonical_hostname,
+                "hostname": canonical_hostname,
             },
         )
 
@@ -1194,38 +1122,20 @@ async def resolve_preauth_oidc_providers(
     providers = []
 
     for row in rows:
-        item = {
-            field: row[field]
-            for field
-            in PREAUTH_PROVIDER_SAFE_FIELDS
-        }
+        item = {field: row[field] for field in PREAUTH_PROVIDER_SAFE_FIELDS}
 
         # Convert UUID-like values at the resource boundary so
         # callers receive a stable serialization-safe contract.
-        item["tenant_id"] = str(
-            item["tenant_id"]
-        )
+        item["tenant_id"] = str(item["tenant_id"])
 
-        item["provider_id"] = str(
-            item["provider_id"]
-        )
+        item["provider_id"] = str(item["provider_id"])
 
-        item["audiences"] = tuple(
-            item["audiences"] or ()
-        )
+        item["audiences"] = tuple(item["audiences"] or ())
 
-        item["scopes"] = tuple(
-            item["scopes"] or ()
-        )
+        item["scopes"] = tuple(item["scopes"] or ())
 
-        item["allowed_algorithms"] = tuple(
-            item["allowed_algorithms"] or ()
-        )
+        item["allowed_algorithms"] = tuple(item["allowed_algorithms"] or ())
 
-        providers.append(
-            item
-        )
+        providers.append(item)
 
-    return tuple(
-        providers
-    )
+    return tuple(providers)

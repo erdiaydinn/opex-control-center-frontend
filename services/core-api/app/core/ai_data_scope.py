@@ -52,9 +52,7 @@ class AiDataScopeEmpty(AiDataScopeError):
 
 def _normalize_store_name(value: Any) -> str:
     if not isinstance(value, str):
-        raise AiDataScopeInvalid(
-            "AI data scope store name must be text"
-        )
+        raise AiDataScopeInvalid("AI data scope store name must be text")
 
     normalized = unicodedata.normalize(
         "NFC",
@@ -62,24 +60,14 @@ def _normalize_store_name(value: Any) -> str:
     )
 
     if not normalized:
-        raise AiDataScopeInvalid(
-            "AI data scope store name is empty"
-        )
+        raise AiDataScopeInvalid("AI data scope store name is empty")
 
     if len(normalized) > AI_DATA_SCOPE_MAX_STORE_NAME_LENGTH:
-        raise AiDataScopeInvalid(
-            "AI data scope store name is too long"
-        )
+        raise AiDataScopeInvalid("AI data scope store name is too long")
 
     lowered = normalized.casefold()
-    if (
-        lowered in _BLOCKED_SCOPE_NAMES
-        or "*" in normalized
-        or "%" in normalized
-    ):
-        raise AiDataScopeInvalid(
-            "AI data scope wildcard is forbidden"
-        )
+    if lowered in _BLOCKED_SCOPE_NAMES or "*" in normalized or "%" in normalized:
+        raise AiDataScopeInvalid("AI data scope wildcard is forbidden")
 
     return normalized
 
@@ -89,33 +77,18 @@ def _normalize_store_names(
     *,
     max_items: int = AI_DATA_SCOPE_MAX_STORES,
 ) -> tuple[str, ...]:
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes, bytearray))
-    ):
-        raise AiDataScopeInvalid(
-            "AI data scope store_names must be a list"
-        )
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise AiDataScopeInvalid("AI data scope store_names must be a list")
 
     if not 1 <= len(value) <= max_items:
-        raise AiDataScopeEmpty(
-            "AI data scope must contain a bounded store list"
-        )
+        raise AiDataScopeEmpty("AI data scope must contain a bounded store list")
 
-    names = tuple(
-        _normalize_store_name(item)
-        for item in value
-    )
+    names = tuple(_normalize_store_name(item) for item in value)
 
-    normalized_keys = [
-        item.casefold()
-        for item in names
-    ]
+    normalized_keys = [item.casefold() for item in names]
 
     if len(set(normalized_keys)) != len(normalized_keys):
-        raise AiDataScopeInvalid(
-            "AI data scope contains duplicate store names"
-        )
+        raise AiDataScopeInvalid("AI data scope contains duplicate store names")
 
     return tuple(
         sorted(
@@ -140,13 +113,8 @@ class AiDataScope(BaseModel):
     @field_validator("version", mode="before")
     @classmethod
     def validate_version(cls, value: Any) -> Any:
-        if (
-            isinstance(value, bool)
-            or value != AI_DATA_SCOPE_VERSION
-        ):
-            raise ValueError(
-                "ai_data_scope version is unsupported"
-            )
+        if isinstance(value, bool) or value != AI_DATA_SCOPE_VERSION:
+            raise ValueError("ai_data_scope version is unsupported")
         return value
 
     @field_validator("store_names", mode="before")
@@ -164,27 +132,19 @@ def parse_ai_data_scope(
     """Parse one DB-backed role permission scope with no widening defaults."""
 
     if not isinstance(permission_scope, Mapping):
-        raise AiDataScopeInvalid(
-            "AI permission scope must be an object"
-        )
+        raise AiDataScopeInvalid("AI permission scope must be an object")
 
     if set(permission_scope) != {AI_DATA_SCOPE_ROOT_KEY}:
-        raise AiDataScopeInvalid(
-            "AI permission scope keys are unsupported"
-        )
+        raise AiDataScopeInvalid("AI permission scope keys are unsupported")
 
     raw = permission_scope[AI_DATA_SCOPE_ROOT_KEY]
     if not isinstance(raw, Mapping):
-        raise AiDataScopeInvalid(
-            "ai_data_scope must be an object"
-        )
+        raise AiDataScopeInvalid("ai_data_scope must be an object")
 
     try:
         return AiDataScope.model_validate(raw)
     except ValidationError as exc:
-        raise AiDataScopeInvalid(
-            "ai_data_scope is invalid"
-        ) from exc
+        raise AiDataScopeInvalid("ai_data_scope is invalid") from exc
 
 
 def union_ai_data_scopes(
@@ -194,9 +154,7 @@ def union_ai_data_scopes(
 
     scope_list = tuple(scopes)
     if not scope_list:
-        raise AiDataScopeEmpty(
-            "AI permission has no usable data scope"
-        )
+        raise AiDataScopeEmpty("AI permission has no usable data scope")
 
     stores: dict[str, str] = {}
     for scope in scope_list:
@@ -204,20 +162,14 @@ def union_ai_data_scopes(
             key = store_name.casefold()
             existing = stores.get(key)
             if existing is not None and existing != store_name:
-                raise AiDataScopeInvalid(
-                    "AI data scope store casing is ambiguous"
-                )
+                raise AiDataScopeInvalid("AI data scope store casing is ambiguous")
             stores[key] = store_name
 
     if not stores:
-        raise AiDataScopeEmpty(
-            "AI permission data scope is empty"
-        )
+        raise AiDataScopeEmpty("AI permission data scope is empty")
 
     if len(stores) > AI_DATA_SCOPE_MAX_STORES:
-        raise AiDataScopeInvalid(
-            "Combined AI data scope is too large"
-        )
+        raise AiDataScopeInvalid("Combined AI data scope is too large")
 
     return AiDataScope(
         version=AI_DATA_SCOPE_VERSION,
@@ -240,15 +192,10 @@ def intersect_ai_data_scopes(
 
     scope_list = tuple(scopes)
     if not scope_list:
-        raise AiDataScopeEmpty(
-            "AI tool has no data scope"
-        )
+        raise AiDataScopeEmpty("AI tool has no data scope")
 
     by_scope = [
-        {
-            store_name.casefold(): store_name
-            for store_name in scope.store_names
-        }
+        {store_name.casefold(): store_name for store_name in scope.store_names}
         for scope in scope_list
     ]
 
@@ -257,21 +204,13 @@ def intersect_ai_data_scopes(
         common.intersection_update(mapping)
 
     if not common:
-        raise AiDataScopeEmpty(
-            "Required AI permission scopes do not overlap"
-        )
+        raise AiDataScopeEmpty("Required AI permission scopes do not overlap")
 
     canonical: list[str] = []
     for key in common:
-        variants = {
-            mapping[key]
-            for mapping in by_scope
-            if key in mapping
-        }
+        variants = {mapping[key] for mapping in by_scope if key in mapping}
         if len(variants) != 1:
-            raise AiDataScopeInvalid(
-                "AI data scope store casing is ambiguous"
-            )
+            raise AiDataScopeInvalid("AI data scope store casing is ambiguous")
         canonical.append(next(iter(variants)))
 
     return AiDataScope(
@@ -303,14 +242,10 @@ def validate_ai_data_scope_invocation(
     """
 
     if tool != "ops_kpi_query":
-        raise AiDataScopeInvalid(
-            "AI tool has no enforceable V1 data scope adapter"
-        )
+        raise AiDataScopeInvalid("AI tool has no enforceable V1 data scope adapter")
 
     if not isinstance(arguments, Mapping):
-        raise AiDataScopeInvalid(
-            "AI tool arguments must be an object"
-        )
+        raise AiDataScopeInvalid("AI tool arguments must be an object")
 
     raw_stores = arguments.get("stores")
     try:
@@ -319,22 +254,16 @@ def validate_ai_data_scope_invocation(
             max_items=OPS_KPI_MAX_REQUESTED_STORES,
         )
     except AiDataScopeError as exc:
-        raise AiDataScopeInvalid(
-            "ops_kpi_query requires explicit scoped stores"
-        ) from exc
+        raise AiDataScopeInvalid("ops_kpi_query requires explicit scoped stores") from exc
 
     # Do not silently rewrite execution arguments. The caller must use the
     # same canonical store names that were approved in role_permissions.scope.
     if tuple(raw_stores) != requested:
-        raise AiDataScopeInvalid(
-            "ops_kpi_query store arguments are not canonical"
-        )
+        raise AiDataScopeInvalid("ops_kpi_query store arguments are not canonical")
 
     authorized = set(data_scope.store_names)
     if not set(requested).issubset(authorized):
-        raise AiDataScopeInvalid(
-            "ops_kpi_query store arguments exceed authorized data scope"
-        )
+        raise AiDataScopeInvalid("ops_kpi_query store arguments exceed authorized data scope")
 
     return requested
 

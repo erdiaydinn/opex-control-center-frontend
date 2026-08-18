@@ -55,9 +55,7 @@ def _candidate(payload: dict[str, object], location_id: str) -> dict[str, object
     try:
         UUID(plan_version_id)
     except ValueError as exc:
-        raise FieldPromotionError(
-            "Planogram compliance plan_version_id must be UUID"
-        ) from exc
+        raise FieldPromotionError("Planogram compliance plan_version_id must be UUID") from exc
     return {
         "candidate_type": "planogram_compliance_observation",
         "location_id": location_id,
@@ -122,9 +120,7 @@ async def create_planogram_compliance_promotion(
         )
         evidence = evidence_result.mappings().first()
         if evidence is None:
-            raise FieldPromotionError(
-                "promotion requires accepted evidence in authorized scope"
-            )
+            raise FieldPromotionError("promotion requires accepted evidence in authorized scope")
         if str(evidence["latest_evidence_id"]) != str(evidence["id"]):
             raise FieldPromotionError("stale Field evidence cannot be promoted")
         if str(evidence["target_status"]) != "verified":

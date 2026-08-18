@@ -139,7 +139,16 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
         assert home.status_code == 200
         assert home.json()["direction_by_locale"]["ar"] == "rtl"
         assert set(home.json()["locales"]) == {
-            "tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"
+            "tr",
+            "en",
+            "de",
+            "ar",
+            "fr",
+            "es",
+            "it",
+            "nl",
+            "pl",
+            "pt-BR",
         }
         enrollment = home.json()["enrollments"][0]["id"]
         workspace = await c.get(f"/v1/academy/enrollments/{enrollment}")
@@ -262,8 +271,14 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(
 
         # Tenant B must not read or operate on A's content/enrollment/media.
         headers_b = {"X-Test-Tenant": "b"}
-        assert (await c.get(f"/v1/academy/enrollments/{enrollment}", headers=headers_b)).status_code == 404
-        assert (await c.post(f"/v1/academy/media/{media.json()['id']}/playback-authorization", headers=headers_b)).status_code == 404
+        assert (
+            await c.get(f"/v1/academy/enrollments/{enrollment}", headers=headers_b)
+        ).status_code == 404
+        assert (
+            await c.post(
+                f"/v1/academy/media/{media.json()['id']}/playback-authorization", headers=headers_b
+            )
+        ).status_code == 404
         answer = await c.post(
             "/v1/academy/knowledge/answer",
             headers=headers_b,

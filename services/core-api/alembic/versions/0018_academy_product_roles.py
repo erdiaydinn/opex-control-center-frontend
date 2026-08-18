@@ -100,8 +100,7 @@ def upgrade() -> None:
     # Expand persisted Academy language/content contracts before the API starts
     # accepting them. UI, content versions and RAG chunks must share one truth.
     op.execute(
-        "ALTER TABLE academy_content_versions "
-        "DROP CONSTRAINT ck_academy_content_version_locale"
+        "ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale"
     )
     op.execute(
         f"""
@@ -250,8 +249,7 @@ def downgrade() -> None:
         )
 
     op.execute(
-        "ALTER TABLE academy_content_versions "
-        "DROP CONSTRAINT ck_academy_content_version_locale"
+        "ALTER TABLE academy_content_versions DROP CONSTRAINT ck_academy_content_version_locale"
     )
     op.execute(
         """

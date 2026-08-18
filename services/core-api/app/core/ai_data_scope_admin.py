@@ -75,11 +75,7 @@ def permission_scope_record_fingerprint(
 def role_permission_scope_payload(
     data_scope: AiDataScope,
 ) -> dict[str, object]:
-    return {
-        "ai_data_scope": data_scope.model_dump(
-            mode="json"
-        )
-    }
+    return {"ai_data_scope": data_scope.model_dump(mode="json")}
 
 
 def _scope_store_count(scope: Mapping[str, Any]) -> int | None:
@@ -147,9 +143,7 @@ async def list_ai_data_scope_assignments(
             is_system=bool(row["is_system"]),
             permission_key=str(row["permission_key"]),
             raw_scope=dict(row["scope"] or {}),
-            record_fingerprint=permission_scope_record_fingerprint(
-                dict(row["scope"] or {})
-            ),
+            record_fingerprint=permission_scope_record_fingerprint(dict(row["scope"] or {})),
         )
         for row in rows
     )
@@ -170,10 +164,7 @@ async def _write_scope_change_audit_in_transaction(
 ) -> None:
     data = {
         "method": "PUT",
-        "path": (
-            "/v1/admin/ai-data-scopes/"
-            f"{role_key}/{permission_key}"
-        ),
+        "path": (f"/v1/admin/ai-data-scopes/{role_key}/{permission_key}"),
         "status_code": 200,
         "metadata": {
             "role_key": role_key,
@@ -236,21 +227,13 @@ async def update_ai_data_scope_assignment(
 ) -> AiDataScopeAssignmentUpdate:
     """Atomically replace an existing permission scope and record the audit."""
 
-    if (
-        len(expected_record_fingerprint) != SHA256_HEX_LENGTH
-        or any(
-            char not in "0123456789abcdef"
-            for char in expected_record_fingerprint
-        )
+    if len(expected_record_fingerprint) != SHA256_HEX_LENGTH or any(
+        char not in "0123456789abcdef" for char in expected_record_fingerprint
     ):
-        raise ValueError(
-            "expected_record_fingerprint must be lowercase SHA-256"
-        )
+        raise ValueError("expected_record_fingerprint must be lowercase SHA-256")
 
     new_scope = role_permission_scope_payload(data_scope)
-    new_record_fingerprint = permission_scope_record_fingerprint(
-        new_scope
-    )
+    new_record_fingerprint = permission_scope_record_fingerprint(new_scope)
 
     async with engine.begin() as connection:
         await connection.execute(
@@ -292,19 +275,13 @@ async def update_ai_data_scope_assignment(
         row = result.mappings().first()
 
         if row is None:
-            raise AiDataScopeAssignmentNotFound(
-                "AI permission assignment not found"
-            )
+            raise AiDataScopeAssignmentNotFound("AI permission assignment not found")
 
         old_scope = dict(row["scope"] or {})
-        old_record_fingerprint = (
-            permission_scope_record_fingerprint(old_scope)
-        )
+        old_record_fingerprint = permission_scope_record_fingerprint(old_scope)
 
         if old_record_fingerprint != expected_record_fingerprint:
-            raise AiDataScopeAssignmentConflict(
-                "AI data scope assignment changed"
-            )
+            raise AiDataScopeAssignmentConflict("AI data scope assignment changed")
 
         if old_record_fingerprint == new_record_fingerprint:
             return AiDataScopeAssignmentUpdate(

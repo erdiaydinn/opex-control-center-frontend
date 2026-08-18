@@ -152,10 +152,7 @@ async def get_store_dna_workspace(
             "pallet_count": DEFAULT_PALLET_COUNT,
             "module_total": DEFAULT_AISLE_COUNT * DEFAULT_MODULES_PER_SIDE * 2,
             "shelf_total": (
-                DEFAULT_AISLE_COUNT
-                * DEFAULT_MODULES_PER_SIDE
-                * 2
-                * DEFAULT_SHELVES_PER_MODULE
+                DEFAULT_AISLE_COUNT * DEFAULT_MODULES_PER_SIDE * 2 * DEFAULT_SHELVES_PER_MODULE
             ),
         },
         "capabilities": {

@@ -35,8 +35,7 @@ def test_all_internal_platform_routes_use_canonical_control_plane_authority() ->
 
     assert not unguarded, (
         "Internal control-plane routes must use the canonical "
-        "require_control_plane_admin authority; unguarded routes: "
-        + "; ".join(sorted(unguarded))
+        "require_control_plane_admin authority; unguarded routes: " + "; ".join(sorted(unguarded))
     )
 
 

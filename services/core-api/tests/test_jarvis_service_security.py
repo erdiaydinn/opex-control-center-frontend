@@ -27,9 +27,7 @@ class RecordingReplayGuard:
         assertion_id: str,
         ttl_seconds: int,
     ) -> None:
-        self.calls.append(
-            (assertion_id, ttl_seconds)
-        )
+        self.calls.append((assertion_id, ttl_seconds))
 
 
 class ReplayDetectedGuard(RecordingReplayGuard):
@@ -40,9 +38,7 @@ class ReplayDetectedGuard(RecordingReplayGuard):
         ttl_seconds: int,
     ) -> None:
         del assertion_id, ttl_seconds
-        raise InternalServiceReplayDetected(
-            "replay"
-        )
+        raise InternalServiceReplayDetected("replay")
 
 
 class ReplayUnavailableGuard(RecordingReplayGuard):
@@ -53,9 +49,7 @@ class ReplayUnavailableGuard(RecordingReplayGuard):
         ttl_seconds: int,
     ) -> None:
         del assertion_id, ttl_seconds
-        raise InternalServiceReplayUnavailable(
-            "redis unavailable"
-        )
+        raise InternalServiceReplayUnavailable("redis unavailable")
 
 
 def enabled_settings() -> JarvisServiceSettings:
@@ -198,9 +192,7 @@ async def test_verifier_failure_is_generic_401(
         settings: JarvisServiceSettings,
     ) -> VerifiedJarvisService:
         del token, settings
-        raise InternalAssertionInvalid(
-            "specific cryptographic reason"
-        )
+        raise InternalAssertionInvalid("specific cryptographic reason")
 
     monkeypatch.setattr(
         security,
@@ -215,9 +207,7 @@ async def test_verifier_failure_is_generic_401(
         )
 
     assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == (
-        "Jarvis service authentication failed"
-    )
+    assert exc_info.value.detail == ("Jarvis service authentication failed")
     assert "cryptographic" not in str(exc_info.value.detail)
 
 
@@ -243,8 +233,7 @@ async def test_fresh_jarvis_assertion_consumes_replay_id(
     assert guard.calls == [
         (
             "jarvis-assertion-0001",
-            settings.assertion_max_lifetime_seconds
-            + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
+            settings.assertion_max_lifetime_seconds + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS,
         )
     ]
 
@@ -268,9 +257,7 @@ async def test_replayed_jarvis_assertion_is_generic_401_and_clears_state(
         )
 
     assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == (
-        "Jarvis service authentication failed"
-    )
+    assert exc_info.value.detail == ("Jarvis service authentication failed")
     assert request.state.jarvis_service is None
 
 
@@ -293,7 +280,5 @@ async def test_replay_authority_failure_is_503_and_clears_state(
         )
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "Jarvis service authentication unavailable"
-    )
+    assert exc_info.value.detail == ("Jarvis service authentication unavailable")
     assert request.state.jarvis_service is None

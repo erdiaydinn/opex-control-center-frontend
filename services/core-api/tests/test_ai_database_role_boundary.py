@@ -10,26 +10,18 @@ from sqlalchemy.engine import make_url
 def _asyncpg_dsn(environment_name: str) -> str:
     value = os.environ[environment_name]
 
-    url = make_url(value).set(
-        drivername="postgresql"
-    )
+    url = make_url(value).set(drivername="postgresql")
 
     # Credential remains in memory only; never log this value.
-    return url.render_as_string(
-        hide_password=False
-    )
+    return url.render_as_string(hide_password=False)
 
 
 @pytest.mark.asyncio
 async def test_runtime_role_cannot_assume_ai_reader() -> None:
-    connection = await asyncpg.connect(
-        _asyncpg_dsn("OPEX_DATABASE_URL")
-    )
+    connection = await asyncpg.connect(_asyncpg_dsn("OPEX_DATABASE_URL"))
 
     try:
-        current_user = await connection.fetchval(
-            "SELECT current_user"
-        )
+        current_user = await connection.fetchval("SELECT current_user")
 
         assert current_user == "opex_runtime"
 
@@ -45,12 +37,8 @@ async def test_runtime_role_cannot_assume_ai_reader() -> None:
 
         assert membership is False
 
-        with pytest.raises(
-            asyncpg.exceptions.InsufficientPrivilegeError
-        ):
-            await connection.execute(
-                "SET ROLE opex_ai_reader"
-            )
+        with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+            await connection.execute("SET ROLE opex_ai_reader")
 
     finally:
         await connection.close()
@@ -58,11 +46,7 @@ async def test_runtime_role_cannot_assume_ai_reader() -> None:
 
 @pytest.mark.asyncio
 async def test_ai_reader_is_fail_closed() -> None:
-    connection = await asyncpg.connect(
-        _asyncpg_dsn(
-            "OPEX_MIGRATION_DATABASE_URL"
-        )
-    )
+    connection = await asyncpg.connect(_asyncpg_dsn("OPEX_MIGRATION_DATABASE_URL"))
 
     try:
         role = await connection.fetchrow(

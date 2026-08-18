@@ -52,12 +52,8 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(
-        "ALTER TABLE ai_tenant_query_contexts ENABLE ROW LEVEL SECURITY"
-    )
-    op.execute(
-        "ALTER TABLE ai_tenant_query_contexts FORCE ROW LEVEL SECURITY"
-    )
+    op.execute("ALTER TABLE ai_tenant_query_contexts ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE ai_tenant_query_contexts FORCE ROW LEVEL SECURITY")
     op.execute(
         """
         CREATE POLICY ai_tenant_query_context_isolation
@@ -77,17 +73,9 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(
-        "GRANT SELECT, INSERT, UPDATE ON TABLE "
-        f"ai_tenant_query_contexts TO {RUNTIME_ROLE}"
-    )
+    op.execute(f"GRANT SELECT, INSERT, UPDATE ON TABLE ai_tenant_query_contexts TO {RUNTIME_ROLE}")
 
 
 def downgrade() -> None:
-    op.execute(
-        "REVOKE ALL PRIVILEGES ON TABLE "
-        f"ai_tenant_query_contexts FROM {RUNTIME_ROLE}"
-    )
-    op.execute(
-        "DROP TABLE IF EXISTS ai_tenant_query_contexts"
-    )
+    op.execute(f"REVOKE ALL PRIVILEGES ON TABLE ai_tenant_query_contexts FROM {RUNTIME_ROLE}")
+    op.execute("DROP TABLE IF EXISTS ai_tenant_query_contexts")

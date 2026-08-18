@@ -115,10 +115,7 @@ def test_insight_uses_canonical_orders_v2_readiness() -> None:
 
 @pytest.mark.asyncio
 async def test_jarvis_and_insight_routes_require_module_permissions() -> None:
-    route_by_path = {
-        getattr(item, "path", None): item
-        for item in router.routes
-    }
+    route_by_path = {getattr(item, "path", None): item for item in router.routes}
     assert any(
         dependency.call is jarvis_view_guard
         for dependency in route_by_path["/v1/jarvis/workspace"].dependant.dependencies

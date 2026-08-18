@@ -83,18 +83,12 @@ class Settings(BaseSettings):
             secret_path = Path(self.database_url_file)
 
             try:
-                database_url = secret_path.read_text(
-                    encoding="utf-8"
-                ).strip()
+                database_url = secret_path.read_text(encoding="utf-8").strip()
             except OSError as exc:
-                raise ValueError(
-                    "Runtime database secret file cannot be read"
-                ) from exc
+                raise ValueError("Runtime database secret file cannot be read") from exc
 
             if not database_url:
-                raise ValueError(
-                    "Runtime database secret file is empty"
-                )
+                raise ValueError("Runtime database secret file is empty")
 
             self.database_url = database_url
 
@@ -102,24 +96,18 @@ class Settings(BaseSettings):
             secret_path = Path(self.migration_database_url_file)
 
             try:
-                migration_database_url = secret_path.read_text(
-                    encoding="utf-8"
-                ).strip()
+                migration_database_url = secret_path.read_text(encoding="utf-8").strip()
             except OSError as exc:
-                raise ValueError(
-                    "Migration database secret file cannot be read"
-                ) from exc
+                raise ValueError("Migration database secret file cannot be read") from exc
 
             if not migration_database_url:
-                raise ValueError(
-                    "Migration database secret file is empty"
-                )
+                raise ValueError("Migration database secret file is empty")
 
             self.migration_database_url = migration_database_url
-        if (
-            self.environment in {"staging", "production"}
-            and self.auth_mode not in {"oidc", "internal_assertion"}
-        ):
+        if self.environment in {"staging", "production"} and self.auth_mode not in {
+            "oidc",
+            "internal_assertion",
+        }:
             raise ValueError(
                 "Staging and production require OPEX_AUTH_MODE=oidc or internal_assertion"
             )
@@ -133,21 +121,16 @@ class Settings(BaseSettings):
         unsupported_algorithms = configured_algorithms - allowed_oidc_algorithms
         if unsupported_algorithms:
             raise ValueError(
-                "Unsupported OIDC signing algorithms: "
-                + ", ".join(sorted(unsupported_algorithms))
+                "Unsupported OIDC signing algorithms: " + ", ".join(sorted(unsupported_algorithms))
             )
 
         if self.auth_mode == "oidc":
             if self.environment in {"staging", "production"}:
                 if not self.oidc_issuer.startswith("https://"):
-                    raise ValueError(
-                        "OIDC issuer must use HTTPS in staging and production"
-                    )
+                    raise ValueError("OIDC issuer must use HTTPS in staging and production")
 
                 if not self.oidc_jwks_url.startswith("https://"):
-                    raise ValueError(
-                        "OIDC JWKS URL must use HTTPS in staging and production"
-                    )
+                    raise ValueError("OIDC JWKS URL must use HTTPS in staging and production")
 
             missing = [
                 name
@@ -162,128 +145,82 @@ class Settings(BaseSettings):
                 raise ValueError(f"OIDC configuration is incomplete: {', '.join(missing)}")
 
         if not self.internal_service_assertion_audience.strip():
-            raise ValueError(
-                "Internal service assertion audience is required"
-            )
+            raise ValueError("Internal service assertion audience is required")
 
-        if (
-            self.internal_service_assertion_audience
-            == self.internal_assertion_audience
-        ):
+        if self.internal_service_assertion_audience == self.internal_assertion_audience:
             raise ValueError(
-                "Internal service assertion audience must differ "
-                "from end-user assertion audience"
+                "Internal service assertion audience must differ from end-user assertion audience"
             )
 
         allowed_internal_assertion_algorithms = {
             "ES256",
         }
 
-        configured_internal_algorithms = set(
-            self.internal_assertion_algorithm_list
-        )
+        configured_internal_algorithms = set(self.internal_assertion_algorithm_list)
 
         if not configured_internal_algorithms:
-            raise ValueError(
-                "At least one internal assertion "
-                "signing algorithm is required"
-            )
+            raise ValueError("At least one internal assertion signing algorithm is required")
 
         unsupported_internal_algorithms = (
-            configured_internal_algorithms
-            - allowed_internal_assertion_algorithms
+            configured_internal_algorithms - allowed_internal_assertion_algorithms
         )
 
         if unsupported_internal_algorithms:
             raise ValueError(
                 "Unsupported internal assertion algorithms: "
-                + ", ".join(
-                    sorted(
-                        unsupported_internal_algorithms
-                    )
-                )
+                + ", ".join(sorted(unsupported_internal_algorithms))
             )
 
-        if not (
-            15
-            <= self.internal_assertion_max_lifetime_seconds
-            <= 60
-        ):
+        if not (15 <= self.internal_assertion_max_lifetime_seconds <= 60):
             raise ValueError(
-                "Internal assertion maximum lifetime "
-                "must be between 15 and 60 seconds"
+                "Internal assertion maximum lifetime must be between 15 and 60 seconds"
             )
 
         replay_retention_seconds = (
-            self.internal_assertion_max_lifetime_seconds
-            + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
+            self.internal_assertion_max_lifetime_seconds + INTERNAL_SERVICE_REPLAY_TTL_SKEW_SECONDS
         )
 
-        if (
-            replay_retention_seconds
-            > INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS
-        ):
-            raise ValueError(
-                "Internal assertion lifetime exceeds "
-                "replay retention capacity"
-            )
+        if replay_retention_seconds > INTERNAL_SERVICE_REPLAY_MAX_TTL_SECONDS:
+            raise ValueError("Internal assertion lifetime exceeds replay retention capacity")
 
         if self.auth_mode == "internal_assertion":
             missing_internal = [
                 name
                 for name, value in {
-                    "OPEX_INTERNAL_ASSERTION_ISSUER":
-                        self.internal_assertion_issuer,
-                    "OPEX_INTERNAL_ASSERTION_AUDIENCE":
-                        self.internal_assertion_audience,
-                    "OPEX_INTERNAL_ASSERTION_JWKS_FILE":
-                        self.internal_assertion_jwks_file,
+                    "OPEX_INTERNAL_ASSERTION_ISSUER": self.internal_assertion_issuer,
+                    "OPEX_INTERNAL_ASSERTION_AUDIENCE": self.internal_assertion_audience,
+                    "OPEX_INTERNAL_ASSERTION_JWKS_FILE": self.internal_assertion_jwks_file,
                 }.items()
                 if not str(value).strip()
             ]
 
             if missing_internal:
                 raise ValueError(
-                    "Internal assertion configuration "
-                    "is incomplete: "
-                    + ", ".join(missing_internal)
+                    "Internal assertion configuration is incomplete: " + ", ".join(missing_internal)
                 )
 
-            jwks_path = Path(
-                self.internal_assertion_jwks_file
-            )
+            jwks_path = Path(self.internal_assertion_jwks_file)
 
             if not jwks_path.is_file():
-                raise ValueError(
-                    "Internal assertion JWKS file "
-                    "cannot be read"
-                )
+                raise ValueError("Internal assertion JWKS file cannot be read")
 
         if self.environment == "production" and "*" in self.cors_origin_list:
             raise ValueError("Wildcard CORS is forbidden in production")
 
         if self.environment in {"staging", "production"}:
             if "*" in self.allowed_host_list:
-                raise ValueError(
-                    "Wildcard allowed host is forbidden in staging and production"
-                )
+                raise ValueError("Wildcard allowed host is forbidden in staging and production")
 
             insecure_origins = [
-                origin
-                for origin in self.cors_origin_list
-                if not origin.startswith("https://")
+                origin for origin in self.cors_origin_list if not origin.startswith("https://")
             ]
             if insecure_origins:
-                raise ValueError(
-                    "CORS origins must use HTTPS in staging and production"
-                )
+                raise ValueError("CORS origins must use HTTPS in staging and production")
 
         if self.environment == "production":
             forbidden_hosts = {"localhost", "127.0.0.1", "::1"}
             if forbidden_hosts.intersection(self.allowed_host_list):
-                raise ValueError(
-                    "Localhost allowed hosts are forbidden in production"
-                )
+                raise ValueError("Localhost allowed hosts are forbidden in production")
 
             local_origin_prefixes = (
                 "http://localhost",
@@ -293,13 +230,8 @@ class Settings(BaseSettings):
                 "http://[::1]",
                 "https://[::1]",
             )
-            if any(
-                origin.startswith(local_origin_prefixes)
-                for origin in self.cors_origin_list
-            ):
-                raise ValueError(
-                    "Localhost CORS origins are forbidden in production"
-                )
+            if any(origin.startswith(local_origin_prefixes) for origin in self.cors_origin_list):
+                raise ValueError("Localhost CORS origins are forbidden in production")
 
         if self.environment in {"staging", "production"}:
             forbidden_secret_env = [
@@ -317,13 +249,9 @@ class Settings(BaseSettings):
                     "environment variables in staging or production"
                 )
 
-            if (
-                not self.database_url_file
-                and not self.migration_database_url_file
-            ):
+            if not self.database_url_file and not self.migration_database_url_file:
                 raise ValueError(
-                    "Staging and production require database credentials "
-                    "from secret files"
+                    "Staging and production require database credentials from secret files"
                 )
 
         if self.database_url == self.migration_database_url:

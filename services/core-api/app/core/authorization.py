@@ -121,11 +121,7 @@ def resolve_permission_scope(
     resolved = ResolvedPermissionScope(
         permission_key=normalized,
         unrestricted=unrestricted,
-        dimensions={
-            key: frozenset(values)
-            for key, values in sorted(dimensions.items())
-            if values
-        },
+        dimensions={key: frozenset(values) for key, values in sorted(dimensions.items()) if values},
         role_keys=frozenset(role_keys),
     )
     if resolved.empty:

@@ -39,19 +39,14 @@ def test_sdk_version_contract_matches_reviewed_optional_range() -> None:
 
 def test_real_sdk_parameters_match_network_free_planner_rest_shape() -> None:
     expected = orders_v2_bigquery_rest_parameters(valid_parameters())
-    sdk_parameters = build_orders_v2_bigquery_sdk_parameters(
-        valid_parameters()
-    )
+    sdk_parameters = build_orders_v2_bigquery_sdk_parameters(valid_parameters())
 
     assert len(sdk_parameters) == 4
     assert isinstance(sdk_parameters[0], bigquery.ScalarQueryParameter)
     assert isinstance(sdk_parameters[1], bigquery.ScalarQueryParameter)
     assert isinstance(sdk_parameters[2], bigquery.ArrayQueryParameter)
     assert isinstance(sdk_parameters[3], bigquery.ArrayQueryParameter)
-    assert tuple(
-        parameter.to_api_repr()
-        for parameter in sdk_parameters
-    ) == expected
+    assert tuple(parameter.to_api_repr() for parameter in sdk_parameters) == expected
 
 
 def test_job_config_is_standard_sql_and_contains_only_reviewed_parameters() -> None:
@@ -72,8 +67,7 @@ def test_job_config_is_standard_sql_and_contains_only_reviewed_parameters() -> N
     assert query["useLegacySql"] is False
     assert query["parameterMode"] == "NAMED"
     assert query["queryParameters"] == [
-        parameter.to_api_repr()
-        for parameter in config.query_parameters
+        parameter.to_api_repr() for parameter in config.query_parameters
     ]
 
 

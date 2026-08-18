@@ -171,9 +171,10 @@ async def test_last_active_super_admin_cannot_be_removed() -> None:
             )
 
             roles = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT r.key
                         FROM membership_roles AS mr
                         JOIN roles AS r
@@ -183,13 +184,16 @@ async def test_last_active_super_admin_cannot_be_removed() -> None:
                           AND mr.membership_id = :membership_id
                         ORDER BY r.key
                         """
-                    ),
-                    {
-                        "tenant_id": TENANT_ID,
-                        "membership_id": membership_id,
-                    },
+                        ),
+                        {
+                            "tenant_id": TENANT_ID,
+                            "membership_id": membership_id,
+                        },
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
         assert status_value == "active"
         assert roles == ["super_admin"]

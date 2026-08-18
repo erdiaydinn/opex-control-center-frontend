@@ -22,9 +22,7 @@ from app.core.jarvis_service_identity import VerifiedJarvisService
 from app.core.jarvis_service_security import require_fresh_jarvis_service
 from app.core.security import PermissionAssignment, Principal, get_current_principal
 
-TENANT = UUID(
-    "11111111-1111-4111-8111-111111111111"
-)
+TENANT = UUID("11111111-1111-4111-8111-111111111111")
 ENTITY_ID = "TEST_ENTITY_TR"
 
 
@@ -65,9 +63,7 @@ def query_context_record() -> AiTenantQueryContextRecord:
     return AiTenantQueryContextRecord(
         tenant_id=str(TENANT),
         context=context,
-        record_fingerprint=(
-            ai_tenant_query_context_fingerprint(context)
-        ),
+        record_fingerprint=(ai_tenant_query_context_fingerprint(context)),
         updated_by="security-admin",
     )
 
@@ -124,9 +120,7 @@ def ops_arguments(*stores: str) -> dict[str, object]:
 
 
 def principal_with_ops_permission() -> Principal:
-    permission = SCOPE_PERMISSION_KEYS[
-        "ops:read"
-    ]
+    permission = SCOPE_PERMISSION_KEYS["ops:read"]
 
     return Principal(
         subject="user-1",
@@ -168,29 +162,16 @@ def _iter_api_routes(route_items):
 
 
 def test_route_dependencies_keep_user_and_machine_auth_separate() -> None:
-    api_routes = tuple(
-        _iter_api_routes(routes.router.routes)
-    )
+    api_routes = tuple(_iter_api_routes(routes.router.routes))
 
-    issue_route = next(
-        route
-        for route in api_routes
-        if route.path == "/v1/ai/tool-grants"
-    )
+    issue_route = next(route for route in api_routes if route.path == "/v1/ai/tool-grants")
     internal_route = next(
-        route
-        for route in api_routes
-        if route.path
-        == "/internal/ai/tool-executions/authorize"
+        route for route in api_routes if route.path == "/internal/ai/tool-executions/authorize"
     )
 
-    issue_dependencies = {
-        dependency.call
-        for dependency in issue_route.dependant.dependencies
-    }
+    issue_dependencies = {dependency.call for dependency in issue_route.dependant.dependencies}
     internal_dependencies = {
-        dependency.call
-        for dependency in internal_route.dependant.dependencies
+        dependency.call for dependency in internal_route.dependant.dependencies
     }
 
     assert get_current_principal in issue_dependencies
@@ -237,9 +218,7 @@ def test_request_models_reject_caller_authorization_smuggling() -> None:
                 "tool": "ops_kpi_query",
                 "arguments": ops_arguments(),
                 "reason": "read orders",
-                "tenant_query_context": {
-                    "entity_ids": ["OTHER_ENTITY"]
-                },
+                "tenant_query_context": {"entity_ids": ["OTHER_ENTITY"]},
             },
         ),
     )
@@ -311,9 +290,7 @@ async def test_missing_tenant_context_is_503_and_no_grant_is_written(
         )
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "AI tenant query context is unavailable"
-    )
+    assert exc_info.value.detail == ("AI tenant query context is unavailable")
     assert redis.values == {}
 
 
@@ -461,9 +438,7 @@ async def test_internal_authorization_recovers_fresh_scope_and_minimal_audit(
             arguments=arguments,
             reason=reason,
         ),
-        request_for(
-            "/internal/ai/tool-executions/authorize"
-        ),
+        request_for("/internal/ai/tool-executions/authorize"),
         jarvis_service(),
     )
 
@@ -475,9 +450,7 @@ async def test_internal_authorization_recovers_fresh_scope_and_minimal_audit(
         "Anka",
         "Fulya",
     )
-    assert response.data_scope_fingerprint == (
-        capability.data_scope_fingerprint
-    )
+    assert response.data_scope_fingerprint == (capability.data_scope_fingerprint)
     assert response.tenant_entity_ids == (ENTITY_ID,)
     assert response.tenant_query_context_fingerprint == (
         issued.binding.tenant_query_context_fingerprint
@@ -561,24 +534,18 @@ async def test_tenant_context_outage_after_issue_burns_grant_and_maps_503(
     with pytest.raises(HTTPException) as exc_info:
         await routes.authorize_internal_ai_tool_execution(
             payload,
-            request_for(
-                "/internal/ai/tool-executions/authorize"
-            ),
+            request_for("/internal/ai/tool-executions/authorize"),
             jarvis_service(),
         )
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "AI tenant query context is unavailable"
-    )
+    assert exc_info.value.detail == ("AI tenant query context is unavailable")
 
     available = True
     with pytest.raises(HTTPException) as replay_info:
         await routes.authorize_internal_ai_tool_execution(
             payload,
-            request_for(
-                "/internal/ai/tool-executions/authorize"
-            ),
+            request_for("/internal/ai/tool-executions/authorize"),
             jarvis_service(),
         )
     assert replay_info.value.status_code == 401
@@ -631,16 +598,12 @@ async def test_audit_failure_denies_execution_after_burning_grant(
     with pytest.raises(HTTPException) as exc_info:
         await routes.authorize_internal_ai_tool_execution(
             payload,
-            request_for(
-                "/internal/ai/tool-executions/authorize"
-            ),
+            request_for("/internal/ai/tool-executions/authorize"),
             jarvis_service(),
         )
 
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == (
-        "AI tool execution audit is unavailable"
-    )
+    assert exc_info.value.detail == ("AI tool execution audit is unavailable")
 
     async def accept_audit(
         event: dict[str, object],
@@ -656,13 +619,9 @@ async def test_audit_failure_denies_execution_after_burning_grant(
     with pytest.raises(HTTPException) as replay_info:
         await routes.authorize_internal_ai_tool_execution(
             payload,
-            request_for(
-                "/internal/ai/tool-executions/authorize"
-            ),
+            request_for("/internal/ai/tool-executions/authorize"),
             jarvis_service(),
         )
 
     assert replay_info.value.status_code == 401
-    assert replay_info.value.detail == (
-        "AI tool grant authentication failed"
-    )
+    assert replay_info.value.detail == ("AI tool grant authentication failed")

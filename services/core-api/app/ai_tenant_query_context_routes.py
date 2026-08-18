@@ -35,9 +35,7 @@ class AiTenantQueryContextResponse(BaseModel):
 class PutAiTenantQueryContextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_record_fingerprint: str = Field(
-        pattern=SHA256_PATTERN
-    )
+    expected_record_fingerprint: str = Field(pattern=SHA256_PATTERN)
     context: AiTenantQueryContext
 
 
@@ -59,9 +57,7 @@ async def get_tenant_query_context(
     ],
 ) -> AiTenantQueryContextResponse:
     try:
-        record = await get_ai_tenant_query_context(
-            tenant_id=str(principal.tenant_id)
-        )
+        record = await get_ai_tenant_query_context(tenant_id=str(principal.tenant_id))
     except AiTenantQueryContextInvalid as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -72,9 +68,7 @@ async def get_tenant_query_context(
         return AiTenantQueryContextResponse(
             tenant_id=str(principal.tenant_id),
             configured=False,
-            record_fingerprint=(
-                ABSENT_QUERY_CONTEXT_FINGERPRINT
-            ),
+            record_fingerprint=(ABSENT_QUERY_CONTEXT_FINGERPRINT),
             context=None,
         )
 
@@ -101,9 +95,7 @@ async def put_tenant_query_context(
     try:
         updated = await put_ai_tenant_query_context(
             tenant_id=str(principal.tenant_id),
-            expected_record_fingerprint=(
-                payload.expected_record_fingerprint
-            ),
+            expected_record_fingerprint=(payload.expected_record_fingerprint),
             context=payload.context,
             actor_subject=principal.subject,
             request_id=request.state.request_id,

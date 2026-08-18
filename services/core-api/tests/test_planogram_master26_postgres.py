@@ -143,8 +143,7 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
 
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await runtime.execute(
-                "UPDATE planogram_plan_versions "
-                "SET physical_truth_attested=TRUE WHERE id=$1",
+                "UPDATE planogram_plan_versions SET physical_truth_attested=TRUE WHERE id=$1",
                 draft_id,
             )
 
@@ -214,8 +213,7 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
             PLAN_ATTESTED,
         )
         approved = await runtime.fetchrow(
-            "SELECT status, physical_truth_attested "
-            "FROM planogram_plan_versions WHERE id=$1::uuid",
+            "SELECT status, physical_truth_attested FROM planogram_plan_versions WHERE id=$1::uuid",
             PLAN_ATTESTED,
         )
         assert approved is not None
@@ -238,8 +236,7 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
 
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await runtime.execute(
-                "UPDATE planogram_execution_assignments "
-                "SET plan_version_id=$1::uuid WHERE id=$2",
+                "UPDATE planogram_execution_assignments SET plan_version_id=$1::uuid WHERE id=$2",
                 draft_id,
                 assignment_id,
             )
@@ -266,8 +263,7 @@ async def test_master26_postgres_truth_and_rls_guards() -> None:
             match="Closed Planogram execution assignment",
         ):
             await runtime.execute(
-                "UPDATE planogram_execution_assignments "
-                "SET status='acknowledged' WHERE id=$1",
+                "UPDATE planogram_execution_assignments SET status='acknowledged' WHERE id=$1",
                 assignment_id,
             )
 
@@ -302,8 +298,7 @@ async def test_master26_schema_is_force_rls_and_compliance_is_bound_to_field() -
             "planogram_compliance_observations",
         ):
             row = await connection.fetchrow(
-                "SELECT relrowsecurity, relforcerowsecurity "
-                "FROM pg_class WHERE oid=$1::regclass",
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid=$1::regclass",
                 table_name,
             )
             assert row is not None

@@ -25,9 +25,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "UPDATE field_templates SET status='draft' WHERE status='retired'"
-    )
+    op.execute("UPDATE field_templates SET status='draft' WHERE status='retired'")
     op.drop_constraint("ck_field_template_status", "field_templates", type_="check")
     op.create_check_constraint(
         "ck_field_template_status",

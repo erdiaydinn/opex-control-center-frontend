@@ -19,9 +19,7 @@ def migration_database_url() -> str:
     ).strip()
 
     if not value:
-        raise RuntimeError(
-            "OPEX_MIGRATION_DATABASE_URL is required"
-        )
+        raise RuntimeError("OPEX_MIGRATION_DATABASE_URL is required")
 
     return value
 
@@ -37,9 +35,10 @@ async def test_preauth_resolver_catalog_privilege_boundary() -> None:
     try:
         async with engine.connect() as connection:
             owner = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT
                             oid,
                             rolcanlogin,
@@ -51,12 +50,15 @@ async def test_preauth_resolver_catalog_privilege_boundary() -> None:
                         FROM pg_catalog.pg_roles
                         WHERE rolname = :role
                         """
-                    ),
-                    {
-                        "role": OWNER_ROLE,
-                    },
+                        ),
+                        {
+                            "role": OWNER_ROLE,
+                        },
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
             assert owner["rolcanlogin"] is False
             assert owner["rolsuper"] is False
@@ -68,9 +70,10 @@ async def test_preauth_resolver_catalog_privilege_boundary() -> None:
             owner_oid = owner["oid"]
 
             function = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT
                             p.oid,
                             p.proowner,
@@ -84,19 +87,20 @@ async def test_preauth_resolver_catalog_privilege_boundary() -> None:
                                 AS regprocedure
                             )::oid
                         """
-                    ),
-                    {
-                        "signature": FUNCTION,
-                    },
+                        ),
+                        {
+                            "signature": FUNCTION,
+                        },
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
 
             assert function["proowner"] == owner_oid
             assert function["prosecdef"] is True
             assert function["provolatile"] == "s"
-            assert function["proconfig"] == [
-                "search_path=pg_catalog"
-            ]
+            assert function["proconfig"] == ["search_path=pg_catalog"]
 
             execute_grantees = {
                 row["grantee"]
@@ -290,19 +294,11 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
     slug_a = f"preauth-ci-{suffix_a}"
     slug_b = f"preauth-ci-{suffix_b}"
 
-    hostname_a = (
-        f"preauth-{suffix_a}.example.test"
-    )
-    hostname_b = (
-        f"preauth-{suffix_b}.example.test"
-    )
+    hostname_a = f"preauth-{suffix_a}.example.test"
+    hostname_b = f"preauth-{suffix_b}.example.test"
 
-    issuer_a = (
-        f"https://idp-{suffix_a}.example.test"
-    )
-    issuer_b = (
-        f"https://idp-{suffix_b}.example.test"
-    )
+    issuer_a = f"https://idp-{suffix_a}.example.test"
+    issuer_b = f"https://idp-{suffix_b}.example.test"
 
     expected_keys = {
         "tenant_id",
@@ -343,8 +339,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                     {
                         "tenant_id": tenant_a,
                         "slug": slug_a,
-                        "display_name":
-                            "Preauth CI Tenant A",
+                        "display_name": "Preauth CI Tenant A",
                     },
                 )
 
@@ -368,8 +363,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                     {
                         "tenant_id": tenant_b,
                         "slug": slug_b,
-                        "display_name":
-                            "Preauth CI Tenant B",
+                        "display_name": "Preauth CI Tenant B",
                     },
                 )
 
@@ -553,11 +547,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
 
                 # No tenant context exists. Direct runtime SELECT
                 # must therefore remain blocked by forced RLS.
-                await connection.execute(
-                    text(
-                        "SET LOCAL ROLE opex_runtime"
-                    )
-                )
+                await connection.execute(text("SET LOCAL ROLE opex_runtime"))
 
                 direct_count = await connection.scalar(
                     text(
@@ -575,20 +565,24 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                 assert direct_count == 0
 
                 result = (
-                    await connection.execute(
-                        text(
-                            """
+                    (
+                        await connection.execute(
+                            text(
+                                """
                             SELECT *
                             FROM public.resolve_preauth_oidc_providers(
                                 :hostname
                             )
                             """
-                        ),
-                        {
-                            "hostname": hostname_a,
-                        },
+                            ),
+                            {
+                                "hostname": hostname_a,
+                            },
+                        )
                     )
-                ).mappings().all()
+                    .mappings()
+                    .all()
+                )
 
                 assert len(result) == 1
 
@@ -604,15 +598,9 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
 
                 serialized = repr(payload)
 
-                assert (
-                    "CI-CANARY-MUST-NOT-LEAK"
-                    not in serialized
-                )
+                assert "CI-CANARY-MUST-NOT-LEAK" not in serialized
                 assert "credential_ref" not in payload
-                assert (
-                    "token_endpoint_auth_method"
-                    not in payload
-                )
+                assert "token_endpoint_auth_method" not in payload
                 assert "email" not in payload
                 assert "subject" not in payload
                 assert "roles" not in payload
@@ -620,20 +608,24 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
 
                 # Exact host B must resolve only tenant B.
                 result_b = (
-                    await connection.execute(
-                        text(
-                            """
+                    (
+                        await connection.execute(
+                            text(
+                                """
                             SELECT *
                             FROM public.resolve_preauth_oidc_providers(
                                 :hostname
                             )
                             """
-                        ),
-                        {
-                            "hostname": hostname_b,
-                        },
+                            ),
+                            {
+                                "hostname": hostname_b,
+                            },
+                        )
                     )
-                ).mappings().all()
+                    .mappings()
+                    .all()
+                )
 
                 assert len(result_b) == 1
                 assert result_b[0]["tenant_id"] == tenant_b
@@ -657,16 +649,13 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                             """
                         ),
                         {
-                            "hostname":
-                                hostile_hostname,
+                            "hostname": hostile_hostname,
                         },
                     )
 
                     assert hostile_count == 0
 
-                await connection.execute(
-                    text("RESET ROLE")
-                )
+                await connection.execute(text("RESET ROLE"))
 
                 # Unverified domain must disappear.
                 await connection.execute(
@@ -682,11 +671,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                     },
                 )
 
-                await connection.execute(
-                    text(
-                        "SET LOCAL ROLE opex_runtime"
-                    )
-                )
+                await connection.execute(text("SET LOCAL ROLE opex_runtime"))
 
                 count = await connection.scalar(
                     text(
@@ -704,9 +689,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
 
                 assert count == 0
 
-                await connection.execute(
-                    text("RESET ROLE")
-                )
+                await connection.execute(text("RESET ROLE"))
 
                 # Suspended tenant must disappear.
                 await connection.execute(
@@ -735,11 +718,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                     },
                 )
 
-                await connection.execute(
-                    text(
-                        "SET LOCAL ROLE opex_runtime"
-                    )
-                )
+                await connection.execute(text("SET LOCAL ROLE opex_runtime"))
 
                 count = await connection.scalar(
                     text(
@@ -757,9 +736,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
 
                 assert count == 0
 
-                await connection.execute(
-                    text("RESET ROLE")
-                )
+                await connection.execute(text("RESET ROLE"))
 
                 # Disabled provider must disappear.
                 await connection.execute(
@@ -788,11 +765,7 @@ async def test_preauth_resolver_runtime_is_exact_and_fail_closed() -> None:
                     },
                 )
 
-                await connection.execute(
-                    text(
-                        "SET LOCAL ROLE opex_runtime"
-                    )
-                )
+                await connection.execute(text("SET LOCAL ROLE opex_runtime"))
 
                 count = await connection.scalar(
                     text(

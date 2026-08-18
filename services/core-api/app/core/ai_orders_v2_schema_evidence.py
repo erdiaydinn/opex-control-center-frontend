@@ -96,9 +96,7 @@ class OrdersV2InformationSchemaEvidence(BaseModel):
     def validate_fingerprints(self) -> OrdersV2InformationSchemaEvidence:
         if self.collector_query_sha256 != ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256:
             raise ValueError("collector query fingerprint mismatch")
-        if self.result_row_sha256 != orders_v2_schema_result_row_fingerprint(
-            self.metadata_row()
-        ):
+        if self.result_row_sha256 != orders_v2_schema_result_row_fingerprint(self.metadata_row()):
             raise ValueError("metadata result row fingerprint mismatch")
         return self
 
@@ -136,17 +134,13 @@ def orders_v2_schema_result_row_fingerprint(
         "data_type",
     }
     if set(row) != expected_keys:
-        raise OrdersV2SchemaEvidenceError(
-            "metadata row has unexpected columns"
-        )
+        raise OrdersV2SchemaEvidenceError("metadata row has unexpected columns")
 
     normalized: dict[str, str] = {}
     for key in sorted(expected_keys):
         value = row[key]
         if not isinstance(value, str):
-            raise OrdersV2SchemaEvidenceError(
-                "metadata row values must be text"
-            )
+            raise OrdersV2SchemaEvidenceError("metadata row values must be text")
         normalized[key] = value
 
     encoded = json.dumps(
@@ -175,9 +169,7 @@ def build_orders_v2_information_schema_evidence(
         field_path=row["field_path"],
         data_type=row["data_type"],
         observed_at=observed_at,
-        collector_query_sha256=(
-            ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256
-        ),
+        collector_query_sha256=(ORDERS_V2_SCHEMA_EVIDENCE_QUERY_SHA256),
         result_row_sha256=result_row_sha256,
     )
 
@@ -197,9 +189,7 @@ def validate_orders_v2_schema_evidence(
     if expected_source != ORDERS_SOURCE_TABLE:
         raise OrdersV2SchemaEvidenceError("source table mismatch")
     if evidence.field_path != ORDERS_V2_CANDIDATE.tenant_discriminator_expression:
-        raise OrdersV2SchemaEvidenceError(
-            "tenant discriminator field path mismatch"
-        )
+        raise OrdersV2SchemaEvidenceError("tenant discriminator field path mismatch")
     if evidence.column_name != ORDERS_TENANT_TOP_LEVEL_COLUMN:
         raise OrdersV2SchemaEvidenceError("top-level tenant column mismatch")
     if evidence.data_type != ORDERS_TENANT_DATA_TYPE:

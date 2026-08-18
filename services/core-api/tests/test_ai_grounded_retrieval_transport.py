@@ -45,8 +45,7 @@ async def test_transport_sends_signed_context_without_tenant_parameter():
     assert evidence == [VALID_EVIDENCE]
     assert observed["url"].endswith("/v1/internal/grounded/retrieve")
     assert (
-        observed["headers"][retrieval.AI_TENANT_CONTEXT_HEADER.lower()]
-        == "signed.tenant.context"
+        observed["headers"][retrieval.AI_TENANT_CONTEXT_HEADER.lower()] == "signed.tenant.context"
     )
     assert "tenant_id" not in observed["body"]
     assert "membership_id" not in observed["body"]
@@ -79,9 +78,7 @@ async def test_transport_never_forwards_assertion_across_redirect():
         if request.url.host == "eay-ai-core":
             return httpx.Response(
                 307,
-                headers={
-                    "location": "https://attacker.example/v1/internal/grounded/retrieve"
-                },
+                headers={"location": "https://attacker.example/v1/internal/grounded/retrieve"},
             )
         return httpx.Response(200, json={"evidence": [VALID_EVIDENCE]})
 

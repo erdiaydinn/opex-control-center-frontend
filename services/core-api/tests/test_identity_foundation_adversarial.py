@@ -126,9 +126,7 @@ async def test_identity_foundation_adversarial_boundary() -> None:
 
             assert revision is not None
 
-            revision_prefix = str(
-                revision
-            ).split("_", 1)[0]
+            revision_prefix = str(revision).split("_", 1)[0]
 
             assert revision_prefix.isdigit()
             assert int(revision_prefix) >= 7
@@ -511,10 +509,7 @@ async def test_identity_foundation_adversarial_boundary() -> None:
             ).all()
 
             assert len(rls_rows) == 3
-            assert all(
-                enabled and forced
-                for _, enabled, forced in rls_rows
-            )
+            assert all(enabled and forced for _, enabled, forced in rls_rows)
 
             # Runtime and backup identities are SELECT-only.
             for role in ("opex_runtime", "opex_backup"):
@@ -563,12 +558,7 @@ async def test_identity_foundation_adversarial_boundary() -> None:
         # --------------------------------------------------------
         async with runtime_engine.begin() as connection:
             count = int(
-                await connection.scalar(
-                    text(
-                        "SELECT COUNT(*) FROM identity_providers"
-                    )
-                )
-                or 0
+                await connection.scalar(text("SELECT COUNT(*) FROM identity_providers")) or 0
             )
 
             assert count == 0
@@ -578,15 +568,19 @@ async def test_identity_foundation_adversarial_boundary() -> None:
             await _tenant(connection, TENANT_A)
 
             tenants = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT DISTINCT tenant_id
                         FROM identity_providers
                         """
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
             assert tenants == [TENANT_A]
 
@@ -595,15 +589,19 @@ async def test_identity_foundation_adversarial_boundary() -> None:
             await _tenant(connection, TENANT_B)
 
             tenants = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT DISTINCT tenant_id
                         FROM identity_providers
                         """
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
             assert tenants == [TENANT_B]
 

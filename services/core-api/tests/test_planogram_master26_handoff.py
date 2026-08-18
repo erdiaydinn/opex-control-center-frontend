@@ -181,9 +181,7 @@ async def test_valid_handoff_records_observation_and_receipt_in_same_session(mon
     assert seen["observation"]["plan_version_id"] == PLAN
     assert seen["observation"]["evaluation"]["result"] == "compliant"
     assert seen["receipt"]["consumer_module"] == "planogram"
-    assert str(seen["receipt"]["destination_candidate_ref"]).startswith(
-        "planogram-compliance:"
-    )
+    assert str(seen["receipt"]["destination_candidate_ref"]).startswith("planogram-compliance:")
     assert result["truth_boundary"] == {
         "field_evidence_is_planogram_truth": False,
         "approved_plan_is_execution_baseline": True,

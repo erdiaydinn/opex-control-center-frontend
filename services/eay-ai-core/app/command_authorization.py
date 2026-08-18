@@ -194,18 +194,17 @@ def authorize_identity_bound_command(
         approval.append("bulk_action_requires_additional_approval")
     if command.irreversible:
         approval.append("irreversible_action_requires_additional_approval")
-    if (
-        policy.max_absolute_quantity is not None
-        and command.absolute_quantity is not None
-        and command.absolute_quantity > policy.max_absolute_quantity
-    ):
-        approval.append("quantity_limit_exceeded")
-    if (
-        policy.max_financial_value is not None
-        and command.financial_value is not None
-        and command.financial_value > policy.max_financial_value
-    ):
-        approval.append("financial_value_limit_exceeded")
+
+    if policy.max_absolute_quantity is not None:
+        if command.absolute_quantity is None:
+            approval.append("quantity_missing_for_bounded_policy")
+        elif command.absolute_quantity > policy.max_absolute_quantity:
+            approval.append("quantity_limit_exceeded")
+    if policy.max_financial_value is not None:
+        if command.financial_value is None:
+            approval.append("financial_value_missing_for_bounded_policy")
+        elif command.financial_value > policy.max_financial_value:
+            approval.append("financial_value_limit_exceeded")
 
     if deny:
         disposition = AuthorizationDisposition.DENY
@@ -240,8 +239,9 @@ def build_mission_command_authorization_checker(
 ) -> AuthorizationChecker:
     """Bind command authorization evidence to its exact mission step/capability."""
 
-    index = {(item.mission_id, item.step_id): item for item in envelopes}
-    if len(index) != len(tuple(envelopes)):
+    materialized = tuple(envelopes)
+    index = {(item.mission_id, item.step_id): item for item in materialized}
+    if len(index) != len(materialized):
         raise ValueError("duplicate_command_authorization_for_mission_step")
 
     async def checker(

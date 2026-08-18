@@ -67,6 +67,10 @@ object InventorySyncContract {
         }
     }.getOrNull()
 
+    fun isLocationCompletion(canonicalPayload: String): Boolean = runCatching {
+        JSONObject(canonicalPayload).optString("event_kind") == "LOCATION_COMPLETE"
+    }.getOrDefault(false)
+
     fun responseMatchesSignedShift(
         canonicalPayload: String,
         serverShiftId: String?,
@@ -128,6 +132,26 @@ class InventorySyncWorker(
                     "UNSUPPORTED_EVENT_KIND",
                 )
                 continue
+            }
+            if (InventorySyncContract.isLocationCompletion(event.canonicalPayload)) {
+                when (
+                    InventoryLocationCompletionDependency.evaluate(
+                        event,
+                        dao.unsettledBefore(event.deviceSequence),
+                    )
+                ) {
+                    LocationCompletionDependencyDecision.CLEAR -> Unit
+                    LocationCompletionDependencyDecision.WAIT ->
+                        return@withContext Result.retry()
+                    LocationCompletionDependencyDecision.BLOCKED -> {
+                        dao.quarantine(
+                            event.eventId,
+                            SyncQuarantineReason.DEPENDENCY_BLOCKED.name,
+                            "LOCATION_COUNT_DEPENDENCY_BLOCKED",
+                        )
+                        continue
+                    }
+                }
             }
 
             val timestamp = Instant.now().toString()

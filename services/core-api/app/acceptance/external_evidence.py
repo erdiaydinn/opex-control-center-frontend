@@ -119,7 +119,11 @@ def _evaluate_requirement(
         if not candidates:
             blockers.append(f"{key}:missing")
             continue
-        if any(not _aware(record.observed_at) or not _aware(record.expires_at) for record in candidates):
+        invalid_window = any(
+            not _aware(record.observed_at) or not _aware(record.expires_at)
+            for record in candidates
+        )
+        if invalid_window:
             blockers.append(f"{key}:invalid_window")
             continue
         effective = tuple(record for record in candidates if record.observed_at <= as_of)

@@ -65,16 +65,23 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const manifest=JSON.parse(fs.readFileSync('dist/.vite/manifest.json','utf8'));
-          const entries=Object.values(manifest);
-          const main=entries.find((row)=>row.src==='src/main.jsx');
-          if (!main?.file) throw new Error('Vite main manifest entry missing');
+          const entries=Object.entries(manifest);
+          const main=manifest['index.html'] ?? entries.map(([,row])=>row).find((row)=>row.isEntry === true);
+          if (!main?.file) throw new Error('Vite application entry missing');
           const mainText=fs.readFileSync(`dist/${main.file}`,'utf8');
           if (mainText.includes('WebGLRenderer') || mainText.includes('OrbitControls')) {
             throw new Error('Three.js leaked into the eager main entry');
           }
-          const assets=fs.readdirSync('dist/assets');
-          if (!assets.some((name)=>name.endsWith('.js'))) throw new Error('No JavaScript build assets found');
+          const dynamicThree=entries.filter(([key,row]) => {
+            const identity=`${key} ${row.src ?? ''} ${row.name ?? ''} ${row.file ?? ''}`;
+            return row.isDynamicEntry === true && /three\.module|OrbitControls|node_modules\/three\//i.test(identity);
+          });
+          if (!dynamicThree.length) throw new Error('No dynamic Three.js manifest entry found');
+          for (const [,row] of dynamicThree) {
+            if (!row.file || row.file === main.file) throw new Error('Three.js dynamic entry collapsed into eager main entry');
+          }
           console.log(`MASTER_27_MAIN_ENTRY=${main.file}`);
+          console.log(`MASTER_27_DYNAMIC_THREE_ENTRIES=${dynamicThree.map(([,row])=>row.file).join(',')}`);
           console.log('MASTER_27_DYNAMIC_THREE_BOUNDARY=PASS');
           NODE
       - name: Preserve accessibility and localization product gate

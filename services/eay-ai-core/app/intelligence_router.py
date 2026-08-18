@@ -123,8 +123,23 @@ class IntelligenceRoutingPlan(BaseModel):
         return self
 
 
-def _engine_is_eligible(task: IntelligenceTask, engine: IntelligenceEngine) -> bool:
-    if not engine.production_enabled or not engine.exact_adapter_verified:
+def engine_satisfies_task_boundary(
+    task: IntelligenceTask,
+    engine: IntelligenceEngine,
+    *,
+    require_production_enabled: bool = True,
+) -> bool:
+    """Return whether one engine satisfies task privacy/risk/modality boundaries.
+
+    Benchmark-only callers may set ``require_production_enabled=False`` to
+    evaluate an exact-adapter-verified candidate before promotion. All other
+    privacy, risk, modality, tool and external-processing constraints remain
+    identical to normal routing.
+    """
+
+    if require_production_enabled and not engine.production_enabled:
+        return False
+    if not engine.exact_adapter_verified:
         return False
     if _PRIVACY_ORDER[task.privacy] > _PRIVACY_ORDER[engine.maximum_privacy]:
         return False
@@ -143,6 +158,10 @@ def _engine_is_eligible(task: IntelligenceTask, engine: IntelligenceEngine) -> b
     ):
         return False
     return True
+
+
+def _engine_is_eligible(task: IntelligenceTask, engine: IntelligenceEngine) -> bool:
+    return engine_satisfies_task_boundary(task, engine, require_production_enabled=True)
 
 
 def _score_engine(task: IntelligenceTask, engine: IntelligenceEngine) -> tuple[float, str]:

@@ -11,37 +11,34 @@ class LocationCompletionContractTest {
         val body = LocationCompletionCanonical.body(
             LocationCompletionInput(
                 activeShiftId = " SHIFT-20260818-001 ",
+                attemptId = ATTEMPT_ID,
                 confirmedLineCount = 3,
                 deviceSequence = 8,
-                documentId = "22222222-2222-4222-8222-222222222222",
+                documentId = DOCUMENT_ID,
                 eventId = "33333333-3333-4333-8333-333333333333",
+                leaseId = LEASE_ID,
                 locationId = " a-04 ",
                 occurredAt = "2026-08-18T15:05:00Z",
             ),
         )
         val expected =
-            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"confirmed_line_count\":3," +
-                "\"device_sequence\":8," +
-                "\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
+            "{\"active_shift_id\":\"SHIFT-20260818-001\"," +
+                "\"attempt_id\":\"$ATTEMPT_ID\",\"confirmed_line_count\":3," +
+                "\"device_sequence\":8,\"document_id\":\"$DOCUMENT_ID\"," +
                 "\"event_id\":\"33333333-3333-4333-8333-333333333333\"," +
-                "\"event_kind\":\"LOCATION_COMPLETE\",\"location_id\":\"A-04\"," +
-                "\"occurred_at\":\"2026-08-18T15:05:00Z\"}"
+                "\"event_kind\":\"LOCATION_COMPLETE\",\"lease_id\":\"$LEASE_ID\"," +
+                "\"location_id\":\"A-04\",\"occurred_at\":\"2026-08-18T15:05:00Z\"}"
         assertEquals(expected, body)
         assertEquals(
-            "96cdbfae950df83e725c3c269a8be900a0ee85880977575afa06cbde88eec7d0",
+            "4a070151035e5a333931d0567f2ad5cb320eaf63a4dbcf44d3cfa7d41a9cab5b",
             LocationCompletionCanonical.hash(body),
         )
     }
 
     @Test
-    fun `completion factory binds shift count location and auth session into durable event`() {
+    fun `completion factory binds shift attempt lease count location and auth session`() {
         val event = InventoryLocationCompletionEventFactory.create(
-            context = InventoryCountEventContext(
-                missionId = "inventory.count:mission-1",
-                documentId = "22222222-2222-4222-8222-222222222222",
-                activeShiftId = "SHIFT-20260818-001",
-                locationId = "A-04",
-            ),
+            context = context(),
             confirmedLineCount = 3,
             deviceSequence = 8,
             eventId = "33333333-3333-4333-8333-333333333333",
@@ -51,6 +48,8 @@ class LocationCompletionContractTest {
         assertEquals("session-a", event.authBindingId)
         assertEquals(8, event.deviceSequence)
         assertTrue(event.canonicalPayload.contains("\"active_shift_id\":\"SHIFT-20260818-001\""))
+        assertTrue(event.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
+        assertTrue(event.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
         assertTrue(event.canonicalPayload.contains("\"confirmed_line_count\":3"))
         assertTrue(event.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
         assertTrue(QueueIntegrity.valid(event, "session-a"))
@@ -61,10 +60,12 @@ class LocationCompletionContractTest {
         val body = LocationCompletionCanonical.body(
             LocationCompletionInput(
                 activeShiftId = "SHIFT-20260818-001",
+                attemptId = ATTEMPT_ID,
                 confirmedLineCount = 0,
                 deviceSequence = 9,
-                documentId = "22222222-2222-4222-8222-222222222222",
+                documentId = DOCUMENT_ID,
                 eventId = "44444444-4444-4444-8444-444444444444",
+                leaseId = LEASE_ID,
                 locationId = "A-05",
                 occurredAt = "2026-08-18T15:06:00Z",
             ),
@@ -89,5 +90,20 @@ class LocationCompletionContractTest {
         )
         assertNull(InventorySyncContract.endpointPath(unknown))
         assertNull(InventorySyncContract.endpointPath("not-json"))
+    }
+
+    private fun context() = InventoryCountEventContext(
+        missionId = "inventory.count:mission-1",
+        documentId = DOCUMENT_ID,
+        activeShiftId = "SHIFT-20260818-001",
+        attemptId = ATTEMPT_ID,
+        leaseId = LEASE_ID,
+        locationId = "A-04",
+    )
+
+    companion object {
+        private const val DOCUMENT_ID = "22222222-2222-4222-8222-222222222222"
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     }
 }

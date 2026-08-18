@@ -28,4 +28,11 @@
     <string name="terminal_sign_in_cancelled">Kurumsal giriş iptal edildi</string>
     <string name="terminal_invalid_quantity">Geçerli, negatif olmayan bir adet gir</string>
     <string name="terminal_complete">Sayım görevi tamamlandı</string>
+    <string name="terminal_finish_location">Lokasyonu Bitir</string>
+    <string name="terminal_finish_location_title">Bu lokasyon tamamlansın mı?</string>
+    <string name="terminal_finish_location_message">Lokasyon: %1$s\nKaydedilen sayım girdisi: %2$d\nİmzalı tamamlama olayı güvenli kuyruğa eklenecek.</string>
+    <string name="terminal_cancel">Vazgeç</string>
+    <string name="terminal_finish_location_confirm">Lokasyonu Tamamla</string>
+    <string name="terminal_location_complete_queued">Lokasyon tamamlandı · güvenli senkron kuyruğa alındı</string>
+    <string name="terminal_completion_retry">Güvenli kuyruk kullanılamıyor · lokasyon tamamlamayı yeniden dene</string>
 </resources>

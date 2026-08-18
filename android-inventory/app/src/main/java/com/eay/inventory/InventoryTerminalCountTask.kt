@@ -8,10 +8,12 @@ import java.util.UUID
 /**
  * Location-bound COUNT mission returned by the production terminal task API.
  * Expected/system stock, cost, SKU universe and variance are intentionally absent.
+ * activeShiftId is server-issued provenance; it never grants authority by itself.
  */
 data class InventoryTerminalCountTask(
     val missionId: String,
     val documentId: String,
+    val activeShiftId: String,
     val warehouseId: String,
     val locationId: String,
     val name: String,
@@ -24,6 +26,7 @@ data class InventoryTerminalCountTask(
     init {
         require(missionId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
         UUID.fromString(documentId)
+        require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
         require(warehouseId.isNotBlank())
         require(locationId.isNotBlank())
         require(name.isNotBlank())
@@ -43,6 +46,7 @@ data class InventoryTerminalCountTask(
     fun eventContext(): InventoryCountEventContext = InventoryCountEventContext(
         missionId = missionId,
         documentId = documentId,
+        activeShiftId = activeShiftId,
         locationId = locationId,
     )
 }

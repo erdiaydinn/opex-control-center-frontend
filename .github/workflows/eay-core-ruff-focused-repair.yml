@@ -1,4 +1,4 @@
-# Branch-only one-shot focused Ruff repair v6 preview-string-processing
+# Branch-only one-shot focused Ruff repair v7 SQL-whitespace wrap
 name: EAY Core Ruff Focused Repair
 
 on:
@@ -24,33 +24,137 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.12'
-      - name: Install focused repair tooling
-        run: python -m pip install 'ruff>=0.8,<1' 'black==26.3.0'
+      - name: Install canonical Ruff compatibility band
+        run: python -m pip install 'ruff>=0.8,<1'
       - name: Apply Ruff safe fixes only
         run: ruff check services/core-api --fix || true
-      - name: Process long strings only in files still reporting E501
+      - name: Wrap only SQL whitespace inside residual multiline literals
         run: |
           ruff check services/core-api --output-format=json > /tmp/core-ruff.json || true
           python - <<'PY'
+          import io
           import json
-          import subprocess
+          import re
+          import tokenize
           from pathlib import Path
 
           diagnostics = json.loads(Path('/tmp/core-ruff.json').read_text(encoding='utf-8') or '[]')
-          files = sorted({item['filename'] for item in diagnostics if item.get('code') == 'E501'})
-          print(f'E501_FILES={len(files)}')
-          if files:
-              subprocess.run([
-                  'black', '--line-length', '100', '--preview', *files
-              ], check=True)
+          files = sorted({Path(item['filename']) for item in diagnostics if item.get('code') == 'E501'})
+
+          def safe_break_positions(line: str) -> list[int]:
+              if '--' in line:
+                  return []
+              positions = []
+              in_single = False
+              in_double = False
+              i = 0
+              while i < len(line):
+                  char = line[i]
+                  if char == "'" and not in_double:
+                      if in_single and i + 1 < len(line) and line[i + 1] == "'":
+                          i += 2
+                          continue
+                      in_single = not in_single
+                  elif char == '"' and not in_single:
+                      if in_double and i + 1 < len(line) and line[i + 1] == '"':
+                          i += 2
+                          continue
+                      in_double = not in_double
+                  elif char.isspace() and not in_single and not in_double:
+                      positions.append(i)
+                  i += 1
+              return positions
+
+          def wrap_content_line(line: str, max_len: int = 96) -> str:
+              pending = [line]
+              output = []
+              while pending:
+                  current = pending.pop(0)
+                  if len(current) <= max_len:
+                      output.append(current)
+                      continue
+                  indent = re.match(r'\s*', current).group(0)
+                  positions = [p for p in safe_break_positions(current) if p > len(indent) + 20]
+                  before = [p for p in positions if p <= max_len]
+                  split_at = max(before) if before else (min(positions) if positions else None)
+                  if split_at is None:
+                      output.append(current)
+                      continue
+                  left = current[:split_at].rstrip()
+                  right = indent + current[split_at:].lstrip()
+                  output.append(left)
+                  pending.insert(0, right)
+              return '\n'.join(output)
+
+          def process_multiline_string(raw: str) -> str:
+              match = re.match(r'(?is)^([rubf]*)("""|\'\'\')', raw)
+              if not match:
+                  return raw
+              quote = match.group(2)
+              if not raw.endswith(quote):
+                  return raw
+              prefix_len = len(match.group(1)) + len(quote)
+              body = raw[prefix_len:-len(quote)]
+              lines = body.split('\n')
+              changed = False
+              wrapped = []
+              for line in lines:
+                  new_line = wrap_content_line(line)
+                  changed = changed or new_line != line
+                  wrapped.append(new_line)
+              if not changed:
+                  return raw
+              return raw[:prefix_len] + '\n'.join(wrapped) + quote
+
+          for path in files:
+              source = path.read_text(encoding='utf-8')
+              line_offsets = [0]
+              for match in re.finditer(r'\n', source):
+                  line_offsets.append(match.end())
+
+              replacements = []
+              tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+              for token in tokens:
+                  if token.type != tokenize.STRING or '\n' not in token.string:
+                      continue
+                  processed = process_multiline_string(token.string)
+                  if processed == token.string:
+                      continue
+                  start_line, start_col = token.start
+                  end_line, end_col = token.end
+                  start = line_offsets[start_line - 1] + start_col
+                  end = line_offsets[end_line - 1] + end_col
+                  replacements.append((start, end, processed))
+
+              for start, end, processed in reversed(replacements):
+                  source = source[:start] + processed + source[end:]
+
+              path.write_text(source, encoding='utf-8')
+
+          promotion = Path('services/core-api/app/modules/field_intelligence/promotion.py')
+          if promotion.exists():
+              text = promotion.read_text(encoding='utf-8')
+              old = '''    if not isinstance(sku, str) or not sku.strip():\n        sku = None\n    else:\n        sku = sku.strip()'''
+              new = '''    sku = None if not isinstance(sku, str) or not sku.strip() else sku.strip()'''
+              if old in text:
+                  promotion.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          migration = Path('services/core-api/alembic/versions/0019_field_intelligence_foundation.py')
+          if migration.exists():
+              text = migration.read_text(encoding='utf-8')
+              old = '''            " ('unseen','seen','started','partial','submitted','rework','verified','overdue','exempt')",'''
+              new = '''            " ('unseen','seen','started','partial','submitted','rework',"\n            "'verified','overdue','exempt')",'''
+              if old in text:
+                  migration.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
+      - name: Compile focused Python surface before lint report
+        run: python -m compileall -q services/core-api
       - name: Capture residual strict Ruff debt
         run: |
           mkdir -p .eay/ci
           {
             echo "HEAD=${GITHUB_SHA}"
             echo "RUFF_VERSION=$(ruff --version)"
-            echo "BLACK_VERSION=$(black --version | head -1)"
             echo "---"
             ruff check services/core-api --output-format=concise || true
           } > .eay/ci/core-ruff-focused-remaining.txt
@@ -63,5 +167,5 @@ jobs:
           git config user.name 'eay-ci-repair-bot'
           git config user.email 'eay-ci-repair-bot@users.noreply.github.com'
           git add services/core-api .eay/ci/core-ruff-focused-remaining.txt
-          git commit -m 'style(core): process residual long strings safely'
+          git commit -m 'style(core): wrap residual SQL whitespace without semantic changes'
           git push origin HEAD:agent/core-ruff-focused-repair-v2

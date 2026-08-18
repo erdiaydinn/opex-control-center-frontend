@@ -55,10 +55,12 @@ EXECUTION_CAPABILITY = "synthetic.inventory.adjust"
 PERMISSION = "inventory.adjust"
 HOST = "portal.example.com"
 VERIFIER = "verifier://inventory/authoritative-readback"
+AUTH_CONTEXT = "auth://verified-browser-session"
 
 
 class FakeSession:
-    def __init__(self):
+    def __init__(self, *, auth_context_ref=AUTH_CONTEXT):
+        self.auth_context_ref = auth_context_ref
         self.actions = []
         self.closed = False
         self.goto_url = None
@@ -72,6 +74,7 @@ class FakeSession:
             action_id=action.action_id,
             application_id="synthetic-carsiportal",
             tenant_scope_ref=TENANT,
+            auth_context_ref=self.auth_context_ref,
             locator_kind=action.locator.kind,
             action_kind=action.kind,
             completed=True,
@@ -192,7 +195,7 @@ def _playwright_plan():
         session_config=PlaywrightSessionConfig(
             application_id="synthetic-carsiportal",
             tenant_scope_ref=TENANT,
-            auth_context_ref="auth://verified-browser-session",
+            auth_context_ref=AUTH_CONTEXT,
             allowed_hosts=frozenset({HOST}),
         ),
         start_url=f"https://{HOST}/inventory",

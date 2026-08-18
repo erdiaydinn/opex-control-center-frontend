@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal
+
+from app.sre.chaos_dr import (
+    ChaosResult,
+    DrResult,
+    chaos_result_accepted,
+    dr_result_accepted,
+)
+from app.sre.governance import AcceptanceEvidence, production_shape_evidence_satisfied
+from app.sre.observability import TelemetryEvent, validate_telemetry_event
 
 
 class ReleaseState(StrEnum):
@@ -44,6 +54,7 @@ STABILIZATION_METRICS = (
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
 _FORBIDDEN_SCOPE = {"*", "all", "all-tenants", "all-modules"}
+_FORBIDDEN_EVIDENCE_ENV = {"ci", "repository", "synthetic"}
 
 
 @dataclass(frozen=True)
@@ -81,6 +92,137 @@ class ReleaseTruth:
 def _hash_ref(value: str, prefix: str) -> bool:
     marker = f"{prefix}-sha256:"
     return value.startswith(marker) and bool(_SHA64.fullmatch(value[len(marker) :]))
+
+
+def _artifact_digest(value: str) -> str:
+    if not _SHA64.fullmatch(value):
+        raise ValueError("artifact digest must be lowercase SHA-256")
+    return value
+
+
+def _sre_ref(item: int, artifact_sha256: str, parts: tuple[str, ...]) -> str:
+    digest = hashlib.sha256(
+        "|".join((str(item), _artifact_digest(artifact_sha256), *parts)).encode()
+    ).hexdigest()
+    return f"sre-sha256:{digest}"
+
+
+def build_observability_item_ref(
+    contract: dict[str, object],
+    events: tuple[TelemetryEvent, ...],
+    *,
+    artifact_sha256: str,
+) -> str:
+    """Build Master 45 evidence only from full, non-synthetic telemetry coverage."""
+
+    if not events:
+        raise ValueError("observability evidence events are required")
+    environments = {event.environment.strip().casefold() for event in events}
+    if len(environments) != 1 or environments & _FORBIDDEN_EVIDENCE_ENV:
+        raise ValueError("observability evidence must come from one governed environment")
+
+    for event in events:
+        validate_telemetry_event(contract, event)
+    required = {str(value) for value in contract["required_signals"]}
+    observed = {event.signal for event in events}
+    if not required <= observed:
+        raise ValueError("observability evidence does not cover every required signal")
+
+    parts = tuple(
+        sorted(
+            ":".join(
+                (
+                    event.signal,
+                    event.service,
+                    event.environment,
+                    event.workflow,
+                    event.operation,
+                    event.result,
+                    ",".join(f"{key}={value}" for key, value in sorted(event.dimensions.items())),
+                )
+            )
+            for event in events
+        )
+    )
+    return _sre_ref(45, artifact_sha256, parts)
+
+
+def build_scale_item_ref(
+    registry: dict[str, object],
+    evidence_by_key: Mapping[str, AcceptanceEvidence],
+    *,
+    artifact_sha256: str,
+) -> str:
+    """Build Master 46 evidence only when every governed production-shape test passes."""
+
+    tests = tuple(registry.get("production_shape_tests", ()))
+    if not tests:
+        raise ValueError("production-shape tests are required")
+    parts: list[str] = []
+    for profile in tests:
+        key = str(profile.get("key", ""))
+        evidence = evidence_by_key.get(key)
+        if evidence is None or not production_shape_evidence_satisfied(profile, evidence):
+            raise ValueError(f"production-shape evidence failed: {key}")
+        parts.append(
+            ":".join(
+                (
+                    key,
+                    evidence.evidence_class,
+                    evidence.environment,
+                    str(evidence.measured),
+                    evidence.provenance,
+                )
+            )
+        )
+    return _sre_ref(46, artifact_sha256, tuple(sorted(parts)))
+
+
+def build_chaos_item_ref(
+    contract: dict[str, object],
+    results: tuple[ChaosResult, ...],
+    *,
+    artifact_sha256: str,
+) -> str:
+    """Build Master 47 evidence only when all governed chaos scenarios pass."""
+
+    expected = {str(value) for value in contract.get("chaos_scenarios", ())}
+    by_scenario = {result.scenario: result for result in results}
+    if not expected or set(by_scenario) != expected or len(by_scenario) != len(results):
+        raise ValueError("chaos evidence must cover each governed scenario exactly once")
+    if not all(chaos_result_accepted(contract, result) for result in results):
+        raise ValueError("one or more governed chaos scenarios failed")
+
+    parts = tuple(
+        sorted(
+            ":".join(
+                (
+                    result.scenario,
+                    result.environment,
+                    str(result.measured),
+                    ",".join(sorted(result.passed_invariants)),
+                    result.provenance,
+                )
+            )
+            for result in results
+        )
+    )
+    return _sre_ref(47, artifact_sha256, parts)
+
+
+def build_dr_item_ref(result: DrResult, *, artifact_sha256: str) -> str:
+    """Build Master 48 evidence only from measured, governed restore/RPO/RTO proof."""
+
+    if not dr_result_accepted(result):
+        raise ValueError("DR evidence is not accepted")
+    parts = (
+        result.environment,
+        str(result.restore_passed),
+        str(result.rpo_seconds),
+        str(result.rto_seconds),
+        result.provenance,
+    )
+    return _sre_ref(48, artifact_sha256, parts)
 
 
 def _controlled(values: tuple[str, ...]) -> bool:

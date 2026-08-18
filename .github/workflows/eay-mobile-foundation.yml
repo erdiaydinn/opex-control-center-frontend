@@ -98,13 +98,13 @@ jobs:
       - name: Prove mobile authority fail-closed behavior
         working-directory: services/core-api
         run: >-
-          pytest -q
+          python -m pytest -q
           tests/test_mobile_device_trust.py
           tests/test_mobile_policy.py
           tests/test_mobile_policy_signing.py
       - name: Prove Workforce active-shift and production Inventory contracts
         run: >-
-          pytest -q
+          python -m pytest -q
           backend/tests/test_workforce_active_shift_authority.py
           backend/tests/test_inventory_production_identity_authority.py
           backend/tests/test_inventory_terminal_active_shift_gate.py

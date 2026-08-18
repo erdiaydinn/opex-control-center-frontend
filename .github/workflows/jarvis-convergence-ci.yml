@@ -7,7 +7,18 @@ on:
       - release/platform-convergence-v0.1
       - product/eay-category-leadership-v1
     paths:
-      - "services/core-api/**"
+      - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/main.py"
+      - "services/core-api/app/core/ai_*.py"
+      - "services/core-api/app/core/permission_catalog.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_ai_*.py"
+      - "services/core-api/tests/test_security_foundation.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/*ai*.py"
+      - "services/core-api/alembic/versions/*jarvis*.py"
+      - "services/core-api/alembic/versions/*orders*.py"
+      - "services/core-api/pyproject.toml"
       - "services/eay-ai-core/**"
       - ".github/workflows/jarvis-convergence-ci.yml"
   pull_request:
@@ -16,7 +27,18 @@ on:
       - product/eay-product-completion-v1
       - product/eay-category-leadership-v1
     paths:
-      - "services/core-api/**"
+      - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/main.py"
+      - "services/core-api/app/core/ai_*.py"
+      - "services/core-api/app/core/permission_catalog.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_ai_*.py"
+      - "services/core-api/tests/test_security_foundation.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/*ai*.py"
+      - "services/core-api/alembic/versions/*jarvis*.py"
+      - "services/core-api/alembic/versions/*orders*.py"
+      - "services/core-api/pyproject.toml"
       - "services/eay-ai-core/**"
       - ".github/workflows/jarvis-convergence-ci.yml"
 

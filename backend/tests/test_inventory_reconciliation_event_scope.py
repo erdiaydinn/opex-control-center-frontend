@@ -24,15 +24,15 @@ def _reconciliation_source() -> str:
 
 def test_reconciliation_aggregates_only_real_count_events() -> None:
     rendered = _reconciliation_source().replace(" ", "")
-    assert "FROMinventory_events" in rendered
+    assert "FROMinventory_eventse" in rendered
     assert "event_typeIN('SCAN','UNEXPECTED_SKU')" in rendered
-    assert "GROUPBYbarcode" in rendered
+    assert "GROUPBYe.barcode" in rendered
 
 
 def test_location_completion_can_never_be_stock_reconciliation_input() -> None:
     rendered = _reconciliation_source()
     assert "LOCATION_COMPLETE" not in rendered
-    assert "sum(quantity)" in rendered
+    assert "sum(e.quantity)" in rendered
 
 
 def test_expected_stock_is_scoped_before_barcode_join() -> None:

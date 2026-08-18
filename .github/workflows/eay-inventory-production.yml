@@ -7,7 +7,7 @@ on:
       - release/platform-convergence-v0.1
     paths:
       - "backend/app/modules/inventory/**"
-      - "backend/migrations/003_inventory_production.sql"
+      - "backend/migrations/*inventory*.sql"
       - "android-inventory/**"
       - "src/modules/inventory/**"
       - "src/App.jsx"
@@ -80,9 +80,49 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r backend/requirements.txt
-      - run: psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/003_inventory_production.sql
+      - name: Apply authoritative Inventory production migration series
         env:
-          INVENTORY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          applied=0
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              printf 'legacy_inventory_migration_frozen=%s\n' "$migration"
+              continue
+            fi
+            printf 'production_inventory_migration=%s\n' "$migration"
+            psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test \
+              -v ON_ERROR_STOP=1 -f "$migration"
+            applied=$((applied + 1))
+          done
+          test "$applied" -ge 1
+      - name: Prove installed production migration authority
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            count="$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=${version}")"
+            test "$count" = "1"
+          done
+          if test -f backend/migrations/004_inventory_location_completion.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_location_event_v4_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_location_completion_once_idx'")" = "1"
+          fi
       - name: Create least-privilege tenant-bound runtime role
         env:
           PGPASSWORD: postgres
@@ -115,10 +155,24 @@ jobs:
             backend.app.modules.inventory.test_inventory_scope \
             backend.app.modules.inventory.test_inventory_production
       - name: Database restart durability
+        shell: bash
         run: |
+          set -euo pipefail
           docker restart ${{ job.services.postgres.id }}
-          for attempt in {1..30}; do pg_isready -d "$INVENTORY_DATABASE_URL" && break; sleep 1; done
-          psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_schema_migrations WHERE version=3"
+          for attempt in {1..30}; do
+            pg_isready -d "$INVENTORY_DATABASE_URL" && break
+            sleep 1
+          done
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            test "$(psql "$INVENTORY_DATABASE_URL" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=${version}")" = "1"
+          done
       - name: Backup and isolated restore acceptance
         run: |
           PG_CONTAINER="${{ job.services.postgres.id }}"
@@ -127,10 +181,24 @@ jobs:
           docker exec -i "$PG_CONTAINER" pg_restore -U postgres -d eay_inventory_restore --no-owner < /tmp/eay-inventory.dump
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_events"
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_audit"
-      - name: Migration replay
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT max(version) FROM inventory_schema_migrations"
+      - name: Replay authoritative production migration series
         env:
           PGPASSWORD: postgres
-        run: psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -v ON_ERROR_STOP=1 -f backend/migrations/003_inventory_production.sql
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test \
+              -v ON_ERROR_STOP=1 -f "$migration"
+          done
 
   android-debug-verification:
     runs-on: ubuntu-latest

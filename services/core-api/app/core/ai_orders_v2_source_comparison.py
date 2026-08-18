@@ -35,12 +35,12 @@ WITH expected AS (
 ),
 candidate AS (
   SELECT field_path, data_type
-  FROM \`curated_data_shared_coredata_business.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS\`
+  FROM `curated_data_shared_coredata_business.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`
   WHERE table_name = 'orders'
 ),
 directive AS (
   SELECT field_path, data_type
-  FROM \`curated_data_shared.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS\`
+  FROM `curated_data_shared.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`
   WHERE table_name = 'orders'
 )
 SELECT

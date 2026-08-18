@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from app.insight.governed_metrics import GovernedMetric, can_activate_family
-from app.insight.product_experience import MetricProvenance, build_insight_card
 from app.insight.proactive import (
     action_requires_approval,
     auto_action_permitted,
     create_signal,
 )
+from app.insight.product_experience import MetricProvenance, build_insight_card
 from app.jarvis.orders_v2_production_truth import (
     EXPECTED_EVIDENCE_CLASS,
     REQUIRED_EVIDENCE_KEYS,

@@ -6,9 +6,9 @@ from uuid import UUID
 import pytest
 
 from app.core.ai_tool_authorization import (
+    SCOPE_PERMISSION_KEYS,
     AiToolAccessDenied,
     AiToolPermissionScopeUnsupported,
-    SCOPE_PERMISSION_KEYS,
 )
 from app.core.operational_tool_authority import (
     OPERATIONAL_TOOL_REGISTRY,

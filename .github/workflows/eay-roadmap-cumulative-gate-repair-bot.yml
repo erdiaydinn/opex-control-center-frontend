@@ -1,4 +1,4 @@
-# Temporary branch-only repair harness; remove before canonical composition.
+# Temporary branch-only repair harness v2 activation; remove before canonical composition.
 name: EAY Roadmap Cumulative Gate Repair Bot
 
 on:

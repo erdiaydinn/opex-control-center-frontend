@@ -2,7 +2,9 @@ name: EAY Master Roadmap 31 - Academy Learning OS
 
 on:
   push:
-    branches: [agent/master-roadmap-31-33-academy-compose-v2]
+    branches:
+      - agent/master-roadmap-31-33-academy-compose-v2
+      - product/eay-category-leadership-v1
   pull_request:
     branches: [product/eay-category-leadership-v1]
     paths:

@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
   workflow_dispatch:
 
 permissions:
@@ -125,11 +126,19 @@ jobs:
               finally: await c.close()
           asyncio.run(main())
           PY
-      - name: Migrate exact head
+      - name: Migrate exact head and preserve item 10 lineage
         working-directory: services/core-api
+        shell: bash
         run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0029_field_template_lifecycle_column_grant' /tmp/eay-alembic-history.txt
           alembic upgrade head
-          alembic current | grep -q '0029_field_template_lifecycle_column_grant'
+          current="$(alembic current | awk '/\(head\)/ {print $1}')"
+          test "$current" = "${heads[0]}"
       - name: Core and Field security boundaries
         env:
           PYTHONPATH: services/core-api

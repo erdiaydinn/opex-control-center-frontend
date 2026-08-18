@@ -12,7 +12,9 @@ from app.core.localization import (
 from app.core.security import PermissionAssignment, Principal
 
 
-def _principal(*assignments: PermissionAssignment, permissions: tuple[str, ...] | None = None) -> Principal:
+def _principal(
+    *assignments: PermissionAssignment, permissions: tuple[str, ...] | None = None
+) -> Principal:
     permission_keys = permissions or tuple(sorted({assignment.key for assignment in assignments}))
     return Principal(
         subject="subject-a",

@@ -5,10 +5,29 @@ import sqlite3
 import uuid
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .grounded_critic import (
+    CRITIC_SCHEMA,
+    CRITIC_SYSTEM_PROMPT,
+    GroundedCriticReport,
+    apply_critic_constraints,
+    build_critic_prompt,
+    build_revision_prompt,
+    is_high_assurance_critic,
+    normalize_critic_report,
+    should_run_grounded_critic,
+    unavailable_critic_report,
+)
+from .grounded_evidence_planner import (
+    EvidencePlan,
+    build_evidence_plan,
+    execute_evidence_plan,
+    select_evidence,
+)
 from .grounded_reasoning import (
     DecisionQualityReport,
     assess_and_calibrate_grounded_answer,
@@ -60,9 +79,14 @@ class GroundedChatAnswer(BaseModel):
     temporal_resolution_fingerprint: str | None = None
     legal_audit_fingerprint: str | None = None
     decision_quality: DecisionQualityReport | None = None
+    critic: GroundedCriticReport | None = None
+    evidence_plan: EvidencePlan | None = None
 
 
-def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
+def _enforce_grounded_retrieval_truth_boundary(
+    request: ChatRequest,
+    active_layers: list[str] | None = None,
+) -> None:
     """Keep tenant-scoped retrieval closed until Core tenant authority is bound.
 
     EAY AI Core's local SQLite/FTS store currently has no authoritative tenant
@@ -83,7 +107,8 @@ def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
     if environment != "production":
         return
 
-    tenant_scoped = sorted(_TENANT_SCOPED_LAYERS.intersection(request.layers))
+    scoped_layers = active_layers if active_layers is not None else request.layers
+    tenant_scoped = sorted(_TENANT_SCOPED_LAYERS.intersection(scoped_layers))
     if tenant_scoped:
         raise HTTPException(
             status_code=503,
@@ -97,16 +122,14 @@ def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
         )
 
 
-def _company_conflicts_for_response(request: ChatRequest) -> list[dict]:
-    """Project company-vs-law conflicts only where company scope is safe.
+def _company_conflicts_for_response(
+    request: ChatRequest,
+    active_layers: list[str] | None = None,
+) -> list[dict]:
+    """Project company-vs-law conflicts only where company scope is safe."""
 
-    The normalized legal engine is not tenant-scoped yet. Production therefore
-    must never serialize its company requirements, even for global legal-only
-    requests. Development/test keeps the existing single-company research path,
-    but conflict projection is still opt-in through the explicit company layer.
-    """
-
-    if "company" not in request.layers:
+    scoped_layers = active_layers if active_layers is not None else request.layers
+    if "company" not in scoped_layers:
         return []
 
     environment = os.getenv("EAY_ENVIRONMENT", "development").strip().lower()
@@ -255,12 +278,7 @@ def _filter_temporally_active_legal_evidence(
     evidence: list[Evidence],
     state: LegalTemporalState,
 ) -> list[Evidence]:
-    """Remove legal chunks whose source instrument is not active at `state.as_of`.
-
-    Legal evidence without a verified legal-chunk provenance row is also excluded.
-    This keeps older/manual `legal` knowledge rows from bypassing the temporal graph.
-    Non-legal evidence is preserved unchanged.
-    """
+    """Remove legal chunks whose source instrument is not active at `state.as_of`."""
     legal_ids = [item.id for item in evidence if item.layer == "legal"]
     if not legal_ids:
         return evidence
@@ -287,33 +305,138 @@ def _filter_temporally_active_legal_evidence(
     ]
 
 
+def _token(raw: dict[str, Any] | None, key: str) -> int:
+    try:
+        return int((raw or {}).get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def _run_grounded_critic(
+    *,
+    request: ChatRequest,
+    answer: ChatAnswer,
+    evidence: list[Evidence],
+    decision_quality: DecisionQualityReport,
+) -> tuple[GroundedCriticReport, dict[str, Any]]:
+    if not should_run_grounded_critic(request, answer, decision_quality):
+        return GroundedCriticReport(), {}
+
+    try:
+        parsed, raw = await ollama.chat_json(
+            system=CRITIC_SYSTEM_PROMPT,
+            user=build_critic_prompt(
+                request=request,
+                answer=answer,
+                evidence_text=_format_evidence(evidence),
+                decision_quality=decision_quality,
+            ),
+            schema=CRITIC_SCHEMA,
+        )
+        report = normalize_critic_report(
+            parsed,
+            current_confidence=answer.confidence,
+        )
+        return report, raw
+    except Exception:
+        return (
+            unavailable_critic_report(
+                current_confidence=answer.confidence,
+                high_assurance=is_high_assurance_critic(
+                    request,
+                    answer,
+                    decision_quality,
+                ),
+            ),
+            {},
+        )
+
+
+async def _apply_bounded_revision(
+    *,
+    request: ChatRequest,
+    answer: ChatAnswer,
+    evidence: list[Evidence],
+    critic: GroundedCriticReport,
+    valid_ids: set[str],
+    has_legal: bool,
+    interaction_id: str,
+) -> tuple[ChatAnswer, DecisionQualityReport | None, dict[str, Any]]:
+    if critic.verdict not in {"REVISE", "REJECT"} or not critic.revision_instructions:
+        return answer, None, {}
+
+    revision_system = (
+        SYSTEM_PROMPT
+        + "\n\nYou are revising an existing evidence-bound answer after verifier review. "
+        "Apply only the supplied observable correction instructions. Do not add "
+        "new facts or citations."
+    )
+    try:
+        parsed, raw = await ollama.chat_json(
+            system=revision_system,
+            user=build_revision_prompt(
+                request=request,
+                answer=answer,
+                evidence_text=_format_evidence(evidence),
+                critic=critic,
+            ),
+            schema=ANSWER_SCHEMA,
+        )
+        revised = ChatAnswer(
+            **parsed,
+            evidence=evidence,
+            model=settings.model,
+            prompt_tokens=answer.prompt_tokens,
+            output_tokens=answer.output_tokens,
+            interaction_id=interaction_id,
+        )
+        revised = validate_citations(revised, valid_ids, has_legal)
+        revised_quality = assess_and_calibrate_grounded_answer(
+            request,
+            revised,
+            evidence,
+        )
+        critic.revision_applied = True
+        critic.revision_guard_passed = bool(revised_quality.evidence_sufficient)
+        if critic.revision_guard_passed:
+            return revised, revised_quality, raw
+    except Exception:
+        pass
+
+    critic.requires_human_review = True
+    critic.confidence_cap = min(critic.confidence_cap, 0.40)
+    return answer, None, {}
+
+
 @router.post("/chat", response_model=GroundedChatAnswer)
 async def grounded_chat(request: ChatRequest):
-    _enforce_grounded_retrieval_truth_boundary(request)
+    evidence_plan = build_evidence_plan(request, settings.top_k)
+    _enforce_grounded_retrieval_truth_boundary(request, evidence_plan.active_layers)
 
     temporal_state: LegalTemporalState | None = None
-    if "legal" in request.layers:
+    if evidence_plan.legal_temporal_resolution_required:
         temporal_state = _resolve_temporal_state(request.as_of)
 
-    retrieval_limit = settings.top_k
-    if temporal_state is not None:
-        # Inactive historical legal chunks can occupy lexical top-k positions. Search
-        # a bounded wider window, apply the temporal graph, then restore the public cap.
-        retrieval_limit = min(max(settings.top_k * 4, settings.top_k), 32)
-
-    evidence = store.search(
-        request.message,
-        request.as_of,
-        request.layers,
-        retrieval_limit,
+    evidence_candidates = execute_evidence_plan(
+        evidence_plan,
+        store=store,
+        as_of=request.as_of,
     )
     if temporal_state is not None:
-        evidence = _filter_temporally_active_legal_evidence(evidence, temporal_state)
-        evidence = evidence[: settings.top_k]
+        evidence_candidates = _filter_temporally_active_legal_evidence(
+            evidence_candidates,
+            temporal_state,
+        )
+    evidence = select_evidence(
+        evidence_plan,
+        evidence_candidates,
+        limit=settings.top_k,
+    )
 
     prompt = f"""
 AS_OF: {request.as_of.isoformat()}
 COMPANY: {request.company or 'not_specified'}
+EVIDENCE_ACTIVE_LAYERS: {', '.join(evidence_plan.active_layers) or 'none'}
 LEGAL_TEMPORAL_RESOLUTION: {temporal_state.resolution_fingerprint if temporal_state else 'not_requested'}
 
 USER QUESTION:
@@ -325,7 +448,7 @@ RETRIEVED EVIDENCE:
 Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and legal layers differ, explain the difference explicitly.
 """.strip()
     try:
-        parsed, raw = await ollama.chat_json(
+        parsed, initial_raw = await ollama.chat_json(
             system=SYSTEM_PROMPT,
             user=prompt,
             schema=ANSWER_SCHEMA,
@@ -338,8 +461,8 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         **parsed,
         evidence=evidence,
         model=settings.model,
-        prompt_tokens=raw.get("prompt_eval_count"),
-        output_tokens=raw.get("eval_count"),
+        prompt_tokens=_token(initial_raw, "prompt_eval_count"),
+        output_tokens=_token(initial_raw, "eval_count"),
         interaction_id=interaction_id,
     )
     valid_ids = {item.id for item in evidence}
@@ -353,6 +476,38 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         answer,
         evidence,
     )
+
+    critic, critic_raw = await _run_grounded_critic(
+        request=request,
+        answer=answer,
+        evidence=evidence,
+        decision_quality=decision_quality,
+    )
+    revised_answer, revised_quality, revision_raw = await _apply_bounded_revision(
+        request=request,
+        answer=answer,
+        evidence=evidence,
+        critic=critic,
+        valid_ids=valid_ids,
+        has_legal=has_legal,
+        interaction_id=interaction_id,
+    )
+    if revised_quality is not None:
+        answer = revised_answer
+        decision_quality = revised_quality
+
+    apply_critic_constraints(answer, critic)
+    answer.prompt_tokens = (
+        _token(initial_raw, "prompt_eval_count")
+        + _token(critic_raw, "prompt_eval_count")
+        + _token(revision_raw, "prompt_eval_count")
+    )
+    answer.output_tokens = (
+        _token(initial_raw, "eval_count")
+        + _token(critic_raw, "eval_count")
+        + _token(revision_raw, "eval_count")
+    )
+
     store.save_interaction(
         interaction_id=interaction_id,
         request=request,
@@ -376,7 +531,7 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
     if answer.confidence < settings.low_confidence_threshold:
         store.create_low_confidence_candidate(interaction_id)
 
-    conflicts = _company_conflicts_for_response(request)
+    conflicts = _company_conflicts_for_response(request, evidence_plan.active_layers)
     temporal_fingerprint = (
         temporal_state.resolution_fingerprint if temporal_state is not None else None
     )
@@ -391,4 +546,6 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         temporal_resolution_fingerprint=temporal_fingerprint,
         legal_audit_fingerprint=legal_audit_fingerprint,
         decision_quality=decision_quality,
+        critic=critic,
+        evidence_plan=evidence_plan,
     )

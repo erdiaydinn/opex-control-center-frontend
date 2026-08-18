@@ -1,0 +1,66 @@
+name: EAY Jarvis Decision Trace Acceptance
+
+on:
+  push:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/eay-ai-core/app/grounded_decision_trace.py"
+      - "services/eay-ai-core/tests/test_grounded_decision_trace.py"
+      - "services/eay-ai-core/pyproject.toml"
+      - ".github/workflows/eay-jarvis-decision-trace-acceptance.yml"
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/eay-ai-core/app/grounded_decision_trace.py"
+      - "services/eay-ai-core/tests/test_grounded_decision_trace.py"
+      - "services/eay-ai-core/pyproject.toml"
+      - ".github/workflows/eay-jarvis-decision-trace-acceptance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-jarvis-decision-trace-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decision-trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install EAY AI Core test surface
+        run: python -m pip install -e './services/eay-ai-core[dev]'
+      - name: Compile and lint decision trace
+        run: |
+          python -m compileall -q services/eay-ai-core/app/grounded_decision_trace.py services/eay-ai-core/tests/test_grounded_decision_trace.py
+          ruff check services/eay-ai-core/app/grounded_decision_trace.py services/eay-ai-core/tests/test_grounded_decision_trace.py
+      - name: Run decision trace acceptance
+        working-directory: services/eay-ai-core
+        run: pytest -q tests/test_grounded_decision_trace.py
+      - name: Prove no raw-question or private-reasoning trace authority
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('services/eay-ai-core/app/grounded_decision_trace.py').read_text(encoding='utf-8').lower()
+          assert 'chain-of-thought' in text
+          assert 'question_fingerprint' in text
+          assert 'trace_fingerprint' in text
+          assert 'production_authority: bool = false' in text
+          assert 'invalid_citation_ids' in text
+          print('JARVIS_DECISION_TRACE_PUBLIC_EVIDENCE_ONLY=PASS')
+          PY
+      - name: Truth boundary
+        run: |
+          echo 'JARVIS_DECISION_TRACE_REPOSITORY_CONTRACT=IMPLEMENTED'
+          echo 'JARVIS_DECISION_TRACE_PRODUCTION_AUTHORITY=FALSE'
+          echo 'JARVIS_PRODUCTION_TENANT_AUTHORITY=REQUIRED'

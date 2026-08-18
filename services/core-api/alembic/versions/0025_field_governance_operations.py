@@ -66,7 +66,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=20), nullable=False, server_default="active"),
         sa.Column("rule_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("created_by", sa.String(length=255), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "mission_id"],
             ["field_missions.tenant_id", "field_missions.id"],
@@ -74,7 +79,9 @@ def upgrade() -> None:
             name="fk_field_recurrence_mission",
         ),
         sa.CheckConstraint("revision > 0", name="ck_field_recurrence_revision"),
-        sa.CheckConstraint("cadence IN ('daily','weekly','monthly')", name="ck_field_recurrence_cadence"),
+        sa.CheckConstraint(
+            "cadence IN ('daily','weekly','monthly')", name="ck_field_recurrence_cadence"
+        ),
         sa.CheckConstraint("interval_count BETWEEN 1 AND 52", name="ck_field_recurrence_interval"),
         sa.CheckConstraint("window_minutes BETWEEN 5 AND 10080", name="ck_field_recurrence_window"),
         sa.CheckConstraint("status IN ('active','retired')", name="ck_field_recurrence_status"),
@@ -87,8 +94,12 @@ def upgrade() -> None:
             name="ck_field_recurrence_fingerprint",
         ),
         sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_field_recurrence_rules"),
-        sa.UniqueConstraint("tenant_id", "mission_id", "revision", name="uq_field_recurrence_revision"),
-        sa.UniqueConstraint("tenant_id", "rule_fingerprint", name="uq_field_recurrence_fingerprint"),
+        sa.UniqueConstraint(
+            "tenant_id", "mission_id", "revision", name="uq_field_recurrence_revision"
+        ),
+        sa.UniqueConstraint(
+            "tenant_id", "rule_fingerprint", name="uq_field_recurrence_fingerprint"
+        ),
     )
 
     op.create_table(
@@ -102,10 +113,19 @@ def upgrade() -> None:
         sa.Column("evidence_ref_hash", sa.String(length=64), nullable=True),
         sa.Column("approved_by", sa.String(length=255), nullable=False),
         sa.Column("exemption_fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "mission_id", "location_id"],
-            ["field_mission_targets.tenant_id", "field_mission_targets.mission_id", "field_mission_targets.location_id"],
+            [
+                "field_mission_targets.tenant_id",
+                "field_mission_targets.mission_id",
+                "field_mission_targets.location_id",
+            ],
             ondelete="RESTRICT",
             name="fk_field_exemption_target",
         ),
@@ -118,7 +138,9 @@ def upgrade() -> None:
             name="ck_field_exemption_fingerprint",
         ),
         sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_field_target_exemptions"),
-        sa.UniqueConstraint("tenant_id", "mission_id", "location_id", name="uq_field_target_exemption"),
+        sa.UniqueConstraint(
+            "tenant_id", "mission_id", "location_id", name="uq_field_target_exemption"
+        ),
     )
 
     op.create_table(
@@ -130,7 +152,12 @@ def upgrade() -> None:
         sa.Column("scope_snapshot", JSONB, nullable=False),
         sa.Column("scope_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("requested_by", sa.String(length=255), nullable=False),
-        sa.Column("requested_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "requested_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "mission_id"],
             ["field_missions.tenant_id", "field_missions.id"],
@@ -154,7 +181,12 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("decided_by", sa.String(length=255), nullable=False),
         sa.Column("decision_fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("decided_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "decided_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "export_request_id"],
             ["field_export_requests.tenant_id", "field_export_requests.id"],
@@ -171,7 +203,9 @@ def upgrade() -> None:
             name="ck_field_export_decision_fingerprint",
         ),
         sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_field_export_decisions"),
-        sa.UniqueConstraint("tenant_id", "export_request_id", name="uq_field_export_single_decision"),
+        sa.UniqueConstraint(
+            "tenant_id", "export_request_id", name="uq_field_export_single_decision"
+        ),
     )
 
     for table_name in (
@@ -184,7 +218,7 @@ def upgrade() -> None:
         _append_only(table_name)
         op.execute(f"GRANT SELECT, INSERT ON TABLE {table_name} TO {RUNTIME_ROLE}")
 
-    all_scope = "'{\"type\":\"all\"}'::jsonb"
+    all_scope = '\'{"type":"all"}\'::jsonb'
     permissions = _sql_array(NEW_PERMISSIONS)
     op.execute(
         f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) "

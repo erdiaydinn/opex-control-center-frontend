@@ -56,6 +56,16 @@ BUDGET_SQL_EXECUTION_POINTS = {
     ("modules/budget/planning.py", "create_line"),
     ("modules/budget/planning.py", "create_forecast"),
     ("modules/budget/planning.py", "close_period"),
+    # Master 28/60 security review: scenario/assumption/driver/allocation SQL is
+    # static text() with bound parameters only. Runtime authorization still
+    # flows through BudgetUnitOfWork tenant and cost-center scope authority.
+    ("modules/budget/planning_engine.py", "create_scenario"),
+    ("modules/budget/planning_engine.py", "add_assumption"),
+    ("modules/budget/planning_engine.py", "add_driver_line"),
+    ("modules/budget/planning_engine.py", "add_allocation_rule"),
+    ("modules/budget/planning_engine.py", "publish_scenario"),
+    ("modules/budget/planning_engine.py", "get_activation_snapshot"),
+    ("modules/budget/planning_engine.py", "list_scenarios"),
     ("modules/budget/procurement.py", "create_request"),
     ("modules/budget/procurement.py", "decide_request"),
     ("modules/budget/procurement.py", "create_po"),

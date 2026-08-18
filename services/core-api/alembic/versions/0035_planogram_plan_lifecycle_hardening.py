@@ -16,8 +16,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_plan_lifecycle_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE dna_status varchar(20); dna_geometry boolean; dna_store varchar(80);
@@ -61,7 +60,7 @@ def upgrade() -> None:
                    OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
                    OR NEW.rejection_reason IS DISTINCT FROM OLD.rejection_reason
                 THEN
-                    RAISE EXCEPTION 'Approved Planogram plan is immutable except approved -> superseded';
+    RAISE EXCEPTION 'Approved Planogram plan is immutable except approved -> superseded';
                 END IF;
             ELSIF OLD.status IN ('rejected','superseded') THEN
                 RAISE EXCEPTION 'Terminal Planogram plan version is immutable';
@@ -69,7 +68,7 @@ def upgrade() -> None:
 
             IF NEW.status = 'approved' AND OLD.status = 'submitted' THEN
                 IF NOT NEW.physical_truth_attested THEN
-                    RAISE EXCEPTION 'Planogram approval requires external physical-truth attestation';
+    RAISE EXCEPTION 'Planogram approval requires external physical-truth attestation';
                 END IF;
                 IF NEW.submitted_by IS NULL OR NEW.approved_by IS NULL
                    OR NEW.submitted_by = NEW.approved_by
@@ -84,13 +83,12 @@ def upgrade() -> None:
                    OR NOT COALESCE(dna_geometry, FALSE)
                    OR dna_store IS DISTINCT FROM NEW.store_code
                 THEN
-                    RAISE EXCEPTION 'Planogram approval requires approved attested Store DNA for the same store';
+    RAISE EXCEPTION 'Planogram approval requires approved attested Store DNA for the same store';
                 END IF;
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

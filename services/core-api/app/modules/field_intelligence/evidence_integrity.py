@@ -47,9 +47,7 @@ def validate_photo_receipt_binding(
         )
 
     populated_photo_keys = {
-        key
-        for key in photo_keys
-        if key in payload and payload[key] not in (None, "", [])
+        key for key in photo_keys if key in payload and payload[key] not in (None, "", [])
     }
     if populated_photo_keys != set(by_field):
         missing = sorted(populated_photo_keys - set(by_field))
@@ -232,7 +230,8 @@ async def verify_evidence_authority(
                 attestation = attestation_result.mappings().first()
                 if attestation is None:
                     raise FieldEvidenceIntegrityError(
-                        f"camera-only policy requires authoritative capture attestation for {claim.field_key}"
+                        "camera-only policy requires authoritative capture attestation for"
+                        f" {claim.field_key}"
                     )
                 capture_fingerprint = str(attestation["attestation_fingerprint"])
 

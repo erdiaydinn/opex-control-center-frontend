@@ -1,3 +1,4 @@
+import ast
 import json
 from pathlib import Path
 
@@ -47,7 +48,9 @@ def test_every_commercial_and_shared_module_has_category_leadership_gates():
     gates = load_gates()
     modules = set(gates["modules"])
     assert REQUIRED_MODULES <= modules
-    assert not (modules - REQUIRED_MODULES), f"unreviewed modules in gate manifest: {sorted(modules - REQUIRED_MODULES)}"
+    assert not (modules - REQUIRED_MODULES), (
+        f"unreviewed modules in gate manifest: {sorted(modules - REQUIRED_MODULES)}"
+    )
 
     for module, rules in gates["modules"].items():
         assert rules, f"{module} has no category leadership rules"
@@ -68,7 +71,11 @@ def test_p0_rules_require_external_or_field_evidence_not_ci_only_claims():
             if rule["priority"] != "P0":
                 continue
             text = " ".join(str(value).lower() for value in rule.values())
-            assert "external" in rule["evidence_type"] or "field" in rule["evidence_type"] or "production" in rule["evidence_type"], module
+            assert (
+                "external" in rule["evidence_type"]
+                or "field" in rule["evidence_type"]
+                or "production" in rule["evidence_type"]
+            ), module
             assert "ci only" not in text
             assert "green ci = production" not in text
 
@@ -81,6 +88,19 @@ def test_field_intelligence_core_surface_is_live_through_existing_core_router():
     assert "create_mission(str(principal.tenant_id), principal.subject, payload, scope)" in text
 
 
+def _literal_assignment_value(source: str, variable_name: str):
+    tree = ast.parse(source)
+    matches = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if isinstance(target, ast.Name) and target.id == variable_name:
+            matches.append(ast.literal_eval(node.value))
+    assert len(matches) == 1, f"expected one literal assignment for {variable_name}"
+    return matches[0]
+
+
 def test_field_permissions_and_core_migration_are_explicitly_authoritative():
     catalog = Path("services/core-api/app/core/permission_catalog.py").read_text(encoding="utf-8")
     migration = Path("services/core-api/alembic/versions/0019_field_intelligence_foundation.py").read_text(encoding="utf-8")
@@ -90,5 +110,5 @@ def test_field_permissions_and_core_migration_are_explicitly_authoritative():
     assert 'action_permission("field_intelligence", "viewEvidence")' in catalog
     assert '"module:field_intelligence:view"' in migration
     assert '"action:field_intelligence:createMission"' in migration
-    assert 'FORCE ROW LEVEL SECURITY' in migration
-    assert 'all_scope = "\'{\\"type\\":\\"all\\"}\'::jsonb"' in migration
+    assert "FORCE ROW LEVEL SECURITY" in migration
+    assert _literal_assignment_value(migration, "all_scope") == '\'{"type":"all"}\'::jsonb'

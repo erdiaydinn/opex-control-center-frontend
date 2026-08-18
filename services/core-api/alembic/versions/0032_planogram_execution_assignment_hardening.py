@@ -20,11 +20,10 @@ RUNTIME_ROLE = "opex_runtime"
 def upgrade() -> None:
     op.execute(f"REVOKE UPDATE ON planogram_execution_assignments FROM {RUNTIME_ROLE}")
     op.execute(
-        f"GRANT UPDATE (status, acknowledged_by, acknowledged_at, closed_by, closed_at) "
+        "GRANT UPDATE (status, acknowledged_by, acknowledged_at, closed_by, closed_at) "
         f"ON planogram_execution_assignments TO {RUNTIME_ROLE}"
     )
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_assignment_identity_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
@@ -41,7 +40,8 @@ def upgrade() -> None:
             IF OLD.status = 'closed' THEN
                 RAISE EXCEPTION 'Closed Planogram execution assignment is immutable';
             END IF;
-            IF OLD.status = 'assigned' AND NEW.status NOT IN ('assigned','acknowledged','closed') THEN
+            IF OLD.status = 'assigned' AND NEW.status NOT IN
+            ('assigned','acknowledged','closed') THEN
                 RAISE EXCEPTION 'Invalid Planogram assignment state transition';
             END IF;
             IF OLD.status = 'acknowledged' AND NEW.status NOT IN ('acknowledged','closed') THEN
@@ -49,8 +49,7 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
     op.execute(
         "CREATE TRIGGER trg_planogram_assignment_identity BEFORE UPDATE "
         "ON planogram_execution_assignments FOR EACH ROW "

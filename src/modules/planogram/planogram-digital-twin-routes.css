@@ -1,0 +1,136 @@
+.eay-twin-route-path {
+  fill: none;
+  stroke: #df1067;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.eay-twin-route-path[data-route-rank="2"] {
+  stroke-width: 2.5;
+  opacity: 0.72;
+}
+
+.eay-twin-route-path[data-route-rank="3"] {
+  stroke-width: 2;
+  opacity: 0.5;
+}
+
+.eay-twin-route-origin {
+  fill: #ffffff;
+  stroke: #df1067;
+  stroke-width: 3;
+  pointer-events: none;
+}
+
+.eay-twin-module.is-route-hotspot {
+  filter: drop-shadow(0 0 5px rgba(223, 16, 103, 0.72));
+}
+
+.eay-twin-module.is-route-hotspot[data-route-rank="1"] {
+  stroke: #ffffff;
+  stroke-width: 2.5;
+}
+
+.eay-twin-route-hotspots {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem 1rem 0;
+}
+
+.eay-twin-route-hotspots > header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted, #a8aebc);
+  font-size: 0.78rem;
+}
+
+.eay-twin-route-hotspots ol {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.eay-twin-route-hotspots li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.18rem 0.45rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--border, #303442) 86%, #df1067 14%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface, #11131a) 94%, #df1067 6%);
+  font-size: 0.73rem;
+}
+
+.eay-twin-route-hotspots code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eay-twin-route-hotspots li > span:not(.eay-twin-route-rank),
+.eay-twin-route-hotspots li > strong {
+  grid-column: 2;
+  color: var(--muted, #a8aebc);
+}
+
+.eay-twin-route-rank {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #df1067;
+  color: white;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  .eay-twin-route-hotspots ol {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .eay-twin-route-hotspots {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .eay-twin-route-hotspots ol {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eay-twin-module.is-route-hotspot {
+    filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .eay-twin-route-path,
+  .eay-twin-route-origin,
+  .eay-twin-module.is-route-hotspot {
+    stroke: Highlight;
+  }
+
+  .eay-twin-route-hotspots li {
+    border: 1px solid CanvasText;
+  }
+
+  .eay-twin-route-rank {
+    background: Highlight;
+    color: HighlightText;
+  }
+}

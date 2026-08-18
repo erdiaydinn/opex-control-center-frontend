@@ -1,0 +1,88 @@
+name: EAY Planogram Picker Tour Optimizer V3
+
+on:
+  push:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_optimizer_v3.py"
+      - "apps/planai/backend/picker_tour_simulation.py"
+      - "apps/planai/backend/physical_optimizer_v2.py"
+      - "apps/planai/backend/tests/test_physical_optimizer_v3.py"
+      - "apps/planai/backend/tests/test_picker_tour_simulation.py"
+      - ".github/workflows/eay-planogram-picker-tour-optimizer-v3.yml"
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_optimizer_v3.py"
+      - "apps/planai/backend/picker_tour_simulation.py"
+      - "apps/planai/backend/physical_optimizer_v2.py"
+      - "apps/planai/backend/tests/test_physical_optimizer_v3.py"
+      - "apps/planai/backend/tests/test_picker_tour_simulation.py"
+      - ".github/workflows/eay-planogram-picker-tour-optimizer-v3.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-picker-tour-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  basket-aware-optimizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Install PlanAI backend and focused test tooling
+        working-directory: apps/planai/backend
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest ruff
+      - name: Compile V1 V2 V3 optimization stack
+        run: >-
+          python -m compileall -q
+          apps/planai/backend/architecture_truth.py
+          apps/planai/backend/picker_tour_simulation.py
+          apps/planai/backend/physical_optimizer.py
+          apps/planai/backend/physical_optimizer_v2.py
+          apps/planai/backend/physical_optimizer_v3.py
+      - name: Ruff basket-aware optimization stack
+        run: >-
+          ruff check
+          apps/planai/backend/picker_tour_simulation.py
+          apps/planai/backend/physical_optimizer_v3.py
+          apps/planai/backend/tests/test_picker_tour_simulation.py
+          apps/planai/backend/tests/test_physical_optimizer_v3.py
+      - name: Run picker tour and V3 optimizer acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_picker_tour_simulation.py tests/test_physical_optimizer_v3.py
+      - name: Prove hard-first objective contract
+        working-directory: apps/planai/backend
+        run: |
+          python - <<'PY'
+          import physical_optimizer_v3 as v3
+          assert v3.OPTIMIZER_VERSION == 'physical-plan-optimizer-v3-picker-tour'
+          assert len(v3.STRATEGIES) == 8
+          assert len({name for name, _ in v3.STRATEGIES}) == 8
+          assert v3.TOUR_OBJECTIVE_ORDER[:4] == (
+              'hard_violation_count',
+              'weighted_unplaced_sales',
+              'unplaced_sku_count',
+              'tour_unsimulated_order_count',
+          )
+          assert v3.TOUR_OBJECTIVE_ORDER.index('tour_p95_m') < v3.TOUR_OBJECTIVE_ORDER.index('tour_average_m')
+          print('PLANOGRAM_PICKER_TOUR_V3_OBJECTIVE=PASS')
+          PY
+      - name: Truth boundary
+        run: |
+          echo 'PLANOGRAM_PICKER_TOUR_V3_REPOSITORY_OPTIMIZER=IMPLEMENTED'
+          echo 'PLANOGRAM_CALLER_SUPPLIED_ORDER_BASKETS=REQUIRED'
+          echo 'PLANOGRAM_FIELD_PICKER_TRACE_VALIDATION=REQUIRED'
+          echo 'PLANOGRAM_PRODUCTION_READY=FALSE'

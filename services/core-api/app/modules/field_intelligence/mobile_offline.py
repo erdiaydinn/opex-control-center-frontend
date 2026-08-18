@@ -168,7 +168,10 @@ async def _sync_one(
                 "device_sequence": event.device_sequence,
                 "decision": "conflict",
                 "evidence_id": None,
-                "reason": "device sequence or client submission id was already consumed by different evidence",
+                "reason": (
+                    "device sequence or client submission id was already consumed by different"
+                    " evidence"
+                ),
             }
 
         target_result = await connection.execute(

@@ -9,7 +9,7 @@ declared store architecture, and only then delegates to the foundation allocator
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import engine as deterministic_engine
 from architecture_truth import (
@@ -26,9 +26,9 @@ from physical_truth import (
 
 
 def _explicit_unplaced(
-    products: List[Dict[str, Any]],
-    acceptance: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    products: list[dict[str, Any]],
+    acceptance: dict[str, Any],
+) -> list[dict[str, Any]]:
     blockers = acceptance.get("blockers") or []
     blocker_text = ",".join(blockers) or "unknown_physical_truth_blocker"
     rows = []
@@ -59,7 +59,9 @@ def _explicit_unplaced(
     return rows
 
 
-def prepare_production_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def prepare_production_products(
+    products: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     prepared = []
     for raw in products or []:
         # Critical boundary: production truth never fills missing dimensions
@@ -79,7 +81,7 @@ def prepare_production_products(products: List[Dict[str, Any]]) -> List[Dict[str
     return prepared
 
 
-def _iter_placed(planogram: Dict[str, Any]):
+def _iter_placed(planogram: dict[str, Any]):
     for aisle in (planogram or {}).get("aisles", []) or []:
         for module in aisle.get("modules", []) or []:
             for shelf in module.get("shelves", []) or []:
@@ -87,7 +89,9 @@ def _iter_placed(planogram: Dict[str, Any]):
                     yield aisle, module, shelf, product
 
 
-def validate_operational_physical_rules(planogram: Dict[str, Any]) -> Dict[str, Any]:
+def validate_operational_physical_rules(
+    planogram: dict[str, Any],
+) -> dict[str, Any]:
     violations = []
     for aisle, module, shelf, product in _iter_placed(planogram):
         reason = physical_constraint_reason(product, module, shelf)
@@ -113,10 +117,10 @@ def validate_operational_physical_rules(planogram: Dict[str, Any]) -> Dict[str, 
 
 
 def _apply_architecture_gate(
-    acceptance: Dict[str, Any],
-    layout: Optional[Dict[str, Any]],
-    store_dna: Optional[Dict[str, Any]],
-) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    acceptance: dict[str, Any],
+    layout: dict[str, Any] | None,
+    store_dna: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fail closed only when an architecture contract has been declared.
 
     Legacy approved stores can migrate incrementally. A store that supplies an
@@ -142,7 +146,9 @@ def _apply_architecture_gate(
     return architecture, layout_validation
 
 
-def _qualify_route_module_ids(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _qualify_route_module_ids(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     """Scope module identity by aisle for spatial routing only.
 
     The legacy allocator legitimately reuses small integer module ids across
@@ -162,11 +168,11 @@ def _qualify_route_module_ids(payload: Optional[Dict[str, Any]]) -> Optional[Dic
 
 
 def _architecture_route_report(
-    result: Dict[str, Any],
-    prepared: List[Dict[str, Any]],
-    layout: Optional[Dict[str, Any]],
-    store_dna: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
+    result: dict[str, Any],
+    prepared: list[dict[str, Any]],
+    layout: dict[str, Any] | None,
+    store_dna: dict[str, Any] | None,
+) -> dict[str, Any]:
     routed_result = deepcopy(result)
     routed_result["planogram"] = _qualify_route_module_ids(result.get("planogram"))
     routed_layout = _qualify_route_module_ids(layout)
@@ -179,9 +185,9 @@ def _architecture_route_report(
 
 
 def _apply_route_gate(
-    acceptance: Dict[str, Any],
-    architecture: Dict[str, Any],
-    route_report: Dict[str, Any],
+    acceptance: dict[str, Any],
+    architecture: dict[str, Any],
+    route_report: dict[str, Any],
 ) -> bool:
     """Return whether declared architecture is physically walkable.
 
@@ -207,16 +213,16 @@ def _apply_route_gate(
 
 
 def generate_production_plan(
-    products: List[Dict[str, Any]],
-    layout: Optional[Dict[str, Any]],
-    store_dna: Optional[Dict[str, Any]],
+    products: list[dict[str, Any]],
+    layout: dict[str, Any] | None,
+    store_dna: dict[str, Any] | None,
     *,
     mode: str = "HYBRID",
-    brand_side_rules: Optional[Dict[str, str]] = None,
-    scoring_config: Optional[Dict[str, float]] = None,
+    brand_side_rules: dict[str, str] | None = None,
+    scoring_config: dict[str, float] | None = None,
     require_images: bool = True,
     progress_callback=None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     prepared = prepare_production_products(products or [])
     acceptance = production_acceptance_report(
         prepared,
@@ -247,10 +253,16 @@ def generate_production_plan(
                 "placed": 0,
                 "unplaced": len(unplaced),
                 "strict_rule_violation_count": 0,
-                "production_acceptance_blocker_count": len(acceptance.get("blockers") or []),
+                "production_acceptance_blocker_count": len(
+                    acceptance.get("blockers") or []
+                ),
                 "unplaced_reason_counts": {
-                    reason: sum(1 for row in unplaced if row.get("reason") == reason)
-                    for reason in sorted({row.get("reason") or "unknown" for row in unplaced})
+                    reason: sum(
+                        1 for row in unplaced if row.get("reason") == reason
+                    )
+                    for reason in sorted(
+                        {row.get("reason") or "unknown" for row in unplaced}
+                    )
                 },
             },
             "planogram": None,
@@ -309,10 +321,16 @@ def generate_production_plan(
     result.setdefault("summary", {})["production_acceptance_blocker_count"] = len(
         acceptance.get("blockers") or []
     )
-    result.setdefault("diagnostics", {})["operational_physical_validation"] = operational
+    result.setdefault("diagnostics", {})[
+        "operational_physical_validation"
+    ] = operational
     result.setdefault("diagnostics", {})["architecture_truth"] = architecture
-    result.setdefault("diagnostics", {})["layout_architecture_validation"] = layout_architecture
-    result.setdefault("diagnostics", {})["architecture_route_objective"] = route_report
+    result.setdefault("diagnostics", {})[
+        "layout_architecture_validation"
+    ] = layout_architecture
+    result.setdefault("diagnostics", {})[
+        "architecture_route_objective"
+    ] = route_report
     if not publishable:
         result.setdefault("diagnostics", {}).setdefault("summary", {})["valid"] = False
     return result

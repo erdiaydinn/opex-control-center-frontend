@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Callable, Literal
+from typing import Literal
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -64,7 +65,9 @@ def _positive_decimal(payload: dict[str, object], key: str, *, allow_zero: bool 
     return format(parsed.normalize(), "f")
 
 
-def _build_planogram_fixture_candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
+def _build_planogram_fixture_candidate(
+    payload: dict[str, object], location_id: str
+) -> dict[str, object]:
     candidate: dict[str, object] = {
         "candidate_type": "planogram_fixture_measurement",
         "location_id": location_id,
@@ -86,13 +89,12 @@ def _build_planogram_fixture_candidate(payload: dict[str, object], location_id: 
     return candidate
 
 
-def _build_inventory_count_candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
+def _build_inventory_count_candidate(
+    payload: dict[str, object], location_id: str
+) -> dict[str, object]:
     sku = payload.get("sku")
     pallet_id = payload.get("pallet_id")
-    if not isinstance(sku, str) or not sku.strip():
-        sku = None
-    else:
-        sku = sku.strip()
+    sku = None if not isinstance(sku, str) or not sku.strip() else sku.strip()
     if not isinstance(pallet_id, str) or not pallet_id.strip():
         pallet_id = None
     else:
@@ -111,7 +113,9 @@ def _build_inventory_count_candidate(payload: dict[str, object], location_id: st
     }
 
 
-def _build_budget_support_candidate(payload: dict[str, object], location_id: str) -> dict[str, object]:
+def _build_budget_support_candidate(
+    payload: dict[str, object], location_id: str
+) -> dict[str, object]:
     currency = _required_text(payload, "currency").upper()
     if len(currency) != 3 or not currency.isalpha():
         raise FieldPromotionError("budget promotion currency must be an ISO-like three-letter code")
@@ -195,8 +199,7 @@ async def create_promotion_request(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         evidence_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT e.id, e.mission_id, e.location_id, e.fingerprint, e.payload,
                        review.id AS review_id, review.reviewer_subject,
                        target.status AS target_status,
@@ -224,8 +227,7 @@ async def create_promotion_request(
                   AND e.id=CAST(:evidence_id AS UUID)
                   AND e.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                   AND review.decision='accept'
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "evidence_id": evidence_id,
@@ -257,23 +259,23 @@ async def create_promotion_request(
         )
 
         insert_result = await connection.execute(
-            text(
-                """
+            text("""
                 INSERT INTO field_promotion_requests (
                     tenant_id, evidence_id, review_id, mission_id, location_id,
                     consumer_module, adapter_key, adapter_version,
                     source_evidence_fingerprint, candidate_payload,
                     candidate_fingerprint, proposal_fingerprint, requested_by
                 ) VALUES (
-                    CAST(:tenant_id AS UUID), CAST(:evidence_id AS UUID), CAST(:review_id AS UUID),
+                    CAST(:tenant_id AS UUID), CAST(:evidence_id AS UUID), CAST(:review_id AS
+                    UUID),
                     CAST(:mission_id AS UUID), :location_id, :consumer_module, :adapter_key,
-                    :adapter_version, :source_evidence_fingerprint, CAST(:candidate_payload AS JSONB),
+                    :adapter_version, :source_evidence_fingerprint, CAST(:candidate_payload AS
+                    JSONB),
                     :candidate_fingerprint, :proposal_fingerprint, :requested_by
                 )
                 ON CONFLICT (tenant_id, proposal_fingerprint) DO NOTHING
                 RETURNING id, requested_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "evidence_id": str(evidence["id"]),
@@ -293,14 +295,12 @@ async def create_promotion_request(
         inserted = insert_result.mappings().first()
         if inserted is None:
             existing_result = await connection.execute(
-                text(
-                    """
+                text("""
                     SELECT id, requested_at, requested_by
                     FROM field_promotion_requests
                     WHERE tenant_id=CAST(:tenant_id AS UUID)
                       AND proposal_fingerprint=:proposal_fingerprint
-                    """
-                ),
+                    """),
                 {"tenant_id": tenant_id, "proposal_fingerprint": proposal_fingerprint},
             )
             inserted = existing_result.mappings().one()
@@ -334,8 +334,7 @@ async def list_promotion_requests(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT p.id, p.evidence_id, p.review_id, p.mission_id, p.location_id,
                        p.consumer_module, p.adapter_key, p.adapter_version,
                        p.source_evidence_fingerprint, p.candidate_payload,
@@ -347,14 +346,15 @@ async def list_promotion_requests(
                        c.destination_candidate_ref_hash, c.reason AS consumer_reason,
                        c.receipt_fingerprint, c.created_at AS consumer_decided_at
                 FROM field_promotion_requests p
-                LEFT JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND d.promotion_id=p.id
-                LEFT JOIN field_promotion_consumer_receipts c ON c.tenant_id=p.tenant_id AND c.promotion_id=p.id
+                LEFT JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND
+                d.promotion_id=p.id
+                LEFT JOIN field_promotion_consumer_receipts c ON c.tenant_id=p.tenant_id AND
+                c.promotion_id=p.id
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)
                   AND p.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                 ORDER BY p.requested_at DESC, p.id DESC
                 LIMIT :limit
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "allowed_ids": sorted(allowed_location_ids),
@@ -391,8 +391,7 @@ async def decide_promotion_request(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         request_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT p.id, p.location_id, p.requested_by, p.proposal_fingerprint,
                        p.consumer_module, p.adapter_key, p.adapter_version,
                        existing.id AS existing_decision_id
@@ -402,8 +401,7 @@ async def decide_promotion_request(
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)
                   AND p.id=CAST(:promotion_id AS UUID)
                   AND p.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "promotion_id": promotion_id,
@@ -416,7 +414,9 @@ async def decide_promotion_request(
         if request["existing_decision_id"] is not None:
             raise FieldPromotionError("promotion request already has an immutable decision")
         if str(request["requested_by"]) == actor_subject:
-            raise FieldPromotionError("promotion proposer cannot approve or reject their own proposal")
+            raise FieldPromotionError(
+                "promotion proposer cannot approve or reject their own proposal"
+            )
 
         decision_fingerprint = _canonical_fingerprint(
             {
@@ -430,17 +430,16 @@ async def decide_promotion_request(
         )
         try:
             decision_result = await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_promotion_decisions (
-                        tenant_id, promotion_id, decision, decided_by, reason, decision_fingerprint
+                        tenant_id, promotion_id, decision, decided_by, reason,
+                        decision_fingerprint
                     ) VALUES (
                         CAST(:tenant_id AS UUID), CAST(:promotion_id AS UUID), :decision,
                         :decided_by, :reason, :decision_fingerprint
                     )
                     RETURNING id, decided_at
-                    """
-                ),
+                    """),
                 {
                     "tenant_id": tenant_id,
                     "promotion_id": promotion_id,
@@ -451,7 +450,9 @@ async def decide_promotion_request(
                 },
             )
         except IntegrityError as exc:
-            raise FieldPromotionError("promotion decision collided with a concurrent reviewer") from exc
+            raise FieldPromotionError(
+                "promotion decision collided with a concurrent reviewer"
+            ) from exc
         row = decision_result.mappings().one()
         return {
             "id": str(row["id"]),
@@ -459,7 +460,9 @@ async def decide_promotion_request(
             "decision": decision,
             "decision_fingerprint": decision_fingerprint,
             "decided_at": row["decided_at"],
-            "state": "field_approved_pending_consumer" if decision == "approve" else "field_rejected",
+            "state": (
+                "field_approved_pending_consumer" if decision == "approve" else "field_rejected"
+            ),
             "truth_mutation_permitted": False,
         }
 
@@ -477,7 +480,9 @@ async def record_consumer_receipt(
     normalized_reason = (reason or "").strip() or None
     normalized_ref = (destination_candidate_ref or "").strip() or None
     if decision == "accept" and normalized_ref is None:
-        raise FieldPromotionError("consumer acceptance requires an opaque destination candidate reference")
+        raise FieldPromotionError(
+            "consumer acceptance requires an opaque destination candidate reference"
+        )
     if decision == "reject" and normalized_reason is None:
         raise FieldPromotionError("consumer rejection requires a reason")
     if decision == "reject":
@@ -486,20 +491,19 @@ async def record_consumer_receipt(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         request_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT p.id, p.requested_by, p.consumer_module, p.proposal_fingerprint,
                        p.candidate_fingerprint, p.location_id,
                        d.decision AS field_decision, d.decided_by, d.decision_fingerprint,
                        existing.id AS existing_receipt_id
                 FROM field_promotion_requests p
-                JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND d.promotion_id=p.id
+                JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND
+                d.promotion_id=p.id
                 LEFT JOIN field_promotion_consumer_receipts existing
                   ON existing.tenant_id=p.tenant_id AND existing.promotion_id=p.id
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)
                   AND p.id=CAST(:promotion_id AS UUID)
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "promotion_id": promotion_id},
         )
         request = request_result.mappings().first()
@@ -535,8 +539,7 @@ async def record_consumer_receipt(
         )
         try:
             receipt_result = await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_promotion_consumer_receipts (
                         tenant_id, promotion_id, consumer_module, decision,
                         accepted_by, destination_candidate_ref_hash, reason, receipt_fingerprint
@@ -546,8 +549,7 @@ async def record_consumer_receipt(
                         :receipt_fingerprint
                     )
                     RETURNING id, created_at
-                    """
-                ),
+                    """),
                 {
                     "tenant_id": tenant_id,
                     "promotion_id": promotion_id,
@@ -560,7 +562,9 @@ async def record_consumer_receipt(
                 },
             )
         except IntegrityError as exc:
-            raise FieldPromotionError("consumer receipt collided with a concurrent acceptance") from exc
+            raise FieldPromotionError(
+                "consumer receipt collided with a concurrent acceptance"
+            ) from exc
         row = receipt_result.mappings().one()
         return {
             "id": str(row["id"]),

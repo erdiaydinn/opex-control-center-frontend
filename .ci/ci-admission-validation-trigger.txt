@@ -1,0 +1,4 @@
+EAY CI admission-control validation trigger.
+
+Purpose: exercise only the permanent read-only CI Admission Guard against the final fix tree.
+No product authority. Do not merge into product branches.

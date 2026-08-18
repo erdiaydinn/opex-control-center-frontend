@@ -2,8 +2,9 @@
 
 Jarvis is local-first. Open-weight/local models are treated as task specialists,
 not as an undifferentiated fallback. A model may participate only when its
-license posture, runtime availability, benchmark evidence and task capability
-are explicit. No catalog entry makes a model production-active by itself.
+license posture, runtime availability, benchmark evidence, language support and
+task capability are explicit. No catalog entry makes a model production-active
+by itself.
 
 Paid frontier escalation is outside this module and remains platform-admin
 controlled by paid-token governance.
@@ -27,6 +28,7 @@ class LocalCapability(str, Enum):
     IMAGE = "IMAGE"
     AUDIO = "AUDIO"
     ASR = "ASR"
+    TTS = "TTS"
     REASONING = "REASONING"
     TOOL_PLANNING = "TOOL_PLANNING"
     AGENTIC = "AGENTIC"
@@ -52,6 +54,7 @@ class LocalModelCatalogEntry(BaseModel):
     commercial_use_status: CommercialUseStatus
     capabilities: frozenset[LocalCapability]
     preferred_tasks: frozenset[str]
+    supported_languages: frozenset[str] = frozenset()
     production_candidate: bool
     external_network_required: bool = False
 
@@ -66,6 +69,9 @@ class LocalModelCatalogEntry(BaseModel):
             raise ValueError("local_model_production_candidate_requires_reviewed_commercial_posture")
         if self.external_network_required:
             raise ValueError("local_model_pool_cannot_require_external_network")
+        normalized = [item.casefold() for item in self.supported_languages]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("local_model_supported_languages_duplicate")
         return self
 
 
@@ -101,6 +107,15 @@ class LocalModelTask(BaseModel):
     required_capabilities: frozenset[LocalCapability]
     minimum_benchmark_score: float = Field(default=0.0, ge=0.0, le=1.0)
     minimum_context_tokens: int | None = Field(default=None, gt=0)
+    language_code: str | None = Field(default=None, min_length=2, max_length=16)
+
+    @model_validator(mode="after")
+    def language_is_normalized(self) -> "LocalModelTask":
+        if self.language_code is not None:
+            normalized = self.language_code.strip().casefold()
+            if normalized != self.language_code:
+                raise ValueError("local_model_task_language_code_must_be_lowercase")
+        return self
 
 
 class LocalModelSelection(BaseModel):
@@ -169,6 +184,10 @@ def _eligible(
         blockers.append("local_model_catalog_capability_missing")
     if not task.required_capabilities.issubset(deployment.observed_capabilities):
         blockers.append("local_model_observed_capability_missing")
+    if task.language_code is not None:
+        supported = {item.casefold() for item in entry.supported_languages}
+        if task.language_code not in supported:
+            blockers.append("local_model_language_support_not_verified")
     if task.minimum_context_tokens is not None:
         if deployment.max_context_tokens is None or deployment.max_context_tokens < task.minimum_context_tokens:
             blockers.append("local_model_context_window_insufficient")

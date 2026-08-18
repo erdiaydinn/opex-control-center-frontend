@@ -55,6 +55,20 @@ class TerminalEventCreate(BaseModel):
     payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
 
 
+class LocationCompletionCreate(BaseModel):
+    # Location completion is a distinct signed terminal event. It carries no
+    # barcode, SKU, expected stock or quantity truth and cannot smuggle extras.
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    document_id: str
+    active_shift_id: str = Field(min_length=1, max_length=128)
+    device_sequence: int = Field(gt=0)
+    location_id: str = Field(min_length=1, max_length=120)
+    occurred_at: str = Field(min_length=20, max_length=50)
+    payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
+
+
 class DocumentTransitionCreate(BaseModel):
     expected_revision: int = Field(gt=0)
     target_state: str = Field(pattern="^(SUBMITTED|RECONCILING|APPROVED|LOCKED|REJECTED)$")

@@ -1,4 +1,4 @@
-# Branch-only one-shot focused Ruff repair v3 targeted-format
+# Branch-only one-shot focused Ruff repair v4 targeted-E501
 name: EAY Core Ruff Focused Repair
 
 on:
@@ -24,8 +24,8 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.12'
-      - name: Install canonical Ruff compatibility band
-        run: python -m pip install 'ruff>=0.8,<1'
+      - name: Install focused repair tooling
+        run: python -m pip install 'ruff>=0.8,<1' 'autopep8>=2.3,<3'
       - name: Apply Ruff safe fixes only
         run: ruff check services/core-api --fix || true
       - name: Format only files that still report E501
@@ -41,6 +41,9 @@ jobs:
           print(f'E501_FILES={len(files)}')
           if files:
               subprocess.run(['ruff', 'format', *files], check=True)
+              subprocess.run([
+                  'autopep8', '--in-place', '--select=E501', '--max-line-length=100', *files
+              ], check=True)
           PY
       - name: Capture residual strict Ruff debt
         run: |
@@ -48,6 +51,7 @@ jobs:
           {
             echo "HEAD=${GITHUB_SHA}"
             echo "RUFF_VERSION=$(ruff --version)"
+            echo "AUTOPEP8_VERSION=$(autopep8 --version)"
             echo "---"
             ruff check services/core-api --output-format=concise || true
           } > .eay/ci/core-ruff-focused-remaining.txt
@@ -60,5 +64,5 @@ jobs:
           git config user.name 'eay-ci-repair-bot'
           git config user.email 'eay-ci-repair-bot@users.noreply.github.com'
           git add services/core-api .eay/ci/core-ruff-focused-remaining.txt
-          git commit -m 'style(core): format only files with strict Ruff debt'
+          git commit -m 'style(core): repair residual E501 only'
           git push origin HEAD:agent/core-ruff-focused-repair-v2

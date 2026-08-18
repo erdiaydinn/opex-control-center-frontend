@@ -23,8 +23,18 @@ class InventoryTerminalTaskClientTest {
 
         assertEquals(2, tasks.size)
         assertEquals(" A-04 ", tasks[0].locationId)
+        assertEquals("SHIFT-20260818-001", tasks[0].activeShiftId)
         assertEquals("inventory.count", tasks[0].operation)
         assertEquals("EAY_TERMINAL", tasks[0].runtimeProfile.name)
+    }
+
+    @Test
+    fun `missing server shift provenance fails closed`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryTerminalTaskContract.map(
+                listOf(row("inventory.count:a", "A-04", activeShiftId = "")),
+            )
+        }
     }
 
     @Test
@@ -103,11 +113,13 @@ class InventoryTerminalTaskClientTest {
     private fun row(
         missionId: String,
         locationId: String,
+        activeShiftId: String = "SHIFT-20260818-001",
         operation: String = "inventory.count",
         runtimeProfile: String = "EAY_TERMINAL",
     ) = InventoryTerminalTaskWire(
         missionId = missionId,
         documentId = "22222222-2222-4222-8222-222222222222",
+        activeShiftId = activeShiftId,
         warehouseId = "FULYA",
         locationId = locationId,
         name = "Weekly cycle count",

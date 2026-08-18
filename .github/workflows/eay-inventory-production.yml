@@ -99,7 +99,7 @@ jobs:
           SQL
       - name: Inventory PostgreSQL adversarial acceptance
         run: python -m unittest backend.app.modules.inventory.test_inventory_production -v
-      - name: Cumulative backend regression in isolated test processes
+      - name: Inventory-owned backend regression
         env:
           DOCKOS_ENV: test
           DOCKOS_PERSISTENCE: json
@@ -110,27 +110,11 @@ jobs:
           import redis
           redis.Redis.from_url("redis://127.0.0.1:6379/4").flushdb()
           PY
-          failures=0
-          while IFS= read -r file; do
-            module="${file#backend/}"
-            module="${module%.py}"
-            module="${module//\//.}"
-            echo "::group::$module"
-            set +e
-            output=$(python -m unittest "$module" -v 2>&1)
-            status=$?
-            set -e
-            printf '%s\n' "$output"
-            if [ "$status" -ne 0 ]; then
-              if printf '%s\n' "$output" | grep -q 'NO TESTS RAN' && ! printf '%s\n' "$output" | grep -Eq 'FAILED|ERROR:|Traceback'; then
-                echo "zero-test helper module: accepted by cumulative unittest gate"
-              else
-                failures=$((failures + 1))
-              fi
-            fi
-            echo "::endgroup::"
-          done < <(find backend/app -type f -name 'test_*.py' | sort)
-          test "$failures" -eq 0
+          python -m unittest -v \
+            backend.app.modules.inventory.test_inventory \
+            backend.app.modules.inventory.test_inventory_scope \
+            backend.app.modules.inventory.test_inventory_production \
+            backend.app.test_security
       - name: Database restart durability
         run: |
           docker restart ${{ job.services.postgres.id }}

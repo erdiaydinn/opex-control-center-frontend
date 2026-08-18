@@ -33,7 +33,7 @@ class BlindCountFlowTest {
     fun `count cannot expose or consume expected stock quantity`() {
         val target = BlindCountTarget(
             missionId = "mission-1",
-            locationTokenHash = sha256("A-04-02"),
+            locationTokenHash = BlindCountLocationToken.hash("A-04-02"),
             targetLineCount = 1,
         )
         var session = BlindCountSession("mission-1")
@@ -61,10 +61,25 @@ class BlindCountFlowTest {
     }
 
     @Test
+    fun `location token follows backend trim and uppercase semantics`() {
+        val target = BlindCountTarget(
+            missionId = "mission-1",
+            locationTokenHash = BlindCountLocationToken.hash("A-04-02"),
+        )
+        val result = BlindCountFlow.verifyLocation(
+            BlindCountSession("mission-1"),
+            target,
+            accepted("location-1", " a-04-02 "),
+        )
+        assertTrue(result.accepted)
+        assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
+    }
+
+    @Test
     fun `wrong physical location blocks count before item scan`() {
         val target = BlindCountTarget(
             missionId = "mission-1",
-            locationTokenHash = sha256("A-04-02"),
+            locationTokenHash = BlindCountLocationToken.hash("A-04-02"),
         )
         val result = BlindCountFlow.verifyLocation(
             BlindCountSession("mission-1"),
@@ -109,7 +124,7 @@ class BlindCountFlowTest {
     fun `mission target cannot silently accept extra confirmed lines`() {
         val target = BlindCountTarget(
             missionId = "mission-1",
-            locationTokenHash = sha256("A-04-02"),
+            locationTokenHash = BlindCountLocationToken.hash("A-04-02"),
             targetLineCount = 1,
         )
         val alreadyAtTarget = BlindCountSession(

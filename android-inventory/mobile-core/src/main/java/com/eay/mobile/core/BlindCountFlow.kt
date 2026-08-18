@@ -1,5 +1,7 @@
 package com.eay.mobile.core
 
+import java.util.Locale
+
 enum class BlindCountStep {
     SCAN_LOCATION,
     SCAN_ITEM,
@@ -16,6 +18,16 @@ enum class BlindCountCode {
     DENY_SCAN,
     DENY_QUANTITY,
     DENY_TARGET,
+}
+
+object BlindCountLocationToken {
+    fun normalize(value: String): String = value.trim().uppercase(Locale.ROOT)
+
+    fun hash(value: String): String {
+        val normalized = normalize(value)
+        require(normalized.isNotBlank())
+        return sha256(normalized)
+    }
 }
 
 data class BlindCountTarget(
@@ -75,7 +87,7 @@ object BlindCountFlow {
         }
         val scan = acceptedScan
             ?: return denied(BlindCountCode.DENY_SCAN, session)
-        if (scan.payloadHash != target.locationTokenHash) {
+        if (BlindCountLocationToken.hash(scan.value) != target.locationTokenHash) {
             return denied(BlindCountCode.DENY_LOCATION, session)
         }
         return success(

@@ -1,22 +1,22 @@
 """Executable intelligence-engine gateway for EAY Jarvis.
 
 The gateway makes the intelligence router operational without weakening its
-privacy/risk boundary. Callers submit a task and prompt; the gateway recomputes
-routing from registered engine profiles and invokes only the selected verified
-engine. A caller cannot supply a forged routing plan.
+privacy/risk boundary. Normal callers submit a task and prompt and the gateway
+recomputes routing from registered, verified production engines. A separate
+benchmark-only mode can invoke one exact-adapter-verified candidate before
+promotion, but only for tool-free reasoning and under the same privacy/risk/
+modality boundary. That breaks the benchmark/promotion circular dependency
+without creating an execution backdoor.
 
-Supported adapters in v1:
+Supported adapters:
 - Ollama `/api/chat`, preserving the existing local-first EAY path.
 - OpenAI Responses API `/v1/responses`.
 - Anthropic Messages API `/v1/messages`.
 - Google Gemini `generateContent` REST API.
 
-Frontier adapters are pure reasoning/text adapters in this layer: provider
-built-in tools are not enabled, secrets and prompts are not returned in
-receipts, and sensitive external processing still requires the EAY router's
-explicit authorization boundary. Provider HTTP/transport errors are reduced to
-status/type-only EAY errors so request headers, prompts and secrets cannot leak
-through exception objects or chained HTTPX request state.
+Provider built-in tools are not enabled, secrets and prompts are not returned
+in receipts, and provider HTTP/transport errors are reduced to status/type-only
+EAY errors so request state cannot leak through exception chains.
 """
 
 from __future__ import annotations
@@ -34,10 +34,11 @@ from .intelligence_router import (
     IntelligenceRoutingPlan,
     IntelligenceTask,
     PrivacyLevel,
+    engine_satisfies_task_boundary,
     route_intelligence,
 )
 
-ENGINE_GATEWAY_CONTRACT = "eay-engine-gateway-v1"
+ENGINE_GATEWAY_CONTRACT = "eay-engine-gateway-v2"
 
 
 class EngineProvider(str, Enum):
@@ -45,6 +46,11 @@ class EngineProvider(str, Enum):
     OPENAI_RESPONSES = "openai_responses"
     ANTHROPIC_MESSAGES = "anthropic_messages"
     GEMINI_GENERATE_CONTENT = "gemini_generate_content"
+
+
+class EngineInvocationMode(str, Enum):
+    ROUTED = "routed"
+    BENCHMARK = "benchmark"
 
 
 _OFFICIAL_FRONTIER_HOSTS = {
@@ -113,6 +119,21 @@ class RegisteredEngine(BaseModel):
         return self
 
 
+class BenchmarkInvocationContext(BaseModel):
+    benchmark_run_ref: str = Field(pattern=r"^benchmark-run://[A-Za-z0-9._:/-]+$")
+    engine_id: str = Field(min_length=1)
+    task_set_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    environment_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator_ref: str = Field(min_length=1)
+    side_effects_authorized: bool = False
+
+    @model_validator(mode="after")
+    def benchmark_context_never_authorizes_side_effects(self) -> "BenchmarkInvocationContext":
+        if self.side_effects_authorized:
+            raise ValueError("engine_benchmark_context_never_authorizes_side_effects")
+        return self
+
+
 class EngineInvocationReceipt(BaseModel):
     contract: str = ENGINE_GATEWAY_CONTRACT
     task_id: str
@@ -129,15 +150,21 @@ class EngineInvocationReceipt(BaseModel):
     secret_retained: bool = False
     external_processing: bool
     routing_plan: IntelligenceRoutingPlan
+    invocation_mode: EngineInvocationMode = EngineInvocationMode.ROUTED
+    benchmark_context_ref: str | None = None
 
     @model_validator(mode="after")
     def receipt_preserves_gateway_boundaries(self) -> "EngineInvocationReceipt":
         if self.provider_stored_state_requested:
             raise ValueError("engine_gateway_cannot_request_provider_state_storage")
         if self.provider_tools_enabled:
-            raise ValueError("engine_gateway_v1_cannot_enable_provider_tools")
+            raise ValueError("engine_gateway_cannot_enable_provider_tools")
         if self.prompt_retained or self.secret_retained:
             raise ValueError("engine_gateway_receipt_cannot_retain_prompt_or_secret")
+        if self.invocation_mode is EngineInvocationMode.BENCHMARK and not self.benchmark_context_ref:
+            raise ValueError("benchmark_engine_receipt_requires_context_ref")
+        if self.invocation_mode is EngineInvocationMode.ROUTED and self.benchmark_context_ref is not None:
+            raise ValueError("routed_engine_receipt_cannot_claim_benchmark_context")
         return self
 
 
@@ -209,8 +236,6 @@ async def _post_json_safely(
     timeout_seconds: float,
     transport: httpx.AsyncBaseTransport | None,
 ) -> Any:
-    """POST JSON while severing HTTPX request/secret state from raised errors."""
-
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds, transport=transport) as client:
             response = await client.post(url, headers=headers, json=payload)
@@ -218,7 +243,6 @@ async def _post_json_safely(
         raise EngineGatewayError(
             f"{provider.value}_transport_error:{type(exc).__name__}"
         ) from None
-
     if not response.is_success:
         raise EngineGatewayError(
             f"{provider.value}_http_status:{response.status_code}"
@@ -266,7 +290,6 @@ class EngineGateway:
         task: IntelligenceTask,
         prompt: str,
     ) -> tuple[EngineInvocationReceipt, ...]:
-        """Invoke the router-selected primary and critics; never arbitrary engines."""
         if not prompt.strip():
             raise ValueError("engine_gateway_prompt_required")
         plan = self.plan(task)
@@ -284,6 +307,50 @@ class EngineGateway:
                 )
             )
         return tuple(receipts)
+
+    async def invoke_for_benchmark(
+        self,
+        *,
+        engine_id: str,
+        task: IntelligenceTask,
+        prompt: str,
+        context: BenchmarkInvocationContext,
+    ) -> EngineInvocationReceipt:
+        """Invoke one exact candidate for measured, tool-free pre-promotion evaluation."""
+
+        if not prompt.strip():
+            raise ValueError("engine_gateway_prompt_required")
+        if context.engine_id != engine_id:
+            raise EngineGatewayError("benchmark_context_engine_identity_mismatch")
+        if task.requires_tools:
+            raise EngineGatewayError("benchmark_engine_invocation_forbids_provider_tools")
+        registration = self._registrations.get(engine_id)
+        if registration is None:
+            raise EngineGatewayError("benchmark_engine_not_registered")
+        if not engine_satisfies_task_boundary(
+            task,
+            registration.profile,
+            require_production_enabled=False,
+        ):
+            raise EngineGatewayError("benchmark_engine_does_not_satisfy_task_boundary")
+
+        benchmark_plan = IntelligenceRoutingPlan(
+            task_id=task.task_id,
+            primary_engine_id=engine_id,
+            execution_permitted=True,
+        )
+        receipt = await self._invoke_registered(
+            task=task,
+            prompt=prompt,
+            plan=benchmark_plan,
+            registration=registration,
+        )
+        return receipt.model_copy(
+            update={
+                "invocation_mode": EngineInvocationMode.BENCHMARK,
+                "benchmark_context_ref": context.benchmark_run_ref,
+            }
+        )
 
     def _transport(self, endpoint: EngineEndpoint) -> httpx.AsyncBaseTransport | None:
         return self._transport_factory(endpoint) if self._transport_factory else None

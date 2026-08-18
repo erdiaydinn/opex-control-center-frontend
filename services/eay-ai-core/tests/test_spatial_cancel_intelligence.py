@@ -67,8 +67,8 @@ def _fist_frame():
         (17, 18, 20, 0.63),
     ):
         points[mcp] = Landmark3D(x=x, y=0.54, z=0.0)
-        points[pip] = Landmark3D(x=x, y=0.49, z=0.0)
-        points[tip] = Landmark3D(x=x, y=0.56, z=0.0)
+        points[pip] = Landmark3D(x=x, y=0.53, z=0.0)
+        points[tip] = Landmark3D(x=x, y=0.59, z=0.0)
     points[4] = Landmark3D(x=0.40, y=0.55, z=0.0)
     return HandLandmarkFrame(
         observed_at=NOW,

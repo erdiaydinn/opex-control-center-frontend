@@ -85,8 +85,8 @@ class MeasuredGridRouter:
             width_m=width,
             depth_m=depth,
             resolution_m=resolution_m,
-            columns=max(1, round(width / resolution_m) + 1),
-            rows=max(1, round(depth / resolution_m) + 1),
+            columns=max(1, int(width / resolution_m) + 1),
+            rows=max(1, int(depth / resolution_m) + 1),
         )
         self._obstacles = _walk_obstacles(architecture)
         self._fields: dict[

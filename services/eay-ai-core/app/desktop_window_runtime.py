@@ -1,11 +1,9 @@
 """Native multi-monitor window movement for Jarvis spatial control.
 
-The pure planning layer is platform-independent and testable.  The Windows
-backend uses Win32 APIs directly through ``ctypes`` so moving the focused
-window does not require a second RPA product or shelling out to scripts.
-
-No window titles, document text, clipboard data or application content are
-persisted. Receipts retain only opaque window/monitor identifiers and geometry.
+The pure planning layer is platform-independent and testable. The Windows
+backend uses Win32 APIs directly through ``ctypes``. No window titles, document
+text, clipboard data or application content are persisted; receipts retain only
+opaque window/monitor identifiers and geometry.
 """
 
 from __future__ import annotations
@@ -137,50 +135,28 @@ def _source_monitor(window: WindowGeometry, monitors: tuple[MonitorGeometry, ...
     return min(monitors, key=lambda monitor: _distance_squared_to_rect_center(window.rect, monitor))
 
 
-def _adjacent_monitor(
-    source: MonitorGeometry,
-    monitors: tuple[MonitorGeometry, ...],
-    direction: MonitorDirection,
-) -> MonitorGeometry:
+def _adjacent_monitor(source: MonitorGeometry, monitors: tuple[MonitorGeometry, ...], direction: MonitorDirection) -> MonitorGeometry:
     others = [monitor for monitor in monitors if monitor.monitor_id != source.monitor_id]
     if direction is MonitorDirection.RIGHT:
         directional = [monitor for monitor in others if monitor.work_area.center_x > source.work_area.center_x]
         if not directional:
             raise ValueError("desktop_no_monitor_to_right")
-        return min(
-            directional,
-            key=lambda monitor: (
-                monitor.work_area.center_x - source.work_area.center_x,
-                abs(monitor.work_area.center_y - source.work_area.center_y),
-            ),
-        )
+        return min(directional, key=lambda monitor: (monitor.work_area.center_x - source.work_area.center_x, abs(monitor.work_area.center_y - source.work_area.center_y)))
     directional = [monitor for monitor in others if monitor.work_area.center_x < source.work_area.center_x]
     if not directional:
         raise ValueError("desktop_no_monitor_to_left")
-    return min(
-        directional,
-        key=lambda monitor: (
-            source.work_area.center_x - monitor.work_area.center_x,
-            abs(monitor.work_area.center_y - source.work_area.center_y),
-        ),
-    )
+    return min(directional, key=lambda monitor: (source.work_area.center_x - monitor.work_area.center_x, abs(monitor.work_area.center_y - source.work_area.center_y)))
 
 
-def _project_window_rect(
-    window: WindowGeometry,
-    source: MonitorGeometry,
-    target: MonitorGeometry,
-) -> DesktopRect:
+def _project_window_rect(window: WindowGeometry, source: MonitorGeometry, target: MonitorGeometry) -> DesktopRect:
     src = source.work_area
     dst = target.work_area
     width = min(window.rect.width, dst.width)
     height = min(window.rect.height, dst.height)
-
     src_x_range = max(1, src.width - window.rect.width)
     src_y_range = max(1, src.height - window.rect.height)
     rel_x = min(1.0, max(0.0, (window.rect.left - src.left) / src_x_range))
     rel_y = min(1.0, max(0.0, (window.rect.top - src.top) / src_y_range))
-
     dst_x_range = max(0, dst.width - width)
     dst_y_range = max(0, dst.height - height)
     left = dst.left + round(rel_x * dst_x_range)
@@ -188,11 +164,7 @@ def _project_window_rect(
     return DesktopRect(left=left, top=top, right=left + width, bottom=top + height)
 
 
-def move_active_window_to_adjacent_monitor(
-    *,
-    backend: DesktopWindowBackend,
-    direction: MonitorDirection,
-) -> WindowMoveReceipt:
+def move_active_window_to_adjacent_monitor(*, backend: DesktopWindowBackend, direction: MonitorDirection) -> WindowMoveReceipt:
     monitors = backend.monitors()
     if len(monitors) < 2:
         raise ValueError("desktop_multi_monitor_required")
@@ -218,13 +190,16 @@ def _opaque_ref(prefix: str, native_id: int | str) -> str:
     return f"{prefix}:{digest}"
 
 
+def _handle_int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    raw = ctypes.cast(value, ctypes.c_void_p).value
+    if raw is None:
+        return 0
+    return int(raw)
+
+
 class WindowsNativeWindowBackend:
-    """Win32 active-window and multi-monitor backend.
-
-    Instantiate only on Windows. It preserves maximized state by restoring the
-    window before SetWindowPos and re-maximizing it on the target monitor.
-    """
-
     SW_RESTORE = 9
     SW_MAXIMIZE = 3
     SWP_NOZORDER = 0x0004
@@ -237,43 +212,48 @@ class WindowsNativeWindowBackend:
         self._user32 = ctypes.windll.user32
         self._window_handles: dict[str, int] = {}
 
+        self._user32.GetForegroundWindow.argtypes = []
+        self._user32.GetForegroundWindow.restype = wintypes.HWND
+        self._user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(_WinRect)]
+        self._user32.GetWindowRect.restype = wintypes.BOOL
+        self._user32.IsZoomed.argtypes = [wintypes.HWND]
+        self._user32.IsZoomed.restype = wintypes.BOOL
+        self._user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(_WinMonitorInfo)]
+        self._user32.GetMonitorInfoW.restype = wintypes.BOOL
+        self._user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        self._user32.SetWindowPos.restype = wintypes.BOOL
+        self._user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        self._user32.ShowWindow.restype = wintypes.BOOL
+
     @staticmethod
     def _rect(value: _WinRect) -> DesktopRect:
         return DesktopRect(left=value.left, top=value.top, right=value.right, bottom=value.bottom)
 
     def active_window(self) -> WindowGeometry:
-        hwnd = int(self._user32.GetForegroundWindow())
+        hwnd_native = self._user32.GetForegroundWindow()
+        hwnd = _handle_int(hwnd_native)
         if not hwnd:
             raise RuntimeError("windows_active_window_missing")
         rect = _WinRect()
-        if not self._user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        if not self._user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
             raise RuntimeError("windows_get_window_rect_failed")
         ref = _opaque_ref("window", hwnd)
         self._window_handles[ref] = hwnd
-        return WindowGeometry(
-            window_ref=ref,
-            rect=self._rect(rect),
-            maximized=bool(self._user32.IsZoomed(hwnd)),
-        )
+        return WindowGeometry(window_ref=ref, rect=self._rect(rect), maximized=bool(self._user32.IsZoomed(wintypes.HWND(hwnd))))
 
     def monitors(self) -> tuple[MonitorGeometry, ...]:
         found: list[MonitorGeometry] = []
-        MONITORENUMPROC = ctypes.WINFUNCTYPE(
-            ctypes.c_int,
-            wintypes.HMONITOR,
-            wintypes.HDC,
-            ctypes.POINTER(_WinRect),
-            wintypes.LPARAM,
-        )
+        monitor_enum_proc = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(_WinRect), wintypes.LPARAM)
 
         def callback(hmonitor, _hdc, _rect, _data):
             info = _WinMonitorInfo()
             info.cbSize = ctypes.sizeof(_WinMonitorInfo)
             if not self._user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
                 return 1
+            handle = _handle_int(hmonitor)
             found.append(
                 MonitorGeometry(
-                    monitor_id=_opaque_ref("monitor", int(hmonitor)),
+                    monitor_id=_opaque_ref("monitor", handle),
                     bounds=self._rect(info.rcMonitor),
                     work_area=self._rect(info.rcWork),
                     primary=bool(info.dwFlags & self.MONITORINFOF_PRIMARY),
@@ -281,8 +261,10 @@ class WindowsNativeWindowBackend:
             )
             return 1
 
-        callback_ref = MONITORENUMPROC(callback)
-        if not self._user32.EnumDisplayMonitors(0, 0, callback_ref, 0):
+        callback_ref = monitor_enum_proc(callback)
+        self._user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.POINTER(_WinRect), monitor_enum_proc, wintypes.LPARAM]
+        self._user32.EnumDisplayMonitors.restype = wintypes.BOOL
+        if not self._user32.EnumDisplayMonitors(0, None, callback_ref, 0):
             raise RuntimeError("windows_enum_display_monitors_failed")
         if not found:
             raise RuntimeError("windows_monitor_inventory_empty")
@@ -292,19 +274,12 @@ class WindowsNativeWindowBackend:
         hwnd = self._window_handles.get(window_ref)
         if hwnd is None:
             raise KeyError("windows_window_ref_unknown")
+        hwnd_value = wintypes.HWND(hwnd)
         if restore_maximized:
-            self._user32.ShowWindow(hwnd, self.SW_RESTORE)
+            self._user32.ShowWindow(hwnd_value, self.SW_RESTORE)
         flags = self.SWP_NOZORDER | self.SWP_NOACTIVATE
-        ok = self._user32.SetWindowPos(
-            hwnd,
-            0,
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            flags,
-        )
+        ok = self._user32.SetWindowPos(hwnd_value, 0, rect.left, rect.top, rect.width, rect.height, flags)
         if not ok:
             raise RuntimeError("windows_set_window_pos_failed")
         if restore_maximized:
-            self._user32.ShowWindow(hwnd, self.SW_MAXIMIZE)
+            self._user32.ShowWindow(hwnd_value, self.SW_MAXIMIZE)

@@ -31,6 +31,8 @@ class BlindCountTerminalControllerTest {
         assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
         assertEquals(1, result.session.confirmedLineCount)
         assertEquals(1, sink.lineAttempts.size)
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
     }
 
     @Test
@@ -76,6 +78,8 @@ class BlindCountTerminalControllerTest {
         assertEquals(0, sink.completionAttempts.single().third)
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":0"))
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
     }
 
     @Test
@@ -110,7 +114,7 @@ class BlindCountTerminalControllerTest {
 
         val second = controller.completeLocation()
         assertTrue(second.accepted)
-        assertEquals(BlindCountStep.COMPLETE, second.session.step)
+        assertEquals(BlindCountStep.COMPLETE, second.session().step)
         assertEquals(2, sink.completionAttempts.size)
         assertEquals(sink.completionAttempts[0], sink.completionAttempts[1])
     }
@@ -150,12 +154,7 @@ class BlindCountTerminalControllerTest {
                 missionId = "mission-1",
                 locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             ),
-            eventContext = InventoryCountEventContext(
-                missionId = "mission-1",
-                documentId = "22222222-2222-4222-8222-222222222222",
-                activeShiftId = "SHIFT-20260818-001",
-                locationId = "B-05",
-            ),
+            eventContext = context(missionId = "mission-1", locationId = "B-05"),
             eventSink = sink,
         )
 
@@ -184,12 +183,7 @@ class BlindCountTerminalControllerTest {
                     missionId = "mission-1",
                     locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
                 ),
-                eventContext = InventoryCountEventContext(
-                    missionId = "mission-2",
-                    documentId = "22222222-2222-4222-8222-222222222222",
-                    activeShiftId = "SHIFT-20260818-001",
-                    locationId = "A-04",
-                ),
+                eventContext = context(missionId = "mission-2"),
                 eventSink = RecordingSink(),
             )
         }
@@ -206,15 +200,22 @@ class BlindCountTerminalControllerTest {
             locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             targetLineCount = targetLineCount,
         ),
-        eventContext = InventoryCountEventContext(
-            missionId = "mission-1",
-            documentId = "22222222-2222-4222-8222-222222222222",
-            activeShiftId = "SHIFT-20260818-001",
-            locationId = "A-04",
-        ),
+        eventContext = context(),
         eventSink = sink,
         eventIdFactory = { eventId },
         occurredAtFactory = { occurredAt },
+    )
+
+    private fun context(
+        missionId: String = "mission-1",
+        locationId: String = "A-04",
+    ) = InventoryCountEventContext(
+        missionId = missionId,
+        documentId = DOCUMENT_ID,
+        activeShiftId = "SHIFT-20260818-001",
+        attemptId = ATTEMPT_ID,
+        leaseId = LEASE_ID,
+        locationId = locationId,
     )
 
     private fun locationScan(value: String) = AcceptedScan(
@@ -296,5 +297,11 @@ class BlindCountTerminalControllerTest {
                 authBindingId = "binding-1",
             )
         }
+    }
+
+    companion object {
+        private const val DOCUMENT_ID = "22222222-2222-4222-8222-222222222222"
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     }
 }

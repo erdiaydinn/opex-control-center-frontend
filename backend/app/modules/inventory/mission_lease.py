@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime, timedelta
+from os import getenv
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -27,7 +27,7 @@ LEASE_SECONDS_DEFAULT = 900
 
 
 def _lease_seconds() -> int:
-    raw = os.getenv("EAY_INVENTORY_MISSION_LEASE_SECONDS", str(LEASE_SECONDS_DEFAULT)).strip()
+    raw = getenv("EAY_INVENTORY_MISSION_LEASE_SECONDS", str(LEASE_SECONDS_DEFAULT)).strip()
     try:
         value = int(raw)
     except ValueError as error:

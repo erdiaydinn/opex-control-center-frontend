@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
 from pathlib import Path
-import unittest
-from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
+import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from ..workforce.active_shift import ActiveShiftAttestation
+from . import production as production_module
+from .location_completion import location_completion_hash_input, record_location_completion
 from .production import (
     InventoryPrincipal,
     canonical_payload_hash,
@@ -25,7 +29,10 @@ from .service import InventoryRuleError
 
 class InventoryProductionContractTests(unittest.TestCase):
     def test_canonical_hash_is_order_independent(self):
-        self.assertEqual(canonical_payload_hash({"b": 2, "a": 1}), canonical_payload_hash({"a": 1, "b": 2}))
+        self.assertEqual(
+            canonical_payload_hash({"b": 2, "a": 1}),
+            canonical_payload_hash({"a": 1, "b": 2}),
+        )
 
     def test_principal_requires_all_authoritative_scopes(self):
         principal = InventoryPrincipal("tenant", "subject", "employee", frozenset(), uuid4())
@@ -40,6 +47,7 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
         cls.tenant = os.getenv("INVENTORY_TEST_TENANT", f"test-{uuid4()}")
         cls.document_id = uuid4()
         cls.device_id = uuid4()
+        cls.shift_id = "SHIFT-INVENTORY-CI-1"
         cls.private_key = ec.generate_private_key(ec.SECP256R1())
         public_pem = cls.private_key.public_key().public_bytes(
             serialization.Encoding.PEM,
@@ -70,11 +78,40 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             )
             db.commit()
         cls.principal = InventoryPrincipal(
-            cls.tenant, "maker", "EMP-1", frozenset({"WH-1"}), cls.device_id,
+            cls.tenant,
+            "maker",
+            "EMP-1",
+            frozenset({"WH-1"}),
+            cls.device_id,
         )
+        cls.shift_attestation = ActiveShiftAttestation(
+            tenant_id=cls.tenant,
+            employee_id="EMP-1",
+            warehouse_id="WH-1",
+            shift_id=cls.shift_id,
+            attendance_id="ATT-INVENTORY-CI-1",
+            checked_in_at=datetime.now(UTC).isoformat(),
+        )
+        cls.shift_patch = patch.object(
+            production_module,
+            "attest_shift_at_event",
+            return_value=cls.shift_attestation,
+        )
+        cls.shift_patch.start()
+        cls.addClassCleanup(cls.shift_patch.stop)
+
+    def sign_payload(self, payload):
+        timestamp = datetime.now(UTC).isoformat()
+        nonce = uuid4().hex
+        message = f"{self.device_id}\n{timestamp}\n{nonce}\n{payload['payload_hash']}".encode()
+        signature = base64.b64encode(
+            self.private_key.sign(message, ec.ECDSA(hashes.SHA256()))
+        ).decode()
+        return payload, timestamp, nonce, signature
 
     def signed_event(self, *, event_id=None, sequence=1, barcode="8690000000001"):
         payload = {
+            "active_shift_id": self.shift_id,
             "event_id": str(event_id or uuid4()),
             "document_id": str(self.document_id),
             "device_sequence": sequence,
@@ -85,11 +122,30 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             "occurred_at": datetime.now(UTC).isoformat(),
         }
         payload["payload_hash"] = canonical_payload_hash(terminal_event_hash_input(payload))
-        timestamp = datetime.now(UTC).isoformat()
-        nonce = uuid4().hex
-        message = f"{self.device_id}\n{timestamp}\n{nonce}\n{payload['payload_hash']}".encode()
-        signature = base64.b64encode(self.private_key.sign(message, ec.ECDSA(hashes.SHA256()))).decode()
-        return payload, timestamp, nonce, signature
+        return self.sign_payload(payload)
+
+    def signed_completion(self):
+        with connect() as db:
+            row = db.execute(
+                """SELECT count(*)::integer AS line_count,
+                          coalesce(max(device_sequence),0)::bigint + 1 AS next_sequence
+                   FROM inventory_events
+                   WHERE tenant_id=%s AND document_id=%s
+                     AND event_type IN ('SCAN','UNEXPECTED_SKU')""",
+                (self.tenant, self.document_id),
+            ).fetchone()
+        payload = {
+            "active_shift_id": self.shift_id,
+            "confirmed_line_count": int(row["line_count"]),
+            "device_sequence": int(row["next_sequence"]),
+            "document_id": str(self.document_id),
+            "event_id": str(uuid4()),
+            "event_kind": "LOCATION_COMPLETE",
+            "location_id": "A01",
+            "occurred_at": datetime.now(UTC).isoformat(),
+        }
+        payload["payload_hash"] = canonical_payload_hash(location_completion_hash_input(payload))
+        return self.sign_payload(payload)
 
     def test_exact_replay_payload_substitution_and_unexpected_sku(self):
         event_id = uuid4()
@@ -98,6 +154,7 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
         replay = record_event(self.principal, payload, timestamp, nonce, signature)
         self.assertFalse(first["idempotent_replay"])
         self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(first["active_shift_id"], self.shift_id)
 
         changed = dict(payload, quantity=3)
         changed["payload_hash"] = canonical_payload_hash(terminal_event_hash_input(changed))
@@ -105,15 +162,20 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             record_event(self.principal, changed, timestamp, uuid4().hex, signature)
 
         unexpected, ts2, nonce2, sig2 = self.signed_event(sequence=2, barcode="9999999999999")
-        self.assertEqual(record_event(self.principal, unexpected, ts2, nonce2, sig2)["event_type"], "UNEXPECTED_SKU")
+        self.assertEqual(
+            record_event(self.principal, unexpected, ts2, nonce2, sig2)["event_type"],
+            "UNEXPECTED_SKU",
+        )
 
     def test_concurrent_duplicate_event_is_exactly_once(self):
         payload, timestamp, nonce, signature = self.signed_event(sequence=20)
         with ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(
-                lambda _: record_event(self.principal, payload, timestamp, nonce, signature),
-                range(2),
-            ))
+            results = list(
+                executor.map(
+                    lambda _: record_event(self.principal, payload, timestamp, nonce, signature),
+                    range(2),
+                )
+            )
         self.assertEqual({row["event_id"] for row in results}, {payload["event_id"]})
         self.assertEqual(sorted(row["idempotent_replay"] for row in results), [False, True])
         with connect() as db:
@@ -122,17 +184,6 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
                 (self.tenant, payload["event_id"]),
             ).fetchone()["n"]
         self.assertEqual(count, 1)
-
-    def test_maker_checker_and_stale_supervisor_revision(self):
-        submitted = transition(self.principal, self.document_id, 1, "SUBMITTED", "count complete")
-        self.assertEqual(submitted["revision"], 2)
-        with self.assertRaises(InventoryRuleError):
-            transition(self.principal, self.document_id, 2, "APPROVED", "self approval")
-        checker = InventoryPrincipal(self.tenant, "checker", "EMP-2", frozenset({"WH-1"}), self.device_id)
-        approved = transition(checker, self.document_id, 2, "APPROVED", "variance reviewed")
-        self.assertEqual(approved["revision"], 3)
-        with self.assertRaises(InventoryRuleError):
-            transition(checker, self.document_id, 2, "LOCKED", "stale screen")
 
     def test_load_smoke_preserves_all_distinct_events(self):
         signed = [self.signed_event(sequence=100 + index) for index in range(40)]
@@ -143,6 +194,49 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
         self.assertEqual(len({row["event_id"] for row in results}), 40)
         self.assertTrue(all(row["accepted"] for row in results))
         self.assertLess(elapsed, 20, "CI smoke only; this is not production capacity acceptance")
+
+    def test_maker_checker_requires_completion_and_reconciliation(self):
+        completion = record_location_completion(self.principal, *self.signed_completion())
+        self.assertTrue(completion["accepted"])
+        self.assertEqual(completion["active_shift_id"], self.shift_id)
+
+        submitted = transition(
+            self.principal,
+            self.document_id,
+            1,
+            "SUBMITTED",
+            "all locations server-complete",
+        )
+        self.assertEqual(submitted["revision"], 2)
+
+        with self.assertRaises(InventoryRuleError):
+            transition(self.principal, self.document_id, 2, "APPROVED", "bypass reconciliation")
+
+        reconciling = transition(
+            self.principal,
+            self.document_id,
+            2,
+            "RECONCILING",
+            "variance review started",
+        )
+        self.assertEqual(reconciling["revision"], 3)
+
+        with self.assertRaises(InventoryRuleError):
+            transition(self.principal, self.document_id, 3, "APPROVED", "self approval")
+
+        checker = InventoryPrincipal(
+            self.tenant,
+            "checker",
+            "EMP-2",
+            frozenset({"WH-1"}),
+            self.device_id,
+        )
+        approved = transition(checker, self.document_id, 3, "APPROVED", "variance reviewed")
+        self.assertEqual(approved["revision"], 4)
+        with self.assertRaises(InventoryRuleError):
+            transition(checker, self.document_id, 3, "LOCKED", "stale screen")
+        locked = transition(checker, self.document_id, 4, "LOCKED", "supervisor lock")
+        self.assertEqual(locked["revision"], 5)
 
 
 if __name__ == "__main__":

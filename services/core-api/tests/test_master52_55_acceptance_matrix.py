@@ -14,18 +14,18 @@ MATRIX = ROOT / "docs/governance/eay_real_acceptance_matrix.json"
 
 def test_real_acceptance_matrix_covers_standalone_cross_security_and_languages() -> None:
     matrix = load_acceptance_matrix(MATRIX)
-    assert REQUIRED_MODULES <= set(matrix["module_uat"])
-    assert REQUIRED_CROSS <= set(matrix["cross_module_uat"])
-    assert REQUIRED_PEN <= set(matrix["security_penetration"])
-    assert REQUIRED_LANGS <= set(matrix["accessibility_language"])
-    assert {
+    assert set(matrix["module_uat"]) >= REQUIRED_MODULES
+    assert set(matrix["cross_module_uat"]) >= REQUIRED_CROSS
+    assert set(matrix["security_penetration"]) >= REQUIRED_PEN
+    assert set(matrix["accessibility_language"]) >= REQUIRED_LANGS
+    assert set(matrix["accessibility_language"]) >= {
         "keyboard_only",
         "screen_reader",
         "large_text",
         "reduced_motion",
         "mobile_ergonomics",
-    } <= set(matrix["accessibility_language"])
-    assert {
+    }
+    assert set(matrix["common_flows"]) >= {
         "login_navigation",
         "workforce_checkin",
         "inventory_scan",
@@ -35,4 +35,4 @@ def test_real_acceptance_matrix_covers_standalone_cross_security_and_languages()
         "budget_approval",
         "academy_learning",
         "jarvis_question",
-    } <= set(matrix["common_flows"])
+    }

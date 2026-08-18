@@ -1,10 +1,9 @@
 """Fail-closed live-source bindings for the Jarvis company world model.
 
-This module is an ingestion gate, not a second source of truth. A live source may
-only create a ``WorldAssertion`` when its tenant, source identity, schema,
-authority, freshness, verifier and evidence all match an explicit runtime
-policy. Repository fixtures, synthetic proof and model-derived content can
-never be promoted to live company truth by this layer.
+This is an ingestion gate, not a second source of truth. Live observations only
+become existing ``WorldAssertion`` objects after exact policy, identity,
+schema, freshness and independently trusted evidence checks. Synthetic,
+repository and model-derived evidence can never be promoted to live truth.
 """
 
 from __future__ import annotations
@@ -67,6 +66,7 @@ class LiveSourceBindingPolicy(BaseModel):
     schema_contract: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
     environment_ref: str = Field(min_length=1)
+    execution_identity_ref: str = Field(min_length=1)
     verifier_ref: str = Field(min_length=1)
     truth_class: TruthClass
     max_observation_age_seconds: int = Field(gt=0)
@@ -81,7 +81,8 @@ class LiveSourceBindingPolicy(BaseModel):
             raise ValueError("live_binding_cannot_promote_analytic_inference")
         if not self.allowed_fields and not self.allowed_field_prefixes:
             raise ValueError("live_binding_requires_field_namespace")
-        if any(not item for item in (*self.allowed_fields, *self.allowed_field_prefixes)):
+        namespace = (*self.allowed_fields, *self.allowed_field_prefixes)
+        if any(not item for item in namespace):
             raise ValueError("live_binding_field_namespace_must_be_nonempty")
         return self
 
@@ -105,8 +106,28 @@ class LiveSourceAttestation(BaseModel):
 
     @model_validator(mode="after")
     def integrity_contract(self) -> "LiveSourceAttestation":
-        _require_aware(self.verified_at, "live_attestation_verified_at_requires_timezone")
-        expected = _attestation_fingerprint(self.model_dump(exclude={"fingerprint"}, mode="json"))
+        _require_aware(
+            self.verified_at,
+            "live_attestation_verified_at_requires_timezone",
+        )
+        expected = _attestation_fingerprint(
+            _attestation_payload(
+                binding_id=self.binding_id,
+                tenant_id=self.tenant_id,
+                source_kind=self.source_kind,
+                source_ref=self.source_ref,
+                schema_contract=self.schema_contract,
+                schema_version=self.schema_version,
+                environment_ref=self.environment_ref,
+                execution_identity_ref=self.execution_identity_ref,
+                verifier_ref=self.verifier_ref,
+                verified_at=self.verified_at,
+                evidence_ref=self.evidence_ref,
+                source_receipt_ref=self.source_receipt_ref,
+                evidence_class=self.evidence_class,
+                field_production_verified=self.field_production_verified,
+            )
+        )
         if self.fingerprint != expected:
             raise ValueError("live_attestation_fingerprint_mismatch")
         return self
@@ -188,6 +209,41 @@ def _canonical_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _attestation_payload(
+    *,
+    binding_id: str,
+    tenant_id: str,
+    source_kind: LiveSourceKind,
+    source_ref: str,
+    schema_contract: str,
+    schema_version: str,
+    environment_ref: str,
+    execution_identity_ref: str,
+    verifier_ref: str,
+    verified_at: datetime,
+    evidence_ref: str,
+    source_receipt_ref: str,
+    evidence_class: LiveEvidenceClass,
+    field_production_verified: bool,
+) -> dict[str, Any]:
+    return {
+        "binding_id": binding_id,
+        "tenant_id": tenant_id,
+        "source_kind": source_kind.value,
+        "source_ref": source_ref,
+        "schema_contract": schema_contract,
+        "schema_version": schema_version,
+        "environment_ref": environment_ref,
+        "execution_identity_ref": execution_identity_ref,
+        "verifier_ref": verifier_ref,
+        "verified_at": verified_at.isoformat(),
+        "evidence_ref": evidence_ref,
+        "source_receipt_ref": source_receipt_ref,
+        "evidence_class": evidence_class.value,
+        "field_production_verified": field_production_verified,
+    }
+
+
 def _attestation_fingerprint(payload: dict[str, Any]) -> str:
     return _canonical_hash(payload)
 
@@ -209,32 +265,39 @@ def build_live_source_attestation(
     evidence_class: LiveEvidenceClass,
     field_production_verified: bool,
 ) -> LiveSourceAttestation:
-    payload = {
-        "binding_id": binding_id,
-        "tenant_id": tenant_id,
-        "source_kind": source_kind.value,
-        "source_ref": source_ref,
-        "schema_contract": schema_contract,
-        "schema_version": schema_version,
-        "environment_ref": environment_ref,
-        "execution_identity_ref": execution_identity_ref,
-        "verifier_ref": verifier_ref,
-        "verified_at": verified_at.isoformat(),
-        "evidence_ref": evidence_ref,
-        "source_receipt_ref": source_receipt_ref,
-        "evidence_class": evidence_class.value,
-        "field_production_verified": field_production_verified,
-    }
-    return LiveSourceAttestation(**payload, fingerprint=_attestation_fingerprint(payload))
+    payload = _attestation_payload(
+        binding_id=binding_id,
+        tenant_id=tenant_id,
+        source_kind=source_kind,
+        source_ref=source_ref,
+        schema_contract=schema_contract,
+        schema_version=schema_version,
+        environment_ref=environment_ref,
+        execution_identity_ref=execution_identity_ref,
+        verifier_ref=verifier_ref,
+        verified_at=verified_at,
+        evidence_ref=evidence_ref,
+        source_receipt_ref=source_receipt_ref,
+        evidence_class=evidence_class,
+        field_production_verified=field_production_verified,
+    )
+    return LiveSourceAttestation(
+        **payload,
+        fingerprint=_attestation_fingerprint(payload),
+    )
 
 
 def _field_allowed(policy: LiveSourceBindingPolicy, field_name: str) -> bool:
     return field_name in policy.allowed_fields or any(
-        field_name.startswith(prefix) for prefix in policy.allowed_field_prefixes
+        field_name.startswith(prefix)
+        for prefix in policy.allowed_field_prefixes
     )
 
 
-def _assertion_id(policy: LiveSourceBindingPolicy, observation: LiveFactObservation) -> str:
+def _assertion_id(
+    policy: LiveSourceBindingPolicy,
+    observation: LiveFactObservation,
+) -> str:
     payload = {
         "binding_id": policy.binding_id,
         "tenant_id": observation.tenant_id,
@@ -245,7 +308,11 @@ def _assertion_id(policy: LiveSourceBindingPolicy, observation: LiveFactObservat
         "field_name": observation.field_name,
         "value": observation.value,
         "valid_from": observation.valid_from.isoformat(),
-        "valid_to": observation.valid_to.isoformat() if observation.valid_to else None,
+        "valid_to": (
+            observation.valid_to.isoformat()
+            if observation.valid_to is not None
+            else None
+        ),
         "observed_at": observation.observed_at.isoformat(),
         "attestation_fingerprint": observation.attestation.fingerprint,
     }
@@ -258,6 +325,7 @@ def bind_live_observation(
     observation: LiveFactObservation,
     as_of: datetime,
     known_entity_ids: Collection[str],
+    trusted_attestation_fingerprints: Collection[str],
 ) -> LiveBindingOutcome:
     """Validate one observation and convert it to existing world-model truth."""
 
@@ -282,13 +350,21 @@ def bind_live_observation(
     if not _field_allowed(policy, observation.field_name):
         reasons.append("field_namespace_not_allowed")
 
-    if attestation.binding_id != policy.binding_id or attestation.binding_id != observation.binding_id:
+    if attestation.binding_id != policy.binding_id:
         reasons.append("attestation_binding_mismatch")
-    if attestation.tenant_id != policy.tenant_id or attestation.tenant_id != observation.tenant_id:
+    if attestation.binding_id != observation.binding_id:
+        reasons.append("attestation_binding_mismatch")
+    if attestation.tenant_id != policy.tenant_id:
         reasons.append("attestation_tenant_mismatch")
-    if attestation.source_kind != policy.source_kind or attestation.source_kind != observation.source_kind:
+    if attestation.tenant_id != observation.tenant_id:
+        reasons.append("attestation_tenant_mismatch")
+    if attestation.source_kind != policy.source_kind:
         reasons.append("attestation_source_kind_mismatch")
-    if attestation.source_ref != policy.source_ref or attestation.source_ref != observation.source_ref:
+    if attestation.source_kind != observation.source_kind:
+        reasons.append("attestation_source_kind_mismatch")
+    if attestation.source_ref != policy.source_ref:
+        reasons.append("attestation_source_ref_mismatch")
+    if attestation.source_ref != observation.source_ref:
         reasons.append("attestation_source_ref_mismatch")
     if attestation.schema_contract != policy.schema_contract:
         reasons.append("attestation_schema_contract_mismatch")
@@ -296,8 +372,12 @@ def bind_live_observation(
         reasons.append("attestation_schema_version_mismatch")
     if attestation.environment_ref != policy.environment_ref:
         reasons.append("attestation_environment_mismatch")
+    if attestation.execution_identity_ref != policy.execution_identity_ref:
+        reasons.append("attestation_execution_identity_mismatch")
     if attestation.verifier_ref != policy.verifier_ref:
         reasons.append("attestation_verifier_mismatch")
+    if attestation.fingerprint not in trusted_attestation_fingerprints:
+        reasons.append("attestation_not_in_trusted_registry")
     if attestation.evidence_class != LiveEvidenceClass.AUTHORITATIVE_LIVE:
         reasons.append("evidence_not_authoritative_live")
     if not attestation.field_production_verified:
@@ -309,19 +389,29 @@ def bind_live_observation(
 
     if reasons:
         return LiveBindingOutcome(
-            receipt=_receipt(policy, observation, LiveBindingStatus.REJECTED, tuple(sorted(set(reasons))))
+            receipt=_receipt(
+                policy,
+                observation,
+                LiveBindingStatus.REJECTED,
+                tuple(sorted(set(reasons))),
+            )
         )
 
+    stale_reasons: list[str] = []
     observation_age = (as_of - observation.observed_at).total_seconds()
     attestation_age = (as_of - attestation.verified_at).total_seconds()
-    stale_reasons: list[str] = []
     if observation_age > policy.max_observation_age_seconds:
         stale_reasons.append("observation_stale")
     if attestation_age > policy.max_attestation_age_seconds:
         stale_reasons.append("attestation_stale")
     if stale_reasons:
         return LiveBindingOutcome(
-            receipt=_receipt(policy, observation, LiveBindingStatus.STALE, tuple(stale_reasons))
+            receipt=_receipt(
+                policy,
+                observation,
+                LiveBindingStatus.STALE,
+                tuple(stale_reasons),
+            )
         )
 
     assertion_id = _assertion_id(policy, observation)
@@ -384,13 +474,9 @@ def build_live_company_reality_snapshot(
     entities: list[WorldEntity],
     policies: list[LiveSourceBindingPolicy],
     observations: list[LiveFactObservation],
+    trusted_attestation_fingerprints: Collection[str],
 ) -> LiveCompanyRealitySnapshot:
-    """Build a world snapshot from explicitly governed live-source policies.
-
-    A required binding with no accepted current observation makes live reality
-    unavailable. Rejected/stale observations never enter the world model.
-    Existing equal-authority world-model conflicts remain fail-closed.
-    """
+    """Build a snapshot from independently trusted live-source evidence."""
 
     _require_aware(as_of, "live_reality_as_of_requires_timezone")
     if any(policy.tenant_id != tenant_id for policy in policies):
@@ -400,16 +486,25 @@ def build_live_company_reality_snapshot(
     if len(policy_by_id) != len(policies):
         raise ValueError("live_reality_duplicate_binding_id")
 
-    tenant_entity_ids = {entity.entity_id for entity in entities if entity.tenant_id == tenant_id}
-    outcomes: list[LiveBindingOutcome] = []
+    tenant_entity_ids = {
+        entity.entity_id
+        for entity in entities
+        if entity.tenant_id == tenant_id
+    }
     observations_by_binding: dict[str, list[LiveFactObservation]] = {}
     for observation in observations:
-        observations_by_binding.setdefault(observation.binding_id, []).append(observation)
+        observations_by_binding.setdefault(
+            observation.binding_id,
+            [],
+        ).append(observation)
 
-    unknown_binding_ids = sorted(set(observations_by_binding) - set(policy_by_id))
+    unknown_binding_ids = sorted(
+        set(observations_by_binding) - set(policy_by_id)
+    )
     if unknown_binding_ids:
         raise ValueError("live_reality_observation_binding_unknown")
 
+    outcomes: list[LiveBindingOutcome] = []
     unavailable: list[str] = []
     degraded: list[str] = []
     assertions: list[WorldAssertion] = []
@@ -419,7 +514,11 @@ def build_live_company_reality_snapshot(
         if not items:
             if policy.required:
                 unavailable.append(policy.binding_id)
-            reason = "required_source_observation_missing" if policy.required else "optional_source_observation_missing"
+            reason = (
+                "required_source_observation_missing"
+                if policy.required
+                else "optional_source_observation_missing"
+            )
             outcomes.append(
                 LiveBindingOutcome(
                     receipt=LiveBindingReceipt(
@@ -442,6 +541,9 @@ def build_live_company_reality_snapshot(
                 observation=observation,
                 as_of=as_of,
                 known_entity_ids=tenant_entity_ids,
+                trusted_attestation_fingerprints=(
+                    trusted_attestation_fingerprints
+                ),
             )
             outcomes.append(outcome)
             if outcome.assertion is not None:

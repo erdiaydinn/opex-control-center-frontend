@@ -101,6 +101,20 @@ def main() -> None:
             stable_non_sha(name, source)
         check(rolling)
 
+    # Roadmap 1-15 still proves the immediately prior 1-14 exact head. Never
+    # archive or remove that active bridge while the dependency remains.
+    def rolling_dependency_bridge() -> None:
+        source = read("eay-roadmap-1-15-exact-head.yml")
+        dependency = "eay-roadmap-1-14-exact-head.yml"
+        if dependency not in source:
+            raise AssertionError("Roadmap 1-15 lost its exact-head 1-14 dependency")
+        if not (WF / dependency).is_file():
+            raise AssertionError("Roadmap 1-15 references an inactive 1-14 workflow")
+        bridge = read(dependency)
+        if "EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}" not in bridge:
+            raise AssertionError("Roadmap 1-14 dependency bridge lost exact-head binding")
+    check(rolling_dependency_bridge)
+
     for helper in (
         ROOT / "scripts/ci/apply_inventory_admission_control.py",
         ROOT / "scripts/ci/migrate_legacy_exact_head_headers.py",
@@ -143,6 +157,32 @@ def main() -> None:
         stable_non_sha("opex-inventory-android.yml", android)
     check(inventory)
 
+    def inventory_migration_chain() -> None:
+        source = read("eay-inventory-migration-contract.yml")
+        block = pull_request_block(source)
+        head = header(source)
+        if '"backend/migrations/*inventory*.sql"' not in block:
+            raise AssertionError("Inventory migration gate lost wildcard migration admission")
+        if "product/eay-category-leadership-v1" not in block:
+            raise AssertionError("Inventory migration gate lost category PR admission")
+        if "release/platform-convergence-v0.1" not in block:
+            raise AssertionError("Inventory migration gate lost release PR admission")
+        if "contents: write" in head:
+            raise AssertionError("Inventory migration gate must remain read-only")
+        stable_non_sha("eay-inventory-migration-contract.yml", source)
+        required = (
+            "find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort",
+            "legacy_inventory_migration_frozen=%s",
+            "inventory_schema_migrations WHERE version=${version}",
+            "004_inventory_location_completion.sql",
+            "inventory_guard_location_event_v4_trigger",
+            "inventory_location_completion_once_idx",
+        )
+        for fragment in required:
+            if fragment not in source:
+                raise AssertionError(f"Inventory migration-chain proof missing: {fragment}")
+    check(inventory_migration_chain)
+
     for name in PLANOGRAM:
         check(lambda name=name: require_pr_paths(name, ('"apps/planai/**"',)))
     check(lambda: require_pr_paths(
@@ -181,8 +221,10 @@ def main() -> None:
 
     print("CI_ADMISSION_POLICY=PASS")
     print("rolling_1_10_1_14=product_completion_only")
+    print("roadmap_1_14_dependency_bridge=active")
     print("category_targeted_workstream_legacy_fanout=false")
     print("domain_heavy_pr_admission=scoped")
+    print("inventory_migration_chain=governed")
     print("superseded_pr_runs=stable_non_sha_concurrency")
     print("canonical_cumulative_chain=preserved")
 

@@ -1,4 +1,4 @@
-HEAD=7fa3d6f14acdd0ea611da0af4c8fce7e7dda4d16
+HEAD=8d35a12add03b791017a2db9dd7a829ec5612893
 RUFF_VERSION=ruff 0.16.3
 ---
 services/core-api/alembic/versions/0019_field_intelligence_foundation.py:72:101: E501 Line too long (102 > 100)

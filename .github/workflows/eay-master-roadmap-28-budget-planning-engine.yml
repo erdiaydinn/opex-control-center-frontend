@@ -5,6 +5,19 @@ on:
     branches: [agent/master-roadmap-28-budget-planning-engine, product/eay-category-leadership-v1]
   pull_request:
     branches: [product/eay-category-leadership-v1]
+    paths:
+      - "backend/app/modules/budget/**"
+      - "backend/**/*budget*.py"
+      - "backend/migrations/*budget*.sql"
+      - "services/core-api/app/modules/budget/**"
+      - "services/core-api/**/*budget*.py"
+      - "services/core-api/alembic/versions/*budget*.py"
+      - "src/**/*budget*"
+      - "src/**/Budget/**"
+      - "config/**/*budget*"
+      - "scripts/**/*budget*"
+      - "config/eay_master_roadmap_60.json"
+      - ".github/workflows/eay-master-roadmap-28-budget-planning-engine.yml"
   workflow_dispatch:
 
 permissions:

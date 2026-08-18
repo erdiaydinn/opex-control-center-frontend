@@ -1,0 +1,147 @@
+name: EAY Master Roadmap 56-60 - Release Authority
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-56-60-release-compose-v2
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - 'docs/governance/eay_release_category_leadership_policy.json'
+      - 'docs/governance/eay_observability_contract.json'
+      - 'docs/governance/eay_sre_service_registry.json'
+      - 'docs/governance/eay_chaos_dr_acceptance.json'
+      - 'docs/governance/eay_external_acceptance_requirements.json'
+      - 'services/core-api/app/acceptance/external_evidence.py'
+      - 'services/core-api/app/sre/observability.py'
+      - 'services/core-api/app/sre/governance.py'
+      - 'services/core-api/app/sre/chaos_dr.py'
+      - 'services/core-api/app/release/category_leadership.py'
+      - 'services/core-api/app/release/canonical_evidence_bridge.py'
+      - 'services/core-api/app/release/canonical_transition.py'
+      - 'services/core-api/tests/test_master56_60_release_leadership.py'
+      - 'services/core-api/tests/test_master56_60_canonical_evidence_bridge.py'
+      - 'services/core-api/tests/test_master56_60_canonical_transition.py'
+      - '.github/workflows/eay-master-roadmap-56-60-release-leadership.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: eay-master-56-60-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Core API test surface
+        working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - name: Strict release authority gate
+        run: |
+          ruff check \
+            services/core-api/app/release/category_leadership.py \
+            services/core-api/app/release/canonical_evidence_bridge.py \
+            services/core-api/app/release/canonical_transition.py \
+            services/core-api/tests/test_master56_60_release_leadership.py \
+            services/core-api/tests/test_master56_60_canonical_evidence_bridge.py \
+            services/core-api/tests/test_master56_60_canonical_transition.py
+          python -m py_compile \
+            services/core-api/app/release/category_leadership.py \
+            services/core-api/app/release/canonical_evidence_bridge.py \
+            services/core-api/app/release/canonical_transition.py \
+            services/core-api/tests/test_master56_60_release_leadership.py \
+            services/core-api/tests/test_master56_60_canonical_evidence_bridge.py \
+            services/core-api/tests/test_master56_60_canonical_transition.py
+          python -m json.tool docs/governance/eay_release_category_leadership_policy.json >/dev/null
+      - name: Run Master 56-60 release authority contracts
+        run: |
+          pytest -q \
+            services/core-api/tests/test_master56_60_release_leadership.py \
+            services/core-api/tests/test_master56_60_canonical_evidence_bridge.py \
+            services/core-api/tests/test_master56_60_canonical_transition.py
+      - name: Preserve production truth and governed state transitions
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy = json.loads(
+              Path('docs/governance/eay_release_category_leadership_policy.json').read_text()
+          )
+          assert policy['schema_version'] == 6
+          truth = policy['truth_contract']
+          release = policy['release_requirements']
+          assert truth['repository_or_synthetic_can_satisfy_external_acceptance'] is False
+          assert truth['candidate_sha_exact_40_hex'] is True
+          assert truth['repository_status_bound_to_candidate_sha'] is True
+          assert truth['all_release_stage_evidence_bound_to_release_and_candidate'] is True
+          assert truth['cross_release_or_cross_candidate_evidence_reuse_allowed'] is False
+          assert truth['sre_item_ref_derived_from_canonical_acceptance'] is True
+          assert truth['external_item_ref_derived_from_canonical_ledger'] is True
+          assert truth['release_transition_rebuilds_current_45_55_authority'] is True
+          assert truth['stale_truth_fingerprint_can_advance_release'] is False
+          assert truth['external_item_requires_ledger_sha256_ref'] is True
+          assert truth['pilot_metric_requires_sha256_evidence_ref'] is True
+          assert truth['production_signoff_requires_sha256_evidence_ref'] is True
+          candidate = release['production_candidate']
+          assert candidate['external_items'] == list(range(49, 56))
+          assert candidate['sre_items'] == list(range(45, 49))
+          assert candidate['sre_evidence_source'] == 'CANONICAL_45_48_ACCEPTANCE_VALIDATORS'
+          assert candidate['external_evidence_source'] == 'CANONICAL_49_55_LEDGER_FINGERPRINTS'
+          assert candidate['transition_authority'] == 'JUST_IN_TIME_CANONICAL_REVALIDATION'
+          assert candidate['candidate_binding'] == 'EXACT_GITHUB_SHA'
+          assert candidate['release_binding'] == 'RELEASE_ID_SHA256'
+          assert release['pilot']['scope'] == 'TENANT_MODULE_CONTROLLED'
+          assert release['pilot']['rollback_evidence'] == 'RELEASE_AND_CANDIDATE_BOUND_SHA256'
+          assert release['production']['activation'] == 'TENANT_MODULE_CONTROLLED'
+          assert release['production']['activation_must_be_within_pilot_scope'] is True
+          assert release['production']['signoff_evidence'] == 'RELEASE_AND_CANDIDATE_BOUND_SHA256'
+          assert release['stabilization']['revalidate_active_release_chain'] is True
+          assert release['stabilization']['revalidate_before_entering_stabilization'] is True
+          assert release['stabilization']['acceptance_metrics'] == [
+              'error_budget',
+              'incident_rate',
+              'reconciliation',
+              'support_backlog',
+              'no_open_p0',
+              'rollback_readiness',
+          ]
+          leadership = release['category_leadership']
+          assert leadership['requires'] == 'STABILIZATION_ACCEPTED'
+          assert leadership['state'] == 'CATEGORY_LEADERSHIP'
+          assert leadership['semantic'].endswith('NOT_MARKET_LEADERSHIP_CLAIM')
+          PY
+      - name: Publish Master 56-60 release authority exact-head status
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/product/eay-category-leadership-v1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=failure
+          description='Master 56-60 release authority canonical gate failed'
+          if [ "$JOB_STATUS" = 'success' ]; then
+            state=success
+            description='Master 56-60 release authority passed; external release evidence still required'
+          fi
+          payload=$(printf '{"state":"%s","context":"EAY Master 56-60 Release Authority Exact-Head","description":"%s"}' "$state" "$description")
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --data "$payload"

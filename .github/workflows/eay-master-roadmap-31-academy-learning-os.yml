@@ -1,0 +1,188 @@
+name: EAY Master Roadmap 31 - Academy Learning OS
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-31-33-academy-compose-v2
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches: [product/eay-category-leadership-v1]
+    paths:
+      - 'services/core-api/alembic/versions/0041_academy_learning_os.py'
+      - 'services/core-api/app/modules/academy/learning_os.py'
+      - 'services/core-api/tests/test_academy_master31_learning_os.py'
+      - '.github/workflows/eay-master-roadmap-31-academy-learning-os.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: eay-master-31-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  academy-learning-os:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Core API test surface
+        working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - name: Create non-superuser runtime role
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime') THEN
+              CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+            END IF;
+          END
+          $$;
+          SQL
+      - name: Strict Ruff and compile gate
+        run: |
+          ruff check \
+            services/core-api/alembic/versions/0041_academy_learning_os.py \
+            services/core-api/app/modules/academy/learning_os.py \
+            services/core-api/tests/test_academy_master31_learning_os.py
+          python -m py_compile \
+            services/core-api/alembic/versions/0041_academy_learning_os.py \
+            services/core-api/app/modules/academy/learning_os.py
+      - name: Enforce one cumulative Alembic head and Academy ancestry
+        working-directory: services/core-api
+        run: |
+          alembic heads | tee /tmp/academy-heads.txt
+          test "$(grep -c '(head)' /tmp/academy-heads.txt)" -eq 1
+          test -n "$(awk '/\(head\)/ {print $1}' /tmp/academy-heads.txt)"
+          alembic history | tee /tmp/academy-history.txt
+          grep -q '0043_shared_platform_delivery_search' /tmp/academy-history.txt
+          grep -q '0042_shared_platform_authorities' /tmp/academy-history.txt
+          grep -q '0041_academy_learning_os' /tmp/academy-history.txt
+          grep -q '0040_budget_planning_hardening' /tmp/academy-history.txt
+          grep -q '0015_academy_foundation' /tmp/academy-history.txt
+      - name: Apply cumulative migrations
+        working-directory: services/core-api
+        run: |
+          alembic upgrade head
+          alembic current | tee /tmp/academy-current.txt
+          grep -q '(head)' /tmp/academy-current.txt
+      - name: Prove Academy FORCE RLS, security-invoker view and runtime grants
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            protected_count integer;
+            policy_count integer;
+          BEGIN
+            SELECT count(*) INTO protected_count
+            FROM pg_class
+            WHERE relname IN (
+              'academy_skills',
+              'academy_role_skill_requirement',
+              'academy_path_skill_outcome',
+              'academy_skill_evidence'
+            )
+            AND relrowsecurity
+            AND relforcerowsecurity;
+            IF protected_count <> 4 THEN
+              RAISE EXCEPTION 'Academy Learning OS FORCE RLS incomplete: %', protected_count;
+            END IF;
+
+            SELECT count(*) INTO policy_count
+            FROM pg_policies
+            WHERE tablename IN (
+              'academy_skills',
+              'academy_role_skill_requirement',
+              'academy_path_skill_outcome',
+              'academy_skill_evidence'
+            );
+            IF policy_count <> 4 THEN
+              RAISE EXCEPTION 'Academy Learning OS tenant policies incomplete: %', policy_count;
+            END IF;
+
+            IF NOT has_table_privilege('opex_runtime', 'academy_skill_evidence', 'SELECT,INSERT') THEN
+              RAISE EXCEPTION 'Runtime evidence privileges missing';
+            END IF;
+            IF has_table_privilege('opex_runtime', 'academy_skill_evidence', 'UPDATE')
+               OR has_table_privilege('opex_runtime', 'academy_skill_evidence', 'DELETE') THEN
+              RAISE EXCEPTION 'Runtime evidence mutability exceeds append-only authority';
+            END IF;
+          END
+          $$;
+
+          SELECT reloptions
+          FROM pg_class
+          WHERE relname = 'academy_subject_skill_proficiency'
+            AND reloptions @> ARRAY['security_invoker=true'];
+          SQL
+      - name: Run Learning OS contracts and Academy regression
+        run: |
+          pytest -q \
+            services/core-api/tests/test_academy_master31_learning_os.py \
+            services/core-api/tests/test_academy_contracts.py \
+            services/core-api/tests/test_academy_media_tenant_isolation.py
+      - name: Preserve production truth boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path('services/core-api/alembic/versions/0041_academy_learning_os.py').read_text()
+          assert 'manager_verified' in text
+          assert 'external_verified' in text
+          assert 'AUTO_PROFICIENCY' not in text
+          PY
+      - name: Publish Master 31 canonical exact-head status
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/product/eay-category-leadership-v1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=failure
+          description='Master 31 Academy canonical exact-head acceptance failed'
+          if [ "$JOB_STATUS" = 'success' ]; then
+            state=success
+            description='Master 31 Academy canonical exact-head acceptance passed'
+          fi
+          payload=$(printf '{"state":"%s","context":"EAY Master 31 Academy Exact-Head","description":"%s"}' "$state" "$description")
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --data "$payload"

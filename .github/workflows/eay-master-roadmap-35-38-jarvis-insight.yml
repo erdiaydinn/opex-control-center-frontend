@@ -1,0 +1,125 @@
+name: EAY Master Roadmap 35-38 - Jarvis Production Truth and Insight
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-34-38-jarvis-compose-v2
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches: [product/eay-category-leadership-v1]
+    paths:
+      - 'services/core-api/app/jarvis/orders_v2_production_truth.py'
+      - 'services/core-api/app/insight/governed_metrics.py'
+      - 'services/core-api/app/insight/product_experience.py'
+      - 'services/core-api/app/insight/proactive.py'
+      - 'services/core-api/tests/test_master35_38_jarvis_insight.py'
+      - '.github/workflows/eay-master-roadmap-35-38-jarvis-insight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: eay-master-35-38-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governed-intelligence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Core API governed intelligence test surface
+        working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - name: Strict Ruff and compile gate
+        run: |
+          ruff check \
+            services/core-api/app/core/operational_tool_authority.py \
+            services/core-api/app/jarvis/orders_v2_production_truth.py \
+            services/core-api/app/insight/governed_metrics.py \
+            services/core-api/app/insight/product_experience.py \
+            services/core-api/app/insight/proactive.py \
+            services/core-api/tests/test_master34_operational_tool_authority.py \
+            services/core-api/tests/test_master35_38_jarvis_insight.py
+          python -m py_compile \
+            services/core-api/app/jarvis/orders_v2_production_truth.py \
+            services/core-api/app/insight/governed_metrics.py \
+            services/core-api/app/insight/product_experience.py \
+            services/core-api/app/insight/proactive.py
+      - name: Preserve Orders live-proof and governed Insight contracts
+        run: |
+          pytest -q \
+            services/core-api/tests/test_master34_operational_tool_authority.py \
+            services/core-api/tests/test_master35_38_jarvis_insight.py \
+            services/core-api/tests/test_ai_orders_v2_source_comparison.py
+      - name: Orders production truth remains evidence-only and non-activating
+        run: |
+          python - <<'PY'
+          from app.jarvis.orders_v2_production_truth import (
+              ProductionEvidence,
+              orders_v2_production_receipt,
+          )
+
+          receipt = orders_v2_production_receipt((
+              ProductionEvidence(
+                  key='authorized_readonly_identity',
+                  tenant_id='tenant-a',
+                  evidence_class='REPOSITORY',
+                  passed=True,
+                  provenance='ci',
+                  approver='bot',
+              ),
+          ))
+          assert not receipt.ready
+          assert receipt.production_activation_permitted is False
+          PY
+      - name: Proactive intelligence cannot bypass approval authority
+        run: |
+          python - <<'PY'
+          from app.insight.proactive import (
+              action_requires_approval,
+              auto_action_permitted,
+              create_signal,
+          )
+
+          signal = create_signal(
+              tenant_id='tenant-a',
+              key='low-risk-signal',
+              module='academy',
+              reason='governed threshold crossed',
+              evidence_refs=('evidence:1',),
+              risk='LOW',
+              policy_version='v1',
+              proposed_action='assign_training',
+          )
+          assert action_requires_approval(signal)
+          assert not auto_action_permitted(signal)
+          PY
+      - name: Publish Master 35-38 canonical exact-head status
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/product/eay-category-leadership-v1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=failure
+          description='Master 35-38 Jarvis canonical exact-head acceptance failed'
+          if [ "$JOB_STATUS" = 'success' ]; then
+            state=success
+            description='Master 35-38 Jarvis canonical exact-head acceptance passed'
+          fi
+          payload=$(printf '{"state":"%s","context":"EAY Master 35-38 Jarvis Exact-Head","description":"%s"}' "$state" "$description")
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --data "$payload"

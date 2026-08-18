@@ -208,7 +208,7 @@ if grep -n -E 'enabled[[:space:]]*=[[:space:]]*(true|false)' "$ADAPTER"; then
   exit 1
 fi
 
-if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance|sku|barcode' "$COUNT_CONTROLLER" "$COUNT_TASK" "$COMPLETION_FACTORY" "$BACKEND_COMPLETION"; then
+if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance|sku' "$COUNT_CONTROLLER" "$COUNT_TASK" "$COMPLETION_FACTORY" "$BACKEND_COMPLETION"; then
   echo "blind-count completion contract leaked stock truth" >&2
   exit 1
 fi

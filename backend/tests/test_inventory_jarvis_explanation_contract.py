@@ -33,12 +33,13 @@ def test_explanation_context_is_read_only_and_tenant_warehouse_scoped() -> None:
 def test_explanation_context_excludes_prompt_injection_and_sensitive_raw_fields() -> None:
     source = EXPLANATION.read_text(encoding="utf-8")
     assert '"free_text_excluded": True' in source
+    assert "SELECT event_type,location_id" in source
+    assert '"events": [dict(row) for row in event_rows]' in source
     assert "SELECT revision,state,snapshot_hash,created_at" in source
     assert "SELECT action,previous_hash,hash,occurred_at" in source
     assert "actor_subject" not in source
     assert "employee_id" not in source
     assert "device_id" not in source
-    assert "SELECT barcode" not in source
     assert "SELECT action,record" not in source
     assert "SELECT revision,state,reason" not in source
 

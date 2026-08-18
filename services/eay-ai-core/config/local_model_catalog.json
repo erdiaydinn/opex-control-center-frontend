@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "policy": {
     "default_execution": "LOCAL_FIRST",
     "paid_frontier_fallback": "PLATFORM_ADMIN_GRANT_ONLY",
@@ -75,12 +75,37 @@
     },
     {
       "model_family": "qwen3-asr",
-      "recommended_runtime": "VLLM_OR_COMPATIBLE_LOCAL_RUNTIME",
-      "default_model_id": null,
+      "recommended_runtime": "VLLM_OR_QWEN_LOCAL_RUNTIME",
+      "default_model_id": "Qwen3-ASR-0.6B",
       "license": "APACHE-2.0",
       "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
       "capabilities": ["AUDIO", "ASR", "MULTILINGUAL"],
-      "preferred_tasks": ["VOICE_TRANSCRIPTION", "VOICE_SESSION"],
+      "preferred_tasks": ["VOICE_TRANSCRIPTION", "VOICE_SESSION", "STREAMING_ASR"],
+      "supported_languages": ["zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru", "th", "vi", "ja", "tr", "hi", "ms", "nl", "sv", "da", "fi", "pl", "cs", "fil", "fa", "el", "hu", "mk", "ro"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "chatterbox-multilingual-v3",
+      "recommended_runtime": "LOCAL_PYTORCH",
+      "default_model_id": "ResembleAI/Chatterbox-Multilingual-v3",
+      "license": "MIT",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["AUDIO", "TTS", "MULTILINGUAL"],
+      "preferred_tasks": ["VOICE_SYNTHESIS", "VOICE_SESSION", "TURKISH_TTS"],
+      "supported_languages": ["ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it", "ja", "ko", "ms", "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "qwen3-tts",
+      "recommended_runtime": "LOCAL_PYTORCH_OR_VLLM",
+      "default_model_id": null,
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["AUDIO", "TTS", "MULTILINGUAL"],
+      "preferred_tasks": ["VOICE_SYNTHESIS", "VOICE_SESSION"],
+      "supported_languages": ["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
       "production_candidate": true,
       "external_network_required": false
     },

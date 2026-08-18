@@ -34,7 +34,15 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Verify final CI admission policy
+      - name: Verify historical gates are archived and inert
+        run: python scripts/ci/verify_ci_admission_policy.py --section historical
+      - name: Verify Inventory and DockOS admission separation
+        run: python scripts/ci/verify_ci_admission_policy.py --section inventory-dockos
+      - name: Verify Planogram and Budget PR admission
+        run: python scripts/ci/verify_ci_admission_policy.py --section planogram-budget
+      - name: Verify Jarvis scope and Release Authority preservation
+        run: python scripts/ci/verify_ci_admission_policy.py --section jarvis-release
+      - name: Verify aggregate CI admission policy
         run: python scripts/ci/verify_ci_admission_policy.py
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check

@@ -40,7 +40,7 @@ def _profile(engine_id, *, local, score):
         modalities=(Modality.TEXT,),
         supports_long_horizon=True,
         local_processing=local,
-        maximum_privacy=PrivacyLevel.INTERNAL,
+        maximum_privacy=PrivacyLevel.RESTRICTED,
         maximum_risk=TaskRisk.MEDIUM,
         exact_adapter_verified=True,
         production_enabled=True,
@@ -211,7 +211,9 @@ def test_admin_granted_frontier_call_is_metered_and_written_to_chargeback_ledger
     assert result.paid_usage.billable_microunits > result.paid_usage.provider_cost_microunits
     assert writes == [result.paid_usage]
     serialized = result.model_dump_json()
-    assert "secret" not in serialized
+    assert result.engine_receipt.secret_retained is False
+    assert result.paid_usage.provider_secret_retained is False
+    assert "sk-test-super-secret" not in serialized
     assert "Use the approved frontier model" not in serialized
 
 

@@ -33,9 +33,15 @@ def test_counting_to_submitted_requires_all_location_completion_inside_transitio
     assert "_assert_all_locations_completed" in rendered
 
 
-def test_other_state_transitions_do_not_redefine_completion_truth() -> None:
+def test_approval_cannot_bypass_explicit_reconciliation_state() -> None:
     rendered = ast.unparse(_function("transition"))
     assert "('COUNTING', 'SUBMITTED')" in rendered
     assert "('SUBMITTED', 'RECONCILING')" in rendered
     assert "('RECONCILING', 'APPROVED')" in rendered
     assert "('APPROVED', 'LOCKED')" in rendered
+    assert "('SUBMITTED', 'APPROVED')" not in rendered
+
+
+def test_rejection_remains_a_supervisor_escape_path_from_submitted() -> None:
+    rendered = ast.unparse(_function("transition"))
+    assert "('SUBMITTED', 'REJECTED')" in rendered

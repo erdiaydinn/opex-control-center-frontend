@@ -21,7 +21,7 @@ class RetryableCountPersistenceException(
  */
 class InventoryOfflineQueue(
     private val database: InventoryDatabase,
-) : ConfirmedCountEventSink {
+) : BlindCountEventSink {
     suspend fun enqueue(event: OfflineEvent) = database.withTransaction {
         val binding = requireInteractiveBinding()
         require(event.authBindingId.isBlank() || event.authBindingId == binding) {
@@ -42,52 +42,55 @@ class InventoryOfflineQueue(
         database.events().insert(boundEvent)
     }
 
-    /**
-     * Atomic count-line boundary: allocate the next durable device sequence,
-     * canonicalize the accepted scan + confirmed blind-count evidence and insert
-     * the immutable event under the current verified OIDC binding in one SQLCipher
-     * transaction.
-     *
-     * Contract/security violations remain fail-closed IllegalArgumentException.
-     * Storage/runtime failures are explicitly wrapped as retryable so the controller
-     * can preserve the exact event identity without silently advancing the count.
-     */
     override suspend fun enqueueConfirmedCount(
         context: InventoryCountEventContext,
         acceptedScan: AcceptedScan,
         evidence: BlindCountLineEvidence,
         eventId: String,
         occurredAt: String,
+    ): OfflineEvent = persistWithAllocatedSequence(eventId) { sequence, binding ->
+        InventoryCountEventFactory.create(
+            context = context,
+            acceptedScan = acceptedScan,
+            evidence = evidence,
+            deviceSequence = sequence,
+            eventId = eventId,
+            occurredAt = occurredAt,
+            authBindingId = binding,
+        )
+    }
+
+    override suspend fun enqueueLocationCompletion(
+        context: InventoryCountEventContext,
+        eventId: String,
+        occurredAt: String,
+    ): OfflineEvent = persistWithAllocatedSequence(eventId) { sequence, binding ->
+        InventoryLocationCompletionEventFactory.create(
+            context = context,
+            deviceSequence = sequence,
+            eventId = eventId,
+            occurredAt = occurredAt,
+            authBindingId = binding,
+        )
+    }
+
+    private suspend fun persistWithAllocatedSequence(
+        eventId: String,
+        factory: (Long, String) -> OfflineEvent,
     ): OfflineEvent = try {
         database.withTransaction {
             val binding = requireInteractiveBinding()
             val existing = database.events().byEventId(eventId)
             if (existing != null) {
-                val replayCandidate = InventoryCountEventFactory.create(
-                    context = context,
-                    acceptedScan = acceptedScan,
-                    evidence = evidence,
-                    deviceSequence = existing.deviceSequence,
-                    eventId = eventId,
-                    occurredAt = occurredAt,
-                    authBindingId = binding,
-                )
+                val replayCandidate = factory(existing.deviceSequence, binding)
                 require(OfflineEventIdentity.sameImmutableIdentity(existing, replayCandidate)) {
-                    "Offline count event ID collision"
+                    "Offline terminal event ID collision"
                 }
                 return@withTransaction existing
             }
 
             val nextSequence = Math.addExact(database.events().maxDeviceSequence(), 1L)
-            val event = InventoryCountEventFactory.create(
-                context = context,
-                acceptedScan = acceptedScan,
-                evidence = evidence,
-                deviceSequence = nextSequence,
-                eventId = eventId,
-                occurredAt = occurredAt,
-                authBindingId = binding,
-            )
+            val event = factory(nextSequence, binding)
             require(database.events().byDeviceSequence(nextSequence) == null) {
                 "Offline device sequence collision"
             }

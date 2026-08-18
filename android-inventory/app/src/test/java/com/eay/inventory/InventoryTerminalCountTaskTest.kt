@@ -18,6 +18,7 @@ class InventoryTerminalCountTaskTest {
         assertEquals("inventory.count:mission-1", target.missionId)
         assertEquals(BlindCountLocationToken.hash("A-04"), target.locationTokenHash)
         assertEquals("22222222-2222-4222-8222-222222222222", context.documentId)
+        assertEquals("SHIFT-20260818-001", context.activeShiftId)
         assertEquals(" a-04 ", context.locationId)
         assertEquals(MobileRuntimeProfile.EAY_TERMINAL, task.runtimeProfile)
     }
@@ -38,6 +39,13 @@ class InventoryTerminalCountTaskTest {
     }
 
     @Test
+    fun `missing server shift provenance fails closed`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            task(activeShiftId = "")
+        }
+    }
+
+    @Test
     fun `non counting task fails closed`() {
         assertThrows(IllegalArgumentException::class.java) {
             task(state = "APPROVED")
@@ -47,9 +55,11 @@ class InventoryTerminalCountTaskTest {
     private fun task(
         locationId: String = "A-04",
         state: String = "COUNTING",
+        activeShiftId: String = "SHIFT-20260818-001",
     ) = InventoryTerminalCountTask(
         missionId = "inventory.count:mission-1",
         documentId = "22222222-2222-4222-8222-222222222222",
+        activeShiftId = activeShiftId,
         warehouseId = "FULYA",
         locationId = locationId,
         name = "Weekly cycle count",

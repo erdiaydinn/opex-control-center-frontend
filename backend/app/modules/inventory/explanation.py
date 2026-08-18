@@ -29,8 +29,10 @@ def explanation_context(
     """Build bounded, read-only causal evidence for Jarvis from authoritative Inventory truth.
 
     Free-form audit records, revision reasons, raw barcodes, actor/employee identities and
-    device identifiers are deliberately excluded from this context. The consumer must treat
-    this structure as evidence, never as authorization or executable instructions.
+    device identifiers are deliberately excluded from this context. Count/variance truth is
+    derived only from COMPLETED mission attempts; abandoned evidence remains represented
+    only as an identity-free lifecycle aggregate. The consumer must treat this structure as
+    evidence, never as authorization or executable instructions.
     """
     principal.validate()
     from .production import connect
@@ -54,12 +56,25 @@ def explanation_context(
             )
 
         event_rows = db.execute(
-            """SELECT event_type,location_id,count(*)::integer AS event_count,
-                      min(occurred_at) AS first_seen_at,max(occurred_at) AS last_seen_at
-               FROM inventory_events
+            """SELECT e.event_type,e.location_id,count(*)::integer AS event_count,
+                      min(e.occurred_at) AS first_seen_at,max(e.occurred_at) AS last_seen_at
+               FROM inventory_events e
+               JOIN inventory_mission_attempts a
+                 ON a.tenant_id=e.tenant_id AND a.attempt_id=e.attempt_id
+                AND a.document_id=e.document_id AND a.location_id=e.location_id
+               WHERE e.tenant_id=%s AND e.document_id=%s
+                 AND a.status='COMPLETED'
+               GROUP BY e.event_type,e.location_id
+               ORDER BY min(e.occurred_at),e.event_type,e.location_id""",
+            (principal.tenant_id, document_id),
+        ).fetchall()
+
+        attempt_rows = db.execute(
+            """SELECT status,count(*)::integer AS attempt_count,
+                      count(DISTINCT location_id)::integer AS location_count
+               FROM inventory_mission_attempts
                WHERE tenant_id=%s AND document_id=%s
-               GROUP BY event_type,location_id
-               ORDER BY min(occurred_at),event_type,location_id""",
+               GROUP BY status ORDER BY status""",
             (principal.tenant_id, document_id),
         ).fetchall()
 
@@ -85,12 +100,16 @@ def explanation_context(
                  FROM inventory_expected_stock
                  WHERE tenant_id=%s AND document_id=%s
                ), counted AS (
-                 SELECT barcode,sum(quantity) AS counted_quantity
-                 FROM inventory_events
-                 WHERE tenant_id=%s AND document_id=%s
-                   AND event_type IN ('SCAN','UNEXPECTED_SKU')
-                   AND barcode IS NOT NULL
-                 GROUP BY barcode
+                 SELECT e.barcode,sum(e.quantity) AS counted_quantity
+                 FROM inventory_events e
+                 JOIN inventory_mission_attempts a
+                   ON a.tenant_id=e.tenant_id AND a.attempt_id=e.attempt_id
+                  AND a.document_id=e.document_id AND a.location_id=e.location_id
+                 WHERE e.tenant_id=%s AND e.document_id=%s
+                   AND e.event_type IN ('SCAN','UNEXPECTED_SKU')
+                   AND e.barcode IS NOT NULL
+                   AND a.status='COMPLETED'
+                 GROUP BY e.barcode
                ), joined AS (
                  SELECT COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0) AS variance,
                         (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*
@@ -113,10 +132,11 @@ def explanation_context(
         ).fetchone()
 
     evidence = {
-        "schema_version": 1,
-        "source": "inventory_authoritative_ledger",
+        "schema_version": 2,
+        "source": "inventory_completed_attempt_truth",
         "read_only": True,
         "free_text_excluded": True,
+        "abandoned_attempt_events_excluded_from_stock_truth": True,
         "tenant_id": principal.tenant_id,
         "document_id": str(document_id),
         "warehouse_id": document["warehouse_id"],
@@ -125,7 +145,8 @@ def explanation_context(
             "revision": document["revision"],
             "updated_at": document["updated_at"],
         },
-        "events": [dict(row) for row in event_rows],
+        "authoritative_events": [dict(row) for row in event_rows],
+        "attempt_lifecycle": [dict(row) for row in attempt_rows],
         "revisions": [dict(row) for row in revision_rows],
         "audit_entries": [dict(row) for row in audit_rows],
         "audit_chain_scope": "tenant_global_filtered_to_document",

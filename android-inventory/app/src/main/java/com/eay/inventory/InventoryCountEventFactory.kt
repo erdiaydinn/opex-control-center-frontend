@@ -9,20 +9,24 @@ data class InventoryCountEventContext(
     val missionId: String,
     val documentId: String,
     val activeShiftId: String,
+    val attemptId: String,
+    val leaseId: String,
     val locationId: String,
 ) {
     init {
         require(missionId.isNotBlank())
-        require(documentId.isNotBlank())
+        UUID.fromString(documentId)
         require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
+        UUID.fromString(attemptId)
+        UUID.fromString(leaseId)
         require(locationId.isNotBlank())
     }
 }
 
 /**
  * Converts one already-confirmed blind-count line into the immutable encrypted
- * queue contract. It does not grant authority and it does not accept raw scans;
- * callers must pass an AcceptedScan produced by ScannerIngressGuard.
+ * queue contract. Authority comes from the signed server-issued attempt + lease,
+ * never from a local task selection.
  */
 object InventoryCountEventFactory {
     fun create(
@@ -47,10 +51,12 @@ object InventoryCountEventFactory {
         val canonicalBody = TerminalEventCanonical.body(
             TerminalEventInput(
                 activeShiftId = context.activeShiftId,
+                attemptId = context.attemptId,
                 barcode = acceptedScan.value,
                 deviceSequence = deviceSequence,
                 documentId = context.documentId,
                 eventId = normalizedEventId,
+                leaseId = context.leaseId,
                 locationId = context.locationId,
                 occurredAt = occurredAt,
                 quantity = BigDecimal.valueOf(evidence.quantity.toLong()),

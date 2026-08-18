@@ -180,9 +180,11 @@ class TransientUserSecret(BaseModel):
     must_not_be_persisted_outside_vault: bool = True
 
     @model_validator(mode="after")
-    def transient_secret_is_time_bound(self) -> "TransientUserSecret":
+    def transient_secret_is_time_bound_and_nonblank(self) -> "TransientUserSecret":
         if self.captured_at.tzinfo is None or self.captured_at.utcoffset() is None:
             raise ValueError("transient_user_secret_requires_timezone")
+        if not self.secret_value.strip():
+            raise ValueError("transient_user_secret_cannot_be_blank")
         if not self.must_not_be_persisted_outside_vault:
             raise ValueError("user_secret_must_not_be_persisted_outside_vault")
         return self
@@ -194,6 +196,7 @@ class VaultEnrollmentReceipt(BaseModel):
     principal_ref: str
     credential_scope_ref: str
     credential_kind: CredentialKind
+    vault_provider_ref: str = Field(min_length=1)
     vault_ref: str = Field(min_length=1)
     enrolled_at: datetime
     enrollment_evidence_ref: str = Field(min_length=1)
@@ -242,4 +245,6 @@ def validate_vault_enrollment(
         raise ValueError("vault_enrollment_policy_identity_mismatch")
     if policy.credential_scope_ref != receipt.credential_scope_ref:
         raise ValueError("vault_enrollment_policy_scope_mismatch")
+    if receipt.vault_provider_ref != policy.approved_vault_ref:
+        raise ValueError("vault_enrollment_provider_not_approved")
     return receipt.vault_ref

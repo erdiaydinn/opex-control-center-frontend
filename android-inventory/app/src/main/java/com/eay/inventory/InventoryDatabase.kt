@@ -77,6 +77,13 @@ interface OfflineEventDao {
     )
     suspend fun due(now: Long, limit: Int = 100): List<OfflineEvent>
 
+    @Query(
+        "SELECT * FROM offline_events " +
+            "WHERE deviceSequence<:beforeSequence AND state<>'ACKED' " +
+            "ORDER BY deviceSequence",
+    )
+    suspend fun unsettledBefore(beforeSequence: Long): List<OfflineEvent>
+
     @Query("UPDATE offline_events SET state='ACKED' WHERE eventId=:eventId")
     suspend fun acknowledge(eventId: String)
 

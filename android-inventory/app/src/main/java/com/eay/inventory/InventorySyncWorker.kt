@@ -14,11 +14,12 @@ import com.eay.mobile.core.SyncServerOutcome
 import com.eay.mobile.core.SyncServerVerdict
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.io.IOException
+import java.time.Instant
 import java.util.UUID
 
 object InventorySyncClassifier {
@@ -59,10 +60,13 @@ class InventorySyncWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val db = InventoryDatabase.get(applicationContext)
         val dao = db.events()
-        val session = db.sessions().current() ?: return@withContext Result.failure()
+        val deviceId = runCatching {
+            ManagedDeviceIdentity(applicationContext).requireDeviceId()
+        }.getOrElse { return@withContext Result.failure() }
+        val session = db.sessions().get() ?: return@withContext Result.failure()
         if (session.authBindingId.isBlank()) return@withContext Result.failure()
 
-        if (!ensureFreshAccessToken(session)) {
+        if (AccessTokenMemory.freshOrNull() == null && refreshAccessToken(session) == null) {
             return@withContext Result.retry()
         }
 
@@ -75,7 +79,6 @@ class InventorySyncWorker(
             }
         }
 
-        val http = PinnedHttp.client()
         val url = BuildConfig.API_BASE_URL.trimEnd('/') +
             "/api/inventory/v1/terminal/events"
         for (event in due) {
@@ -92,36 +95,34 @@ class InventorySyncWorker(
                 continue
             }
 
-            val timestamp = TerminalEventCanonical.utcTimestamp()
-            val nonce = UUID.randomUUID().toString().replace("-", "")
-            val signature = DeviceRequestSigner.sign(
-                timestamp,
-                nonce,
-                event.payloadHash,
-            )
+            val timestamp = Instant.now().toString()
+            val nonce = UUID.randomUUID().toString()
+            val proof = "$deviceId\n$timestamp\n$nonce\n${event.payloadHash}"
+                .toByteArray(Charsets.UTF_8)
+            val signature = DeviceRequestSigner.sign(proof)
+            val requestBody = JSONObject(event.canonicalPayload)
+                .put("payload_hash", event.payloadHash)
+                .toString()
             val request = Request.Builder()
                 .url(url)
                 .header(
                     "Authorization",
                     "Bearer ${AccessTokenMemory.requireFresh()}",
                 )
-                .header(
-                    "X-EAY-Device-ID",
-                    ManagedDeviceIdentity(applicationContext).requireDeviceId(),
-                )
+                .header("X-EAY-Device-ID", deviceId.toString())
                 .header("X-EAY-Request-Timestamp", timestamp)
                 .header("X-EAY-Request-Nonce", nonce)
                 .header("X-EAY-Device-Signature", signature)
                 .post(
-                    event.canonicalPayload.toRequestBody(
+                    requestBody.toRequestBody(
                         "application/json".toMediaType(),
                     ),
                 )
                 .build()
 
-            val response = try {
-                http.newCall(request).execute()
-            } catch (_: IOException) {
+            val response = runCatching {
+                PinnedApi.client.newCall(request).execute()
+            }.getOrElse {
                 if (scheduleRetry(dao, event, "NETWORK_EXCEPTION")) {
                     return@withContext Result.retry()
                 }
@@ -141,7 +142,7 @@ class InventorySyncWorker(
                 when (verdict.outcome) {
                     SyncServerOutcome.COMMITTED,
                     SyncServerOutcome.EXACT_REPLAY,
-                    -> dao.ack(event.eventId, verdict.code)
+                    -> dao.acknowledgeWithCode(event.eventId, verdict.code)
 
                     SyncServerOutcome.AUTH_REJECTED -> {
                         AccessTokenMemory.clear()
@@ -200,7 +201,7 @@ class InventorySyncWorker(
             return false
         }
         val delay = RETRY_POLICY.delayAfterFailure(nextAttempts)
-        dao.retry(
+        dao.retryWithCode(
             event.eventId,
             System.currentTimeMillis() + delay,
             serverCode,
@@ -208,9 +209,43 @@ class InventorySyncWorker(
         return true
     }
 
-    private suspend fun ensureFreshAccessToken(session: AuthSession): Boolean {
-        if (AccessTokenMemory.freshOrNull() != null) return true
-        return TokenRefresh.refresh(applicationContext, session).isSuccess
+    private suspend fun refreshAccessToken(session: AuthSession): String? {
+        if (
+            session.authBindingId.isBlank() ||
+            !session.tokenEndpoint.startsWith("https://")
+        ) {
+            return null
+        }
+        val request = Request.Builder()
+            .url(session.tokenEndpoint)
+            .post(
+                FormBody.Builder()
+                    .add("grant_type", "refresh_token")
+                    .add("refresh_token", session.refreshToken)
+                    .add("client_id", session.clientId)
+                    .build(),
+            )
+            .build()
+        return runCatching {
+            PinnedApi.client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = JSONObject(response.body?.string().orEmpty())
+                val token = body.optString("access_token")
+                    .takeIf { it.isNotBlank() }
+                    ?: return@use null
+                val expiresAt = System.currentTimeMillis() +
+                    body.optLong("expires_in", 300L) * 1_000
+                val rotated = body.optString("refresh_token")
+                    .takeIf { it.isNotBlank() }
+                if (rotated != null) {
+                    InventoryDatabase.get(applicationContext)
+                        .sessions()
+                        .put(session.copy(refreshToken = rotated))
+                }
+                AccessTokenMemory.replace(token, expiresAt)
+                token
+            }
+        }.getOrNull()
     }
 
     companion object {

@@ -105,8 +105,8 @@ class NativeCredentialVault:
         )
         try:
             self._backend.set_password(self.service_name, item_id, secret.secret_value)
-        except Exception as exc:
-            raise RuntimeError("credential_vault_enrollment_failed") from exc
+        except Exception:
+            raise RuntimeError("credential_vault_enrollment_failed") from None
         enrolled_at = now or datetime.now(timezone.utc)
         return VaultEnrollmentReceipt(
             application_id=secret.application_id,
@@ -135,8 +135,8 @@ class NativeCredentialVault:
         )
         try:
             secret = self._backend.get_password(self.service_name, item_id)
-        except Exception as exc:
-            raise RuntimeError("credential_vault_lookup_failed") from exc
+        except Exception:
+            raise RuntimeError("credential_vault_lookup_failed") from None
         return ManagedCredentialObservation(
             application_id=application_id,
             principal_ref=principal_ref,
@@ -170,8 +170,8 @@ class NativeCredentialVault:
             raise ValueError("credential_vault_ref_identity_or_scope_mismatch")
         try:
             secret = self._backend.get_password(self.service_name, actual_item_id)
-        except Exception as exc:
-            raise RuntimeError("credential_vault_lookup_failed") from exc
+        except Exception:
+            raise RuntimeError("credential_vault_lookup_failed") from None
         if not secret:
             raise KeyError("credential_vault_item_missing")
         issued_at = now or datetime.now(timezone.utc)
@@ -204,15 +204,15 @@ class NativeCredentialVault:
             raise ValueError("credential_vault_ref_identity_or_scope_mismatch")
         try:
             self._backend.delete_password(self.service_name, actual_item_id)
-        except Exception as exc:
-            raise RuntimeError("credential_vault_revoke_failed") from exc
+        except Exception:
+            raise RuntimeError("credential_vault_revoke_failed") from None
 
 
 def load_system_native_credential_vault() -> NativeCredentialVault:
     try:
         import keyring  # type: ignore[import-not-found]
-    except ImportError as exc:  # pragma: no cover - optional production dependency
-        raise RuntimeError("credential_vault_optional_keyring_dependency_not_installed") from exc
+    except ImportError:
+        raise RuntimeError("credential_vault_optional_keyring_dependency_not_installed") from None
 
     backend = keyring.get_keyring()
     priority = getattr(backend, "priority", 0)

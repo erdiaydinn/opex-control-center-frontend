@@ -7,19 +7,16 @@ on:
       - release/platform-convergence-v0.1
       - product/eay-category-leadership-v1
     paths:
-      - "services/core-api/app/ai_tool_routes.py"
-      - "services/core-api/app/core/ai_*.py"
-      - "services/core-api/tests/test_ai_*.py"
+      - "services/core-api/**"
       - "services/eay-ai-core/**"
       - ".github/workflows/jarvis-convergence-ci.yml"
   pull_request:
     branches:
       - release/platform-convergence-v0.1
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
     paths:
-      - "services/core-api/app/ai_tool_routes.py"
-      - "services/core-api/app/core/ai_*.py"
-      - "services/core-api/tests/test_ai_*.py"
+      - "services/core-api/**"
       - "services/eay-ai-core/**"
       - ".github/workflows/jarvis-convergence-ci.yml"
 
@@ -110,7 +107,7 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = '0018_academy_product_roles'
+          test "${heads[0]}" = '0036_planogram_product_roles'
       - name: Apply cumulative database migrations
         working-directory: services/core-api
         run: alembic upgrade head

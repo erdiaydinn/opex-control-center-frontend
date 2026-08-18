@@ -4,6 +4,7 @@ Revision ID: 0037_budget_planning_authority
 Revises: 0036_planogram_product_roles
 """
 from collections.abc import Sequence
+
 from alembic import op
 
 revision: str = "0037_budget_planning_authority"
@@ -135,10 +136,12 @@ def upgrade() -> None:
     """)
     op.execute("CREATE TRIGGER trg_budget_scenario_publish BEFORE UPDATE ON budget_scenario FOR EACH ROW EXECUTE FUNCTION budget_scenario_publish_guard()")
     for table in ('budget_plan_snapshot','budget_scenario','budget_scenario_assumption'):
-        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"); op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
         op.execute(f"CREATE POLICY {table}_tenant_policy ON {table} USING (budget_tenant_allows(tenant_id)) WITH CHECK (budget_tenant_allows(tenant_id))")
     for table,column in (('budget_scenario_line','cost_center_id'),('budget_allocation_rule','target_cost_center_id')):
-        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"); op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
         op.execute(f"CREATE POLICY {table}_scope_policy ON {table} USING (budget_tenant_allows(tenant_id) AND budget_scope_allows({column})) WITH CHECK (budget_tenant_allows(tenant_id) AND budget_scope_allows({column}))")
     op.execute(f"GRANT SELECT ON budget_plan_snapshot TO {RUNTIME_ROLE}")
     op.execute(f"REVOKE INSERT,UPDATE,DELETE ON budget_plan_snapshot FROM {RUNTIME_ROLE}")

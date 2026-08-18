@@ -4,20 +4,21 @@ Revision ID: 0040_budget_planning_hardening
 Revises: 0039_budget_finance_controls
 """
 from collections.abc import Sequence
+
 from alembic import op
 
-revision: str='0040_budget_planning_hardening'
-down_revision: str|None='0039_budget_finance_controls'
-branch_labels: str|Sequence[str]|None=None
-depends_on: str|Sequence[str]|None=None
-RUNTIME='opex_runtime'
+revision: str = "0040_budget_planning_hardening"
+down_revision: str | None = "0039_budget_finance_controls"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+RUNTIME = "opex_runtime"
 
 
-def upgrade()->None:
-    for table in ('budget_plan_snapshot','budget_scenario','budget_scenario_assumption'):
-        op.execute(f'DROP POLICY IF EXISTS {table}_tenant_policy ON {table}')
+def upgrade() -> None:
+    for table in ("budget_plan_snapshot", "budget_scenario", "budget_scenario_assumption"):
+        op.execute(f"DROP POLICY IF EXISTS {table}_tenant_policy ON {table}")
         op.execute(f"CREATE POLICY {table}_global_planning_scope ON {table} USING (budget_tenant_allows(tenant_id) AND current_setting('app.budget_cost_center_ids',true)='__all__') WITH CHECK (budget_tenant_allows(tenant_id) AND current_setting('app.budget_cost_center_ids',true)='__all__')")
-    op.execute('DROP POLICY IF EXISTS budget_allocation_rule_scope_policy ON budget_allocation_rule')
+    op.execute("DROP POLICY IF EXISTS budget_allocation_rule_scope_policy ON budget_allocation_rule")
     op.execute("CREATE POLICY budget_allocation_rule_global_scope ON budget_allocation_rule USING (budget_tenant_allows(tenant_id) AND current_setting('app.budget_cost_center_ids',true)='__all__') WITH CHECK (budget_tenant_allows(tenant_id) AND current_setting('app.budget_cost_center_ids',true)='__all__')")
     op.execute("""
     CREATE OR REPLACE FUNCTION budget_scenario_publish_guard() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -41,15 +42,15 @@ def upgrade()->None:
       RETURN NEW;
     END $$
     """)
-    op.execute(f'REVOKE UPDATE ON budget_scenario FROM {RUNTIME}')
-    op.execute(f'GRANT UPDATE(status,published_by,published_at) ON budget_scenario TO {RUNTIME}')
+    op.execute(f"REVOKE UPDATE ON budget_scenario FROM {RUNTIME}")
+    op.execute(f"GRANT UPDATE(status,published_by,published_at) ON budget_scenario TO {RUNTIME}")
 
 
-def downgrade()->None:
-    op.execute(f'REVOKE UPDATE ON budget_scenario FROM {RUNTIME}')
-    op.execute(f'GRANT UPDATE ON budget_scenario TO {RUNTIME}')
-    op.execute('DROP POLICY IF EXISTS budget_allocation_rule_global_scope ON budget_allocation_rule')
+def downgrade() -> None:
+    op.execute(f"REVOKE UPDATE ON budget_scenario FROM {RUNTIME}")
+    op.execute(f"GRANT UPDATE ON budget_scenario TO {RUNTIME}")
+    op.execute("DROP POLICY IF EXISTS budget_allocation_rule_global_scope ON budget_allocation_rule")
     op.execute("CREATE POLICY budget_allocation_rule_scope_policy ON budget_allocation_rule USING (budget_tenant_allows(tenant_id) AND budget_scope_allows(target_cost_center_id)) WITH CHECK (budget_tenant_allows(tenant_id) AND budget_scope_allows(target_cost_center_id))")
-    for table in ('budget_plan_snapshot','budget_scenario','budget_scenario_assumption'):
-        op.execute(f'DROP POLICY IF EXISTS {table}_global_planning_scope ON {table}')
-        op.execute(f'CREATE POLICY {table}_tenant_policy ON {table} USING (budget_tenant_allows(tenant_id)) WITH CHECK (budget_tenant_allows(tenant_id))')
+    for table in ("budget_plan_snapshot", "budget_scenario", "budget_scenario_assumption"):
+        op.execute(f"DROP POLICY IF EXISTS {table}_global_planning_scope ON {table}")
+        op.execute(f"CREATE POLICY {table}_tenant_policy ON {table} USING (budget_tenant_allows(tenant_id)) WITH CHECK (budget_tenant_allows(tenant_id))")

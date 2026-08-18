@@ -57,7 +57,18 @@ jobs:
           PY
       - name: Strict lint and unit contracts
         run: |
-          ruff check services/core-api/app/modules/budget/planning_engine.py services/core-api/app/modules/budget/planning_engine_routes.py services/core-api/app/modules/budget/planning_engine_schemas.py services/core-api/app/modules/budget/intelligence.py services/core-api/tests/test_budget_master28_planning.py services/core-api/tests/test_budget_master28_hardening.py services/core-api/tests/test_budget_master29_30_controls.py
+          ruff check \
+            services/core-api/alembic/versions/0037_budget_planning_authority.py \
+            services/core-api/alembic/versions/0038_budget_ai_recommendation_authority.py \
+            services/core-api/alembic/versions/0039_budget_finance_controls.py \
+            services/core-api/alembic/versions/0040_budget_planning_hardening.py \
+            services/core-api/app/modules/budget/planning_engine.py \
+            services/core-api/app/modules/budget/planning_engine_routes.py \
+            services/core-api/app/modules/budget/planning_engine_schemas.py \
+            services/core-api/app/modules/budget/intelligence.py \
+            services/core-api/tests/test_budget_master28_planning.py \
+            services/core-api/tests/test_budget_master28_hardening.py \
+            services/core-api/tests/test_budget_master29_30_controls.py
           pytest -q services/core-api/tests/test_budget_domain.py services/core-api/tests/test_budget_master28_planning.py services/core-api/tests/test_budget_master28_hardening.py services/core-api/tests/test_budget_master29_30_controls.py services/core-api/tests/test_sql_access_boundary.py
       - name: Apply cumulative migrations and preserve Budget 0040 milestone
         working-directory: services/core-api

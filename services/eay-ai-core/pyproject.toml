@@ -26,6 +26,7 @@ bigquery = [
 ]
 computer-use = [
   "playwright>=1.60,<2",
+  "keyring>=25.7,<26",
 ]
 training = [
   "torch>=2.6,<3",

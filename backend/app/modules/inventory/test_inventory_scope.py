@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from .test_inventory_explanation_attempt_truth import InventoryExplanationAttemptTruthTests
+
 
 class InventoryWarehouseScopeTests(unittest.TestCase):
     @classmethod
@@ -57,6 +59,11 @@ class InventoryWarehouseScopeTests(unittest.TestCase):
         self.assertNotIn("SECRET-SKU", serialized)
         self.assertNotIn("expected", serialized)
         self.assertEqual(task["location_count"], 1)
+
+
+def load_tests(loader, tests, pattern):
+    tests.addTests(loader.loadTestsFromTestCase(InventoryExplanationAttemptTruthTests))
+    return tests
 
 
 if __name__ == "__main__":

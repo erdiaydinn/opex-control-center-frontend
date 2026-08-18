@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
 ARCHIVE = ROOT / "docs" / "ci" / "historical-workflows"
 CATEGORY = "product/eay-category-leadership-v1"
+RELEASE_AUTHORITY = "eay-master-roadmap-56-60-release-leadership.yml"
 
 HISTORICAL = (
     "eay-roadmap-1-10-acceptance.yml",
@@ -62,7 +63,6 @@ def pull_request_block(head: str) -> str:
     for boundary in ("workflow_dispatch:", "permissions:", "concurrency:"):
         if boundary in pr:
             pr = pr.split(boundary, 1)[0]
-    # push may appear after pull_request in some workflow layouts.
     if "\n  push:" in pr:
         pr = pr.split("\n  push:", 1)[0]
     return pr
@@ -118,8 +118,19 @@ def check_jarvis_release() -> None:
     assert "paths:" in jarvis_pr, "Jarvis PR path scope missing"
     assert '"services/core-api/**"' not in jarvis_pr, "Jarvis gate still consumes the whole Core API tree"
     require_stable_concurrency("jarvis-convergence-ci.yml", jarvis_head)
-    release = WF / "eay-master-roadmap-56-60-release-leadership.yml"
-    assert release.is_file(), "Master 56-60 Release Authority workflow missing"
+
+    # Master 56-60 Release Authority currently lives on its own workstream PR
+    # until composed into category canonical. Admission control must not create
+    # or replace a parallel authority. Once present, verify its canonical name.
+    release = WF / RELEASE_AUTHORITY
+    if release.is_file():
+        release_source = release.read_text(encoding="utf-8")
+        assert "EAY Master Roadmap 56-60 - Release Authority" in release_source, (
+            "unexpected Master 56-60 release workflow identity"
+        )
+        print("CI_ADMISSION_RELEASE_AUTHORITY=PRESENT_PRESERVED")
+    else:
+        print("CI_ADMISSION_RELEASE_AUTHORITY=SEPARATE_WORKSTREAM")
     print("CI_ADMISSION_JARVIS_RELEASE=PASS")
 
 
@@ -144,7 +155,7 @@ def main() -> None:
     print("historical_1_10_1_14=archived_inert")
     print("domain_pr_gates=path_scoped")
     print("superseded_pr_runs=stable_non_sha_concurrency")
-    print("release_authority=preserved")
+    print("release_authority=preserved_or_separate_workstream")
 
 
 if __name__ == "__main__":

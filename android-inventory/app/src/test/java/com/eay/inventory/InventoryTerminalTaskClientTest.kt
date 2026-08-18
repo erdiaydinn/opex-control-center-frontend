@@ -24,8 +24,43 @@ class InventoryTerminalTaskClientTest {
         assertEquals(2, tasks.size)
         assertEquals(" A-04 ", tasks[0].locationId)
         assertEquals("SHIFT-20260818-001", tasks[0].activeShiftId)
+        assertEquals(InventoryMissionClaimStatus.AVAILABLE, tasks[0].claimStatus)
         assertEquals("inventory.count", tasks[0].operation)
         assertEquals("EAY_TERMINAL", tasks[0].runtimeProfile.name)
+    }
+
+    @Test
+    fun `owned task requires complete attempt lease tuple`() {
+        val owned = InventoryTerminalTaskContract.map(
+            listOf(
+                row(
+                    "inventory.count:a",
+                    "A-04",
+                    claimStatus = "OWNED",
+                    attemptId = ATTEMPT_ID,
+                    leaseId = LEASE_ID,
+                    leaseValidUntil = "2026-08-18T15:15:00Z",
+                ),
+            ),
+        ).single()
+        assertEquals(InventoryMissionClaimStatus.OWNED, owned.claimStatus)
+        assertEquals(ATTEMPT_ID, owned.attemptId)
+        assertEquals(LEASE_ID, owned.leaseId)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryTerminalTaskContract.map(
+                listOf(row("inventory.count:b", "B-05", claimStatus = "OWNED")),
+            )
+        }
+    }
+
+    @Test
+    fun `available task cannot carry live lease`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryTerminalTaskContract.map(
+                listOf(row("inventory.count:a", "A-04", leaseId = LEASE_ID)),
+            )
+        }
     }
 
     @Test
@@ -62,7 +97,7 @@ class InventoryTerminalTaskClientTest {
     }
 
     @Test
-    fun `wrong operation or runtime profile fails closed`() {
+    fun `wrong operation runtime or claim status fails closed`() {
         assertThrows(IllegalArgumentException::class.java) {
             InventoryTerminalTaskContract.map(
                 listOf(row("inventory.count:a", "A-04", operation = "inventory.approve")),
@@ -71,6 +106,11 @@ class InventoryTerminalTaskClientTest {
         assertThrows(IllegalArgumentException::class.java) {
             InventoryTerminalTaskContract.map(
                 listOf(row("inventory.count:a", "A-04", runtimeProfile = "EAY_ONE")),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryTerminalTaskContract.map(
+                listOf(row("inventory.count:a", "A-04", claimStatus = "CLIENT_GRANTED")),
             )
         }
     }
@@ -114,6 +154,10 @@ class InventoryTerminalTaskClientTest {
         missionId: String,
         locationId: String,
         activeShiftId: String = "SHIFT-20260818-001",
+        claimStatus: String = "AVAILABLE",
+        attemptId: String? = null,
+        leaseId: String? = null,
+        leaseValidUntil: String? = null,
         operation: String = "inventory.count",
         runtimeProfile: String = "EAY_TERMINAL",
     ) = InventoryTerminalTaskWire(
@@ -126,7 +170,16 @@ class InventoryTerminalTaskClientTest {
         state = "COUNTING",
         revision = 3,
         locationCount = 2,
+        claimStatus = claimStatus,
+        attemptId = attemptId,
+        leaseId = leaseId,
+        leaseValidUntil = leaseValidUntil,
         operation = operation,
         runtimeProfile = runtimeProfile,
     )
+
+    companion object {
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    }
 }

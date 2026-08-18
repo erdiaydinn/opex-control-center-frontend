@@ -1,5 +1,6 @@
-HEAD=ac14f757cb55cd9ab7337fdf9848b84b174f60c7
+HEAD=2a49b85467e1c8bb5365893e8f2250a9ce841a3e
 RUFF_VERSION=ruff 0.16.3
+AUTOPEP8_VERSION=autopep8 2.3.2 (pycodestyle: 2.14.0)
 ---
 services/core-api/alembic/versions/0019_field_intelligence_foundation.py:195:101: E501 Line too long (113 > 100)
 services/core-api/alembic/versions/0019_field_intelligence_foundation.py:278:101: E501 Line too long (161 > 100)

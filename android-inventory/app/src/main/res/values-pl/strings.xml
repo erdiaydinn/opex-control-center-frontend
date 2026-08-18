@@ -28,4 +28,11 @@
     <string name="terminal_sign_in_cancelled">Logowanie firmowe anulowane</string>
     <string name="terminal_invalid_quantity">Wprowadź prawidłową nieujemną ilość</string>
     <string name="terminal_complete">Misja liczenia zakończona</string>
+    <string name="terminal_finish_location">Zakończ lokalizację</string>
+    <string name="terminal_finish_location_title">Zakończyć tę lokalizację?</string>
+    <string name="terminal_finish_location_message">Lokalizacja: %1$s\nZapisane wpisy liczenia: %2$d\nPodpisane zdarzenie zakończenia zostanie dodane do bezpiecznej kolejki.</string>
+    <string name="terminal_cancel">Anuluj</string>
+    <string name="terminal_finish_location_confirm">Zakończ lokalizację</string>
+    <string name="terminal_location_complete_queued">Lokalizacja zakończona · bezpieczna synchronizacja w kolejce</string>
+    <string name="terminal_completion_retry">Bezpieczna kolejka niedostępna · ponów zakończenie lokalizacji</string>
 </resources>

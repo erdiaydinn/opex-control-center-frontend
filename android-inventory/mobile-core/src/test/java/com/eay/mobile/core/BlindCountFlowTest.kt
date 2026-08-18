@@ -138,4 +138,67 @@ class BlindCountFlowTest {
         val result = BlindCountFlow.confirmItem(alreadyAtTarget, target)
         assertEquals(BlindCountCode.DENY_TARGET, result.code)
     }
+
+    @Test
+    fun `open ended location may complete only between item scans`() {
+        val target = BlindCountTarget(
+            missionId = "mission-1",
+            locationTokenHash = BlindCountLocationToken.hash("A-04-02"),
+        )
+        val ready = BlindCountSession(
+            missionId = "mission-1",
+            step = BlindCountStep.SCAN_ITEM,
+            locationVerified = true,
+            confirmedLineCount = 3,
+        )
+        val completed = BlindCountFlow.completeLocation(ready, target)
+        assertTrue(completed.accepted)
+        assertEquals(BlindCountStep.COMPLETE, completed.session.step)
+        assertEquals(3, completed.session.confirmedLineCount)
+
+        val midItem = ready.copy(
+            step = BlindCountStep.ENTER_QUANTITY,
+            currentItemHash = sha256("8691234567890"),
+        )
+        assertEquals(
+            BlindCountCode.DENY_STEP,
+            BlindCountFlow.completeLocation(midItem, target).code,
+        )
+    }
+
+    @Test
+    fun `explicit target cannot be bypassed by manual location completion`() {
+        val target = BlindCountTarget(
+            missionId = "mission-1",
+            locationTokenHash = BlindCountLocationToken.hash("A-04-02"),
+            targetLineCount = 5,
+        )
+        val incomplete = BlindCountSession(
+            missionId = "mission-1",
+            step = BlindCountStep.SCAN_ITEM,
+            locationVerified = true,
+            confirmedLineCount = 4,
+        )
+        assertEquals(
+            BlindCountCode.DENY_TARGET,
+            BlindCountFlow.completeLocation(incomplete, target).code,
+        )
+    }
+
+    @Test
+    fun `verified empty location can be explicitly completed`() {
+        val target = BlindCountTarget(
+            missionId = "mission-1",
+            locationTokenHash = BlindCountLocationToken.hash("EMPTY-01"),
+        )
+        val verified = BlindCountFlow.verifyLocation(
+            BlindCountSession("mission-1"),
+            target,
+            accepted("location-empty", "EMPTY-01"),
+        ).session
+        val completed = BlindCountFlow.completeLocation(verified, target)
+        assertTrue(completed.accepted)
+        assertEquals(0, completed.session.confirmedLineCount)
+        assertEquals(BlindCountStep.COMPLETE, completed.session.step)
+    }
 }

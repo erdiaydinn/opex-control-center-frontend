@@ -41,8 +41,9 @@ def test_v5_database_enforces_attempt_lease_history_and_rls() -> None:
 
 def test_claim_is_transactional_idempotent_and_never_retroactively_extends_a_lease() -> None:
     rendered = ast.unparse(_function(LEASE_MODULE, "claim_terminal_mission"))
-    assert "SERIALIZABLE" in rendered
+    assert "READ COMMITTED" in rendered
     assert "pg_advisory_xact_lock" in rendered
+    assert "FOR UPDATE" in rendered
     assert "_verify_device_proof" in rendered
     assert "valid_until>%s" in rendered
     assert "idempotent=True" in rendered

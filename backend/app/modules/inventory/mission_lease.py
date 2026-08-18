@@ -20,7 +20,6 @@ from .production import (
 )
 from .service import InventoryRuleError
 
-
 LEASE_SECONDS_MIN = 120
 LEASE_SECONDS_MAX = 3600
 LEASE_SECONDS_DEFAULT = 900

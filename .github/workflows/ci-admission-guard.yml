@@ -4,12 +4,14 @@ on:
   pull_request:
     branches:
       - product/eay-category-leadership-v1
+      - fix/ci-admission-control-v1
     paths:
       - ".github/workflows/**"
       - "scripts/ci/apply_ci_admission_control.py"
       - "scripts/ci/apply_exact_head_concurrency.py"
       - "scripts/ci/apply_inventory_admission_control.py"
       - "scripts/ci/migrate_legacy_exact_head_headers.py"
+      - ".ci/ci-admission-validation-trigger.txt"
   push:
     branches:
       - product/eay-category-leadership-v1

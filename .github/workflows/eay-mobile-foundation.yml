@@ -6,6 +6,7 @@ on:
       - product/eay-category-leadership-v1
     paths:
       - "android-inventory/**"
+      - "android-field-ui/**"
       - "mobile-presentation-contracts/**"
       - "config/eay_mobile_platform.json"
       - "config/eay_localization.json"
@@ -125,7 +126,7 @@ jobs:
 
   android-mobile-core:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: android-inventory
@@ -139,7 +140,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
         with:
           gradle-version: "8.9"
-      - name: Unit, lint, typed presentation adapter and executable terminal regression
+      - name: Unit, lint, shared Compose compatibility, typed adapter and executable terminal regression
         run: >-
           gradle --no-daemon clean
           :mobile-core:testDebugUnitTest
@@ -147,6 +148,9 @@ jobs:
           :field-presentation-adapter:testDebugUnitTest
           :field-presentation-adapter:lintDebug
           :field-presentation-adapter:assembleDebug
+          :field-ui-runtime:testDebugUnitTest
+          :field-ui-runtime:lintDebug
+          :field-ui-runtime:assembleDebug
           :app:testDebugUnitTest
           :app:lintDebug
           :app:assembleDebug

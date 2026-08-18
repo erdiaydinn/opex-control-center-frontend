@@ -10,6 +10,7 @@ from pathlib import Path
 ROUTER = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "router.py"
 PRODUCTION_AUTHORIZED_ROUTES = {
     "create_production_document",
+    "production_terminal_tasks",
     "production_reconciliation",
     "transition_document",
 }

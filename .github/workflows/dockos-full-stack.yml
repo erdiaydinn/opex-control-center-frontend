@@ -2,11 +2,38 @@ name: DockOS full-stack validation
 
 on:
   pull_request:
+    paths:
+      - "backend/app/modules/workforce/**"
+      - "backend/app/modules/recruitment/**"
+      - "backend/app/modules/dockos/**"
+      - "backend/app/test_security.py"
+      - "backend/migrations/*workforce*.sql"
+      - "backend/migrations/*dockos*.sql"
+      - "backend/migrations/*recruit*.sql"
+      - "backend/scripts/setup_workforce_postgres_ci.py"
+      - "backend/scripts/workforce_postgres_load_ci.py"
+      - "backend/scripts/verify_workforce_restore_ci.py"
+      - "backend/requirements.txt"
+      - "src/**/*workforce*"
+      - "src/**/Workforce/**"
+      - "src/**/*dockos*"
+      - "src/**/DockOS/**"
+      - "src/**/*hiring*"
+      - "src/**/Hiring/**"
+      - "src/**/*recruit*"
+      - "src/**/Recruitment/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/dockos-full-stack.yml"
   workflow_dispatch:
   push:
     branches:
       - main
       - product/workforce-**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:

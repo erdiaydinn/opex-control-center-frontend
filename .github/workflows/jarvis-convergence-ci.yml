@@ -99,7 +99,7 @@ jobs:
         run: ruff check services/core-api --output-format=github
       - name: Preserve central SQL access boundary before migrations
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
-      - name: Enforce one cumulative Alembic head
+      - name: Enforce one cumulative Alembic head and preserve Planogram milestone
         working-directory: services/core-api
         shell: bash
         run: |
@@ -107,7 +107,8 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = '0036_planogram_product_roles'
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0036_planogram_product_roles' /tmp/eay-alembic-history.txt
       - name: Apply cumulative database migrations
         working-directory: services/core-api
         run: alembic upgrade head

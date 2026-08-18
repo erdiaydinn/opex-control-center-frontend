@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Read-only verifier for the final EAY GitHub Actions admission policy.
+"""Read-only verifier for EAY GitHub Actions admission policy.
 
-Workstream PRs run relevant delta gates; canonical composition retains broad
-regression authority. Historical Roadmap 1-10..1-14 definitions remain
-version-controlled for audit but are inert outside .github/workflows.
+Workstream PRs run scoped delta gates. The rolling category PR back to
+product-completion retains the 1-10..1-14 cumulative bridge required by later
+exact-head gates. Archived copies remain version-controlled for audit.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
 ARCHIVE = ROOT / "docs" / "ci" / "historical-workflows"
 
-HISTORICAL = (
+ROLLING_BRIDGE = (
     "eay-roadmap-1-10-acceptance.yml",
     "eay-roadmap-1-10-exact-head.yml",
     "eay-roadmap-1-11-exact-head.yml",
@@ -86,19 +86,21 @@ def main() -> None:
         except AssertionError as exc:
             failures.append(str(exc))
 
-    # Historical gates are preserved verbatim for audit, but cannot consume
-    # Actions capacity anymore.
-    for name in HISTORICAL:
-        check(lambda name=name: (
-            (_ for _ in ()).throw(AssertionError(f"historical workflow still active: {name}"))
-            if (WF / name).exists()
-            else None
-        ))
-        check(lambda name=name: (
-            None
-            if (ARCHIVE / name).is_file()
-            else (_ for _ in ()).throw(AssertionError(f"historical archive missing: {name}"))
-        ))
+    # These gates are not general workstream PR gates. They exist only to
+    # re-prove the rolling category PR (#94) against product-completion so
+    # 1-15+ can require the previous exact-head result without deadlocking.
+    for name in ROLLING_BRIDGE:
+        def rolling_check(name=name) -> None:
+            source = read(name)
+            block = pull_request_block(source)
+            if "product/eay-product-completion-v1" not in block:
+                raise AssertionError(f"{name}: rolling product-completion PR admission missing")
+            if "product/eay-category-leadership-v1" in block:
+                raise AssertionError(f"{name}: category-targeted workstream PR admission must stay disabled")
+            if not (ARCHIVE / name).is_file():
+                raise AssertionError(f"{name}: audit archive missing")
+            stable_non_sha(name, source)
+        check(rolling_check)
 
     for helper in (
         ROOT / "scripts/ci/apply_inventory_admission_control.py",
@@ -107,7 +109,6 @@ def main() -> None:
         if helper.exists():
             failures.append(f"temporary mutation helper still present: {helper.relative_to(ROOT)}")
 
-    # DockOS cannot be a global PR gate or impersonate Inventory acceptance.
     def dockos_check() -> None:
         source = read("dockos-full-stack.yml")
         block = pull_request_block(source)
@@ -125,9 +126,6 @@ def main() -> None:
         stable_non_sha("dockos-full-stack.yml", source)
     check(dockos_check)
 
-    # Inventory owns its focused backend/DB/Android proof. Generic identity
-    # authority remains in the dedicated Security/Platform gates rather than
-    # requiring Inventory to fabricate a local JWT test environment.
     def inventory_check() -> None:
         source = read("eay-inventory-production.yml")
         block = pull_request_block(source)
@@ -146,7 +144,6 @@ def main() -> None:
         stable_non_sha("opex-inventory-android.yml", android)
     check(inventory_check)
 
-    # Planogram and Budget run only relevant workstream deltas on PRs.
     for name in PLANOGRAM:
         check(lambda name=name: require_pr_paths(name, ('"apps/planai/**"',)))
     check(lambda: require_pr_paths(
@@ -154,7 +151,6 @@ def main() -> None:
         ('"backend/app/modules/budget/**"',),
     ))
 
-    # Jarvis Orders V2 may not consume the entire Core API tree.
     def jarvis_check() -> None:
         source = read("jarvis-convergence-ci.yml")
         block = pull_request_block(source)
@@ -167,9 +163,6 @@ def main() -> None:
         stable_non_sha("jarvis-convergence-ci.yml", source)
     check(jarvis_check)
 
-    # Master 56-60 legitimately remains a separate PR until composed. If it is
-    # present later, verify its reviewed identity instead of creating a second
-    # authority here.
     release_path = WF / "eay-master-roadmap-56-60-release-leadership.yml"
     if release_path.exists():
         release = release_path.read_text(encoding="utf-8")
@@ -188,12 +181,13 @@ def main() -> None:
         raise SystemExit("CI admission policy verification failed:\n- " + "\n- ".join(failures))
 
     print("CI_ADMISSION_POLICY=PASS")
-    print("historical_1_10_1_14=archived_inert")
+    print("rolling_1_10_1_14=product_completion_only")
+    print("category_targeted_workstream_legacy_fanout=false")
     print("domain_heavy_pr_admission=scoped")
     print("superseded_pr_runs=stable_non_sha_concurrency")
     print("dockos_inventory_fanout=false")
     print("jarvis_core_api_fanout=false")
-    print("canonical_push_regression=preserved")
+    print("canonical_cumulative_chain=preserved")
 
 
 if __name__ == "__main__":

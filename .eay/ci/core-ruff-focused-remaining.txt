@@ -1,4 +1,4 @@
-HEAD=fb5e9a15684c711549c34972da1cd0715a18c23b
+HEAD=0d2def241a52633c7fb2edaeed3ebb0b0fadff34
 RUFF_VERSION=ruff 0.16.3
 ---
 services/core-api/alembic/versions/0030_planogram_store_dna_foundation.py:126:101: E501 Line too long (101 > 100)

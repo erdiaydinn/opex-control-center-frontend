@@ -10,7 +10,7 @@ Safety / UX rules:
 - an open-palm dwell arms the hand, then a thumb/index pinch grabs;
 - horizontal drag while pinched emits one left/right window-transfer intent;
 - vertical/noisy motion, weak tracking and stale sessions do nothing;
-- a closed-fist observation cancels the current hand state;
+- a closed-fist observation emits an explicit CANCEL intent and resets state;
 - no business/application mutation authority is granted by a gesture.
 """
 
@@ -35,6 +35,7 @@ class Handedness(str, Enum):
 class SpatialGestureCommand(str, Enum):
     MOVE_ACTIVE_WINDOW_LEFT = "move_active_window_left"
     MOVE_ACTIVE_WINDOW_RIGHT = "move_active_window_right"
+    CANCEL = "cancel"
 
 
 class Landmark3D(BaseModel):
@@ -74,6 +75,7 @@ class SpatialControlSession(BaseModel):
         {
             SpatialGestureCommand.MOVE_ACTIVE_WINDOW_LEFT,
             SpatialGestureCommand.MOVE_ACTIVE_WINDOW_RIGHT,
+            SpatialGestureCommand.CANCEL,
         }
     )
     raw_video_retained: bool = False
@@ -114,6 +116,8 @@ class SpatialGestureIntent(BaseModel):
     def intent_is_compact_local_ui_control(self) -> "SpatialGestureIntent":
         if self.emitted_at.tzinfo is None or self.emitted_at.utcoffset() is None:
             raise ValueError("spatial_gesture_intent_requires_timezone")
+        if self.command is SpatialGestureCommand.CANCEL and abs(self.horizontal_displacement) > 1e-12:
+            raise ValueError("spatial_cancel_cannot_claim_displacement")
         if self.raw_landmarks_retained:
             raise ValueError("spatial_gesture_intent_cannot_retain_landmarks")
         if self.business_side_effects_authorized:
@@ -213,6 +217,10 @@ class SpatialGestureRecognizer:
         self._state.pinch_start_x = None
         self._state.pinch_start_y = None
 
+    def _evidence_ref(self, now: datetime, suffix: str = "") -> str:
+        tail = f"/{suffix}" if suffix else ""
+        return f"evidence://spatial-gesture/{self.session.session_id}/{int(now.timestamp() * 1000)}{tail}"
+
     def consume(self, frame: HandLandmarkFrame) -> SpatialGestureIntent | None:
         now = frame.observed_at
         if now < self.session.armed_at or now > self.session.expires_at:
@@ -225,7 +233,19 @@ class SpatialGestureRecognizer:
             return None
         if _closed_fist(frame):
             self._reset_hand_state()
-            return None
+            if SpatialGestureCommand.CANCEL not in self.session.allowed_commands:
+                return None
+            self._state.cooldown_until = now + self.cooldown
+            return SpatialGestureIntent(
+                session_id=self.session.session_id,
+                principal_ref=self.session.principal_ref,
+                command=SpatialGestureCommand.CANCEL,
+                emitted_at=now,
+                handedness=frame.handedness,
+                confidence=frame.tracking_confidence,
+                horizontal_displacement=0.0,
+                source_evidence_ref=self._evidence_ref(now, "cancel"),
+            )
 
         palm_score = _open_palm_score(frame)
         if self._state.pinch_started_at is None:
@@ -283,7 +303,7 @@ class SpatialGestureRecognizer:
             handedness=frame.handedness,
             confidence=confidence,
             horizontal_displacement=dx,
-            source_evidence_ref=f"evidence://spatial-gesture/{self.session.session_id}/{int(now.timestamp() * 1000)}",
+            source_evidence_ref=self._evidence_ref(now),
         )
         self._reset_hand_state()
         self._state.cooldown_until = now + self.cooldown

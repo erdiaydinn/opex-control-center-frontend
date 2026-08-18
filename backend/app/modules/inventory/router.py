@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from app.modules.workforce.active_shift import ActiveShiftAuthorityError, resolve_active_shift
 from app.modules.workforce.authorization import is_action_allowed
 from .schemas import DecisionCreate, DeviceEnrollCreate, DocumentCreate, DocumentTransitionCreate, LocationLockCreate, ScanCreate, TerminalEventCreate
 from .production import InventoryPrincipal, create_document as production_create_document, enroll_device, list_terminal_tasks as production_list_terminal_tasks, readiness as production_readiness, reconciliation, record_event as production_record_event, transition as production_transition
@@ -80,6 +81,33 @@ def production_principal(request: Request, device_id: str) -> InventoryPrincipal
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail="Geçerli managed device UUID zorunludur.") from error
+
+
+def active_shift_principal(principal: InventoryPrincipal) -> tuple[InventoryPrincipal, str] | None:
+    """Narrow terminal scope to the one durable Workforce shift currently checked in."""
+    try:
+        attestation = resolve_active_shift(
+            principal.tenant_id,
+            principal.employee_id,
+            principal.warehouse_scope,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ActiveShiftAuthorityError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Workforce aktif vardiya doğrulaması geçici olarak kullanılamıyor.",
+        ) from error
+    if attestation is None:
+        return None
+    narrowed = InventoryPrincipal(
+        tenant_id=principal.tenant_id,
+        subject=principal.subject,
+        employee_id=principal.employee_id,
+        warehouse_scope=frozenset({attestation.warehouse_id}),
+        device_id=principal.device_id,
+    )
+    return narrowed, attestation.shift_id
 
 
 def run(action, *args, **kwargs):
@@ -209,7 +237,19 @@ def production_terminal_tasks(
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production terminal endpoint etkin değil.")
-    return {"rows": run(production_list_terminal_tasks, production_principal(request, x_eay_device_id))}
+    require_verified_identity(request, "countInventory")
+    principal = production_principal(request, x_eay_device_id)
+    active = active_shift_principal(principal)
+    if active is None:
+        return {"rows": []}
+    narrowed_principal, active_shift_id = active
+    rows = run(production_list_terminal_tasks, narrowed_principal)
+    return {
+        "rows": [
+            {**row, "active_shift_id": active_shift_id}
+            for row in rows
+        ]
+    }
 
 
 @router.get("/v1/documents/{document_id}/reconciliation")

@@ -6,6 +6,7 @@ on:
       - fix/ci-admission-control-v1
     paths:
       - scripts/ci/apply_ci_admission_control.py
+      - scripts/ci/apply_exact_head_concurrency.py
       - .github/workflows/ci-admission-bootstrap.yml
   workflow_dispatch:
 
@@ -28,9 +29,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Apply reviewed CI admission policy
-        run: python scripts/ci/apply_ci_admission_control.py
+        run: |
+          python scripts/ci/apply_ci_admission_control.py
+          python scripts/ci/apply_exact_head_concurrency.py
       - name: Re-verify admission policy from resulting tree
-        run: python scripts/ci/apply_ci_admission_control.py --check
+        run: |
+          python scripts/ci/apply_ci_admission_control.py --check
+          python scripts/ci/apply_exact_head_concurrency.py --check
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check
       - name: Commit verified workflow admission changes and remove bootstrap
@@ -46,6 +51,17 @@ jobs:
             .github/workflows/eay-roadmap-1-12-exact-head.yml \
             .github/workflows/eay-roadmap-1-13-exact-head.yml \
             .github/workflows/eay-roadmap-1-14-exact-head.yml \
+            .github/workflows/eay-roadmap-1-15-exact-head.yml \
+            .github/workflows/eay-roadmap-1-16-exact-head.yml \
+            .github/workflows/eay-roadmap-1-17-exact-head.yml \
+            .github/workflows/eay-roadmap-1-18-exact-head.yml \
+            .github/workflows/eay-roadmap-1-19-exact-head.yml \
+            .github/workflows/eay-roadmap-1-20-exact-head.yml \
+            .github/workflows/eay-roadmap-1-21-exact-head.yml \
+            .github/workflows/eay-roadmap-1-22-exact-head.yml \
+            .github/workflows/eay-roadmap-1-23-exact-head.yml \
+            .github/workflows/eay-roadmap-1-24-exact-head.yml \
+            .github/workflows/eay-roadmap-1-25-exact-head.yml \
             .github/workflows/eay-master-roadmap-24-planogram-physical-truth.yml \
             .github/workflows/eay-master-roadmap-25-planogram-optimizer.yml \
             .github/workflows/eay-master-roadmap-26-planogram-execution-compliance.yml \

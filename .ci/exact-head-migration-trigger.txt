@@ -2,5 +2,5 @@ Purpose: trigger exact-head header migration from the latest fix-base snapshot.
 Runner lane: temporary macOS migration lane.
 No product authority. No main merge. Header-only fail-closed migration.
 Verification: phase-aware Master55/Master60 admission policy.
-Migration implementation: unified Roadmap 1-10..1-25 idempotent normalizer.
+Migration implementation: unified Roadmap 1-10..1-25 idempotent normalizer; reviewed inline/multiline branch syntax supported.
 Output: verified copies published under .ci/generated only; workflow files are not pushed by Actions.

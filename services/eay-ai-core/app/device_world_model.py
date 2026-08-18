@@ -47,6 +47,7 @@ class DeviceCapability(str, Enum):
     CAMERA_OBSERVATION = "camera_observation"
     PRINT = "print"
     POINTER_INPUT = "pointer_input"
+    IOT_SETPOINT = "iot_setpoint"
     ROBOTIC_ACTUATION = "robotic_actuation"
 
 

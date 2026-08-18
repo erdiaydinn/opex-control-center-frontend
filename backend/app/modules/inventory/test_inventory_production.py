@@ -4,7 +4,6 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import os
-from pathlib import Path
 from time import perf_counter
 import unittest
 from unittest.mock import patch
@@ -14,6 +13,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from ..workforce.active_shift import ActiveShiftAttestation
+from . import location_completion as location_completion_module
 from . import production as production_module
 from .location_completion import location_completion_hash_input, record_location_completion
 from .production import (
@@ -92,13 +92,20 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             attendance_id="ATT-INVENTORY-CI-1",
             checked_in_at=datetime.now(UTC).isoformat(),
         )
-        cls.shift_patch = patch.object(
+        cls.production_shift_patch = patch.object(
             production_module,
             "attest_shift_at_event",
             return_value=cls.shift_attestation,
         )
-        cls.shift_patch.start()
-        cls.addClassCleanup(cls.shift_patch.stop)
+        cls.completion_shift_patch = patch.object(
+            location_completion_module,
+            "attest_shift_at_event",
+            return_value=cls.shift_attestation,
+        )
+        cls.production_shift_patch.start()
+        cls.completion_shift_patch.start()
+        cls.addClassCleanup(cls.completion_shift_patch.stop)
+        cls.addClassCleanup(cls.production_shift_patch.stop)
 
     def sign_payload(self, payload):
         timestamp = datetime.now(UTC).isoformat()

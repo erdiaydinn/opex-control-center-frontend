@@ -85,19 +85,15 @@ object InventoryMissionClaimContract {
  * Server-authoritative mission claim client. The signed request proves the managed
  * device submitted the exact document/location claim payload; the Android UI does
  * not mint attempts, leases, permissions, shifts or tenant authority.
+ *
+ * Even a task listed as OWNED is re-claimed here. Task-list state is only a snapshot;
+ * the claim endpoint is the authority that confirms a still-live lease or issues the
+ * next immutable lease interval for the same governed owner after expiry.
  */
 class InventoryTerminalMissionClaimClient(context: Context) {
     private val appContext = context.applicationContext
 
     fun claim(task: InventoryTerminalCountTask): InventoryMissionClaimResult {
-        if (task.claimStatus == InventoryMissionClaimStatus.OWNED) {
-            return runCatching { task.eventContext() }
-                .fold(
-                    onSuccess = { InventoryMissionClaimResult(InventoryMissionClaimCode.OK, task) },
-                    onFailure = { InventoryMissionClaimResult(InventoryMissionClaimCode.CONTRACT_REJECTED) },
-                )
-        }
-
         val token = AccessTokenMemory.freshOrNull()
             ?: return InventoryMissionClaimResult(InventoryMissionClaimCode.AUTH_REQUIRED)
         val deviceId = runCatching {

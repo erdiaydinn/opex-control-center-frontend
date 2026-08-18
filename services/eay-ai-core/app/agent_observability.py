@@ -61,7 +61,7 @@ class AgentTraceSpan(BaseModel):
     permission_required: bool
     effect_verifier_present: bool
     capability_ref: str | None = None
-    reasoning_task_kind: str | None = None
+    reasoning_task_ref: str | None = None
     evidence_refs: tuple[str, ...] = ()
     error_code: str | None = None
     ambiguous_outcome: bool = False
@@ -77,6 +77,10 @@ class AgentTraceSpan(BaseModel):
             raise ValueError("capability_trace_requires_capability_ref")
         if self.execution_kind is MissionExecutionKind.REASONING and self.capability_ref is not None:
             raise ValueError("reasoning_trace_cannot_claim_capability_ref")
+        if self.execution_kind is MissionExecutionKind.REASONING and not self.reasoning_task_ref:
+            raise ValueError("reasoning_trace_requires_task_ref")
+        if self.execution_kind is MissionExecutionKind.CAPABILITY and self.reasoning_task_ref is not None:
+            raise ValueError("capability_trace_cannot_claim_reasoning_task_ref")
         if self.side_effect and not self.effect_verifier_present:
             raise ValueError("side_effect_trace_requires_effect_verifier_presence")
         return self
@@ -200,13 +204,13 @@ def build_agent_diagnostic_trace(
         spec = spec_map[step.step_id]
         if spec.kind is MissionExecutionKind.REASONING:
             span_kind = TraceSpanKind.REASONING
-            reasoning_task_kind = (
-                None if spec.intelligence_task is None else str(spec.intelligence_task.task_kind.value)
+            reasoning_task_ref = (
+                None if spec.intelligence_task is None else spec.intelligence_task.task_id
             )
             capability_ref = None
         else:
             span_kind = TraceSpanKind.CAPABILITY
-            reasoning_task_kind = None
+            reasoning_task_ref = None
             capability_ref = spec.capability_ref
         spans.append(
             AgentTraceSpan(
@@ -230,7 +234,7 @@ def build_agent_diagnostic_trace(
                 permission_required=bool(step.required_permission),
                 effect_verifier_present=bool(step.effect_verifier_ref),
                 capability_ref=capability_ref,
-                reasoning_task_kind=reasoning_task_kind,
+                reasoning_task_ref=reasoning_task_ref,
                 evidence_refs=state.evidence_refs,
                 error_code=state.last_error,
                 ambiguous_outcome=state.ambiguous_outcome,

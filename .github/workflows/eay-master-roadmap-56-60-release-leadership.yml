@@ -50,7 +50,7 @@ jobs:
           python -m json.tool docs/governance/eay_release_category_leadership_policy.json >/dev/null
       - name: Run Master 56-60 release authority contracts
         run: pytest -q services/core-api/tests/test_master56_60_release_leadership.py
-      - name: Preserve production truth and external acceptance boundary
+      - name: Preserve production truth and governed state transitions
         run: |
           python - <<'PY'
           import json
@@ -59,15 +59,31 @@ jobs:
           policy = json.loads(
               Path('docs/governance/eay_release_category_leadership_policy.json').read_text()
           )
+          assert policy['schema_version'] == 3
           truth = policy['truth_contract']
           release = policy['release_requirements']
           assert truth['repository_or_synthetic_can_satisfy_external_acceptance'] is False
-          assert truth['external_item_requires_evidence_ref'] is True
-          assert truth['pilot_metric_requires_evidence_ref'] is True
-          assert truth['production_signoff_requires_evidence_ref'] is True
-          assert release['production']['activation'] == 'TENANT_MODULE_CONTROLLED'
+          assert truth['candidate_sha_exact_40_hex'] is True
+          assert truth['repository_status_bound_to_candidate_sha'] is True
+          assert truth['external_item_requires_ledger_sha256_ref'] is True
+          assert truth['pilot_metric_requires_sha256_evidence_ref'] is True
+          assert truth['production_signoff_requires_sha256_evidence_ref'] is True
           assert release['production_candidate']['external_items'] == list(range(49, 56))
           assert release['production_candidate']['sre_items'] == list(range(45, 49))
+          assert release['pilot']['scope'] == 'TENANT_MODULE_CONTROLLED'
+          assert release['pilot']['rollback_evidence'] == 'SHA256_BOUND'
+          assert release['production']['activation'] == 'TENANT_MODULE_CONTROLLED'
+          assert release['production']['activation_must_be_within_pilot_scope'] is True
+          assert release['stabilization']['acceptance_metrics'] == [
+              'error_budget',
+              'incident_rate',
+              'reconciliation',
+              'support_backlog',
+              'no_open_p0',
+              'rollback_readiness',
+          ]
+          assert release['category_leadership']['requires'] == 'STABILIZATION_ACCEPTED'
+          assert release['category_leadership']['state'] == 'CATEGORY_LEADERSHIP'
           PY
       - name: Publish Master 56-60 release authority exact-head status
         if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/product/eay-category-leadership-v1' }}
@@ -79,7 +95,7 @@ jobs:
           description='Master 56-60 release authority canonical gate failed'
           if [ "$JOB_STATUS" = 'success' ]; then
             state=success
-            description='Master 56-60 release authority canonical gate passed'
+            description='Master 56-60 release authority passed; external release evidence still required'
           fi
           payload=$(printf '{"state":"%s","context":"EAY Master 56-60 Release Authority Exact-Head","description":"%s"}' "$state" "$description")
           curl --fail-with-body --silent --show-error \

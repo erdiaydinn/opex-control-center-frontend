@@ -10,8 +10,12 @@ on:
       - "docs/mobile/**"
       - "mobile/**"
       - "ops/mobile/**"
+      - "backend/app/modules/inventory/router.py"
+      - "backend/tests/test_inventory_production_identity_authority.py"
       - "services/core-api/app/core/mobile_policy.py"
+      - "services/core-api/app/core/mobile_policy_signing.py"
       - "services/core-api/tests/test_mobile_policy.py"
+      - "services/core-api/tests/test_mobile_policy_signing.py"
       - ".github/workflows/eay-mobile-foundation.yml"
   push:
     branches:
@@ -44,14 +48,19 @@ jobs:
       - name: Install Core API test surface
         working-directory: services/core-api
         run: python -m pip install -e '.[dev]'
-      - name: Lint mobile authority resolver
+      - name: Lint mobile authority and signed policy
         run: >-
           ruff check
           services/core-api/app/core/mobile_policy.py
+          services/core-api/app/core/mobile_policy_signing.py
           services/core-api/tests/test_mobile_policy.py
+          services/core-api/tests/test_mobile_policy_signing.py
+          backend/tests/test_inventory_production_identity_authority.py
       - name: Prove mobile policy fail-closed behavior
         working-directory: services/core-api
-        run: pytest -q tests/test_mobile_policy.py
+        run: pytest -q tests/test_mobile_policy.py tests/test_mobile_policy_signing.py
+      - name: Prove legacy production routes ignore client role headers
+        run: pytest -q backend/tests/test_inventory_production_identity_authority.py
 
   android-mobile-core:
     runs-on: ubuntu-latest

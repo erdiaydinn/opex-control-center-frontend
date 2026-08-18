@@ -19,6 +19,7 @@ def require_pilot_mode() -> None:
     if production_mode():
         raise HTTPException(status_code=410, detail="Legacy Inventory endpoint production ortamında kapalıdır.")
 
+
 ROLE_ACTIONS = {
     "counter": {"viewInventory", "countInventory"},
     "warehouse_manager": {"viewInventory", "countInventory", "completeInventory", "approveInventory"},
@@ -33,6 +34,27 @@ def require(role: str, permissions: str, action: str) -> None:
     if action in ROLE_ACTIONS.get(normalized, set()) or is_action_allowed(role, permissions, action):
         return
     raise HTTPException(status_code=403, detail=f"Bu işlem için {action} yetkisi gerekir.")
+
+
+def require_verified_identity(request: Request, action: str) -> None:
+    """Authorize production operations only from middleware-verified identity state.
+
+    Production middleware already strips inbound X-OPEX identity/permission headers.
+    Keeping those headers out of the v1 route signature prevents future middleware or
+    proxy refactors from accidentally turning a compatibility field into authority.
+    """
+    identity = getattr(request.state, "identity", None)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Doğrulanmış kurumsal kimlik gerekli.")
+
+    roles = tuple(str(role) for role in (getattr(identity, "roles", ()) or ()) if str(role).strip())
+    permissions = tuple(
+        str(permission)
+        for permission in (getattr(identity, "permissions", ()) or ())
+        if str(permission).strip()
+    )
+    primary_role = str(getattr(identity, "primary_role", "") or (roles[0] if roles else "viewer"))
+    require(primary_role, ",".join(permissions), action)
 
 
 def actor(request: Request) -> str:
@@ -173,12 +195,10 @@ def create_production_document(
     payload: DocumentCreate,
     request: Request,
     x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
-    x_opex_role: str = Header("viewer", alias="X-OPEX-Role"),
-    x_opex_permissions: str = Header("", alias="X-OPEX-Permissions"),
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production document endpoint etkin değil.")
-    require(x_opex_role, x_opex_permissions, "createInventory")
+    require_verified_identity(request, "createInventory")
     return run(production_create_document, production_principal(request, x_eay_device_id), payload.model_dump())
 
 
@@ -197,12 +217,10 @@ def production_reconciliation(
     document_id: str,
     request: Request,
     x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
-    x_opex_role: str = Header("viewer", alias="X-OPEX-Role"),
-    x_opex_permissions: str = Header("", alias="X-OPEX-Permissions"),
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production reconciliation endpoint etkin değil.")
-    require(x_opex_role, x_opex_permissions, "approveInventory")
+    require_verified_identity(request, "approveInventory")
     try:
         parsed = UUID(document_id)
     except ValueError as error:
@@ -216,12 +234,13 @@ def transition_document(
     payload: DocumentTransitionCreate,
     request: Request,
     x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
-    x_opex_role: str = Header("viewer", alias="X-OPEX-Role"),
-    x_opex_permissions: str = Header("", alias="X-OPEX-Permissions"),
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production document endpoint etkin değil.")
-    require(x_opex_role, x_opex_permissions, "approveInventory" if payload.target_state in {"APPROVED", "LOCKED", "REJECTED"} else "completeInventory")
+    require_verified_identity(
+        request,
+        "approveInventory" if payload.target_state in {"APPROVED", "LOCKED", "REJECTED"} else "completeInventory",
+    )
     try:
         parsed_document_id = UUID(document_id)
     except ValueError as error:

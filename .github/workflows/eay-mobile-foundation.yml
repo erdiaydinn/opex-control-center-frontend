@@ -17,6 +17,7 @@ on:
       - "backend/app/modules/inventory/production.py"
       - "backend/app/modules/inventory/schemas.py"
       - "backend/app/modules/inventory/location_completion.py"
+      - "backend/app/modules/inventory/reconciliation.py"
       - "backend/app/modules/inventory/explanation.py"
       - "backend/app/modules/workforce/active_shift.py"
       - "backend/migrations/004_inventory_location_completion.sql"
@@ -79,6 +80,7 @@ jobs:
           backend/app/modules/workforce/active_shift.py
           backend/app/modules/inventory/schemas.py
           backend/app/modules/inventory/location_completion.py
+          backend/app/modules/inventory/reconciliation.py
           backend/app/modules/inventory/explanation.py
           backend/tests/test_workforce_active_shift_authority.py
           backend/tests/test_inventory_production_identity_authority.py

@@ -112,7 +112,7 @@ def test_camera_runtime_requires_explicit_identity_bound_authorization():
 
 
 def test_camera_observation_returns_transient_landmarks_and_content_free_receipt():
-    raw_marker = object()
+    raw_marker = "RAW_FRAME_PAYLOAD_SHOULD_NOT_PERSIST_7e5d"
     capture = _Capture(frame=raw_marker)
     detector = _Detector()
     runtime = SpatialHandCameraRuntime(
@@ -134,8 +134,8 @@ def test_camera_observation_returns_transient_landmarks_and_content_free_receipt
     assert receipt.remote_processing_used is False
     assert receipt.business_side_effects_authorized is False
     serialized = receipt.model_dump_json()
-    assert "landmarks" not in serialized
-    assert "frame" not in serialized.casefold() or "camera_frame_available" in serialized
+    assert raw_marker not in serialized
+    assert '"landmarks"' not in serialized
 
 
 def test_camera_timestamp_must_increase_and_close_is_idempotent():

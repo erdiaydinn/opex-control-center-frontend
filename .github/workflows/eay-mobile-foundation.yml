@@ -15,6 +15,7 @@ on:
       - "ops/inventory/**"
       - "backend/app/modules/inventory/router.py"
       - "backend/app/modules/inventory/production.py"
+      - "backend/app/modules/inventory/schemas.py"
       - "backend/app/modules/inventory/location_completion.py"
       - "backend/app/modules/workforce/active_shift.py"
       - "backend/migrations/004_inventory_location_completion.sql"
@@ -72,6 +73,7 @@ jobs:
           services/core-api/tests/test_mobile_policy.py
           services/core-api/tests/test_mobile_policy_signing.py
           backend/app/modules/workforce/active_shift.py
+          backend/app/modules/inventory/schemas.py
           backend/app/modules/inventory/location_completion.py
           backend/tests/test_workforce_active_shift_authority.py
           backend/tests/test_inventory_production_identity_authority.py

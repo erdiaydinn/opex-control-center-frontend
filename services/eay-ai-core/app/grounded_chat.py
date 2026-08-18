@@ -22,6 +22,12 @@ from .grounded_critic import (
     should_run_grounded_critic,
     unavailable_critic_report,
 )
+from .grounded_evidence_planner import (
+    EvidencePlan,
+    build_evidence_plan,
+    execute_evidence_plan,
+    select_evidence,
+)
 from .grounded_reasoning import (
     DecisionQualityReport,
     assess_and_calibrate_grounded_answer,
@@ -74,9 +80,13 @@ class GroundedChatAnswer(BaseModel):
     legal_audit_fingerprint: str | None = None
     decision_quality: DecisionQualityReport | None = None
     critic: GroundedCriticReport | None = None
+    evidence_plan: EvidencePlan | None = None
 
 
-def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
+def _enforce_grounded_retrieval_truth_boundary(
+    request: ChatRequest,
+    active_layers: list[str] | None = None,
+) -> None:
     """Keep tenant-scoped retrieval closed until Core tenant authority is bound.
 
     EAY AI Core's local SQLite/FTS store currently has no authoritative tenant
@@ -97,7 +107,8 @@ def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
     if environment != "production":
         return
 
-    tenant_scoped = sorted(_TENANT_SCOPED_LAYERS.intersection(request.layers))
+    scoped_layers = active_layers if active_layers is not None else request.layers
+    tenant_scoped = sorted(_TENANT_SCOPED_LAYERS.intersection(scoped_layers))
     if tenant_scoped:
         raise HTTPException(
             status_code=503,
@@ -111,10 +122,14 @@ def _enforce_grounded_retrieval_truth_boundary(request: ChatRequest) -> None:
         )
 
 
-def _company_conflicts_for_response(request: ChatRequest) -> list[dict]:
+def _company_conflicts_for_response(
+    request: ChatRequest,
+    active_layers: list[str] | None = None,
+) -> list[dict]:
     """Project company-vs-law conflicts only where company scope is safe."""
 
-    if "company" not in request.layers:
+    scoped_layers = active_layers if active_layers is not None else request.layers
+    if "company" not in scoped_layers:
         return []
 
     environment = os.getenv("EAY_ENVIRONMENT", "development").strip().lower()
@@ -395,29 +410,33 @@ async def _apply_bounded_revision(
 
 @router.post("/chat", response_model=GroundedChatAnswer)
 async def grounded_chat(request: ChatRequest):
-    _enforce_grounded_retrieval_truth_boundary(request)
+    evidence_plan = build_evidence_plan(request, settings.top_k)
+    _enforce_grounded_retrieval_truth_boundary(request, evidence_plan.active_layers)
 
     temporal_state: LegalTemporalState | None = None
-    if "legal" in request.layers:
+    if evidence_plan.legal_temporal_resolution_required:
         temporal_state = _resolve_temporal_state(request.as_of)
 
-    retrieval_limit = settings.top_k
-    if temporal_state is not None:
-        retrieval_limit = min(max(settings.top_k * 4, settings.top_k), 32)
-
-    evidence = store.search(
-        request.message,
-        request.as_of,
-        request.layers,
-        retrieval_limit,
+    evidence_candidates = execute_evidence_plan(
+        evidence_plan,
+        store=store,
+        as_of=request.as_of,
     )
     if temporal_state is not None:
-        evidence = _filter_temporally_active_legal_evidence(evidence, temporal_state)
-        evidence = evidence[: settings.top_k]
+        evidence_candidates = _filter_temporally_active_legal_evidence(
+            evidence_candidates,
+            temporal_state,
+        )
+    evidence = select_evidence(
+        evidence_plan,
+        evidence_candidates,
+        limit=settings.top_k,
+    )
 
     prompt = f"""
 AS_OF: {request.as_of.isoformat()}
 COMPANY: {request.company or 'not_specified'}
+EVIDENCE_ACTIVE_LAYERS: {', '.join(evidence_plan.active_layers) or 'none'}
 LEGAL_TEMPORAL_RESOLUTION: {temporal_state.resolution_fingerprint if temporal_state else 'not_requested'}
 
 USER QUESTION:
@@ -512,7 +531,7 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
     if answer.confidence < settings.low_confidence_threshold:
         store.create_low_confidence_candidate(interaction_id)
 
-    conflicts = _company_conflicts_for_response(request)
+    conflicts = _company_conflicts_for_response(request, evidence_plan.active_layers)
     temporal_fingerprint = (
         temporal_state.resolution_fingerprint if temporal_state is not None else None
     )
@@ -528,4 +547,5 @@ Keep LEGAL, COMPANY, STANDARD and OPERATIONAL findings separate. If company and 
         legal_audit_fingerprint=legal_audit_fingerprint,
         decision_quality=decision_quality,
         critic=critic,
+        evidence_plan=evidence_plan,
     )

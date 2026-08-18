@@ -21,6 +21,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from ..workforce.active_shift import ActiveShiftAuthorityError, attest_shift_at_event
 from .service import InventoryRuleError
 
 
@@ -61,6 +62,7 @@ def canonical_payload_hash(payload: dict[str, Any]) -> str:
 def terminal_event_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     quantity = Decimal(str(payload["quantity"])).normalize()
     return {
+        "active_shift_id": str(payload["active_shift_id"]).strip(),
         "barcode": str(payload["barcode"]).strip(),
         "device_sequence": int(payload["device_sequence"]),
         "document_id": str(UUID(str(payload["document_id"]))),
@@ -422,6 +424,7 @@ def record_event(
     principal.validate()
     event_id = UUID(str(payload["event_id"]))
     document_id = UUID(str(payload["document_id"]))
+    active_shift_id = str(payload["active_shift_id"]).strip()
     claimed_hash = str(payload["payload_hash"])
     hash_input = terminal_event_hash_input(payload)
     actual_hash = canonical_payload_hash(hash_input)
@@ -468,6 +471,22 @@ def record_event(
                 raise PermissionError("Sayım görevi depo kapsamı dışında.")
             if document["state"] != "COUNTING":
                 raise InventoryRuleError("Kilitli veya gönderilmiş sayıma event eklenemez.")
+
+            try:
+                shift_attestation = attest_shift_at_event(
+                    principal.tenant_id,
+                    principal.employee_id,
+                    document["warehouse_id"],
+                    active_shift_id,
+                    str(payload["occurred_at"]),
+                )
+            except ActiveShiftAuthorityError as error:
+                raise RuntimeError(
+                    "Workforce event vardiya authority kullanılamıyor."
+                ) from error
+            if shift_attestation is None:
+                raise PermissionError("Event aktif vardiya penceresi dışında üretildi.")
+
             location = str(payload["location_id"]).strip().upper()
             allowed = db.execute(
                 """SELECT 1 FROM inventory_document_locations
@@ -501,6 +520,7 @@ def record_event(
                 "accepted": True,
                 "event_type": event_type,
                 "document_revision": document["revision"],
+                "active_shift_id": shift_attestation.shift_id,
                 "idempotent_replay": False,
             }
             db.execute(

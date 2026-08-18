@@ -6,7 +6,9 @@ on:
       - agent/master-roadmap-39-40-ai-repository-compose-v3
       - product/eay-category-leadership-v1
   pull_request:
-    branches: [product/eay-category-leadership-v1]
+    branches:
+      - agent/master-roadmap-34-38-jarvis-compose-v2
+      - product/eay-category-leadership-v1
     paths:
       - 'docs/governance/eay_ai_core_shared_substrate.json'
       - 'services/core-api/app/ai_core/substrate_contract.py'

@@ -23,6 +23,7 @@ interface BlindCountEventSink {
 
     suspend fun enqueueLocationCompletion(
         context: InventoryCountEventContext,
+        confirmedLineCount: Int,
         eventId: String,
         occurredAt: String,
     ): OfflineEvent
@@ -138,6 +139,7 @@ class BlindCountTerminalController(
         val durableEvent = try {
             eventSink.enqueueLocationCompletion(
                 context = eventContext,
+                confirmedLineCount = state.confirmedLineCount,
                 eventId = durableIdentity.eventId,
                 occurredAt = durableIdentity.occurredAt,
             )

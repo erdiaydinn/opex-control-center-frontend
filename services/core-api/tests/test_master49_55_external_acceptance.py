@@ -128,7 +128,10 @@ def test_expired_or_other_release_evidence_cannot_be_reused() -> None:
     assert not ok
     assert f"{expired[0].evidence_key}:expired" in blockers
 
-    prior_release = tuple(replace(record, release_id="old-release") for record in _records(requirement))
+    prior_release = tuple(
+        replace(record, release_id="old-release")
+        for record in _records(requirement)
+    )
     ok, blockers = _evaluate(requirement, prior_release)
     assert not ok
     assert all(blocker.endswith(":missing") for blocker in blockers)

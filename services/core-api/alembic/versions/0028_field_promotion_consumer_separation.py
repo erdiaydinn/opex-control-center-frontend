@@ -69,6 +69,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP TRIGGER IF EXISTS field_promotion_consumer_separation ON field_promotion_consumer_receipts"
+        "DROP TRIGGER IF EXISTS field_promotion_consumer_separation ON"
+        " field_promotion_consumer_receipts"
     )
     op.execute("DROP FUNCTION IF EXISTS enforce_field_promotion_consumer_separation()")

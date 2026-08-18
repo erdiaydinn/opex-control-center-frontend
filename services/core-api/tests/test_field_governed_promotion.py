@@ -142,7 +142,10 @@ def test_migration_keeps_promotion_evidence_append_only_and_rls_bound() -> None:
         "field_promotion_consumer_receipts",
     ):
         assert table in migration
-        assert f'_tenant_policy("{table}")' not in migration or "_tenant_policy(table_name)" in migration
+        assert (
+            f'_tenant_policy("{table}")' not in migration
+            or "_tenant_policy(table_name)" in migration
+        )
     assert "FORCE ROW LEVEL SECURITY" in migration
     assert "prevent_field_evidence_mutation" in migration
     assert "GRANT SELECT, INSERT" in migration

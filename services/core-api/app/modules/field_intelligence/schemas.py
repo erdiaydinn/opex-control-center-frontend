@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.localization import SUPPORTED_LOCALE_SET
 
-
 FIELD_INPUT_TYPES = frozenset(
     {
         "text",
@@ -37,7 +36,7 @@ class LocalizedText(StrictModel):
     values: dict[str, str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_locales(self) -> "LocalizedText":
+    def validate_locales(self) -> LocalizedText:
         unknown = set(self.values) - SUPPORTED_LOCALE_SET
         if unknown:
             raise ValueError(f"unsupported locales: {', '.join(sorted(unknown))}")
@@ -69,7 +68,7 @@ class TemplateFieldDefinition(StrictModel):
     config: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_type_and_options(self) -> "TemplateFieldDefinition":
+    def validate_type_and_options(self) -> TemplateFieldDefinition:
         if self.type not in FIELD_INPUT_TYPES:
             raise ValueError(f"unsupported field type: {self.type}")
         if self.type == "select" and not self.options:
@@ -83,7 +82,7 @@ class TemplateSchema(StrictModel):
     fields: tuple[TemplateFieldDefinition, ...] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
-    def unique_field_keys(self) -> "TemplateSchema":
+    def unique_field_keys(self) -> TemplateSchema:
         keys = [field.key for field in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError("template field keys must be unique")
@@ -127,7 +126,7 @@ class TargetSelector(StrictModel):
     exclude_location_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def require_positive_selector(self) -> "TargetSelector":
+    def require_positive_selector(self) -> TargetSelector:
         positive = (
             self.all_active_locations
             or self.countries
@@ -157,7 +156,7 @@ class MissionCreate(StrictModel):
     activate: bool = False
 
     @model_validator(mode="after")
-    def validate_deadline(self) -> "MissionCreate":
+    def validate_deadline(self) -> MissionCreate:
         if self.deadline_at <= self.assigned_at:
             raise ValueError("deadline_at must be after assigned_at")
         return self
@@ -182,7 +181,7 @@ class OfflineEvidenceEvent(StrictModel):
     evidence_objects: tuple[EvidenceObjectClaim, ...] = Field(default=(), max_length=20)
 
     @model_validator(mode="after")
-    def validate_capture_identity(self) -> "OfflineEvidenceEvent":
+    def validate_capture_identity(self) -> OfflineEvidenceEvent:
         if self.captured_at.tzinfo is None or self.captured_at.utcoffset() is None:
             raise ValueError("captured_at must be timezone-aware")
         receipt_ids = [claim.receipt_id for claim in self.evidence_objects]
@@ -198,7 +197,7 @@ class OfflineSyncBatch(StrictModel):
     events: tuple[OfflineEvidenceEvent, ...] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
-    def reject_duplicate_batch_identities(self) -> "OfflineSyncBatch":
+    def reject_duplicate_batch_identities(self) -> OfflineSyncBatch:
         sequences = [(event.device_id, event.device_sequence) for event in self.events]
         if len(sequences) != len(set(sequences)):
             raise ValueError("batch contains duplicate device sequence identities")
@@ -213,7 +212,7 @@ class EvidenceReview(StrictModel):
     reason: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
-    def validate_reason(self) -> "EvidenceReview":
+    def validate_reason(self) -> EvidenceReview:
         if self.decision != "accept" and not (self.reason or "").strip():
             raise ValueError("rework or reject decision requires a reason")
         return self

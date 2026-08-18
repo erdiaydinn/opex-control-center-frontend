@@ -38,9 +38,9 @@ def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
     op.execute(
-        f'''CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)'''
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
     )
 
 
@@ -74,7 +74,12 @@ def upgrade() -> None:
         sa.Column("candidate_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("proposal_fingerprint", sa.String(length=64), nullable=False),
         sa.Column("requested_by", sa.String(length=255), nullable=False),
-        sa.Column("requested_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "requested_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "evidence_id"],
             ["field_evidence.tenant_id", "field_evidence.id"],
@@ -124,7 +129,12 @@ def upgrade() -> None:
         sa.Column("decided_by", sa.String(length=255), nullable=False),
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("decision_fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("decided_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "decided_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "promotion_id"],
             ["field_promotion_requests.tenant_id", "field_promotion_requests.id"],
@@ -155,7 +165,12 @@ def upgrade() -> None:
         sa.Column("destination_candidate_ref_hash", sa.String(length=64), nullable=True),
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("receipt_fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "promotion_id"],
             ["field_promotion_requests.tenant_id", "field_promotion_requests.id"],
@@ -166,10 +181,13 @@ def upgrade() -> None:
             "consumer_module IN ('inventory','planogram','budget')",
             name="ck_field_promotion_receipt_consumer",
         ),
-        sa.CheckConstraint("decision IN ('accept','reject')", name="ck_field_promotion_consumer_decision"),
         sa.CheckConstraint(
-            "(decision = 'accept' AND destination_candidate_ref_hash ~ '^[0-9a-f]{64}$') OR "
-            "(decision = 'reject' AND destination_candidate_ref_hash IS NULL AND length(trim(coalesce(reason,''))) > 0)",
+            "decision IN ('accept','reject')", name="ck_field_promotion_consumer_decision"
+        ),
+        sa.CheckConstraint(
+            "(decision = 'accept' AND destination_candidate_ref_hash ~ '^[0-9a-f]{64}$') OR"
+            " (decision = 'reject' AND destination_candidate_ref_hash IS NULL AND"
+            " length(trim(coalesce(reason,''))) > 0)",
             name="ck_field_promotion_consumer_receipt_semantics",
         ),
         sa.CheckConstraint(
@@ -177,7 +195,9 @@ def upgrade() -> None:
             name="ck_field_promotion_receipt_fingerprint",
         ),
         sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_field_promotion_consumer_receipts"),
-        sa.UniqueConstraint("tenant_id", "promotion_id", name="uq_field_promotion_single_consumer_receipt"),
+        sa.UniqueConstraint(
+            "tenant_id", "promotion_id", name="uq_field_promotion_single_consumer_receipt"
+        ),
     )
 
     for table_name in (
@@ -189,39 +209,39 @@ def upgrade() -> None:
         _append_only(table_name)
         op.execute(f"GRANT SELECT, INSERT ON TABLE {table_name} TO {RUNTIME_ROLE}")
 
-    all_scope = "'{\"type\":\"all\"}'::jsonb"
+    all_scope = '\'{"type":"all"}\'::jsonb'
     field_permissions = _sql_array(FIELD_PROMOTION_PERMISSIONS)
     consumer_permissions = _sql_array(CONSUMER_PROMOTION_PERMISSIONS)
 
     op.execute(
-        f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) "
+        "INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) "
         f"SELECT r.tenant_id,r.id,p.permission_key,{all_scope} "
         f"FROM roles r CROSS JOIN unnest({field_permissions}) p(permission_key) "
         "WHERE r.key='field_manager' AND r.is_system IS TRUE "
         "ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope=EXCLUDED.scope"
     )
     op.execute(
-        f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) "
+        "INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) "
         f"SELECT r.tenant_id,r.id,p.permission_key,{all_scope} "
         f"FROM roles r CROSS JOIN unnest({consumer_permissions}) p(permission_key) "
         "WHERE r.key='super_admin' AND r.is_system IS TRUE "
         "ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope=EXCLUDED.scope"
     )
     op.execute(
-        f"INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) "
-        f"SELECT r.tenant_id,r.id,p.permission_key,{all_scope} "
-        f"FROM roles r CROSS JOIN unnest({_sql_array(FIELD_PROMOTION_PERMISSIONS + CONSUMER_PROMOTION_PERMISSIONS)}) p(permission_key) "
-        "WHERE r.key='super_admin' AND r.is_system IS TRUE "
-        "ON CONFLICT (tenant_id,role_id,permission_key) DO UPDATE SET scope=EXCLUDED.scope"
+        "INSERT INTO role_permissions (tenant_id,role_id,permission_key,scope) SELECT"
+        f" r.tenant_id,r.id,p.permission_key,{all_scope} FROM roles r CROSS JOIN"
+        f" unnest({_sql_array(FIELD_PROMOTION_PERMISSIONS + CONSUMER_PROMOTION_PERMISSIONS)})"
+        " p(permission_key) WHERE r.key='super_admin' AND r.is_system IS TRUE ON CONFLICT"
+        " (tenant_id,role_id,permission_key) DO UPDATE SET scope=EXCLUDED.scope"
     )
 
 
 def downgrade() -> None:
     permissions = FIELD_PROMOTION_PERMISSIONS + CONSUMER_PROMOTION_PERMISSIONS
     op.execute(
-        f"DELETE FROM role_permissions rp USING roles r "
-        f"WHERE rp.tenant_id=r.tenant_id AND rp.role_id=r.id "
-        f"AND r.key IN ('field_manager','super_admin') AND r.is_system IS TRUE "
+        "DELETE FROM role_permissions rp USING roles r "
+        "WHERE rp.tenant_id=r.tenant_id AND rp.role_id=r.id "
+        "AND r.key IN ('field_manager','super_admin') AND r.is_system IS TRUE "
         f"AND rp.permission_key=ANY({_sql_array(permissions)})"
     )
     for table_name in (

@@ -5,7 +5,10 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.modules.field_intelligence.repository import FieldRepositoryError, _validate_evidence_payload
+from app.modules.field_intelligence.repository import (
+    FieldRepositoryError,
+    _validate_evidence_payload,
+)
 from app.modules.field_intelligence.schemas import (
     EvidenceReview,
     EvidenceSubmit,
@@ -15,7 +18,6 @@ from app.modules.field_intelligence.schemas import (
     TemplateFieldDefinition,
     TemplateSchema,
 )
-
 
 FIELD_TYPES = (
     "text",

@@ -9,9 +9,9 @@ from app.core.authorization import require_permission
 from app.core.security import Principal
 from app.modules.field_intelligence.authorization import require_field_permission
 from app.modules.field_intelligence.evidence_object_upload import (
+    MAX_EVIDENCE_BYTES,
     FieldEvidenceStoreUnavailable,
     FieldEvidenceUploadError,
-    MAX_EVIDENCE_BYTES,
     upload_private_evidence_object,
 )
 from app.modules.field_intelligence.repository import list_locations
@@ -41,7 +41,9 @@ async def post_field_evidence_object(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Field evidence object location is outside authorized scope",
         )
-    if len(content_sha256) != 64 or any(character not in "0123456789abcdef" for character in content_sha256):
+    if len(content_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in content_sha256
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Field evidence object SHA-256 header is invalid",

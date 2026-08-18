@@ -106,7 +106,7 @@ class BlindCountTerminalController(
                 eventId = durableIdentity.eventId,
                 occurredAt = durableIdentity.occurredAt,
             )
-        } catch (_: Exception) {
+        } catch (_: RetryableCountPersistenceException) {
             // Do not advance or clear the scan. A retry uses the exact same event identity.
             return BlindCountControllerResult(
                 code = BlindCountControllerCode.PERSIST_RETRY,

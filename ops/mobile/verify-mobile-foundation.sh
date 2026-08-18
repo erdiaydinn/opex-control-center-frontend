@@ -13,7 +13,9 @@ EVENT_FACTORY="$APP/InventoryCountEventFactory.kt"
 DATABASE="$APP/InventoryDatabase.kt"
 QUEUE="$APP/InventoryOfflineQueue.kt"
 COUNT_CONTROLLER="$APP/BlindCountTerminalController.kt"
+COUNT_TASK="$APP/InventoryTerminalCountTask.kt"
 COUNT_CONTROLLER_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/BlindCountTerminalControllerTest.kt"
+COUNT_TASK_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalCountTaskTest.kt"
 ANDROID_EVENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/OfflineContractTest.kt"
 BACKEND_EVENT_TEST="$ROOT/backend/tests/test_inventory_terminal_event_hash_contract.py"
 GOLDEN_HASH="83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291"
@@ -42,7 +44,9 @@ $EVENT_FACTORY
 $DATABASE
 $QUEUE
 $COUNT_CONTROLLER
+$COUNT_TASK
 $COUNT_CONTROLLER_TEST
+$COUNT_TASK_TEST
 $ANDROID_EVENT_TEST
 $BACKEND_EVENT_TEST
 $PY_CORE/mobile_policy.py
@@ -76,6 +80,7 @@ grep -q 'barcode' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'biometric' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'MissionGate.evaluate' "$ADAPTER"
 grep -q 'MobileOperationAdmission' "$CORE/FieldMission.kt"
+grep -q 'BlindCountLocationToken.hash(scan.value)' "$CORE/BlindCountFlow.kt"
 grep -q 'UUID.fromString' "$CANONICAL"
 grep -q 'OffsetDateTime.parse' "$CANONICAL"
 grep -q 'acceptedScan.payloadHash == evidence.itemPayloadHash' "$EVENT_FACTORY"
@@ -83,12 +88,16 @@ grep -q 'MAX(deviceSequence)' "$DATABASE"
 grep -q 'database.withTransaction' "$QUEUE"
 grep -q 'maxDeviceSequence()' "$QUEUE"
 grep -q 'enqueueConfirmedCount' "$QUEUE"
+grep -q 'RetryableCountPersistenceException' "$QUEUE"
 grep -q 'BlindCountFlow.verifyLocation' "$COUNT_CONTROLLER"
 grep -q 'BlindCountFlow.scanItem' "$COUNT_CONTROLLER"
 grep -q 'BlindCountFlow.confirmItem' "$COUNT_CONTROLLER"
 grep -q 'eventSink.enqueueConfirmedCount' "$COUNT_CONTROLLER"
-grep -q 'PERSIST_RETRY' "$COUNT_CONTROLLER"
+grep -q 'catch (_: RetryableCountPersistenceException)' "$COUNT_CONTROLLER"
+grep -q 'InventoryTerminalCountTask' "$COUNT_TASK"
+grep -q 'BlindCountLocationToken.hash(locationId)' "$COUNT_TASK"
 grep -q 'reuses exact event identity' "$COUNT_CONTROLLER_TEST"
+grep -q 'not mislabeled as retryable' "$COUNT_CONTROLLER_TEST"
 grep -q "$GOLDEN_HASH" "$ANDROID_EVENT_TEST"
 grep -q "$GOLDEN_HASH" "$BACKEND_EVENT_TEST"
 grep -q 'MOBILE_POLICY_ALGORITHM = "ES256"' "$PY_CORE/mobile_policy_signing.py"
@@ -121,8 +130,8 @@ if grep -n -E 'enabled[[:space:]]*=[[:space:]]*(true|false)' "$ADAPTER"; then
   exit 1
 fi
 
-if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance' "$COUNT_CONTROLLER"; then
-  echo "blind-count terminal controller leaked stock truth" >&2
+if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance' "$COUNT_CONTROLLER" "$COUNT_TASK"; then
+  echo "blind-count terminal contract leaked stock truth" >&2
   exit 1
 fi
 

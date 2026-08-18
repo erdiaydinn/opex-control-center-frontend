@@ -35,7 +35,7 @@ class BlindCountTerminalControllerTest {
 
     @Test
     fun `queue failure preserves confirm state and reuses exact event identity`() = runBlocking {
-        val sink = RecordingSink(failuresRemaining = 1)
+        val sink = RecordingSink(retryableFailuresRemaining = 1)
         val controller = controller(
             sink = sink,
             eventId = "11111111-1111-4111-8111-111111111111",
@@ -58,12 +58,27 @@ class BlindCountTerminalControllerTest {
     }
 
     @Test
+    fun `contract violation is not mislabeled as retryable persistence`() {
+        val sink = RecordingSink(contractFailure = true)
+        val controller = controller(sink = sink)
+        controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { controller.confirmItem() }
+        }
+        assertEquals(BlindCountStep.CONFIRM_ITEM, controller.session().step)
+        assertEquals(0, controller.session().confirmedLineCount)
+    }
+
+    @Test
     fun `location scan must bind both blind target and event context`() {
         val sink = RecordingSink()
         val controller = BlindCountTerminalController(
             target = BlindCountTarget(
                 missionId = "mission-1",
-                locationTokenHash = TerminalEventCanonical.hash("A-04"),
+                locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             ),
             eventContext = InventoryCountEventContext(
                 missionId = "mission-1",
@@ -80,12 +95,23 @@ class BlindCountTerminalControllerTest {
     }
 
     @Test
+    fun `controller accepts location case and surrounding whitespace after scanner admission`() {
+        val sink = RecordingSink()
+        val controller = controller(sink = sink)
+
+        val result = controller.onAcceptedScan(locationScan(" a-04 "))
+
+        assertTrue(result.accepted)
+        assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
+    }
+
+    @Test
     fun `controller refuses target and event context from different missions`() {
         assertThrows(IllegalArgumentException::class.java) {
             BlindCountTerminalController(
                 target = BlindCountTarget(
                     missionId = "mission-1",
-                    locationTokenHash = TerminalEventCanonical.hash("A-04"),
+                    locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
                 ),
                 eventContext = InventoryCountEventContext(
                     missionId = "mission-2",
@@ -105,7 +131,7 @@ class BlindCountTerminalControllerTest {
     ) = BlindCountTerminalController(
         target = BlindCountTarget(
             missionId = "mission-1",
-            locationTokenHash = TerminalEventCanonical.hash("A-04"),
+            locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             targetLineCount = targetLineCount,
         ),
         eventContext = InventoryCountEventContext(
@@ -137,7 +163,8 @@ class BlindCountTerminalControllerTest {
     )
 
     private class RecordingSink(
-        var failuresRemaining: Int = 0,
+        var retryableFailuresRemaining: Int = 0,
+        val contractFailure: Boolean = false,
     ) : ConfirmedCountEventSink {
         val attempts = mutableListOf<Pair<String, String>>()
 
@@ -149,9 +176,14 @@ class BlindCountTerminalControllerTest {
             occurredAt: String,
         ): OfflineEvent {
             attempts += eventId to occurredAt
-            if (failuresRemaining > 0) {
-                failuresRemaining -= 1
-                error("simulated durable queue failure")
+            if (contractFailure) {
+                throw IllegalArgumentException("simulated immutable contract violation")
+            }
+            if (retryableFailuresRemaining > 0) {
+                retryableFailuresRemaining -= 1
+                throw RetryableCountPersistenceException(
+                    IllegalStateException("simulated durable queue failure"),
+                )
             }
             return InventoryCountEventFactory.create(
                 context = context,

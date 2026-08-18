@@ -4,6 +4,10 @@ import androidx.room.withTransaction
 import com.eay.mobile.core.AcceptedScan
 import com.eay.mobile.core.BlindCountLineEvidence
 
+class RetryableCountPersistenceException(
+    cause: Throwable,
+) : RuntimeException("Encrypted count queue is temporarily unavailable", cause)
+
 /**
  * Single enqueue boundary for terminal mutations.
  *
@@ -43,6 +47,10 @@ class InventoryOfflineQueue(
      * canonicalize the accepted scan + confirmed blind-count evidence and insert
      * the immutable event under the current verified OIDC binding in one SQLCipher
      * transaction.
+     *
+     * Contract/security violations remain fail-closed IllegalArgumentException.
+     * Storage/runtime failures are explicitly wrapped as retryable so the controller
+     * can preserve the exact event identity without silently advancing the count.
      */
     override suspend fun enqueueConfirmedCount(
         context: InventoryCountEventContext,
@@ -50,40 +58,46 @@ class InventoryOfflineQueue(
         evidence: BlindCountLineEvidence,
         eventId: String,
         occurredAt: String,
-    ): OfflineEvent = database.withTransaction {
-        val binding = requireInteractiveBinding()
-        val existing = database.events().byEventId(eventId)
-        if (existing != null) {
-            val replayCandidate = InventoryCountEventFactory.create(
+    ): OfflineEvent = try {
+        database.withTransaction {
+            val binding = requireInteractiveBinding()
+            val existing = database.events().byEventId(eventId)
+            if (existing != null) {
+                val replayCandidate = InventoryCountEventFactory.create(
+                    context = context,
+                    acceptedScan = acceptedScan,
+                    evidence = evidence,
+                    deviceSequence = existing.deviceSequence,
+                    eventId = eventId,
+                    occurredAt = occurredAt,
+                    authBindingId = binding,
+                )
+                require(OfflineEventIdentity.sameImmutableIdentity(existing, replayCandidate)) {
+                    "Offline count event ID collision"
+                }
+                return@withTransaction existing
+            }
+
+            val nextSequence = Math.addExact(database.events().maxDeviceSequence(), 1L)
+            val event = InventoryCountEventFactory.create(
                 context = context,
                 acceptedScan = acceptedScan,
                 evidence = evidence,
-                deviceSequence = existing.deviceSequence,
+                deviceSequence = nextSequence,
                 eventId = eventId,
                 occurredAt = occurredAt,
                 authBindingId = binding,
             )
-            require(OfflineEventIdentity.sameImmutableIdentity(existing, replayCandidate)) {
-                "Offline count event ID collision"
+            require(database.events().byDeviceSequence(nextSequence) == null) {
+                "Offline device sequence collision"
             }
-            return@withTransaction existing
+            database.events().insert(event)
+            event
         }
-
-        val nextSequence = Math.addExact(database.events().maxDeviceSequence(), 1L)
-        val event = InventoryCountEventFactory.create(
-            context = context,
-            acceptedScan = acceptedScan,
-            evidence = evidence,
-            deviceSequence = nextSequence,
-            eventId = eventId,
-            occurredAt = occurredAt,
-            authBindingId = binding,
-        )
-        require(database.events().byDeviceSequence(nextSequence) == null) {
-            "Offline device sequence collision"
-        }
-        database.events().insert(event)
-        event
+    } catch (error: IllegalArgumentException) {
+        throw error
+    } catch (error: Exception) {
+        throw RetryableCountPersistenceException(error)
     }
 
     private suspend fun requireInteractiveBinding(): String {

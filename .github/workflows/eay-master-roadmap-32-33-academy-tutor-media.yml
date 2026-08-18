@@ -46,13 +46,14 @@ jobs:
             services/core-api/app/modules/academy/learning_os.py \
             services/core-api/app/modules/academy/tutor.py \
             services/core-api/app/modules/academy/media_plane.py
-      - name: Run Tutor, media and provenance regression contracts
+      - name: Run Tutor, media and current Academy regression contracts
         run: |
           pytest -q \
             services/core-api/tests/test_academy_master31_learning_os.py \
             services/core-api/tests/test_academy_master32_33.py \
-            services/core-api/tests/test_academy_rag.py \
-            services/core-api/tests/test_academy_media.py
+            services/core-api/tests/test_academy_contracts.py \
+            services/core-api/tests/test_academy_integration.py \
+            services/core-api/tests/test_academy_media_tenant_isolation.py
       - name: Prove production media truth remains external
         run: |
           python - <<'PY'

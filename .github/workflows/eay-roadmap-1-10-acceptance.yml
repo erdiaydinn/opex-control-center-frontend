@@ -1,0 +1,209 @@
+name: EAY Roadmap 1-10 Acceptance
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-roadmap-1-10-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance-and-semantics:
+    name: Lineage readiness authority security and semantics
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install focused contract dependencies
+        run: python -m pip install "pydantic>=2.9,<3" "pytest>=8,<9"
+      - name: Validate canonical lineage and frozen anchors
+        run: python scripts/validate_canonical_lineage.py
+      - name: Validate portfolio category leadership contract
+        run: python scripts/validate_portfolio_category_leadership.py
+      - name: Score repository and production readiness separately
+        run: python scripts/score_portfolio_readiness.py > /tmp/readiness.json
+      - name: Enforce readiness truth boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/readiness.json').read_text())
+          for item in result['modules']:
+              assert item['production_readiness_percent'] <= item['repository_readiness_percent'], item
+              if item['p0_external_blocked']:
+                  assert item['production_ready_claim_permitted'] is False, item
+          print(result['portfolio'])
+          PY
+      - name: Validate single Platform Core authority ownership
+        run: python scripts/validate_platform_authority.py
+      - name: Validate Security item 4 adversarial matrix
+        run: python scripts/validate_security_item4_matrix.py
+      - name: Run Business Glossary governance and shared-consumer contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_business_glossary_*.py
+      - name: Run Field domain targeting recurrence accountability and lifecycle contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_field_*.py
+
+  core-postgres:
+    name: Core PostgreSQL Field mobile governance and promotion
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install Core API test dependencies
+        run: python -m pip install -e './services/core-api[dev]'
+      - name: Create non-bypass runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+          async def main():
+              connection = await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  exists = await connection.fetchval("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')")
+                  if not exists:
+                      await connection.execute("CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS")
+              finally:
+                  await connection.close()
+          asyncio.run(main())
+          PY
+      - name: Apply cumulative migration chain and preserve item 10 lineage
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0029_field_template_lifecycle_column_grant' /tmp/eay-alembic-history.txt
+          alembic upgrade head
+          current="$(alembic current | awk '/\(head\)/ {print $1}')"
+          test "$current" = "${heads[0]}"
+      - name: Run tenant identity and base Field RLS authority
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_bearer_header_boundary.py \
+            services/core-api/tests/test_security_foundation.py \
+            services/core-api/tests/test_identity_foundation_adversarial.py \
+            services/core-api/tests/test_field_intelligence_rls.py \
+            services/core-api/tests/test_field_intelligence_ui_contract.py
+      - name: Run Field mobile receipt and private-object authority
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_field_mobile_offline.py \
+            services/core-api/tests/test_field_evidence_object_upload.py
+      - name: Run Field recurrence exemption targeting and export governance
+        env:
+          PYTHONPATH: services/core-api
+        run: python -m pytest -q services/core-api/tests/test_field_governance_contract.py
+      - name: Run Field to consumer governed promotion chain
+        env:
+          PYTHONPATH: services/core-api
+        run: python -m pytest -q services/core-api/tests/test_field_governed_promotion.py
+      - name: Run service replay proxy CORS TLS browser and SQL fail-closed gates
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_internal_service_auth_dependency.py \
+            services/core-api/tests/test_internal_service_replay.py \
+            services/core-api/tests/test_trusted_proxy_boundary.py \
+            services/core-api/tests/test_cors_runtime_boundary.py \
+            services/core-api/tests/test_production_tls_boundary.py \
+            services/core-api/tests/test_frontend_browser_trust_boundary.py \
+            services/core-api/tests/test_sql_access_boundary.py
+
+  web-product:
+    name: Ten-locale accessible Field web and mobile product
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Reject new ungoverned UI copy
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Install exact frontend dependencies
+        run: npm ci
+      - name: Validate access and platform inclusion
+        run: npm run test:access && node scripts/test-platform-inclusion.mjs
+      - name: Validate ten-locale WCAG product-quality contract
+        run: node scripts/test-global-product-quality-v3.mjs
+      - name: Validate Field command center and builder
+        run: node scripts/test-field-intelligence-ui.mjs
+      - name: Validate Field mobile offline private-receipt contract
+        run: node scripts/test-field-mobile-offline.mjs
+      - name: Validate Field governance and promotion workspace
+        run: node scripts/test-field-governance-ui.mjs
+      - name: Validate accessibility regressions
+        run: |
+          node scripts/test-accessibility-focus-trap.mjs
+          node scripts/test-route-accessibility.mjs
+          node scripts/test-skip-navigation.mjs
+          node scripts/test-route-error-boundary.mjs
+      - name: Production frontend build
+        run: npm run build
+
+  acceptance:
+    name: Roadmap 1-10 repository acceptance
+    runs-on: ubuntu-latest
+    needs:
+      - governance-and-semantics
+      - core-postgres
+      - web-product
+    steps:
+      - name: Preserve truth boundary
+        run: |
+          echo 'Roadmap items 1-10 repository/software acceptance passed on one exact head.'
+          echo 'This does not claim corporate identity, real device, managed storage, field pilot, staging capacity or production readiness.'

@@ -1,0 +1,325 @@
+name: EAY Roadmap 1-13 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-contracts:
+    name: Re-prove roadmap 1-10 lineage semantics readiness and security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "pydantic>=2.9,<3" "pytest>=8,<9"
+      - name: Prove rolling parent is an ancestor of exact head
+        run: |
+          git fetch origin product/eay-product-completion-v1:refs/remotes/origin/product/eay-product-completion-v1
+          git merge-base --is-ancestor refs/remotes/origin/product/eay-product-completion-v1 HEAD
+      - name: Preserve frozen and release anchors
+        run: |
+          python - <<'PY'
+          import json, re, subprocess
+          from pathlib import Path
+          manifest = json.loads(Path('config/eay_canonical_lineage.json').read_text())
+          assert manifest['canonical_continuation']['pr'] == 94
+          assert manifest['canonical_continuation']['main_merge_permitted'] is False
+          assert manifest['canonical_continuation']['force_push_permitted'] is False
+          assert manifest['canonical_continuation']['production_activation_permitted'] is False
+          for anchor in manifest['immutable_anchors']:
+              sha = anchor['head_sha']
+              assert re.fullmatch(r'[0-9a-f]{40}', sha)
+              subprocess.run(['git','cat-file','-e',f'{sha}^{{commit}}'], check=True)
+          PY
+      - name: Portfolio truth and separate readiness scores
+        run: |
+          python scripts/validate_portfolio_category_leadership.py
+          python scripts/score_portfolio_readiness.py > /tmp/readiness.json
+          python - <<'PY'
+          import json
+          result=json.load(open('/tmp/readiness.json'))
+          for item in result['modules']:
+              assert item['production_readiness_percent'] <= item['repository_readiness_percent']
+              if item['p0_external_blocked']:
+                  assert item['production_ready_claim_permitted'] is False
+          PY
+      - name: Platform Core authority and item 4 security matrix
+        run: |
+          python scripts/validate_platform_authority.py
+          python scripts/validate_security_item4_matrix.py
+      - name: Shared Business Glossary consumer authority
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_business_glossary_*.py
+      - name: Field domain lifecycle targeting recurrence accountability
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_field_*.py
+
+  prior-database:
+    name: Re-prove roadmap 1-10 PostgreSQL RLS mobile governance promotion
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e './services/core-api[dev]'
+      - name: Create non-bypass runtime role
+        run: |
+          python - <<'PY'
+          import asyncio, asyncpg
+          async def main():
+              c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  if not await c.fetchval("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"):
+                      await c.execute("CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS")
+              finally: await c.close()
+          asyncio.run(main())
+          PY
+      - name: Migrate exact head and preserve item 10 lineage
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0029_field_template_lifecycle_column_grant' /tmp/eay-alembic-history.txt
+          alembic upgrade head
+          current="$(alembic current | awk '/\(head\)/ {print $1}')"
+          test "$current" = "${heads[0]}"
+      - name: Core and Field security boundaries
+        env:
+          PYTHONPATH: services/core-api
+        run: |
+          python -m pytest -q \
+            services/core-api/tests/test_bearer_header_boundary.py \
+            services/core-api/tests/test_security_foundation.py \
+            services/core-api/tests/test_identity_foundation_adversarial.py \
+            services/core-api/tests/test_field_intelligence_rls.py \
+            services/core-api/tests/test_field_intelligence_ui_contract.py \
+            services/core-api/tests/test_internal_service_auth_dependency.py \
+            services/core-api/tests/test_internal_service_replay.py
+      - name: Field mobile private evidence authority
+        env:
+          PYTHONPATH: services/core-api
+        run: python -m pytest -q services/core-api/tests/test_field_mobile_offline.py services/core-api/tests/test_field_evidence_object_upload.py
+      - name: Field governance and governed promotion
+        env:
+          PYTHONPATH: services/core-api
+        run: python -m pytest -q services/core-api/tests/test_field_governance_contract.py services/core-api/tests/test_field_governed_promotion.py
+      - name: SQL proxy CORS TLS and browser boundaries
+        env:
+          PYTHONPATH: services/core-api
+        run: python -m pytest -q services/core-api/tests/test_sql_access_boundary.py services/core-api/tests/test_trusted_proxy_boundary.py services/core-api/tests/test_cors_runtime_boundary.py services/core-api/tests/test_production_tls_boundary.py services/core-api/tests/test_frontend_browser_trust_boundary.py
+
+  prior-product:
+    name: Re-prove roadmap 1-10 ten-locale accessible product
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - run: node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - run: npm ci
+      - run: npm run test:access
+      - run: node scripts/test-platform-inclusion.mjs
+      - run: node scripts/test-global-product-quality-v3.mjs
+      - run: node scripts/test-field-intelligence-ui.mjs
+      - run: node scripts/test-field-mobile-offline.mjs
+      - run: node scripts/test-field-governance-ui.mjs
+      - run: node scripts/test-accessibility-focus-trap.mjs
+      - run: node scripts/test-route-accessibility.mjs
+      - run: node scripts/test-skip-navigation.mjs
+      - run: node scripts/test-route-error-boundary.mjs
+      - run: npm run build
+
+  workforce-demand-capacity-dpi:
+    name: Items 11-13 demand capacity DPI PostgreSQL authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_workforce_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_workforce_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgresql://workforce_a:runtime_a@localhost:5432/eay_workforce_ci
+      WORKFORCE_TENANT_ID: tenant-a
+      WORKFORCE_AUTO_MIGRATE: "false"
+      DOCKOS_ENV: test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install canonical backend dependencies
+        run: python -m pip install -r backend/requirements.txt "pytest>=8,<9"
+      - name: Compile items 11-13 authorities
+        run: |
+          python -m py_compile \
+            backend/app/modules/workforce/demand_model.py \
+            backend/app/modules/workforce/demand_authority.py \
+            backend/app/modules/workforce/demand_repository.py \
+            backend/app/modules/workforce/skill_capacity.py \
+            backend/app/modules/workforce/capacity_authority.py \
+            backend/app/modules/workforce/capacity_repository.py \
+            backend/app/modules/workforce/capacity_router.py \
+            backend/app/modules/workforce/dpi_authority.py \
+            backend/app/modules/workforce/dpi_repository.py \
+            backend/app/modules/workforce/dpi_service.py \
+            backend/app/modules/workforce/dpi_router.py
+      - name: Apply canonical Workforce V29-V35 migrations
+        run: |
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/002_workforce_v29.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/003_workforce_v30_acceptance.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/004_workforce_v31_lifecycle_acceptance.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/005_workforce_v32_identity_revocation.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/010_workforce_v33_demand_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/011_workforce_v34_capacity_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/012_workforce_v35_dpi_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -Atc "SELECT max(version) FROM workforce_schema_migrations" | grep -qx '35'
+      - name: Create tenant-bound non-bypass Workforce runtime roles
+        run: |
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE workforce_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE workforce_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO workforce_tenant_bindings(role_name,tenant_id)
+          VALUES ('workforce_a','tenant-a'),('workforce_b','tenant-b');
+          GRANT SELECT, INSERT ON workforce_labor_standard_versions, workforce_demand_snapshots, workforce_capacity_snapshots, workforce_dpi_snapshots TO workforce_a, workforce_b;
+          INSERT INTO workforce_dpi_snapshots(
+            tenant_id,id,location_id,interval_start,model_version,
+            demand_snapshot_fingerprint,capacity_snapshot_fingerprint,
+            required_man_hours,effective_man_hours,skill_deficit_man_hours,
+            demand_pressure_index,capacity_gap_man_hours,capacity_sufficient,
+            kpi_bad,bad_kpi_keys,manpower_shortage,root_cause,
+            automatic_extra_people_permitted,staffing_review_required,
+            kpi_observations,explanation,input_fingerprint,snapshot_fingerprint,created_by
+          ) VALUES (
+            'tenant-b','DPI-tenant-b','WH-B','2026-08-17T09:00:00Z','workforce-dpi-v1',
+            repeat('1',64),repeat('2',64),10,10.7,0,0.9345794393,0,true,
+            true,'["picking_seconds_per_order"]'::jsonb,false,'execution_or_process',
+            false,false,'[]'::jsonb,'[]'::jsonb,repeat('3',64),repeat('4',64),'seed'
+          );
+          SQL
+      - name: Run items 11-13 deterministic and PostgreSQL acceptance
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m pytest -q \
+            backend/app/modules/workforce/test_demand_model.py \
+            backend/app/modules/workforce/test_demand_authority.py \
+            backend/app/modules/workforce/test_demand_authority_postgres.py \
+            backend/app/modules/workforce/test_skill_capacity.py \
+            backend/app/modules/workforce/test_capacity_authority.py \
+            backend/app/modules/workforce/test_capacity_authority_postgres.py \
+            backend/app/modules/workforce/test_capacity_api.py \
+            backend/app/modules/workforce/test_dpi_authority.py \
+            backend/app/modules/workforce/test_dpi_authority_postgres.py \
+            backend/app/modules/workforce/test_dpi_api.py
+      - name: Prove cross-tenant zero-read and zero-write for DPI
+        run: |
+          PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -Atc "SELECT count(*) FROM workforce_dpi_snapshots WHERE tenant_id='tenant-b';" | grep -qx '0'
+          PGPASSWORD=runtime_b psql -h localhost -U workforce_b -d eay_workforce_ci -Atc "SELECT count(*) FROM workforce_dpi_snapshots WHERE tenant_id='tenant-a';" | grep -qx '0'
+          if PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_dpi_snapshots(tenant_id,id,location_id,interval_start,model_version,demand_snapshot_fingerprint,capacity_snapshot_fingerprint,required_man_hours,effective_man_hours,skill_deficit_man_hours,demand_pressure_index,capacity_gap_man_hours,capacity_sufficient,kpi_bad,bad_kpi_keys,manpower_shortage,root_cause,automatic_extra_people_permitted,staffing_review_required,kpi_observations,explanation,input_fingerprint,snapshot_fingerprint,created_by) VALUES ('tenant-b','DPI-forbidden','WH-B',now(),'v1',repeat('5',64),repeat('6',64),1,1,0,1,0,true,false,'[]',false,'no_pressure_signal',false,false,'[]','[]',repeat('7',64),repeat('8',64),'attacker');"; then
+            echo 'cross-tenant DPI write unexpectedly succeeded' >&2
+            exit 1
+          fi
+      - name: Prove DPI evidence is append-only and cannot authorize auto staffing
+        run: |
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "UPDATE workforce_dpi_snapshots SET manpower_shortage=true WHERE tenant_id='tenant-b' AND id='DPI-tenant-b';"; then
+            echo 'DPI snapshot mutation unexpectedly succeeded' >&2
+            exit 1
+          fi
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_dpi_snapshots(tenant_id,id,location_id,interval_start,model_version,demand_snapshot_fingerprint,capacity_snapshot_fingerprint,required_man_hours,effective_man_hours,skill_deficit_man_hours,demand_pressure_index,capacity_gap_man_hours,capacity_sufficient,kpi_bad,bad_kpi_keys,manpower_shortage,root_cause,automatic_extra_people_permitted,staffing_review_required,kpi_observations,explanation,input_fingerprint,snapshot_fingerprint,created_by) VALUES ('tenant-b','DPI-auto-forbidden','WH-B',now(),'v1',repeat('9',64),repeat('a',64),1,0,0,999,1,false,true,'[\"bad\"]',true,'manpower_capacity_shortage',true,true,'[]','[]',repeat('b',64),repeat('c',64),'seed');"; then
+            echo 'DPI automatic staffing authority unexpectedly succeeded' >&2
+            exit 1
+          fi
+      - name: Preserve production truth boundary
+        run: |
+          echo 'roadmap_1_12_regression_reproved=true'
+          echo 'item13_repository_acceptance=true'
+          echo 'live_kpi_feed_and_field_root_cause_uat_external_evidence=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-13 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-contracts, prior-database, prior-product, workforce-demand-capacity-dpi]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_12_regression_reproved=true'
+          echo 'item13_repository_software_acceptance=true'
+          echo 'production_ready=false'
+          echo 'external_evidence_not_substituted=true'

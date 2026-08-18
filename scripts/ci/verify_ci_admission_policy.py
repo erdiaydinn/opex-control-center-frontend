@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only verifier for the final EAY GitHub Actions admission policy.
-
-Workstream PRs run relevant delta gates; canonical composition retains broad
-regression authority. Historical Roadmap 1-10..1-14 definitions remain
-version-controlled for audit but are inert outside .github/workflows.
-"""
-
-from __future__ import annotations
+"""Read-only verifier for EAY GitHub Actions admission policy."""
 
 from pathlib import Path
 
@@ -14,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
 ARCHIVE = ROOT / "docs" / "ci" / "historical-workflows"
 
-HISTORICAL = (
+ROLLING_BRIDGE = (
     "eay-roadmap-1-10-acceptance.yml",
     "eay-roadmap-1-10-exact-head.yml",
     "eay-roadmap-1-11-exact-head.yml",
@@ -22,7 +15,6 @@ HISTORICAL = (
     "eay-roadmap-1-13-exact-head.yml",
     "eay-roadmap-1-14-exact-head.yml",
 )
-
 PLANOGRAM = (
     "eay-master-roadmap-24-planogram-physical-truth.yml",
     "eay-master-roadmap-25-planogram-optimizer.yml",
@@ -47,22 +39,30 @@ def pull_request_block(source: str) -> str:
     if "pull_request:" not in head:
         raise AssertionError("pull_request admission missing")
     block = head.split("pull_request:", 1)[1]
-    for marker in ("\n  push:", "\n  workflow_dispatch:", "\npermissions:", "\nconcurrency:"):
+    for marker in ("\n  push:", "\n  workflow_dispatch:", "\npermissions:", "\nconcurrency:", "\nenv:"):
+        if marker in block:
+            block = block.split(marker, 1)[0]
+    return block
+
+
+def concurrency_block(source: str) -> str:
+    head = header(source)
+    if "concurrency:" not in head:
+        raise AssertionError("concurrency missing")
+    block = head.split("concurrency:", 1)[1]
+    for marker in ("\nenv:", "\npermissions:", "\ndefaults:"):
         if marker in block:
             block = block.split(marker, 1)[0]
     return block
 
 
 def stable_non_sha(name: str, source: str) -> None:
-    head = header(source)
-    if "concurrency:" not in head:
-        raise AssertionError(f"{name}: concurrency missing")
-    if "cancel-in-progress: true" not in head:
+    block = concurrency_block(source)
+    if "cancel-in-progress: true" not in block:
         raise AssertionError(f"{name}: superseded-run cancellation missing")
-    concurrency = head.split("concurrency:", 1)[1]
-    if "head.sha" in concurrency or "github.sha" in concurrency:
+    if "head.sha" in block or "github.sha" in block:
         raise AssertionError(f"{name}: concurrency still keyed by immutable commit SHA")
-    if "github.ref" not in concurrency and "github.event.pull_request.number" not in concurrency:
+    if "github.ref" not in block and "github.event.pull_request.number" not in block:
         raise AssertionError(f"{name}: concurrency lacks stable PR/ref identity")
 
 
@@ -86,19 +86,20 @@ def main() -> None:
         except AssertionError as exc:
             failures.append(str(exc))
 
-    # Historical gates are preserved verbatim for audit, but cannot consume
-    # Actions capacity anymore.
-    for name in HISTORICAL:
-        check(lambda name=name: (
-            (_ for _ in ()).throw(AssertionError(f"historical workflow still active: {name}"))
-            if (WF / name).exists()
-            else None
-        ))
-        check(lambda name=name: (
-            None
-            if (ARCHIVE / name).is_file()
-            else (_ for _ in ()).throw(AssertionError(f"historical archive missing: {name}"))
-        ))
+    # 1-10..1-14 are a rolling bridge for #94 -> product-completion only.
+    # They must never fan out on category-targeted domain/workstream PRs.
+    for name in ROLLING_BRIDGE:
+        def rolling(name=name) -> None:
+            source = read(name)
+            block = pull_request_block(source)
+            if "product/eay-product-completion-v1" not in block:
+                raise AssertionError(f"{name}: rolling product-completion admission missing")
+            if "product/eay-category-leadership-v1" in block:
+                raise AssertionError(f"{name}: category workstream admission must stay disabled")
+            if not (ARCHIVE / name).is_file():
+                raise AssertionError(f"{name}: audit archive missing")
+            stable_non_sha(name, source)
+        check(rolling)
 
     for helper in (
         ROOT / "scripts/ci/apply_inventory_admission_control.py",
@@ -107,8 +108,7 @@ def main() -> None:
         if helper.exists():
             failures.append(f"temporary mutation helper still present: {helper.relative_to(ROOT)}")
 
-    # DockOS cannot be a global PR gate or impersonate Inventory acceptance.
-    def dockos_check() -> None:
+    def dockos() -> None:
         source = read("dockos-full-stack.yml")
         block = pull_request_block(source)
         if "paths:" not in block:
@@ -123,12 +123,9 @@ def main() -> None:
             if forbidden in block:
                 raise AssertionError(f"DockOS still consumes Inventory PR admission: {forbidden}")
         stable_non_sha("dockos-full-stack.yml", source)
-    check(dockos_check)
+    check(dockos)
 
-    # Inventory owns its focused backend/DB/Android proof. Generic identity
-    # authority remains in the dedicated Security/Platform gates rather than
-    # requiring Inventory to fabricate a local JWT test environment.
-    def inventory_check() -> None:
+    def inventory() -> None:
         source = read("eay-inventory-production.yml")
         block = pull_request_block(source)
         if "product/eay-category-leadership-v1" not in block:
@@ -144,9 +141,8 @@ def main() -> None:
         if '"android-inventory/**"' not in pull_request_block(android):
             raise AssertionError("Inventory Android gate lost Android path scope")
         stable_non_sha("opex-inventory-android.yml", android)
-    check(inventory_check)
+    check(inventory)
 
-    # Planogram and Budget run only relevant workstream deltas on PRs.
     for name in PLANOGRAM:
         check(lambda name=name: require_pr_paths(name, ('"apps/planai/**"',)))
     check(lambda: require_pr_paths(
@@ -154,8 +150,7 @@ def main() -> None:
         ('"backend/app/modules/budget/**"',),
     ))
 
-    # Jarvis Orders V2 may not consume the entire Core API tree.
-    def jarvis_check() -> None:
+    def jarvis() -> None:
         source = read("jarvis-convergence-ci.yml")
         block = pull_request_block(source)
         if "paths:" not in block:
@@ -165,11 +160,8 @@ def main() -> None:
         if '"services/core-api/app/core/ai_*.py"' not in block:
             raise AssertionError("Jarvis governed AI Core API path missing")
         stable_non_sha("jarvis-convergence-ci.yml", source)
-    check(jarvis_check)
+    check(jarvis)
 
-    # Master 56-60 legitimately remains a separate PR until composed. If it is
-    # present later, verify its reviewed identity instead of creating a second
-    # authority here.
     release_path = WF / "eay-master-roadmap-56-60-release-leadership.yml"
     if release_path.exists():
         release = release_path.read_text(encoding="utf-8")
@@ -182,18 +174,17 @@ def main() -> None:
     guard = read("ci-admission-guard.yml")
     if "contents: read" not in guard:
         failures.append("CI Admission Guard must remain read-only")
-    stable_non_sha("ci-admission-guard.yml", guard)
+    check(lambda: stable_non_sha("ci-admission-guard.yml", guard))
 
     if failures:
         raise SystemExit("CI admission policy verification failed:\n- " + "\n- ".join(failures))
 
     print("CI_ADMISSION_POLICY=PASS")
-    print("historical_1_10_1_14=archived_inert")
+    print("rolling_1_10_1_14=product_completion_only")
+    print("category_targeted_workstream_legacy_fanout=false")
     print("domain_heavy_pr_admission=scoped")
     print("superseded_pr_runs=stable_non_sha_concurrency")
-    print("dockos_inventory_fanout=false")
-    print("jarvis_core_api_fanout=false")
-    print("canonical_push_regression=preserved")
+    print("canonical_cumulative_chain=preserved")
 
 
 if __name__ == "__main__":

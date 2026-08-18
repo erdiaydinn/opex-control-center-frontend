@@ -14,6 +14,7 @@ outputs fail closed.
 from __future__ import annotations
 
 import json
+from datetime import date
 from enum import Enum
 from typing import Callable
 
@@ -59,20 +60,23 @@ class AgentBenchEngineParseError(ValueError):
     pass
 
 
-def build_reasoning_agent_bench_suite(
-    catalog: EnterpriseAgentBenchCatalog,
-) -> BenchmarkTaskSuite:
-    """Use cases a reasoning engine can fairly attempt without real side effects."""
-
-    cases = tuple(
-        case.benchmark_case()
+def _reasoning_cases(catalog: EnterpriseAgentBenchCatalog) -> tuple[EnterpriseAgentBenchCase, ...]:
+    return tuple(
+        case
         for case in catalog.cases
         if not case.expectation.requires_effect_verification
         and case.expectation.disposition is not AgentDisposition.EXECUTE_SIMULATED
     )
+
+
+def build_reasoning_agent_bench_suite(
+    catalog: EnterpriseAgentBenchCatalog,
+) -> BenchmarkTaskSuite:
+    """Plain reasoning subset, useful for non-provider/native system adapters."""
+
     return BenchmarkTaskSuite(
         task_set_id="eay-enterprise-agent-bench-reasoning-v1",
-        cases=cases,
+        cases=tuple(case.benchmark_case() for case in _reasoning_cases(catalog)),
     )
 
 
@@ -159,6 +163,31 @@ def build_engine_case_prompt(
     )
 
 
+def build_reasoning_engine_benchmark_suite(
+    *,
+    catalog: EnterpriseAgentBenchCatalog,
+    fixtures: dict[str, tuple[EngineBenchFixture, ...]],
+) -> BenchmarkTaskSuite:
+    """Provider-ready reasoning suite with identical strict schema/trust framing."""
+
+    benchmark_cases: list[BenchmarkTaskCase] = []
+    for case in _reasoning_cases(catalog):
+        case_fixtures = fixtures.get(case.case_id, ())
+        benchmark_cases.append(
+            BenchmarkTaskCase(
+                case_id=case.case_id,
+                prompt=build_engine_case_prompt(case=case, fixtures=case_fixtures),
+                category=case.domain.value,
+                side_effect=case.side_effect,
+                expected_evaluator_ref=case.evaluator_ref,
+            )
+        )
+    return BenchmarkTaskSuite(
+        task_set_id="eay-enterprise-agent-bench-engine-reasoning-v1",
+        cases=tuple(benchmark_cases),
+    )
+
+
 def _parse_engine_envelope(
     *,
     case: EnterpriseAgentBenchCase,
@@ -221,7 +250,7 @@ def build_agent_bench_receipt_evaluator(
             )
 
         try:
-            as_of = None if envelope.as_of is None else __import__("datetime").date.fromisoformat(envelope.as_of)
+            as_of = None if envelope.as_of is None else date.fromisoformat(envelope.as_of)
         except ValueError:
             return BenchmarkCaseOutcome(
                 task_success=False,

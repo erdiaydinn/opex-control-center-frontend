@@ -2,10 +2,10 @@
 
 Adapters existing in code is not enough to make an engine production-active.
 Frontier engines require an explicit enable flag, configured model id, secret
-availability and a verified evidence-bound benchmark attestation.  Environment
-score/ref values may be supplied as deployment assertions, but they must match
-the attestation rather than acting as the source of truth. Secret values are
-only checked for presence and are never stored in registry state.
+availability and a source-replay-verified benchmark promotion bundle. Plain
+attestation objects or environment score/ref assertions cannot activate a
+frontier engine. Secret values are only checked for presence and are never
+stored in registry state.
 
 The existing EAY Ollama path remains the default local privacy fallback and
 uses the existing `EAY_OLLAMA_URL` / `EAY_MODEL` configuration names.
@@ -17,7 +17,7 @@ from typing import Mapping
 
 from pydantic import BaseModel
 
-from .benchmark_promotion import EngineBenchmarkAttestation
+from .benchmark_promotion import VerifiedEngineBenchmarkPromotion
 from .engine_gateway import EngineEndpoint, EngineProvider, RegisteredEngine
 from .intelligence_router import (
     EngineClass,
@@ -27,7 +27,7 @@ from .intelligence_router import (
     TaskRisk,
 )
 
-ENGINE_REGISTRY_CONTRACT = "eay-engine-deployment-registry-v2"
+ENGINE_REGISTRY_CONTRACT = "eay-engine-deployment-registry-v3"
 
 
 def _enabled(value: str | None, *, default: bool = False) -> bool:
@@ -66,22 +66,26 @@ class EngineRegistryState(BaseModel):
         return {item.profile.engine_id: item for item in self.registrations}
 
 
-def _validate_frontier_attestation(
+def _validate_frontier_promotion(
     *,
     environ: Mapping[str, str],
     prefix: str,
     engine_id: str,
-    attestation: EngineBenchmarkAttestation | None,
+    promotion: VerifiedEngineBenchmarkPromotion | None,
 ) -> tuple[float | None, str | None, list[str]]:
     blockers: list[str] = []
-    if attestation is None:
-        return None, None, [f"{prefix.casefold()}_verified_benchmark_attestation_missing"]
-    if attestation.engine_id != engine_id:
-        blockers.append(f"{prefix.casefold()}_benchmark_attestation_engine_mismatch")
+    if promotion is None:
+        return None, None, [f"{prefix.casefold()}_verified_benchmark_promotion_missing"]
+    if not isinstance(promotion, VerifiedEngineBenchmarkPromotion):
+        return None, None, [f"{prefix.casefold()}_verified_benchmark_promotion_required"]
+
+    attestation = promotion.attestation
+    if attestation.engine_id != engine_id or promotion.challenger.system_id != engine_id:
+        blockers.append(f"{prefix.casefold()}_benchmark_promotion_engine_mismatch")
     if not attestation.promotion_allowed or attestation.blockers:
-        blockers.append(f"{prefix.casefold()}_benchmark_attestation_not_promotable")
+        blockers.append(f"{prefix.casefold()}_benchmark_promotion_not_promotable")
     if attestation.critical_safety_regression:
-        blockers.append(f"{prefix.casefold()}_benchmark_attestation_safety_regression")
+        blockers.append(f"{prefix.casefold()}_benchmark_promotion_safety_regression")
 
     configured_score = environ.get(f"{prefix}_BENCHMARK_SCORE", "").strip()
     if configured_score:
@@ -91,11 +95,11 @@ def _validate_frontier_attestation(
             blockers.append(f"{prefix.casefold()}_benchmark_score_invalid")
         else:
             if abs(parsed_score - attestation.benchmark_score) > 1e-12:
-                blockers.append(f"{prefix.casefold()}_benchmark_score_attestation_mismatch")
+                blockers.append(f"{prefix.casefold()}_benchmark_score_promotion_mismatch")
 
     configured_ref = environ.get(f"{prefix}_BENCHMARK_EVIDENCE_REF", "").strip()
     if configured_ref and configured_ref != attestation.evidence_ref:
-        blockers.append(f"{prefix.casefold()}_benchmark_evidence_ref_attestation_mismatch")
+        blockers.append(f"{prefix.casefold()}_benchmark_evidence_ref_promotion_mismatch")
 
     if blockers:
         return None, None, blockers
@@ -111,7 +115,7 @@ def _frontier_registration(
     base_url: str,
     secret_env_name: str,
     provider_key: str,
-    attestation: EngineBenchmarkAttestation | None,
+    promotion: VerifiedEngineBenchmarkPromotion | None,
 ) -> tuple[RegisteredEngine | None, list[str]]:
     if not _enabled(environ.get(f"{prefix}_ENABLED")):
         return None, []
@@ -123,11 +127,11 @@ def _frontier_registration(
     if not environ.get(secret_env_name, "").strip():
         blockers.append(f"{prefix.casefold()}_secret_missing")
 
-    benchmark_score, benchmark_ref, benchmark_blockers = _validate_frontier_attestation(
+    benchmark_score, benchmark_ref, benchmark_blockers = _validate_frontier_promotion(
         environ=environ,
         prefix=prefix,
         engine_id=engine_id,
-        attestation=attestation,
+        promotion=promotion,
     )
     blockers.extend(benchmark_blockers)
 
@@ -163,13 +167,13 @@ def _frontier_registration(
 def build_engine_registry(
     environ: Mapping[str, str],
     *,
-    benchmark_attestations: Mapping[str, EngineBenchmarkAttestation] | None = None,
+    benchmark_promotions: Mapping[str, VerifiedEngineBenchmarkPromotion] | None = None,
 ) -> EngineRegistryState:
     registrations: list[RegisteredEngine] = []
     blockers: list[str] = []
     requested: list[str] = []
     active: list[str] = []
-    attestations = benchmark_attestations or {}
+    promotions = benchmark_promotions or {}
 
     if _enabled(environ.get("EAY_OLLAMA_ENABLED"), default=True):
         local_score, local_ref, _ = _benchmark(environ, "EAY_OLLAMA")
@@ -238,7 +242,7 @@ def build_engine_registry(
             base_url=base_url,
             secret_env_name=secret_name,
             provider_key=provider_key,
-            attestation=attestations.get(engine_id),
+            promotion=promotions.get(engine_id),
         )
         blockers.extend(item_blockers)
         if registration is not None:

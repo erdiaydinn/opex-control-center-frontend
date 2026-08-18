@@ -121,24 +121,27 @@ def _validate_entry(entry: RepositoryEntry) -> None:
             raise ValueError(f"verified entry requires owner/repo identity: {entry.registry_id}")
     else:
         if entry.repository is not None or entry.canonical_upstream is not None:
-            raise ValueError(f"unresolved entry cannot guess repository identity: {entry.registry_id}")
+            raise ValueError(
+                f"unresolved entry cannot guess repository identity: {entry.registry_id}"
+            )
         if not entry.source_locator:
-            raise ValueError(f"unresolved entry requires an explicit source locator: {entry.registry_id}")
+            raise ValueError(
+                f"unresolved entry requires an explicit source locator: {entry.registry_id}"
+            )
         if entry.license_status != "BLOCKED_UNRESOLVED" or entry.decision != "PENDING":
             raise ValueError(f"unresolved entry must remain blocked/pending: {entry.registry_id}")
 
     if entry.canonical_upstream and not _REPOSITORY.fullmatch(entry.canonical_upstream):
         raise ValueError(f"canonical upstream is not owner/repo: {entry.registry_id}")
 
-    if entry.classification == "OWN":
-        if (
-            entry.identity_status != "VERIFIED"
-            or entry.relation != "OWN"
-            or entry.license_status != "OWNED"
-            or entry.decision != "OWN"
-            or entry.canonical_upstream is not None
-        ):
-            raise ValueError(f"OWN source contract is inconsistent: {entry.registry_id}")
+    if entry.classification == "OWN" and (
+        entry.identity_status != "VERIFIED"
+        or entry.relation != "OWN"
+        or entry.license_status != "OWNED"
+        or entry.decision != "OWN"
+        or entry.canonical_upstream is not None
+    ):
+        raise ValueError(f"OWN source contract is inconsistent: {entry.registry_id}")
 
     if entry.decision == "ADOPT" and entry.license_status not in _CODE_SOURCE_LICENSES:
         raise ValueError(f"ADOPT requires commercial code-source authority: {entry.registry_id}")

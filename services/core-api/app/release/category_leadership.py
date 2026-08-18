@@ -211,7 +211,15 @@ def can_activate_production(
 
 
 def can_accept_stabilization(truth: ReleaseTruth) -> bool:
-    return _verified_named(
+    scope = truth.activation_scope
+    if not _scope_valid(scope):
+        return False
+    assert scope is not None
+    return can_activate_production(
+        truth,
+        tenant_ids=scope.tenant_ids,
+        modules=scope.modules,
+    ) and _verified_named(
         truth.stabilization_metrics,
         truth.stabilization_evidence_refs,
         STABILIZATION_METRICS,
@@ -252,7 +260,7 @@ def next_state(
         return ReleaseState.STABILIZING
     if current == ReleaseState.STABILIZING:
         if not can_accept_stabilization(truth):
-            raise ValueError("stabilization acceptance evidence incomplete")
+            raise ValueError("stabilization or active release evidence incomplete")
         return ReleaseState.CATEGORY_LEADERSHIP
     raise ValueError("category leadership is a continuous governed iteration state")
 

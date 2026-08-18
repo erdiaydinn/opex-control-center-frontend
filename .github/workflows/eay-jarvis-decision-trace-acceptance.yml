@@ -7,13 +7,16 @@ on:
     paths:
       - "services/eay-ai-core/app/grounded_decision_trace.py"
       - "services/eay-ai-core/tests/test_grounded_decision_trace.py"
+      - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/eay-jarvis-decision-trace-acceptance.yml"
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
     paths:
       - "services/eay-ai-core/app/grounded_decision_trace.py"
       - "services/eay-ai-core/tests/test_grounded_decision_trace.py"
+      - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/eay-jarvis-decision-trace-acceptance.yml"
 
 permissions:

@@ -41,12 +41,17 @@ A feature is not accepted because its screen works. It must pass the relevant ga
 - Tokens, keys, raw payloads, barcodes, biometrics and precise location are absent from telemetry/crash evidence.
 - Release signing is protected and reproducible enough to verify artifact provenance.
 
-## G5 — field ergonomics
+## G5 — field ergonomics and localization
 
 - Zebra hardware scanning matrix passes for required device families.
 - Scan-to-feedback, gloves, one-hand use, low light, sun visibility and accidental double-scan scenarios pass.
 - Accessibility includes large targets, screen semantics, contrast and non-color-only status.
 - Critical flow avoids unnecessary typing and modal navigation.
+- The shared Platform Core localization contract is used; a module-specific locale list is not accepted.
+- Production resource-key parity passes for TR, EN, DE, AR, FR, ES, IT, NL, PL and PT-BR.
+- Locale plural categories satisfy the shared CLDR cardinal contract and Android lint.
+- RTL is locale-driven; feature code may not force LTR. Arabic RTL field flows require visual acceptance.
+- A new mobile feature cannot claim production acceptance with an English-first localization exception.
 
 ## G6 — resilience / fleet
 

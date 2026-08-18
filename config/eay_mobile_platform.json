@@ -15,6 +15,14 @@
       "state": "scanner-and-blind-count-foundation"
     }
   },
+  "localization": {
+    "contract": "config/eay_localization_contract.json",
+    "authority": "platform_core",
+    "mandatory_locale_parity": true,
+    "english_first_production_exception": false,
+    "rtl_locale_driven": true,
+    "plural_rules": "cldr_cardinal_categories_plus_android_lint"
+  },
   "authority": {
     "identity": "platform_core",
     "authorization": "server_authoritative",

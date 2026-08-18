@@ -67,14 +67,16 @@ contract = json.loads(contract_path.read_text(encoding="utf-8"))
 
 if contract.get("capability") != "LOC":
     raise SystemExit("localization contract must be owned by LOC capability")
+if contract.get("authority") != "platform_core":
+    raise SystemExit("localization authority must remain Platform Core")
 if contract.get("default_locale") != "en" or contract.get("fallback_locale") != "en":
     raise SystemExit("localization fallback/default must remain explicit English")
 if contract.get("english_only_production_exception_allowed") is not False:
     raise SystemExit("English-only production exception must remain disabled")
 
 required_locales = contract.get("required_locales") or []
-if len(required_locales) < 10 or len(required_locales) != len(set(required_locales)):
-    raise SystemExit("localization contract must define at least 10 unique required locales")
+if len(required_locales) != 10 or len(required_locales) != len(set(required_locales)):
+    raise SystemExit("localization contract must define exactly 10 unique required locales")
 rtl_locales = set(contract.get("rtl_locales") or [])
 if "ar" not in rtl_locales:
     raise SystemExit("Arabic RTL is mandatory")
@@ -84,6 +86,13 @@ if not rtl_locales.issubset(set(required_locales)):
 qualifiers = contract.get("android_resource_qualifiers") or {}
 if set(qualifiers) != set(required_locales):
     raise SystemExit("Android qualifier map must exactly cover required locales")
+
+plural_contract = contract.get("plural_categories") or {}
+if set(plural_contract) != set(required_locales):
+    raise SystemExit("plural category map must exactly cover required locales")
+for locale, categories in plural_contract.items():
+    if not categories or len(categories) != len(set(categories)) or "other" not in categories:
+        raise SystemExit(f"invalid plural category contract for {locale}")
 
 locales = {}
 for locale in required_locales:
@@ -120,14 +129,26 @@ for locale, path in locales.items():
 required_plurals = {"field_sync_pending", "blind_count_completed_lines"}
 for locale, path in locales.items():
     root = ET.parse(path).getroot()
-    plural_names = {node.attrib.get("name") for node in root.findall("plurals")}
-    missing = sorted(required_plurals - plural_names)
-    if missing:
-        raise SystemExit(f"plural contract failure for {locale}: missing={missing}")
+    plural_nodes = {node.attrib.get("name"): node for node in root.findall("plurals")}
+    missing_names = sorted(required_plurals - set(plural_nodes))
+    if missing_names:
+        raise SystemExit(f"plural contract failure for {locale}: missing={missing_names}")
+
+    required_categories = set(plural_contract[locale])
+    for plural_name in required_plurals:
+        actual_categories = {
+            item.attrib.get("quantity") for item in plural_nodes[plural_name].findall("item")
+        }
+        missing_categories = sorted(required_categories - actual_categories)
+        if missing_categories:
+            raise SystemExit(
+                f"CLDR plural category failure for {locale}/{plural_name}: "
+                f"missing={missing_categories}"
+            )
 
 print(
     "EAY Field UI locale parity: PASS "
-    f"({len(required_locales)} required locales; RTL={sorted(rtl_locales)})"
+    f"({len(required_locales)} required locales; RTL={sorted(rtl_locales)}; CLDR categories enforced)"
 )
 PY
 

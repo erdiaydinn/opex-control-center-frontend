@@ -1,14 +1,7 @@
-HEAD=0d2def241a52633c7fb2edaeed3ebb0b0fadff34
+HEAD=3020d4192ea5a2f1c575a71e51da74d8ac944521
 RUFF_VERSION=ruff 0.16.3
 ---
-services/core-api/alembic/versions/0030_planogram_store_dna_foundation.py:126:101: E501 Line too long (101 > 100)
-services/core-api/alembic/versions/0031_planogram_execution_compliance.py:82:101: E501 Line too long (107 > 100)
-services/core-api/alembic/versions/0031_planogram_execution_compliance.py:225:101: E501 Line too long (106 > 100)
-services/core-api/alembic/versions/0031_planogram_execution_compliance.py:230:101: E501 Line too long (102 > 100)
 services/core-api/alembic/versions/0031_planogram_execution_compliance.py:242:101: E501 Line too long (113 > 100)
-services/core-api/alembic/versions/0031_planogram_execution_compliance.py:264:101: E501 Line too long (102 > 100)
 services/core-api/alembic/versions/0031_planogram_execution_compliance.py:281:101: E501 Line too long (108 > 100)
-services/core-api/alembic/versions/0035_planogram_plan_lifecycle_hardening.py:63:101: E501 Line too long (105 > 100)
-services/core-api/alembic/versions/0035_planogram_plan_lifecycle_hardening.py:71:101: E501 Line too long (102 > 100)
 services/core-api/alembic/versions/0035_planogram_plan_lifecycle_hardening.py:86:101: E501 Line too long (113 > 100)
-Found 10 errors.
+Found 3 errors.

@@ -79,7 +79,7 @@ def upgrade() -> None:
             tenant_id uuid NOT NULL,
             store_dna_version_id uuid NOT NULL,
             event_type varchar(40) NOT NULL CHECK (event_type IN
-            ('bootstrapped','updated','submitted','approved','rejected','superseded','revised')),
+    ('bootstrapped','updated','submitted','approved','rejected','superseded','revised')),
             actor_subject varchar(255) NOT NULL,
             from_status varchar(20), to_status varchar(20), reason varchar(500),
             payload jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -123,7 +123,7 @@ def upgrade() -> None:
                    OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
                    OR NEW.rejection_reason IS DISTINCT FROM OLD.rejection_reason
                    OR NEW.supersedes_version_id IS DISTINCT FROM OLD.supersedes_version_id
-                THEN RAISE EXCEPTION 'Approved Store DNA is immutable except approved -> superseded';
+    THEN RAISE EXCEPTION 'Approved Store DNA is immutable except approved -> superseded';
                 END IF;
             END IF;
             RETURN NEW;

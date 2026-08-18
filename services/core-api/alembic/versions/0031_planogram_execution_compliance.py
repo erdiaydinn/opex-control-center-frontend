@@ -79,7 +79,7 @@ def upgrade() -> None:
             tenant_id uuid NOT NULL,
             plan_version_id uuid NOT NULL,
             event_type varchar(32) NOT NULL
-                CHECK (event_type IN ('drafted','updated','submitted','approved','rejected','superseded')),
+    CHECK (event_type IN ('drafted','updated','submitted','approved','rejected','superseded')),
             actor_subject varchar(255) NOT NULL,
             from_status varchar(20), to_status varchar(20), reason varchar(500),
             payload jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -222,12 +222,12 @@ def upgrade() -> None:
                    OR NEW.rejected_by IS DISTINCT FROM OLD.rejected_by
                    OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
                    OR NEW.rejection_reason IS DISTINCT FROM OLD.rejection_reason
-                THEN RAISE EXCEPTION 'Approved Planogram plan is immutable except approved -> superseded';
+    THEN RAISE EXCEPTION 'Approved Planogram plan is immutable except approved -> superseded';
                 END IF;
             END IF;
             IF NEW.status = 'approved' AND OLD.status <> 'approved' THEN
                 IF NOT NEW.physical_truth_attested THEN
-                    RAISE EXCEPTION 'Planogram approval requires external physical-truth attestation';
+    RAISE EXCEPTION 'Planogram approval requires external physical-truth attestation';
                 END IF;
                 IF NEW.submitted_by IS NULL OR NEW.approved_by IS NULL OR NEW.submitted_by =
                 NEW.approved_by THEN
@@ -261,7 +261,7 @@ def upgrade() -> None:
             WHERE tenant_id=NEW.tenant_id AND id=NEW.plan_version_id;
             IF plan_status IS DISTINCT FROM 'approved' OR NOT COALESCE(attested, FALSE)
                OR plan_store IS DISTINCT FROM NEW.store_code THEN
-                RAISE EXCEPTION 'Execution assignment requires approved attested plan for same store';
+    RAISE EXCEPTION 'Execution assignment requires approved attested plan for same store';
             END IF;
             RETURN NEW;
         END; $$

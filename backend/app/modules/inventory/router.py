@@ -11,13 +11,19 @@ from .location_completion import (
     filter_completed_terminal_tasks,
     record_location_completion,
 )
+from .mission_event import record_event as mission_record_event
+from .mission_lease import (
+    claim_terminal_mission,
+    filter_and_annotate_terminal_tasks,
+    lease_readiness,
+    supersede_attempt,
+)
 from .production import (
     InventoryPrincipal,
     create_document as production_create_document,
     enroll_device,
     list_terminal_tasks as production_list_terminal_tasks,
     readiness as production_readiness,
-    record_event as production_record_event,
     transition as production_transition,
 )
 from .reconciliation import reconciliation as read_reconciliation
@@ -30,6 +36,8 @@ from .schemas import (
     LocationLockCreate,
     ScanCreate,
     TerminalEventCreate,
+    TerminalMissionClaimCreate,
+    TerminalMissionReassignCreate,
 )
 from .service import (
     InventoryRuleError,
@@ -179,6 +187,7 @@ def production_health() -> dict:
     result = production_readiness()
     checks = dict(result.get("checks", {}))
     checks["migration_v4_location_completion"] = completion_readiness()
+    checks["migration_v5_mission_lease"] = lease_readiness()
     return {
         "status": "ready" if result.get("status") == "ready" and all(checks.values()) else "blocked",
         "checks": checks,
@@ -260,7 +269,7 @@ def terminal_event(
     require_verified_identity(request, "countInventory")
     principal = production_principal(request, x_eay_device_id)
     return run(
-        production_record_event,
+        mission_record_event,
         principal,
         payload.model_dump(),
         x_eay_request_timestamp,
@@ -335,12 +344,70 @@ def production_terminal_tasks(
     narrowed_principal, active_shift_id = active
     rows = run(production_list_terminal_tasks, narrowed_principal)
     rows = run(filter_completed_terminal_tasks, narrowed_principal, rows)
+    rows = run(
+        filter_and_annotate_terminal_tasks,
+        narrowed_principal,
+        active_shift_id,
+        rows,
+    )
     return {
         "rows": [
             {**row, "active_shift_id": active_shift_id}
             for row in rows
         ]
     }
+
+
+@router.post("/v1/terminal/missions/claim")
+def production_terminal_mission_claim(
+    payload: TerminalMissionClaimCreate,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+    x_eay_request_timestamp: str = Header(..., alias="X-EAY-Request-Timestamp"),
+    x_eay_request_nonce: str = Header(..., alias="X-EAY-Request-Nonce"),
+    x_eay_device_signature: str = Header(..., alias="X-EAY-Device-Signature"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production terminal endpoint etkin değil.")
+    require_verified_identity(request, "countInventory")
+    principal = production_principal(request, x_eay_device_id)
+    active = active_shift_principal(principal)
+    if active is None:
+        raise HTTPException(status_code=409, detail="Aktif vardiya olmadan mission claim edilemez.")
+    narrowed_principal, active_shift_id = active
+    return run(
+        claim_terminal_mission,
+        narrowed_principal,
+        active_shift_id,
+        payload.model_dump(),
+        x_eay_request_timestamp,
+        x_eay_request_nonce,
+        x_eay_device_signature,
+    )
+
+
+@router.post("/v1/documents/{document_id}/locations/{location_id}/reassign")
+def production_terminal_mission_reassign(
+    document_id: str,
+    location_id: str,
+    payload: TerminalMissionReassignCreate,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production document endpoint etkin değil.")
+    require_verified_identity(request, "approveInventory")
+    try:
+        parsed_document_id = UUID(document_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Geçerli document UUID zorunludur.") from error
+    return run(
+        supersede_attempt,
+        production_principal(request, x_eay_device_id),
+        parsed_document_id,
+        location_id,
+        payload.reason,
+    )
 
 
 @router.get("/v1/documents/{document_id}/reconciliation")

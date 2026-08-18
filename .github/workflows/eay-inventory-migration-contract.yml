@@ -1,0 +1,110 @@
+name: EAY Inventory Migration Contract
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+      - release/platform-convergence-v0.1
+    paths:
+      - "backend/migrations/*inventory*.sql"
+      - "backend/app/modules/inventory/**"
+      - "backend/tests/test_inventory_*.py"
+      - ".github/workflows/eay-inventory-migration-contract.yml"
+  push:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "backend/migrations/*inventory*.sql"
+      - "backend/app/modules/inventory/**"
+      - "backend/tests/test_inventory_*.py"
+      - ".github/workflows/eay-inventory-migration-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-migration-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_inventory_migrations
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_inventory_migrations"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_migrations
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Apply authoritative Inventory production migration series
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          applied=0
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              printf 'legacy_inventory_migration_frozen=%s\n' "$migration"
+              continue
+            fi
+            printf 'production_inventory_migration=%s\n' "$migration"
+            psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+            applied=$((applied + 1))
+          done
+          test "$applied" -ge 1
+      - name: Require version registration for production migration series
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            count="$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=${version}")"
+            test "$count" = "1"
+          done
+      - name: Replay production migration series idempotently
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Prove v4 location-completion database authority when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f backend/migrations/004_inventory_location_completion.sql; then
+            test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=4")" = "1"
+            test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_location_event_v4_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_location_completion_once_idx'")" = "1"
+          fi
+      - name: Reject malformed diff
+        run: git diff --check

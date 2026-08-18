@@ -1,0 +1,8 @@
+{
+  "schema_version":1,
+  "module_uat":["workforce_standalone","hiring_standalone","inventory_standalone","dockos_standalone","planogram_standalone","budget_standalone","academy_standalone","field_standalone","jarvis_with_entitled_tools_only"],
+  "cross_module_uat":["workforce_kpi","field_planogram","dock_inventory","hiring_workforce_academy","budget_operations","jarvis_all_entitled_modules"],
+  "security_penetration":["cross_tenant_api_rls_cache_object","privilege_escalation","data_export_scope","signed_url_replay","device_replay","api_abuse_rate_limit","ai_prompt_tool_authorization","admin_control_plane"],
+  "accessibility_language":["tr","en","de","ar_rtl","fr","es","it","nl","pl","pt_br","keyboard_only","screen_reader","large_text","reduced_motion","mobile_ergonomics"],
+  "common_flows":["login_navigation","workforce_checkin","inventory_scan","field_capture","planogram_review","dock_booking","budget_approval","academy_learning","jarvis_question"]
+}

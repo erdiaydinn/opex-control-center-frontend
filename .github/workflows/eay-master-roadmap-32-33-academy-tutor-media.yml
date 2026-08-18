@@ -89,8 +89,13 @@ jobs:
         run: |
           alembic heads | tee /tmp/academy-heads.txt
           test "$(grep -c '(head)' /tmp/academy-heads.txt)" -eq 1
-          grep -q '0041_academy_learning_os' /tmp/academy-heads.txt
+          test -n "$(awk '/\(head\)/ {print $1}' /tmp/academy-heads.txt)"
+          alembic history | tee /tmp/academy-history.txt
+          grep -q '0043_shared_platform_delivery_search' /tmp/academy-history.txt
+          grep -q '0041_academy_learning_os' /tmp/academy-history.txt
           alembic upgrade head
+          alembic current | tee /tmp/academy-current.txt
+          grep -q '(head)' /tmp/academy-current.txt
       - name: Run Tutor, media and current Academy regression contracts
         run: |
           pytest -q \

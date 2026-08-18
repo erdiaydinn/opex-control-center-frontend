@@ -1,0 +1,92 @@
+name: EAY Master Roadmap 39 - Frozen AI Shared Substrate
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-39-40-ai-repository-compose-v3
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - agent/master-roadmap-34-38-jarvis-compose-v2
+      - product/eay-category-leadership-v1
+    paths:
+      - 'docs/governance/eay_ai_core_shared_substrate.json'
+      - 'services/core-api/app/ai_core/substrate_contract.py'
+      - 'services/core-api/tests/test_master39_ai_core_substrate.py'
+      - '.github/workflows/eay-master-roadmap-39-ai-core-substrate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: eay-master-39-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frozen-ai-substrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Core API test surface
+        working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - name: Strict Ruff and compile gate
+        run: |
+          ruff check \
+            services/core-api/app/ai_core/substrate_contract.py \
+            services/core-api/tests/test_master39_ai_core_substrate.py
+          python -m py_compile \
+            services/core-api/app/ai_core/substrate_contract.py \
+            services/core-api/tests/test_master39_ai_core_substrate.py
+      - name: Prove frozen AI Core substrate contract
+        run: pytest -q services/core-api/tests/test_master39_ai_core_substrate.py
+      - name: Preserve frozen PR 15 and production truth boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          contract = json.loads(Path('docs/governance/eay_ai_core_shared_substrate.json').read_text())
+          frozen = contract['frozen_baseline']
+          truth = contract['truth_boundaries']
+          assert frozen == {
+              'pull_request': 15,
+              'head_sha': '9e1422df2a584b71593c2f6188d26c8ab4ab4c15',
+              'mutable': False,
+          }
+          assert truth['synthetic_is_production_evidence'] is False
+          assert truth['self_modify_production_weights'] is False
+          assert truth['promotion_requires_eval'] is True
+          assert truth['promotion_requires_human_approval'] is True
+          assert truth['source_provenance_required'] is True
+          assert truth['tenant_authorization_required'] is True
+          PY
+      - name: Publish Master 39 canonical exact-head status
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/product/eay-category-leadership-v1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=failure
+          description='Master 39 AI substrate canonical exact-head acceptance failed'
+          if [ "$JOB_STATUS" = 'success' ]; then
+            state=success
+            description='Master 39 AI substrate canonical exact-head acceptance passed'
+          fi
+          payload=$(printf '{"state":"%s","context":"EAY Master 39 AI Substrate Exact-Head","description":"%s"}' "$state" "$description")
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --data "$payload"

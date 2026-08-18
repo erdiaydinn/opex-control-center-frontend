@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from ..workforce.active_shift import ActiveShiftAuthorityError, attest_shift_at_event
+from .mission_lease import attest_event_lease, complete_attempt
 from .production import (
     InventoryPrincipal,
     _advisory_key,
@@ -26,11 +27,13 @@ LOCATION_COMPLETE = "LOCATION_COMPLETE"
 def location_completion_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "active_shift_id": str(payload["active_shift_id"]).strip(),
+        "attempt_id": str(UUID(str(payload["attempt_id"]))),
         "confirmed_line_count": int(payload["confirmed_line_count"]),
         "device_sequence": int(payload["device_sequence"]),
         "document_id": str(UUID(str(payload["document_id"]))),
         "event_id": str(UUID(str(payload["event_id"]))),
         "event_kind": LOCATION_COMPLETE,
+        "lease_id": str(UUID(str(payload["lease_id"]))),
         "location_id": str(payload["location_id"]).strip().upper(),
         "occurred_at": str(payload["occurred_at"]),
     }
@@ -96,16 +99,17 @@ def record_location_completion(
     request_nonce: str,
     request_signature: str,
 ) -> dict[str, Any]:
-    """Append one shift-bound location completion to the canonical Inventory ledger."""
+    """Append one shift/attempt/lease-bound location completion to the canonical ledger."""
 
     principal.validate()
     event_id = UUID(str(payload["event_id"]))
     document_id = UUID(str(payload["document_id"]))
+    attempt_id = UUID(str(payload["attempt_id"]))
+    lease_id = UUID(str(payload["lease_id"]))
     active_shift_id = str(payload["active_shift_id"]).strip()
     confirmed_line_count = int(payload["confirmed_line_count"])
     claimed_hash = str(payload["payload_hash"])
-    hash_input = location_completion_hash_input(payload)
-    actual_hash = canonical_payload_hash(hash_input)
+    actual_hash = canonical_payload_hash(location_completion_hash_input(payload))
     if claimed_hash != actual_hash:
         raise InventoryRuleError("Location completion payload hash doğrulaması başarısız.")
     _redis_event_preflight(principal.tenant_id, event_id, actual_hash)
@@ -184,6 +188,20 @@ def record_location_completion(
             ).fetchone()
             if not allowed:
                 raise InventoryRuleError("Lokasyon sayım kapsamında değil.")
+
+            attest_event_lease(
+                db,
+                principal,
+                document_id=document_id,
+                warehouse_id=document["warehouse_id"],
+                location_id=location,
+                active_shift_id=active_shift_id,
+                attempt_id=attempt_id,
+                lease_id=lease_id,
+                occurred_at=occurred_at,
+                location_completion=True,
+            )
+
             already_completed = db.execute(
                 """SELECT event_id FROM inventory_events
                    WHERE tenant_id=%s AND document_id=%s AND location_id=%s
@@ -198,22 +216,29 @@ def record_location_completion(
                 """SELECT count(*)::integer AS committed_line_count
                    FROM inventory_events
                    WHERE tenant_id=%s AND document_id=%s AND location_id=%s
+                     AND attempt_id=%s
                      AND event_type IN ('SCAN','UNEXPECTED_SKU')
                      AND occurred_at<=%s""",
-                (principal.tenant_id, document_id, location, occurred_at),
+                (
+                    principal.tenant_id,
+                    document_id,
+                    location,
+                    attempt_id,
+                    occurred_at,
+                ),
             ).fetchone()
             committed_line_count = int(committed_count_row["committed_line_count"])
             if committed_line_count != confirmed_line_count:
                 raise InventoryRuleError(
-                    "Lokasyon completion satır sayısı server-committed sayım kanıtıyla eşleşmiyor."
+                    "Lokasyon completion satır sayısı aynı attempt'in server-committed kanıtıyla eşleşmiyor."
                 )
 
             db.execute(
                 """INSERT INTO inventory_events(
                      tenant_id,event_id,device_id,device_sequence,document_id,warehouse_id,
                      employee_id,event_type,location_id,barcode,quantity,symbology,
-                     payload_hash,occurred_at
-                   ) VALUES (%s,%s,%s,%s,%s,%s,%s,'LOCATION_COMPLETE',%s,NULL,NULL,NULL,%s,%s)""",
+                     payload_hash,occurred_at,attempt_id,lease_id,active_shift_id
+                   ) VALUES (%s,%s,%s,%s,%s,%s,%s,'LOCATION_COMPLETE',%s,NULL,NULL,NULL,%s,%s,%s,%s,%s)""",
                 (
                     principal.tenant_id,
                     event_id,
@@ -225,7 +250,19 @@ def record_location_completion(
                     location,
                     actual_hash,
                     occurred_at,
+                    attempt_id,
+                    lease_id,
+                    active_shift_id,
                 ),
+            )
+            complete_attempt(
+                db,
+                principal,
+                attempt_id=attempt_id,
+                lease_id=lease_id,
+                document_id=document_id,
+                warehouse_id=document["warehouse_id"],
+                occurred_at=occurred_at,
             )
             response = {
                 "event_id": str(event_id),
@@ -234,6 +271,8 @@ def record_location_completion(
                 "document_revision": document["revision"],
                 "location_id": location,
                 "active_shift_id": shift_attestation.shift_id,
+                "attempt_id": str(attempt_id),
+                "lease_id": str(lease_id),
                 "confirmed_line_count": committed_line_count,
                 "idempotent_replay": False,
             }

@@ -26,6 +26,7 @@ LOCATION_COMPLETE = "LOCATION_COMPLETE"
 def location_completion_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "active_shift_id": str(payload["active_shift_id"]).strip(),
+        "confirmed_line_count": int(payload["confirmed_line_count"]),
         "device_sequence": int(payload["device_sequence"]),
         "document_id": str(UUID(str(payload["document_id"]))),
         "event_id": str(UUID(str(payload["event_id"]))),
@@ -96,6 +97,7 @@ def record_location_completion(
     event_id = UUID(str(payload["event_id"]))
     document_id = UUID(str(payload["document_id"]))
     active_shift_id = str(payload["active_shift_id"]).strip()
+    confirmed_line_count = int(payload["confirmed_line_count"])
     claimed_hash = str(payload["payload_hash"])
     hash_input = location_completion_hash_input(payload)
     actual_hash = canonical_payload_hash(hash_input)
@@ -187,17 +189,18 @@ def record_location_completion(
             if already_completed:
                 raise InventoryRuleError("Lokasyon daha önce tamamlandı.")
 
-            committed_count = db.execute(
-                """SELECT 1 FROM inventory_events
+            committed_count_row = db.execute(
+                """SELECT count(*)::integer AS committed_line_count
+                   FROM inventory_events
                    WHERE tenant_id=%s AND document_id=%s AND location_id=%s
                      AND event_type IN ('SCAN','UNEXPECTED_SKU')
-                     AND occurred_at<=%s
-                   LIMIT 1""",
+                     AND occurred_at<=%s""",
                 (principal.tenant_id, document_id, location, occurred_at),
             ).fetchone()
-            if not committed_count:
+            committed_line_count = int(committed_count_row["committed_line_count"])
+            if committed_line_count != confirmed_line_count:
                 raise InventoryRuleError(
-                    "Server-committed sayım satırı olmadan lokasyon tamamlanamaz."
+                    "Lokasyon completion satır sayısı server-committed sayım kanıtıyla eşleşmiyor."
                 )
 
             db.execute(
@@ -226,6 +229,7 @@ def record_location_completion(
                 "document_revision": document["revision"],
                 "location_id": location,
                 "active_shift_id": shift_attestation.shift_id,
+                "confirmed_line_count": committed_line_count,
                 "idempotent_replay": False,
             }
             db.execute(

@@ -4,7 +4,7 @@ This layer composes the existing durable mission state machine with the real
 engine gateway and capability handlers. It is intentionally small and strict:
 - reasoning steps use the router-backed EngineGateway;
 - permissioned actions require authorization evidence;
-- live-company-dependent steps require a matching DecisionTruthReceipt;
+- live-company-dependent steps require an integrity-valid DecisionTruthReceipt;
 - side effects are never marked successful without authoritative effect
   verification;
 - ambiguous write outcomes halt the mission instead of retrying blindly;
@@ -22,6 +22,7 @@ from typing import Awaitable, Callable, Mapping
 
 from pydantic import BaseModel, Field, model_validator
 
+from .decision_truth_integrity import validate_decision_truth_receipt_integrity
 from .engine_gateway import EngineGateway, EngineInvocationReceipt
 from .intelligence_router import IntelligenceTask
 from .live_company_readiness import DecisionTruthReceipt, DecisionTruthStatus
@@ -131,6 +132,8 @@ def _truth_receipt_ref(receipt: DecisionTruthReceipt) -> str:
         + receipt.requirement_id
         + "/"
         + receipt.status.value
+        + "/"
+        + receipt.receipt_fingerprint
     )
 
 
@@ -147,6 +150,12 @@ def _truth_gate_blocker(
     receipt = receipts.get(requirement_id)
     if receipt is None:
         return "live_company_truth_receipt_missing", None
+    try:
+        receipt = validate_decision_truth_receipt_integrity(receipt)
+    except ValueError:
+        return "live_company_truth_receipt_invalid", None
+    if receipt.requirement_id != requirement_id:
+        return "live_company_truth_requirement_mismatch", None
     if receipt.tenant_id != definition.tenant_id:
         return "live_company_truth_tenant_mismatch", None
     if receipt.status is DecisionTruthStatus.BLOCKED:

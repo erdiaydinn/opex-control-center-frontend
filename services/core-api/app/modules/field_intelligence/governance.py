@@ -4,7 +4,6 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Literal
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Callable, Literal
+from typing import Literal
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError

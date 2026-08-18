@@ -9,9 +9,9 @@ from app.core.authorization import require_permission
 from app.core.security import Principal
 from app.modules.field_intelligence.authorization import require_field_permission
 from app.modules.field_intelligence.evidence_object_upload import (
+    MAX_EVIDENCE_BYTES,
     FieldEvidenceStoreUnavailable,
     FieldEvidenceUploadError,
-    MAX_EVIDENCE_BYTES,
     upload_private_evidence_object,
 )
 from app.modules.field_intelligence.repository import list_locations

@@ -258,7 +258,7 @@ async def upload_private_evidence_object(
             f"{tenant_id}|{receipt_id}|{client_submission_id}|{mission_id}|{location_id}|"
             f"{field_key}|{actual_sha256}|{normalized_media_type}|{len(content)}|"
             f"{storage_receipt_hash}"
-        ).encode("utf-8")
+        ).encode()
     ).hexdigest()
 
     try:

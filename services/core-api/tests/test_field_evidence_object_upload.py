@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
@@ -151,7 +151,7 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
                 tenant_id=str(tenant_id),
                 client_submission_id=str(submission_id),
                 device_id="device-photo-001",
-                captured_at=datetime(2026, 8, 17, 7, 30, tzinfo=timezone.utc),
+                captured_at=datetime(2026, 8, 17, 7, 30, tzinfo=UTC),
                 template_schema=template_schema,
                 payload={"photo": receipt["receipt_id"]},
                 claims=(claim,),
@@ -168,7 +168,7 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
                     tenant_id=str(tenant_id),
                     client_submission_id=str(uuid4()),
                     device_id="device-photo-001",
-                    captured_at=datetime(2026, 8, 17, 7, 31, tzinfo=timezone.utc),
+                    captured_at=datetime(2026, 8, 17, 7, 31, tzinfo=UTC),
                     template_schema=template_schema,
                     payload={"photo": receipt["receipt_id"]},
                     claims=(claim,),

@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, date, datetime
-from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError

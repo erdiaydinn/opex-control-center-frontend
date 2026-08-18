@@ -1,16 +1,11 @@
 """Read-only application onboarding for Jarvis computer use.
 
 Jarvis must learn a new enterprise application before it is allowed to mutate
-it.  This module fingerprints the exact application/environment from managed
-browser receipts, rejects any onboarding trace that contains mutating network
-traffic, derives read-only API candidates from observed traffic, and compiles a
-structured-UI/readback procedure candidate without authorizing execution.
-
-The output composes with existing Procedural Memory. A read capability becomes
-directly reusable only after repeated, independent authoritative read
-verification under the same environment fingerprint. Write capabilities must
-use the separate mission/action/effect-verification path; read-only onboarding
-can never promote a write.
+it. This module fingerprints the exact application/environment from managed
+browser receipts, rejects mutating traffic, derives read-only API candidates,
+and compiles a structured-UI/readback procedure candidate without authorizing
+writes. Application, tenant and auth context must remain identical from the
+session through browser receipts and captured network observations.
 """
 
 from __future__ import annotations
@@ -85,10 +80,20 @@ class ApplicationOnboardingSession(BaseModel):
                 raise ValueError("application_onboarding_receipt_application_mismatch")
             if receipt.tenant_scope_ref != self.tenant_scope_ref:
                 raise ValueError("application_onboarding_receipt_tenant_mismatch")
+            if receipt.auth_context_ref != self.auth_context_ref:
+                raise ValueError("application_onboarding_receipt_auth_context_mismatch")
             if not receipt.completed:
                 raise ValueError("application_onboarding_requires_completed_read_receipts")
             if receipt.direct_api_execution_authorized:
                 raise ValueError("application_onboarding_cannot_inherit_direct_api_authority")
+            for observation in receipt.observations:
+                exchange = observation.exchange
+                if exchange.application_id != self.application_id:
+                    raise ValueError("application_onboarding_observation_application_mismatch")
+                if exchange.tenant_scope_ref != self.tenant_scope_ref:
+                    raise ValueError("application_onboarding_observation_tenant_mismatch")
+                if exchange.auth_context_ref != self.auth_context_ref:
+                    raise ValueError("application_onboarding_observation_auth_context_mismatch")
         return self
 
 
@@ -185,6 +190,7 @@ def _environment_fingerprint(session: ApplicationOnboardingSession) -> tuple[str
             key=lambda item: (item["host"], item["path"], item["method"]),
         ),
         "locator_kinds": sorted(receipt.locator_kind.value for receipt in session.receipts),
+        "auth_context_bound": True,
     }
     fingerprint = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -201,7 +207,7 @@ def build_application_profile(session: ApplicationOnboardingSession) -> Applicat
         allowed_hosts=tuple(sorted(session.allowed_hosts)),
         environment_fingerprint=fingerprint,
         page_shape_fingerprints=page_shapes,
-        auth_context_bound=bool(session.auth_context_ref),
+        auth_context_bound=True,
     )
 
 

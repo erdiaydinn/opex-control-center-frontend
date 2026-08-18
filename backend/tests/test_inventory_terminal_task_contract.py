@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from pathlib import Path
-from types import SimpleNamespace
+from typing import Any
 from uuid import UUID
 
 PRODUCTION = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "production.py"
@@ -16,7 +16,12 @@ def _load_task_contract():
         node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names
     ]
     assert {node.name for node in functions} == names
-    namespace: dict[str, object] = {"hashlib": hashlib}
+    namespace: dict[str, object] = {
+        "Any": Any,
+        "UUID": UUID,
+        "InventoryPrincipal": object,
+        "hashlib": hashlib,
+    }
     exec(compile(ast.Module(body=functions, type_ignores=[]), str(PRODUCTION), "exec"), namespace)
     return namespace, tree
 

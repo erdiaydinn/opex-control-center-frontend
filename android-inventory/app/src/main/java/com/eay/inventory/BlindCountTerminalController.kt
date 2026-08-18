@@ -12,11 +12,17 @@ import java.time.ZoneOffset
 import java.util.Locale
 import java.util.UUID
 
-fun interface ConfirmedCountEventSink {
+interface BlindCountEventSink {
     suspend fun enqueueConfirmedCount(
         context: InventoryCountEventContext,
         acceptedScan: AcceptedScan,
         evidence: com.eay.mobile.core.BlindCountLineEvidence,
+        eventId: String,
+        occurredAt: String,
+    ): OfflineEvent
+
+    suspend fun enqueueLocationCompletion(
+        context: InventoryCountEventContext,
         eventId: String,
         occurredAt: String,
     ): OfflineEvent
@@ -44,14 +50,14 @@ data class BlindCountControllerResult(
  *
  * Authority remains outside this controller: the mission/target must already come
  * from a server-authorized task, scans must already be admitted by ScannerIngressGuard,
- * and the sink is responsible for binding the mutation to the current verified OIDC
- * session. The controller advances BlindCountFlow only after the confirmed line is
- * durably inserted into the encrypted queue.
+ * and the sink is responsible for binding mutations to the current verified OIDC
+ * session. State advances only after the relevant immutable event is durably inserted
+ * into the encrypted queue.
  */
 class BlindCountTerminalController(
     private val target: BlindCountTarget,
     private val eventContext: InventoryCountEventContext,
-    private val eventSink: ConfirmedCountEventSink,
+    private val eventSink: BlindCountEventSink,
     private val eventIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val occurredAtFactory: () -> String = {
         OffsetDateTime.now(ZoneOffset.UTC).toString()
@@ -59,7 +65,8 @@ class BlindCountTerminalController(
 ) {
     private var state = BlindCountSession(missionId = target.missionId)
     private var pendingItemScan: AcceptedScan? = null
-    private var pendingDurableIdentity: PendingDurableIdentity? = null
+    private var pendingLineIdentity: PendingDurableIdentity? = null
+    private var pendingCompletionIdentity: PendingDurableIdentity? = null
 
     init {
         require(eventContext.missionId == target.missionId) {
@@ -94,11 +101,9 @@ class BlindCountTerminalController(
         }
         val evidence = confirmation.evidence ?: return denied(BlindCountCode.DENY_STEP)
 
-        val durableIdentity = pendingDurableIdentity ?: PendingDurableIdentity(
-            eventId = eventIdFactory(),
-            occurredAt = occurredAtFactory(),
-        ).also { pendingDurableIdentity = it }
-
+        val durableIdentity = pendingLineIdentity ?: newDurableIdentity().also {
+            pendingLineIdentity = it
+        }
         val durableEvent = try {
             eventSink.enqueueConfirmedCount(
                 context = eventContext,
@@ -108,21 +113,44 @@ class BlindCountTerminalController(
                 occurredAt = durableIdentity.occurredAt,
             )
         } catch (_: RetryableCountPersistenceException) {
-            // Do not advance or clear the scan. A retry uses the exact same event identity.
-            return BlindCountControllerResult(
-                code = BlindCountControllerCode.PERSIST_RETRY,
-                session = state,
-                flowCode = confirmation.code,
-            )
+            return persistenceRetry(confirmation.code)
         }
 
         state = confirmation.session
         pendingItemScan = null
-        pendingDurableIdentity = null
+        pendingLineIdentity = null
+        pendingCompletionIdentity = null
         return BlindCountControllerResult(
             code = BlindCountControllerCode.OK,
             session = state,
             flowCode = confirmation.code,
+            durableEvent = durableEvent,
+        )
+    }
+
+    suspend fun completeLocation(): BlindCountControllerResult {
+        val completion = BlindCountFlow.completeLocation(state, target)
+        if (!completion.accepted) return denied(completion.code)
+
+        val durableIdentity = pendingCompletionIdentity ?: newDurableIdentity().also {
+            pendingCompletionIdentity = it
+        }
+        val durableEvent = try {
+            eventSink.enqueueLocationCompletion(
+                context = eventContext,
+                eventId = durableIdentity.eventId,
+                occurredAt = durableIdentity.occurredAt,
+            )
+        } catch (_: RetryableCountPersistenceException) {
+            return persistenceRetry(completion.code)
+        }
+
+        state = completion.session
+        pendingCompletionIdentity = null
+        return BlindCountControllerResult(
+            code = BlindCountControllerCode.OK,
+            session = state,
+            flowCode = completion.code,
             durableEvent = durableEvent,
         )
     }
@@ -145,7 +173,8 @@ class BlindCountTerminalController(
         if (!transition.accepted) return denied(transition.code)
         state = transition.session
         pendingItemScan = scan
-        pendingDurableIdentity = null
+        pendingLineIdentity = null
+        pendingCompletionIdentity = null
         return BlindCountControllerResult(
             code = BlindCountControllerCode.OK,
             session = state,
@@ -165,6 +194,12 @@ class BlindCountTerminalController(
         )
     }
 
+    private fun persistenceRetry(flowCode: BlindCountCode) = BlindCountControllerResult(
+        code = BlindCountControllerCode.PERSIST_RETRY,
+        session = state,
+        flowCode = flowCode,
+    )
+
     private fun denied(code: BlindCountCode) = BlindCountControllerResult(
         code = BlindCountControllerCode.DENY_FLOW,
         session = state,
@@ -173,6 +208,11 @@ class BlindCountTerminalController(
 
     private fun normalizeLocation(value: String): String =
         value.trim().uppercase(Locale.ROOT)
+
+    private fun newDurableIdentity() = PendingDurableIdentity(
+        eventId = eventIdFactory(),
+        occurredAt = occurredAtFactory(),
+    )
 
     private data class PendingDurableIdentity(
         val eventId: String,

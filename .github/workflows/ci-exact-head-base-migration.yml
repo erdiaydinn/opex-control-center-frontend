@@ -38,16 +38,18 @@ jobs:
           python scripts/ci/verify_ci_admission_policy.py
       - name: Reject malformed diff
         run: git diff --check
-      - name: Commit header-only migration to fix base and self-remove
+      - name: Publish verified transformed workflow copies only
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .ci/generated/exact-head
+          for item in {10..25}; do
+            cp ".github/workflows/eay-roadmap-1-${item}-exact-head.yml" ".ci/generated/exact-head/eay-roadmap-1-${item}-exact-head.yml"
+            git restore ".github/workflows/eay-roadmap-1-${item}-exact-head.yml"
+          done
+          git diff --check
           git config user.name "eay-ci-admission-bot"
           git config user.email "eay-ci-admission-bot@users.noreply.github.com"
-          for item in {10..25}; do
-            git add ".github/workflows/eay-roadmap-1-${item}-exact-head.yml"
-          done
-          git rm .github/workflows/ci-exact-head-base-migration.yml
-          git diff --cached --check
-          git commit -m "ci: stabilize exact-head workflow admission"
-          git push origin HEAD:fix/ci-admission-control-v1
+          git add .ci/generated/exact-head
+          git commit -m "ci: publish verified exact-head workflow transforms"
+          git push origin HEAD:refs/heads/generated/ci-exact-head-output-v1

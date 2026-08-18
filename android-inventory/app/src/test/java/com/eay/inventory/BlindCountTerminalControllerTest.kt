@@ -30,12 +30,12 @@ class BlindCountTerminalControllerTest {
         assertNotNull(result.durableEvent)
         assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
         assertEquals(1, result.session.confirmedLineCount)
-        assertEquals(1, sink.attempts.size)
+        assertEquals(1, sink.lineAttempts.size)
     }
 
     @Test
     fun `queue failure preserves confirm state and reuses exact event identity`() = runBlocking {
-        val sink = RecordingSink(retryableFailuresRemaining = 1)
+        val sink = RecordingSink(retryableLineFailuresRemaining = 1)
         val controller = controller(
             sink = sink,
             eventId = "11111111-1111-4111-8111-111111111111",
@@ -53,8 +53,48 @@ class BlindCountTerminalControllerTest {
         val second = controller.confirmItem()
         assertTrue(second.accepted)
         assertEquals(1, second.session.confirmedLineCount)
-        assertEquals(2, sink.attempts.size)
-        assertEquals(sink.attempts[0], sink.attempts[1])
+        assertEquals(2, sink.lineAttempts.size)
+        assertEquals(sink.lineAttempts[0], sink.lineAttempts[1])
+    }
+
+    @Test
+    fun `location completion advances only after durable queue insert`() = runBlocking {
+        val sink = RecordingSink()
+        val controller = controller(
+            sink = sink,
+            eventId = "33333333-3333-4333-8333-333333333333",
+            occurredAt = "2026-08-18T15:05:00Z",
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+
+        val result = controller.completeLocation()
+
+        assertTrue(result.accepted)
+        assertNotNull(result.durableEvent)
+        assertEquals(BlindCountStep.COMPLETE, result.session.step)
+        assertEquals(1, sink.completionAttempts.size)
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
+    }
+
+    @Test
+    fun `completion queue failure preserves state and exact identity`() = runBlocking {
+        val sink = RecordingSink(retryableCompletionFailuresRemaining = 1)
+        val controller = controller(
+            sink = sink,
+            eventId = "33333333-3333-4333-8333-333333333333",
+            occurredAt = "2026-08-18T15:05:00Z",
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+
+        val first = controller.completeLocation()
+        assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
+        assertEquals(BlindCountStep.SCAN_ITEM, controller.session().step)
+
+        val second = controller.completeLocation()
+        assertTrue(second.accepted)
+        assertEquals(BlindCountStep.COMPLETE, second.session.step)
+        assertEquals(2, sink.completionAttempts.size)
+        assertEquals(sink.completionAttempts[0], sink.completionAttempts[1])
     }
 
     @Test
@@ -70,6 +110,18 @@ class BlindCountTerminalControllerTest {
         }
         assertEquals(BlindCountStep.CONFIRM_ITEM, controller.session().step)
         assertEquals(0, controller.session().confirmedLineCount)
+    }
+
+    @Test
+    fun `completion contract violation is not retried`() {
+        val sink = RecordingSink(contractFailure = true)
+        val controller = controller(sink = sink)
+        controller.onAcceptedScan(locationScan("A-04"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { controller.completeLocation() }
+        }
+        assertEquals(BlindCountStep.SCAN_ITEM, controller.session().step)
     }
 
     @Test
@@ -166,10 +218,12 @@ class BlindCountTerminalControllerTest {
     )
 
     private class RecordingSink(
-        var retryableFailuresRemaining: Int = 0,
+        var retryableLineFailuresRemaining: Int = 0,
+        var retryableCompletionFailuresRemaining: Int = 0,
         val contractFailure: Boolean = false,
-    ) : ConfirmedCountEventSink {
-        val attempts = mutableListOf<Pair<String, String>>()
+    ) : BlindCountEventSink {
+        val lineAttempts = mutableListOf<Pair<String, String>>()
+        val completionAttempts = mutableListOf<Pair<String, String>>()
 
         override suspend fun enqueueConfirmedCount(
             context: InventoryCountEventContext,
@@ -178,12 +232,12 @@ class BlindCountTerminalControllerTest {
             eventId: String,
             occurredAt: String,
         ): OfflineEvent {
-            attempts += eventId to occurredAt
+            lineAttempts += eventId to occurredAt
             if (contractFailure) {
                 throw IllegalArgumentException("simulated immutable contract violation")
             }
-            if (retryableFailuresRemaining > 0) {
-                retryableFailuresRemaining -= 1
+            if (retryableLineFailuresRemaining > 0) {
+                retryableLineFailuresRemaining -= 1
                 throw RetryableCountPersistenceException(
                     IllegalStateException("simulated durable queue failure"),
                 )
@@ -193,6 +247,30 @@ class BlindCountTerminalControllerTest {
                 acceptedScan = acceptedScan,
                 evidence = evidence,
                 deviceSequence = 1,
+                eventId = eventId,
+                occurredAt = occurredAt,
+                authBindingId = "binding-1",
+            )
+        }
+
+        override suspend fun enqueueLocationCompletion(
+            context: InventoryCountEventContext,
+            eventId: String,
+            occurredAt: String,
+        ): OfflineEvent {
+            completionAttempts += eventId to occurredAt
+            if (contractFailure) {
+                throw IllegalArgumentException("simulated immutable completion violation")
+            }
+            if (retryableCompletionFailuresRemaining > 0) {
+                retryableCompletionFailuresRemaining -= 1
+                throw RetryableCountPersistenceException(
+                    IllegalStateException("simulated durable completion failure"),
+                )
+            }
+            return InventoryLocationCompletionEventFactory.create(
+                context = context,
+                deviceSequence = 2,
                 eventId = eventId,
                 occurredAt = occurredAt,
                 authBindingId = "binding-1",

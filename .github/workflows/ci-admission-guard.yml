@@ -4,21 +4,17 @@ on:
   pull_request:
     branches:
       - product/eay-category-leadership-v1
-      - fix/ci-admission-control-v1
     paths:
       - ".github/workflows/**"
       - "scripts/ci/verify_ci_admission_policy.py"
-      - "scripts/ci/apply_inventory_admission_control.py"
-      - "scripts/ci/migrate_legacy_exact_head_headers.py"
-      - ".ci/ci-admission-validation-trigger.txt"
+      - "docs/ci/historical-workflows/**"
   push:
     branches:
       - product/eay-category-leadership-v1
     paths:
       - ".github/workflows/**"
       - "scripts/ci/verify_ci_admission_policy.py"
-      - "scripts/ci/apply_inventory_admission_control.py"
-      - "scripts/ci/migrate_legacy_exact_head_headers.py"
+      - "docs/ci/historical-workflows/**"
   workflow_dispatch:
 
 permissions:
@@ -38,11 +34,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Verify historical exact-head admission and concurrency through Roadmap 25
-        run: python scripts/ci/migrate_legacy_exact_head_headers.py --check
-      - name: Verify Inventory and DockOS admission separation
-        run: python scripts/ci/apply_inventory_admission_control.py --check
-      - name: Verify phase-aware domain admission policy
+      - name: Verify final CI admission policy
         run: python scripts/ci/verify_ci_admission_policy.py
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check

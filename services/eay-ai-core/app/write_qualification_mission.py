@@ -19,7 +19,7 @@ from .mission_execution import (
     MissionExecutionSpec,
     MissionExecutionSummary,
 )
-from .mission_runtime import MissionDefinition, MissionStatus
+from .mission_runtime import MissionDefinition, MissionStatus, StepStatus
 from .write_capability_qualification import (
     WriteCapabilityCandidate,
     WriteQualificationDemonstration,
@@ -71,10 +71,15 @@ def create_write_demonstration_from_completed_mission(
     state = states.get(spec.step_id)
     if state is None:
         raise ValueError("write_qualification_mission_step_checkpoint_missing")
-    if getattr(state.status, "value", state.status) != "completed":
+    # Mission-level completion and step-level success intentionally use
+    # different enums. A write demonstration is valid only when its exact
+    # side-effect step reached SUCCEEDED; mission COMPLETED alone is not enough.
+    if state.status is not StepStatus.SUCCEEDED:
         raise ValueError("write_qualification_mission_step_not_completed")
-    if state.error_code is not None:
+    if state.last_error is not None:
         raise ValueError("write_qualification_mission_step_has_error")
+    if state.ambiguous_outcome:
+        raise ValueError("write_qualification_mission_step_ambiguous")
 
     evidence = tuple(state.evidence_refs)
     if not authorization.authorization_evidence_ref:
@@ -84,9 +89,10 @@ def create_write_demonstration_from_completed_mission(
     if not transaction_ref.strip() or transaction_ref not in evidence:
         raise ValueError("write_qualification_mission_transaction_not_in_checkpoint")
 
-    # MissionExecution marks a side-effect step completed only after the
-    # capability outcome succeeded and its effect verifier passed. Rebuild the
-    # minimal safe outcome from that authoritative checkpoint, not from UI text.
+    # MissionExecution records a side-effect step as SUCCEEDED only after the
+    # governed capability path reports success and effect verification passes.
+    # Rebuild the minimal controlled-write outcome from the checkpoint evidence,
+    # never from UI text or a model's self-attestation.
     outcome = CapabilityExecutionOutcome(
         succeeded=True,
         effect_verified=True,

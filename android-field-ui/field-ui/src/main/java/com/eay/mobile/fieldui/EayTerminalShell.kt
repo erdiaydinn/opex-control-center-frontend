@@ -75,12 +75,14 @@ fun EayTerminalShell(
                         if (mission.subtitle.isNotBlank()) {
                             Text(mission.subtitle, style = MaterialTheme.typography.bodyLarge)
                         }
-                        if (mission.progressCurrent != null && mission.progressTotal != null) {
+                        val progressCurrent = mission.progressCurrent
+                        val progressTotal = mission.progressTotal
+                        if (progressCurrent != null && progressTotal != null) {
                             Text(
                                 text = stringResource(
                                     R.string.blind_count_progress,
-                                    mission.progressCurrent,
-                                    mission.progressTotal,
+                                    progressCurrent,
+                                    progressTotal,
                                 ),
                                 style = MaterialTheme.typography.bodyLarge,
                             )

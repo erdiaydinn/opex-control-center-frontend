@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -230,7 +230,10 @@ def claim_terminal_mission(
     valid_until = now + timedelta(seconds=_lease_seconds())
     with connect() as db:
         try:
-            db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            # The cross-session advisory lock is the serialization primitive for
+            # this exact physical mission. READ COMMITTED ensures a waiter sees
+            # the winner's committed attempt/lease after the lock is acquired.
+            db.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             _assert_runtime_tenant(db, principal)
             _require_schema_v5(db)
             _verify_device_proof(
@@ -523,7 +526,7 @@ def supersede_attempt(
     now = datetime.now(UTC)
     with connect() as db:
         try:
-            db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            db.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             _assert_runtime_tenant(db, principal)
             _require_schema_v5(db)
             db.execute(

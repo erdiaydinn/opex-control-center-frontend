@@ -196,9 +196,25 @@ def validate_pull_request_shape(manifest: Mapping[str, Any], env: Mapping[str, s
     continuation = manifest["canonical_continuation"]
     base_ref = env.get("GITHUB_BASE_REF", "")
     head_ref = env.get("GITHUB_HEAD_REF", "")
-    _require(base_ref != "main", "category-leadership PR must never target main")
-    _require(base_ref == continuation["base_branch"], f"unexpected PR base: {base_ref!r}")
-    _require(head_ref == continuation["head_branch"], f"unexpected PR head: {head_ref!r}")
+    _require(base_ref != "main", "category-leadership work must never target main")
+
+    is_canonical_pr = (
+        base_ref == continuation["base_branch"]
+        and head_ref == continuation["head_branch"]
+    )
+    is_composition_pr = (
+        base_ref == continuation["head_branch"]
+        and bool(head_ref)
+        and head_ref not in {
+            "main",
+            continuation["head_branch"],
+            continuation["base_branch"],
+        }
+    )
+    _require(
+        is_canonical_pr or is_composition_pr,
+        f"unexpected PR shape: base={base_ref!r}, head={head_ref!r}",
+    )
 
 
 def validate_git_lineage(repo_root: Path, manifest: Mapping[str, Any]) -> None:

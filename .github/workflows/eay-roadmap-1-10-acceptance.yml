@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
   workflow_dispatch:
 
 permissions:
@@ -109,12 +110,19 @@ jobs:
                   await connection.close()
           asyncio.run(main())
           PY
-      - name: Apply full canonical migration chain
+      - name: Apply cumulative migration chain and preserve item 10 lineage
         working-directory: services/core-api
-        run: alembic upgrade head
-      - name: Verify migration head is item 10 continuation
-        working-directory: services/core-api
-        run: alembic current | grep -q '0029_field_template_lifecycle_column_grant'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0029_field_template_lifecycle_column_grant' /tmp/eay-alembic-history.txt
+          alembic upgrade head
+          current="$(alembic current | awk '/\(head\)/ {print $1}')"
+          test "$current" = "${heads[0]}"
       - name: Run tenant identity and base Field RLS authority
         env:
           PYTHONPATH: services/core-api

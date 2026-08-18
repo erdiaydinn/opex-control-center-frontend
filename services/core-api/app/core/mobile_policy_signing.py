@@ -6,8 +6,9 @@ signing provider; no shared verification secret is embedded in an APK.
 """
 
 import hashlib
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 import jwt

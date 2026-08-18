@@ -1,17 +1,15 @@
 """Controlled write-capability qualification for Jarvis computer use.
 
 Read-only onboarding is the prerequisite for learning a mutating enterprise
-workflow.  A write procedure can become deterministic-replay eligible only
-after:
-- a validated read foundation in the exact same tenant/environment;
-- structured procedure steps with explicit effect contracts on every write;
-- repeated controlled executions with identity-bound authorization evidence;
-- unique idempotency keys and independently verified transaction effects;
-- no ambiguous demonstration and no environment drift.
+workflow. A write procedure can become deterministic-replay eligible only
+after a validated read foundation, exact environment binding, repeated
+identity-authorized executions, unique idempotency keys and independently
+verified business effects.
 
-"Direct replay" here means the healthy path no longer needs model exploration.
-It never means authorization-free or verification-free execution. Every replay
-still requires fresh scoped authorization and an authoritative effect verifier.
+"Direct replay" means the healthy UI/API trajectory no longer needs model
+exploration. It never means authorization-free or verification-free execution.
+The executable capability reference and the policy permission are kept
+separate because the mission fabric already models them as different concepts.
 """
 
 from __future__ import annotations
@@ -53,6 +51,7 @@ class WriteCapabilityCandidate(BaseModel):
     application_id: str = Field(min_length=1)
     tenant_scope_ref: str = Field(min_length=1)
     capability_name: str = Field(min_length=1)
+    execution_capability_ref: str = Field(min_length=1)
     required_permission: str = Field(min_length=1)
     target_scope_ref: str = Field(min_length=1)
     risk: ActionRisk
@@ -95,6 +94,7 @@ class QualifiedWriteCapability(BaseModel):
     application_id: str
     tenant_scope_ref: str
     capability_name: str
+    execution_capability_ref: str
     required_permission: str
     target_scope_ref: str
     risk: ActionRisk
@@ -129,6 +129,8 @@ class QualifiedWriteCapability(BaseModel):
 class WriteReplayPreflight(BaseModel):
     contract: str = WRITE_CAPABILITY_QUALIFICATION_CONTRACT
     capability_name: str
+    execution_capability_ref: str
+    required_permission: str
     procedure_capability_id: str
     allowed: bool
     authorization_evidence_ref: str | None = None
@@ -152,6 +154,8 @@ def _candidate_id(
     application_id: str,
     tenant_scope_ref: str,
     capability_name: str,
+    execution_capability_ref: str,
+    required_permission: str,
     target_scope_ref: str,
     environment_fingerprint: str,
     read_foundation_capability_id: str,
@@ -162,6 +166,8 @@ def _candidate_id(
         "application_id": application_id,
         "tenant_scope_ref": tenant_scope_ref,
         "capability_name": capability_name,
+        "execution_capability_ref": execution_capability_ref,
+        "required_permission": required_permission,
         "target_scope_ref": target_scope_ref,
         "environment_fingerprint": environment_fingerprint,
         "read_foundation_capability_id": read_foundation_capability_id,
@@ -177,6 +183,7 @@ def build_write_capability_candidate(
     application_id: str,
     read_foundation: ProceduralCapability,
     capability_name: str,
+    execution_capability_ref: str,
     required_permission: str,
     target_scope_ref: str,
     risk: ActionRisk,
@@ -191,7 +198,13 @@ def build_write_capability_candidate(
         raise ValueError("write_qualification_foundation_must_be_read_only")
     if read_foundation.environment_fingerprint == "0" * 64:
         raise ValueError("write_qualification_foundation_environment_unverified")
-    if not capability_name.strip() or not required_permission.strip() or not target_scope_ref.strip():
+    identity_fields = (
+        capability_name,
+        execution_capability_ref,
+        required_permission,
+        target_scope_ref,
+    )
+    if any(not item.strip() for item in identity_fields):
         raise ValueError("write_qualification_identity_fields_required")
 
     return WriteCapabilityCandidate(
@@ -199,6 +212,8 @@ def build_write_capability_candidate(
             application_id=application_id,
             tenant_scope_ref=read_foundation.tenant_id,
             capability_name=capability_name,
+            execution_capability_ref=execution_capability_ref,
+            required_permission=required_permission,
             target_scope_ref=target_scope_ref,
             environment_fingerprint=read_foundation.environment_fingerprint,
             read_foundation_capability_id=read_foundation.capability_id,
@@ -207,6 +222,7 @@ def build_write_capability_candidate(
         application_id=application_id,
         tenant_scope_ref=read_foundation.tenant_id,
         capability_name=capability_name,
+        execution_capability_ref=execution_capability_ref,
         required_permission=required_permission,
         target_scope_ref=target_scope_ref,
         risk=risk,
@@ -238,8 +254,8 @@ def create_controlled_write_demonstration(
         raise ValueError("write_demonstration_requires_authorization_evidence")
     if authorization.tenant_ref != candidate.tenant_scope_ref:
         raise ValueError("write_demonstration_tenant_mismatch")
-    if authorization.capability_ref != candidate.required_permission:
-        raise ValueError("write_demonstration_permission_mismatch")
+    if authorization.capability_ref != candidate.execution_capability_ref:
+        raise ValueError("write_demonstration_capability_mismatch")
     if authorization.target_scope_ref != candidate.target_scope_ref:
         raise ValueError("write_demonstration_target_scope_mismatch")
     if not idempotency_key.strip():
@@ -341,6 +357,7 @@ def compile_qualified_write_capability(
         application_id=candidate.application_id,
         tenant_scope_ref=candidate.tenant_scope_ref,
         capability_name=candidate.capability_name,
+        execution_capability_ref=candidate.execution_capability_ref,
         required_permission=candidate.required_permission,
         target_scope_ref=candidate.target_scope_ref,
         risk=candidate.risk,
@@ -374,14 +391,16 @@ def preflight_qualified_write_replay(
         blockers.append("write_replay_fresh_authorization_evidence_missing")
     if authorization.tenant_ref != capability.tenant_scope_ref:
         blockers.append("write_replay_tenant_mismatch")
-    if authorization.capability_ref != capability.required_permission:
-        blockers.append("write_replay_permission_mismatch")
+    if authorization.capability_ref != capability.execution_capability_ref:
+        blockers.append("write_replay_capability_mismatch")
     if authorization.target_scope_ref != capability.target_scope_ref:
         blockers.append("write_replay_target_scope_mismatch")
 
     blockers = list(dict.fromkeys(blockers))
     return WriteReplayPreflight(
         capability_name=capability.capability_name,
+        execution_capability_ref=capability.execution_capability_ref,
+        required_permission=capability.required_permission,
         procedure_capability_id=capability.procedure.capability_id,
         allowed=not blockers,
         authorization_evidence_ref=(authorization.authorization_evidence_ref if not blockers else None),

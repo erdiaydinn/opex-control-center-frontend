@@ -2,9 +2,6 @@
 name: EAY Core Ruff Focused Repair
 
 on:
-  push:
-    branches:
-      - agent/core-ruff-focused-repair-v2
   pull_request:
     branches:
       - product/eay-category-leadership-v1
@@ -17,12 +14,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: eay-core-ruff-focused-${{ github.head_ref || github.ref }}
+  group: eay-core-ruff-focused-${{ github.head_ref }}
   cancel-in-progress: true
 
 jobs:
   safe-fix-and-report:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

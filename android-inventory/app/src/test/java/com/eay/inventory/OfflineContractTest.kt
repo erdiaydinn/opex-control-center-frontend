@@ -140,23 +140,26 @@ class OfflineContractTest {
     @Test fun canonicalEventIsStableAndQuantityNormalized() {
         val body = TerminalEventCanonical.body(
             TerminalEventInput(
-                " 869 ",
-                7,
-                "550E8400-E29B-41D4-A716-446655440000",
-                "550E8400-E29B-41D4-A716-446655440001",
-                "a01",
-                "2026-08-13T20:00:00Z",
-                BigDecimal("2.000"),
-                "EAN13",
+                activeShiftId = "SHIFT-20260813-001",
+                barcode = " 869 ",
+                deviceSequence = 7,
+                documentId = "550E8400-E29B-41D4-A716-446655440000",
+                eventId = "550E8400-E29B-41D4-A716-446655440001",
+                locationId = "a01",
+                occurredAt = "2026-08-13T20:00:00Z",
+                quantity = BigDecimal("2.000"),
+                symbology = "EAN13",
             ),
         )
         assertTrue(body.contains("\"quantity\":\"2\""))
+        assertTrue(body.contains("\"active_shift_id\":\"SHIFT-20260813-001\""))
         assertEquals(64, TerminalEventCanonical.hash(body).length)
     }
 
     @Test fun canonicalEventMatchesBackendGoldenVectorByteForByte() {
         val body = TerminalEventCanonical.body(
             TerminalEventInput(
+                activeShiftId = "SHIFT-20260818-001",
                 barcode = " 8690000000001 ",
                 deviceSequence = 7,
                 documentId = "22222222-2222-4222-8222-222222222222",
@@ -168,14 +171,14 @@ class OfflineContractTest {
             ),
         )
         val expectedBody =
-            "{\"barcode\":\"8690000000001\",\"device_sequence\":7," +
-                "\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
+            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"barcode\":\"8690000000001\"," +
+                "\"device_sequence\":7,\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
                 "\"event_id\":\"11111111-1111-4111-8111-111111111111\"," +
                 "\"location_id\":\"A-04\",\"occurred_at\":\"2026-08-18T15:00:00Z\"," +
                 "\"quantity\":\"5\",\"symbology\":\"EAN13\"}"
         assertEquals(expectedBody, body)
         assertEquals(
-            "83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291",
+            "f0a1a16e9bfbf74a09667a7435e8880ea539d4cab88299ce8c9f4c58e1596626",
             TerminalEventCanonical.hash(body),
         )
     }
@@ -198,6 +201,7 @@ class OfflineContractTest {
             context = InventoryCountEventContext(
                 missionId = "mission-1",
                 documentId = "22222222-2222-4222-8222-222222222222",
+                activeShiftId = "SHIFT-20260818-001",
                 locationId = "a-04",
             ),
             acceptedScan = acceptedScan,
@@ -208,7 +212,7 @@ class OfflineContractTest {
             authBindingId = "session-a",
         )
         assertEquals(
-            "83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291",
+            "f0a1a16e9bfbf74a09667a7435e8880ea539d4cab88299ce8c9f4c58e1596626",
             event.payloadHash,
         )
         assertTrue(QueueIntegrity.valid(event, "session-a"))
@@ -229,6 +233,7 @@ class OfflineContractTest {
                 context = InventoryCountEventContext(
                     missionId = "mission-1",
                     documentId = "22222222-2222-4222-8222-222222222222",
+                    activeShiftId = "SHIFT-20260818-001",
                     locationId = "A-04",
                 ),
                 acceptedScan = acceptedScan,

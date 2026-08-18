@@ -41,7 +41,5 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
         with:
           gradle-version: "9.4.1"
-      - name: Ensure Android API 37 platform
-        run: sdkmanager "platforms;android-37"
       - name: Compile, unit test and lint isolated Compose field UI
         run: gradle --no-daemon clean :field-ui:testDebugUnitTest :field-ui:lintDebug :field-ui:assembleDebug

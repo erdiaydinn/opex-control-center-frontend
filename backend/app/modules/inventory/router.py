@@ -5,9 +5,44 @@ from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.modules.workforce.active_shift import ActiveShiftAuthorityError, resolve_active_shift
 from app.modules.workforce.authorization import is_action_allowed
-from .schemas import DecisionCreate, DeviceEnrollCreate, DocumentCreate, DocumentTransitionCreate, LocationLockCreate, ScanCreate, TerminalEventCreate
-from .production import InventoryPrincipal, create_document as production_create_document, enroll_device, list_terminal_tasks as production_list_terminal_tasks, readiness as production_readiness, reconciliation, record_event as production_record_event, transition as production_transition
-from .service import InventoryRuleError, complete, create_document, decide, get_document, initialize, list_documents, list_terminal_tasks, lock_location, readiness, record_scan
+from .location_completion import (
+    completion_readiness,
+    filter_completed_terminal_tasks,
+    record_location_completion,
+)
+from .production import (
+    InventoryPrincipal,
+    create_document as production_create_document,
+    enroll_device,
+    list_terminal_tasks as production_list_terminal_tasks,
+    readiness as production_readiness,
+    reconciliation,
+    record_event as production_record_event,
+    transition as production_transition,
+)
+from .schemas import (
+    DecisionCreate,
+    DeviceEnrollCreate,
+    DocumentCreate,
+    DocumentTransitionCreate,
+    LocationCompletionCreate,
+    LocationLockCreate,
+    ScanCreate,
+    TerminalEventCreate,
+)
+from .service import (
+    InventoryRuleError,
+    complete,
+    create_document,
+    decide,
+    get_document,
+    initialize,
+    list_documents,
+    list_terminal_tasks,
+    lock_location,
+    readiness,
+    record_scan,
+)
 
 router = APIRouter(prefix="/inventory", tags=["Inventory V22"])
 
@@ -126,9 +161,19 @@ def run(action, *args, **kwargs):
         raise
 
 
+def production_health() -> dict:
+    result = production_readiness()
+    checks = dict(result.get("checks", {}))
+    checks["migration_v4_location_completion"] = completion_readiness()
+    return {
+        "status": "ready" if result.get("status") == "ready" and all(checks.values()) else "blocked",
+        "checks": checks,
+    }
+
+
 @router.get("/health")
 def health():
-    return production_readiness() if production_mode() else readiness()
+    return production_health() if production_mode() else readiness()
 
 
 @router.get("/documents")
@@ -198,9 +243,33 @@ def terminal_event(
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production terminal endpoint etkin değil.")
+    require_verified_identity(request, "countInventory")
     principal = production_principal(request, x_eay_device_id)
     return run(
         production_record_event,
+        principal,
+        payload.model_dump(),
+        x_eay_request_timestamp,
+        x_eay_request_nonce,
+        x_eay_device_signature,
+    )
+
+
+@router.post("/v1/terminal/location-completions")
+def terminal_location_completion(
+    payload: LocationCompletionCreate,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+    x_eay_request_timestamp: str = Header(..., alias="X-EAY-Request-Timestamp"),
+    x_eay_request_nonce: str = Header(..., alias="X-EAY-Request-Nonce"),
+    x_eay_device_signature: str = Header(..., alias="X-EAY-Device-Signature"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production terminal endpoint etkin değil.")
+    require_verified_identity(request, "countInventory")
+    principal = production_principal(request, x_eay_device_id)
+    return run(
+        record_location_completion,
         principal,
         payload.model_dump(),
         x_eay_request_timestamp,
@@ -251,6 +320,7 @@ def production_terminal_tasks(
         return {"rows": []}
     narrowed_principal, active_shift_id = active
     rows = run(production_list_terminal_tasks, narrowed_principal)
+    rows = run(filter_completed_terminal_tasks, narrowed_principal, rows)
     return {
         "rows": [
             {**row, "active_shift_id": active_shift_id}

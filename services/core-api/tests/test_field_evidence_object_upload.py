@@ -70,7 +70,8 @@ async def test_private_photo_receipt_is_bound_to_exact_submission_and_field() ->
             """
             INSERT INTO field_templates (
                 tenant_id, template_id, version, name_i18n, schema, status, created_by
-            ) VALUES ($1, 'photo-check', 1, '{"en":"Photo check"}'::jsonb, $2::jsonb, 'active', 'author')
+            ) VALUES ($1, 'photo-check', 1, '{"en":"Photo check"}'::jsonb, $2::jsonb, 'active',
+            'author')
             """,
             tenant_id,
             __import__("json").dumps(template_schema),

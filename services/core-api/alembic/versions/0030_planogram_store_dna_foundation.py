@@ -33,11 +33,14 @@ def upgrade() -> None:
             store_code varchar(80) NOT NULL,
             store_name varchar(160),
             version_number integer NOT NULL CHECK (version_number > 0),
-            source varchar(40) NOT NULL CHECK (source IN ('warehouse_bootstrap','warehouse_revision','inventory_seed')),
-            status varchar(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','rejected','superseded')),
+            source varchar(40) NOT NULL CHECK (source IN
+            ('warehouse_bootstrap','warehouse_revision','inventory_seed')),
+            status varchar(20) NOT NULL DEFAULT 'draft' CHECK (status IN
+            ('draft','submitted','approved','rejected','superseded')),
             configuration jsonb NOT NULL,
             summary jsonb NOT NULL,
-            configuration_sha256 char(64) NOT NULL CHECK (configuration_sha256 ~ '^[0-9a-f]{64}$'),
+            configuration_sha256 char(64) NOT NULL CHECK (configuration_sha256 ~
+            '^[0-9a-f]{64}$'),
             geometry_attested boolean NOT NULL DEFAULT FALSE,
             created_by varchar(255) NOT NULL,
             created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -46,12 +49,15 @@ def upgrade() -> None:
             approved_by varchar(255), approved_at timestamptz,
             rejected_by varchar(255), rejected_at timestamptz, rejection_reason varchar(500),
             supersedes_version_id uuid,
-            CONSTRAINT uq_planogram_store_dna_version UNIQUE (tenant_id, store_code, version_number),
+            CONSTRAINT uq_planogram_store_dna_version UNIQUE (tenant_id, store_code,
+            version_number),
             CONSTRAINT uq_planogram_store_dna_tenant_id UNIQUE (tenant_id, id),
-            CONSTRAINT fk_planogram_store_dna_supersedes FOREIGN KEY (tenant_id, supersedes_version_id)
+            CONSTRAINT fk_planogram_store_dna_supersedes FOREIGN KEY (tenant_id,
+            supersedes_version_id)
                 REFERENCES planogram_store_dna_versions(tenant_id, id),
             CONSTRAINT ck_planogram_store_dna_rejection CHECK (
-                status <> 'rejected' OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL)
+                status <> 'rejected' OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND
+                rejection_reason IS NOT NULL)
             )
         )
         """)
@@ -72,12 +78,14 @@ def upgrade() -> None:
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
             store_dna_version_id uuid NOT NULL,
-            event_type varchar(40) NOT NULL CHECK (event_type IN ('bootstrapped','updated','submitted','approved','rejected','superseded','revised')),
+            event_type varchar(40) NOT NULL CHECK (event_type IN
+            ('bootstrapped','updated','submitted','approved','rejected','superseded','revised')),
             actor_subject varchar(255) NOT NULL,
             from_status varchar(20), to_status varchar(20), reason varchar(500),
             payload jsonb NOT NULL DEFAULT '{}'::jsonb,
             created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CONSTRAINT fk_planogram_store_dna_event_version FOREIGN KEY (tenant_id, store_dna_version_id)
+            CONSTRAINT fk_planogram_store_dna_event_version FOREIGN KEY (tenant_id,
+            store_dna_version_id)
                 REFERENCES planogram_store_dna_versions(tenant_id, id) ON DELETE RESTRICT
         )
         """)

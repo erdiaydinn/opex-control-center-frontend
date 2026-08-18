@@ -191,7 +191,8 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "status IN"
-            " ('unseen','seen','started','partial','submitted','rework','verified','overdue','exempt')",
+            " ('unseen','seen','started','partial','submitted','rework',"
+            "'verified','overdue','exempt')",
             name="ck_field_target_status",
         ),
         sa.PrimaryKeyConstraint(

@@ -94,10 +94,7 @@ def _build_inventory_count_candidate(
 ) -> dict[str, object]:
     sku = payload.get("sku")
     pallet_id = payload.get("pallet_id")
-    if not isinstance(sku, str) or not sku.strip():
-        sku = None
-    else:
-        sku = sku.strip()
+    sku = None if not isinstance(sku, str) or not sku.strip() else sku.strip()
     if not isinstance(pallet_id, str) or not pallet_id.strip():
         pallet_id = None
     else:
@@ -269,9 +266,11 @@ async def create_promotion_request(
                     source_evidence_fingerprint, candidate_payload,
                     candidate_fingerprint, proposal_fingerprint, requested_by
                 ) VALUES (
-                    CAST(:tenant_id AS UUID), CAST(:evidence_id AS UUID), CAST(:review_id AS UUID),
+                    CAST(:tenant_id AS UUID), CAST(:evidence_id AS UUID), CAST(:review_id AS
+                    UUID),
                     CAST(:mission_id AS UUID), :location_id, :consumer_module, :adapter_key,
-                    :adapter_version, :source_evidence_fingerprint, CAST(:candidate_payload AS JSONB),
+                    :adapter_version, :source_evidence_fingerprint, CAST(:candidate_payload AS
+                    JSONB),
                     :candidate_fingerprint, :proposal_fingerprint, :requested_by
                 )
                 ON CONFLICT (tenant_id, proposal_fingerprint) DO NOTHING
@@ -347,8 +346,10 @@ async def list_promotion_requests(
                        c.destination_candidate_ref_hash, c.reason AS consumer_reason,
                        c.receipt_fingerprint, c.created_at AS consumer_decided_at
                 FROM field_promotion_requests p
-                LEFT JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND d.promotion_id=p.id
-                LEFT JOIN field_promotion_consumer_receipts c ON c.tenant_id=p.tenant_id AND c.promotion_id=p.id
+                LEFT JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND
+                d.promotion_id=p.id
+                LEFT JOIN field_promotion_consumer_receipts c ON c.tenant_id=p.tenant_id AND
+                c.promotion_id=p.id
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)
                   AND p.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                 ORDER BY p.requested_at DESC, p.id DESC
@@ -431,7 +432,8 @@ async def decide_promotion_request(
             decision_result = await connection.execute(
                 text("""
                     INSERT INTO field_promotion_decisions (
-                        tenant_id, promotion_id, decision, decided_by, reason, decision_fingerprint
+                        tenant_id, promotion_id, decision, decided_by, reason,
+                        decision_fingerprint
                     ) VALUES (
                         CAST(:tenant_id AS UUID), CAST(:promotion_id AS UUID), :decision,
                         :decided_by, :reason, :decision_fingerprint
@@ -495,7 +497,8 @@ async def record_consumer_receipt(
                        d.decision AS field_decision, d.decided_by, d.decision_fingerprint,
                        existing.id AS existing_receipt_id
                 FROM field_promotion_requests p
-                JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND d.promotion_id=p.id
+                JOIN field_promotion_decisions d ON d.tenant_id=p.tenant_id AND
+                d.promotion_id=p.id
                 LEFT JOIN field_promotion_consumer_receipts existing
                   ON existing.tenant_id=p.tenant_id AND existing.promotion_id=p.id
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)

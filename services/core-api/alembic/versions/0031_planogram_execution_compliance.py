@@ -55,7 +55,8 @@ def upgrade() -> None:
             ),
             CONSTRAINT ck_planogram_plan_rejection CHECK (
                 status <> 'rejected'
-                OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL)
+                OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND rejection_reason IS
+                NOT NULL)
             )
         )
         """)
@@ -105,9 +106,11 @@ def upgrade() -> None:
             CONSTRAINT uq_planogram_assignment_tenant_id UNIQUE (tenant_id, id),
             CONSTRAINT fk_planogram_assignment_plan FOREIGN KEY (tenant_id, plan_version_id)
                 REFERENCES planogram_plan_versions(tenant_id, id) ON DELETE RESTRICT,
-            CONSTRAINT ck_planogram_assignment_due CHECK (due_at IS NULL OR due_at >= effective_from),
+            CONSTRAINT ck_planogram_assignment_due CHECK (due_at IS NULL OR due_at >=
+            effective_from),
             CONSTRAINT ck_planogram_assignment_ack CHECK (
-                status <> 'acknowledged' OR (acknowledged_by IS NOT NULL AND acknowledged_at IS NOT NULL)
+                status <> 'acknowledged' OR (acknowledged_by IS NOT NULL AND acknowledged_at IS
+                NOT NULL)
             ),
             CONSTRAINT ck_planogram_assignment_closed CHECK (
                 status <> 'closed' OR (closed_by IS NOT NULL AND closed_at IS NOT NULL)
@@ -145,7 +148,8 @@ def upgrade() -> None:
             assignment_id uuid NOT NULL,
             plan_version_id uuid NOT NULL,
             field_promotion_id uuid NOT NULL,
-            candidate_fingerprint char(64) NOT NULL CHECK (candidate_fingerprint ~ '^[0-9a-f]{64}$'),
+            candidate_fingerprint char(64) NOT NULL CHECK (candidate_fingerprint ~
+            '^[0-9a-f]{64}$'),
             sku varchar(160) NOT NULL,
             expected_locations jsonb NOT NULL,
             actual_location jsonb NOT NULL,
@@ -225,7 +229,8 @@ def upgrade() -> None:
                 IF NOT NEW.physical_truth_attested THEN
                     RAISE EXCEPTION 'Planogram approval requires external physical-truth attestation';
                 END IF;
-                IF NEW.submitted_by IS NULL OR NEW.approved_by IS NULL OR NEW.submitted_by = NEW.approved_by THEN
+                IF NEW.submitted_by IS NULL OR NEW.approved_by IS NULL OR NEW.submitted_by =
+                NEW.approved_by THEN
                     RAISE EXCEPTION 'Planogram approval requires maker-checker separation';
                 END IF;
                 SELECT status, geometry_attested, store_code

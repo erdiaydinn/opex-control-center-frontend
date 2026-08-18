@@ -40,7 +40,8 @@ def upgrade() -> None:
             IF OLD.status = 'closed' THEN
                 RAISE EXCEPTION 'Closed Planogram execution assignment is immutable';
             END IF;
-            IF OLD.status = 'assigned' AND NEW.status NOT IN ('assigned','acknowledged','closed') THEN
+            IF OLD.status = 'assigned' AND NEW.status NOT IN
+            ('assigned','acknowledged','closed') THEN
                 RAISE EXCEPTION 'Invalid Planogram assignment state transition';
             END IF;
             IF OLD.status = 'acknowledged' AND NEW.status NOT IN ('acknowledged','closed') THEN

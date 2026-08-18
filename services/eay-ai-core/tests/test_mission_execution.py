@@ -81,7 +81,7 @@ def _gateway():
 def _task():
     return IntelligenceTask(
         task_id="validate-stock-adjustment",
-        complexity=TaskComplexity.MODERATE,
+        complexity=TaskComplexity.STANDARD,
         risk=TaskRisk.MEDIUM,
         privacy=PrivacyLevel.INTERNAL,
         modalities=(Modality.TEXT,),

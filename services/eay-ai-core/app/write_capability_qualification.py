@@ -9,8 +9,8 @@ verified business effects.
 "Direct replay" means the healthy UI/API trajectory no longer needs model
 exploration. It never means authorization-free or verification-free execution.
 The executable capability reference and the policy permission are kept
-separate, and every write is bound to the exact idempotency key present in its
-authorization envelope.
+separate, and every write is bound to the exact risk and idempotency key present
+in its authorization envelope.
 """
 
 from __future__ import annotations
@@ -262,6 +262,8 @@ def create_controlled_write_demonstration(
         raise ValueError("write_demonstration_capability_mismatch")
     if authorization.target_scope_ref != candidate.target_scope_ref:
         raise ValueError("write_demonstration_target_scope_mismatch")
+    if authorization.risk != candidate.risk:
+        raise ValueError("write_demonstration_risk_authorization_mismatch")
     if not idempotency_key.strip():
         raise ValueError("write_demonstration_requires_idempotency_key")
     if authorization.idempotency_key != idempotency_key:
@@ -404,6 +406,8 @@ def preflight_qualified_write_replay(
         blockers.append("write_replay_capability_mismatch")
     if authorization.target_scope_ref != capability.target_scope_ref:
         blockers.append("write_replay_target_scope_mismatch")
+    if authorization.risk != capability.risk:
+        blockers.append("write_replay_risk_authorization_mismatch")
     if authorization.idempotency_key != expected_idempotency_key:
         blockers.append("write_replay_idempotency_authorization_mismatch")
 

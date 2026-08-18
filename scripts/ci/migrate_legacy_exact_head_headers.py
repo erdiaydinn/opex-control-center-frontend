@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Migrate historical Roadmap 1-10..1-14 exact-head workflow headers only.
+"""Normalize historical Roadmap 1-10..1-25 exact-head workflow headers.
 
-This intentionally does not touch jobs or exact-head checkout semantics. It
-removes the category-leadership PR trigger from historical gates and replaces
-SHA-keyed concurrency with a stable workflow+PR key so superseded runs can be
-cancelled. Re-runs are idempotent, but any third/unreviewed state fails closed.
+This migration intentionally touches header admission/concurrency only. Job
+bodies and exact-head checkout semantics remain unchanged. It is idempotent so
+runner retries cannot corrupt already-migrated files, and it fails closed on
+unexpected trigger/concurrency drift.
 """
 
 from __future__ import annotations
@@ -14,76 +14,88 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
-ITEMS = range(10, 15)
 STABLE = "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
 SHA_EXPR = "${{ github.event.pull_request.head.sha || github.sha }}"
-
-OLD_BRANCHES = """  pull_request:\n    branches:\n      - product/eay-product-completion-v1\n      - product/eay-category-leadership-v1\n"""
-NEW_BRANCHES = """  pull_request:\n    branches:\n      - product/eay-product-completion-v1\n"""
+PRODUCT = "      - product/eay-product-completion-v1\n"
+CATEGORY = "      - product/eay-category-leadership-v1\n"
 
 
 def path_for(item: int) -> Path:
     return WF / f"eay-roadmap-1-{item}-exact-head.yml"
 
 
-def apply() -> None:
-    for item in ITEMS:
-        path = path_for(item)
-        text = path.read_text(encoding="utf-8")
+def trigger_block(text: str) -> str:
+    if "permissions:" not in text:
+        raise SystemExit("workflow header missing permissions boundary")
+    return text.split("permissions:", 1)[0]
 
-        old_branches = text.count(OLD_BRANCHES)
-        new_branches = text.count(NEW_BRANCHES)
-        if old_branches == 1:
-            text = text.replace(OLD_BRANCHES, NEW_BRANCHES, 1)
-        elif old_branches == 0 and new_branches == 1:
-            pass
-        else:
-            raise SystemExit(
-                f"{path.name}: PR branch block is neither reviewed old nor reviewed new state"
-            )
 
-        old_group = f"group: eay-roadmap-1-{item}-exact-{SHA_EXPR}"
-        old_groups = text.count(old_group)
-        stable_groups = text.count(STABLE)
-        if old_groups == 1:
-            text = text.replace(old_group, STABLE, 1)
-        elif old_groups == 0 and stable_groups == 1:
-            pass
-        else:
-            raise SystemExit(
-                f"{path.name}: concurrency is neither reviewed SHA state nor stable state"
-            )
+def normalize_item(item: int, *, write: bool) -> None:
+    path = path_for(item)
+    text = path.read_text(encoding="utf-8")
+    trigger = trigger_block(text)
 
+    if PRODUCT not in trigger:
+        raise SystemExit(f"{path.name}: product-completion PR trigger missing")
+
+    if item <= 14:
+        category_count = trigger.count(CATEGORY)
+        if category_count == 1:
+            text = text.replace(CATEGORY, "", 1)
+        elif category_count != 0:
+            raise SystemExit(f"{path.name}: unexpected category trigger count={category_count}")
+    elif CATEGORY in trigger:
+        raise SystemExit(f"{path.name}: unexpected category-leadership PR trigger")
+
+    old_group = f"group: eay-roadmap-1-{item}-exact-{SHA_EXPR}"
+    old_count = text.count(old_group)
+    stable_count = text.count(STABLE)
+    if old_count == 1 and stable_count == 0:
+        text = text.replace(old_group, STABLE, 1)
+    elif old_count == 0 and stable_count == 1:
+        pass
+    else:
+        raise SystemExit(
+            f"{path.name}: unexpected concurrency state old={old_count} stable={stable_count}"
+        )
+
+    if write:
         path.write_text(text, encoding="utf-8")
+
+
+def apply() -> None:
+    for item in range(10, 26):
+        normalize_item(item, write=True)
 
 
 def check() -> None:
     failures: list[str] = []
-    for item in ITEMS:
+    for item in range(10, 26):
         path = path_for(item)
         text = path.read_text(encoding="utf-8")
-        trigger = text.split("permissions:", 1)[0]
-        concurrency = text.split("env:", 1)[0]
-        env_block = text.split("env:", 1)[1].split("jobs:", 1)[0]
+        trigger = trigger_block(text)
+        header = text.split("env:", 1)[0] if "env:" in text else text.split("jobs:", 1)[0]
 
-        if "product/eay-category-leadership-v1" in trigger:
+        if PRODUCT not in trigger:
+            failures.append(f"{path.name}: product-completion trigger lost")
+        if CATEGORY in trigger:
             failures.append(f"{path.name}: category-leadership PR trigger remains")
-        if "product/eay-product-completion-v1" not in trigger:
-            failures.append(f"{path.name}: product-completion PR trigger lost")
-        if STABLE not in concurrency:
+        if STABLE not in header:
             failures.append(f"{path.name}: stable workflow+PR concurrency missing")
-        if "head.sha || github.sha" in concurrency:
+        if "head.sha || github.sha" in header:
             failures.append(f"{path.name}: SHA-keyed concurrency remains")
-        if SHA_EXPR not in env_block:
-            failures.append(f"{path.name}: exact-head env binding was changed")
+        if "env:" in text:
+            env_block = text.split("env:", 1)[1].split("jobs:", 1)[0]
+            if SHA_EXPR not in env_block:
+                failures.append(f"{path.name}: exact-head env binding changed")
 
     if failures:
-        raise SystemExit("Legacy exact-head header verification failed:\n- " + "\n- ".join(failures))
+        raise SystemExit("Historical exact-head verification failed:\n- " + "\n- ".join(failures))
 
-    print("LEGACY_EXACT_HEAD_10_14=PASS")
-    print("category_pr_fanout=false")
-    print("superseded_sha_groups=false")
-    print("exact_head_env_binding=preserved")
+    print("HISTORICAL_EXACT_HEAD_10_25=PASS")
+    print("category_pr_fanout_10_14=false")
+    print("superseded_sha_groups_10_25=false")
+    print("exact_head_checkout_semantics=preserved")
 
 
 def main() -> None:

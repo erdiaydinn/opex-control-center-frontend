@@ -156,11 +156,6 @@ object BlindCountFlow {
         if (target.targetLineCount != null && nextCount > target.targetLineCount) {
             return denied(BlindCountCode.DENY_TARGET, session)
         }
-        val nextStep = if (target.targetLineCount == nextCount) {
-            BlindCountStep.COMPLETE
-        } else {
-            BlindCountStep.SCAN_ITEM
-        }
         val evidence = BlindCountLineEvidence(
             missionId = session.missionId,
             itemPayloadHash = session.currentItemHash,
@@ -169,7 +164,7 @@ object BlindCountFlow {
         return BlindCountTransition(
             code = BlindCountCode.OK,
             session = session.copy(
-                step = nextStep,
+                step = BlindCountStep.SCAN_ITEM,
                 currentItemHash = null,
                 currentQuantity = null,
                 confirmedLineCount = nextCount,

@@ -44,3 +44,11 @@ def test_terminal_task_route_never_accepts_client_shift_or_role_truth() -> None:
     assert "active_shift_id" not in parameters
     assert "x_opex_role" not in parameters
     assert "x_opex_permissions" not in parameters
+
+
+def test_shared_inventory_boundary_maps_only_workforce_authority_outage_to_503() -> None:
+    rendered = ast.unparse(_function("run"))
+    assert "except RuntimeError as error" in rendered
+    assert "isinstance(error.__cause__, ActiveShiftAuthorityError)" in rendered
+    assert "status_code=503" in rendered
+    assert "raise" in rendered

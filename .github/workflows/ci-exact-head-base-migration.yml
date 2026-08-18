@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile fail-closed migration tools
-        run: python -m py_compile scripts/ci/migrate_legacy_exact_head_headers.py scripts/ci/apply_exact_head_concurrency.py
+        run: python -m py_compile scripts/ci/migrate_legacy_exact_head_headers.py scripts/ci/apply_exact_head_concurrency.py scripts/ci/verify_ci_admission_policy.py
       - name: Apply header-only historical migration
         run: |
           python scripts/ci/migrate_legacy_exact_head_headers.py
@@ -38,7 +38,7 @@ jobs:
           python scripts/ci/migrate_legacy_exact_head_headers.py --check
           python scripts/ci/apply_exact_head_concurrency.py --check
           python scripts/ci/apply_inventory_admission_control.py --check
-          python scripts/ci/apply_ci_admission_control.py --check
+          python scripts/ci/verify_ci_admission_policy.py
       - name: Reject malformed diff
         run: git diff --check
       - name: Commit header-only migration to fix base and self-remove

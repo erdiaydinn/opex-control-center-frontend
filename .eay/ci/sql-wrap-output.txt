@@ -1,6 +1,6 @@
 E501_INPUT_FILES=3
 SQL_WRAP_CHANGED_FILES=0
-WRAPPER_EXIT_CODE=0
+COMPILE_EXIT_CODE=0
 services/core-api/app/core/ai_orders_v2_source_comparison.py:38: SyntaxWarning: invalid escape sequence '\`'
   FROM \`curated_data_shared_coredata_business.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS\`
-COMPILE_EXIT_CODE=0
+

@@ -1,6 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from app.decision_intelligence import (
     DecisionPacketInput,
     DecisionReadiness,
@@ -147,7 +149,9 @@ def test_mutated_truth_receipt_is_rejected_by_decision_boundary():
         }
     )
 
-    packet = build_decision_packet(
+    # DecisionPacketInput is itself a trusted boundary. Pydantic revalidates the
+    # nested receipt and rejects fingerprint tampering before packet synthesis.
+    with pytest.raises(ValueError, match="decision_truth_receipt_fingerprint_mismatch"):
         DecisionPacketInput(
             decision_id="inventory-tampered-receipt",
             risk_radar=_radar(),
@@ -155,11 +159,6 @@ def test_mutated_truth_receipt_is_rejected_by_decision_boundary():
             requires_live_company_truth=True,
             requires_firm_company_claim=True,
         )
-    )
-
-    assert packet.readiness is DecisionReadiness.HOLD
-    assert packet.confidence_cap <= 0.20
-    assert "live_company_truth_receipt_invalid" in packet.blockers
 
 
 def test_mission_waits_for_required_live_truth_without_consuming_retry_budget():

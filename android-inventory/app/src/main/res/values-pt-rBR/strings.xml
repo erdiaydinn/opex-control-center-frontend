@@ -28,4 +28,11 @@
     <string name="terminal_sign_in_cancelled">Login corporativo cancelado</string>
     <string name="terminal_invalid_quantity">Informe uma quantidade válida e não negativa</string>
     <string name="terminal_complete">Missão de contagem concluída</string>
+    <string name="terminal_finish_location">Finalizar local</string>
+    <string name="terminal_finish_location_title">Finalizar este local?</string>
+    <string name="terminal_finish_location_message">Local: %1$s\nRegistros de contagem salvos: %2$d\nUm evento de conclusão assinado será colocado na fila segura.</string>
+    <string name="terminal_cancel">Cancelar</string>
+    <string name="terminal_finish_location_confirm">Finalizar local</string>
+    <string name="terminal_location_complete_queued">Local concluído · sincronização segura enfileirada</string>
+    <string name="terminal_completion_retry">Fila segura indisponível · tente finalizar o local novamente</string>
 </resources>

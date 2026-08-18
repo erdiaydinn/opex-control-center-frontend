@@ -3,7 +3,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-EXPLANATION = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "explanation.py"
+EXPLANATION = (
+    Path(__file__).parents[1]
+    / "app"
+    / "modules"
+    / "inventory"
+    / "explanation.py"
+)
 ROUTER = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "router.py"
 
 

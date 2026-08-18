@@ -83,6 +83,7 @@ class LocationCompletionCreate(BaseModel):
     active_shift_id: str = Field(min_length=1, max_length=128)
     attempt_id: str
     lease_id: str
+    event_kind: str = Field(default="LOCATION_COMPLETE", pattern="^LOCATION_COMPLETE$")
     confirmed_line_count: int = Field(ge=0, le=1_000_000)
     device_sequence: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)

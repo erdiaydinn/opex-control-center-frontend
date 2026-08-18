@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import os
 import unittest
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -14,6 +14,7 @@ from ..workforce.active_shift import ActiveShiftAttestation
 from . import location_completion_v5 as completion_v5
 from . import mission_attempt as mission_attempt_module
 from . import production_v5
+from .explanation import explanation_context
 from .location_completion_v5 import location_completion_hash_input_v5, record_location_completion_v5
 from .mission_attempt import abandon_mission_attempt, claim_mission_attempt, mission_claim_hash_input
 from .production import InventoryPrincipal, canonical_payload_hash, connect
@@ -184,7 +185,11 @@ class InventoryMissionAttemptLeaseTests(unittest.TestCase):
         document_id = self.new_document()
         abandoned = self.claim(self.principal_one, self.private_one, document_id)
         self.event(self.principal_one, self.private_one, document_id, abandoned, 2)
-        abandon_mission_attempt(self.principal_one, uuid4() if False else __import__("uuid").UUID(abandoned["attempt_id"]), "device replacement")
+        abandon_mission_attempt(
+            self.principal_one,
+            UUID(abandoned["attempt_id"]),
+            "device replacement",
+        )
 
         accepted = self.claim(self.principal_two, self.private_two, document_id)
         self.event(self.principal_two, self.private_two, document_id, accepted, 5)
@@ -197,6 +202,20 @@ class InventoryMissionAttemptLeaseTests(unittest.TestCase):
         statuses = {str(item["attempt_id"]): item["status"] for item in result["attempts"]}
         self.assertEqual(statuses[abandoned["attempt_id"]], "ABANDONED")
         self.assertEqual(statuses[accepted["attempt_id"]], "COMPLETED")
+
+        jarvis = explanation_context(self.principal_two, document_id)
+        self.assertEqual(jarvis["schema_version"], 2)
+        self.assertEqual(jarvis["source"], "inventory_completed_attempt_truth")
+        self.assertTrue(jarvis["abandoned_attempt_events_excluded_from_stock_truth"])
+        lifecycle = {row["status"]: row["attempt_count"] for row in jarvis["attempt_lifecycle"]}
+        self.assertEqual(lifecycle["ABANDONED"], 1)
+        self.assertEqual(lifecycle["COMPLETED"], 1)
+        scan_events = [
+            row for row in jarvis["authoritative_events"]
+            if row["event_type"] in {"SCAN", "UNEXPECTED_SKU"}
+        ]
+        self.assertEqual(sum(row["event_count"] for row in scan_events), 1)
+        self.assertEqual(float(jarvis["variance_summary"]["absolute_quantity_variance"]), 5.0)
 
         submitted = transition_v5(
             self.principal_two,

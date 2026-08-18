@@ -9,7 +9,8 @@ verified business effects.
 "Direct replay" means the healthy UI/API trajectory no longer needs model
 exploration. It never means authorization-free or verification-free execution.
 The executable capability reference and the policy permission are kept
-separate because the mission fabric already models them as different concepts.
+separate, and every write is bound to the exact idempotency key present in its
+authorization envelope.
 """
 
 from __future__ import annotations
@@ -132,6 +133,7 @@ class WriteReplayPreflight(BaseModel):
     execution_capability_ref: str
     required_permission: str
     procedure_capability_id: str
+    idempotency_key: str | None = None
     allowed: bool
     authorization_evidence_ref: str | None = None
     effect_verification_required: bool = True
@@ -142,6 +144,8 @@ class WriteReplayPreflight(BaseModel):
         if self.allowed:
             if not self.authorization_evidence_ref:
                 raise ValueError("write_replay_preflight_requires_authorization_evidence")
+            if not self.idempotency_key:
+                raise ValueError("write_replay_preflight_requires_idempotency_key")
             if self.blockers:
                 raise ValueError("write_replay_preflight_cannot_ignore_blockers")
         if not self.effect_verification_required:
@@ -260,6 +264,8 @@ def create_controlled_write_demonstration(
         raise ValueError("write_demonstration_target_scope_mismatch")
     if not idempotency_key.strip():
         raise ValueError("write_demonstration_requires_idempotency_key")
+    if authorization.idempotency_key != idempotency_key:
+        raise ValueError("write_demonstration_idempotency_authorization_mismatch")
 
     combined_evidence = tuple(
         dict.fromkeys(
@@ -375,8 +381,11 @@ def preflight_qualified_write_replay(
     capability: QualifiedWriteCapability,
     authorization: CommandAuthorizationEnvelope,
     observed_environment_fingerprint: str,
+    expected_idempotency_key: str,
 ) -> WriteReplayPreflight:
     blockers: list[str] = []
+    if not expected_idempotency_key.strip():
+        blockers.append("write_replay_expected_idempotency_missing")
     if not capability.deterministic_replay_allowed:
         blockers.append("write_replay_capability_not_qualified")
     if capability.procedure.status is not ProcedureStatus.VALIDATED:
@@ -395,6 +404,8 @@ def preflight_qualified_write_replay(
         blockers.append("write_replay_capability_mismatch")
     if authorization.target_scope_ref != capability.target_scope_ref:
         blockers.append("write_replay_target_scope_mismatch")
+    if authorization.idempotency_key != expected_idempotency_key:
+        blockers.append("write_replay_idempotency_authorization_mismatch")
 
     blockers = list(dict.fromkeys(blockers))
     return WriteReplayPreflight(
@@ -402,6 +413,7 @@ def preflight_qualified_write_replay(
         execution_capability_ref=capability.execution_capability_ref,
         required_permission=capability.required_permission,
         procedure_capability_id=capability.procedure.capability_id,
+        idempotency_key=(expected_idempotency_key if not blockers else None),
         allowed=not blockers,
         authorization_evidence_ref=(authorization.authorization_evidence_ref if not blockers else None),
         blockers=tuple(blockers),

@@ -9,6 +9,7 @@ private const val LOCATION_COMPLETE_KIND = "LOCATION_COMPLETE"
 
 data class LocationCompletionInput(
     val activeShiftId: String,
+    val confirmedLineCount: Int,
     val deviceSequence: Long,
     val documentId: String,
     val eventId: String,
@@ -25,6 +26,7 @@ object LocationCompletionCanonical {
         val occurredAt = input.occurredAt.trim()
 
         require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
+        require(input.confirmedLineCount >= 0)
         require(input.deviceSequence > 0)
         require(locationId.isNotBlank())
         OffsetDateTime.parse(occurredAt)
@@ -32,6 +34,7 @@ object LocationCompletionCanonical {
         return buildString {
             append('{')
             append("\"active_shift_id\":").append(jsonString(activeShiftId)).append(',')
+            append("\"confirmed_line_count\":").append(input.confirmedLineCount).append(',')
             append("\"device_sequence\":").append(input.deviceSequence).append(',')
             append("\"document_id\":").append(jsonString(documentId)).append(',')
             append("\"event_id\":").append(jsonString(eventId)).append(',')
@@ -71,17 +74,20 @@ object LocationCompletionCanonical {
 object InventoryLocationCompletionEventFactory {
     fun create(
         context: InventoryCountEventContext,
+        confirmedLineCount: Int,
         deviceSequence: Long,
         eventId: String,
         occurredAt: String,
         authBindingId: String,
     ): OfflineEvent {
+        require(confirmedLineCount >= 0)
         require(deviceSequence > 0)
         require(authBindingId.isNotBlank())
         val normalizedEventId = UUID.fromString(eventId.trim()).toString()
         val canonicalBody = LocationCompletionCanonical.body(
             LocationCompletionInput(
                 activeShiftId = context.activeShiftId,
+                confirmedLineCount = confirmedLineCount,
                 deviceSequence = deviceSequence,
                 documentId = context.documentId,
                 eventId = normalizedEventId,

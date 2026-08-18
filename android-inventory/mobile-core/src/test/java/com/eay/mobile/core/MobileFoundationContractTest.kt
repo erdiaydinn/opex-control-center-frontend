@@ -163,20 +163,24 @@ class MobileFoundationContractTest {
     }
 
     @Test
-    fun `telemetry redacts credentials payloads barcodes precise location and fingerprints identity`() {
+    fun `telemetry redacts credentials operational payloads and raw identity`() {
         val sanitized = MobileTelemetryPolicy.sanitize(
             mapOf(
                 "authorization" to "Bearer secret",
                 "barcode" to "8690000000000",
                 "latitude" to "41.0",
                 "actor_id" to "employee-secret",
+                "device_id" to "managed-device-1",
+                "fleet_device_token" to "fleet-device-token-0001",
                 "screen" to "count",
             ),
         )
         assertEquals("[REDACTED]", sanitized["authorization"])
         assertEquals("[REDACTED]", sanitized["barcode"])
         assertEquals("[REDACTED]", sanitized["latitude"])
-        assertTrue(sanitized.getValue("actor_id").startsWith("sha256:"))
+        assertEquals("[REDACTED]", sanitized["actor_id"])
+        assertEquals("[REDACTED]", sanitized["device_id"])
+        assertEquals("fleet-device-token-0001", sanitized["fleet_device_token"])
         assertEquals("count", sanitized["screen"])
         assertFalse(MobileTelemetryPolicy.containsForbiddenRawData(sanitized))
     }

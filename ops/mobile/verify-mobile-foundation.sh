@@ -13,9 +13,15 @@ $CORE/MobileEventLedger.kt
 $CORE/MobileTelemetryPolicy.kt
 $CORE/MobileSyncEngine.kt
 $CORE/FieldMission.kt
+$CORE/ScannerIngress.kt
+$CORE/BlindCountFlow.kt
+$CORE/FleetHealth.kt
+$CORE/RuntimeControl.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/MobileFoundationContractTest.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/MobileSyncEngineTest.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FieldMissionTest.kt
+$ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FleetHealthTest.kt
+$ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/RuntimeControlTest.kt
 $PY_CORE/mobile_policy.py
 $PY_CORE/mobile_policy_signing.py
 $PY_CORE/mobile_device_trust.py
@@ -39,6 +45,9 @@ grep -q 'SEQUENCE_COLLISION' "$CORE/MobileEventLedger.kt"
 grep -q 'BUSINESS_CONFLICT' "$CORE/MobileSyncEngine.kt"
 grep -q 'AUTH_BINDING_CHANGED' "$CORE/MobileSyncEngine.kt"
 grep -q 'INSTALLATION_BINDING_CHANGED' "$CORE/MobileSyncEngine.kt"
+grep -q 'fleet_device_token' "$CORE/FleetHealth.kt"
+grep -q 'DISABLED_POLICY_MISMATCH' "$CORE/RuntimeControl.kt"
+grep -q 'actor_id' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'canonical_payload' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'barcode' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'biometric' "$CORE/MobileTelemetryPolicy.kt"

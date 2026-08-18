@@ -409,10 +409,13 @@ def build_real_world_timeline(
     selected_ids = {item.event_id for item in selected}
 
     validated_links: list[TimelineEventLink] = []
+    all_event_ids = set(by_id)
     for link in links:
         link = TimelineEventLink.model_validate(link.model_dump(mode="json"))
         if link.tenant_id != tenant_id:
             raise ValueError("timeline_cross_tenant_link_forbidden")
+        if link.source_event_id not in all_event_ids or link.target_event_id not in all_event_ids:
+            raise ValueError("timeline_link_references_unknown_event")
         validated_links.append(link)
 
     selected_links = tuple(

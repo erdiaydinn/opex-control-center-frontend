@@ -79,7 +79,7 @@ def test_world_assertion_is_indexed_without_copying_business_value():
     assert event.data_ref == "world-assertion://orders-fulya-1800"
     assert event.authority_class is TimelineAuthorityClass.GOVERNED_OPERATIONAL
     assert "DO_NOT_DUPLICATE" not in encoded
-    assert "9123" not in encoded
+    assert "sensitive_marker" not in encoded
     assert event.timeline_grants_truth_authority is False
     assert event.execution_authority_granted is False
 
@@ -223,6 +223,55 @@ def test_model_copy_tampering_is_rejected_at_integrity_boundary():
     with pytest.raises(ValueError, match="timeline_event_fingerprint_mismatch"):
         validate_timeline_event_integrity(tampered)
 
+
+
+def test_future_effective_company_assertion_is_indexed_when_observed_before_effective_date():
+    assertion = WorldAssertion(
+        assertion_id="future-company-policy",
+        tenant_id="YS_TR",
+        entity_id="company:eay",
+        field_name="policy.future_effective",
+        value=True,
+        truth_class=TruthClass.VERIFIED_COMPANY,
+        valid_from=NOW + timedelta(days=2),
+        observed_at=NOW,
+        source_ref="company-policy://approved-change",
+        evidence_ref="evidence://policy/approved-change",
+        confidence=1.0,
+    )
+
+    event = timeline_event_from_world_assertion(assertion)
+    assert event.occurred_at == NOW
+    assert event.effective_from == NOW + timedelta(days=2)
+
+    snapshot = build_real_world_timeline(
+        tenant_id="YS_TR",
+        window_start=NOW + timedelta(days=2),
+        window_end=NOW + timedelta(days=3),
+        events=(event,),
+    )
+    assert tuple(item.event_id for item in snapshot.events) == (event.event_id,)
+
+
+def test_link_to_unknown_event_fails_instead_of_being_silently_dropped():
+    event = _event("known")
+    dangling = TimelineEventLink(
+        tenant_id="YS_TR",
+        source_event_id=event.event_id,
+        relation=TimelineRelationKind.DERIVED_FROM,
+        target_event_id="missing",
+        evidence_refs=("evidence://link",),
+        confidence=0.8,
+    )
+
+    with pytest.raises(ValueError, match="timeline_link_references_unknown_event"):
+        build_real_world_timeline(
+            tenant_id="YS_TR",
+            window_start=NOW - timedelta(minutes=1),
+            window_end=NOW + timedelta(hours=1),
+            events=(event,),
+            links=(dangling,),
+        )
 
 def test_secret_bearing_reference_is_rejected():
     with pytest.raises(ValueError, match="timeline_event_reference_may_contain_secret"):

@@ -46,7 +46,7 @@ def timeline_event_from_world_assertion(assertion: WorldAssertion):
         event_kind=TimelineEventKind.COMPANY_ASSERTION,
         source_ref=assertion.source_ref,
         tenant_id=assertion.tenant_id,
-        occurred_at=assertion.valid_from,
+        occurred_at=assertion.observed_at,
         observed_at=assertion.observed_at,
         effective_from=assertion.valid_from,
         effective_until=assertion.valid_to,

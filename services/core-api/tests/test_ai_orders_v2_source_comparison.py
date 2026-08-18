@@ -69,6 +69,18 @@ def config():
     )
 
 
+def test_source_comparison_query_uses_valid_bigquery_backtick_identifiers() -> None:
+    assert (
+        "`curated_data_shared_coredata_business.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`"
+        in SOURCE_COMPARISON_QUERY
+    )
+    assert (
+        "`curated_data_shared.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`"
+        in SOURCE_COMPARISON_QUERY
+    )
+    assert "\\`" not in SOURCE_COMPARISON_QUERY
+
+
 def test_source_comparison_is_fixed_bounded_and_non_promoting() -> None:
     client = FakeClient(matrix_rows())
     artifact = collect_orders_v2_source_comparison(

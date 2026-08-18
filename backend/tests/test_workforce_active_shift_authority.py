@@ -104,3 +104,103 @@ def test_empty_warehouse_scope_is_denied(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(PermissionError, match="depo kapsamı"):
         active_shift.resolve_active_shift("tenant-1", "E-1", set())
+
+
+def test_offline_event_is_valid_inside_completed_shift_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(
+        monkeypatch,
+        [(
+            "ATT-1",
+            "SHIFT-1",
+            "E-1",
+            "2026-08-18T15:00:00+00:00",
+            "2026-08-18T16:00:00+00:00",
+            "FULYA",
+            "Tamamlandı",
+        )],
+    )
+
+    attestation = active_shift.attest_shift_at_event(
+        "tenant-1",
+        "E-1",
+        "FULYA",
+        "SHIFT-1",
+        "2026-08-18T15:30:00+00:00",
+    )
+
+    assert attestation is not None
+    assert attestation.shift_id == "SHIFT-1"
+    assert attestation.attendance_id == "ATT-1"
+
+
+def test_offline_event_before_checkin_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(
+        monkeypatch,
+        [(
+            "ATT-1",
+            "SHIFT-1",
+            "E-1",
+            "2026-08-18T15:00:00+00:00",
+            "2026-08-18T16:00:00+00:00",
+            "FULYA",
+            "Tamamlandı",
+        )],
+    )
+    assert active_shift.attest_shift_at_event(
+        "tenant-1", "E-1", "FULYA", "SHIFT-1", "2026-08-18T14:59:59+00:00"
+    ) is None
+
+
+def test_offline_event_after_checkout_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(
+        monkeypatch,
+        [(
+            "ATT-1",
+            "SHIFT-1",
+            "E-1",
+            "2026-08-18T15:00:00+00:00",
+            "2026-08-18T16:00:00+00:00",
+            "FULYA",
+            "Tamamlandı",
+        )],
+    )
+    assert active_shift.attest_shift_at_event(
+        "tenant-1", "E-1", "FULYA", "SHIFT-1", "2026-08-18T16:00:01+00:00"
+    ) is None
+
+
+def test_open_shift_allows_event_after_checkin(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(
+        monkeypatch,
+        [(
+            "ATT-1",
+            "SHIFT-1",
+            "E-1",
+            "2026-08-18T15:00:00+00:00",
+            None,
+            "FULYA",
+            "Vardiyada",
+        )],
+    )
+    assert active_shift.attest_shift_at_event(
+        "tenant-1", "E-1", "FULYA", "SHIFT-1", "2026-08-18T15:30:00+00:00"
+    ) is not None
+
+
+def test_future_event_time_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(
+        monkeypatch,
+        [(
+            "ATT-1",
+            "SHIFT-1",
+            "E-1",
+            "2026-08-18T15:00:00+00:00",
+            None,
+            "FULYA",
+            "Vardiyada",
+        )],
+    )
+    with pytest.raises(PermissionError, match="gelecekte"):
+        active_shift.attest_shift_at_event(
+            "tenant-1", "E-1", "FULYA", "SHIFT-1", "2099-01-01T00:00:00+00:00"
+        )

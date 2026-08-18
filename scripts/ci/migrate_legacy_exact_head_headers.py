@@ -16,8 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 WF = ROOT / ".github" / "workflows"
 STABLE = "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
 SHA_EXPR = "${{ github.event.pull_request.head.sha || github.sha }}"
-PRODUCT = "      - product/eay-product-completion-v1\n"
-CATEGORY = "      - product/eay-category-leadership-v1\n"
+PRODUCT = "product/eay-product-completion-v1"
+CATEGORY = "product/eay-category-leadership-v1"
+CATEGORY_LINE = "      - product/eay-category-leadership-v1\n"
 
 
 def path_for(item: int) -> Path:
@@ -35,13 +36,18 @@ def normalize_item(item: int, *, write: bool) -> None:
     text = path.read_text(encoding="utf-8")
     trigger = trigger_block(text)
 
+    # Accept both reviewed YAML spellings: multi-line branches and inline list.
     if PRODUCT not in trigger:
         raise SystemExit(f"{path.name}: product-completion PR trigger missing")
 
     if item <= 14:
         category_count = trigger.count(CATEGORY)
         if category_count == 1:
-            text = text.replace(CATEGORY, "", 1)
+            if CATEGORY_LINE not in trigger:
+                raise SystemExit(
+                    f"{path.name}: category trigger exists in an unreviewed YAML shape"
+                )
+            text = text.replace(CATEGORY_LINE, "", 1)
         elif category_count != 0:
             raise SystemExit(f"{path.name}: unexpected category trigger count={category_count}")
     elif CATEGORY in trigger:

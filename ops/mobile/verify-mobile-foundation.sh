@@ -11,7 +11,11 @@ $CORE/MobilePlatformContract.kt
 $CORE/MobileOperationAdmission.kt
 $CORE/MobileEventLedger.kt
 $CORE/MobileTelemetryPolicy.kt
+$CORE/MobileSyncEngine.kt
+$CORE/FieldMission.kt
 $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/MobileFoundationContractTest.kt
+$ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/MobileSyncEngineTest.kt
+$ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/FieldMissionTest.kt
 $PY_CORE/mobile_policy.py
 $PY_CORE/mobile_policy_signing.py
 $PY_CORE/mobile_device_trust.py
@@ -32,6 +36,9 @@ grep -q 'DENY_INTEGRITY' "$CORE/MobileOperationAdmission.kt"
 grep -q 'risk == OperationRisk.CRITICAL' "$CORE/MobileOperationAdmission.kt"
 grep -q 'PAYLOAD_SUBSTITUTION' "$CORE/MobileEventLedger.kt"
 grep -q 'SEQUENCE_COLLISION' "$CORE/MobileEventLedger.kt"
+grep -q 'BUSINESS_CONFLICT' "$CORE/MobileSyncEngine.kt"
+grep -q 'AUTH_BINDING_CHANGED' "$CORE/MobileSyncEngine.kt"
+grep -q 'INSTALLATION_BINDING_CHANGED' "$CORE/MobileSyncEngine.kt"
 grep -q 'canonical_payload' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'barcode' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'biometric' "$CORE/MobileTelemetryPolicy.kt"

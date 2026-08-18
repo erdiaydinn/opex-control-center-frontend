@@ -18,6 +18,10 @@ data class InventoryTerminalTaskWire(
     val state: String,
     val revision: Int,
     val locationCount: Int,
+    val claimStatus: String,
+    val attemptId: String?,
+    val leaseId: String?,
+    val leaseValidUntil: String?,
     val operation: String,
     val runtimeProfile: String,
 )
@@ -71,6 +75,7 @@ object InventoryTerminalTaskContract {
             require(row.activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$"))) {
                 "Missing or invalid server-issued active shift"
             }
+            val claimStatus = InventoryMissionClaimStatus.valueOf(row.claimStatus)
             require(missionIds.add(row.missionId)) { "Duplicate terminal mission ID" }
             val binding = "${row.documentId}:${row.locationId.trim().uppercase(Locale.ROOT)}"
             require(locationBindings.add(binding)) { "Duplicate document/location mission" }
@@ -84,6 +89,10 @@ object InventoryTerminalTaskContract {
                 state = row.state,
                 revision = row.revision,
                 locationCount = row.locationCount,
+                claimStatus = claimStatus,
+                attemptId = row.attemptId,
+                leaseId = row.leaseId,
+                leaseValidUntil = row.leaseValidUntil,
                 operation = row.operation,
                 runtimeProfile = MobileRuntimeProfile.valueOf(row.runtimeProfile),
             )
@@ -168,6 +177,10 @@ class InventoryTerminalTaskClient(context: Context) {
                 state = row.getString("state"),
                 revision = row.getInt("revision"),
                 locationCount = row.getInt("location_count"),
+                claimStatus = row.getString("claim_status"),
+                attemptId = row.optString("attempt_id").takeIf { it.isNotBlank() },
+                leaseId = row.optString("lease_id").takeIf { it.isNotBlank() },
+                leaseValidUntil = row.optString("lease_valid_until").takeIf { it.isNotBlank() },
                 operation = row.getString("operation"),
                 runtimeProfile = row.getString("runtime_profile"),
             )

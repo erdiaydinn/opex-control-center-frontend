@@ -9,12 +9,16 @@ data class InventoryCountEventContext(
     val missionId: String,
     val documentId: String,
     val activeShiftId: String,
+    val attemptId: String,
+    val leaseId: String,
     val locationId: String,
 ) {
     init {
         require(missionId.isNotBlank())
-        require(documentId.isNotBlank())
+        UUID.fromString(documentId)
         require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
+        UUID.fromString(attemptId)
+        UUID.fromString(leaseId)
         require(locationId.isNotBlank())
     }
 }
@@ -47,10 +51,12 @@ object InventoryCountEventFactory {
         val canonicalBody = TerminalEventCanonical.body(
             TerminalEventInput(
                 activeShiftId = context.activeShiftId,
+                attemptId = context.attemptId,
                 barcode = acceptedScan.value,
                 deviceSequence = deviceSequence,
                 documentId = context.documentId,
                 eventId = normalizedEventId,
+                leaseId = context.leaseId,
                 locationId = context.locationId,
                 occurredAt = occurredAt,
                 quantity = BigDecimal.valueOf(evidence.quantity.toLong()),

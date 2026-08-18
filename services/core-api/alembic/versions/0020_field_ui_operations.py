@@ -25,9 +25,9 @@ def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
     op.execute(
-        f'''CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)'''
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
     )
 
 
@@ -96,7 +96,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP TRIGGER IF EXISTS field_notification_intents_append_only ON field_notification_intents"
+        "DROP TRIGGER IF EXISTS field_notification_intents_append_only ON"
+        " field_notification_intents"
     )
     op.drop_table("field_notification_intents")
     op.drop_constraint(

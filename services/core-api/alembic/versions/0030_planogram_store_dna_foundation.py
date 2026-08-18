@@ -21,9 +21,9 @@ def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
     op.execute(
-        f'''CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)'''
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
     )
 
 
@@ -60,13 +60,16 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_planogram_store_dna_active_edit ON planogram_store_dna_versions (tenant_id, store_code) WHERE status IN ('draft','submitted')"
+        "CREATE UNIQUE INDEX uq_planogram_store_dna_active_edit ON planogram_store_dna_versions"
+        " (tenant_id, store_code) WHERE status IN ('draft','submitted')"
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_planogram_store_dna_approved ON planogram_store_dna_versions (tenant_id, store_code) WHERE status='approved'"
+        "CREATE UNIQUE INDEX uq_planogram_store_dna_approved ON planogram_store_dna_versions"
+        " (tenant_id, store_code) WHERE status='approved'"
     )
     op.execute(
-        "CREATE INDEX ix_planogram_store_dna_store_status ON planogram_store_dna_versions (tenant_id, store_code, status, version_number DESC)"
+        "CREATE INDEX ix_planogram_store_dna_store_status ON planogram_store_dna_versions"
+        " (tenant_id, store_code, status, version_number DESC)"
     )
     op.execute(
         """
@@ -85,7 +88,8 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX ix_planogram_store_dna_events_version ON planogram_store_dna_events (tenant_id, store_dna_version_id, created_at)"
+        "CREATE INDEX ix_planogram_store_dna_events_version ON planogram_store_dna_events"
+        " (tenant_id, store_dna_version_id, created_at)"
     )
     _tenant_policy("planogram_store_dna_versions")
     _tenant_policy("planogram_store_dna_events")
@@ -126,7 +130,9 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE TRIGGER trg_planogram_store_dna_immutable_history BEFORE UPDATE ON planogram_store_dna_versions FOR EACH ROW EXECUTE FUNCTION planogram_store_dna_immutable_history()"
+        "CREATE TRIGGER trg_planogram_store_dna_immutable_history BEFORE UPDATE ON"
+        " planogram_store_dna_versions FOR EACH ROW EXECUTE FUNCTION"
+        " planogram_store_dna_immutable_history()"
     )
     op.execute(f"GRANT SELECT, INSERT, UPDATE ON planogram_store_dna_versions TO {RUNTIME_ROLE}")
     op.execute(f"GRANT SELECT, INSERT ON planogram_store_dna_events TO {RUNTIME_ROLE}")
@@ -134,7 +140,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "DROP TRIGGER IF EXISTS trg_planogram_store_dna_immutable_history ON planogram_store_dna_versions"
+        "DROP TRIGGER IF EXISTS trg_planogram_store_dna_immutable_history ON"
+        " planogram_store_dna_versions"
     )
     op.execute("DROP FUNCTION IF EXISTS planogram_store_dna_immutable_history()")
     op.execute("DROP TABLE planogram_store_dna_events")

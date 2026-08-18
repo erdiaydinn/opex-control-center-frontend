@@ -25,9 +25,9 @@ def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
     op.execute(
-        f'''CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)'''
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
     )
 
 
@@ -190,7 +190,8 @@ def downgrade() -> None:
     op.drop_column("field_offline_receipts", "authority_fingerprint")
 
     op.execute(
-        "DROP TRIGGER IF EXISTS field_capture_attestations_append_only ON field_capture_attestations"
+        "DROP TRIGGER IF EXISTS field_capture_attestations_append_only ON"
+        " field_capture_attestations"
     )
     op.drop_table("field_capture_attestations")
     op.execute(
@@ -198,6 +199,7 @@ def downgrade() -> None:
     )
     op.drop_table("field_device_attestations")
     op.execute(
-        "DROP TRIGGER IF EXISTS field_evidence_object_receipts_append_only ON field_evidence_object_receipts"
+        "DROP TRIGGER IF EXISTS field_evidence_object_receipts_append_only ON"
+        " field_evidence_object_receipts"
     )
     op.drop_table("field_evidence_object_receipts")

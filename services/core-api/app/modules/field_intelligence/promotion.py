@@ -470,9 +470,9 @@ async def decide_promotion_request(
             "decision": decision,
             "decision_fingerprint": decision_fingerprint,
             "decided_at": row["decided_at"],
-            "state": "field_approved_pending_consumer"
-            if decision == "approve"
-            else "field_rejected",
+            "state": (
+                "field_approved_pending_consumer" if decision == "approve" else "field_rejected"
+            ),
             "truth_mutation_permitted": False,
         }
 

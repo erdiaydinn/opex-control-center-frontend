@@ -230,7 +230,8 @@ async def verify_evidence_authority(
                 attestation = attestation_result.mappings().first()
                 if attestation is None:
                     raise FieldEvidenceIntegrityError(
-                        f"camera-only policy requires authoritative capture attestation for {claim.field_key}"
+                        "camera-only policy requires authoritative capture attestation for"
+                        f" {claim.field_key}"
                     )
                 capture_fingerprint = str(attestation["attestation_fingerprint"])
 

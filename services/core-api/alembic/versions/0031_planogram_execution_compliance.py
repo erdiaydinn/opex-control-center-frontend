@@ -21,9 +21,9 @@ def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
     op.execute(
-        f'''CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)'''
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
     )
 
 
@@ -123,8 +123,8 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE UNIQUE INDEX uq_planogram_assignment_active_store ON planogram_execution_assignments "
-        "(tenant_id, store_code) WHERE status <> 'closed'"
+        "CREATE UNIQUE INDEX uq_planogram_assignment_active_store ON"
+        " planogram_execution_assignments (tenant_id, store_code) WHERE status <> 'closed'"
     )
     op.execute(
         "CREATE INDEX ix_planogram_assignment_store ON planogram_execution_assignments "
@@ -199,8 +199,9 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE TRIGGER trg_planogram_plan_runtime_attestation BEFORE INSERT OR UPDATE "
-        "ON planogram_plan_versions FOR EACH ROW EXECUTE FUNCTION planogram_plan_runtime_attestation_guard()"
+        "CREATE TRIGGER trg_planogram_plan_runtime_attestation BEFORE INSERT OR UPDATE ON"
+        " planogram_plan_versions FOR EACH ROW EXECUTE FUNCTION"
+        " planogram_plan_runtime_attestation_guard()"
     )
 
     op.execute(
@@ -279,8 +280,9 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE TRIGGER trg_planogram_assignment_approved_plan BEFORE INSERT ON planogram_execution_assignments "
-        "FOR EACH ROW EXECUTE FUNCTION planogram_assignment_approved_plan_guard()"
+        "CREATE TRIGGER trg_planogram_assignment_approved_plan BEFORE INSERT ON"
+        " planogram_execution_assignments FOR EACH ROW EXECUTE FUNCTION"
+        " planogram_assignment_approved_plan_guard()"
     )
 
     for table_name in (
@@ -299,13 +301,14 @@ def upgrade() -> None:
 
     op.execute(f"GRANT SELECT ON planogram_plan_versions TO {RUNTIME_ROLE}")
     op.execute(
-        f"GRANT INSERT (tenant_id, store_dna_version_id, store_code, version_number, source, "
-        f"plan_payload, plan_fingerprint, optimizer_fingerprint, created_by) ON planogram_plan_versions TO {RUNTIME_ROLE}"
+        "GRANT INSERT (tenant_id, store_dna_version_id, store_code, version_number, source,"
+        " plan_payload, plan_fingerprint, optimizer_fingerprint, created_by) ON"
+        f" planogram_plan_versions TO {RUNTIME_ROLE}"
     )
     op.execute(
-        f"GRANT UPDATE (status, plan_payload, plan_fingerprint, optimizer_fingerprint, updated_at, "
-        f"submitted_by, submitted_at, approved_by, approved_at, rejected_by, rejected_at, rejection_reason) "
-        f"ON planogram_plan_versions TO {RUNTIME_ROLE}"
+        "GRANT UPDATE (status, plan_payload, plan_fingerprint, optimizer_fingerprint, updated_at,"
+        " submitted_by, submitted_at, approved_by, approved_at, rejected_by, rejected_at,"
+        f" rejection_reason) ON planogram_plan_versions TO {RUNTIME_ROLE}"
     )
     op.execute(f"GRANT SELECT, INSERT ON planogram_plan_events TO {RUNTIME_ROLE}")
     op.execute(f"GRANT SELECT, INSERT, UPDATE ON planogram_execution_assignments TO {RUNTIME_ROLE}")
@@ -322,7 +325,8 @@ def downgrade() -> None:
         op.execute(f"DROP TRIGGER IF EXISTS trg_{table_name}_append_only ON {table_name}")
         op.execute(f"DROP FUNCTION IF EXISTS {table_name}_append_only()")
     op.execute(
-        "DROP TRIGGER IF EXISTS trg_planogram_assignment_approved_plan ON planogram_execution_assignments"
+        "DROP TRIGGER IF EXISTS trg_planogram_assignment_approved_plan ON"
+        " planogram_execution_assignments"
     )
     op.execute("DROP FUNCTION IF EXISTS planogram_assignment_approved_plan_guard()")
     op.execute("DROP TRIGGER IF EXISTS trg_planogram_plan_lifecycle ON planogram_plan_versions")

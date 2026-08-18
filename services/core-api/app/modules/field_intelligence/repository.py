@@ -1008,8 +1008,8 @@ async def field_analytics(tenant_id: str, scope: FieldScope) -> dict[str, object
             "active_mission_count": int(row.get("active_mission_count") or 0),
             "target_count": target_count,
             "status_counts": status_counts,
-            "completion_percent": round(((verified + exempt) / target_count * 100.0), 2)
-            if target_count
-            else 0.0,
+            "completion_percent": (
+                round(((verified + exempt) / target_count * 100.0), 2) if target_count else 0.0
+            ),
             "deadline_overdue_targets": int(row.get("deadline_overdue_targets") or 0),
         }

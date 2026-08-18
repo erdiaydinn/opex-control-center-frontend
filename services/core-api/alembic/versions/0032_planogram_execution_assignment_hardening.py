@@ -20,7 +20,7 @@ RUNTIME_ROLE = "opex_runtime"
 def upgrade() -> None:
     op.execute(f"REVOKE UPDATE ON planogram_execution_assignments FROM {RUNTIME_ROLE}")
     op.execute(
-        f"GRANT UPDATE (status, acknowledged_by, acknowledged_at, closed_by, closed_at) "
+        "GRANT UPDATE (status, acknowledged_by, acknowledged_at, closed_by, closed_at) "
         f"ON planogram_execution_assignments TO {RUNTIME_ROLE}"
     )
     op.execute(

@@ -73,7 +73,25 @@ class BlindCountTerminalControllerTest {
         assertNotNull(result.durableEvent)
         assertEquals(BlindCountStep.COMPLETE, result.session.step)
         assertEquals(1, sink.completionAttempts.size)
+        assertEquals(0, sink.completionAttempts.single().third)
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":0"))
+    }
+
+    @Test
+    fun `completion carries exact confirmed line count`() = runBlocking {
+        val sink = RecordingSink()
+        val controller = controller(sink = sink)
+        controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+        controller.confirmItem()
+
+        val completion = controller.completeLocation()
+
+        assertTrue(completion.accepted)
+        assertEquals(1, sink.completionAttempts.single().third)
+        assertTrue(completion.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":1"))
     }
 
     @Test
@@ -223,7 +241,7 @@ class BlindCountTerminalControllerTest {
         val contractFailure: Boolean = false,
     ) : BlindCountEventSink {
         val lineAttempts = mutableListOf<Pair<String, String>>()
-        val completionAttempts = mutableListOf<Pair<String, String>>()
+        val completionAttempts = mutableListOf<Triple<String, String, Int>>()
 
         override suspend fun enqueueConfirmedCount(
             context: InventoryCountEventContext,
@@ -255,10 +273,11 @@ class BlindCountTerminalControllerTest {
 
         override suspend fun enqueueLocationCompletion(
             context: InventoryCountEventContext,
+            confirmedLineCount: Int,
             eventId: String,
             occurredAt: String,
         ): OfflineEvent {
-            completionAttempts += eventId to occurredAt
+            completionAttempts += Triple(eventId, occurredAt, confirmedLineCount)
             if (contractFailure) {
                 throw IllegalArgumentException("simulated immutable completion violation")
             }
@@ -270,6 +289,7 @@ class BlindCountTerminalControllerTest {
             }
             return InventoryLocationCompletionEventFactory.create(
                 context = context,
+                confirmedLineCount = confirmedLineCount,
                 deviceSequence = 2,
                 eventId = eventId,
                 occurredAt = occurredAt,

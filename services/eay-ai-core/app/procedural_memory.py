@@ -13,7 +13,7 @@ import json
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 PROCEDURAL_MEMORY_CONTRACT = "eay-procedural-memory-v1"
 
@@ -40,7 +40,13 @@ class ProcedureStep(BaseModel):
     operation_ref: str = Field(min_length=1)
     input_schema_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     expected_effect_ref: str | None = None
-    verifier_ref: str | None = None
+    # Keep verifier_ref as the stable internal/serialized field so existing
+    # procedure fingerprints and callers do not drift. Newer execution layers
+    # use the more explicit effect_verifier_ref spelling; accept both inputs.
+    verifier_ref: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("verifier_ref", "effect_verifier_ref"),
+    )
     side_effect: bool = False
 
     @model_validator(mode="after")

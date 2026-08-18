@@ -7,8 +7,10 @@ import org.junit.Test
 class InventoryLocationCompletionEventFactoryTest {
     private val context = InventoryCountEventContext(
         missionId = "inventory.count:mission-a",
-        documentId = "22222222-2222-4222-8222-222222222222",
+        documentId = DOCUMENT_ID,
         activeShiftId = "SHIFT-20260818-001",
+        attemptId = ATTEMPT_ID,
+        leaseId = LEASE_ID,
         locationId = " a-04 ",
     )
 
@@ -23,15 +25,16 @@ class InventoryLocationCompletionEventFactoryTest {
             authBindingId = "binding-1",
         )
         val expected =
-            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"confirmed_line_count\":3," +
-                "\"device_sequence\":8,\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
+            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"attempt_id\":\"$ATTEMPT_ID\"," +
+                "\"confirmed_line_count\":3,\"device_sequence\":8," +
+                "\"document_id\":\"$DOCUMENT_ID\"," +
                 "\"event_id\":\"33333333-3333-4333-8333-333333333333\"," +
-                "\"event_kind\":\"LOCATION_COMPLETE\",\"location_id\":\"A-04\"," +
-                "\"occurred_at\":\"2026-08-18T15:05:00Z\"}"
+                "\"event_kind\":\"LOCATION_COMPLETE\",\"lease_id\":\"$LEASE_ID\"," +
+                "\"location_id\":\"A-04\",\"occurred_at\":\"2026-08-18T15:05:00Z\"}"
 
         assertEquals(expected, event.canonicalPayload)
         assertEquals(
-            "96cdbfae950df83e725c3c269a8be900a0ee85880977575afa06cbde88eec7d0",
+            "4a070151035e5a333931d0567f2ad5cb320eaf63a4dbcf44d3cfa7d41a9cab5b",
             event.payloadHash,
         )
     }
@@ -47,5 +50,13 @@ class InventoryLocationCompletionEventFactoryTest {
             authBindingId = "binding-1",
         )
         assertTrue(event.canonicalPayload.contains("\"confirmed_line_count\":0"))
+        assertTrue(event.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
+        assertTrue(event.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
+    }
+
+    companion object {
+        private const val DOCUMENT_ID = "22222222-2222-4222-8222-222222222222"
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     }
 }

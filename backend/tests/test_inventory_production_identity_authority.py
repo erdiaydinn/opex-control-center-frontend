@@ -12,6 +12,7 @@ PRODUCTION_AUTHORIZED_ROUTES = {
     "create_production_document",
     "production_terminal_tasks",
     "production_reconciliation",
+    "production_explanation_context",
     "transition_document",
 }
 FORBIDDEN_AUTHORITY_PARAMETERS = {"x_opex_role", "x_opex_permissions"}

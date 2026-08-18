@@ -1,15 +1,10 @@
 """Measured same-task benchmark runner for Jarvis and peer intelligence systems.
 
-This module closes the gap between benchmark scorecards and real benchmark
-execution. Every system is run against the same immutable task corpus and
-same environment fingerprint. The runner records task success, silent wrong
-actions, effect-verification coverage, duplicate actions and latency from
-case-level evidence, then emits a BenchmarkRun plus a deterministic evidence
-artifact that can feed the existing promotion attestation.
-
-Prompts are used transiently by system adapters but are not retained in the
-result artifact. Environment manifests reject secret-like keys. Side-effecting
-cases cannot count as successful unless their business effect is verified.
+Every system is run against the same immutable task corpus and environment.
+Case-level evidence is deterministically fingerprinted, aggregate measurements
+are replayed from those records, and only a source-consistent measured result
+can feed a verified engine-promotion bundle. Prompts and secrets are never
+retained in benchmark artifacts.
 """
 
 from __future__ import annotations
@@ -20,7 +15,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Mapping
+from typing import Awaitable, Callable
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -164,51 +159,30 @@ class BenchmarkEvidenceArtifact(BaseModel):
     task_set_id: str
     task_set_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     environment_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    records: tuple[BenchmarkCaseRecord, ...]
+    records: tuple[BenchmarkCaseRecord, ...] = Field(min_length=1)
     artifact_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     evidence_ref: str
     prompts_retained: bool = False
 
     @model_validator(mode="after")
-    def artifact_ref_matches_fingerprint(self) -> "BenchmarkEvidenceArtifact":
-        if self.evidence_ref != f"benchmark-evidence://{self.artifact_fingerprint}":
-            raise ValueError("benchmark_evidence_ref_fingerprint_mismatch")
+    def artifact_is_payload_bound(self) -> "BenchmarkEvidenceArtifact":
         if self.prompts_retained:
             raise ValueError("benchmark_artifact_cannot_retain_prompts")
+        payload = {
+            "contract": BENCHMARK_RUNNER_CONTRACT,
+            "system_id": self.system_id,
+            "system_version": self.system_version,
+            "task_set_id": self.task_set_id,
+            "task_set_fingerprint": self.task_set_fingerprint,
+            "environment_fingerprint": self.environment_fingerprint,
+            "records": [item.model_dump(mode="json") for item in self.records],
+        }
+        expected = _fingerprint(payload)
+        if self.artifact_fingerprint != expected:
+            raise ValueError("benchmark_evidence_artifact_fingerprint_mismatch")
+        if self.evidence_ref != f"benchmark-evidence://{expected}":
+            raise ValueError("benchmark_evidence_ref_fingerprint_mismatch")
         return self
-
-
-class MeasuredBenchmarkResult(BaseModel):
-    contract: str = BENCHMARK_RUNNER_CONTRACT
-    run: BenchmarkRun
-    evidence: BenchmarkEvidenceArtifact
-
-    @model_validator(mode="after")
-    def run_and_evidence_match(self) -> "MeasuredBenchmarkResult":
-        if self.run.system_id != self.evidence.system_id:
-            raise ValueError("benchmark_result_system_identity_mismatch")
-        if self.run.system_version != self.evidence.system_version:
-            raise ValueError("benchmark_result_system_version_mismatch")
-        if self.run.task_set_fingerprint != self.evidence.task_set_fingerprint:
-            raise ValueError("benchmark_result_task_set_fingerprint_mismatch")
-        if self.run.environment_fingerprint != self.evidence.environment_fingerprint:
-            raise ValueError("benchmark_result_environment_fingerprint_mismatch")
-        return self
-
-
-SystemInvoke = Callable[[BenchmarkTaskCase], Awaitable[BenchmarkCaseOutcome]]
-Clock = Callable[[], float]
-
-
-@dataclass(frozen=True)
-class BenchmarkSystemAdapter:
-    system_id: str
-    system_version: str
-    invoke: SystemInvoke
-
-    def __post_init__(self) -> None:
-        if not self.system_id.strip() or not self.system_version.strip():
-            raise ValueError("benchmark_system_identity_required")
 
 
 def _aggregate_measurements(
@@ -217,6 +191,8 @@ def _aggregate_measurements(
     evidence_ref: str,
 ) -> tuple[MetricMeasurement, ...]:
     sample_count = len(records)
+    if sample_count < 1:
+        raise ValueError("benchmark_measurement_requires_records")
     successes = sum(item.task_success for item in records)
     silent_wrong = sum(item.silent_wrong_action for item in records)
     duplicates = sum(item.duplicate_action for item in records)
@@ -257,6 +233,47 @@ def _aggregate_measurements(
             evidence_ref=evidence_ref,
         ),
     )
+
+
+class MeasuredBenchmarkResult(BaseModel):
+    contract: str = BENCHMARK_RUNNER_CONTRACT
+    run: BenchmarkRun
+    evidence: BenchmarkEvidenceArtifact
+
+    @model_validator(mode="after")
+    def run_and_evidence_match(self) -> "MeasuredBenchmarkResult":
+        if self.run.system_id != self.evidence.system_id:
+            raise ValueError("benchmark_result_system_identity_mismatch")
+        if self.run.system_version != self.evidence.system_version:
+            raise ValueError("benchmark_result_system_version_mismatch")
+        if self.run.task_set_id != self.evidence.task_set_id:
+            raise ValueError("benchmark_result_task_set_identity_mismatch")
+        if self.run.task_set_fingerprint != self.evidence.task_set_fingerprint:
+            raise ValueError("benchmark_result_task_set_fingerprint_mismatch")
+        if self.run.environment_fingerprint != self.evidence.environment_fingerprint:
+            raise ValueError("benchmark_result_environment_fingerprint_mismatch")
+        replayed = _aggregate_measurements(
+            self.evidence.records,
+            evidence_ref=self.evidence.evidence_ref,
+        )
+        if self.run.measurements != replayed:
+            raise ValueError("benchmark_result_measurements_not_reproducible_from_case_evidence")
+        return self
+
+
+SystemInvoke = Callable[[BenchmarkTaskCase], Awaitable[BenchmarkCaseOutcome]]
+Clock = Callable[[], float]
+
+
+@dataclass(frozen=True)
+class BenchmarkSystemAdapter:
+    system_id: str
+    system_version: str
+    invoke: SystemInvoke
+
+    def __post_init__(self) -> None:
+        if not self.system_id.strip() or not self.system_version.strip():
+            raise ValueError("benchmark_system_identity_required")
 
 
 async def run_system_benchmark(
@@ -369,6 +386,39 @@ async def run_same_task_benchmark(
             )
         )
     return tuple(results)
+
+
+def build_verified_promotion_from_measured_results(
+    *,
+    engine_id: str,
+    challenger: MeasuredBenchmarkResult,
+    baselines: tuple[MeasuredBenchmarkResult, ...],
+    metrics: tuple[BenchmarkMetric, ...] = CANONICAL_AGENT_METRICS,
+    required_weighted_win_rate: float = 0.80,
+    generated_at=None,
+):
+    """Convert case-evidence-bound measured results into registry promotion."""
+    if challenger.run.system_id != engine_id:
+        raise ValueError("measured_promotion_engine_id_mismatch")
+    if not baselines:
+        raise ValueError("measured_promotion_requires_baseline")
+    task_fp = challenger.run.task_set_fingerprint
+    env_fp = challenger.run.environment_fingerprint
+    for baseline in baselines:
+        if baseline.run.task_set_fingerprint != task_fp:
+            raise ValueError("measured_promotion_task_set_not_comparable")
+        if baseline.run.environment_fingerprint != env_fp:
+            raise ValueError("measured_promotion_environment_not_comparable")
+    from .benchmark_promotion import build_verified_engine_benchmark_promotion
+
+    return build_verified_engine_benchmark_promotion(
+        engine_id=engine_id,
+        challenger=challenger.run,
+        baselines=tuple(item.run for item in baselines),
+        metrics=metrics,
+        required_weighted_win_rate=required_weighted_win_rate,
+        generated_at=generated_at,
+    )
 
 
 def write_benchmark_evidence_artifact(

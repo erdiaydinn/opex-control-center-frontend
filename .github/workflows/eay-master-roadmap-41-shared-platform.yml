@@ -100,13 +100,17 @@ jobs:
         run: |
           alembic heads | tee /tmp/shared-heads.txt
           test "$(grep -c '(head)' /tmp/shared-heads.txt)" -eq 1
-          grep -q '0043_shared_platform_delivery_search' /tmp/shared-heads.txt
+          test -n "$(awk '/\(head\)/ {print $1}' /tmp/shared-heads.txt)"
           alembic history | tee /tmp/shared-history.txt
+          grep -q '0043_shared_platform_delivery_search' /tmp/shared-history.txt
           grep -q '0042_shared_platform_authorities' /tmp/shared-history.txt
           grep -q '0041_academy_learning_os' /tmp/shared-history.txt
       - name: Apply cumulative migrations
         working-directory: services/core-api
-        run: alembic upgrade head
+        run: |
+          alembic upgrade head
+          alembic current | tee /tmp/shared-current.txt
+          grep -q '(head)' /tmp/shared-current.txt
       - name: Prove FORCE RLS, runtime grants and cross-tenant isolation
         env:
           PGPASSWORD: opex_migrator

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -46,10 +46,15 @@ def _require_schema_v4(db: Any) -> None:
 
 def completion_readiness() -> bool:
     try:
+        from psycopg import Error as PsycopgError
+    except ImportError:
+        return False
+
+    try:
         with connect() as db:
             _require_schema_v4(db)
         return True
-    except Exception:
+    except (RuntimeError, PsycopgError):
         return False
 
 

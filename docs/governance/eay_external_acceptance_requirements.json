@@ -1,0 +1,12 @@
+{
+  "schema_version":1,
+  "requirements":[
+    {"item":49,"key":"corporate_identity","required_class":"REAL_ENVIRONMENT","evidence":["oidc_tenant","claims_mapping","stale_token_rejection","exit_revocation","workload_identity","service_accounts"]},
+    {"item":50,"key":"physical_devices","required_class":"REAL_ENVIRONMENT","evidence":["workforce_ios_android","app_attest_play_integrity","gps_geofence","biometric_presence","inventory_zebra","scanner_mdm_signing","device_replacement","field_camera_offline"]},
+    {"item":51,"key":"real_data","required_class":"MANAGED_STAGING_OR_REAL","evidence":["hr_roster_leave_attendance","finance_mapping","sku_dimensions","store_dna","bigquery_schemas","supplier_dc","academy_content","location_hierarchy","field_use_cases"]},
+    {"item":52,"key":"module_uat","required_class":"MANAGED_STAGING_OR_REAL","evidence":["standalone_module_matrix","module_owner_signoff"]},
+    {"item":53,"key":"cross_module_uat","required_class":"MANAGED_STAGING_OR_REAL","evidence":["workforce_kpi","field_planogram","dock_inventory","hiring_workforce_academy","budget_operations","jarvis_all"]},
+    {"item":54,"key":"security_penetration","required_class":"REAL_STAGING","evidence":["cross_tenant","privilege","export","signed_url","device_replay","api_abuse","ai_prompt_tool_auth","admin_control_plane"]},
+    {"item":55,"key":"accessibility_language_field","required_class":"REAL_BUILD_UAT","evidence":["ten_languages","arabic_rtl","keyboard_only","screen_reader","mobile_ergonomics","large_text","reduced_motion","common_flows"]}
+  ]
+}

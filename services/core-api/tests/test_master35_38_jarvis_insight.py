@@ -8,6 +8,7 @@ from app.insight.proactive import (
     create_signal,
 )
 from app.jarvis.orders_v2_production_truth import (
+    EXPECTED_EVIDENCE_CLASS,
     REQUIRED_EVIDENCE_KEYS,
     ProductionEvidence,
     orders_v2_production_receipt,
@@ -16,46 +17,43 @@ from app.jarvis.orders_v2_production_truth import (
 TENANT = "tenant-a"
 
 
-def evidence(
-    *,
-    evidence_class: str,
-    tenant_id: str = TENANT,
-) -> tuple[ProductionEvidence, ...]:
-    return tuple(
-        ProductionEvidence(
-            key=key,
-            tenant_id=tenant_id,
-            evidence_class=evidence_class,
-            passed=True,
-            provenance=f"evidence:{key}",
-            approver="release-reviewer",
+def evidence(*, live: bool, tenant_id: str = TENANT) -> tuple[ProductionEvidence, ...]:
+    records: list[ProductionEvidence] = []
+    for key in REQUIRED_EVIDENCE_KEYS:
+        records.append(
+            ProductionEvidence(
+                key=key,
+                tenant_id=tenant_id,
+                evidence_class=(
+                    EXPECTED_EVIDENCE_CLASS[key] if live else "SYNTHETIC"
+                ),
+                passed=True,
+                provenance=f"evidence:{key}",
+                approver="release-reviewer",
+            )
         )
-        for key in REQUIRED_EVIDENCE_KEYS
-    )
+    return tuple(records)
 
 
 def test_synthetic_orders_v2_proof_never_activates_production() -> None:
-    receipt = orders_v2_production_receipt(
-        evidence(evidence_class="SYNTHETIC")
-    )
+    receipt = orders_v2_production_receipt(evidence(live=False))
     assert not receipt.ready
     assert receipt.production_activation_permitted is False
-    assert all("not_live_production_evidence" in blocker for blocker in receipt.blockers)
+    assert all("wrong_evidence_class" in blocker for blocker in receipt.blockers)
 
 
-def test_live_orders_receipt_is_tenant_and_provenance_bound() -> None:
-    receipt = orders_v2_production_receipt(
-        evidence(evidence_class="REAL_PRODUCTION_READONLY")
-    )
+def test_live_orders_receipt_is_tenant_and_provenance_bound_but_non_activating() -> None:
+    receipt = orders_v2_production_receipt(evidence(live=True))
     assert receipt.ready
     assert receipt.tenant_id == TENANT
     assert len(receipt.evidence_fingerprint) == 64
+    assert receipt.production_activation_permitted is False
 
-    mixed = list(evidence(evidence_class="REAL_PRODUCTION_READONLY"))
+    mixed = list(evidence(live=True))
     mixed[-1] = ProductionEvidence(
         key=mixed[-1].key,
         tenant_id="tenant-b",
-        evidence_class="REAL_PRODUCTION_READONLY",
+        evidence_class="REAL_HUMAN_APPROVAL",
         passed=True,
         provenance="foreign",
         approver="reviewer",
@@ -63,41 +61,57 @@ def test_live_orders_receipt_is_tenant_and_provenance_bound() -> None:
     assert not orders_v2_production_receipt(tuple(mixed)).ready
 
 
-def test_kpi_family_expansion_requires_orders_receipt_and_metric_governance() -> None:
-    metric = GovernedMetric(
+def test_human_promotion_evidence_is_not_misclassified_as_bigquery_observation() -> None:
+    records = list(evidence(live=True))
+    records[-1] = ProductionEvidence(
+        key="human_release_deploy_promotion",
         tenant_id=TENANT,
-        key="ops.kpi.nsfr.v1",
-        family="nsfr_pfr_refund",
+        evidence_class="REAL_PRODUCTION_READONLY",
+        passed=True,
+        provenance="approval:1",
+        approver="release-reviewer",
+    )
+    receipt = orders_v2_production_receipt(tuple(records))
+    assert not receipt.ready
+    assert "human_release_deploy_promotion:wrong_evidence_class" in receipt.blockers
+
+
+def metric(*, family: str, tenant_id: str = TENANT) -> GovernedMetric:
+    return GovernedMetric(
+        tenant_id=tenant_id,
+        key=f"ops.kpi.{family}.v1",
+        family=family,
         formula_version="v1",
-        glossary_concept_id="NSFR",
+        glossary_concept_id=family.upper(),
         source_contract="bq:orders-v2",
         production_ready=True,
     )
-    synthetic = orders_v2_production_receipt(
-        evidence(evidence_class="SYNTHETIC")
-    )
-    assert not can_activate_family(
-        tenant_id=TENANT,
-        family="nsfr_pfr_refund",
-        orders_v2_receipt=synthetic,
-        metrics=(metric,),
-    )
 
-    live = orders_v2_production_receipt(
-        evidence(evidence_class="REAL_PRODUCTION_READONLY")
-    )
-    assert can_activate_family(
-        tenant_id=TENANT,
-        family="nsfr_pfr_refund",
-        orders_v2_receipt=live,
-        metrics=(metric,),
-    )
-    assert not can_activate_family(
-        tenant_id="tenant-b",
-        family="nsfr_pfr_refund",
-        orders_v2_receipt=live,
-        metrics=(metric,),
-    )
+
+def test_orders_and_later_kpi_families_require_live_same_tenant_receipt() -> None:
+    synthetic = orders_v2_production_receipt(evidence(live=False))
+    live = orders_v2_production_receipt(evidence(live=True))
+
+    for family in ("orders", "nsfr_pfr_refund"):
+        governed_metric = metric(family=family)
+        assert not can_activate_family(
+            tenant_id=TENANT,
+            family=family,
+            orders_v2_receipt=synthetic,
+            metrics=(governed_metric,),
+        )
+        assert can_activate_family(
+            tenant_id=TENANT,
+            family=family,
+            orders_v2_receipt=live,
+            metrics=(governed_metric,),
+        )
+        assert not can_activate_family(
+            tenant_id="tenant-b",
+            family=family,
+            orders_v2_receipt=live,
+            metrics=(governed_metric,),
+        )
 
 
 def test_insight_card_and_proactive_action_are_tenant_provenance_bound() -> None:

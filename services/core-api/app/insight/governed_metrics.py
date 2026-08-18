@@ -38,6 +38,13 @@ def can_activate_family(
     if not normalized_tenant or family not in KPI_FAMILY_ORDER:
         return False
 
+    if not orders_v2_receipt.ready:
+        return False
+    if orders_v2_receipt.tenant_id != normalized_tenant:
+        return False
+    if not orders_v2_receipt.evidence_fingerprint.strip():
+        return False
+
     members = tuple(
         metric
         for metric in metrics
@@ -45,14 +52,6 @@ def can_activate_family(
     )
     if not members:
         return False
-
-    if family != "orders":
-        if not orders_v2_receipt.ready:
-            return False
-        if orders_v2_receipt.tenant_id != normalized_tenant:
-            return False
-        if not orders_v2_receipt.evidence_fingerprint.strip():
-            return False
 
     return all(
         metric.production_ready

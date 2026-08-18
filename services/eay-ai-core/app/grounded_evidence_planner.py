@@ -194,8 +194,11 @@ def build_evidence_plan(request: Any, base_limit: int) -> EvidencePlan:
 
     add(message, active, "primary")
 
-    if len(active) > 1:
-        for layer in active:
+    # Diversify by authority layer only when the question itself explicitly
+    # requires multiple layers. Ambiguous questions preserve the caller's
+    # allowed retrieval window without inventing extra layer-focused intent.
+    if len(inferred) > 1:
+        for layer in inferred:
             add(message, [layer], "layer_focus")
 
     normalized_message = _norm_key(message)

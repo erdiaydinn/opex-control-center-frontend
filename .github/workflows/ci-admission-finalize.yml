@@ -3,7 +3,7 @@ name: EAY CI Admission Finalize
 on:
   push:
     branches:
-      - fix/ci-admission-control-final-v2
+      - fix/ci-admission-control-dependency-safe-v3
     paths:
       - "scripts/ci/migrate_legacy_exact_head_headers.py"
       - ".github/workflows/ci-admission-finalize.yml"
@@ -49,4 +49,4 @@ jobs:
           git rm .github/workflows/ci-admission-finalize.yml
           git diff --cached --check
           git commit -m "ci: stabilize historical exact-head admission"
-          git push origin HEAD:fix/ci-admission-control-final-v2
+          git push origin HEAD:fix/ci-admission-control-dependency-safe-v3

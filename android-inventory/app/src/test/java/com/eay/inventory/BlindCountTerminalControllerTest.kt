@@ -17,15 +17,12 @@ class BlindCountTerminalControllerTest {
     fun `confirmed line advances only after durable queue insert`() = runBlocking {
         val sink = RecordingSink()
         val controller = controller(sink = sink, targetLineCount = 2)
-
         assertTrue(controller.onAcceptedScan(locationScan("A-04")).accepted)
         assertEquals(BlindCountStep.SCAN_ITEM, controller.session().step)
         assertTrue(controller.onAcceptedScan(itemScan()).accepted)
         assertTrue(controller.enterQuantity(5).accepted)
         assertEquals(BlindCountStep.CONFIRM_ITEM, controller.session().step)
-
         val result = controller.confirmItem()
-
         assertTrue(result.accepted)
         assertNotNull(result.durableEvent)
         assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
@@ -44,12 +41,10 @@ class BlindCountTerminalControllerTest {
         controller.onAcceptedScan(locationScan("A-04"))
         controller.onAcceptedScan(itemScan())
         controller.enterQuantity(5)
-
         val first = controller.confirmItem()
         assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
         assertEquals(BlindCountStep.CONFIRM_ITEM, controller.session().step)
         assertEquals(0, controller.session().confirmedLineCount)
-
         val second = controller.confirmItem()
         assertTrue(second.accepted)
         assertEquals(1, second.session.confirmedLineCount)
@@ -66,9 +61,7 @@ class BlindCountTerminalControllerTest {
             occurredAt = "2026-08-18T15:05:00Z",
         )
         controller.onAcceptedScan(locationScan("A-04"))
-
         val result = controller.completeLocation()
-
         assertTrue(result.accepted)
         assertNotNull(result.durableEvent)
         assertEquals(BlindCountStep.COMPLETE, result.session.step)
@@ -76,6 +69,8 @@ class BlindCountTerminalControllerTest {
         assertEquals(0, sink.completionAttempts.single().third)
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":0"))
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"attempt_id\":"))
+        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"lease_id\":"))
     }
 
     @Test
@@ -86,9 +81,7 @@ class BlindCountTerminalControllerTest {
         controller.onAcceptedScan(itemScan())
         controller.enterQuantity(5)
         controller.confirmItem()
-
         val completion = controller.completeLocation()
-
         assertTrue(completion.accepted)
         assertEquals(1, sink.completionAttempts.single().third)
         assertTrue(completion.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":1"))
@@ -103,11 +96,9 @@ class BlindCountTerminalControllerTest {
             occurredAt = "2026-08-18T15:05:00Z",
         )
         controller.onAcceptedScan(locationScan("A-04"))
-
         val first = controller.completeLocation()
         assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
         assertEquals(BlindCountStep.SCAN_ITEM, controller.session().step)
-
         val second = controller.completeLocation()
         assertTrue(second.accepted)
         assertEquals(BlindCountStep.COMPLETE, second.session.step)
@@ -122,7 +113,6 @@ class BlindCountTerminalControllerTest {
         controller.onAcceptedScan(locationScan("A-04"))
         controller.onAcceptedScan(itemScan())
         controller.enterQuantity(5)
-
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { controller.confirmItem() }
         }
@@ -135,7 +125,6 @@ class BlindCountTerminalControllerTest {
         val sink = RecordingSink(contractFailure = true)
         val controller = controller(sink = sink)
         controller.onAcceptedScan(locationScan("A-04"))
-
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking { controller.completeLocation() }
         }
@@ -150,17 +139,10 @@ class BlindCountTerminalControllerTest {
                 missionId = "mission-1",
                 locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             ),
-            eventContext = InventoryCountEventContext(
-                missionId = "mission-1",
-                documentId = "22222222-2222-4222-8222-222222222222",
-                activeShiftId = "SHIFT-20260818-001",
-                locationId = "B-05",
-            ),
+            eventContext = context(locationId = "B-05"),
             eventSink = sink,
         )
-
         val result = controller.onAcceptedScan(locationScan("A-04"))
-
         assertEquals(BlindCountControllerCode.DENY_LOCATION_CONTEXT, result.code)
         assertEquals(BlindCountStep.SCAN_LOCATION, controller.session().step)
     }
@@ -169,9 +151,7 @@ class BlindCountTerminalControllerTest {
     fun `controller accepts location case and surrounding whitespace after scanner admission`() {
         val sink = RecordingSink()
         val controller = controller(sink = sink)
-
         val result = controller.onAcceptedScan(locationScan(" a-04 "))
-
         assertTrue(result.accepted)
         assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
     }
@@ -184,12 +164,7 @@ class BlindCountTerminalControllerTest {
                     missionId = "mission-1",
                     locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
                 ),
-                eventContext = InventoryCountEventContext(
-                    missionId = "mission-2",
-                    documentId = "22222222-2222-4222-8222-222222222222",
-                    activeShiftId = "SHIFT-20260818-001",
-                    locationId = "A-04",
-                ),
+                eventContext = context(missionId = "mission-2"),
                 eventSink = RecordingSink(),
             )
         }
@@ -206,15 +181,22 @@ class BlindCountTerminalControllerTest {
             locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             targetLineCount = targetLineCount,
         ),
-        eventContext = InventoryCountEventContext(
-            missionId = "mission-1",
-            documentId = "22222222-2222-4222-8222-222222222222",
-            activeShiftId = "SHIFT-20260818-001",
-            locationId = "A-04",
-        ),
+        eventContext = context(),
         eventSink = sink,
         eventIdFactory = { eventId },
         occurredAtFactory = { occurredAt },
+    )
+
+    private fun context(
+        missionId: String = "mission-1",
+        locationId: String = "A-04",
+    ) = InventoryCountEventContext(
+        missionId = missionId,
+        documentId = "22222222-2222-4222-8222-222222222222",
+        activeShiftId = "SHIFT-20260818-001",
+        attemptId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        leaseId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        locationId = locationId,
     )
 
     private fun locationScan(value: String) = AcceptedScan(
@@ -251,9 +233,7 @@ class BlindCountTerminalControllerTest {
             occurredAt: String,
         ): OfflineEvent {
             lineAttempts += eventId to occurredAt
-            if (contractFailure) {
-                throw IllegalArgumentException("simulated immutable contract violation")
-            }
+            if (contractFailure) throw IllegalArgumentException("simulated immutable contract violation")
             if (retryableLineFailuresRemaining > 0) {
                 retryableLineFailuresRemaining -= 1
                 throw RetryableCountPersistenceException(
@@ -278,9 +258,7 @@ class BlindCountTerminalControllerTest {
             occurredAt: String,
         ): OfflineEvent {
             completionAttempts += Triple(eventId, occurredAt, confirmedLineCount)
-            if (contractFailure) {
-                throw IllegalArgumentException("simulated immutable completion violation")
-            }
+            if (contractFailure) throw IllegalArgumentException("simulated immutable completion violation")
             if (retryableCompletionFailuresRemaining > 0) {
                 retryableCompletionFailuresRemaining -= 1
                 throw RetryableCountPersistenceException(

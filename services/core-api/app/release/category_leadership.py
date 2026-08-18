@@ -232,7 +232,9 @@ def next_state(
         return ReleaseState.PRODUCTION_CANDIDATE
     if current == ReleaseState.PRODUCTION_CANDIDATE:
         if not can_start_pilot(truth):
-            raise ValueError("pilot start requires bounded scope, plan, rollback, and valid evidence")
+            raise ValueError(
+                "pilot start requires bounded scope, plan, rollback, and valid evidence"
+            )
         return ReleaseState.PILOT
     if current == ReleaseState.PILOT:
         if not can_accept_pilot(truth):

@@ -1,0 +1,178 @@
+package com.eay.mobile.core
+
+enum class BlindCountStep {
+    SCAN_LOCATION,
+    SCAN_ITEM,
+    ENTER_QUANTITY,
+    CONFIRM_ITEM,
+    COMPLETE,
+}
+
+enum class BlindCountCode {
+    OK,
+    DENY_MISSION,
+    DENY_STEP,
+    DENY_LOCATION,
+    DENY_SCAN,
+    DENY_QUANTITY,
+    DENY_TARGET,
+}
+
+data class BlindCountTarget(
+    val missionId: String,
+    val locationTokenHash: String,
+    val targetLineCount: Int? = null,
+) {
+    init {
+        require(missionId.isNotBlank())
+        require(locationTokenHash.matches(Regex("^[a-f0-9]{64}$")))
+        require(targetLineCount == null || targetLineCount > 0)
+    }
+}
+
+data class BlindCountSession(
+    val missionId: String,
+    val step: BlindCountStep = BlindCountStep.SCAN_LOCATION,
+    val locationVerified: Boolean = false,
+    val currentItemHash: String? = null,
+    val currentQuantity: Int? = null,
+    val confirmedLineCount: Int = 0,
+) {
+    init {
+        require(missionId.isNotBlank())
+        require(confirmedLineCount >= 0)
+        require(currentQuantity == null || currentQuantity >= 0)
+    }
+}
+
+data class BlindCountLineEvidence(
+    val missionId: String,
+    val itemPayloadHash: String,
+    val quantity: Int,
+)
+
+data class BlindCountTransition(
+    val code: BlindCountCode,
+    val session: BlindCountSession,
+    val evidence: BlindCountLineEvidence? = null,
+) {
+    val accepted: Boolean get() = code == BlindCountCode.OK
+}
+
+object BlindCountFlow {
+    const val MAX_QUANTITY = 999_999
+
+    fun verifyLocation(
+        session: BlindCountSession,
+        target: BlindCountTarget,
+        acceptedScan: AcceptedScan?,
+    ): BlindCountTransition {
+        if (session.missionId != target.missionId) {
+            return denied(BlindCountCode.DENY_MISSION, session)
+        }
+        if (session.step != BlindCountStep.SCAN_LOCATION) {
+            return denied(BlindCountCode.DENY_STEP, session)
+        }
+        val scan = acceptedScan
+            ?: return denied(BlindCountCode.DENY_SCAN, session)
+        if (scan.payloadHash != target.locationTokenHash) {
+            return denied(BlindCountCode.DENY_LOCATION, session)
+        }
+        return success(
+            session.copy(
+                step = BlindCountStep.SCAN_ITEM,
+                locationVerified = true,
+            ),
+        )
+    }
+
+    fun scanItem(
+        session: BlindCountSession,
+        acceptedScan: AcceptedScan?,
+    ): BlindCountTransition {
+        if (!session.locationVerified || session.step != BlindCountStep.SCAN_ITEM) {
+            return denied(BlindCountCode.DENY_STEP, session)
+        }
+        val scan = acceptedScan
+            ?: return denied(BlindCountCode.DENY_SCAN, session)
+        return success(
+            session.copy(
+                step = BlindCountStep.ENTER_QUANTITY,
+                currentItemHash = scan.payloadHash,
+                currentQuantity = null,
+            ),
+        )
+    }
+
+    fun enterQuantity(
+        session: BlindCountSession,
+        quantity: Int,
+    ): BlindCountTransition {
+        if (
+            session.step != BlindCountStep.ENTER_QUANTITY ||
+            session.currentItemHash == null
+        ) {
+            return denied(BlindCountCode.DENY_STEP, session)
+        }
+        if (quantity !in 0..MAX_QUANTITY) {
+            return denied(BlindCountCode.DENY_QUANTITY, session)
+        }
+        return success(
+            session.copy(
+                step = BlindCountStep.CONFIRM_ITEM,
+                currentQuantity = quantity,
+            ),
+        )
+    }
+
+    fun confirmItem(
+        session: BlindCountSession,
+        target: BlindCountTarget,
+    ): BlindCountTransition {
+        if (session.missionId != target.missionId) {
+            return denied(BlindCountCode.DENY_MISSION, session)
+        }
+        if (
+            session.step != BlindCountStep.CONFIRM_ITEM ||
+            session.currentItemHash == null ||
+            session.currentQuantity == null
+        ) {
+            return denied(BlindCountCode.DENY_STEP, session)
+        }
+
+        val nextCount = session.confirmedLineCount + 1
+        if (target.targetLineCount != null && nextCount > target.targetLineCount) {
+            return denied(BlindCountCode.DENY_TARGET, session)
+        }
+        val nextStep = if (target.targetLineCount == nextCount) {
+            BlindCountStep.COMPLETE
+        } else {
+            BlindCountStep.SCAN_ITEM
+        }
+        val evidence = BlindCountLineEvidence(
+            missionId = session.missionId,
+            itemPayloadHash = session.currentItemHash,
+            quantity = session.currentQuantity,
+        )
+        return BlindCountTransition(
+            code = BlindCountCode.OK,
+            session = session.copy(
+                step = nextStep,
+                currentItemHash = null,
+                currentQuantity = null,
+                confirmedLineCount = nextCount,
+            ),
+            evidence = evidence,
+        )
+    }
+
+    private fun success(session: BlindCountSession) = BlindCountTransition(
+        code = BlindCountCode.OK,
+        session = session,
+    )
+
+    private fun denied(
+        code: BlindCountCode,
+        session: BlindCountSession,
+    ) = BlindCountTransition(code = code, session = session)
+}

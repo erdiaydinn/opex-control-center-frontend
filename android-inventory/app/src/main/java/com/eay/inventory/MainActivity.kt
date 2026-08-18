@@ -336,6 +336,7 @@ class MainActivity : AppCompatActivity() {
                     BlindCountTerminalController(
                         target = claimedTask.blindCountTarget(),
                         eventContext = claimedTask.eventContext(),
+                        leaseValidUntil = requireNotNull(claimedTask.leaseValidUntil),
                         eventSink = offlineQueue,
                     )
                 }.getOrElse {

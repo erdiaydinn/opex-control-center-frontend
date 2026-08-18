@@ -20,6 +20,7 @@ jobs:
   normalize-historical-gates:
     # Temporary one-shot migration lane. Permanent EAY gates remain on Linux;
     # this avoids the current Linux Actions backlog while changing headers only.
+    # Dependency-safe v3 retry marker; this workflow deletes itself on success.
     runs-on: macos-latest
     timeout-minutes: 10
     steps:

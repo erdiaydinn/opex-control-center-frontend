@@ -83,6 +83,26 @@ object InventorySyncContract {
                 .trim() == normalizedServerShift
         }.getOrDefault(false)
     }
+
+    fun responseMatchesSignedMission(
+        canonicalPayload: String,
+        serverShiftId: String?,
+        serverAttemptId: String?,
+        serverLeaseId: String?,
+    ): Boolean {
+        val shift = serverShiftId?.trim().orEmpty()
+        val attempt = serverAttemptId?.trim().orEmpty()
+        val lease = serverLeaseId?.trim().orEmpty()
+        if (shift.isBlank() || attempt.isBlank() || lease.isBlank()) return false
+        return runCatching {
+            val payload = JSONObject(canonicalPayload)
+            payload.getString("active_shift_id").trim() == shift &&
+                UUID.fromString(payload.getString("attempt_id").trim()).toString() ==
+                UUID.fromString(attempt).toString() &&
+                UUID.fromString(payload.getString("lease_id").trim()).toString() ==
+                UUID.fromString(lease).toString()
+        }.getOrDefault(false)
+    }
 }
 
 class InventorySyncWorker(
@@ -197,15 +217,17 @@ class InventorySyncWorker(
                 if (
                     it.code in 200..299 &&
                     accepted == true &&
-                    !InventorySyncContract.responseMatchesSignedShift(
+                    !InventorySyncContract.responseMatchesSignedMission(
                         event.canonicalPayload,
                         json?.optString("active_shift_id")?.takeIf { value -> value.isNotBlank() },
+                        json?.optString("attempt_id")?.takeIf { value -> value.isNotBlank() },
+                        json?.optString("lease_id")?.takeIf { value -> value.isNotBlank() },
                     )
                 ) {
                     dao.quarantine(
                         event.eventId,
                         SyncQuarantineReason.SERVER_CONTRACT_MISMATCH.name,
-                        "SHIFT_ATTESTATION_MISMATCH",
+                        "MISSION_ATTESTATION_MISMATCH",
                     )
                     return@use
                 }

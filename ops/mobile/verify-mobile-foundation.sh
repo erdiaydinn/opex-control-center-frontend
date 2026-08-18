@@ -10,6 +10,8 @@ CONFIG="$ROOT/config/eay_mobile_platform.json"
 PY_CORE="$ROOT/services/core-api/app/core"
 CANONICAL="$APP/TerminalEventCanonical.kt"
 EVENT_FACTORY="$APP/InventoryCountEventFactory.kt"
+DATABASE="$APP/InventoryDatabase.kt"
+QUEUE="$APP/InventoryOfflineQueue.kt"
 ANDROID_EVENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/OfflineContractTest.kt"
 BACKEND_EVENT_TEST="$ROOT/backend/tests/test_inventory_terminal_event_hash_contract.py"
 GOLDEN_HASH="83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291"
@@ -35,6 +37,8 @@ $PRESENTATION
 $ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapterTest.kt
 $CANONICAL
 $EVENT_FACTORY
+$DATABASE
+$QUEUE
 $ANDROID_EVENT_TEST
 $BACKEND_EVENT_TEST
 $PY_CORE/mobile_policy.py
@@ -71,6 +75,10 @@ grep -q 'MobileOperationAdmission' "$CORE/FieldMission.kt"
 grep -q 'UUID.fromString' "$CANONICAL"
 grep -q 'OffsetDateTime.parse' "$CANONICAL"
 grep -q 'acceptedScan.payloadHash == evidence.itemPayloadHash' "$EVENT_FACTORY"
+grep -q 'MAX(deviceSequence)' "$DATABASE"
+grep -q 'database.withTransaction' "$QUEUE"
+grep -q 'maxDeviceSequence()' "$QUEUE"
+grep -q 'enqueueConfirmedCount' "$QUEUE"
 grep -q "$GOLDEN_HASH" "$ANDROID_EVENT_TEST"
 grep -q "$GOLDEN_HASH" "$BACKEND_EVENT_TEST"
 grep -q 'MOBILE_POLICY_ALGORITHM = "ES256"' "$PY_CORE/mobile_policy_signing.py"

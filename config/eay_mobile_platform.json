@@ -54,6 +54,7 @@
     "physical_zebra_datawedge_matrix",
     "gps_geofence_field_walk",
     "offline_online_field_chaos",
+    "device_reinstall_sequence_rebind_or_new_server_identity",
     "production_endpoint_certificate_pinning_and_rotation",
     "kms_hsm_mobile_policy_signing_and_rotation",
     "operator_uat",

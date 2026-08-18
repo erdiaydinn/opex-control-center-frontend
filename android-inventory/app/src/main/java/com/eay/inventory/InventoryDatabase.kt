@@ -67,6 +67,9 @@ interface OfflineEventDao {
     @Query("SELECT * FROM offline_events WHERE deviceSequence=:deviceSequence LIMIT 1")
     suspend fun byDeviceSequence(deviceSequence: Long): OfflineEvent?
 
+    @Query("SELECT COALESCE(MAX(deviceSequence), 0) FROM offline_events")
+    suspend fun maxDeviceSequence(): Long
+
     @Query(
         "SELECT * FROM offline_events " +
             "WHERE state IN ('PENDING','RETRY_WAIT') AND nextAttemptAt<=:now " +

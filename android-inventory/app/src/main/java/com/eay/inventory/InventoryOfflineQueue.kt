@@ -1,5 +1,9 @@
 package com.eay.inventory
 
+import androidx.room.withTransaction
+import com.eay.mobile.core.AcceptedScan
+import com.eay.mobile.core.BlindCountLineEvidence
+
 /**
  * Single enqueue boundary for terminal mutations.
  *
@@ -12,9 +16,8 @@ package com.eay.inventory
  * of mutating the already-durable event or resurrecting an ACKED event.
  */
 class InventoryOfflineQueue(private val database: InventoryDatabase) {
-    suspend fun enqueue(event: OfflineEvent) {
-        val binding = database.sessions().get()?.authBindingId.orEmpty()
-        require(binding.isNotBlank()) { "Verified interactive inventory session is required" }
+    suspend fun enqueue(event: OfflineEvent) = database.withTransaction {
+        val binding = requireInteractiveBinding()
         require(event.authBindingId.isBlank() || event.authBindingId == binding) {
             "Offline event is bound to a different inventory session"
         }
@@ -25,10 +28,66 @@ class InventoryOfflineQueue(private val database: InventoryDatabase) {
             require(OfflineEventIdentity.sameImmutableIdentity(existing, boundEvent)) {
                 "Offline event ID collision"
             }
-            return
+            return@withTransaction
         }
 
+        val sequenceOwner = database.events().byDeviceSequence(boundEvent.deviceSequence)
+        require(sequenceOwner == null) { "Offline device sequence collision" }
         database.events().insert(boundEvent)
+    }
+
+    /**
+     * Atomic count-line boundary: allocate the next durable device sequence,
+     * canonicalize the accepted scan + confirmed blind-count evidence and insert
+     * the immutable event under the current verified OIDC binding in one SQLCipher
+     * transaction.
+     */
+    suspend fun enqueueConfirmedCount(
+        context: InventoryCountEventContext,
+        acceptedScan: AcceptedScan,
+        evidence: BlindCountLineEvidence,
+        eventId: String,
+        occurredAt: String,
+    ): OfflineEvent = database.withTransaction {
+        val binding = requireInteractiveBinding()
+        val existing = database.events().byEventId(eventId)
+        if (existing != null) {
+            val replayCandidate = InventoryCountEventFactory.create(
+                context = context,
+                acceptedScan = acceptedScan,
+                evidence = evidence,
+                deviceSequence = existing.deviceSequence,
+                eventId = eventId,
+                occurredAt = occurredAt,
+                authBindingId = binding,
+            )
+            require(OfflineEventIdentity.sameImmutableIdentity(existing, replayCandidate)) {
+                "Offline count event ID collision"
+            }
+            return@withTransaction existing
+        }
+
+        val nextSequence = Math.addExact(database.events().maxDeviceSequence(), 1L)
+        val event = InventoryCountEventFactory.create(
+            context = context,
+            acceptedScan = acceptedScan,
+            evidence = evidence,
+            deviceSequence = nextSequence,
+            eventId = eventId,
+            occurredAt = occurredAt,
+            authBindingId = binding,
+        )
+        require(database.events().byDeviceSequence(nextSequence) == null) {
+            "Offline device sequence collision"
+        }
+        database.events().insert(event)
+        event
+    }
+
+    private suspend fun requireInteractiveBinding(): String {
+        val binding = database.sessions().get()?.authBindingId.orEmpty()
+        require(binding.isNotBlank()) { "Verified interactive inventory session is required" }
+        return binding
     }
 }
 

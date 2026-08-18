@@ -14,7 +14,7 @@ REGISTRY_PATH = ROOT / "docs/governance/eay_repository_intelligence_registry.jso
 def test_registry_preserves_all_required_sources_without_guessing_unresolved_identity() -> None:
     entries = load_registry(REGISTRY_PATH)
     assert_registry_preserves_required_seeds(entries)
-    assert REQUIRED_SEED_IDS <= {entry.registry_id for entry in entries}
+    assert {entry.registry_id for entry in entries} >= REQUIRED_SEED_IDS
     assert {entry.classification for entry in entries} == {
         "OWN",
         "IMPORTED",
@@ -90,5 +90,5 @@ def test_discovered_capability_categories_remain_explicit_when_exact_repos_are_u
         "discovered:data-catalog-semantic-set",
         "discovered:jarvis-evolution-set",
     }
-    assert expected <= set(entries)
+    assert set(entries) >= expected
     assert all(entries[key].identity_status == "UNRESOLVED" for key in expected)

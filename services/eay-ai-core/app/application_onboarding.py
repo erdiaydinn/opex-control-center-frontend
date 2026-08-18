@@ -6,6 +6,12 @@ browser receipts, rejects mutating traffic, derives read-only API candidates,
 and compiles a structured-UI/readback procedure candidate without authorizing
 writes. Application, tenant and auth context must remain identical from the
 session through browser receipts and captured network observations.
+
+Production/staging/development read verification is never a client-authored
+boolean. It must be accompanied by an independent verifier receipt whose
+evidence is already present in the onboarding evidence bundle. Synthetic
+fixtures may retain the legacy boolean for isolated tests, but are explicitly
+labelled synthetic and can never be confused with field evidence.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .api_discovery_intelligence import EndpointCandidate, OperationKind, discover_api_candidates
 from .playwright_computer_runtime import BrowserActionReceipt, LocatorKind
+from .playwright_mission_adapter import BrowserEffectVerification, EffectVerificationStatus
 from .procedural_memory import (
     ProcedureDemonstration,
     ProceduralCapability,
@@ -29,7 +36,7 @@ from .procedural_memory import (
     procedure_step_fingerprint,
 )
 
-APPLICATION_ONBOARDING_CONTRACT = "eay-application-onboarding-v1"
+APPLICATION_ONBOARDING_CONTRACT = "eay-application-onboarding-v2"
 
 
 class ApplicationEnvironmentKind(str, Enum):
@@ -63,6 +70,7 @@ class ApplicationOnboardingSession(BaseModel):
     evidence_refs: tuple[str, ...] = Field(min_length=1)
     business_write_observed: bool = False
     authoritative_read_verified: bool = False
+    authoritative_read_verification: BrowserEffectVerification | None = None
     synthetic_fixture: bool = False
 
     @model_validator(mode="after")
@@ -75,6 +83,19 @@ class ApplicationOnboardingSession(BaseModel):
             raise ValueError("synthetic_onboarding_environment_requires_fixture_label")
         if self.environment_kind is not ApplicationEnvironmentKind.SYNTHETIC and self.synthetic_fixture:
             raise ValueError("non_synthetic_environment_cannot_claim_synthetic_fixture")
+
+        verification = self.authoritative_read_verification
+        if self.environment_kind is not ApplicationEnvironmentKind.SYNTHETIC:
+            if self.authoritative_read_verified and verification is None:
+                raise ValueError("non_synthetic_read_verification_requires_verifier_receipt")
+            if verification is not None:
+                if verification.status is not EffectVerificationStatus.VERIFIED_APPLIED:
+                    raise ValueError("non_synthetic_read_verifier_must_confirm_authoritative_read")
+                if not set(verification.evidence_refs).issubset(set(self.evidence_refs)):
+                    raise ValueError("read_verifier_evidence_must_be_bound_to_onboarding_session")
+        elif verification is not None and not set(verification.evidence_refs).issubset(set(self.evidence_refs)):
+            raise ValueError("read_verifier_evidence_must_be_bound_to_onboarding_session")
+
         for receipt in self.receipts:
             if receipt.application_id != self.application_id:
                 raise ValueError("application_onboarding_receipt_application_mismatch")
@@ -95,6 +116,12 @@ class ApplicationOnboardingSession(BaseModel):
                 if exchange.auth_context_ref != self.auth_context_ref:
                     raise ValueError("application_onboarding_observation_auth_context_mismatch")
         return self
+
+    def read_is_authoritatively_verified(self) -> bool:
+        verification = self.authoritative_read_verification
+        if verification is not None:
+            return verification.status is EffectVerificationStatus.VERIFIED_APPLIED
+        return self.environment_kind is ApplicationEnvironmentKind.SYNTHETIC and self.authoritative_read_verified
 
 
 class ApplicationProfile(BaseModel):
@@ -248,15 +275,10 @@ def discover_read_capability(
     if not capability_name.strip():
         raise ValueError("application_onboarding_capability_name_required")
     profile = build_application_profile(session)
-    exchanges = [
-        observation.exchange
-        for receipt in session.receipts
-        for observation in receipt.observations
-    ]
+    exchanges = [observation.exchange for receipt in session.receipts for observation in receipt.observations]
     candidates = discover_api_candidates(exchanges, allowed_hosts=set(session.allowed_hosts))
     read_candidates = tuple(
-        item for item in candidates
-        if item.operation_kind is OperationKind.READ and item.eligible_for_promotion
+        item for item in candidates if item.operation_kind is OperationKind.READ and item.eligible_for_promotion
     )
     write_candidates = tuple(item for item in candidates if item.operation_kind is OperationKind.WRITE)
 
@@ -312,14 +334,15 @@ def create_read_demonstration(
         raise ValueError("blocked_onboarding_candidate_cannot_create_demonstration")
     if candidate.environment_fingerprint != build_application_profile(session).environment_fingerprint:
         raise ValueError("onboarding_candidate_environment_mismatch")
+    verified = session.read_is_authoritatively_verified()
     return ProcedureDemonstration(
         demonstration_id=f"onboarding:{session.session_id}",
         tenant_id=session.tenant_scope_ref,
         capability_name=candidate.capability_name,
         observed_at=session.observed_at,
         step_fingerprint=procedure_step_fingerprint(candidate.procedure_steps),
-        successful=session.authoritative_read_verified,
-        effect_verified=session.authoritative_read_verified,
+        successful=verified,
+        effect_verified=verified,
         ambiguous_outcome=False,
         environment_fingerprint=candidate.environment_fingerprint,
         evidence_refs=session.evidence_refs,

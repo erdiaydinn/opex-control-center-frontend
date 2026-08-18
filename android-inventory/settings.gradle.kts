@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "EayInventory"
 include(":app")
+include(":mobile-core")

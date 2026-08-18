@@ -4,6 +4,9 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 CORE="$ROOT/android-inventory/mobile-core/src/main/java/com/eay/mobile/core"
 APP="$ROOT/android-inventory/app/src/main/java/com/eay/inventory"
+INVENTORY_RES="$ROOT/android-inventory/app/src/main/res"
+INVENTORY_MANIFEST="$ROOT/android-inventory/app/src/main/AndroidManifest.xml"
+LOCALE_CONTRACT="$ROOT/config/eay_localization.json"
 ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapter.kt"
 PRESENTATION="$ROOT/mobile-presentation-contracts/src/main/kotlin/com/eay/mobile/presentation/FieldPresentationModels.kt"
 CONFIG="$ROOT/config/eay_mobile_platform.json"
@@ -15,6 +18,7 @@ QUEUE="$APP/InventoryOfflineQueue.kt"
 COUNT_CONTROLLER="$APP/BlindCountTerminalController.kt"
 COUNT_TASK="$APP/InventoryTerminalCountTask.kt"
 TASK_CLIENT="$APP/InventoryTerminalTaskClient.kt"
+MAIN_ACTIVITY="$APP/MainActivity.kt"
 COUNT_CONTROLLER_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/BlindCountTerminalControllerTest.kt"
 COUNT_TASK_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalCountTaskTest.kt"
 TASK_CLIENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalTaskClientTest.kt"
@@ -49,6 +53,9 @@ $QUEUE
 $COUNT_CONTROLLER
 $COUNT_TASK
 $TASK_CLIENT
+$MAIN_ACTIVITY
+$INVENTORY_MANIFEST
+$LOCALE_CONTRACT
 $COUNT_CONTROLLER_TEST
 $COUNT_TASK_TEST
 $TASK_CLIENT_TEST
@@ -110,6 +117,11 @@ grep -q '/api/inventory/v1/terminal/tasks' "$TASK_CLIENT"
 grep -q 'CONTRACT_REJECTED' "$TASK_CLIENT"
 grep -q 'expected_quantity' "$TASK_CLIENT"
 grep -q 'Duplicate terminal mission ID' "$TASK_CLIENT"
+grep -q 'InventoryTerminalTaskClient(this)' "$MAIN_ACTIVITY"
+grep -q 'BlindCountTerminalController(' "$MAIN_ACTIVITY"
+grep -q 'InventorySyncWorker.enqueue(this)' "$MAIN_ACTIVITY"
+grep -q 'R.string.terminal_' "$MAIN_ACTIVITY"
+grep -q 'android:supportsRtl="true"' "$INVENTORY_MANIFEST"
 grep -q 'reuses exact event identity' "$COUNT_CONTROLLER_TEST"
 grep -q 'not mislabeled as retryable' "$COUNT_CONTROLLER_TEST"
 grep -q 'no anonymous fallback' "$TASK_CLIENT_TEST"
@@ -137,6 +149,11 @@ if grep -n -E 'OkHttpClient|CertificatePinner|newBuilder\(' "$TASK_CLIENT"; then
   exit 1
 fi
 
+if grep -n -E '(status\.)?text[[:space:]]*=[[:space:]]*"' "$MAIN_ACTIVITY"; then
+  echo "hard-coded user-facing terminal text detected" >&2
+  exit 1
+fi
+
 if grep -n -E 'def (create_production_document|production_reconciliation|transition_document).*x_opex_(role|permissions)' "$ROOT/backend/app/modules/inventory/router.py"; then
   echo "production Inventory route exposes client-facing role/permission authority" >&2
   exit 1
@@ -156,5 +173,47 @@ if grep -n -E 'expectedStock|systemStock|expected_quantity|unit_cost|variance' "
   echo "blind-count terminal contract leaked stock truth" >&2
   exit 1
 fi
+
+python3 - "$LOCALE_CONTRACT" "$INVENTORY_RES" <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+contract = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+res = Path(sys.argv[2])
+required_locales = contract.get("required_locales") or []
+qualifiers = contract.get("android_resource_qualifiers") or {}
+if len(required_locales) != 10 or set(qualifiers) != set(required_locales):
+    raise SystemExit("Inventory terminal must consume the canonical 10-locale contract")
+
+placeholder = re.compile(r"%\d+\$[a-zA-Z]")
+resources = {}
+for locale in required_locales:
+    path = res / qualifiers[locale] / "strings.xml"
+    if not path.is_file():
+        raise SystemExit(f"missing Inventory terminal locale resource: {locale} -> {path}")
+    root = ET.parse(path).getroot()
+    values = {}
+    for node in root.findall("string"):
+        name = node.attrib.get("name")
+        if name:
+            values[name] = "".join(node.itertext())
+    resources[locale] = values
+
+baseline = resources[contract["default_locale"]]
+for locale, values in resources.items():
+    if set(values) != set(baseline):
+        raise SystemExit(
+            f"Inventory terminal locale key parity failure for {locale}: "
+            f"missing={sorted(set(baseline) - set(values))} extra={sorted(set(values) - set(baseline))}"
+        )
+    for key, baseline_value in baseline.items():
+        if set(placeholder.findall(values[key])) != set(placeholder.findall(baseline_value)):
+            raise SystemExit(f"Inventory terminal placeholder parity failure for {locale}/{key}")
+
+print(f"EAY Inventory terminal locale parity: PASS ({len(required_locales)} locales)")
+PY
 
 echo "EAY Mobile foundation static security contract: PASS"

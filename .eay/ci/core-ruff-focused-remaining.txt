@@ -1,4 +1,4 @@
-HEAD=3020d4192ea5a2f1c575a71e51da74d8ac944521
+HEAD=c277c614f33b7b7930f24882b559fee791a6dd62
 RUFF_VERSION=ruff 0.16.3
 ---
 services/core-api/alembic/versions/0031_planogram_execution_compliance.py:242:101: E501 Line too long (113 > 100)

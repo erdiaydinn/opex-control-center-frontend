@@ -62,13 +62,14 @@ data class BlindCountControllerResult(
 class BlindCountTerminalController(
     private val target: BlindCountTarget,
     private val eventContext: InventoryCountEventContext,
+    leaseValidUntil: String,
     private val eventSink: BlindCountEventSink,
     private val eventIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val occurredAtFactory: () -> String = {
         OffsetDateTime.now(ZoneOffset.UTC).toString()
     },
 ) {
-    private val leaseExpiry = OffsetDateTime.parse(eventContext.leaseValidUntil).toInstant()
+    private val leaseExpiry = OffsetDateTime.parse(leaseValidUntil).toInstant()
     private var state = BlindCountSession(missionId = target.missionId)
     private var pendingItemScan: AcceptedScan? = null
     private var pendingLineIdentity: PendingDurableIdentity? = null

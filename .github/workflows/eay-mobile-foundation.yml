@@ -17,15 +17,19 @@ on:
       - "backend/app/modules/inventory/production.py"
       - "backend/app/modules/inventory/schemas.py"
       - "backend/app/modules/inventory/location_completion.py"
+      - "backend/app/modules/inventory/mission_event.py"
+      - "backend/app/modules/inventory/mission_lease.py"
       - "backend/app/modules/inventory/reconciliation.py"
       - "backend/app/modules/inventory/explanation.py"
       - "backend/app/modules/workforce/active_shift.py"
       - "backend/migrations/004_inventory_location_completion.sql"
+      - "backend/migrations/005_inventory_mission_attempt_lease.sql"
       - "backend/tests/test_inventory_production_identity_authority.py"
       - "backend/tests/test_inventory_terminal_active_shift_gate.py"
       - "backend/tests/test_inventory_terminal_event_hash_contract.py"
       - "backend/tests/test_inventory_terminal_task_contract.py"
       - "backend/tests/test_inventory_location_completion_contract.py"
+      - "backend/tests/test_inventory_mission_lease_contract.py"
       - "backend/tests/test_inventory_reconciliation_event_scope.py"
       - "backend/tests/test_inventory_submission_completion_gate.py"
       - "backend/tests/test_inventory_jarvis_explanation_contract.py"
@@ -84,6 +88,8 @@ jobs:
           backend/app/modules/workforce/active_shift.py
           backend/app/modules/inventory/schemas.py
           backend/app/modules/inventory/location_completion.py
+          backend/app/modules/inventory/mission_event.py
+          backend/app/modules/inventory/mission_lease.py
           backend/app/modules/inventory/reconciliation.py
           backend/app/modules/inventory/explanation.py
           backend/tests/test_workforce_active_shift_authority.py
@@ -92,6 +98,7 @@ jobs:
           backend/tests/test_inventory_terminal_event_hash_contract.py
           backend/tests/test_inventory_terminal_task_contract.py
           backend/tests/test_inventory_location_completion_contract.py
+          backend/tests/test_inventory_mission_lease_contract.py
           backend/tests/test_inventory_reconciliation_event_scope.py
           backend/tests/test_inventory_submission_completion_gate.py
           backend/tests/test_inventory_jarvis_explanation_contract.py
@@ -111,6 +118,7 @@ jobs:
           backend/tests/test_inventory_terminal_event_hash_contract.py
           backend/tests/test_inventory_terminal_task_contract.py
           backend/tests/test_inventory_location_completion_contract.py
+          backend/tests/test_inventory_mission_lease_contract.py
           backend/tests/test_inventory_reconciliation_event_scope.py
           backend/tests/test_inventory_submission_completion_gate.py
           backend/tests/test_inventory_jarvis_explanation_contract.py

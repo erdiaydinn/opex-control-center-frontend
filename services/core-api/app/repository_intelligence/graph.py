@@ -41,7 +41,8 @@ def validate_snapshot(snapshot: RepoSnapshot) -> None:
         raise ValueError("repository snapshot requires exact commit SHA")
     if not snapshot.branch_or_tag.strip():
         raise ValueError("repository snapshot requires branch or tag provenance")
-    if any(not value.strip() for value in (*snapshot.paths, *snapshot.symbols, *snapshot.contracts)):
+    provenance_values = (*snapshot.paths, *snapshot.symbols, *snapshot.contracts)
+    if any(not value.strip() for value in provenance_values):
         raise ValueError("repository snapshot contains empty provenance values")
 
 

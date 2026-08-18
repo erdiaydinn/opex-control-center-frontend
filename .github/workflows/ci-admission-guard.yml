@@ -8,7 +8,6 @@ on:
     paths:
       - ".github/workflows/**"
       - "scripts/ci/verify_ci_admission_policy.py"
-      - "scripts/ci/apply_exact_head_concurrency.py"
       - "scripts/ci/apply_inventory_admission_control.py"
       - "scripts/ci/migrate_legacy_exact_head_headers.py"
       - ".ci/ci-admission-validation-trigger.txt"
@@ -18,7 +17,6 @@ on:
     paths:
       - ".github/workflows/**"
       - "scripts/ci/verify_ci_admission_policy.py"
-      - "scripts/ci/apply_exact_head_concurrency.py"
       - "scripts/ci/apply_inventory_admission_control.py"
       - "scripts/ci/migrate_legacy_exact_head_headers.py"
   workflow_dispatch:
@@ -40,10 +38,8 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Verify historical 1-10..1-14 category admission and exact-head binding
+      - name: Verify historical exact-head admission and concurrency through Roadmap 25
         run: python scripts/ci/migrate_legacy_exact_head_headers.py --check
-      - name: Verify exact-head concurrency policy through Roadmap 25
-        run: python scripts/ci/apply_exact_head_concurrency.py --check
       - name: Verify Inventory and DockOS admission separation
         run: python scripts/ci/apply_inventory_admission_control.py --check
       - name: Verify phase-aware domain admission policy

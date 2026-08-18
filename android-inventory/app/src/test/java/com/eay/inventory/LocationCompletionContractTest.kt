@@ -11,6 +11,7 @@ class LocationCompletionContractTest {
         val body = LocationCompletionCanonical.body(
             LocationCompletionInput(
                 activeShiftId = " SHIFT-20260818-001 ",
+                confirmedLineCount = 3,
                 deviceSequence = 8,
                 documentId = "22222222-2222-4222-8222-222222222222",
                 eventId = "33333333-3333-4333-8333-333333333333",
@@ -19,20 +20,21 @@ class LocationCompletionContractTest {
             ),
         )
         val expected =
-            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"device_sequence\":8," +
+            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"confirmed_line_count\":3," +
+                "\"device_sequence\":8," +
                 "\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
                 "\"event_id\":\"33333333-3333-4333-8333-333333333333\"," +
                 "\"event_kind\":\"LOCATION_COMPLETE\",\"location_id\":\"A-04\"," +
                 "\"occurred_at\":\"2026-08-18T15:05:00Z\"}"
         assertEquals(expected, body)
         assertEquals(
-            "631e5b6c4447c10bda695763e432cccae8af623426eab370ee3db9d1cd4ab6ba",
+            "96cdbfae950df83e725c3c269a8be900a0ee85880977575afa06cbde88eec7d0",
             LocationCompletionCanonical.hash(body),
         )
     }
 
     @Test
-    fun `completion factory binds shift location and auth session into durable event`() {
+    fun `completion factory binds shift count location and auth session into durable event`() {
         val event = InventoryLocationCompletionEventFactory.create(
             context = InventoryCountEventContext(
                 missionId = "inventory.count:mission-1",
@@ -40,6 +42,7 @@ class LocationCompletionContractTest {
                 activeShiftId = "SHIFT-20260818-001",
                 locationId = "A-04",
             ),
+            confirmedLineCount = 3,
             deviceSequence = 8,
             eventId = "33333333-3333-4333-8333-333333333333",
             occurredAt = "2026-08-18T15:05:00Z",
@@ -48,8 +51,25 @@ class LocationCompletionContractTest {
         assertEquals("session-a", event.authBindingId)
         assertEquals(8, event.deviceSequence)
         assertTrue(event.canonicalPayload.contains("\"active_shift_id\":\"SHIFT-20260818-001\""))
+        assertTrue(event.canonicalPayload.contains("\"confirmed_line_count\":3"))
         assertTrue(event.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
         assertTrue(QueueIntegrity.valid(event, "session-a"))
+    }
+
+    @Test
+    fun `empty location completion keeps zero line count in signed payload`() {
+        val body = LocationCompletionCanonical.body(
+            LocationCompletionInput(
+                activeShiftId = "SHIFT-20260818-001",
+                confirmedLineCount = 0,
+                deviceSequence = 9,
+                documentId = "22222222-2222-4222-8222-222222222222",
+                eventId = "44444444-4444-4444-8444-444444444444",
+                locationId = "A-05",
+                occurredAt = "2026-08-18T15:06:00Z",
+            ),
+        )
+        assertTrue(body.contains("\"confirmed_line_count\":0"))
     }
 
     @Test

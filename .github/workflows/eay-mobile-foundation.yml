@@ -12,7 +12,9 @@ on:
       - "mobile/**"
       - "ops/mobile/**"
       - "backend/app/modules/inventory/router.py"
+      - "backend/app/modules/inventory/production.py"
       - "backend/tests/test_inventory_production_identity_authority.py"
+      - "backend/tests/test_inventory_terminal_event_hash_contract.py"
       - "services/core-api/app/core/mobile_device_trust.py"
       - "services/core-api/app/core/mobile_policy.py"
       - "services/core-api/app/core/mobile_policy_signing.py"
@@ -51,7 +53,7 @@ jobs:
       - name: Install Core API test surface
         working-directory: services/core-api
         run: python -m pip install -e '.[dev]'
-      - name: Lint mobile authority, device trust and signed policy
+      - name: Lint mobile authority, device trust and terminal event contracts
         run: >-
           ruff check
           services/core-api/app/core/mobile_device_trust.py
@@ -61,6 +63,7 @@ jobs:
           services/core-api/tests/test_mobile_policy.py
           services/core-api/tests/test_mobile_policy_signing.py
           backend/tests/test_inventory_production_identity_authority.py
+          backend/tests/test_inventory_terminal_event_hash_contract.py
       - name: Prove mobile authority fail-closed behavior
         working-directory: services/core-api
         run: >-
@@ -68,8 +71,11 @@ jobs:
           tests/test_mobile_device_trust.py
           tests/test_mobile_policy.py
           tests/test_mobile_policy_signing.py
-      - name: Prove legacy production routes ignore client role headers
-        run: pytest -q backend/tests/test_inventory_production_identity_authority.py
+      - name: Prove production Inventory identity and event hash contracts
+        run: >-
+          pytest -q
+          backend/tests/test_inventory_production_identity_authority.py
+          backend/tests/test_inventory_terminal_event_hash_contract.py
 
   android-mobile-core:
     runs-on: ubuntu-latest

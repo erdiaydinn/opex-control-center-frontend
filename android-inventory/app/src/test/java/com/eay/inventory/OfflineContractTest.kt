@@ -1,8 +1,13 @@
 package com.eay.inventory
 
+import com.eay.mobile.core.AcceptedScan
+import com.eay.mobile.core.BarcodeSymbology
+import com.eay.mobile.core.BlindCountLineEvidence
+import com.eay.mobile.core.ScannerSource
 import com.eay.mobile.core.SyncQuarantineReason
 import com.eay.mobile.core.SyncServerOutcome
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -147,6 +152,97 @@ class OfflineContractTest {
         )
         assertTrue(body.contains("\"quantity\":\"2\""))
         assertEquals(64, TerminalEventCanonical.hash(body).length)
+    }
+
+    @Test fun canonicalEventMatchesBackendGoldenVectorByteForByte() {
+        val body = TerminalEventCanonical.body(
+            TerminalEventInput(
+                barcode = " 8690000000001 ",
+                deviceSequence = 7,
+                documentId = "22222222-2222-4222-8222-222222222222",
+                eventId = "11111111-1111-4111-8111-111111111111",
+                locationId = " a-04 ",
+                occurredAt = "2026-08-18T15:00:00Z",
+                quantity = BigDecimal("5.000"),
+                symbology = " EAN13 ",
+            ),
+        )
+        val expectedBody =
+            "{\"barcode\":\"8690000000001\",\"device_sequence\":7," +
+                "\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
+                "\"event_id\":\"11111111-1111-4111-8111-111111111111\"," +
+                "\"location_id\":\"A-04\",\"occurred_at\":\"2026-08-18T15:00:00Z\"," +
+                "\"quantity\":\"5\",\"symbology\":\"EAN13\"}"
+        assertEquals(expectedBody, body)
+        assertEquals(
+            "83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291",
+            TerminalEventCanonical.hash(body),
+        )
+    }
+
+    @Test fun confirmedBlindCountLineCreatesImmutableQueueEvent() {
+        val acceptedScan = AcceptedScan(
+            sourceEventId = "scan-1",
+            source = ScannerSource.HARDWARE_DATAWEDGE,
+            symbology = BarcodeSymbology.EAN13,
+            value = "8690000000001",
+            payloadHash = "c".repeat(64),
+            capturedAtEpochMs = 1_500L,
+        )
+        val evidence = BlindCountLineEvidence(
+            missionId = "mission-1",
+            itemPayloadHash = acceptedScan.payloadHash,
+            quantity = 5,
+        )
+        val event = InventoryCountEventFactory.create(
+            context = InventoryCountEventContext(
+                missionId = "mission-1",
+                documentId = "22222222-2222-4222-8222-222222222222",
+                locationId = "a-04",
+            ),
+            acceptedScan = acceptedScan,
+            evidence = evidence,
+            deviceSequence = 7,
+            eventId = "11111111-1111-4111-8111-111111111111",
+            occurredAt = "2026-08-18T15:00:00Z",
+            authBindingId = "session-a",
+        )
+        assertEquals(
+            "83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291",
+            event.payloadHash,
+        )
+        assertTrue(QueueIntegrity.valid(event, "session-a"))
+        assertEquals(7, event.deviceSequence)
+    }
+
+    @Test fun confirmedBlindCountLineRejectsScanEvidenceSubstitution() {
+        val acceptedScan = AcceptedScan(
+            sourceEventId = "scan-2",
+            source = ScannerSource.HARDWARE_DATAWEDGE,
+            symbology = BarcodeSymbology.EAN13,
+            value = "8690000000001",
+            payloadHash = "c".repeat(64),
+            capturedAtEpochMs = 1_500L,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            InventoryCountEventFactory.create(
+                context = InventoryCountEventContext(
+                    missionId = "mission-1",
+                    documentId = "22222222-2222-4222-8222-222222222222",
+                    locationId = "A-04",
+                ),
+                acceptedScan = acceptedScan,
+                evidence = BlindCountLineEvidence(
+                    missionId = "mission-1",
+                    itemPayloadHash = "d".repeat(64),
+                    quantity = 5,
+                ),
+                deviceSequence = 7,
+                eventId = "11111111-1111-4111-8111-111111111111",
+                occurredAt = "2026-08-18T15:00:00Z",
+                authBindingId = "session-a",
+            )
+        }
     }
 
     @Test fun serverClassificationSeparatesRetryConflictAndPolicy() {

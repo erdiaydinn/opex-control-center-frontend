@@ -3,10 +3,16 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 CORE="$ROOT/android-inventory/mobile-core/src/main/java/com/eay/mobile/core"
+APP="$ROOT/android-inventory/app/src/main/java/com/eay/inventory"
 ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapter.kt"
 PRESENTATION="$ROOT/mobile-presentation-contracts/src/main/kotlin/com/eay/mobile/presentation/FieldPresentationModels.kt"
 CONFIG="$ROOT/config/eay_mobile_platform.json"
 PY_CORE="$ROOT/services/core-api/app/core"
+CANONICAL="$APP/TerminalEventCanonical.kt"
+EVENT_FACTORY="$APP/InventoryCountEventFactory.kt"
+ANDROID_EVENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/OfflineContractTest.kt"
+BACKEND_EVENT_TEST="$ROOT/backend/tests/test_inventory_terminal_event_hash_contract.py"
+GOLDEN_HASH="83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291"
 
 required="
 $CORE/MobilePlatformContract.kt
@@ -27,6 +33,10 @@ $ROOT/android-inventory/mobile-core/src/test/java/com/eay/mobile/core/RuntimeCon
 $ADAPTER
 $PRESENTATION
 $ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapterTest.kt
+$CANONICAL
+$EVENT_FACTORY
+$ANDROID_EVENT_TEST
+$BACKEND_EVENT_TEST
 $PY_CORE/mobile_policy.py
 $PY_CORE/mobile_policy_signing.py
 $PY_CORE/mobile_device_trust.py
@@ -58,6 +68,11 @@ grep -q 'barcode' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'biometric' "$CORE/MobileTelemetryPolicy.kt"
 grep -q 'MissionGate.evaluate' "$ADAPTER"
 grep -q 'MobileOperationAdmission' "$CORE/FieldMission.kt"
+grep -q 'UUID.fromString' "$CANONICAL"
+grep -q 'OffsetDateTime.parse' "$CANONICAL"
+grep -q 'acceptedScan.payloadHash == evidence.itemPayloadHash' "$EVENT_FACTORY"
+grep -q "$GOLDEN_HASH" "$ANDROID_EVENT_TEST"
+grep -q "$GOLDEN_HASH" "$BACKEND_EVENT_TEST"
 grep -q 'MOBILE_POLICY_ALGORITHM = "ES256"' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MAX_SIGNED_POLICY_LIFETIME_SECONDS = 300' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MobileDeviceState.REPLACED' "$ROOT/services/core-api/tests/test_mobile_device_trust.py"

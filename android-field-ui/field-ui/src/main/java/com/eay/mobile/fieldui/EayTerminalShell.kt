@@ -11,14 +11,9 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CloudDone
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -27,9 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -48,7 +43,10 @@ fun EayTerminalShell(
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("EAY Terminal", style = MaterialTheme.typography.displaySmall)
+                    Text(
+                        text = stringResource(R.string.eay_terminal_brand),
+                        style = MaterialTheme.typography.displaySmall,
+                    )
                     Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -60,7 +58,12 @@ fun EayTerminalShell(
                     }
                 }
             }
-            item { Text("Sıradaki görevler", style = MaterialTheme.typography.headlineMedium) }
+            item {
+                Text(
+                    text = stringResource(R.string.field_next_missions),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+            }
             items(missions, key = { it.missionId }) { mission ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -68,15 +71,26 @@ fun EayTerminalShell(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Text(mission.title, style = MaterialTheme.typography.titleLarge)
-                        if (mission.subtitle.isNotBlank()) Text(mission.subtitle, style = MaterialTheme.typography.bodyLarge)
+                        if (mission.subtitle.isNotBlank()) {
+                            Text(mission.subtitle, style = MaterialTheme.typography.bodyLarge)
+                        }
                         if (mission.progressCurrent != null && mission.progressTotal != null) {
-                            Text("${mission.progressCurrent} / ${mission.progressTotal}", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = stringResource(
+                                    R.string.blind_count_progress,
+                                    mission.progressCurrent,
+                                    mission.progressTotal,
+                                ),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
                         }
                         Button(
                             onClick = { onMissionOpen(mission.missionId) },
                             enabled = mission.enabled,
                             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
-                        ) { Text(mission.primaryActionLabel) }
+                        ) {
+                            Text(mission.primaryActionLabel)
+                        }
                     }
                 }
             }
@@ -97,54 +111,62 @@ fun BlindCountScreen(
     ) {
         Text(state.locationLabel, style = MaterialTheme.typography.headlineMedium)
         Text(state.stepLabel, style = MaterialTheme.typography.titleLarge)
-        state.scannedItemLabel?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+        state.scannedItemLabel?.let {
+            Text(it, style = MaterialTheme.typography.bodyLarge)
+        }
         OutlinedTextField(
             value = state.observedQuantityText,
             onValueChange = onQuantityChange,
-            label = { Text("Gözlenen adet") },
+            label = {
+                Text(stringResource(R.string.blind_count_observed_quantity))
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
         )
         Text(
-            text = state.totalLines?.let { "${state.confirmedLines} / $it" }
-                ?: "${state.confirmedLines} satır tamamlandı",
+            text = state.totalLines?.let {
+                stringResource(
+                    R.string.blind_count_progress,
+                    state.confirmedLines,
+                    it,
+                )
+            } ?: stringResource(
+                R.string.blind_count_completed_lines,
+                state.confirmedLines,
+            ),
             style = MaterialTheme.typography.bodyLarge,
         )
         Button(
             onClick = onConfirm,
             enabled = state.scannedItemLabel != null && state.observedQuantityText.isNotBlank(),
             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
-        ) { Text("Adedi doğrula") }
+        ) {
+            Text(stringResource(R.string.blind_count_confirm))
+        }
     }
 }
 
 @Composable
 private fun SyncStatus(state: FieldSyncVisualState, pendingCount: Int) {
-    val icon = when (state) {
-        FieldSyncVisualState.SYNCED -> Icons.Outlined.CloudDone
-        FieldSyncVisualState.OFFLINE -> Icons.Outlined.CloudOff
-        FieldSyncVisualState.PENDING -> Icons.Outlined.Sync
-        FieldSyncVisualState.QUARANTINED -> Icons.Outlined.ErrorOutline
-    }
     val label = when (state) {
-        FieldSyncVisualState.SYNCED -> "Senkron"
-        FieldSyncVisualState.OFFLINE -> "Çevrimdışı"
-        FieldSyncVisualState.PENDING -> "$pendingCount bekliyor"
-        FieldSyncVisualState.QUARANTINED -> "İnceleme gerekli"
+        FieldSyncVisualState.SYNCED -> stringResource(R.string.field_sync_synced)
+        FieldSyncVisualState.OFFLINE -> stringResource(R.string.field_sync_offline)
+        FieldSyncVisualState.PENDING -> stringResource(R.string.field_sync_pending, pendingCount)
+        FieldSyncVisualState.QUARANTINED -> stringResource(R.string.field_sync_quarantined)
     }
+    val accessibilityLabel = stringResource(R.string.field_sync_description, label)
     Surface(
         tonalElevation = 2.dp,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.semantics { contentDescription = "Senkron durumu: $label" },
+        modifier = Modifier.semantics {
+            contentDescription = accessibilityLabel
+        },
     ) {
-        Row(
+        Text(
+            text = label,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, contentDescription = null)
-            Text(label, style = MaterialTheme.typography.labelLarge)
-        }
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }

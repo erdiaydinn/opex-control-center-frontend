@@ -14,6 +14,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from .decision_truth_integrity import validate_decision_truth_receipt_integrity
 from .hypothesis_intelligence import HypothesisRanking
 from .live_company_readiness import DecisionTruthReceipt, DecisionTruthStatus
 from .proactive_intelligence import GovernedActionProposal, RadarDisposition, RiskRadar
@@ -80,6 +81,14 @@ def build_decision_packet(payload: DecisionPacketInput) -> ExecutiveDecisionPack
         warnings.append("degraded_external_source_governance")
 
     truth = payload.decision_truth
+    truth_invalid = False
+    if truth is not None:
+        try:
+            truth = validate_decision_truth_receipt_integrity(truth)
+        except ValueError:
+            truth = None
+            truth_invalid = True
+
     truth_status = truth.status if truth is not None else None
     truth_requirement_id = truth.requirement_id if truth is not None else None
     truth_cap = 1.0
@@ -91,7 +100,11 @@ def build_decision_packet(payload: DecisionPacketInput) -> ExecutiveDecisionPack
         truth_hard_block = True
         truth_cap = min(truth_cap, 0.25)
 
-    if payload.requires_live_company_truth and truth is None:
+    if truth_invalid:
+        blockers.append("live_company_truth_receipt_invalid")
+        truth_hard_block = True
+        truth_cap = min(truth_cap, 0.20)
+    elif payload.requires_live_company_truth and truth is None:
         blockers.append("live_company_truth_receipt_missing")
         truth_hard_block = True
         truth_cap = min(truth_cap, 0.25)

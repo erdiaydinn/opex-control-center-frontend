@@ -392,7 +392,10 @@ def reconciliation(principal: InventoryPrincipal, document_id: UUID) -> dict[str
         rows = db.execute(
             """WITH counted AS (
                  SELECT barcode,sum(quantity) AS counted_quantity
-                 FROM inventory_events WHERE tenant_id=%s AND document_id=%s
+                 FROM inventory_events
+                 WHERE tenant_id=%s AND document_id=%s
+                   AND event_type IN ('SCAN','UNEXPECTED_SKU')
+                   AND barcode IS NOT NULL
                  GROUP BY barcode
                )
                SELECT COALESCE(s.sku,'UNEXPECTED') AS sku,COALESCE(s.barcode,c.barcode) AS barcode,

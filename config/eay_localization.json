@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "capability": "LOC",
+  "contract": "10-language-plus-rtl",
+  "required_locales": [
+    "tr-TR",
+    "en",
+    "de",
+    "ar",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "pl",
+    "pt-BR"
+  ],
+  "default_locale": "en",
+  "fallback_locale": "en",
+  "rtl_locales": ["ar"],
+  "english_only_production_exception_allowed": false,
+  "android_resource_qualifiers": {
+    "tr-TR": "values-tr",
+    "en": "values",
+    "de": "values-de",
+    "ar": "values-ar",
+    "fr": "values-fr",
+    "es": "values-es",
+    "it": "values-it",
+    "nl": "values-nl",
+    "pl": "values-pl",
+    "pt-BR": "values-pt-rBR"
+  }
+}

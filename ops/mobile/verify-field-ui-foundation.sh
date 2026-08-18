@@ -4,6 +4,7 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 UI="$ROOT/android-field-ui/field-ui/src/main/java/com/eay/mobile/fieldui"
 RES="$ROOT/android-field-ui/field-ui/src/main/res"
+LOCALE_CONTRACT="$ROOT/config/eay_localization.json"
 
 required="
 $ROOT/android-field-ui/settings.gradle.kts
@@ -12,16 +13,7 @@ $ROOT/android-field-ui/field-ui/build.gradle.kts
 $UI/FieldUiModels.kt
 $UI/EayFieldTheme.kt
 $UI/EayTerminalShell.kt
-$RES/values/strings.xml
-$RES/values-tr/strings.xml
-$RES/values-de/strings.xml
-$RES/values-ar/strings.xml
-$RES/values-fr/strings.xml
-$RES/values-es/strings.xml
-$RES/values-it/strings.xml
-$RES/values-nl/strings.xml
-$RES/values-pl/strings.xml
-$RES/values-pt-rBR/strings.xml
+$LOCALE_CONTRACT
 "
 
 for file in $required; do
@@ -59,28 +51,47 @@ if grep -R -n 'androidx.compose.material.icons' "$UI" || grep -q 'material-icons
 fi
 
 if grep -R -n -E 'LayoutDirection\.Ltr|TextDirection\.Ltr|supportsRtl="false"' "$ROOT/android-field-ui"; then
-  echo "forced LTR behavior is forbidden; Arabic RTL must remain locale-driven" >&2
+  echo "forced LTR behavior is forbidden; RTL must remain locale-driven" >&2
   exit 1
 fi
 
-python3 - "$RES" <<'PY'
+python3 - "$RES" "$LOCALE_CONTRACT" <<'PY'
 from pathlib import Path
+import json
 import sys
 import xml.etree.ElementTree as ET
 
 res = Path(sys.argv[1])
-locales = {
-    "en": res / "values" / "strings.xml",
-    "tr-TR": res / "values-tr" / "strings.xml",
-    "de": res / "values-de" / "strings.xml",
-    "ar": res / "values-ar" / "strings.xml",
-    "fr": res / "values-fr" / "strings.xml",
-    "es": res / "values-es" / "strings.xml",
-    "it": res / "values-it" / "strings.xml",
-    "nl": res / "values-nl" / "strings.xml",
-    "pl": res / "values-pl" / "strings.xml",
-    "pt-BR": res / "values-pt-rBR" / "strings.xml",
-}
+contract_path = Path(sys.argv[2])
+contract = json.loads(contract_path.read_text(encoding="utf-8"))
+
+if contract.get("capability") != "LOC":
+    raise SystemExit("localization contract must be owned by LOC capability")
+if contract.get("default_locale") != "en" or contract.get("fallback_locale") != "en":
+    raise SystemExit("localization fallback/default must remain explicit English")
+if contract.get("english_only_production_exception_allowed") is not False:
+    raise SystemExit("English-only production exception must remain disabled")
+
+required_locales = contract.get("required_locales") or []
+if len(required_locales) < 10 or len(required_locales) != len(set(required_locales)):
+    raise SystemExit("localization contract must define at least 10 unique required locales")
+rtl_locales = set(contract.get("rtl_locales") or [])
+if "ar" not in rtl_locales:
+    raise SystemExit("Arabic RTL is mandatory")
+if not rtl_locales.issubset(set(required_locales)):
+    raise SystemExit("RTL locales must also be required locales")
+
+qualifiers = contract.get("android_resource_qualifiers") or {}
+if set(qualifiers) != set(required_locales):
+    raise SystemExit("Android qualifier map must exactly cover required locales")
+
+locales = {}
+for locale in required_locales:
+    qualifier = qualifiers[locale]
+    path = res / qualifier / "strings.xml"
+    if not path.is_file():
+        raise SystemExit(f"missing Android resources for required locale {locale}: {path}")
+    locales[locale] = path
 
 
 def keys(path: Path):
@@ -96,7 +107,7 @@ def keys(path: Path):
             out.add((child.tag, name))
     return out
 
-baseline = keys(locales["en"])
+baseline = keys(locales[contract["default_locale"]])
 for locale, path in locales.items():
     current = keys(path)
     if current != baseline:
@@ -114,7 +125,10 @@ for locale, path in locales.items():
     if missing:
         raise SystemExit(f"plural contract failure for {locale}: missing={missing}")
 
-print("EAY Field UI locale parity: PASS (10 mandatory locales)")
+print(
+    "EAY Field UI locale parity: PASS "
+    f"({len(required_locales)} required locales; RTL={sorted(rtl_locales)})"
+)
 PY
 
 echo "EAY Field UI static contract: PASS"

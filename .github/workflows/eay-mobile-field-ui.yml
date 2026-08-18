@@ -7,6 +7,7 @@ on:
     paths:
       - "android-field-ui/**"
       - "ops/mobile/verify-field-ui-foundation.sh"
+      - "config/eay_localization.json"
       - ".github/workflows/eay-mobile-field-ui.yml"
   push:
     branches:
@@ -22,7 +23,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - name: Verify presentation boundary
+      - name: Verify presentation and localization boundary
         run: sh ops/mobile/verify-field-ui-foundation.sh
 
   field-ui-compose-compatibility:

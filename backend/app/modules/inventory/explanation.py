@@ -148,6 +148,7 @@ def explanation_context(
             ),
         ).fetchone()
 
+    authoritative_events = [dict(row) for row in event_rows]
     evidence = {
         "schema_version": 2,
         "source": "inventory_completed_attempt_truth",
@@ -162,7 +163,10 @@ def explanation_context(
             "revision": document["revision"],
             "updated_at": document["updated_at"],
         },
-        "authoritative_events": [dict(row) for row in event_rows],
+        # Keep the established `events` key for downstream compatibility while
+        # making its new authority semantics explicit for new consumers.
+        "events": authoritative_events,
+        "authoritative_events": authoritative_events,
         "attempt_lifecycle": [dict(row) for row in attempt_rows],
         "revisions": [dict(row) for row in revision_rows],
         "audit_entries": [dict(row) for row in audit_rows],

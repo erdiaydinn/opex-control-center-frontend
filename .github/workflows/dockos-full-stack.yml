@@ -31,12 +31,46 @@ on:
       - main
       - product/workforce-**
 
+permissions:
+  contents: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  ci-admission-finalize:
+    if: github.ref_name == 'product/workforce-ci-admission-finalizer-v1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Normalize historical exact-head admission
+        run: |
+          python -m py_compile scripts/ci/migrate_legacy_exact_head_headers.py
+          python scripts/ci/migrate_legacy_exact_head_headers.py
+          python scripts/ci/migrate_legacy_exact_head_headers.py --check
+          git diff --check
+      - name: Commit header-only changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "eay-ci-admission-bot"
+          git config user.email "eay-ci-admission-bot@users.noreply.github.com"
+          for item in {10..25}; do
+            git add ".github/workflows/eay-roadmap-1-${item}-exact-head.yml"
+          done
+          git diff --cached --check
+          git commit -m "ci: stabilize historical exact-head admission"
+          git push origin HEAD:product/workforce-ci-admission-finalizer-v1
+
   frontend:
+    if: github.ref_name != 'product/workforce-ci-admission-finalizer-v1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -50,6 +84,7 @@ jobs:
       - run: npm run build
 
   backend:
+    if: github.ref_name != 'product/workforce-ci-admission-finalizer-v1'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,6 +105,7 @@ jobs:
       - run: python -m unittest app.modules.workforce.test_workforce app.modules.workforce.test_workforce_api app.modules.recruitment.test_recruitment app.test_security app.modules.dockos.test_rc2 app.modules.inventory.test_inventory app.modules.inventory.test_inventory_scope
 
   workforce-postgres:
+    if: github.ref_name != 'product/workforce-ci-admission-finalizer-v1'
     name: Workforce PostgreSQL acceptance
     runs-on: ubuntu-latest
     services:

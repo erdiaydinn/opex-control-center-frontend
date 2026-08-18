@@ -1,4 +1,4 @@
-# Branch-only one-shot focused Ruff repair v8 observable SQL wrap
+# Branch-only one-shot focused Ruff repair v9 helper-driven
 name: EAY Core Ruff Focused Repair
 
 on:
@@ -28,129 +28,12 @@ jobs:
         run: python -m pip install 'ruff>=0.8,<1'
       - name: Apply Ruff safe fixes only
         run: ruff check services/core-api --fix || true
-      - name: Run observable SQL-whitespace wrapper
-        shell: bash
+      - name: Run tested focused SQL repair helper
+        run: python scripts/ci/core_ruff_sql_wrap.py
+      - name: Capture residual strict Ruff debt
+        if: always()
         run: |
-          set +e
           mkdir -p .eay/ci
-          ruff check services/core-api --output-format=json > /tmp/core-ruff.json || true
-          python - <<'PY' > .eay/ci/sql-wrap-output.txt 2>&1
-          import io
-          import json
-          import re
-          import tokenize
-          from pathlib import Path
-
-          diagnostics = json.loads(Path('/tmp/core-ruff.json').read_text(encoding='utf-8') or '[]')
-          files = sorted({Path(item['filename']) for item in diagnostics if item.get('code') == 'E501'})
-          print(f'E501_INPUT_FILES={len(files)}')
-
-          def safe_break_positions(line: str) -> list[int]:
-              if '--' in line:
-                  return []
-              positions: list[int] = []
-              in_single = False
-              in_double = False
-              i = 0
-              while i < len(line):
-                  char = line[i]
-                  if char == "'" and not in_double:
-                      if in_single and i + 1 < len(line) and line[i + 1] == "'":
-                          i += 2
-                          continue
-                      in_single = not in_single
-                  elif char == '"' and not in_single:
-                      if in_double and i + 1 < len(line) and line[i + 1] == '"':
-                          i += 2
-                          continue
-                      in_double = not in_double
-                  elif char.isspace() and not in_single and not in_double:
-                      positions.append(i)
-                  i += 1
-              return positions
-
-          def wrap_content_line(line: str, max_len: int = 96) -> str:
-              pending = [line]
-              output: list[str] = []
-              while pending:
-                  current = pending.pop(0)
-                  if len(current) <= max_len:
-                      output.append(current)
-                      continue
-                  indent_match = re.match(r'\s*', current)
-                  indent = indent_match.group(0) if indent_match else ''
-                  positions = [p for p in safe_break_positions(current) if p > len(indent) + 20]
-                  before = [p for p in positions if p <= max_len]
-                  split_at = max(before) if before else (min(positions) if positions else None)
-                  if split_at is None:
-                      output.append(current)
-                      continue
-                  output.append(current[:split_at].rstrip())
-                  pending.insert(0, indent + current[split_at:].lstrip())
-              return '\n'.join(output)
-
-          def process_multiline_string(raw: str) -> str:
-              match = re.match(r"(?is)^([rubf]*)(\"\"\"|''')", raw)
-              if not match:
-                  return raw
-              quote = match.group(2)
-              if not raw.endswith(quote):
-                  return raw
-              prefix_len = len(match.group(1)) + len(quote)
-              body = raw[prefix_len:-len(quote)]
-              lines = body.split('\n')
-              wrapped = [wrap_content_line(line) for line in lines]
-              if wrapped == lines:
-                  return raw
-              return raw[:prefix_len] + '\n'.join(wrapped) + quote
-
-          changed_files = 0
-          for path in files:
-              source = path.read_text(encoding='utf-8')
-              line_offsets = [0]
-              line_offsets.extend(match.end() for match in re.finditer(r'\n', source))
-              replacements: list[tuple[int, int, str]] = []
-              for token in tokenize.generate_tokens(io.StringIO(source).readline):
-                  if token.type != tokenize.STRING or '\n' not in token.string:
-                      continue
-                  processed = process_multiline_string(token.string)
-                  if processed == token.string:
-                      continue
-                  start_line, start_col = token.start
-                  end_line, end_col = token.end
-                  start = line_offsets[start_line - 1] + start_col
-                  end = line_offsets[end_line - 1] + end_col
-                  replacements.append((start, end, processed))
-              for start, end, processed in reversed(replacements):
-                  source = source[:start] + processed + source[end:]
-              if replacements:
-                  path.write_text(source, encoding='utf-8')
-                  changed_files += 1
-                  print(f'SQL_WRAP_FILE={path} TOKENS={len(replacements)}')
-
-          promotion = Path('services/core-api/app/modules/field_intelligence/promotion.py')
-          if promotion.exists():
-              text = promotion.read_text(encoding='utf-8')
-              old = """    if not isinstance(sku, str) or not sku.strip():\n        sku = None\n    else:\n        sku = sku.strip()"""
-              new = """    sku = None if not isinstance(sku, str) or not sku.strip() else sku.strip()"""
-              if old in text:
-                  promotion.write_text(text.replace(old, new, 1), encoding='utf-8')
-                  print('SIM108_SKU_REPAIR=APPLIED')
-
-          migration = Path('services/core-api/alembic/versions/0019_field_intelligence_foundation.py')
-          if migration.exists():
-              text = migration.read_text(encoding='utf-8')
-              old = """            \" ('unseen','seen','started','partial','submitted','rework','verified','overdue','exempt')\","""
-              new = """            \" ('unseen','seen','started','partial','submitted','rework',\"\n            \"'verified','overdue','exempt')\","""
-              if old in text:
-                  migration.write_text(text.replace(old, new, 1), encoding='utf-8')
-                  print('FIELD_STATUS_LITERAL_REPAIR=APPLIED')
-          print(f'SQL_WRAP_CHANGED_FILES={changed_files}')
-          PY
-          wrapper_rc=$?
-          echo "WRAPPER_EXIT_CODE=${wrapper_rc}" >> .eay/ci/sql-wrap-output.txt
-          python -m compileall -q services/core-api >> .eay/ci/sql-wrap-output.txt 2>&1
-          echo "COMPILE_EXIT_CODE=$?" >> .eay/ci/sql-wrap-output.txt
           {
             echo "HEAD=${GITHUB_SHA}"
             echo "RUFF_VERSION=$(ruff --version)"
@@ -158,6 +41,7 @@ jobs:
             ruff check services/core-api --output-format=concise || true
           } > .eay/ci/core-ruff-focused-remaining.txt
       - name: Commit targeted repairs and diagnostics
+        if: always()
         run: |
           git config user.name 'eay-ci-repair-bot'
           git config user.email 'eay-ci-repair-bot@users.noreply.github.com'
@@ -166,5 +50,5 @@ jobs:
             echo 'CORE_RUFF_FOCUSED_CHANGES=NONE'
             exit 0
           fi
-          git commit -m 'style(core): apply observable residual SQL repair'
+          git commit -m 'style(core): apply focused SQL whitespace repair'
           git push origin HEAD:agent/core-ruff-focused-repair-v2

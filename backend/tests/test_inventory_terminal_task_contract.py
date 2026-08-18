@@ -1,29 +1,11 @@
 from __future__ import annotations
 
-import ast
-import hashlib
-from pathlib import Path
-from typing import Any
+import inspect
 from uuid import UUID
 
-PRODUCTION = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "production.py"
+import pytest
 
-
-def _load_task_contract():
-    tree = ast.parse(PRODUCTION.read_text(encoding="utf-8"))
-    names = {"_terminal_mission_id", "list_terminal_tasks"}
-    functions = [
-        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names
-    ]
-    assert {node.name for node in functions} == names
-    namespace: dict[str, object] = {
-        "Any": Any,
-        "UUID": UUID,
-        "InventoryPrincipal": object,
-        "hashlib": hashlib,
-    }
-    exec(compile(ast.Module(body=functions, type_ignores=[]), str(PRODUCTION), "exec"), namespace)
-    return namespace, tree
+from backend.app.modules.inventory import production
 
 
 class _Rows:
@@ -62,8 +44,9 @@ class _Principal:
         return None
 
 
-def test_terminal_tasks_are_location_bound_without_stock_truth() -> None:
-    namespace, _ = _load_task_contract()
+def test_terminal_tasks_are_location_bound_without_stock_truth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     rows = [
         {
             "id": UUID("22222222-2222-4222-8222-222222222222"),
@@ -87,15 +70,11 @@ def test_terminal_tasks_are_location_bound_without_stock_truth() -> None:
         },
     ]
     db = _Db(rows)
-    namespace.update(
-        {
-            "connect": lambda: db,
-            "_assert_runtime_tenant": lambda _db, _principal: None,
-            "_assert_active_device": lambda _db, _principal: None,
-        }
-    )
+    monkeypatch.setattr(production, "connect", lambda: db)
+    monkeypatch.setattr(production, "_assert_runtime_tenant", lambda _db, _principal: None)
+    monkeypatch.setattr(production, "_assert_active_device", lambda _db, _principal: None)
 
-    tasks = namespace["list_terminal_tasks"](_Principal())
+    tasks = production.list_terminal_tasks(_Principal())
 
     assert len(tasks) == 2
     assert tasks[0]["location_id"] == "A-04"
@@ -112,18 +91,17 @@ def test_terminal_tasks_are_location_bound_without_stock_truth() -> None:
 
 
 def test_terminal_task_mission_id_is_stable_and_tenant_bound() -> None:
-    namespace, _ = _load_task_contract()
-    mission_id = namespace["_terminal_mission_id"](
+    mission_id = production._terminal_mission_id(
         "tenant-1",
         UUID("22222222-2222-4222-8222-222222222222"),
         "A-04",
     )
-    assert mission_id == namespace["_terminal_mission_id"](
+    assert mission_id == production._terminal_mission_id(
         "tenant-1",
         UUID("22222222-2222-4222-8222-222222222222"),
         " a-04 ",
     )
-    assert mission_id != namespace["_terminal_mission_id"](
+    assert mission_id != production._terminal_mission_id(
         "tenant-2",
         UUID("22222222-2222-4222-8222-222222222222"),
         "A-04",
@@ -132,13 +110,7 @@ def test_terminal_task_mission_id_is_stable_and_tenant_bound() -> None:
 
 
 def test_terminal_task_function_does_not_query_stock_truth_tables() -> None:
-    _, tree = _load_task_contract()
-    function = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "list_terminal_tasks"
-    )
-    rendered = ast.unparse(function)
+    rendered = inspect.getsource(production.list_terminal_tasks)
     assert "inventory_expected_stock" not in rendered
     assert "inventory_events" not in rendered
     assert "expected_quantity" not in rendered

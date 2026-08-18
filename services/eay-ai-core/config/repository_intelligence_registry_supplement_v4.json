@@ -1,0 +1,49 @@
+{
+  "version": 4,
+  "updated_at": "2026-08-18",
+  "repositories": [
+    {
+      "id": "vercel-agent-browser",
+      "classification": "DISCOVERED",
+      "identity": "vercel-labs/agent-browser",
+      "canonical_upstream": "vercel-labs/agent-browser",
+      "decision": "adopt",
+      "capabilities": [
+        "semantic-browser-snapshot",
+        "accessibility-tree",
+        "named-browser-sessions",
+        "strict-tab-pinning",
+        "content-boundaries",
+        "read-only-browser-harness"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "548b159b30eef119ccf6846c8bc807d0eaa3f6f8",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "e2b-awesome-ai-agents",
+      "classification": "DISCOVERED",
+      "identity": "e2b-dev/awesome-ai-agents",
+      "canonical_upstream": "e2b-dev/awesome-ai-agents",
+      "decision": "reference",
+      "capabilities": [
+        "agent-landscape-discovery",
+        "agent-framework-catalog",
+        "research-source-discovery"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "999f3c390b8a373ed243ee297ff32a433cd0d68b",
+        "license": "CC-BY-NC-SA-4.0",
+        "commercial_use": "reference-only-noncommercial-license"
+      }
+    }
+  ],
+  "required_discovery_domains": [
+    "agent-browser-harnesses",
+    "agent-runtime-landscape"
+  ]
+}

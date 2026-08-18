@@ -3,8 +3,6 @@ from uuid import UUID
 
 import pytest
 
-from app.core.permission_catalog import action_permission, feature_permission, module_permission
-from app.core.security import PermissionAssignment, Principal
 from app.core.mobile_policy import (
     MobileDeviceTrust,
     MobileIntegrityVerdict,
@@ -14,6 +12,8 @@ from app.core.mobile_policy import (
     VerifiedMobileDeviceContext,
     build_mobile_policy_snapshot,
 )
+from app.core.permission_catalog import action_permission, feature_permission, module_permission
+from app.core.security import PermissionAssignment, Principal
 
 TENANT = UUID("11111111-1111-1111-1111-111111111111")
 OTHER_TENANT = UUID("22222222-2222-2222-2222-222222222222")
@@ -87,11 +87,15 @@ def test_stale_or_future_device_context_fails_closed() -> None:
 
 
 def test_location_scope_is_not_reinterpreted_permissively() -> None:
-    actor = principal(permission(module_permission("inventory"), {"warehouses": ["store-2"]}))
+    actor = principal(
+        permission(module_permission("inventory"), {"warehouses": ["store-2"]})
+    )
     snapshot = build_mobile_policy_snapshot(actor, device(location_id="store-1"), now=NOW)
     assert "inventory.count.capture" not in snapshot.operation_policies
 
-    indirect = principal(permission(module_permission("inventory"), {"regions": ["TR-34"]}))
+    indirect = principal(
+        permission(module_permission("inventory"), {"regions": ["TR-34"]})
+    )
     indirect_snapshot = build_mobile_policy_snapshot(indirect, device(), now=NOW)
     assert "inventory.count.capture" not in indirect_snapshot.operation_policies
 

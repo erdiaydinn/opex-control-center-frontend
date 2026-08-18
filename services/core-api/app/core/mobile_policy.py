@@ -192,8 +192,17 @@ MOBILE_OPERATION_RULES = (
 )
 
 _LOCATION_DIMENSIONS = frozenset(
-    {"warehouse", "warehouses", "warehouse_ids", "location", "locations", "location_ids",
-     "store", "stores", "store_ids"}
+    {
+        "warehouse",
+        "warehouses",
+        "warehouse_ids",
+        "location",
+        "locations",
+        "location_ids",
+        "store",
+        "stores",
+        "store_ids",
+    }
 )
 
 _TRUST_RANK = {
@@ -218,17 +227,13 @@ def _scope_allows_location(scope: ResolvedPermissionScope, location_id: str) -> 
     if scope.unrestricted:
         return True
 
-    observed_location_dimension = False
     for dimension, values in scope.dimensions.items():
-        if dimension not in _LOCATION_DIMENSIONS:
-            continue
-        observed_location_dimension = True
-        if location_id in values:
+        if dimension in _LOCATION_DIMENSIONS and location_id in values:
             return True
 
     # A region/cost-center/other indirect scope cannot be translated into location
     # authority here without a canonical server-side relation. Fail closed instead.
-    return False if observed_location_dimension or scope.dimensions else False
+    return False
 
 
 def _scope_fingerprint(scope: ResolvedPermissionScope) -> str:

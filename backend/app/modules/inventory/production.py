@@ -543,6 +543,30 @@ def record_event(
             raise
 
 
+def _assert_all_locations_completed(db: Any, tenant_id: str, document_id: UUID) -> None:
+    status = db.execute(
+        """SELECT
+             (SELECT count(*)::integer
+                FROM inventory_document_locations
+               WHERE tenant_id=%s AND document_id=%s) AS required_location_count,
+             (SELECT count(DISTINCT location_id)::integer
+                FROM inventory_events
+               WHERE tenant_id=%s AND document_id=%s
+                 AND event_type='LOCATION_COMPLETE') AS completed_location_count""",
+        (tenant_id, document_id, tenant_id, document_id),
+    ).fetchone()
+    if not status:
+        raise InventoryRuleError("Sayım lokasyon tamamlama kanıtı okunamadı.")
+    required_location_count = int(status["required_location_count"])
+    completed_location_count = int(status["completed_location_count"])
+    if required_location_count <= 0:
+        raise InventoryRuleError("Lokasyonsuz sayım gönderilemez.")
+    if completed_location_count != required_location_count:
+        raise InventoryRuleError(
+            "Tüm sayım lokasyonları server tarafından tamamlanmadan sayım gönderilemez."
+        )
+
+
 def transition(
     principal: InventoryPrincipal,
     document_id: UUID,
@@ -570,6 +594,8 @@ def transition(
                 raise InventoryRuleError("Sayım başka bir yönetici tarafından değiştirildi; ekranı yenileyin.")
             if (row["state"], target_state) not in allowed:
                 raise InventoryRuleError("Geçersiz sayım durum geçişi.")
+            if row["state"] == "COUNTING" and target_state == "SUBMITTED":
+                _assert_all_locations_completed(db, principal.tenant_id, document_id)
             if target_state in {"APPROVED", "LOCKED"} and row["submitted_by"] == principal.subject:
                 raise InventoryRuleError("Sayımı gönderen kişi aynı sayımı onaylayamaz veya kilitleyemez.")
             next_revision = expected_revision + 1

@@ -9,8 +9,8 @@ import org.junit.Test
 
 class InventoryTerminalCountTaskTest {
     @Test
-    fun `location mission maps to blind target and durable event context`() {
-        val task = task(locationId = " a-04 ")
+    fun `owned location mission maps to blind target and lease-bound event context`() {
+        val task = task(locationId = " a-04 ", owned = true)
 
         val target = task.blindCountTarget()
         val context = task.eventContext()
@@ -19,8 +19,16 @@ class InventoryTerminalCountTaskTest {
         assertEquals(BlindCountLocationToken.hash("A-04"), target.locationTokenHash)
         assertEquals("22222222-2222-4222-8222-222222222222", context.documentId)
         assertEquals("SHIFT-20260818-001", context.activeShiftId)
+        assertEquals(ATTEMPT_ID, context.attemptId)
+        assertEquals(LEASE_ID, context.leaseId)
         assertEquals(" a-04 ", context.locationId)
         assertEquals(MobileRuntimeProfile.EAY_TERMINAL, task.runtimeProfile)
+    }
+
+    @Test
+    fun `available mission cannot create event authority`() {
+        val available = task()
+        assertThrows(IllegalArgumentException::class.java) { available.eventContext() }
     }
 
     @Test
@@ -46,6 +54,13 @@ class InventoryTerminalCountTaskTest {
     }
 
     @Test
+    fun `owned mission requires complete lease tuple`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            task(owned = true, leaseId = null)
+        }
+    }
+
+    @Test
     fun `non counting task fails closed`() {
         assertThrows(IllegalArgumentException::class.java) {
             task(state = "APPROVED")
@@ -56,6 +71,8 @@ class InventoryTerminalCountTaskTest {
         locationId: String = "A-04",
         state: String = "COUNTING",
         activeShiftId: String = "SHIFT-20260818-001",
+        owned: Boolean = false,
+        leaseId: String? = if (owned) LEASE_ID else null,
     ) = InventoryTerminalCountTask(
         missionId = "inventory.count:mission-1",
         documentId = "22222222-2222-4222-8222-222222222222",
@@ -66,5 +83,14 @@ class InventoryTerminalCountTaskTest {
         state = state,
         revision = 1,
         locationCount = 12,
+        claimStatus = if (owned) InventoryMissionClaimStatus.OWNED else InventoryMissionClaimStatus.AVAILABLE,
+        attemptId = if (owned) ATTEMPT_ID else null,
+        leaseId = leaseId,
+        leaseValidUntil = if (owned) "2026-08-18T15:15:00Z" else null,
     )
+
+    companion object {
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    }
 }

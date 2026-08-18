@@ -3,11 +3,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PRODUCTION = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "production.py"
+RECONCILIATION = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "reconciliation.py"
 
 
 def _reconciliation_source() -> str:
-    tree = ast.parse(PRODUCTION.read_text(encoding="utf-8"))
+    tree = ast.parse(RECONCILIATION.read_text(encoding="utf-8"))
     node = next(
         item
         for item in tree.body
@@ -27,3 +27,20 @@ def test_location_completion_can_never_be_stock_reconciliation_input() -> None:
     rendered = _reconciliation_source()
     assert "LOCATION_COMPLETE" not in rendered
     assert "sum(quantity)" in rendered
+
+
+def test_expected_stock_is_scoped_before_barcode_join() -> None:
+    rendered = _reconciliation_source().replace(" ", "")
+    assert "WITHexpectedAS(" in rendered
+    assert "FROMinventory_expected_stock" in rendered
+    assert "WHEREtenant_id=%sANDdocument_id=%s" in rendered
+    assert "FROMexpecteds" in rendered
+    assert "FULLOUTERJOINcountedcONc.barcode=s.barcode" in rendered
+    assert "FROMinventory_expected_stocks\nFULLOUTERJOIN" not in rendered
+
+
+def test_reconciliation_is_tenant_and_warehouse_authorized() -> None:
+    rendered = _reconciliation_source()
+    assert "inventory_current_tenant" in rendered
+    assert "principal.tenant_id" in rendered
+    assert "principal.warehouse_scope" in rendered

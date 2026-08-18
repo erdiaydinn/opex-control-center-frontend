@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import hashlib
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -12,7 +12,13 @@ class InventoryExplanationError(PermissionError):
 
 
 def _fingerprint(payload: dict[str, Any]) -> str:
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -32,7 +38,9 @@ def explanation_context(
     with connect() as db:
         runtime = db.execute("SELECT inventory_current_tenant() AS tenant_id").fetchone()
         if not runtime or runtime["tenant_id"] != principal.tenant_id:
-            raise InventoryExplanationError("database tenant binding does not match explanation authority")
+            raise InventoryExplanationError(
+                "database tenant binding does not match explanation authority"
+            )
 
         document = db.execute(
             """SELECT warehouse_id,state,revision,updated_at
@@ -41,7 +49,9 @@ def explanation_context(
             (principal.tenant_id, document_id),
         ).fetchone()
         if not document or document["warehouse_id"] not in principal.warehouse_scope:
-            raise InventoryExplanationError("inventory document is outside explanation authority")
+            raise InventoryExplanationError(
+                "inventory document is outside explanation authority"
+            )
 
         event_rows = db.execute(
             """SELECT event_type,location_id,count(*)::integer AS event_count,
@@ -83,8 +93,8 @@ def explanation_context(
                  GROUP BY barcode
                ), joined AS (
                  SELECT COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0) AS variance,
-                        (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*COALESCE(s.unit_cost,0)
-                          AS variance_value
+                        (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*
+                          COALESCE(s.unit_cost,0) AS variance_value
                  FROM expected s
                  FULL OUTER JOIN counted c ON c.barcode=s.barcode
                )

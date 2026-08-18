@@ -114,7 +114,7 @@ class BlindCountTerminalControllerTest {
 
         val second = controller.completeLocation()
         assertTrue(second.accepted)
-        assertEquals(BlindCountStep.COMPLETE, second.session().step)
+        assertEquals(BlindCountStep.COMPLETE, second.session.step)
         assertEquals(2, sink.completionAttempts.size)
         assertEquals(sink.completionAttempts[0], sink.completionAttempts[1])
     }

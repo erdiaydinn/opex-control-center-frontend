@@ -14,7 +14,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter, deque
-from typing import Any, Iterable
+from collections.abc import Iterable
+from math import isnan
+from typing import Any
 
 ARCHITECTURE_CONTRACT_VERSION = "store-architecture-v1"
 ROUTE_OBJECTIVE_VERSION = "architecture-grid-astar-v1"
@@ -131,7 +133,7 @@ def architecture_fingerprint(architecture: dict[str, Any]) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
-    ).encode("utf-8")
+    ).encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -188,16 +190,19 @@ def architecture_truth_report(store_dna: dict[str, Any] | None) -> dict[str, Any
         if rect is None:
             invalid_elements.append(element_id)
             continue
-        if floor_width > 0 and floor_depth > 0:
-            if (
+        if (
+            floor_width > 0
+            and floor_depth > 0
+            and (
                 rect[0] < 0
                 or rect[1] < 0
                 or rect[2] > floor_rect[2]
                 or rect[3] > floor_rect[3]
-            ):
-                blockers.append(
-                    f"architecture_element_outside_floorplate:{element_id}"
-                )
+            )
+        ):
+            blockers.append(
+                f"architecture_element_outside_floorplate:{element_id}"
+            )
 
     if invalid_elements:
         blockers.append(
@@ -258,7 +263,7 @@ def _module_dimensions(module: dict[str, Any]) -> tuple[float, float]:
 def _module_rect(module: dict[str, Any]):
     x_m = _num(module.get("x_m"), float("nan"))
     y_m = _num(module.get("y_m"), float("nan"))
-    if x_m != x_m or y_m != y_m:  # NaN-safe missing check.
+    if isnan(x_m) or isnan(y_m):
         return None
     width, depth = _module_dimensions(module)
     if width <= 0 or depth <= 0:
@@ -424,8 +429,8 @@ def _distance_field(
 
     def to_cell(point: tuple[float, float]) -> tuple[int, int]:
         return (
-            max(0, min(cols - 1, int(round(point[0] / resolution_m)))),
-            max(0, min(rows - 1, int(round(point[1] / resolution_m)))),
+            max(0, min(cols - 1, round(point[0] / resolution_m))),
+            max(0, min(rows - 1, round(point[1] / resolution_m))),
         )
 
     def blocked(cell: tuple[int, int]) -> bool:
@@ -588,8 +593,8 @@ def architecture_route_objective(
 
     def to_cell(point: tuple[float, float]) -> tuple[int, int]:
         return (
-            max(0, min(cols - 1, int(round(point[0] / resolution_m)))),
-            max(0, min(rows - 1, int(round(point[1] / resolution_m)))),
+            max(0, min(cols - 1, round(point[0] / resolution_m))),
+            max(0, min(rows - 1, round(point[1] / resolution_m))),
         )
 
     source_sales = {_sku(row): _sales(row) for row in source_products}

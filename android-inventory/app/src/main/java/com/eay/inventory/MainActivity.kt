@@ -15,6 +15,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.eay.mobile.core.BarcodeSymbology
@@ -34,11 +35,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var taskList: LinearLayout
     private lateinit var quantityInput: EditText
     private lateinit var confirmQuantity: Button
+    private lateinit var finishLocation: Button
     private val auth by lazy { AuthorizationService(this) }
     private val taskClient by lazy { InventoryTerminalTaskClient(this) }
     private val offlineQueue by lazy { InventoryOfflineQueue(InventoryDatabase.get(this)) }
     private var dataWedgeSession: DataWedge.Session? = null
     private var scannerReceiverRegistered = false
+    private var loadedTasks: List<InventoryTerminalCountTask> = emptyList()
     private var activeTask: InventoryTerminalCountTask? = null
     private var activeController: BlindCountTerminalController? = null
 
@@ -98,6 +101,12 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             setOnClickListener { submitObservedQuantity() }
         }
+        finishLocation = Button(this).apply {
+            text = getString(R.string.terminal_finish_location)
+            minimumHeight = dp(64)
+            visibility = View.GONE
+            setOnClickListener { showLocationCompletionConfirmation() }
+        }
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -115,6 +124,7 @@ class MainActivity : AppCompatActivity() {
             addView(taskList)
             addView(quantityInput)
             addView(confirmQuantity)
+            addView(finishLocation)
         }
         setContentView(ScrollView(this).apply { addView(content) })
 
@@ -223,9 +233,10 @@ class MainActivity : AppCompatActivity() {
     private fun loadTerminalTasks() {
         status.text = getString(R.string.terminal_task_loading)
         taskList.removeAllViews()
+        loadedTasks = emptyList()
         activeTask = null
         activeController = null
-        hideQuantityEntry()
+        hideExecutionControls()
         Thread {
             val result = taskClient.fetch()
             runOnUiThread {
@@ -239,6 +250,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderTasks(tasks: List<InventoryTerminalCountTask>) {
+        loadedTasks = tasks
         taskList.removeAllViews()
         if (tasks.isEmpty()) {
             status.text = getString(R.string.terminal_no_tasks)
@@ -264,7 +276,8 @@ class MainActivity : AppCompatActivity() {
             eventContext = task.eventContext(),
             eventSink = offlineQueue,
         )
-        hideQuantityEntry()
+        setTaskSelectionEnabled(false)
+        hideExecutionControls()
         renderStep(BlindCountStep.SCAN_LOCATION)
     }
 
@@ -272,14 +285,17 @@ class MainActivity : AppCompatActivity() {
         val task = activeTask ?: return
         when (step) {
             BlindCountStep.SCAN_LOCATION -> {
-                hideQuantityEntry()
+                hideExecutionControls()
                 status.text = getString(R.string.terminal_scan_location, task.locationId.trim())
             }
             BlindCountStep.SCAN_ITEM -> {
                 hideQuantityEntry()
+                finishLocation.visibility = View.VISIBLE
+                finishLocation.isEnabled = true
                 status.text = getString(R.string.terminal_scan_item)
             }
             BlindCountStep.ENTER_QUANTITY -> {
+                finishLocation.visibility = View.GONE
                 quantityInput.visibility = View.VISIBLE
                 confirmQuantity.visibility = View.VISIBLE
                 confirmQuantity.isEnabled = true
@@ -287,12 +303,13 @@ class MainActivity : AppCompatActivity() {
                 quantityInput.requestFocus()
             }
             BlindCountStep.CONFIRM_ITEM -> {
+                finishLocation.visibility = View.GONE
                 quantityInput.visibility = View.VISIBLE
                 confirmQuantity.visibility = View.VISIBLE
                 status.text = getString(R.string.terminal_saving)
             }
             BlindCountStep.COMPLETE -> {
-                hideQuantityEntry()
+                hideExecutionControls()
                 status.text = getString(R.string.terminal_complete)
             }
         }
@@ -329,36 +346,104 @@ class MainActivity : AppCompatActivity() {
                         BlindCountControllerCode.OK -> {
                             quantityInput.text.clear()
                             hideQuantityEntry()
+                            finishLocation.visibility = View.VISIBLE
+                            finishLocation.isEnabled = true
                             InventorySyncWorker.enqueue(this)
-                            if (confirmation.session.step == BlindCountStep.COMPLETE) {
-                                status.text = getString(R.string.terminal_complete)
-                            } else {
-                                status.text = getString(R.string.terminal_saved_next)
-                            }
+                            status.text = getString(R.string.terminal_saved_next)
                         }
                         BlindCountControllerCode.PERSIST_RETRY -> {
                             confirmQuantity.isEnabled = true
                             status.text = getString(R.string.terminal_persist_retry)
                         }
-                        else -> {
-                            activeController = null
-                            hideQuantityEntry()
-                            status.text = getString(R.string.terminal_contract_blocked)
-                        }
+                        else -> blockCurrentMission()
                     }
                 }.onFailure {
-                    activeController = null
-                    hideQuantityEntry()
-                    status.text = getString(R.string.terminal_contract_blocked)
+                    blockCurrentMission()
                 }
             }
         }.start()
+    }
+
+    private fun showLocationCompletionConfirmation() {
+        val task = activeTask ?: return
+        val controller = activeController ?: return
+        if (controller.session().step != BlindCountStep.SCAN_ITEM) {
+            status.text = getString(R.string.terminal_contract_blocked)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.terminal_finish_location_title)
+            .setMessage(
+                getString(
+                    R.string.terminal_finish_location_message,
+                    task.locationId.trim(),
+                    controller.session().confirmedLineCount,
+                ),
+            )
+            .setNegativeButton(R.string.terminal_cancel, null)
+            .setPositiveButton(R.string.terminal_finish_location_confirm) { _, _ ->
+                completeLocationDurably(controller, task)
+            }
+            .show()
+    }
+
+    private fun completeLocationDurably(
+        controller: BlindCountTerminalController,
+        task: InventoryTerminalCountTask,
+    ) {
+        finishLocation.isEnabled = false
+        status.text = getString(R.string.terminal_saving)
+        Thread {
+            val result = runCatching { runBlocking { controller.completeLocation() } }
+            runOnUiThread {
+                result.onSuccess { completion ->
+                    when (completion.code) {
+                        BlindCountControllerCode.OK -> {
+                            InventorySyncWorker.enqueue(this)
+                            activeTask = null
+                            activeController = null
+                            hideExecutionControls()
+                            setTaskSelectionEnabled(true)
+                            renderTasks(loadedTasks.filterNot { it.missionId == task.missionId })
+                            status.text = getString(R.string.terminal_location_complete_queued)
+                        }
+                        BlindCountControllerCode.PERSIST_RETRY -> {
+                            finishLocation.isEnabled = true
+                            status.text = getString(R.string.terminal_completion_retry)
+                        }
+                        else -> blockCurrentMission()
+                    }
+                }.onFailure {
+                    blockCurrentMission()
+                }
+            }
+        }.start()
+    }
+
+    private fun blockCurrentMission() {
+        activeTask = null
+        activeController = null
+        hideExecutionControls()
+        setTaskSelectionEnabled(true)
+        status.text = getString(R.string.terminal_contract_blocked)
+    }
+
+    private fun setTaskSelectionEnabled(enabled: Boolean) {
+        for (index in 0 until taskList.childCount) {
+            taskList.getChildAt(index).isEnabled = enabled
+        }
     }
 
     private fun hideQuantityEntry() {
         quantityInput.visibility = View.GONE
         confirmQuantity.visibility = View.GONE
         confirmQuantity.isEnabled = true
+    }
+
+    private fun hideExecutionControls() {
+        hideQuantityEntry()
+        finishLocation.visibility = View.GONE
+        finishLocation.isEnabled = true
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

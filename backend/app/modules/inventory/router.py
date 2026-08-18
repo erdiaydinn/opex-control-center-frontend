@@ -6,10 +6,12 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from app.modules.workforce.active_shift import ActiveShiftAuthorityError, resolve_active_shift
 from app.modules.workforce.authorization import is_action_allowed
 from .explanation import explanation_context
-from .location_completion import (
-    completion_readiness,
-    filter_completed_terminal_tasks,
-    record_location_completion,
+from .location_completion import completion_readiness, filter_completed_terminal_tasks
+from .location_completion_v5 import record_location_completion_v5
+from .mission_attempt import (
+    abandon_mission_attempt,
+    attempt_readiness,
+    claim_mission_attempt,
 )
 from .production import (
     InventoryPrincipal,
@@ -17,10 +19,9 @@ from .production import (
     enroll_device,
     list_terminal_tasks as production_list_terminal_tasks,
     readiness as production_readiness,
-    record_event as production_record_event,
-    transition as production_transition,
 )
-from .reconciliation import reconciliation as read_reconciliation
+from .production_v5 import record_event_v5 as production_record_event, transition_v5 as production_transition
+from .reconciliation_v5 import reconciliation_v5 as read_reconciliation
 from .schemas import (
     DecisionCreate,
     DeviceEnrollCreate,
@@ -28,6 +29,8 @@ from .schemas import (
     DocumentTransitionCreate,
     LocationCompletionCreate,
     LocationLockCreate,
+    MissionAttemptAbandonCreate,
+    MissionAttemptClaimCreate,
     ScanCreate,
     TerminalEventCreate,
 )
@@ -74,12 +77,7 @@ def require(role: str, permissions: str, action: str) -> None:
 
 
 def require_verified_identity(request: Request, action: str) -> None:
-    """Authorize production operations only from middleware-verified identity state.
-
-    Production middleware already strips inbound X-OPEX identity/permission headers.
-    Keeping those headers out of the v1 route signature prevents future middleware or
-    proxy refactors from accidentally turning a compatibility field into authority.
-    """
+    """Authorize production operations only from middleware-verified identity state."""
     identity = getattr(request.state, "identity", None)
     if identity is None:
         raise HTTPException(status_code=401, detail="Doğrulanmış kurumsal kimlik gerekli.")
@@ -179,6 +177,7 @@ def production_health() -> dict:
     result = production_readiness()
     checks = dict(result.get("checks", {}))
     checks["migration_v4_location_completion"] = completion_readiness()
+    checks["migration_v5_mission_attempt_lease"] = attempt_readiness()
     return {
         "status": "ready" if result.get("status") == "ready" and all(checks.values()) else "blocked",
         "checks": checks,
@@ -246,6 +245,50 @@ def decision(document_id: str, payload: DecisionCreate, request: Request, x_opex
     return run(decide, document_id, payload.decision, payload.note, actor(request), scope(request))
 
 
+@router.post("/v1/terminal/mission-attempts/claim")
+def claim_terminal_mission(
+    payload: MissionAttemptClaimCreate,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+    x_eay_request_timestamp: str = Header(..., alias="X-EAY-Request-Timestamp"),
+    x_eay_request_nonce: str = Header(..., alias="X-EAY-Request-Nonce"),
+    x_eay_device_signature: str = Header(..., alias="X-EAY-Device-Signature"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production mission endpoint etkin değil.")
+    require_verified_identity(request, "countInventory")
+    return run(
+        claim_mission_attempt,
+        production_principal(request, x_eay_device_id),
+        payload.model_dump(),
+        x_eay_request_timestamp,
+        x_eay_request_nonce,
+        x_eay_device_signature,
+    )
+
+
+@router.post("/v1/terminal/mission-attempts/{attempt_id}/abandon")
+def abandon_terminal_mission(
+    attempt_id: str,
+    payload: MissionAttemptAbandonCreate,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production mission endpoint etkin değil.")
+    require_verified_identity(request, "approveInventory")
+    try:
+        parsed_attempt_id = UUID(attempt_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Geçerli attempt UUID zorunludur.") from error
+    return run(
+        abandon_mission_attempt,
+        production_principal(request, x_eay_device_id),
+        parsed_attempt_id,
+        payload.reason,
+    )
+
+
 @router.post("/v1/terminal/events")
 def terminal_event(
     payload: TerminalEventCreate,
@@ -258,10 +301,9 @@ def terminal_event(
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production terminal endpoint etkin değil.")
     require_verified_identity(request, "countInventory")
-    principal = production_principal(request, x_eay_device_id)
     return run(
         production_record_event,
-        principal,
+        production_principal(request, x_eay_device_id),
         payload.model_dump(),
         x_eay_request_timestamp,
         x_eay_request_nonce,
@@ -281,10 +323,9 @@ def terminal_location_completion(
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production terminal endpoint etkin değil.")
     require_verified_identity(request, "countInventory")
-    principal = production_principal(request, x_eay_device_id)
     return run(
-        record_location_completion,
-        principal,
+        record_location_completion_v5,
+        production_principal(request, x_eay_device_id),
         payload.model_dump(),
         x_eay_request_timestamp,
         x_eay_request_nonce,
@@ -337,7 +378,7 @@ def production_terminal_tasks(
     rows = run(filter_completed_terminal_tasks, narrowed_principal, rows)
     return {
         "rows": [
-            {**row, "active_shift_id": active_shift_id}
+            {**row, "active_shift_id": active_shift_id, "claim_required": True}
             for row in rows
         ]
     }

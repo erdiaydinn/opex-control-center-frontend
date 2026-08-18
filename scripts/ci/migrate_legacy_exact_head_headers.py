@@ -4,10 +4,7 @@
 This intentionally does not touch jobs or exact-head checkout semantics. It
 removes the category-leadership PR trigger from historical gates and replaces
 SHA-keyed concurrency with a stable workflow+PR key so superseded runs can be
-cancelled. Every rewrite is exact-match and fail-closed.
-
-This file is intentionally versioned so the one-shot migration can be safely
-retriggered without changing product code when runner capacity recovers.
+cancelled. Re-runs are idempotent, but any third/unreviewed state fails closed.
 """
 
 from __future__ import annotations
@@ -34,14 +31,28 @@ def apply() -> None:
         path = path_for(item)
         text = path.read_text(encoding="utf-8")
 
-        if text.count(OLD_BRANCHES) != 1:
-            raise SystemExit(f"{path.name}: reviewed PR branch block drifted")
-        text = text.replace(OLD_BRANCHES, NEW_BRANCHES, 1)
+        old_branches = text.count(OLD_BRANCHES)
+        new_branches = text.count(NEW_BRANCHES)
+        if old_branches == 1:
+            text = text.replace(OLD_BRANCHES, NEW_BRANCHES, 1)
+        elif old_branches == 0 and new_branches == 1:
+            pass
+        else:
+            raise SystemExit(
+                f"{path.name}: PR branch block is neither reviewed old nor reviewed new state"
+            )
 
         old_group = f"group: eay-roadmap-1-{item}-exact-{SHA_EXPR}"
-        if text.count(old_group) != 1:
-            raise SystemExit(f"{path.name}: reviewed SHA concurrency group drifted")
-        text = text.replace(old_group, STABLE, 1)
+        old_groups = text.count(old_group)
+        stable_groups = text.count(STABLE)
+        if old_groups == 1:
+            text = text.replace(old_group, STABLE, 1)
+        elif old_groups == 0 and stable_groups == 1:
+            pass
+        else:
+            raise SystemExit(
+                f"{path.name}: concurrency is neither reviewed SHA state nor stable state"
+            )
 
         path.write_text(text, encoding="utf-8")
 

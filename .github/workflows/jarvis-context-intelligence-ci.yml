@@ -55,6 +55,7 @@ jobs:
             tests/test_benchmark_promotion.py \
             tests/test_intelligence_router.py \
             tests/test_mission_runtime.py \
+            tests/test_mission_execution.py \
             tests/test_world_model.py \
             tests/test_jarvis_benchmark.py \
             tests/test_procedural_memory.py \

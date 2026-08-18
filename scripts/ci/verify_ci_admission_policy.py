@@ -86,6 +86,28 @@ def main() -> None:
     if STABLE not in inventory:
         failures.append("Inventory Production Gate stable concurrency missing")
 
+    inventory_migrations = read("eay-inventory-migration-contract.yml")
+    migration_pr = pr_block(inventory_migrations, "  push:\n")
+    migration_header = inventory_migrations.split("jobs:", 1)[0]
+    if '"backend/migrations/*inventory*.sql"' not in migration_pr:
+        failures.append("Inventory migration gate lost wildcard migration admission")
+    if "release/platform-convergence-v0.1" not in migration_pr:
+        failures.append("Inventory migration gate lost release PR admission")
+    if STABLE not in migration_header:
+        failures.append("Inventory migration gate stable concurrency missing")
+    if "contents: write" in migration_header:
+        failures.append("Inventory migration gate must remain read-only")
+    required_migration_contract = (
+        "find backend/migrations -maxdepth 1 -type f -name '*inventory*.sql' | sort",
+        "inventory_schema_migrations WHERE version=${version}",
+        "004_inventory_location_completion.sql",
+        "inventory_guard_location_event_v4_trigger",
+        "inventory_location_completion_once_idx",
+    )
+    for required in required_migration_contract:
+        if required not in inventory_migrations:
+            failures.append(f"Inventory migration-chain proof missing: {required}")
+
     android = read("opex-inventory-android.yml")
     android_pr = pr_block(android, "\n\npermissions:\n")
     if '"android-inventory/**"' not in android_pr:
@@ -128,6 +150,7 @@ def main() -> None:
     print("legacy_category_pr_fanout=false")
     print("domain_heavy_pr_admission=scoped")
     print("dockos_inventory_fanout=false")
+    print("inventory_migration_chain=governed")
     print("jarvis_core_api_fanout=false")
     print("canonical_push_regression=preserved")
 

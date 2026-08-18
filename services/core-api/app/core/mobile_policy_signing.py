@@ -38,16 +38,19 @@ class MobilePolicySigningProvider(Protocol):
     """External signer boundary. Production implementation should be KMS/HSM backed."""
 
     @property
-    def kid(self) -> str: ...
+    def kid(self) -> str:
+        ...
 
     @property
-    def algorithm(self) -> str: ...
+    def algorithm(self) -> str:
+        ...
 
     def sign(
         self,
         claims: dict[str, Any],
         headers: dict[str, str],
-    ) -> str: ...
+    ) -> str:
+        ...
 
 
 class MobilePolicyBinding(BaseModel):

@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "truth_contract": {
     "candidate_sha_exact_40_hex": true,
     "repository_status_bound_to_candidate_sha": true,
@@ -8,6 +8,8 @@
     "sre_item_ref_derived_from_canonical_acceptance": true,
     "external_item_requires_ledger_sha256_ref": true,
     "external_item_ref_derived_from_canonical_ledger": true,
+    "release_transition_rebuilds_current_45_55_authority": true,
+    "stale_truth_fingerprint_can_advance_release": false,
     "pilot_metric_requires_sha256_evidence_ref": true,
     "production_signoff_requires_sha256_evidence_ref": true,
     "cross_release_or_cross_candidate_evidence_reuse_allowed": false,
@@ -20,6 +22,7 @@
       "sre_items": [45, 46, 47, 48],
       "sre_evidence_source": "CANONICAL_45_48_ACCEPTANCE_VALIDATORS",
       "external_evidence_source": "CANONICAL_49_55_LEDGER_FINGERPRINTS",
+      "transition_authority": "JUST_IN_TIME_CANONICAL_REVALIDATION",
       "candidate_binding": "EXACT_GITHUB_SHA",
       "release_binding": "RELEASE_ID_SHA256"
     },
@@ -52,6 +55,7 @@
     "stabilization": {
       "requires": "PRODUCTION_ACTIVE",
       "revalidate_active_release_chain": true,
+      "revalidate_before_entering_stabilization": true,
       "evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
       "acceptance_metrics": [
         "error_budget",

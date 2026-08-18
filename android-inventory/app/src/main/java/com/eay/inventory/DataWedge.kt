@@ -2,10 +2,13 @@ package com.eay.inventory
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import com.eay.mobile.core.BarcodeSymbology
 import com.eay.mobile.core.ScannerIngress
 import com.eay.mobile.core.ScannerSource
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicLong
 
@@ -80,7 +83,10 @@ object DataWedge {
                             putString("intent_action", session.action)
                             putString("intent_category", session.category)
                             putString("intent_delivery", "2")
-                            putString("intent_component_info", context.packageName)
+                            putParcelableArrayList(
+                                "intent_component_info",
+                                secureComponentInfo(context),
+                            )
                         },
                     )
                 },
@@ -92,6 +98,57 @@ object DataWedge {
                 putExtra("com.symbol.datawedge.api.SET_CONFIG", profile)
             },
         )
+    }
+
+    private fun secureComponentInfo(context: Context): ArrayList<Bundle> {
+        val signatures = applicationSigningSha1(context)
+        check(signatures.isNotEmpty()) { "Application signing identity unavailable" }
+        return ArrayList<Bundle>().apply {
+            signatures.forEach { digest ->
+                add(
+                    Bundle().apply {
+                        putString("PACKAGE_NAME", context.packageName)
+                        putString("SIGNATURE", digest)
+                    },
+                )
+            }
+        }
+    }
+
+    private fun applicationSigningSha1(context: Context): List<String> {
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNATURES,
+            )
+        }
+
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = packageInfo.signingInfo
+                ?: error("Application signingInfo unavailable")
+            if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners.toList()
+            } else {
+                signingInfo.signingCertificateHistory.toList()
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.signatures.orEmpty().toList()
+        }
+
+        return signatures
+            .map { signature ->
+                MessageDigest.getInstance("SHA-1")
+                    .digest(signature.toByteArray())
+                    .joinToString("") { "%02X".format(it) }
+            }
+            .distinct()
     }
 
     private fun randomSessionId(): String {

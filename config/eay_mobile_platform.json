@@ -1,9 +1,9 @@
 {
   "program": "EAY_MOBILE_P0",
-  "architecture_version": 1,
+  "architecture_version": 2,
   "canonical_parent": {
     "branch": "product/eay-category-leadership-v1",
-    "sha": "8543f831a31c8e31c7b0201014bd172c7ab64cc9"
+    "sha": "f6b75d8720d2c6e09c93333063116395661faae5"
   },
   "runtime_surfaces": {
     "eay_one": {
@@ -12,7 +12,7 @@
     },
     "eay_terminal": {
       "purpose": "managed rugged/Zebra warehouse execution surface",
-      "state": "inventory-migration-source"
+      "state": "scanner-and-blind-count-foundation"
     }
   },
   "authority": {
@@ -20,7 +20,7 @@
     "authorization": "server_authoritative",
     "tenant_scope": "server_authoritative",
     "device_trust": "server_verified",
-    "offline_authority": "bounded_server_policy_snapshot",
+    "offline_authority": "bounded_signed_server_policy_snapshot",
     "inventory_state": "backend_authoritative"
   },
   "hard_security_invariants": [
@@ -31,6 +31,9 @@
     "critical_operations_online_only",
     "offline_operations_explicit_allowlist_only",
     "event_payload_hash_and_replay_collision_guard",
+    "business_conflict_never_last_write_wins",
+    "old_auth_or_reinstalled_device_cannot_silently_inherit_queue",
+    "datawedge_output_bound_to_package_and_app_signature",
     "no_raw_tokens_barcodes_biometrics_or_precise_location_in_telemetry",
     "no_client_owned_permission_truth",
     "no_webview_as_warehouse_execution_substitute"
@@ -39,10 +42,12 @@
     "corporate_oidc_claim_mapping",
     "real_play_integrity_verdicts_and_replay_tests",
     "managed_signing_and_mdm_distribution",
+    "datawedge_controlled_api_access_package_signature_whitelist",
     "physical_zebra_datawedge_matrix",
     "gps_geofence_field_walk",
     "offline_online_field_chaos",
-    "production_endpoint_certificate_pinning",
+    "production_endpoint_certificate_pinning_and_rotation",
+    "kms_hsm_mobile_policy_signing_and_rotation",
     "operator_uat",
     "production_shape_mobile_fleet_observability"
   ],

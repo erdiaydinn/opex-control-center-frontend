@@ -178,13 +178,18 @@ class InventoryTerminalTaskClient(context: Context) {
                 revision = row.getInt("revision"),
                 locationCount = row.getInt("location_count"),
                 claimStatus = row.getString("claim_status"),
-                attemptId = row.optString("attempt_id").takeIf { it.isNotBlank() },
-                leaseId = row.optString("lease_id").takeIf { it.isNotBlank() },
-                leaseValidUntil = row.optString("lease_valid_until").takeIf { it.isNotBlank() },
+                attemptId = nullableString(row, "attempt_id"),
+                leaseId = nullableString(row, "lease_id"),
+                leaseValidUntil = nullableString(row, "lease_valid_until"),
                 operation = row.getString("operation"),
                 runtimeProfile = row.getString("runtime_profile"),
             )
         }
         return InventoryTerminalTaskContract.map(wireRows)
+    }
+
+    private fun nullableString(row: JSONObject, key: String): String? {
+        if (!row.has(key) || row.isNull(key)) return null
+        return row.getString(key).takeIf { it.isNotBlank() }
     }
 }

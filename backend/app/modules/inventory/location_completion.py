@@ -187,6 +187,19 @@ def record_location_completion(
             if already_completed:
                 raise InventoryRuleError("Lokasyon daha önce tamamlandı.")
 
+            committed_count = db.execute(
+                """SELECT 1 FROM inventory_events
+                   WHERE tenant_id=%s AND document_id=%s AND location_id=%s
+                     AND event_type IN ('SCAN','UNEXPECTED_SKU')
+                     AND occurred_at<=%s
+                   LIMIT 1""",
+                (principal.tenant_id, document_id, location, occurred_at),
+            ).fetchone()
+            if not committed_count:
+                raise InventoryRuleError(
+                    "Server-committed sayım satırı olmadan lokasyon tamamlanamaz."
+                )
+
             db.execute(
                 """INSERT INTO inventory_events(
                      tenant_id,event_id,device_id,device_sequence,document_id,warehouse_id,

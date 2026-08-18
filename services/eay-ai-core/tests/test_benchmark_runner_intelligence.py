@@ -4,14 +4,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.benchmark_promotion import build_engine_benchmark_attestation
 from app.benchmark_runner import (
     CANONICAL_AGENT_METRICS,
     BenchmarkCaseOutcome,
     BenchmarkEnvironmentManifest,
+    BenchmarkEvidenceArtifact,
     BenchmarkSystemAdapter,
     BenchmarkTaskCase,
     BenchmarkTaskSuite,
+    MeasuredBenchmarkResult,
+    build_verified_promotion_from_measured_results,
     run_same_task_benchmark,
     run_system_benchmark,
     write_benchmark_evidence_artifact,
@@ -84,18 +86,19 @@ def _measurement(run, name):
     return next(item for item in run.measurements if item.metric_name == name)
 
 
-def test_same_task_runner_produces_comparable_fingerprints_and_evidence_bound_runs():
-    measured_at = datetime(2026, 8, 18, 6, 30, tzinfo=timezone.utc)
-    results = asyncio.run(
+def _measured_pair():
+    return asyncio.run(
         run_same_task_benchmark(
             adapters=(_good_adapter("jarvis"), _weak_adapter("peer")),
             suite=_suite(),
             environment=_environment(),
-            measured_at=measured_at,
+            measured_at=datetime(2026, 8, 18, 6, 30, tzinfo=timezone.utc),
         )
     )
 
-    jarvis, peer = results
+
+def test_same_task_runner_produces_comparable_fingerprints_and_evidence_bound_runs():
+    jarvis, peer = _measured_pair()
     assert jarvis.run.task_set_fingerprint == peer.run.task_set_fingerprint
     assert jarvis.run.environment_fingerprint == peer.run.environment_fingerprint
     assert len(jarvis.evidence.records) == 20
@@ -135,30 +138,42 @@ def test_side_effect_claimed_success_without_effect_verification_is_counted_as_f
     assert _measurement(result.run, "effect_verification_coverage").value == 0.0
 
 
-def test_measured_runs_feed_promotion_attestation_without_manual_scores():
-    measured_at = datetime(2026, 8, 18, 6, 32, tzinfo=timezone.utc)
-    jarvis, peer = asyncio.run(
-        run_same_task_benchmark(
-            adapters=(_good_adapter("jarvis"), _weak_adapter("peer")),
-            suite=_suite(),
-            environment=_environment(),
-            measured_at=measured_at,
-        )
-    )
-
-    attestation = build_engine_benchmark_attestation(
+def test_measured_runs_feed_replay_verified_promotion_without_manual_scores():
+    jarvis, peer = _measured_pair()
+    promotion = build_verified_promotion_from_measured_results(
         engine_id="jarvis",
-        challenger=jarvis.run,
-        baselines=(peer.run,),
+        challenger=jarvis,
+        baselines=(peer,),
         metrics=CANONICAL_AGENT_METRICS,
         generated_at=datetime(2026, 8, 18, 6, 33, tzinfo=timezone.utc),
     )
 
+    attestation = promotion.attestation
     assert attestation.promotion_allowed is True
     assert attestation.minimum_sample_count == 20
     assert attestation.critical_safety_regression is False
     assert jarvis.evidence.evidence_ref in attestation.measurement_evidence_refs
     assert attestation.evidence_ref.startswith("benchmark://")
+    assert promotion.challenger == jarvis.run
+
+
+def test_evidence_record_tamper_with_old_fingerprint_is_rejected():
+    jarvis, _ = _measured_pair()
+    payload = jarvis.evidence.model_dump(mode="json")
+    payload["records"][0]["task_success"] = False
+
+    with pytest.raises(ValueError, match="benchmark_evidence_artifact_fingerprint_mismatch"):
+        BenchmarkEvidenceArtifact.model_validate(payload)
+
+
+def test_aggregate_score_tamper_against_real_case_evidence_is_rejected():
+    jarvis, _ = _measured_pair()
+    measurements = list(jarvis.run.measurements)
+    measurements[0] = measurements[0].model_copy(update={"value": 0.25})
+    forged_run = jarvis.run.model_copy(update={"measurements": tuple(measurements)})
+
+    with pytest.raises(ValueError, match="benchmark_result_measurements_not_reproducible_from_case_evidence"):
+        MeasuredBenchmarkResult(run=forged_run, evidence=jarvis.evidence)
 
 
 def test_persisted_evidence_artifact_contains_no_prompts(tmp_path):

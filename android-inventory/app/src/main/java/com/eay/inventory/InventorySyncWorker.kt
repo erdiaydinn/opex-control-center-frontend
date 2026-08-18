@@ -55,6 +55,18 @@ object InventorySyncClassifier {
 }
 
 object InventorySyncContract {
+    private const val COUNT_LINE_PATH = "/api/inventory/v1/terminal/events"
+    private const val LOCATION_COMPLETE_PATH = "/api/inventory/v1/terminal/location-completions"
+
+    fun endpointPath(canonicalPayload: String): String? = runCatching {
+        val json = JSONObject(canonicalPayload)
+        when (json.optString("event_kind")) {
+            "" -> COUNT_LINE_PATH
+            "LOCATION_COMPLETE" -> LOCATION_COMPLETE_PATH
+            else -> null
+        }
+    }.getOrNull()
+
     fun responseMatchesSignedShift(
         canonicalPayload: String,
         serverShiftId: String?,
@@ -95,8 +107,6 @@ class InventorySyncWorker(
             }
         }
 
-        val url = BuildConfig.API_BASE_URL.trimEnd('/') +
-            "/api/inventory/v1/terminal/events"
         for (event in due) {
             val localFailure = QueueIntegrity.failureReason(
                 event,
@@ -110,6 +120,15 @@ class InventorySyncWorker(
                 )
                 continue
             }
+            val endpointPath = InventorySyncContract.endpointPath(event.canonicalPayload)
+            if (endpointPath == null) {
+                dao.quarantine(
+                    event.eventId,
+                    SyncQuarantineReason.CORRUPT_EVENT.name,
+                    "UNSUPPORTED_EVENT_KIND",
+                )
+                continue
+            }
 
             val timestamp = Instant.now().toString()
             val nonce = UUID.randomUUID().toString()
@@ -120,7 +139,7 @@ class InventorySyncWorker(
                 .put("payload_hash", event.payloadHash)
                 .toString()
             val request = Request.Builder()
-                .url(url)
+                .url(BuildConfig.API_BASE_URL.trimEnd('/') + endpointPath)
                 .header(
                     "Authorization",
                     "Bearer ${AccessTokenMemory.requireFresh()}",

@@ -1,0 +1,178 @@
+name: EAY Roadmap 1-25 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches: [product/eay-product-completion-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-1-24:
+    name: Require roadmap 1-24 GREEN on same exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for exact-head 1-24 cumulative gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in {1..180}; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/eay-roadmap-1-24-exact-head.yml/runs?event=pull_request&per_page=30" --jq ".workflow_runs | map(select(.head_sha == \"$EAY_EXACT_HEAD\")) | sort_by(.id) | last | [.status,.conclusion] | @tsv")"
+            status="${row%%$'\t'*}"; conclusion="${row#*$'\t'}"
+            echo "prior_1_24=$row"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
+            sleep 8
+          done
+          echo 'timed out waiting for roadmap 1-24 exact-head gate' >&2
+          exit 1
+
+  offline-scheduled-audit-authority:
+    name: Item 25 full offline scheduled audit authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_audit_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_audit_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install acceptance dependencies
+        run: python -m pip install -r backend/requirements.txt "pytest>=8,<9"
+      - name: Prove encrypted queue restart idempotency and pinning contract
+        env:
+          PYTHONPATH: backend
+        run: >-
+          python -m pytest -q
+          backend/tests/test_audit_item25_offline_schedule.py
+          backend/tests/test_audit_item24_finding_lifecycle.py
+          backend/tests/test_audit_item23_template_authority.py
+      - name: Apply Audit template finding and offline authority migrations
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -f backend/migrations/020_audit_template_version_authority.sql
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -f backend/migrations/021_audit_finding_corrective_verification.sql
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -f backend/migrations/022_audit_offline_scheduled_authority.sql
+      - name: Seed published v4 schedules occurrences and offline packages
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by,created_at,published_by,published_at)
+          VALUES
+            ('tenant-a','store-safety',4,'published','{"questions":[{"question_id":"q_fire_exit"}]}'::jsonb,repeat('1',64),'owner-a','2026-08-10T08:00:00Z','reviewer-a','2026-08-11T08:00:00Z'),
+            ('tenant-b','store-safety',4,'published','{"questions":[{"question_id":"q_fire_exit"}]}'::jsonb,repeat('5',64),'owner-b','2026-08-10T08:00:00Z','reviewer-b','2026-08-11T08:00:00Z');
+
+          INSERT INTO audit_schedules(tenant_id,schedule_id,schedule_key,template_key,template_revision,template_hash,location_id,assignee_subject,window_start,window_end,created_by,created_at)
+          VALUES
+            ('tenant-a','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','weekly-safety','store-safety',4,repeat('1',64),'store-42','auditor@example.com','2026-08-17T08:00:00Z','2026-08-18T08:00:00Z','audit-admin','2026-08-17T07:50:00Z'),
+            ('tenant-b','11111111-1111-4111-8111-111111111111','weekly-safety-b','store-safety',4,repeat('5',64),'store-b','auditor-b@example.com','2026-08-17T08:00:00Z','2026-08-18T08:00:00Z','audit-admin-b','2026-08-17T07:50:00Z');
+
+          INSERT INTO audit_occurrences(tenant_id,occurrence_id,schedule_id,scheduled_for,template_key,template_revision,template_hash,location_id,assignee_subject,occurrence_hash)
+          VALUES
+            ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-08-17T09:00:00Z','store-safety',4,repeat('1',64),'store-42','auditor@example.com',repeat('2',64)),
+            ('tenant-b','22222222-2222-4222-8222-222222222222','11111111-1111-4111-8111-111111111111','2026-08-17T09:00:00Z','store-safety',4,repeat('5',64),'store-b','auditor-b@example.com',repeat('6',64));
+
+          INSERT INTO audit_offline_packages(tenant_id,package_id,occurrence_id,schedule_id,template_key,template_revision,template_hash,location_id,assignee_subject,device_id,package_version,client_schema_version,policy_version,issued_at,expires_at,package_hash)
+          VALUES
+            ('tenant-a','cccccccc-cccc-4ccc-8ccc-cccccccccccc','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','store-safety',4,repeat('1',64),'store-42','auditor@example.com','managed-device-7','offline-v1','audit-schema-v3','audit-policy-v5','2026-08-17T08:00:00Z','2026-08-17T20:00:00Z',repeat('3',64)),
+            ('tenant-b','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222','11111111-1111-4111-8111-111111111111','store-safety',4,repeat('5',64),'store-b','auditor-b@example.com','managed-device-b','offline-v1','audit-schema-v3','audit-policy-v5','2026-08-17T08:00:00Z','2026-08-17T20:00:00Z',repeat('8',64));
+          SQL
+      - name: Create tenant-bound runtime sync roles with no direct mutation authority
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE audit_offline_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE audit_offline_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO audit_tenant_bindings(role_name,tenant_id) VALUES ('audit_offline_a','tenant-a'),('audit_offline_b','tenant-b');
+          GRANT USAGE ON SCHEMA public TO audit_offline_a,audit_offline_b;
+          GRANT SELECT ON audit_template_revisions,audit_run_snapshots,audit_schedules,audit_occurrences,audit_offline_packages,audit_offline_mutations,audit_occurrence_runs,audit_offline_sync_receipts TO audit_offline_a,audit_offline_b;
+          GRANT EXECUTE ON FUNCTION audit_current_tenant() TO audit_offline_a,audit_offline_b;
+          GRANT EXECUTE ON FUNCTION audit_ingest_offline_mutation(uuid,uuid,text,text,bigint,text,text,text,jsonb,text,timestamptz) TO audit_offline_a,audit_offline_b;
+          GRANT EXECUTE ON FUNCTION audit_link_occurrence_run(uuid,uuid,text) TO audit_offline_a,audit_offline_b;
+          SQL
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_offline_mutations(tenant_id,mutation_id,occurrence_id,package_hash,device_id,sequence,nonce,idempotency_key,mutation_type,payload,payload_hash,captured_at) VALUES ('tenant-a',gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',1,'direct','direct','answer','{}',repeat('7',64),now())"; then echo 'runtime direct mutation write unexpectedly succeeded' >&2; exit 1; fi
+      - name: Prove 8-hour offline reconnect and twenty replays become one mutation
+        run: |
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT audit_ingest_offline_mutation('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',1,'nonce-1','idem-1','answer','{\"question_id\":\"q_fire_exit\",\"answer\":\"no\"}'::jsonb,repeat('7',64),'2026-08-17T16:00:00Z')")" = t
+          for i in $(seq 1 20); do
+            test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',1,'nonce-1','idem-1','answer','{\"question_id\":\"q_fire_exit\",\"answer\":\"no\"}'::jsonb,repeat('7',64),'2026-08-17T16:00:00Z')")" = f
+          done
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT count(*) FROM audit_offline_mutations WHERE occurrence_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = 1
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT max(sequence) FROM audit_offline_mutations WHERE occurrence_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = 1
+      - name: Prove idempotency sequence nonce device expiry and tenant conflicts fail closed
+        run: |
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',1,'nonce-1','idem-1','answer','{\"question_id\":\"q_fire_exit\",\"answer\":\"yes\"}'::jsonb,repeat('7',64),'2026-08-17T16:00:00Z')"; then echo 'changed idempotency replay unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',3,'nonce-3','idem-3','answer','{\"answer\":\"x\"}'::jsonb,repeat('9',64),'2026-08-17T16:10:00Z')"; then echo 'sequence gap unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',2,'nonce-1','idem-2','answer','{\"answer\":\"x\"}'::jsonb,repeat('9',64),'2026-08-17T16:10:00Z')"; then echo 'nonce reuse unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'rogue-device',2,'nonce-2','idem-2','answer','{\"answer\":\"x\"}'::jsonb,repeat('9',64),'2026-08-17T16:10:00Z')"; then echo 'wrong-device mutation unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',repeat('3',64),'managed-device-7',2,'nonce-2','idem-2','answer','{\"answer\":\"x\"}'::jsonb,repeat('9',64),'2026-08-17T20:00:01Z')"; then echo 'expired-capture mutation unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_ingest_offline_mutation(gen_random_uuid(),'22222222-2222-4222-8222-222222222222',repeat('8',64),'managed-device-b',1,'cross','cross','answer','{\"answer\":\"x\"}'::jsonb,repeat('9',64),'2026-08-17T16:00:00Z')"; then echo 'cross-tenant occurrence sync unexpectedly succeeded' >&2; exit 1; fi
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT count(*) FROM audit_occurrences WHERE tenant_id='tenant-b'")" = 0
+          test "$(PGPASSWORD=runtime_b psql -qAt -h localhost -U audit_offline_b -d eay_audit_ci -c "SELECT count(*) FROM audit_occurrences WHERE tenant_id='tenant-a'")" = 0
+      - name: Prove online run reconnects idempotently to exact scheduled occurrence
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_run_snapshots(tenant_id,audit_run_id,template_key,template_revision,template_hash,answers,visible_question_ids,score_awarded,score_possible,score_percent,completed_by,completed_at,snapshot_hash)
+          VALUES
+            ('tenant-a','dddddddd-dddd-4ddd-8ddd-dddddddddddd','store-safety',4,repeat('1',64),'{"q_fire_exit":"no"}'::jsonb,'["q_fire_exit"]'::jsonb,0,10,0,'auditor@example.com','2026-08-17T16:30:00Z',repeat('a',64)),
+            ('tenant-a','44444444-4444-4444-8444-444444444444','store-safety',4,repeat('1',64),'{"q_fire_exit":"no"}'::jsonb,'["q_fire_exit"]'::jsonb,0,10,0,'auditor@example.com','2026-08-17T16:31:00Z',repeat('b',64));
+          SQL
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT audit_link_occurrence_run('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','auditor@example.com')")" = t
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT audit_link_occurrence_run('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','dddddddd-dddd-4ddd-8ddd-dddddddddddd','auditor@example.com')")" = f
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_offline_a -d eay_audit_ci -c "SELECT count(*) FROM audit_occurrence_runs WHERE occurrence_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = 1
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_offline_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "SELECT audit_link_occurrence_run('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','auditor@example.com')"; then echo 'same occurrence linked to second run unexpectedly succeeded' >&2; exit 1; fi
+      - name: Prove v5 publication cannot rewrite frozen v4 occurrence/package and history is append-only
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by,created_at,published_by,published_at)
+          VALUES ('tenant-a','store-safety',5,'published','{"questions":[{"question_id":"q_fire_exit"},{"question_id":"q5"}]}'::jsonb,repeat('c',64),'owner-a','2026-08-17T17:00:00Z','reviewer-a','2026-08-17T17:05:00Z');
+          SQL
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT template_revision||':'||template_hash FROM audit_occurrences WHERE tenant_id='tenant-a' AND occurrence_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = "4:$(printf '1%.0s' {1..64})"
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT template_revision||':'||client_schema_version||':'||policy_version FROM audit_offline_packages WHERE tenant_id='tenant-a' AND package_id='cccccccc-cccc-4ccc-8ccc-cccccccccccc'")" = '4:audit-schema-v3:audit-policy-v5'
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "UPDATE audit_occurrences SET template_revision=5 WHERE tenant_id='tenant-a' AND occurrence_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'"; then echo 'occurrence history mutation unexpectedly succeeded' >&2; exit 1; fi
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "UPDATE audit_offline_mutations SET sequence=2 WHERE tenant_id='tenant-a' AND occurrence_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'"; then echo 'offline mutation history rewrite unexpectedly succeeded' >&2; exit 1; fi
+      - name: Preserve truth boundary
+        run: |
+          echo 'item25_repository_acceptance=true'
+          echo 'offline_queue_aes_gcm=true'
+          echo 'eight_hour_restart_zero_loss_fixture=true'
+          echo 'schedule_occurrence_linkage=true'
+          echo 'twenty_replays_one_mutation=true'
+          echo 'tenant_from_server_binding=true'
+          echo 'cross_tenant_offline_leak=false'
+          echo 'production_mobile_device_evidence=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-25 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-1-24, offline-scheduled-audit-authority]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_24_exact_head_green=true'
+          echo 'item25_repository_software_acceptance=true'
+          echo 'production_ready=false'

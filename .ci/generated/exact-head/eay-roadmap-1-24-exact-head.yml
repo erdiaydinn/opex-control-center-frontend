@@ -1,0 +1,156 @@
+name: EAY Roadmap 1-24 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches: [product/eay-product-completion-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-1-23:
+    name: Require roadmap 1-23 GREEN on same exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for exact-head 1-23 cumulative gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in {1..180}; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/eay-roadmap-1-23-exact-head.yml/runs?event=pull_request&per_page=30" --jq ".workflow_runs | map(select(.head_sha == \"$EAY_EXACT_HEAD\")) | sort_by(.id) | last | [.status,.conclusion] | @tsv")"
+            status="${row%%$'\t'*}"; conclusion="${row#*$'\t'}"
+            echo "prior_1_23=$row"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
+            sleep 8
+          done
+          echo 'timed out waiting for roadmap 1-23 exact-head gate' >&2
+          exit 1
+
+  finding-lifecycle-authority:
+    name: Item 24 finding corrective action verification authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_audit_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_audit_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install acceptance dependencies
+        run: python -m pip install -r backend/requirements.txt "pytest>=8,<9"
+      - name: Prove immutable finding lifecycle contract
+        env:
+          PYTHONPATH: backend
+        run: >-
+          python -m pytest -q
+          backend/tests/test_audit_item24_finding_lifecycle.py
+          backend/tests/test_audit_item23_template_authority.py
+      - name: Apply Audit template and finding authority migrations
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -f backend/migrations/020_audit_template_version_authority.sql
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -f backend/migrations/021_audit_finding_corrective_verification.sql
+      - name: Seed exact audit run and complete first corrective cycle
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by,created_at,published_by,published_at)
+          VALUES ('tenant-a','store-safety',1,'published','{"questions":[{"question_id":"q_fire_exit"}]}'::jsonb,repeat('1',64),'template-owner','2026-08-17T09:00:00Z','template-reviewer','2026-08-17T09:30:00Z');
+          INSERT INTO audit_run_snapshots(tenant_id,audit_run_id,template_key,template_revision,template_hash,answers,visible_question_ids,score_awarded,score_possible,score_percent,completed_by,completed_at,snapshot_hash)
+          VALUES ('tenant-a','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','store-safety',1,repeat('1',64),'{"q_fire_exit":"no"}'::jsonb,'["q_fire_exit"]'::jsonb,0,10,0,'auditor@example.com','2026-08-17T10:00:00Z',repeat('2',64));
+          INSERT INTO audit_findings(tenant_id,finding_id,audit_run_id,audit_snapshot_hash,template_key,template_revision,template_hash,question_id,severity,title,description,opened_by,opened_at)
+          VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',repeat('2',64),'store-safety',1,repeat('1',64),'q_fire_exit','critical','Fire exit blocked','Exit route is obstructed.','auditor@example.com','2026-08-17T10:05:00Z');
+          INSERT INTO audit_corrective_actions(tenant_id,finding_id,action_id,owner_subject,description,due_at,created_by,created_at)
+          VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-cccc-4ccc-8ccc-cccccccccccc','manager@example.com','Clear route and mark no-storage zone.','2026-08-18T10:10:00Z','auditor@example.com','2026-08-17T10:10:00Z');
+          INSERT INTO audit_corrective_evidence(tenant_id,finding_id,action_id,evidence_id,evidence_ref,content_sha256,provenance,attached_by,attached_at)
+          VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-cccc-4ccc-8ccc-cccccccccccc','dddddddd-dddd-4ddd-8ddd-dddddddddddd','evidence://private/fire-exit-after',repeat('3',64),'{"capture":"managed-device","source":"private-object-store"}'::jsonb,'manager@example.com','2026-08-17T10:20:00Z');
+          INSERT INTO audit_finding_verifications(tenant_id,finding_id,action_id,verification_id,verifier_subject,outcome,rationale,verified_at)
+          VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','cccccccc-cccc-4ccc-8ccc-cccccccccccc','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','auditor2@example.com','passed','Evidence and site state verified.','2026-08-17T10:30:00Z');
+          SQL
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT state FROM audit_finding_state WHERE tenant_id='tenant-a' AND finding_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = closed
+      - name: Prove close cannot bypass verification and reopen starts a new cycle
+        run: |
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_corrective_actions(tenant_id,finding_id,owner_subject,description,due_at,created_by,created_at) VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','manager2@example.com','bypass reopen','2026-08-18T10:40:00Z','auditor@example.com','2026-08-17T10:40:00Z')"; then echo 'closed finding accepted action without explicit reopen' >&2; exit 1; fi
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_finding_reopens(tenant_id,finding_id,reopen_id,reopened_by,reason,reopened_at)
+          VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','ffffffff-ffff-4fff-8fff-ffffffffffff','auditor3@example.com','Issue recurred during spot check.','2026-08-17T10:40:00Z');
+          INSERT INTO audit_corrective_actions(tenant_id,finding_id,action_id,owner_subject,description,due_at,created_by,created_at)
+          VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','manager2@example.com','Install permanent barrier.','2026-08-19T10:50:00Z','auditor3@example.com','2026-08-17T10:50:00Z');
+          SQL
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT state FROM audit_finding_state WHERE tenant_id='tenant-a' AND finding_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = action_in_progress
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_finding_verifications(tenant_id,finding_id,action_id,verifier_subject,outcome,rationale,verified_at) VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','auditor2@example.com','passed','no evidence','2026-08-17T11:00:00Z')"; then echo 'passed verification without evidence unexpectedly succeeded' >&2; exit 1; fi
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_corrective_evidence(tenant_id,finding_id,action_id,evidence_ref,content_sha256,attached_by,attached_at) VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','evidence://private/fire-exit-permanent',repeat('4',64),'manager2@example.com','2026-08-17T11:01:00Z')"
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_finding_verifications(tenant_id,finding_id,action_id,verifier_subject,outcome,rationale,verified_at) VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','manager2@example.com','passed','self verify','2026-08-17T11:05:00Z')"; then echo 'action owner self-verification unexpectedly succeeded' >&2; exit 1; fi
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_finding_verifications(tenant_id,finding_id,action_id,verifier_subject,outcome,rationale,verified_at) VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111','auditor2@example.com','failed','Barrier is incomplete.','2026-08-17T11:10:00Z')"
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT state FROM audit_finding_state WHERE tenant_id='tenant-a' AND finding_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = reopened
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_corrective_actions(tenant_id,finding_id,action_id,owner_subject,description,due_at,created_by,created_at) VALUES ('tenant-a','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','44444444-4444-4444-8444-444444444444','manager3@example.com','Escalated corrective plan.','2026-08-20T11:20:00Z','auditor2@example.com','2026-08-17T11:20:00Z')"
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT state FROM audit_finding_state WHERE tenant_id='tenant-a' AND finding_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'")" = action_in_progress
+      - name: Prove source pinning append-only history and runtime-role tenant isolation
+        run: |
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "UPDATE audit_findings SET title='mutated' WHERE tenant_id='tenant-a' AND finding_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'"; then echo 'finding history mutation unexpectedly succeeded' >&2; exit 1; fi
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_findings(tenant_id,audit_run_id,audit_snapshot_hash,template_key,template_revision,template_hash,question_id,severity,title,description,opened_by) VALUES ('tenant-a','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',repeat('9',64),'store-safety',1,repeat('1',64),'q_fire_exit','high','bad pin','bad pin','auditor@example.com')"; then echo 'mismatched audit snapshot provenance unexpectedly succeeded' >&2; exit 1; fi
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_findings(tenant_id,audit_run_id,audit_snapshot_hash,template_key,template_revision,template_hash,question_id,severity,title,description,opened_by) VALUES ('tenant-a','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',repeat('2',64),'store-safety',1,repeat('1',64),'hidden_q','high','hidden','hidden','auditor@example.com')"; then echo 'finding for hidden question unexpectedly succeeded' >&2; exit 1; fi
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by,created_at,published_by,published_at)
+          VALUES ('tenant-b','store-safety',1,'published','{"questions":[{"question_id":"q_fire_exit"}]}'::jsonb,repeat('5',64),'owner-b','2026-08-17T09:00:00Z','reviewer-b','2026-08-17T09:30:00Z');
+          INSERT INTO audit_run_snapshots(tenant_id,audit_run_id,template_key,template_revision,template_hash,answers,visible_question_ids,score_awarded,score_possible,score_percent,completed_by,completed_at,snapshot_hash)
+          VALUES ('tenant-b','22222222-2222-4222-8222-222222222222','store-safety',1,repeat('5',64),'{"q_fire_exit":"no"}'::jsonb,'["q_fire_exit"]'::jsonb,0,10,0,'auditor-b','2026-08-17T10:00:00Z',repeat('6',64));
+          INSERT INTO audit_findings(tenant_id,finding_id,audit_run_id,audit_snapshot_hash,template_key,template_revision,template_hash,question_id,severity,title,description,opened_by)
+          VALUES ('tenant-b','33333333-3333-4333-8333-333333333333','22222222-2222-4222-8222-222222222222',repeat('6',64),'store-safety',1,repeat('5',64),'q_fire_exit','high','tenant b secret','secret','auditor-b');
+          CREATE ROLE audit_runtime_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE audit_runtime_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO audit_tenant_bindings(role_name,tenant_id) VALUES ('audit_runtime_a','tenant-a'),('audit_runtime_b','tenant-b');
+          GRANT USAGE ON SCHEMA public TO audit_runtime_a,audit_runtime_b;
+          GRANT SELECT ON audit_template_revisions,audit_run_snapshots TO audit_runtime_a,audit_runtime_b;
+          GRANT SELECT,INSERT,UPDATE,DELETE ON audit_findings,audit_corrective_actions,audit_corrective_evidence,audit_finding_verifications,audit_finding_reopens TO audit_runtime_a,audit_runtime_b;
+          GRANT EXECUTE ON FUNCTION audit_current_tenant() TO audit_runtime_a,audit_runtime_b;
+          SQL
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_runtime_a -d eay_audit_ci -c "SELECT count(*) FROM audit_findings WHERE tenant_id='tenant-b'")" = 0
+          test "$(PGPASSWORD=runtime_b psql -qAt -h localhost -U audit_runtime_b -d eay_audit_ci -c "SELECT count(*) FROM audit_findings WHERE tenant_id='tenant-a'")" = 0
+          if PGPASSWORD=runtime_a psql -h localhost -U audit_runtime_a -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_findings(tenant_id,audit_run_id,audit_snapshot_hash,template_key,template_revision,template_hash,question_id,severity,title,description,opened_by) VALUES ('tenant-b','22222222-2222-4222-8222-222222222222',repeat('6',64),'store-safety',1,repeat('5',64),'q_fire_exit','high','cross tenant','cross tenant','attacker')"; then echo 'cross-tenant finding write unexpectedly succeeded' >&2; exit 1; fi
+      - name: Preserve truth boundary
+        run: |
+          echo 'item24_repository_acceptance=true'
+          echo 'exact_audit_run_provenance=true'
+          echo 'corrective_action_owner_and_due_date=true'
+          echo 'evidence_bound_to_action=true'
+          echo 'independent_verification=true'
+          echo 'explicit_reopen_history=true'
+          echo 'cross_tenant_finding_leak=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-24 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-1-23, finding-lifecycle-authority]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_23_exact_head_green=true'
+          echo 'item24_repository_software_acceptance=true'
+          echo 'production_ready=false'

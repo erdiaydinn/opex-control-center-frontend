@@ -1,0 +1,137 @@
+name: EAY Roadmap 1-23 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches: [product/eay-product-completion-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-1-22:
+    name: Require roadmap 1-22 GREEN on same exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for exact-head 1-22 cumulative gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in {1..180}; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/eay-roadmap-1-22-exact-head.yml/runs?event=pull_request&per_page=30" --jq ".workflow_runs | map(select(.head_sha == \"$EAY_EXACT_HEAD\")) | sort_by(.id) | last | [.status,.conclusion] | @tsv")"
+            status="${row%%$'\t'*}"; conclusion="${row#*$'\t'}"
+            echo "prior_1_22=$row"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
+            sleep 8
+          done
+          echo 'timed out waiting for roadmap 1-22 exact-head gate' >&2
+          exit 1
+
+  audit-template-authority:
+    name: Item 23 versioned Audit template authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_audit_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_audit_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install acceptance dependencies
+        run: python -m pip install "pytest>=8,<9"
+      - name: Prove versioning scoring branching and historical snapshot contract
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_audit_item23_template_authority.py
+      - name: Apply Audit template authority migration
+        run: psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -f backend/migrations/020_audit_template_version_authority.sql
+      - name: Seed published v1, immutable run, then published v2
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by)
+          VALUES ('tenant-a','store-ops',1,'draft','{"questions":[{"id":"receiving_ok","max_points":10,"scoring":{"yes":10,"no":0}},{"id":"corrective","show_when":{"receiving_ok":"no"},"max_points":5,"scoring":{"yes":5,"no":0}}]}',repeat('1',64),'audit-owner');
+          UPDATE audit_template_revisions SET status='published',published_by='audit-owner',published_at='2026-08-17T12:00:00Z'
+          WHERE tenant_id='tenant-a' AND template_key='store-ops' AND revision=1;
+          INSERT INTO audit_template_current(tenant_id,template_key,revision,content_hash,selected_by)
+          VALUES ('tenant-a','store-ops',1,repeat('1',64),'audit-owner');
+          INSERT INTO audit_run_snapshots(tenant_id,audit_run_id,template_key,template_revision,template_hash,answers,visible_question_ids,score_awarded,score_possible,score_percent,completed_by,completed_at,snapshot_hash)
+          VALUES ('tenant-a','00000000-0000-0000-0000-000000000001','store-ops',1,repeat('1',64),'{"receiving_ok":"no","corrective":"yes"}','["receiving_ok","corrective"]',5,15,33.33,'auditor-1','2026-08-17T12:30:00Z',repeat('a',64));
+
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by)
+          VALUES ('tenant-a','store-ops',2,'draft','{"questions":[{"id":"receiving_ok","max_points":10,"scoring":{"yes":10,"no":0}},{"id":"corrective","show_when":{"receiving_ok":"no"},"max_points":10,"scoring":{"yes":10,"no":0}}]}',repeat('2',64),'audit-owner');
+          UPDATE audit_template_revisions SET status='published',published_by='audit-owner',published_at='2026-08-17T13:00:00Z'
+          WHERE tenant_id='tenant-a' AND template_key='store-ops' AND revision=2;
+          UPDATE audit_template_current SET revision=2,content_hash=repeat('2',64),selected_by='audit-owner',selected_at='2026-08-17T13:00:00Z'
+          WHERE tenant_id='tenant-a' AND template_key='store-ops';
+
+          INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by)
+          VALUES ('tenant-b','store-ops',1,'draft','{"questions":[{"id":"secret","max_points":1,"scoring":{"yes":1}}]}',repeat('b',64),'tenant-b-owner');
+          UPDATE audit_template_revisions SET status='published',published_by='tenant-b-owner',published_at='2026-08-17T12:00:00Z'
+          WHERE tenant_id='tenant-b' AND template_key='store-ops' AND revision=1;
+          SQL
+      - name: Prove published immutability and historical result pinning
+        run: |
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT revision||':'||content_hash FROM audit_template_current WHERE tenant_id='tenant-a' AND template_key='store-ops'")" = "2:$(printf '2%.0s' {1..64})"
+          test "$(psql -qAt -h localhost -U postgres -d eay_audit_ci -c "SELECT template_revision||':'||template_hash||':'||score_awarded||':'||score_possible||':'||score_percent FROM audit_run_snapshots WHERE tenant_id='tenant-a' AND audit_run_id='00000000-0000-0000-0000-000000000001'")" = "1:$(printf '1%.0s' {1..64}):5.00:15.00:33.33"
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "UPDATE audit_template_revisions SET schema_json='{\"questions\":[{\"id\":\"mutated\"}]}' WHERE tenant_id='tenant-a' AND template_key='store-ops' AND revision=1"; then echo 'published template mutation unexpectedly succeeded' >&2; exit 1; fi
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "UPDATE audit_run_snapshots SET score_percent=100 WHERE tenant_id='tenant-a' AND audit_run_id='00000000-0000-0000-0000-000000000001'"; then echo 'historical run mutation unexpectedly succeeded' >&2; exit 1; fi
+          if psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_run_snapshots(tenant_id,audit_run_id,template_key,template_revision,template_hash,answers,visible_question_ids,score_awarded,score_possible,score_percent,completed_by,completed_at,snapshot_hash) VALUES ('tenant-a',gen_random_uuid(),'store-ops',2,repeat('f',64),'{}','[]',0,0,0,'auditor','2026-08-17T14:00:00Z',repeat('c',64))"; then echo 'mismatched template hash unexpectedly succeeded' >&2; exit 1; fi
+      - name: Prove runtime-role RLS tenant isolation
+        run: |
+          psql -h localhost -U postgres -d eay_audit_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE audit_runtime_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE audit_runtime_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO audit_tenant_bindings(role_name,tenant_id) VALUES ('audit_runtime_a','tenant-a'),('audit_runtime_b','tenant-b');
+          GRANT USAGE ON SCHEMA public TO audit_runtime_a, audit_runtime_b;
+          GRANT SELECT,INSERT,UPDATE,DELETE ON audit_template_revisions,audit_template_current,audit_run_snapshots TO audit_runtime_a,audit_runtime_b;
+          GRANT EXECUTE ON FUNCTION audit_current_tenant() TO audit_runtime_a,audit_runtime_b;
+          SQL
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U audit_runtime_a -d eay_audit_ci -c "SELECT count(*) FROM audit_template_revisions WHERE tenant_id='tenant-b'")" = 0
+          test "$(PGPASSWORD=runtime_b psql -qAt -h localhost -U audit_runtime_b -d eay_audit_ci -c "SELECT count(*) FROM audit_template_revisions WHERE tenant_id='tenant-a'")" = 0
+          if PGPASSWORD=runtime_b psql -h localhost -U audit_runtime_b -d eay_audit_ci -v ON_ERROR_STOP=1 -c "INSERT INTO audit_template_revisions(tenant_id,template_key,revision,status,schema_json,content_hash,created_by) VALUES ('tenant-a','cross-tenant',1,'draft','{\"questions\":[{\"id\":\"q\"}]}',repeat('d',64),'intruder')"; then echo 'cross-tenant template write unexpectedly succeeded' >&2; exit 1; fi
+      - name: Preserve truth boundary
+        run: |
+          echo 'item23_repository_acceptance=true'
+          echo 'versioned_template_authority=true'
+          echo 'conditional_branching_fail_closed=true'
+          echo 'published_revision_immutable=true'
+          echo 'historical_audit_result_stable=true'
+          echo 'cross_tenant_template_leak=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-23 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-1-22, audit-template-authority]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_22_exact_head_green=true'
+          echo 'item23_repository_software_acceptance=true'
+          echo 'production_ready=false'

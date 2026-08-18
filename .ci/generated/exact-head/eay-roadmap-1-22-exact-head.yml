@@ -1,0 +1,141 @@
+name: EAY Roadmap 1-22 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches: [product/eay-product-completion-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-1-21:
+    name: Require roadmap 1-21 GREEN on same exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for exact-head 1-21 cumulative gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in {1..180}; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/eay-roadmap-1-21-exact-head.yml/runs?event=pull_request&per_page=30" --jq ".workflow_runs | map(select(.head_sha == \"$EAY_EXACT_HEAD\")) | sort_by(.id) | last | [.status,.conclusion] | @tsv")"
+            status="${row%%$'\t'*}"; conclusion="${row#*$'\t'}"
+            echo "prior_1_21=$row"
+            if [ "$status" = completed ]; then test "$conclusion" = success; exit 0; fi
+            sleep 8
+          done
+          echo 'timed out waiting for roadmap 1-21 exact-head gate' >&2
+          exit 1
+
+  lineage-authority:
+    name: Item 22 exact-version data API dashboard lineage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_glossary_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_glossary_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt "pytest>=8,<9"
+      - name: Prove page-ready exact-version lineage contract
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_business_glossary_item22_lineage.py backend/tests/test_business_glossary_item19_kpi_catalog.py
+      - name: Apply glossary governance and lineage migrations
+        run: |
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -f backend/migrations/007_business_glossary.sql
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -f backend/migrations/016_business_glossary_lifecycle_authority.sql
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -f backend/migrations/017_business_glossary_concept_graph.sql
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -f backend/migrations/018_business_glossary_bulk_import_review.sql
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -f backend/migrations/019_business_glossary_lineage.sql
+      - name: Seed exact glossary versions and lineage
+        run: |
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO glossary_terms(tenant_id,concept_id,canonical_key,business_unit,domain,version,status,display_name,short_definition,owner_subject)
+          VALUES ('tenant-a','nsfr','nsfr','Market','operations',1,'draft','{"en":"NSFR"}','{"en":"v1"}','semantic-governance');
+          UPDATE glossary_terms SET status='review' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=1;
+          UPDATE glossary_terms SET status='approved' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=1;
+          UPDATE glossary_terms SET status='effective', effective_from='2026-01-01T00:00:00Z' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=1;
+          UPDATE glossary_terms SET status='superseded', effective_to='2026-08-01T00:00:00Z' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=1;
+          INSERT INTO glossary_terms(tenant_id,concept_id,canonical_key,business_unit,domain,version,status,display_name,short_definition,owner_subject)
+          VALUES ('tenant-a','nsfr','nsfr','Market','operations',2,'draft','{"en":"NSFR"}','{"en":"v2"}','semantic-governance');
+          UPDATE glossary_terms SET status='review' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=2;
+          UPDATE glossary_terms SET status='approved' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=2;
+          UPDATE glossary_terms SET status='effective', effective_from='2026-08-01T00:00:00Z' WHERE tenant_id='tenant-a' AND concept_id='nsfr' AND version=2;
+          INSERT INTO glossary_terms(tenant_id,concept_id,canonical_key,business_unit,domain,version,status,display_name,short_definition,owner_subject)
+          VALUES ('tenant-b','nsfr','nsfr','Market','operations',1,'draft','{"en":"NSFR"}','{"en":"tenant b"}','semantic-governance');
+          UPDATE glossary_terms SET status='review' WHERE tenant_id='tenant-b' AND concept_id='nsfr' AND version=1;
+          UPDATE glossary_terms SET status='approved' WHERE tenant_id='tenant-b' AND concept_id='nsfr' AND version=1;
+          UPDATE glossary_terms SET status='effective', effective_from='2026-01-01T00:00:00Z' WHERE tenant_id='tenant-b' AND concept_id='nsfr' AND version=1;
+
+          INSERT INTO glossary_lineage_bindings(tenant_id,concept_id,glossary_version,asset_kind,relation,asset_ref) VALUES
+            ('tenant-a','nsfr',1,'dataset','source','legacy.nsfr.v1'),
+            ('tenant-a','nsfr',2,'dataset','source','curated_data_shared.orders'),
+            ('tenant-a','nsfr',2,'api_field','exposed_as','GET /api/kpis/nsfr:data.value'),
+            ('tenant-a','nsfr',2,'dashboard','used_by','ops-overview:NSFR'),
+            ('tenant-b','nsfr',1,'dashboard','used_by','tenant-b-secret');
+          SQL
+      - name: Prove exact-version FK RLS and append-only lineage
+        run: |
+          psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE glossary_lineage_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE glossary_lineage_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO glossary_tenant_bindings(role_name,tenant_id) VALUES ('glossary_lineage_a','tenant-a'),('glossary_lineage_b','tenant-b');
+          GRANT USAGE ON SCHEMA public TO glossary_lineage_a, glossary_lineage_b;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON glossary_lineage_bindings TO glossary_lineage_a, glossary_lineage_b;
+          GRANT EXECUTE ON FUNCTION glossary_current_tenant() TO glossary_lineage_a, glossary_lineage_b;
+          SQL
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U glossary_lineage_a -d eay_glossary_ci -c "SELECT count(*) FROM glossary_lineage_bindings WHERE concept_id='nsfr' AND glossary_version=2")" = 3
+          test "$(PGPASSWORD=runtime_a psql -qAt -h localhost -U glossary_lineage_a -d eay_glossary_ci -c "SELECT count(*) FROM glossary_lineage_bindings WHERE asset_ref='tenant-b-secret'")" = 0
+          test "$(PGPASSWORD=runtime_b psql -qAt -h localhost -U glossary_lineage_b -d eay_glossary_ci -c "SELECT count(*) FROM glossary_lineage_bindings WHERE tenant_id='tenant-a'")" = 0
+          if psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_lineage_bindings(tenant_id,concept_id,glossary_version,asset_kind,relation,asset_ref) VALUES ('tenant-a','nsfr',3,'dataset','source','ghost.v3')"; then echo 'lineage without exact glossary version unexpectedly succeeded' >&2; exit 1; fi
+          if psql -h localhost -U postgres -d eay_glossary_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_lineage_bindings(tenant_id,concept_id,glossary_version,asset_kind,relation,asset_ref) VALUES ('tenant-a','nsfr',2,'dataset','used_by','invalid-pair')"; then echo 'invalid asset/relation pair unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_b psql -h localhost -U glossary_lineage_b -d eay_glossary_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_lineage_bindings(tenant_id,concept_id,glossary_version,asset_kind,relation,asset_ref) VALUES ('tenant-a','nsfr',2,'dashboard','used_by','cross-tenant-write')"; then echo 'cross-tenant lineage write unexpectedly succeeded' >&2; exit 1; fi
+          if PGPASSWORD=runtime_a psql -h localhost -U glossary_lineage_a -d eay_glossary_ci -v ON_ERROR_STOP=1 -c "UPDATE glossary_lineage_bindings SET asset_ref='mutated' WHERE tenant_id='tenant-a' AND asset_ref='ops-overview:NSFR'"; then echo 'lineage mutation unexpectedly succeeded' >&2; exit 1; fi
+      - name: Preserve truth boundary
+        run: |
+          echo 'item22_repository_acceptance=true'
+          echo 'exact_glossary_version_lineage=true'
+          echo 'dataset_api_field_dashboard_view=true'
+          echo 'stale_version_leak=false'
+          echo 'cross_tenant_lineage_leak=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-22 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-1-21, lineage-authority]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_21_exact_head_green=true'
+          echo 'item22_repository_software_acceptance=true'
+          echo 'production_ready=false'

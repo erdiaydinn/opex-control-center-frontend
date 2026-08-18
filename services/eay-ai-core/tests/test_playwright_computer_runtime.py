@@ -73,7 +73,7 @@ class FakeLocator:
 
 class FakePage:
     def __init__(self):
-        self.url = "https://carsi.example.com/inventory"
+        self.url = "https://carsi.example.com/inventory?warehouse=fulya&token=browser-secret"
         self.handlers = []
         self.last_locator = None
         self.goto_calls = []
@@ -189,6 +189,9 @@ def test_accessibility_first_action_captures_secret_free_api_observation():
     )
 
     assert receipt.completed is True
+    assert receipt.auth_context_ref == "managed-session:carsiportal"
+    assert receipt.page_url_after == "https://carsi.example.com/inventory"
+    assert "browser-secret" not in receipt.model_dump_json()
     assert receipt.input_value_retained is False
     assert receipt.direct_api_execution_authorized is False
     assert receipt.ignored_non_allowlisted_response_count == 1

@@ -141,10 +141,12 @@ class OfflineContractTest {
         val body = TerminalEventCanonical.body(
             TerminalEventInput(
                 activeShiftId = "SHIFT-20260813-001",
+                attemptId = ATTEMPT_ID,
                 barcode = " 869 ",
                 deviceSequence = 7,
                 documentId = "550E8400-E29B-41D4-A716-446655440000",
                 eventId = "550E8400-E29B-41D4-A716-446655440001",
+                leaseId = LEASE_ID,
                 locationId = "a01",
                 occurredAt = "2026-08-13T20:00:00Z",
                 quantity = BigDecimal("2.000"),
@@ -153,6 +155,8 @@ class OfflineContractTest {
         )
         assertTrue(body.contains("\"quantity\":\"2\""))
         assertTrue(body.contains("\"active_shift_id\":\"SHIFT-20260813-001\""))
+        assertTrue(body.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
+        assertTrue(body.contains("\"lease_id\":\"$LEASE_ID\""))
         assertEquals(64, TerminalEventCanonical.hash(body).length)
     }
 
@@ -160,10 +164,12 @@ class OfflineContractTest {
         val body = TerminalEventCanonical.body(
             TerminalEventInput(
                 activeShiftId = "SHIFT-20260818-001",
+                attemptId = ATTEMPT_ID,
                 barcode = " 8690000000001 ",
                 deviceSequence = 7,
-                documentId = "22222222-2222-4222-8222-222222222222",
+                documentId = DOCUMENT_ID,
                 eventId = "11111111-1111-4111-8111-111111111111",
+                leaseId = LEASE_ID,
                 locationId = " a-04 ",
                 occurredAt = "2026-08-18T15:00:00Z",
                 quantity = BigDecimal("5.000"),
@@ -171,14 +177,16 @@ class OfflineContractTest {
             ),
         )
         val expectedBody =
-            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"barcode\":\"8690000000001\"," +
-                "\"device_sequence\":7,\"document_id\":\"22222222-2222-4222-8222-222222222222\"," +
+            "{\"active_shift_id\":\"SHIFT-20260818-001\",\"attempt_id\":\"$ATTEMPT_ID\"," +
+                "\"barcode\":\"8690000000001\",\"device_sequence\":7," +
+                "\"document_id\":\"$DOCUMENT_ID\"," +
                 "\"event_id\":\"11111111-1111-4111-8111-111111111111\"," +
-                "\"location_id\":\"A-04\",\"occurred_at\":\"2026-08-18T15:00:00Z\"," +
+                "\"lease_id\":\"$LEASE_ID\",\"location_id\":\"A-04\"," +
+                "\"occurred_at\":\"2026-08-18T15:00:00Z\"," +
                 "\"quantity\":\"5\",\"symbology\":\"EAN13\"}"
         assertEquals(expectedBody, body)
         assertEquals(
-            "f0a1a16e9bfbf74a09667a7435e8880ea539d4cab88299ce8c9f4c58e1596626",
+            "7ea0134fc401ec93770b492ecd423dd0644df1f79d153c4b6f58ad2ed62489e5",
             TerminalEventCanonical.hash(body),
         )
     }
@@ -198,12 +206,7 @@ class OfflineContractTest {
             quantity = 5,
         )
         val event = InventoryCountEventFactory.create(
-            context = InventoryCountEventContext(
-                missionId = "mission-1",
-                documentId = "22222222-2222-4222-8222-222222222222",
-                activeShiftId = "SHIFT-20260818-001",
-                locationId = "a-04",
-            ),
+            context = context(),
             acceptedScan = acceptedScan,
             evidence = evidence,
             deviceSequence = 7,
@@ -212,7 +215,7 @@ class OfflineContractTest {
             authBindingId = "session-a",
         )
         assertEquals(
-            "f0a1a16e9bfbf74a09667a7435e8880ea539d4cab88299ce8c9f4c58e1596626",
+            "7ea0134fc401ec93770b492ecd423dd0644df1f79d153c4b6f58ad2ed62489e5",
             event.payloadHash,
         )
         assertTrue(QueueIntegrity.valid(event, "session-a"))
@@ -230,12 +233,7 @@ class OfflineContractTest {
         )
         assertThrows(IllegalArgumentException::class.java) {
             InventoryCountEventFactory.create(
-                context = InventoryCountEventContext(
-                    missionId = "mission-1",
-                    documentId = "22222222-2222-4222-8222-222222222222",
-                    activeShiftId = "SHIFT-20260818-001",
-                    locationId = "A-04",
-                ),
+                context = context(),
                 acceptedScan = acceptedScan,
                 evidence = BlindCountLineEvidence(
                     missionId = "mission-1",
@@ -275,5 +273,20 @@ class OfflineContractTest {
             SyncServerOutcome.PERMANENT_REJECTED,
             InventorySyncClassifier.classify(422, null, null).outcome,
         )
+    }
+
+    private fun context() = InventoryCountEventContext(
+        missionId = "mission-1",
+        documentId = DOCUMENT_ID,
+        activeShiftId = "SHIFT-20260818-001",
+        attemptId = ATTEMPT_ID,
+        leaseId = LEASE_ID,
+        locationId = "A-04",
+    )
+
+    companion object {
+        private const val DOCUMENT_ID = "22222222-2222-4222-8222-222222222222"
+        private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     }
 }

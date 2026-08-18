@@ -28,4 +28,11 @@
     <string name="terminal_sign_in_cancelled">Bedrijfsaanmelding geannuleerd</string>
     <string name="terminal_invalid_quantity">Voer een geldige niet-negatieve hoeveelheid in</string>
     <string name="terminal_complete">Telmissie voltooid</string>
+    <string name="terminal_finish_location">Locatie afronden</string>
+    <string name="terminal_finish_location_title">Deze locatie afronden?</string>
+    <string name="terminal_finish_location_message">Locatie: %1$s\nOpgeslagen telregistraties: %2$d\nEen ondertekend voltooiingsevenement wordt veilig in de wachtrij geplaatst.</string>
+    <string name="terminal_cancel">Annuleren</string>
+    <string name="terminal_finish_location_confirm">Locatie afronden</string>
+    <string name="terminal_location_complete_queued">Locatie afgerond · veilige synchronisatie in wachtrij</string>
+    <string name="terminal_completion_retry">Veilige wachtrij niet beschikbaar · probeer locatieafronding opnieuw</string>
 </resources>

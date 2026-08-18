@@ -9,10 +9,12 @@ import java.util.UUID
 
 data class TerminalEventInput(
     val activeShiftId: String,
+    val attemptId: String,
     val barcode: String,
     val deviceSequence: Long,
     val documentId: String,
     val eventId: String,
+    val leaseId: String,
     val locationId: String,
     val occurredAt: String,
     val quantity: BigDecimal,
@@ -28,11 +30,13 @@ data class TerminalEventInput(
 object TerminalEventCanonical {
     fun body(input: TerminalEventInput): String {
         val activeShiftId = input.activeShiftId.trim()
+        val attemptId = normalizeUuid(input.attemptId)
         val barcode = input.barcode.trim()
         val locationId = input.locationId.trim().uppercase(Locale.ROOT)
         val symbology = input.symbology.trim()
         val documentId = normalizeUuid(input.documentId)
         val eventId = normalizeUuid(input.eventId)
+        val leaseId = normalizeUuid(input.leaseId)
         val occurredAt = input.occurredAt.trim()
 
         require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
@@ -47,10 +51,12 @@ object TerminalEventCanonical {
         return buildString {
             append('{')
             append("\"active_shift_id\":").append(jsonString(activeShiftId)).append(',')
+            append("\"attempt_id\":").append(jsonString(attemptId)).append(',')
             append("\"barcode\":").append(jsonString(barcode)).append(',')
             append("\"device_sequence\":").append(input.deviceSequence).append(',')
             append("\"document_id\":").append(jsonString(documentId)).append(',')
             append("\"event_id\":").append(jsonString(eventId)).append(',')
+            append("\"lease_id\":").append(jsonString(leaseId)).append(',')
             append("\"location_id\":").append(jsonString(locationId)).append(',')
             append("\"occurred_at\":").append(jsonString(occurredAt)).append(',')
             append("\"quantity\":").append(jsonString(quantity)).append(',')

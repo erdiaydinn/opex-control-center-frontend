@@ -123,6 +123,11 @@ jobs:
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_location_event_v4_trigger' AND NOT tgisinternal")" = "1"
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_location_completion_once_idx'")" = "1"
           fi
+          if test -f backend/migrations/005_inventory_mission_attempt_lease.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_mission_event_v5_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_mission_attempt_one_active_idx'")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('inventory_mission_attempts','inventory_mission_leases','inventory_mission_lease_closures') AND c.relrowsecurity AND c.relforcerowsecurity")" = "3"
+          fi
       - name: Create least-privilege tenant-bound runtime role
         env:
           PGPASSWORD: postgres
@@ -133,6 +138,8 @@ jobs:
           GRANT USAGE ON SCHEMA public TO inventory_runtime;
           GRANT SELECT ON inventory_schema_migrations TO inventory_runtime;
           GRANT SELECT,INSERT,UPDATE ON inventory_devices,inventory_device_activation_codes,inventory_device_nonces,inventory_documents,inventory_document_locations,inventory_expected_stock,inventory_events,inventory_event_responses,inventory_revisions,inventory_audit,inventory_outbox TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_mission_attempts TO inventory_runtime;
+          GRANT SELECT,INSERT ON inventory_mission_leases,inventory_mission_lease_closures TO inventory_runtime;
           GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO inventory_runtime;
           GRANT EXECUTE ON FUNCTION inventory_current_tenant() TO inventory_runtime;
           INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');
@@ -181,6 +188,8 @@ jobs:
           docker exec -i "$PG_CONTAINER" pg_restore -U postgres -d eay_inventory_restore --no-owner < /tmp/eay-inventory.dump
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_events"
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_audit"
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_mission_attempts"
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_mission_leases"
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT max(version) FROM inventory_schema_migrations"
       - name: Replay authoritative production migration series
         env:

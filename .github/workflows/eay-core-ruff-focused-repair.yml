@@ -1,20 +1,28 @@
-# Branch-only one-shot focused Ruff repair v9 helper-driven
+# Temporary focused repair workflow; remove before canonical composition.
 name: EAY Core Ruff Focused Repair
 
 on:
   push:
     branches:
       - agent/core-ruff-focused-repair-v2
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/core-api/**"
+      - "scripts/ci/core_ruff_sql_wrap.py"
+      - ".github/workflows/eay-core-ruff-focused-repair.yml"
 
 permissions:
   contents: write
 
 concurrency:
-  group: eay-core-ruff-focused-${{ github.ref }}
+  group: eay-core-ruff-focused-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   safe-fix-and-report:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

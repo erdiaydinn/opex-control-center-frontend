@@ -89,9 +89,10 @@ class BlindCountTerminalController(
                 flowCode = BlindCountCode.DENY_SCAN,
             )
         val confirmation = BlindCountFlow.confirmItem(state, target)
-        if (!confirmation.accepted || confirmation.evidence == null) {
+        if (!confirmation.accepted) {
             return denied(confirmation.code)
         }
+        val evidence = confirmation.evidence ?: return denied(BlindCountCode.DENY_STEP)
 
         val durableIdentity = pendingDurableIdentity ?: PendingDurableIdentity(
             eventId = eventIdFactory(),
@@ -102,7 +103,7 @@ class BlindCountTerminalController(
             eventSink.enqueueConfirmedCount(
                 context = eventContext,
                 acceptedScan = currentScan,
-                evidence = confirmation.evidence,
+                evidence = evidence,
                 eventId = durableIdentity.eventId,
                 occurredAt = durableIdentity.occurredAt,
             )

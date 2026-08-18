@@ -1,26 +1,62 @@
 from datetime import datetime, timezone
 
-from app.benchmark_promotion import EngineBenchmarkAttestation
+from app.benchmark_promotion import build_verified_engine_benchmark_promotion
 from app.engine_registry import build_engine_registry
+from app.jarvis_benchmark import (
+    BenchmarkMetric,
+    BenchmarkRun,
+    MetricDirection,
+    MetricMeasurement,
+)
 
 
-def _attestation(engine_id: str, *, score: float, marker: str) -> EngineBenchmarkAttestation:
-    fingerprint = marker * 64
-    return EngineBenchmarkAttestation(
-        engine_id=engine_id,
+_METRICS = (
+    BenchmarkMetric(
+        metric_name="task_success",
+        direction=MetricDirection.HIGHER_IS_BETTER,
+        weight=4.0,
+    ),
+    BenchmarkMetric(
+        metric_name="silent_wrong_action_rate",
+        direction=MetricDirection.LOWER_IS_BETTER,
+        weight=10.0,
+        critical_safety=True,
+    ),
+)
+
+
+def _run(system_id: str, *, success: float, wrong: float) -> BenchmarkRun:
+    return BenchmarkRun(
+        system_id=system_id,
         system_version="verified-v1",
         task_set_id="eay-enterprise-agent-bench-v1",
         task_set_fingerprint="1" * 64,
         environment_fingerprint="2" * 64,
-        benchmark_score=score,
-        evidence_ref=f"benchmark://{fingerprint}",
-        artifact_fingerprint=fingerprint,
-        generated_at=datetime(2026, 8, 18, 6, 0, tzinfo=timezone.utc),
-        baseline_system_ids=("peer-baseline",),
-        measurement_evidence_refs=(f"evidence://{engine_id}/measured-run",),
-        minimum_sample_count=30,
-        critical_safety_regression=False,
-        promotion_allowed=True,
+        measured_at=datetime(2026, 8, 18, 6, 0, tzinfo=timezone.utc),
+        measurements=(
+            MetricMeasurement(
+                metric_name="task_success",
+                value=success,
+                sample_count=30,
+                evidence_ref=f"benchmark-evidence://{system_id}/success",
+            ),
+            MetricMeasurement(
+                metric_name="silent_wrong_action_rate",
+                value=wrong,
+                sample_count=30,
+                evidence_ref=f"benchmark-evidence://{system_id}/wrong",
+            ),
+        ),
+    )
+
+
+def _promotion(engine_id: str):
+    return build_verified_engine_benchmark_promotion(
+        engine_id=engine_id,
+        challenger=_run(engine_id, success=0.96, wrong=0.001),
+        baselines=(_run(f"{engine_id}-baseline", success=0.88, wrong=0.010),),
+        metrics=_METRICS,
+        generated_at=datetime(2026, 8, 18, 6, 5, tzinfo=timezone.utc),
     )
 
 
@@ -37,7 +73,7 @@ def test_default_registry_keeps_existing_ollama_local_first_and_frontier_off():
     assert local.profile.local_processing is True
 
 
-def test_frontier_enable_flag_without_secret_model_and_verified_attestation_fails_closed():
+def test_frontier_enable_flag_without_secret_model_and_verified_promotion_fails_closed():
     state = build_engine_registry({"EAY_OPENAI_ENABLED": "true"})
 
     assert state.requested_frontier_engines == ("openai-frontier",)
@@ -45,31 +81,31 @@ def test_frontier_enable_flag_without_secret_model_and_verified_attestation_fail
     assert "openai-frontier" not in state.by_id()
     assert "eay_openai_model_id_missing" in state.blockers
     assert "eay_openai_secret_missing" in state.blockers
-    assert "eay_openai_verified_benchmark_attestation_missing" in state.blockers
+    assert "eay_openai_verified_benchmark_promotion_missing" in state.blockers
 
 
-def test_frontier_engine_activates_only_with_model_secret_and_verified_benchmark_attestation():
+def test_frontier_engine_activates_only_with_model_secret_and_verified_benchmark_promotion():
     secret = "do-not-retain-this-secret"
-    attestation = _attestation("openai-frontier", score=0.94, marker="a")
+    promotion = _promotion("openai-frontier")
     state = build_engine_registry(
         {
             "EAY_OPENAI_ENABLED": "true",
             "EAY_OPENAI_MODEL": "gpt-5.6",
             "OPENAI_API_KEY": secret,
         },
-        benchmark_attestations={"openai-frontier": attestation},
+        benchmark_promotions={"openai-frontier": promotion},
     )
 
     assert state.active_frontier_engines == ("openai-frontier",)
     frontier = state.by_id()["openai-frontier"]
     assert frontier.profile.production_enabled is True
-    assert frontier.profile.benchmark_score == 0.94
-    assert frontier.profile.benchmark_evidence_ref == attestation.evidence_ref
+    assert frontier.profile.benchmark_score == promotion.attestation.benchmark_score
+    assert frontier.profile.benchmark_evidence_ref == promotion.attestation.evidence_ref
     assert frontier.endpoint.secret_ref == "env:OPENAI_API_KEY"
     assert secret not in state.model_dump_json()
 
 
-def test_all_three_frontier_families_can_activate_independently_with_attestations():
+def test_all_three_frontier_families_can_activate_independently_with_verified_promotions():
     env = {
         "EAY_OPENAI_ENABLED": "1",
         "EAY_OPENAI_MODEL": "gpt-5.6",
@@ -81,12 +117,12 @@ def test_all_three_frontier_families_can_activate_independently_with_attestation
         "EAY_GEMINI_MODEL": "gemini-3.1-pro-preview",
         "GEMINI_API_KEY": "g",
     }
-    attestations = {
-        "openai-frontier": _attestation("openai-frontier", score=0.94, marker="a"),
-        "anthropic-frontier": _attestation("anthropic-frontier", score=0.93, marker="b"),
-        "gemini-frontier": _attestation("gemini-frontier", score=0.92, marker="c"),
+    promotions = {
+        "openai-frontier": _promotion("openai-frontier"),
+        "anthropic-frontier": _promotion("anthropic-frontier"),
+        "gemini-frontier": _promotion("gemini-frontier"),
     }
-    state = build_engine_registry(env, benchmark_attestations=attestations)
+    state = build_engine_registry(env, benchmark_promotions=promotions)
 
     assert state.blockers == ()
     assert state.active_frontier_engines == (
@@ -101,8 +137,8 @@ def test_all_three_frontier_families_can_activate_independently_with_attestation
     }
 
 
-def test_invalid_configured_benchmark_score_cannot_override_attestation():
-    attestation = _attestation("gemini-frontier", score=0.92, marker="c")
+def test_invalid_configured_benchmark_score_cannot_override_verified_promotion():
+    promotion = _promotion("gemini-frontier")
     state = build_engine_registry(
         {
             "EAY_GEMINI_ENABLED": "true",
@@ -110,7 +146,7 @@ def test_invalid_configured_benchmark_score_cannot_override_attestation():
             "GEMINI_API_KEY": "g",
             "EAY_GEMINI_BENCHMARK_SCORE": "eleven-out-of-ten",
         },
-        benchmark_attestations={"gemini-frontier": attestation},
+        benchmark_promotions={"gemini-frontier": promotion},
     )
 
     assert "gemini-frontier" not in state.by_id()

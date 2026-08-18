@@ -98,7 +98,8 @@ def main() -> None:
     if "contents: write" in migration_header:
         failures.append("Inventory migration gate must remain read-only")
     required_migration_contract = (
-        "find backend/migrations -maxdepth 1 -type f -name '*inventory*.sql' | sort",
+        "find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort",
+        "legacy_inventory_migration_frozen=%s",
         "inventory_schema_migrations WHERE version=${version}",
         "004_inventory_location_completion.sql",
         "inventory_guard_location_event_v4_trigger",

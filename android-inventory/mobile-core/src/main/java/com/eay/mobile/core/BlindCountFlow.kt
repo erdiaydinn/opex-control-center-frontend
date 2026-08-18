@@ -178,6 +178,25 @@ object BlindCountFlow {
         )
     }
 
+    fun completeLocation(
+        session: BlindCountSession,
+        target: BlindCountTarget,
+    ): BlindCountTransition {
+        if (session.missionId != target.missionId) {
+            return denied(BlindCountCode.DENY_MISSION, session)
+        }
+        if (!session.locationVerified || session.step != BlindCountStep.SCAN_ITEM) {
+            return denied(BlindCountCode.DENY_STEP, session)
+        }
+        if (
+            target.targetLineCount != null &&
+            session.confirmedLineCount != target.targetLineCount
+        ) {
+            return denied(BlindCountCode.DENY_TARGET, session)
+        }
+        return success(session.copy(step = BlindCountStep.COMPLETE))
+    }
+
     private fun success(session: BlindCountSession) = BlindCountTransition(
         code = BlindCountCode.OK,
         session = session,

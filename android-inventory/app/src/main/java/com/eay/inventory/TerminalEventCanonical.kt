@@ -4,9 +4,11 @@ import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.OffsetDateTime
+import java.util.Locale
 import java.util.UUID
 
 data class TerminalEventInput(
+    val activeShiftId: String,
     val barcode: String,
     val deviceSequence: Long,
     val documentId: String,
@@ -25,13 +27,15 @@ data class TerminalEventInput(
  */
 object TerminalEventCanonical {
     fun body(input: TerminalEventInput): String {
+        val activeShiftId = input.activeShiftId.trim()
         val barcode = input.barcode.trim()
-        val locationId = input.locationId.trim().uppercase()
+        val locationId = input.locationId.trim().uppercase(Locale.ROOT)
         val symbology = input.symbology.trim()
         val documentId = normalizeUuid(input.documentId)
         val eventId = normalizeUuid(input.eventId)
         val occurredAt = input.occurredAt.trim()
 
+        require(activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
         require(barcode.isNotBlank())
         require(input.deviceSequence > 0)
         require(locationId.isNotBlank())
@@ -42,6 +46,7 @@ object TerminalEventCanonical {
         val quantity = input.quantity.stripTrailingZeros().toPlainString()
         return buildString {
             append('{')
+            append("\"active_shift_id\":").append(jsonString(activeShiftId)).append(',')
             append("\"barcode\":").append(jsonString(barcode)).append(',')
             append("\"device_sequence\":").append(input.deviceSequence).append(',')
             append("\"document_id\":").append(jsonString(documentId)).append(',')

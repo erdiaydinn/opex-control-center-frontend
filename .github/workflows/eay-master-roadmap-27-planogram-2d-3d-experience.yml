@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
     paths:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"

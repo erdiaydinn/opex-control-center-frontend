@@ -3,7 +3,7 @@
 
 Exact-head checkout/evidence semantics remain unchanged. Only the concurrency
 identity changes so newer commits on the same PR can cancel superseded runs.
-All rewrites are exact-match and fail closed on repository drift.
+Re-runs are idempotent; any third/unreviewed concurrency state fails closed.
 """
 
 from __future__ import annotations
@@ -28,10 +28,17 @@ def apply() -> None:
         path = WF / name
         text = path.read_text(encoding="utf-8")
         old = old_group(item)
-        found = text.count(old)
-        if found != 1:
-            raise SystemExit(f"{name}: expected one reviewed SHA concurrency group, found {found}")
-        path.write_text(text.replace(old, STABLE, 1), encoding="utf-8")
+        old_count = text.count(old)
+        stable_count = text.count(STABLE)
+        if old_count == 1:
+            text = text.replace(old, STABLE, 1)
+        elif old_count == 0 and stable_count == 1:
+            pass
+        else:
+            raise SystemExit(
+                f"{name}: concurrency is neither reviewed SHA state nor stable state"
+            )
+        path.write_text(text, encoding="utf-8")
 
 
 def check() -> None:
@@ -50,6 +57,9 @@ def check() -> None:
             failures.append(f"{name}: unexpected category-leadership PR trigger")
         if "product/eay-product-completion-v1" not in trigger:
             failures.append(f"{name}: product-completion trigger was lost")
+        env_block = text.split("env:", 1)[1].split("jobs:", 1)[0]
+        if SHA_EXPR not in env_block:
+            failures.append(f"{name}: exact-head env binding was changed")
 
     if failures:
         raise SystemExit("Exact-head concurrency verification failed:\n- " + "\n- ".join(failures))

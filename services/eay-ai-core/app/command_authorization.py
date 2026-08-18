@@ -7,9 +7,9 @@ tenant, capability, target scope, reason, quantity/value limits and validity
 window.
 
 The command is never blanket authority. High/critical, bulk, irreversible or
-out-of-envelope actions require additional approval or fail closed. The module
-only emits authorization evidence and an adapter for mission_execution; it does
-not execute the action.
+out-of-envelope actions require additional approval or fail closed. Side-effect
+authorization is also bound to the exact idempotency key used by the mission so
+an approval artifact cannot be replayed under a different write identity.
 """
 
 from __future__ import annotations
@@ -105,6 +105,7 @@ class CommandAuthorizationEnvelope(BaseModel):
     tenant_ref: str
     capability_ref: str
     target_scope_ref: str
+    idempotency_key: str | None = None
     disposition: AuthorizationDisposition
     authorization_evidence_ref: str | None = None
     command_counts_as_approval: bool = False
@@ -227,6 +228,7 @@ def authorize_identity_bound_command(
         tenant_ref=command.tenant_ref,
         capability_ref=command.capability_ref,
         target_scope_ref=command.target_scope_ref,
+        idempotency_key=command.idempotency_key,
         disposition=disposition,
         authorization_evidence_ref=evidence_ref,
         command_counts_as_approval=disposition is AuthorizationDisposition.ALLOW_FROM_COMMAND,
@@ -259,6 +261,11 @@ def build_mission_command_authorization_checker(
             return AuthorizationDecision(
                 allowed=False,
                 reason_code="command_authorization_capability_mismatch",
+            )
+        if step.side_effect and envelope.idempotency_key != step.idempotency_key:
+            return AuthorizationDecision(
+                allowed=False,
+                reason_code="command_authorization_idempotency_mismatch",
             )
         if envelope.disposition is not AuthorizationDisposition.ALLOW_FROM_COMMAND:
             return AuthorizationDecision(

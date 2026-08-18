@@ -39,8 +39,11 @@ def test_explanation_context_is_read_only_and_tenant_warehouse_scoped() -> None:
 def test_explanation_context_excludes_prompt_injection_and_sensitive_raw_fields() -> None:
     source = EXPLANATION.read_text(encoding="utf-8")
     assert '"free_text_excluded": True' in source
-    assert "SELECT event_type,location_id" in source
-    assert '"events": [dict(row) for row in event_rows]' in source
+    assert "SELECT e.event_type,e.location_id" in source
+    assert '"events": authoritative_events' in source
+    assert '"authoritative_events": authoritative_events' in source
+    assert '"abandoned_attempt_events_excluded_from_stock_truth": True' in source
+    assert "a.state='COMPLETED'" in source
     assert "SELECT revision,state,snapshot_hash,created_at" in source
     assert "SELECT action,previous_hash,hash,occurred_at" in source
     assert "actor_subject" not in source
@@ -56,7 +59,8 @@ def test_explanation_context_has_deterministic_integrity_fingerprint() -> None:
     assert "sha256" in rendered
     explanation = ast.unparse(_function(EXPLANATION, "explanation_context"))
     assert "context_fingerprint" in explanation
-    assert "inventory_authoritative_ledger" in explanation
+    assert "inventory_completed_attempt_truth" in explanation
+    assert "attempt_lifecycle" in explanation
 
 
 def test_production_route_requires_supervisor_authority_and_never_accepts_client_scope() -> None:

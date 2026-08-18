@@ -15,7 +15,9 @@ import com.eay.mobile.core.BlindCountLineEvidence
  * for a different sequence, payload, hash or auth binding fails closed instead
  * of mutating the already-durable event or resurrecting an ACKED event.
  */
-class InventoryOfflineQueue(private val database: InventoryDatabase) {
+class InventoryOfflineQueue(
+    private val database: InventoryDatabase,
+) : ConfirmedCountEventSink {
     suspend fun enqueue(event: OfflineEvent) = database.withTransaction {
         val binding = requireInteractiveBinding()
         require(event.authBindingId.isBlank() || event.authBindingId == binding) {
@@ -42,7 +44,7 @@ class InventoryOfflineQueue(private val database: InventoryDatabase) {
      * the immutable event under the current verified OIDC binding in one SQLCipher
      * transaction.
      */
-    suspend fun enqueueConfirmedCount(
+    override suspend fun enqueueConfirmedCount(
         context: InventoryCountEventContext,
         acceptedScan: AcceptedScan,
         evidence: BlindCountLineEvidence,

@@ -3,6 +3,7 @@ name: EAY Inventory Production Gate
 on:
   pull_request:
     branches:
+      - product/eay-category-leadership-v1
       - release/platform-convergence-v0.1
     paths:
       - "backend/app/modules/inventory/**"
@@ -23,6 +24,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   web-truth-boundary:

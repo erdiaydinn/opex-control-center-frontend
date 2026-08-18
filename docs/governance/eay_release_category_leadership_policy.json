@@ -1,0 +1,87 @@
+{
+  "schema_version": 6,
+  "truth_contract": {
+    "candidate_sha_exact_40_hex": true,
+    "repository_status_bound_to_candidate_sha": true,
+    "all_release_stage_evidence_bound_to_release_and_candidate": true,
+    "sre_item_requires_sha256_evidence_ref": true,
+    "sre_item_ref_derived_from_canonical_acceptance": true,
+    "external_item_requires_ledger_sha256_ref": true,
+    "external_item_ref_derived_from_canonical_ledger": true,
+    "release_transition_rebuilds_current_45_55_authority": true,
+    "stale_truth_fingerprint_can_advance_release": false,
+    "pilot_metric_requires_sha256_evidence_ref": true,
+    "production_signoff_requires_sha256_evidence_ref": true,
+    "cross_release_or_cross_candidate_evidence_reuse_allowed": false,
+    "repository_or_synthetic_can_satisfy_external_acceptance": false
+  },
+  "release_requirements": {
+    "production_candidate": {
+      "repository_green": true,
+      "external_items": [49, 50, 51, 52, 53, 54, 55],
+      "sre_items": [45, 46, 47, 48],
+      "sre_evidence_source": "CANONICAL_45_48_ACCEPTANCE_VALIDATORS",
+      "external_evidence_source": "CANONICAL_49_55_LEDGER_FINGERPRINTS",
+      "transition_authority": "JUST_IN_TIME_CANONICAL_REVALIDATION",
+      "candidate_binding": "EXACT_GITHUB_SHA",
+      "release_binding": "RELEASE_ID_SHA256"
+    },
+    "pilot": {
+      "requires": "PRODUCTION_CANDIDATE",
+      "scope": "TENANT_MODULE_CONTROLLED",
+      "scope_evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
+      "plan_evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
+      "rollback_evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
+      "measure": [
+        "error_budget",
+        "task_success",
+        "latency",
+        "reconciliation",
+        "support_cases",
+        "device_issues",
+        "user_feedback",
+        "rollback_criteria"
+      ]
+    },
+    "production": {
+      "requires": "PILOT_ACCEPTED",
+      "signoffs": ["security", "dr", "identity", "real_data", "module_owner"],
+      "activation": "TENANT_MODULE_CONTROLLED",
+      "activation_must_be_within_pilot_scope": true,
+      "plan_evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
+      "rollback_evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
+      "signoff_evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256"
+    },
+    "stabilization": {
+      "requires": "PRODUCTION_ACTIVE",
+      "revalidate_active_release_chain": true,
+      "revalidate_before_entering_stabilization": true,
+      "evidence": "RELEASE_AND_CANDIDATE_BOUND_SHA256",
+      "acceptance_metrics": [
+        "error_budget",
+        "incident_rate",
+        "reconciliation",
+        "support_backlog",
+        "no_open_p0",
+        "rollback_readiness"
+      ],
+      "queues": [
+        "bugs",
+        "friction",
+        "support",
+        "slow_queries",
+        "abandoned_workflows",
+        "false_alerts",
+        "optimizer_rejections",
+        "user_feedback"
+      ]
+    },
+    "category_leadership": {
+      "requires": "STABILIZATION_ACCEPTED",
+      "state": "CATEGORY_LEADERSHIP",
+      "semantic": "GOVERNED_CONTINUOUS_IMPROVEMENT_ITERATION_NOT_MARKET_LEADERSHIP_CLAIM",
+      "loop": ["DISCOVER", "PROVE_VALUE", "BUILD", "TEST", "PILOT", "MEASURE", "IMPROVE"],
+      "benchmark_evidence": "SHA256_BOUND_SOURCE_SIGNAL"
+    }
+  }
+}

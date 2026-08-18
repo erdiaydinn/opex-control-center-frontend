@@ -6,8 +6,6 @@ import json
 from typing import Any
 from uuid import UUID
 
-from .service import InventoryRuleError
-
 
 class InventoryExplanationError(PermissionError):
     pass

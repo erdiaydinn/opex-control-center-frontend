@@ -54,7 +54,7 @@ def safe_break_positions(line: str) -> list[int]:
     return positions
 
 
-def wrap_content_line(line: str, max_len: int = 96) -> str:
+def wrap_content_line(line: str, max_len: int = 100) -> str:
     pending = [line]
     output: list[str] = []
     while pending:
@@ -160,6 +160,21 @@ def apply_exact_replacements() -> list[str]:
         if old in text:
             migration.write_text(text.replace(old, new, 1), encoding="utf-8")
             applied.append("FIELD_STATUS_LITERAL_REPAIR")
+
+    execution = ROOT / "alembic/versions/0031_planogram_execution_compliance.py"
+    if execution.exists():
+        text = execution.read_text(encoding="utf-8")
+        old = (
+            '            f"""CREATE OR REPLACE FUNCTION {table_name}_append_only() '
+            'RETURNS trigger LANGUAGE plpgsql AS $$\n'
+        )
+        new = (
+            '            f"""CREATE OR REPLACE FUNCTION {table_name}_append_only()\n'
+            '            RETURNS trigger LANGUAGE plpgsql AS $$\n'
+        )
+        if old in text:
+            execution.write_text(text.replace(old, new, 1), encoding="utf-8")
+            applied.append("PLANOGRAM_APPEND_ONLY_HEADER_REPAIR")
 
     return applied
 

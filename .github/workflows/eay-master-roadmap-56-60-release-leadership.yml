@@ -58,26 +58,31 @@ jobs:
           policy = json.loads(
               Path('docs/governance/eay_release_category_leadership_policy.json').read_text()
           )
-          assert policy['schema_version'] == 4
+          assert policy['schema_version'] == 5
           truth = policy['truth_contract']
           release = policy['release_requirements']
           assert truth['repository_or_synthetic_can_satisfy_external_acceptance'] is False
           assert truth['candidate_sha_exact_40_hex'] is True
           assert truth['repository_status_bound_to_candidate_sha'] is True
+          assert truth['all_release_stage_evidence_bound_to_release_and_candidate'] is True
+          assert truth['cross_release_or_cross_candidate_evidence_reuse_allowed'] is False
           assert truth['sre_item_ref_derived_from_canonical_acceptance'] is True
+          assert truth['external_item_ref_derived_from_canonical_ledger'] is True
           assert truth['external_item_requires_ledger_sha256_ref'] is True
           assert truth['pilot_metric_requires_sha256_evidence_ref'] is True
           assert truth['production_signoff_requires_sha256_evidence_ref'] is True
-          assert release['production_candidate']['external_items'] == list(range(49, 56))
-          assert release['production_candidate']['sre_items'] == list(range(45, 49))
-          assert (
-              release['production_candidate']['sre_evidence_source']
-              == 'CANONICAL_45_48_ACCEPTANCE_VALIDATORS'
-          )
+          candidate = release['production_candidate']
+          assert candidate['external_items'] == list(range(49, 56))
+          assert candidate['sre_items'] == list(range(45, 49))
+          assert candidate['sre_evidence_source'] == 'CANONICAL_45_48_ACCEPTANCE_VALIDATORS'
+          assert candidate['external_evidence_source'] == 'CANONICAL_49_55_LEDGER_FINGERPRINTS'
+          assert candidate['candidate_binding'] == 'EXACT_GITHUB_SHA'
+          assert candidate['release_binding'] == 'RELEASE_ID_SHA256'
           assert release['pilot']['scope'] == 'TENANT_MODULE_CONTROLLED'
-          assert release['pilot']['rollback_evidence'] == 'SHA256_BOUND'
+          assert release['pilot']['rollback_evidence'] == 'RELEASE_AND_CANDIDATE_BOUND_SHA256'
           assert release['production']['activation'] == 'TENANT_MODULE_CONTROLLED'
           assert release['production']['activation_must_be_within_pilot_scope'] is True
+          assert release['production']['signoff_evidence'] == 'RELEASE_AND_CANDIDATE_BOUND_SHA256'
           assert release['stabilization']['revalidate_active_release_chain'] is True
           assert release['stabilization']['acceptance_metrics'] == [
               'error_budget',

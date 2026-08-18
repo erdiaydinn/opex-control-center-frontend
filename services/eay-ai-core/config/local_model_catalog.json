@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "policy": {
     "default_execution": "LOCAL_FIRST",
     "paid_frontier_fallback": "PLATFORM_ADMIN_GRANT_ONLY",
@@ -25,7 +25,7 @@
       "license": "APACHE-2.0",
       "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
       "capabilities": ["TEXT", "CODE", "REASONING", "TOOL_PLANNING", "AGENTIC"],
-      "preferred_tasks": ["GENERAL", "CODE", "AGENT_REASONING", "MULTILINGUAL"],
+      "preferred_tasks": ["GENERAL", "CODE", "AGENT_REASONING", "MULTILINGUAL", "TEACHING", "TEACHING_TRANSFER"],
       "production_candidate": true,
       "external_network_required": false
     },
@@ -47,7 +47,7 @@
       "license": "APACHE-2.0",
       "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED_WITH_USAGE_POLICY",
       "capabilities": ["TEXT", "REASONING", "TOOL_PLANNING", "STRUCTURED_OUTPUT"],
-      "preferred_tasks": ["GENERAL", "REASONING", "AGENT_REASONING"],
+      "preferred_tasks": ["GENERAL", "REASONING", "AGENT_REASONING", "TEACHING", "TEACHING_FEEDBACK"],
       "production_candidate": true,
       "external_network_required": false
     },
@@ -58,7 +58,7 @@
       "license": "APACHE-2.0",
       "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED_WITH_USAGE_POLICY",
       "capabilities": ["TEXT", "REASONING", "TOOL_PLANNING", "STRUCTURED_OUTPUT"],
-      "preferred_tasks": ["HARD_REASONING", "AGENT_REASONING", "EXECUTIVE_ANALYSIS"],
+      "preferred_tasks": ["HARD_REASONING", "AGENT_REASONING", "EXECUTIVE_ANALYSIS", "TEACHING_TRANSFER"],
       "production_candidate": true,
       "external_network_required": false
     },
@@ -69,7 +69,7 @@
       "license": "APACHE-2.0",
       "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
       "capabilities": ["TEXT", "IMAGE", "CODE", "REASONING", "AGENTIC"],
-      "preferred_tasks": ["GENERAL", "MULTIMODAL", "CODE", "AGENT_REASONING"],
+      "preferred_tasks": ["GENERAL", "MULTIMODAL", "CODE", "AGENT_REASONING", "TEACHING", "TEACHING_TRANSFER"],
       "production_candidate": true,
       "external_network_required": false
     },
@@ -91,7 +91,7 @@
       "license": "GOOGLE_GEMMA_TERMS",
       "commercial_use_status": "CONDITIONAL_LEGAL_REVIEW_REQUIRED",
       "capabilities": ["TEXT", "IMAGE", "MULTILINGUAL", "REASONING"],
-      "preferred_tasks": ["GENERAL", "MULTIMODAL", "EDGE"],
+      "preferred_tasks": ["GENERAL", "MULTIMODAL", "EDGE", "TEACHING"],
       "production_candidate": false,
       "external_network_required": false
     },

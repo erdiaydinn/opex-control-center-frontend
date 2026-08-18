@@ -19,7 +19,9 @@ def reconciliation(
     with connect() as db:
         runtime = db.execute("SELECT inventory_current_tenant() AS tenant_id").fetchone()
         if not runtime or runtime["tenant_id"] != principal.tenant_id:
-            raise InventoryReconciliationError("database tenant binding does not match reconciliation authority")
+            raise InventoryReconciliationError(
+                "database tenant binding does not match reconciliation authority"
+            )
 
         document = db.execute(
             """SELECT warehouse_id,state,revision
@@ -28,7 +30,9 @@ def reconciliation(
             (principal.tenant_id, document_id),
         ).fetchone()
         if not document or document["warehouse_id"] not in principal.warehouse_scope:
-            raise InventoryReconciliationError("inventory document is outside reconciliation authority")
+            raise InventoryReconciliationError(
+                "inventory document is outside reconciliation authority"
+            )
 
         rows = db.execute(
             """WITH expected AS (
@@ -48,8 +52,8 @@ def reconciliation(
                       COALESCE(s.expected_quantity,0) AS expected_quantity,
                       COALESCE(c.counted_quantity,0) AS counted_quantity,
                       COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0) AS variance,
-                      (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*COALESCE(s.unit_cost,0)
-                        AS variance_value
+                      (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*
+                        COALESCE(s.unit_cost,0) AS variance_value
                FROM expected s
                FULL OUTER JOIN counted c ON c.barcode=s.barcode
                ORDER BY abs(COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0)) DESC""",

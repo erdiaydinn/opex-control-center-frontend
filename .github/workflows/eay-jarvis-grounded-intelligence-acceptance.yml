@@ -7,13 +7,16 @@ on:
     paths:
       - "services/eay-ai-core/app/grounded_*.py"
       - "services/eay-ai-core/tests/test_grounded_*.py"
+      - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/eay-jarvis-grounded-intelligence-acceptance.yml"
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
     paths:
       - "services/eay-ai-core/app/grounded_*.py"
       - "services/eay-ai-core/tests/test_grounded_*.py"
+      - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/eay-jarvis-grounded-intelligence-acceptance.yml"
 
 permissions:

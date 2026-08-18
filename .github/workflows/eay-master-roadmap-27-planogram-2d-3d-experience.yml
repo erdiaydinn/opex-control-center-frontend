@@ -30,12 +30,14 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Prove exact checkout
         run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-      - uses: actions/setup-node@1e60f620b9541d00f47ce3d3e2e1ed8bd9d1df6c
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '22'
           cache: npm
       - name: Install locked frontend dependencies
         run: npm ci
+      - name: Reject new hard-coded Planogram UI strings
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
       - name: Verify Master Roadmap item 27 authority
         run: |
           node --input-type=module <<'NODE'

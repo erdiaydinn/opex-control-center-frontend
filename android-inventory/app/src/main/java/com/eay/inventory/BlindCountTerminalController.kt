@@ -34,6 +34,7 @@ enum class BlindCountControllerCode {
     DENY_FLOW,
     DENY_LOCATION_CONTEXT,
     DENY_PENDING_SCAN,
+    DENY_LEASE_EXPIRED,
     PERSIST_RETRY,
 }
 
@@ -54,16 +55,21 @@ data class BlindCountControllerResult(
  * and the sink is responsible for binding mutations to the current verified OIDC
  * session. State advances only after the relevant immutable event is durably inserted
  * into the encrypted queue.
+ *
+ * Lease expiry is only an early fail-closed client guard. The server remains the
+ * authority and historically re-attests every event at its immutable occurred_at.
  */
 class BlindCountTerminalController(
     private val target: BlindCountTarget,
     private val eventContext: InventoryCountEventContext,
+    private val leaseValidUntil: String,
     private val eventSink: BlindCountEventSink,
     private val eventIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val occurredAtFactory: () -> String = {
         OffsetDateTime.now(ZoneOffset.UTC).toString()
     },
 ) {
+    private val leaseExpiry = OffsetDateTime.parse(leaseValidUntil).toInstant()
     private var state = BlindCountSession(missionId = target.missionId)
     private var pendingItemScan: AcceptedScan? = null
     private var pendingLineIdentity: PendingDurableIdentity? = null
@@ -105,6 +111,9 @@ class BlindCountTerminalController(
         val durableIdentity = pendingLineIdentity ?: newDurableIdentity().also {
             pendingLineIdentity = it
         }
+        if (!isWithinLease(durableIdentity.occurredAt)) {
+            return leaseExpired(confirmation.code)
+        }
         val durableEvent = try {
             eventSink.enqueueConfirmedCount(
                 context = eventContext,
@@ -135,6 +144,9 @@ class BlindCountTerminalController(
 
         val durableIdentity = pendingCompletionIdentity ?: newDurableIdentity().also {
             pendingCompletionIdentity = it
+        }
+        if (!isWithinLease(durableIdentity.occurredAt)) {
+            return leaseExpired(completion.code)
         }
         val durableEvent = try {
             eventSink.enqueueLocationCompletion(
@@ -202,6 +214,12 @@ class BlindCountTerminalController(
         flowCode = flowCode,
     )
 
+    private fun leaseExpired(flowCode: BlindCountCode) = BlindCountControllerResult(
+        code = BlindCountControllerCode.DENY_LEASE_EXPIRED,
+        session = state,
+        flowCode = flowCode,
+    )
+
     private fun denied(code: BlindCountCode) = BlindCountControllerResult(
         code = BlindCountControllerCode.DENY_FLOW,
         session = state,
@@ -215,6 +233,10 @@ class BlindCountTerminalController(
         eventId = eventIdFactory(),
         occurredAt = occurredAtFactory(),
     )
+
+    private fun isWithinLease(occurredAt: String): Boolean = runCatching {
+        !OffsetDateTime.parse(occurredAt).toInstant().isAfter(leaseExpiry)
+    }.getOrDefault(false)
 
     private data class PendingDurableIdentity(
         val eventId: String,

@@ -83,6 +83,7 @@ class BlindCountTerminalControllerTest {
             eventContext = InventoryCountEventContext(
                 missionId = "mission-1",
                 documentId = "22222222-2222-4222-8222-222222222222",
+                activeShiftId = "SHIFT-20260818-001",
                 locationId = "B-05",
             ),
             eventSink = sink,
@@ -116,6 +117,7 @@ class BlindCountTerminalControllerTest {
                 eventContext = InventoryCountEventContext(
                     missionId = "mission-2",
                     documentId = "22222222-2222-4222-8222-222222222222",
+                    activeShiftId = "SHIFT-20260818-001",
                     locationId = "A-04",
                 ),
                 eventSink = RecordingSink(),
@@ -137,6 +139,7 @@ class BlindCountTerminalControllerTest {
         eventContext = InventoryCountEventContext(
             missionId = "mission-1",
             documentId = "22222222-2222-4222-8222-222222222222",
+            activeShiftId = "SHIFT-20260818-001",
             locationId = "A-04",
         ),
         eventSink = sink,

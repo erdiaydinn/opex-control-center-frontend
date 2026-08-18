@@ -7,7 +7,7 @@ on:
       - fix/ci-admission-control-v1
     paths:
       - ".github/workflows/**"
-      - "scripts/ci/apply_ci_admission_control.py"
+      - "scripts/ci/verify_ci_admission_policy.py"
       - "scripts/ci/apply_exact_head_concurrency.py"
       - "scripts/ci/apply_inventory_admission_control.py"
       - "scripts/ci/migrate_legacy_exact_head_headers.py"
@@ -17,7 +17,7 @@ on:
       - product/eay-category-leadership-v1
     paths:
       - ".github/workflows/**"
-      - "scripts/ci/apply_ci_admission_control.py"
+      - "scripts/ci/verify_ci_admission_policy.py"
       - "scripts/ci/apply_exact_head_concurrency.py"
       - "scripts/ci/apply_inventory_admission_control.py"
       - "scripts/ci/migrate_legacy_exact_head_headers.py"
@@ -42,11 +42,11 @@ jobs:
           python-version: "3.12"
       - name: Verify historical 1-10..1-14 category admission and exact-head binding
         run: python scripts/ci/migrate_legacy_exact_head_headers.py --check
-      - name: Verify domain admission and historical trigger policy
-        run: python scripts/ci/apply_ci_admission_control.py --check
       - name: Verify exact-head concurrency policy through Roadmap 25
         run: python scripts/ci/apply_exact_head_concurrency.py --check
       - name: Verify Inventory and DockOS admission separation
         run: python scripts/ci/apply_inventory_admission_control.py --check
+      - name: Verify phase-aware domain admission policy
+        run: python scripts/ci/verify_ci_admission_policy.py
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check

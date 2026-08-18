@@ -1,4 +1,4 @@
-# One-shot repair workflow v1
+# One-shot repair workflow v2 activation
 name: EAY Core Ruff Safe Repair Bot
 
 on:

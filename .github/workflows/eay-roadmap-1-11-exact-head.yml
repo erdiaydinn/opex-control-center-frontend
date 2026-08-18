@@ -4,14 +4,13 @@ on:
   pull_request:
     branches:
       - product/eay-product-completion-v1
-      - product/eay-category-leadership-v1
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: eay-roadmap-1-11-exact-${{ github.event.pull_request.head.sha || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:

@@ -135,11 +135,24 @@ def active_shift_principal(principal: InventoryPrincipal) -> tuple[InventoryPrin
         ) from error
     if attestation is None:
         return None
+    canonical_warehouse = next(
+        (
+            warehouse
+            for warehouse in principal.warehouse_scope
+            if str(warehouse).strip().lower() == str(attestation.warehouse_id).strip().lower()
+        ),
+        None,
+    )
+    if canonical_warehouse is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Aktif vardiya deposu doğrulanmış OIDC depo kapsamıyla eşleşmiyor.",
+        )
     narrowed = InventoryPrincipal(
         tenant_id=principal.tenant_id,
         subject=principal.subject,
         employee_id=principal.employee_id,
-        warehouse_scope=frozenset({attestation.warehouse_id}),
+        warehouse_scope=frozenset({canonical_warehouse}),
         device_id=principal.device_id,
     )
     return narrowed, attestation.shift_id

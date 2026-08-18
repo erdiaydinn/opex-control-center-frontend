@@ -53,6 +53,7 @@ STABILIZATION_METRICS = (
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
+_KIND = re.compile(r"^[a-z][a-z0-9_-]*$")
 _FORBIDDEN_SCOPE = {"*", "all", "all-tenants", "all-modules"}
 _FORBIDDEN_EVIDENCE_ENV = {"ci", "repository", "synthetic"}
 
@@ -98,6 +99,73 @@ def _artifact_digest(value: str) -> str:
     if not _SHA64.fullmatch(value):
         raise ValueError("artifact digest must be lowercase SHA-256")
     return value
+
+
+def _validate_release_identity(release_id: str, candidate_sha: str) -> None:
+    if not release_id.strip():
+        raise ValueError("release_id is required")
+    if not _SHA40.fullmatch(candidate_sha):
+        raise ValueError("candidate_sha must be an exact lowercase 40-character commit SHA")
+
+
+def _release_id_digest(release_id: str) -> str:
+    if not release_id.strip():
+        raise ValueError("release_id is required")
+    return hashlib.sha256(release_id.encode()).hexdigest()
+
+
+def bind_release_evidence_ref(
+    kind: str,
+    *,
+    release_id: str,
+    candidate_sha: str,
+    artifact_sha256: str,
+) -> str:
+    """Bind a proof artifact to one release ID and one exact candidate SHA."""
+
+    _validate_release_identity(release_id, candidate_sha)
+    if not _KIND.fullmatch(kind):
+        raise ValueError("invalid release evidence kind")
+    return ":".join(
+        (
+            f"{kind}-sha256",
+            candidate_sha,
+            _release_id_digest(release_id),
+            _artifact_digest(artifact_sha256),
+        )
+    )
+
+
+def bind_authority_ref(
+    kind: str,
+    source_ref: str,
+    *,
+    release_id: str,
+    candidate_sha: str,
+) -> str:
+    """Bind an accepted 45-55 authority fingerprint to the active release."""
+
+    marker = f"{kind}-sha256:"
+    if not source_ref.startswith(marker):
+        raise ValueError("authority fingerprint kind mismatch")
+    source_digest = source_ref[len(marker) :]
+    return bind_release_evidence_ref(
+        kind,
+        release_id=release_id,
+        candidate_sha=candidate_sha,
+        artifact_sha256=source_digest,
+    )
+
+
+def _bound_ref(value: str, kind: str, truth: ReleaseTruth) -> bool:
+    parts = value.split(":")
+    return (
+        len(parts) == 4
+        and parts[0] == f"{kind}-sha256"
+        and parts[1] == truth.candidate_sha
+        and parts[2] == _release_id_digest(truth.release_id)
+        and bool(_SHA64.fullmatch(parts[3]))
+    )
 
 
 def _sre_ref(item: int, artifact_sha256: str, parts: tuple[str, ...]) -> str:
@@ -230,12 +298,12 @@ def _controlled(values: tuple[str, ...]) -> bool:
     return bool(normalized) and not (_FORBIDDEN_SCOPE & normalized)
 
 
-def _scope_valid(scope: ReleaseScope | None) -> bool:
+def _scope_valid(scope: ReleaseScope | None, truth: ReleaseTruth) -> bool:
     return bool(
         scope
         and _controlled(scope.tenant_ids)
         and _controlled(scope.modules)
-        and _hash_ref(scope.evidence_ref, "scope")
+        and _bound_ref(scope.evidence_ref, "scope", truth)
         and scope.owner.strip()
     )
 
@@ -243,10 +311,15 @@ def _scope_valid(scope: ReleaseScope | None) -> bool:
 def _scope_contains(
     scope: ReleaseScope | None,
     *,
+    truth: ReleaseTruth,
     tenant_ids: tuple[str, ...],
     modules: tuple[str, ...],
 ) -> bool:
-    if not _scope_valid(scope) or not _controlled(tenant_ids) or not _controlled(modules):
+    if (
+        not _scope_valid(scope, truth)
+        or not _controlled(tenant_ids)
+        or not _controlled(modules)
+    ):
         return False
     assert scope is not None
     allowed_tenants = {value.strip().lower() for value in scope.tenant_ids}
@@ -261,11 +334,12 @@ def _verified_items(
     evidence_refs: Mapping[int, str],
     required: tuple[int, ...],
     *,
+    truth: ReleaseTruth,
     ref_prefix: str,
 ) -> bool:
     return all(
         values.get(item, False)
-        and _hash_ref(evidence_refs.get(item, ""), ref_prefix)
+        and _bound_ref(evidence_refs.get(item, ""), ref_prefix, truth)
         for item in required
     )
 
@@ -275,31 +349,36 @@ def _verified_named(
     evidence_refs: Mapping[str, str],
     required: tuple[str, ...],
     *,
+    truth: ReleaseTruth,
     ref_prefix: str,
 ) -> bool:
     return all(
         values.get(key, False)
-        and _hash_ref(evidence_refs.get(key, ""), ref_prefix)
+        and _bound_ref(evidence_refs.get(key, ""), ref_prefix, truth)
         for key in required
     )
 
 
 def can_create_production_candidate(truth: ReleaseTruth) -> bool:
+    try:
+        _validate_release_identity(truth.release_id, truth.candidate_sha)
+    except ValueError:
+        return False
     return (
-        bool(truth.release_id.strip())
-        and bool(_SHA40.fullmatch(truth.candidate_sha))
-        and truth.repository_green
+        truth.repository_green
         and truth.repository_evidence_ref == f"github-status:{truth.candidate_sha}"
         and _verified_items(
             truth.sre_items,
             truth.sre_evidence_refs,
             REQUIRED_SRE,
+            truth=truth,
             ref_prefix="sre",
         )
         and _verified_items(
             truth.external_items,
             truth.external_evidence_refs,
             REQUIRED_EXTERNAL,
+            truth=truth,
             ref_prefix="ledger",
         )
     )
@@ -308,9 +387,9 @@ def can_create_production_candidate(truth: ReleaseTruth) -> bool:
 def can_start_pilot(truth: ReleaseTruth) -> bool:
     return (
         can_create_production_candidate(truth)
-        and _scope_valid(truth.pilot_scope)
-        and _hash_ref(truth.pilot_plan_ref, "plan")
-        and _hash_ref(truth.pilot_rollback_ref, "rollback")
+        and _scope_valid(truth.pilot_scope, truth)
+        and _bound_ref(truth.pilot_plan_ref, "plan", truth)
+        and _bound_ref(truth.pilot_rollback_ref, "rollback", truth)
     )
 
 
@@ -319,6 +398,7 @@ def can_accept_pilot(truth: ReleaseTruth) -> bool:
         truth.pilot_metrics,
         truth.pilot_evidence_refs,
         PILOT_METRICS,
+        truth=truth,
         ref_prefix="pilot",
     )
 
@@ -333,20 +413,23 @@ def can_activate_production(
         can_accept_pilot(truth)
         and _scope_contains(
             truth.pilot_scope,
+            truth=truth,
             tenant_ids=tenant_ids,
             modules=modules,
         )
         and _scope_contains(
             truth.activation_scope,
+            truth=truth,
             tenant_ids=tenant_ids,
             modules=modules,
         )
-        and _hash_ref(truth.activation_plan_ref, "plan")
-        and _hash_ref(truth.activation_rollback_ref, "rollback")
+        and _bound_ref(truth.activation_plan_ref, "plan", truth)
+        and _bound_ref(truth.activation_rollback_ref, "rollback", truth)
         and _verified_named(
             truth.signoffs,
             truth.signoff_evidence_refs,
             PROD_SIGNOFFS,
+            truth=truth,
             ref_prefix="signoff",
         )
     )
@@ -354,7 +437,7 @@ def can_activate_production(
 
 def can_accept_stabilization(truth: ReleaseTruth) -> bool:
     scope = truth.activation_scope
-    if not _scope_valid(scope):
+    if not _scope_valid(scope, truth):
         return False
     assert scope is not None
     return can_activate_production(
@@ -365,6 +448,7 @@ def can_accept_stabilization(truth: ReleaseTruth) -> bool:
         truth.stabilization_metrics,
         truth.stabilization_evidence_refs,
         STABILIZATION_METRICS,
+        truth=truth,
         ref_prefix="stabilization",
     )
 

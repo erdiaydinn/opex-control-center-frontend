@@ -18,7 +18,9 @@ concurrency:
 
 jobs:
   normalize-historical-gates:
-    runs-on: ubuntu-latest
+    # Temporary one-shot migration lane. Permanent EAY gates remain on Linux;
+    # this avoids the current Linux Actions backlog while changing headers only.
+    runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

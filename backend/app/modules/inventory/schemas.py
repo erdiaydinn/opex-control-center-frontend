@@ -57,12 +57,15 @@ class TerminalEventCreate(BaseModel):
 
 class LocationCompletionCreate(BaseModel):
     # Location completion is a distinct signed terminal event. It carries no
-    # barcode, SKU, expected stock or quantity truth and cannot smuggle extras.
+    # barcode, SKU, expected stock or stock quantity truth. confirmed_line_count
+    # is only the number of blind-count evidence events the device says belong
+    # to the completed location; the server independently counts committed rows.
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
     document_id: str
     active_shift_id: str = Field(min_length=1, max_length=128)
+    confirmed_line_count: int = Field(ge=0, le=1_000_000)
     device_sequence: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)
     occurred_at: str = Field(min_length=20, max_length=50)

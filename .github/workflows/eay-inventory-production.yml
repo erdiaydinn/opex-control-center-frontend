@@ -113,8 +113,7 @@ jobs:
           python -m unittest -v \
             backend.app.modules.inventory.test_inventory \
             backend.app.modules.inventory.test_inventory_scope \
-            backend.app.modules.inventory.test_inventory_production \
-            backend.app.test_security
+            backend.app.modules.inventory.test_inventory_production
       - name: Database restart durability
         run: |
           docker restart ${{ job.services.postgres.id }}

@@ -20,16 +20,13 @@ RUNTIME_ROLE = "opex_runtime"
 def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
-    op.execute(
-        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+    op.execute(f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
-    )
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)""")
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_plan_versions (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -61,8 +58,7 @@ def upgrade() -> None:
                 OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL)
             )
         )
-        """
-    )
+        """)
     op.execute(
         "CREATE UNIQUE INDEX uq_planogram_plan_active_edit ON planogram_plan_versions "
         "(tenant_id, store_code) WHERE status IN ('draft','submitted')"
@@ -76,8 +72,7 @@ def upgrade() -> None:
         "(tenant_id, store_code, status, version_number DESC)"
     )
 
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_plan_events (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
@@ -91,11 +86,9 @@ def upgrade() -> None:
             CONSTRAINT fk_planogram_plan_event FOREIGN KEY (tenant_id, plan_version_id)
                 REFERENCES planogram_plan_versions(tenant_id, id) ON DELETE RESTRICT
         )
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_execution_assignments (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
@@ -120,8 +113,7 @@ def upgrade() -> None:
                 status <> 'closed' OR (closed_by IS NOT NULL AND closed_at IS NOT NULL)
             )
         )
-        """
-    )
+        """)
     op.execute(
         "CREATE UNIQUE INDEX uq_planogram_assignment_active_store ON"
         " planogram_execution_assignments (tenant_id, store_code) WHERE status <> 'closed'"
@@ -131,8 +123,7 @@ def upgrade() -> None:
         "(tenant_id, store_code, assigned_at DESC)"
     )
 
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_execution_events (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
@@ -145,11 +136,9 @@ def upgrade() -> None:
             CONSTRAINT fk_planogram_execution_event FOREIGN KEY (tenant_id, assignment_id)
                 REFERENCES planogram_execution_assignments(tenant_id, id) ON DELETE RESTRICT
         )
-        """
-    )
+        """)
 
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_compliance_observations (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
@@ -170,8 +159,7 @@ def upgrade() -> None:
             CONSTRAINT fk_planogram_compliance_plan FOREIGN KEY (tenant_id, plan_version_id)
                 REFERENCES planogram_plan_versions(tenant_id, id) ON DELETE RESTRICT
         )
-        """
-    )
+        """)
     op.execute(
         "CREATE INDEX ix_planogram_compliance_assignment ON planogram_compliance_observations "
         "(tenant_id, assignment_id, created_at DESC)"
@@ -186,8 +174,7 @@ def upgrade() -> None:
     ):
         _tenant_policy(table_name)
 
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_plan_runtime_attestation_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
@@ -196,16 +183,14 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
     op.execute(
         "CREATE TRIGGER trg_planogram_plan_runtime_attestation BEFORE INSERT OR UPDATE ON"
         " planogram_plan_versions FOR EACH ROW EXECUTE FUNCTION"
         " planogram_plan_runtime_attestation_guard()"
     )
 
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_plan_lifecycle_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE dna_status varchar(20); dna_geometry boolean; dna_store varchar(80);
@@ -254,15 +239,13 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
     op.execute(
         "CREATE TRIGGER trg_planogram_plan_lifecycle BEFORE UPDATE ON planogram_plan_versions "
         "FOR EACH ROW EXECUTE FUNCTION planogram_plan_lifecycle_guard()"
     )
 
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_assignment_approved_plan_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE plan_status varchar(20); plan_store varchar(80); attested boolean;
@@ -277,8 +260,7 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
     op.execute(
         "CREATE TRIGGER trg_planogram_assignment_approved_plan BEFORE INSERT ON"
         " planogram_execution_assignments FOR EACH ROW EXECUTE FUNCTION"

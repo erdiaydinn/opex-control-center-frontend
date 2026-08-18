@@ -202,8 +202,7 @@ async def create_promotion_request(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         evidence_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT e.id, e.mission_id, e.location_id, e.fingerprint, e.payload,
                        review.id AS review_id, review.reviewer_subject,
                        target.status AS target_status,
@@ -231,8 +230,7 @@ async def create_promotion_request(
                   AND e.id=CAST(:evidence_id AS UUID)
                   AND e.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                   AND review.decision='accept'
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "evidence_id": evidence_id,
@@ -264,8 +262,7 @@ async def create_promotion_request(
         )
 
         insert_result = await connection.execute(
-            text(
-                """
+            text("""
                 INSERT INTO field_promotion_requests (
                     tenant_id, evidence_id, review_id, mission_id, location_id,
                     consumer_module, adapter_key, adapter_version,
@@ -279,8 +276,7 @@ async def create_promotion_request(
                 )
                 ON CONFLICT (tenant_id, proposal_fingerprint) DO NOTHING
                 RETURNING id, requested_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "evidence_id": str(evidence["id"]),
@@ -300,14 +296,12 @@ async def create_promotion_request(
         inserted = insert_result.mappings().first()
         if inserted is None:
             existing_result = await connection.execute(
-                text(
-                    """
+                text("""
                     SELECT id, requested_at, requested_by
                     FROM field_promotion_requests
                     WHERE tenant_id=CAST(:tenant_id AS UUID)
                       AND proposal_fingerprint=:proposal_fingerprint
-                    """
-                ),
+                    """),
                 {"tenant_id": tenant_id, "proposal_fingerprint": proposal_fingerprint},
             )
             inserted = existing_result.mappings().one()
@@ -341,8 +335,7 @@ async def list_promotion_requests(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT p.id, p.evidence_id, p.review_id, p.mission_id, p.location_id,
                        p.consumer_module, p.adapter_key, p.adapter_version,
                        p.source_evidence_fingerprint, p.candidate_payload,
@@ -360,8 +353,7 @@ async def list_promotion_requests(
                   AND p.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                 ORDER BY p.requested_at DESC, p.id DESC
                 LIMIT :limit
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "allowed_ids": sorted(allowed_location_ids),
@@ -398,8 +390,7 @@ async def decide_promotion_request(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         request_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT p.id, p.location_id, p.requested_by, p.proposal_fingerprint,
                        p.consumer_module, p.adapter_key, p.adapter_version,
                        existing.id AS existing_decision_id
@@ -409,8 +400,7 @@ async def decide_promotion_request(
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)
                   AND p.id=CAST(:promotion_id AS UUID)
                   AND p.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "promotion_id": promotion_id,
@@ -439,8 +429,7 @@ async def decide_promotion_request(
         )
         try:
             decision_result = await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_promotion_decisions (
                         tenant_id, promotion_id, decision, decided_by, reason, decision_fingerprint
                     ) VALUES (
@@ -448,8 +437,7 @@ async def decide_promotion_request(
                         :decided_by, :reason, :decision_fingerprint
                     )
                     RETURNING id, decided_at
-                    """
-                ),
+                    """),
                 {
                     "tenant_id": tenant_id,
                     "promotion_id": promotion_id,
@@ -501,8 +489,7 @@ async def record_consumer_receipt(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         request_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT p.id, p.requested_by, p.consumer_module, p.proposal_fingerprint,
                        p.candidate_fingerprint, p.location_id,
                        d.decision AS field_decision, d.decided_by, d.decision_fingerprint,
@@ -513,8 +500,7 @@ async def record_consumer_receipt(
                   ON existing.tenant_id=p.tenant_id AND existing.promotion_id=p.id
                 WHERE p.tenant_id=CAST(:tenant_id AS UUID)
                   AND p.id=CAST(:promotion_id AS UUID)
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "promotion_id": promotion_id},
         )
         request = request_result.mappings().first()
@@ -550,8 +536,7 @@ async def record_consumer_receipt(
         )
         try:
             receipt_result = await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_promotion_consumer_receipts (
                         tenant_id, promotion_id, consumer_module, decision,
                         accepted_by, destination_candidate_ref_hash, reason, receipt_fingerprint
@@ -561,8 +546,7 @@ async def record_consumer_receipt(
                         :receipt_fingerprint
                     )
                     RETURNING id, created_at
-                    """
-                ),
+                    """),
                 {
                     "tenant_id": tenant_id,
                     "promotion_id": promotion_id,

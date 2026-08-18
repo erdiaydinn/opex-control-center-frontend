@@ -209,14 +209,12 @@ async def list_locations(tenant_id: str, scope: FieldScope) -> list[dict[str, ob
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT location_id, name, country, region, city, district, groups, active, source_ref, updated_at
                 FROM field_locations
                 WHERE tenant_id = CAST(:tenant_id AS UUID)
                 ORDER BY active DESC, country NULLS LAST, region NULLS LAST, city NULLS LAST, name
-                """
-            ),
+                """),
             {"tenant_id": tenant_id},
         )
         rows = [dict(row) for row in result.mappings().all()]
@@ -227,8 +225,7 @@ async def upsert_location(tenant_id: str, payload: LocationUpsert) -> dict[str, 
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 INSERT INTO field_locations (
                     tenant_id, location_id, name, country, region, city, district, groups, active, source_ref, updated_at
                 ) VALUES (
@@ -240,8 +237,7 @@ async def upsert_location(tenant_id: str, payload: LocationUpsert) -> dict[str, 
                     city=EXCLUDED.city, district=EXCLUDED.district, groups=EXCLUDED.groups,
                     active=EXCLUDED.active, source_ref=EXCLUDED.source_ref, updated_at=CURRENT_TIMESTAMP
                 RETURNING location_id, name, country, region, city, district, groups, active, source_ref, updated_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "location_id": payload.location_id,
@@ -262,14 +258,12 @@ async def list_templates(tenant_id: str) -> list[dict[str, object]]:
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT template_id, version, status, name_i18n, schema, created_by, created_at
                 FROM field_templates
                 WHERE tenant_id = CAST(:tenant_id AS UUID)
                 ORDER BY template_id, version DESC
-                """
-            ),
+                """),
             {"tenant_id": tenant_id},
         )
         return [dict(row) for row in result.mappings().all()]
@@ -279,13 +273,11 @@ async def create_template(tenant_id: str, actor: str, payload: TemplateCreate) -
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 INSERT INTO field_templates (tenant_id, template_id, version, status, name_i18n, schema, created_by)
                 VALUES (CAST(:tenant_id AS UUID), :template_id, :version, :status, CAST(:name_i18n AS JSONB), CAST(:schema AS JSONB), :created_by)
                 RETURNING template_id, version, status, name_i18n, schema, created_by, created_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "template_id": payload.template_id,
@@ -309,12 +301,10 @@ async def create_mission(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         template = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT status FROM field_templates
                 WHERE tenant_id=CAST(:tenant_id AS UUID) AND template_id=:template_id AND version=:version
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "template_id": payload.template_id,
@@ -326,13 +316,11 @@ async def create_mission(
             raise FieldRepositoryError("mission requires an active template version")
 
         location_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT location_id, name, country, region, city, district, groups, active
                 FROM field_locations
                 WHERE tenant_id=CAST(:tenant_id AS UUID)
-                """
-            ),
+                """),
             {"tenant_id": tenant_id},
         )
         locations = [dict(row) for row in location_result.mappings().all()]
@@ -341,8 +329,7 @@ async def create_mission(
         status_value = "active" if payload.activate else "draft"
 
         mission_result = await connection.execute(
-            text(
-                """
+            text("""
                 INSERT INTO field_missions (
                     tenant_id, template_id, template_version, title_i18n, instructions_i18n,
                     status, priority, selector, target_fingerprint, target_count,
@@ -354,8 +341,7 @@ async def create_mission(
                     :assigned_at, :deadline_at, :created_by, :created_at
                 )
                 RETURNING id, status, priority, target_fingerprint, target_count, assigned_at, deadline_at, created_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "template_id": payload.template_id,
@@ -379,12 +365,10 @@ async def create_mission(
         mission_id = mission["id"]
         for location_id in target_ids:
             await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_mission_targets (tenant_id, mission_id, location_id, status)
                     VALUES (CAST(:tenant_id AS UUID), CAST(:mission_id AS UUID), :location_id, 'unseen')
-                    """
-                ),
+                    """),
                 {"tenant_id": tenant_id, "mission_id": str(mission_id), "location_id": location_id},
             )
 
@@ -404,8 +388,7 @@ async def list_missions(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT
                     m.id, m.template_id, m.template_version, m.title_i18n, m.status, m.priority,
                     m.target_fingerprint, count(*) AS target_count, m.assigned_at, m.deadline_at, m.created_by, m.created_at,
@@ -424,8 +407,7 @@ async def list_missions(
                 GROUP BY m.tenant_id, m.id
                 ORDER BY m.created_at DESC
                 LIMIT :limit
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "allowed_ids": sorted(allowed_ids), "limit": limit},
         )
         rows = []
@@ -450,8 +432,7 @@ async def get_mission_detail(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         mission_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT m.id, m.template_id, m.template_version, m.title_i18n, m.instructions_i18n,
                        m.status, m.priority, m.selector, m.target_fingerprint,
                        m.assigned_at, m.deadline_at, m.created_by, m.created_at,
@@ -465,8 +446,7 @@ async def get_mission_detail(
                     WHERE scoped.tenant_id=m.tenant_id AND scoped.mission_id=m.id
                       AND scoped.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                   )
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "mission_id": mission_id, "allowed_ids": sorted(allowed_ids)},
         )
         mission_row = mission_result.mappings().first()
@@ -474,8 +454,7 @@ async def get_mission_detail(
             return None
 
         target_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT t.location_id, l.name AS location_name, l.country, l.region, l.city, l.district,
                        t.status, t.updated_at,
                        latest.id AS latest_evidence_id, latest.submitted_at AS latest_submitted_at,
@@ -498,8 +477,7 @@ async def get_mission_detail(
                 WHERE t.tenant_id=CAST(:tenant_id AS UUID) AND t.mission_id=CAST(:mission_id AS UUID)
                   AND t.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                 ORDER BY l.name, t.location_id
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "mission_id": mission_id, "allowed_ids": sorted(allowed_ids)},
         )
 
@@ -544,13 +522,11 @@ async def set_mission_status(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 UPDATE field_missions SET status=:next_status
                 WHERE tenant_id=CAST(:tenant_id AS UUID) AND id=CAST(:mission_id AS UUID) AND status=:current_status
                 RETURNING id, status, target_fingerprint, target_count, assigned_at, deadline_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "mission_id": mission_id,
@@ -592,8 +568,7 @@ async def submit_evidence(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         target_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT t.status, m.status AS mission_status, ft.schema AS template_schema
                 FROM field_mission_targets t
                 JOIN field_missions m ON m.tenant_id=t.tenant_id AND m.id=t.mission_id
@@ -601,8 +576,7 @@ async def submit_evidence(
                 WHERE t.tenant_id=CAST(:tenant_id AS UUID) AND t.mission_id=CAST(:mission_id AS UUID)
                   AND t.location_id=:location_id
                 FOR UPDATE OF t
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "mission_id": mission_id, "location_id": location_id},
         )
         target = target_result.mappings().first()
@@ -616,14 +590,12 @@ async def submit_evidence(
         _validate_evidence_payload(dict(target["template_schema"]), payload.payload)
 
         existing_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT id, fingerprint, submitted_at
                 FROM field_evidence
                 WHERE tenant_id=CAST(:tenant_id AS UUID) AND mission_id=CAST(:mission_id AS UUID)
                   AND location_id=:location_id AND client_submission_id=:client_submission_id
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "mission_id": mission_id,
@@ -645,8 +617,7 @@ async def submit_evidence(
 
         try:
             evidence_result = await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_evidence (
                         tenant_id, mission_id, location_id, actor_subject, device_id,
                         client_submission_id, fingerprint, payload, submitted_at
@@ -655,8 +626,7 @@ async def submit_evidence(
                         :client_submission_id, :fingerprint, CAST(:payload AS JSONB), :submitted_at
                     )
                     RETURNING id, fingerprint, submitted_at
-                    """
-                ),
+                    """),
                 {
                     "tenant_id": tenant_id,
                     "mission_id": mission_id,
@@ -675,12 +645,10 @@ async def submit_evidence(
             ) from exc
 
         await connection.execute(
-            text(
-                """
+            text("""
                 UPDATE field_mission_targets SET status='submitted', updated_at=CURRENT_TIMESTAMP
                 WHERE tenant_id=CAST(:tenant_id AS UUID) AND mission_id=CAST(:mission_id AS UUID) AND location_id=:location_id
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "mission_id": mission_id, "location_id": location_id},
         )
         evidence = dict(evidence_result.mappings().one())
@@ -709,8 +677,7 @@ async def list_evidence(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT e.id, e.mission_id, e.location_id, l.name AS location_name, e.actor_subject,
                        e.device_id, e.client_submission_id, e.fingerprint, e.payload, e.submitted_at,
                        r.decision AS review_decision, r.reason AS review_reason,
@@ -728,8 +695,7 @@ async def list_evidence(
                   AND (:mission_id IS NULL OR e.mission_id=CAST(:mission_id AS UUID))
                 ORDER BY e.submitted_at DESC, e.id DESC
                 LIMIT :limit
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "allowed_ids": sorted(allowed_ids),
@@ -761,8 +727,7 @@ async def review_evidence(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         evidence_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT e.id, e.mission_id, e.location_id, t.status AS target_status,
                        latest.id AS latest_evidence_id,
                        EXISTS (
@@ -782,8 +747,7 @@ async def review_evidence(
                 WHERE e.tenant_id=CAST(:tenant_id AS UUID) AND e.id=CAST(:evidence_id AS UUID)
                   AND e.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                 FOR UPDATE OF t
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "evidence_id": evidence_id,
@@ -801,8 +765,7 @@ async def review_evidence(
             raise FieldRepositoryError("only submitted evidence can be reviewed")
 
         review_result = await connection.execute(
-            text(
-                """
+            text("""
                 INSERT INTO field_reviews (
                     tenant_id, evidence_id, mission_id, location_id,
                     reviewer_subject, decision, reason
@@ -811,8 +774,7 @@ async def review_evidence(
                     :reviewer_subject, :decision, :reason
                 )
                 RETURNING id, evidence_id, mission_id, location_id, reviewer_subject, decision, reason, reviewed_at
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "evidence_id": evidence_id,
@@ -825,12 +787,10 @@ async def review_evidence(
         )
         next_status = "verified" if payload.decision == "accept" else "rework"
         await connection.execute(
-            text(
-                """
+            text("""
                 UPDATE field_mission_targets SET status=:next_status, updated_at=CURRENT_TIMESTAMP
                 WHERE tenant_id=CAST(:tenant_id AS UUID) AND mission_id=CAST(:mission_id AS UUID) AND location_id=:location_id
-                """
-            ),
+                """),
             {
                 "tenant_id": tenant_id,
                 "mission_id": str(evidence["mission_id"]),
@@ -863,8 +823,7 @@ async def queue_notification_intents(
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         target_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT t.location_id, t.status, m.status AS mission_status
                 FROM field_mission_targets t
                 JOIN field_missions m ON m.tenant_id=t.tenant_id AND m.id=t.mission_id
@@ -872,8 +831,7 @@ async def queue_notification_intents(
                   AND t.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
                   AND t.status NOT IN ('verified','exempt')
                 ORDER BY t.location_id
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "mission_id": mission_id, "allowed_ids": sorted(allowed_ids)},
         )
         targets = [dict(row) for row in target_result.mappings().all()]
@@ -904,8 +862,7 @@ async def queue_notification_intents(
                 }
             )
             intent_result = await connection.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO field_notification_intents (
                         tenant_id, mission_id, location_id, kind, reason_code,
                         requested_by, idempotency_key, status
@@ -915,8 +872,7 @@ async def queue_notification_intents(
                     )
                     ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
                     RETURNING id
-                    """
-                ),
+                    """),
                 {
                     "tenant_id": tenant_id,
                     "mission_id": mission_id,
@@ -958,8 +914,7 @@ async def field_analytics(tenant_id: str, scope: FieldScope) -> dict[str, object
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         summary_result = await connection.execute(
-            text(
-                """
+            text("""
                 SELECT
                     count(DISTINCT m.id) AS mission_count,
                     count(DISTINCT m.id) FILTER (WHERE m.status='active') AS active_mission_count,
@@ -981,8 +936,7 @@ async def field_analytics(tenant_id: str, scope: FieldScope) -> dict[str, object
                 JOIN field_missions m ON m.tenant_id=t.tenant_id AND m.id=t.mission_id
                 WHERE t.tenant_id=CAST(:tenant_id AS UUID)
                   AND t.location_id=ANY(CAST(:allowed_ids AS VARCHAR[]))
-                """
-            ),
+                """),
             {"tenant_id": tenant_id, "allowed_ids": sorted(allowed_ids)},
         )
         row = dict(summary_result.mappings().one())

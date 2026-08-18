@@ -16,8 +16,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_plan_lifecycle_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE dna_status varchar(20); dna_geometry boolean; dna_store varchar(80);
@@ -89,8 +88,7 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
 
 
 def downgrade() -> None:

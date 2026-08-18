@@ -23,8 +23,7 @@ def upgrade() -> None:
         "GRANT UPDATE (status, acknowledged_by, acknowledged_at, closed_by, closed_at) "
         f"ON planogram_execution_assignments TO {RUNTIME_ROLE}"
     )
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_assignment_identity_guard()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
@@ -49,8 +48,7 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
     op.execute(
         "CREATE TRIGGER trg_planogram_assignment_identity BEFORE UPDATE "
         "ON planogram_execution_assignments FOR EACH ROW "

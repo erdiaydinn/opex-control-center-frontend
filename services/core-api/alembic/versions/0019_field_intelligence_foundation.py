@@ -54,11 +54,9 @@ ROLE_POLICIES = {
 def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
-    op.execute(
-        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+    op.execute(f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
-    )
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)""")
 
 
 def _sql_array(values: tuple[str, ...]) -> str:
@@ -290,8 +288,7 @@ def upgrade() -> None:
 
     op.execute(
         "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE field_locations, field_templates,"
-        " field_missions, field_mission_targets TO "
-        + RUNTIME_ROLE
+        " field_missions, field_mission_targets TO " + RUNTIME_ROLE
     )
     op.execute("GRANT SELECT, INSERT ON TABLE field_evidence, field_reviews TO " + RUNTIME_ROLE)
 

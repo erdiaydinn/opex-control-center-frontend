@@ -20,16 +20,13 @@ RUNTIME_ROLE = "opex_runtime"
 def _tenant_policy(table_name: str) -> None:
     op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
     op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
-    op.execute(
-        f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+    op.execute(f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
         USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
-    )
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)""")
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_store_dna_versions (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -57,8 +54,7 @@ def upgrade() -> None:
                 status <> 'rejected' OR (rejected_by IS NOT NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL)
             )
         )
-        """
-    )
+        """)
     op.execute(
         "CREATE UNIQUE INDEX uq_planogram_store_dna_active_edit ON planogram_store_dna_versions"
         " (tenant_id, store_code) WHERE status IN ('draft','submitted')"
@@ -71,8 +67,7 @@ def upgrade() -> None:
         "CREATE INDEX ix_planogram_store_dna_store_status ON planogram_store_dna_versions"
         " (tenant_id, store_code, status, version_number DESC)"
     )
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE planogram_store_dna_events (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
@@ -85,16 +80,14 @@ def upgrade() -> None:
             CONSTRAINT fk_planogram_store_dna_event_version FOREIGN KEY (tenant_id, store_dna_version_id)
                 REFERENCES planogram_store_dna_versions(tenant_id, id) ON DELETE RESTRICT
         )
-        """
-    )
+        """)
     op.execute(
         "CREATE INDEX ix_planogram_store_dna_events_version ON planogram_store_dna_events"
         " (tenant_id, store_dna_version_id, created_at)"
     )
     _tenant_policy("planogram_store_dna_versions")
     _tenant_policy("planogram_store_dna_events")
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION planogram_store_dna_immutable_history()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
@@ -127,8 +120,7 @@ def upgrade() -> None:
             END IF;
             RETURN NEW;
         END; $$
-        """
-    )
+        """)
     op.execute(
         "CREATE TRIGGER trg_planogram_store_dna_immutable_history BEFORE UPDATE ON"
         " planogram_store_dna_versions FOR EACH ROW EXECUTE FUNCTION"

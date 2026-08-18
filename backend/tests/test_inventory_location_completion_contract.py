@@ -67,6 +67,15 @@ def test_completion_record_reuses_security_and_historical_shift_authority() -> N
     assert "INVENTORY_LOCATION_COMPLETED" in rendered
 
 
+def test_completion_requires_prior_server_committed_count_evidence() -> None:
+    rendered = ast.unparse(_function("record_location_completion"))
+    compact = rendered.replace(" ", "")
+    assert "event_typeIN('SCAN','UNEXPECTED_SKU')" in compact
+    assert "occurred_at<=%s" in compact
+    assert "committed_count" in rendered
+    assert "Server-committed sayım satırı olmadan lokasyon tamamlanamaz." in rendered
+
+
 def test_completed_locations_are_removed_from_terminal_queue() -> None:
     rendered = ast.unparse(_function("filter_completed_terminal_tasks"))
     assert "event_type='LOCATION_COMPLETE'" in rendered

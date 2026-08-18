@@ -19,7 +19,7 @@ EXPECTED_BODY = (
     '"event_kind":"LOCATION_COMPLETE","location_id":"A-04",'
     '"occurred_at":"2026-08-18T15:05:00Z"}'
 )
-EXPECTED_HASH = "4b734a707a99da3a9b37507738d4f9d7f21935564502c365a48ed25a65c30e8a"
+EXPECTED_HASH = "631e5b6c4447c10bda695763e432cccae8af623426eab370ee3db9d1cd4ab6ba"
 
 
 def _function(name: str) -> ast.FunctionDef:

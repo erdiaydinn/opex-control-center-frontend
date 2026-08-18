@@ -15,6 +15,7 @@ on:
       - "backend/app/modules/inventory/production.py"
       - "backend/tests/test_inventory_production_identity_authority.py"
       - "backend/tests/test_inventory_terminal_event_hash_contract.py"
+      - "backend/tests/test_inventory_terminal_task_contract.py"
       - "services/core-api/app/core/mobile_device_trust.py"
       - "services/core-api/app/core/mobile_policy.py"
       - "services/core-api/app/core/mobile_policy_signing.py"
@@ -53,7 +54,7 @@ jobs:
       - name: Install Core API test surface
         working-directory: services/core-api
         run: python -m pip install -e '.[dev]'
-      - name: Lint mobile authority, device trust and terminal event contracts
+      - name: Lint mobile authority, device trust and terminal contracts
         run: >-
           ruff check
           services/core-api/app/core/mobile_device_trust.py
@@ -64,6 +65,7 @@ jobs:
           services/core-api/tests/test_mobile_policy_signing.py
           backend/tests/test_inventory_production_identity_authority.py
           backend/tests/test_inventory_terminal_event_hash_contract.py
+          backend/tests/test_inventory_terminal_task_contract.py
       - name: Prove mobile authority fail-closed behavior
         working-directory: services/core-api
         run: >-
@@ -71,11 +73,12 @@ jobs:
           tests/test_mobile_device_trust.py
           tests/test_mobile_policy.py
           tests/test_mobile_policy_signing.py
-      - name: Prove production Inventory identity and event hash contracts
+      - name: Prove production Inventory identity, event hash and task contracts
         run: >-
           pytest -q
           backend/tests/test_inventory_production_identity_authority.py
           backend/tests/test_inventory_terminal_event_hash_contract.py
+          backend/tests/test_inventory_terminal_task_contract.py
 
   android-mobile-core:
     runs-on: ubuntu-latest
@@ -85,7 +88,7 @@ jobs:
         working-directory: android-inventory
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c09
         with:
           distribution: temurin
           java-version: "17"

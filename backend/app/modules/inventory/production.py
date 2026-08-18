@@ -343,6 +343,12 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
             raise
 
 
+def _terminal_mission_id(tenant_id: str, document_id: UUID, location_id: str) -> str:
+    location = str(location_id).strip().upper()
+    digest = hashlib.sha256(f"{tenant_id}:{document_id}:{location}".encode("utf-8")).hexdigest()[:32]
+    return f"inventory.count:{digest}"
+
+
 def list_terminal_tasks(principal: InventoryPrincipal) -> list[dict[str, Any]]:
     principal.validate()
     with connect() as db:
@@ -350,16 +356,25 @@ def list_terminal_tasks(principal: InventoryPrincipal) -> list[dict[str, Any]]:
         _assert_active_device(db, principal)
         rows = db.execute(
             """SELECT d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at,
-                      count(l.location_id)::integer AS location_count
+                      l.location_id,
+                      count(*) OVER (PARTITION BY d.id)::integer AS location_count
                FROM inventory_documents d
                JOIN inventory_document_locations l ON l.tenant_id=d.tenant_id AND l.document_id=d.id
                WHERE d.tenant_id=%s AND d.state='COUNTING' AND d.warehouse_id=ANY(%s)
-               GROUP BY d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at
-               ORDER BY d.updated_at DESC""",
+               ORDER BY d.updated_at DESC,l.location_id""",
             (principal.tenant_id, list(principal.warehouse_scope)),
         ).fetchall()
+    tasks: list[dict[str, Any]] = []
+    for row in rows:
+        task = dict(row)
+        location_id = str(task["location_id"]).strip().upper()
+        task["location_id"] = location_id
+        task["mission_id"] = _terminal_mission_id(principal.tenant_id, task["id"], location_id)
+        task["operation"] = "inventory.count"
+        task["runtime_profile"] = "EAY_TERMINAL"
+        tasks.append(task)
     # Expected quantities, costs, SKU universe and variance never cross this boundary.
-    return [dict(row) for row in rows]
+    return tasks
 
 
 def reconciliation(principal: InventoryPrincipal, document_id: UUID) -> dict[str, Any]:

@@ -1,0 +1,35 @@
+name: EAY Mobile Ruff Import Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "backend/app/modules/inventory/mission_lease.py"
+      - ".github/workflows/eay-mobile-ruff-diagnostic.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-mobile-ruff-diagnostic-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  import-diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install exact CI Ruff
+        run: python -m pip install 'ruff==0.16.3'
+      - name: Print exact import fix without mutating checkout
+        run: |
+          set +e
+          ruff check --select I001 --diff backend/app/modules/inventory/mission_lease.py
+          code=$?
+          echo "RUFF_DIFF_EXIT=${code}"
+          exit 0

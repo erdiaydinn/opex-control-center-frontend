@@ -38,7 +38,14 @@ class FakeSession:
         )
 
 
-def _lease(*, application_id="carsi-portal", principal_ref="principal:erdi", expires_at=None):
+def _lease(
+    *,
+    application_id="carsi-portal",
+    principal_ref="principal:erdi",
+    issued_at=None,
+    expires_at=None,
+):
+    issued = issued_at or NOW
     return CredentialSecretLease(
         vault_ref="vault-item:keyring:" + "a" * 64,
         application_id=application_id,
@@ -46,8 +53,8 @@ def _lease(*, application_id="carsi-portal", principal_ref="principal:erdi", exp
         credential_scope_ref="credential-scope:carsi-portal:erdi",
         credential_kind=CredentialKind.PASSWORD,
         secret_value="DO-NOT-LOG",
-        issued_at=NOW,
-        expires_at=expires_at or NOW + timedelta(seconds=60),
+        issued_at=issued,
+        expires_at=expires_at or issued + timedelta(seconds=60),
     )
 
 
@@ -80,7 +87,10 @@ def test_secret_fill_rejects_expired_lease_and_wrong_identity():
     with pytest.raises(ValueError, match="credential_secret_lease_expired"):
         perform_managed_secret_fill(
             session=session,
-            lease=_lease(expires_at=NOW - timedelta(seconds=1)),
+            lease=_lease(
+                issued_at=NOW - timedelta(seconds=60),
+                expires_at=NOW - timedelta(seconds=1),
+            ),
             target=_target(),
             expected_principal_ref="principal:erdi",
             now=NOW,

@@ -62,11 +62,101 @@
         "license": "Apache-2.0",
         "commercial_use": "allowed-with-license-obligations-but-turkish-routing-blocked-until-language-evidence"
       }
+    },
+    {
+      "id": "sherpa-onnx",
+      "classification": "DISCOVERED",
+      "identity": "k2-fsa/sherpa-onnx",
+      "canonical_upstream": "k2-fsa/sherpa-onnx",
+      "decision": "reference",
+      "capabilities": [
+        "offline-speech-runtime",
+        "speaker-diarization",
+        "speaker-identification-reference",
+        "speech-enhancement",
+        "source-separation",
+        "keyword-spotting",
+        "cross-platform-edge-speech"
+      ],
+      "review": {
+        "ref": "master",
+        "commit": "1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "samuel-screen-voice-agent",
+      "classification": "DISCOVERED",
+      "identity": "sambuild04/screen-voice-agent",
+      "canonical_upstream": "sambuild04/screen-voice-agent",
+      "decision": "reference",
+      "capabilities": [
+        "ambient-system-audio",
+        "screen-context",
+        "wake-word-desktop-assistant",
+        "ambient-monitoring",
+        "live-meeting-assistance",
+        "runtime-tool-repair-reference",
+        "privacy-toggle-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "9de6855b4cf7edc02f2fe4d7c1ff0be7aa7435ce",
+        "license": "MIT",
+        "commercial_use": "reference-permissive-with-notice"
+      }
+    },
+    {
+      "id": "agentoperations-agent-registry",
+      "classification": "DISCOVERED",
+      "identity": "agentoperations/agent-registry",
+      "canonical_upstream": "agentoperations/agent-registry",
+      "decision": "reference",
+      "capabilities": [
+        "a2a-agent-card-registry",
+        "mcp-server-registry",
+        "skill-registry",
+        "evaluation-signals",
+        "promotion-lifecycle",
+        "supply-chain-visibility",
+        "oci-metadata-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "d3f3de46e0b64f47d9af544aacd8d14d7fd6c306",
+        "license": "pending-review",
+        "commercial_use": "blocked-pending-license-review"
+      }
+    },
+    {
+      "id": "robotmcp-ros-mcp-server",
+      "classification": "DISCOVERED",
+      "identity": "robotmcp/ros-mcp-server",
+      "canonical_upstream": "robotmcp/ros-mcp-server",
+      "decision": "reference",
+      "capabilities": [
+        "ros-and-ros2-mcp-bridge",
+        "robot-topic-discovery",
+        "robot-service-discovery",
+        "robot-action-discovery",
+        "sensor-observation",
+        "physical-ai-integration-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "f1c023bb5570794ee4d935aa2c7c06e025810952",
+        "license": "Apache-2.0",
+        "commercial_use": "reference-only-until-physical-safety-acceptance"
+      }
     }
   ],
   "required_discovery_domains": [
     "local-asr-and-streaming-speech-recognition",
     "local-tts-and-multilingual-speech-synthesis",
-    "turkish-local-voice-runtime"
+    "turkish-local-voice-runtime",
+    "ambient-desktop-and-system-audio-intelligence",
+    "agent-mcp-skill-resource-discovery-and-governance",
+    "robotics-and-ros-capability-bridges"
   ]
 }

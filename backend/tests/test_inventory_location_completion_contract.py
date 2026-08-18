@@ -13,13 +13,13 @@ from backend.app.modules.inventory.production import canonical_payload_hash
 MODULE = Path(__file__).parents[1] / "app" / "modules" / "inventory" / "location_completion.py"
 MIGRATION = Path(__file__).parents[1] / "migrations" / "004_inventory_location_completion.sql"
 EXPECTED_BODY = (
-    '{"active_shift_id":"SHIFT-20260818-001","device_sequence":8,'
-    '"document_id":"22222222-2222-4222-8222-222222222222",'
+    '{"active_shift_id":"SHIFT-20260818-001","confirmed_line_count":3,'
+    '"device_sequence":8,"document_id":"22222222-2222-4222-8222-222222222222",'
     '"event_id":"33333333-3333-4333-8333-333333333333",'
     '"event_kind":"LOCATION_COMPLETE","location_id":"A-04",'
     '"occurred_at":"2026-08-18T15:05:00Z"}'
 )
-EXPECTED_HASH = "631e5b6c4447c10bda695763e432cccae8af623426eab370ee3db9d1cd4ab6ba"
+EXPECTED_HASH = "96cdbfae950df83e725c3c269a8be900a0ee85880977575afa06cbde88eec7d0"
 
 
 def _function(name: str) -> ast.FunctionDef:
@@ -33,6 +33,7 @@ def test_location_completion_hash_contract_is_stable() -> None:
     normalized = location_completion_hash_input(
         {
             "active_shift_id": " SHIFT-20260818-001 ",
+            "confirmed_line_count": 3,
             "device_sequence": 8,
             "document_id": "22222222-2222-4222-8222-222222222222",
             "event_id": "33333333-3333-4333-8333-333333333333",
@@ -47,6 +48,7 @@ def test_location_completion_hash_contract_is_stable() -> None:
         ensure_ascii=False,
     )
     assert normalized["event_kind"] == LOCATION_COMPLETE
+    assert normalized["confirmed_line_count"] == 3
     assert canonical == EXPECTED_BODY
     assert canonical_payload_hash(normalized) == EXPECTED_HASH
 
@@ -60,6 +62,7 @@ def test_completion_record_reuses_security_and_historical_shift_authority() -> N
     assert "_verify_device_proof" in rendered
     assert "attest_shift_at_event" in rendered
     assert "active_shift_id" in rendered
+    assert "confirmed_line_count" in rendered
     assert "LOCATION_COMPLETE" in rendered
     assert "barcode,quantity,symbology" in rendered.replace(" ", "")
     assert "NULL,NULL,NULL" in rendered.replace(" ", "")
@@ -67,13 +70,14 @@ def test_completion_record_reuses_security_and_historical_shift_authority() -> N
     assert "INVENTORY_LOCATION_COMPLETED" in rendered
 
 
-def test_completion_requires_prior_server_committed_count_evidence() -> None:
+def test_completion_requires_exact_server_committed_line_count_including_zero() -> None:
     rendered = ast.unparse(_function("record_location_completion"))
     compact = rendered.replace(" ", "")
+    assert "count(*)::integerAScommitted_line_count" in compact
     assert "event_typeIN('SCAN','UNEXPECTED_SKU')" in compact
     assert "occurred_at<=%s" in compact
-    assert "committed_count" in rendered
-    assert "Server-committed sayım satırı olmadan lokasyon tamamlanamaz." in rendered
+    assert "committed_line_count!=confirmed_line_count" in compact
+    assert "server-committed sayım kanıtıyla eşleşmiyor" in rendered
 
 
 def test_completed_locations_are_removed_from_terminal_queue() -> None:

@@ -8,8 +8,9 @@ window.
 
 The command is never blanket authority. High/critical, bulk, irreversible or
 out-of-envelope actions require additional approval or fail closed. Side-effect
-authorization is also bound to the exact idempotency key used by the mission so
-an approval artifact cannot be replayed under a different write identity.
+authorization is bound to the exact idempotency key used by the mission, and
+the authorized risk class is retained as non-secret provenance so downstream
+write qualification cannot learn a HIGH procedure from a LOW-risk artifact.
 """
 
 from __future__ import annotations
@@ -105,6 +106,7 @@ class CommandAuthorizationEnvelope(BaseModel):
     tenant_ref: str
     capability_ref: str
     target_scope_ref: str
+    risk: ActionRisk | None = None
     idempotency_key: str | None = None
     disposition: AuthorizationDisposition
     authorization_evidence_ref: str | None = None
@@ -228,6 +230,7 @@ def authorize_identity_bound_command(
         tenant_ref=command.tenant_ref,
         capability_ref=command.capability_ref,
         target_scope_ref=command.target_scope_ref,
+        risk=command.risk,
         idempotency_key=command.idempotency_key,
         disposition=disposition,
         authorization_evidence_ref=evidence_ref,

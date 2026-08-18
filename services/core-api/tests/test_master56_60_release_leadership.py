@@ -1,8 +1,15 @@
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
+from app.acceptance.external_evidence import (
+    EvidenceRecord,
+    build_external_item_refs,
+    load_requirements,
+)
 from app.release.category_leadership import (
     PILOT_METRICS,
     PROD_SIGNOFFS,
@@ -26,7 +33,12 @@ from app.sre.chaos_dr import ChaosResult, DrResult
 from app.sre.governance import AcceptanceEvidence
 from app.sre.observability import TelemetryEvent
 
+ROOT = Path(__file__).resolve().parents[3]
+EXTERNAL_REQUIREMENTS = ROOT / "docs/governance/eay_external_acceptance_requirements.json"
 CANDIDATE = "a" * 40
+TENANT = "pilot-tenant"
+RELEASE = "eay-rc-1"
+NOW = datetime(2026, 8, 18, 18, 0, tzinfo=UTC)
 CHAOS_SCENARIOS = tuple(f"scenario-{index}" for index in range(1, 15))
 
 
@@ -157,28 +169,80 @@ def _sre_refs() -> dict[int, str]:
     }
 
 
+def _external_class(required: str) -> str:
+    mapping = {
+        "REAL_ENVIRONMENT": "REAL_ENVIRONMENT",
+        "MANAGED_STAGING_OR_REAL": "MANAGED_STAGING",
+        "REAL_STAGING": "REAL_STAGING",
+        "REAL_BUILD_UAT": "REAL_BUILD_UAT",
+    }
+    return mapping[required]
+
+
+def _external_requirements() -> dict[str, object]:
+    return load_requirements(EXTERNAL_REQUIREMENTS)
+
+
+def _external_records() -> tuple[EvidenceRecord, ...]:
+    records: list[EvidenceRecord] = []
+    for requirement in _external_requirements()["requirements"]:
+        item = int(requirement["item"])
+        evidence_class = _external_class(str(requirement["required_class"]))
+        for key in requirement["evidence"]:
+            evidence_key = str(key)
+            records.append(
+                EvidenceRecord(
+                    tenant_id=TENANT,
+                    release_id=RELEASE,
+                    candidate_sha=CANDIDATE,
+                    requirement_key=str(requirement["key"]),
+                    evidence_key=evidence_key,
+                    evidence_class=evidence_class,
+                    status="PASS",
+                    environment="governed-release-evidence",
+                    provenance=f"evidence:{item}:{evidence_key}",
+                    artifact_sha256=_artifact(f"{item}:{evidence_key}"),
+                    approver=f"owner:{item}",
+                    observed_at=NOW - timedelta(hours=1),
+                    expires_at=NOW + timedelta(days=7),
+                )
+            )
+    return tuple(records)
+
+
+def _external_refs() -> dict[int, str]:
+    return build_external_item_refs(
+        _external_requirements(),
+        _external_records(),
+        tenant_id=TENANT,
+        release_id=RELEASE,
+        candidate_sha=CANDIDATE,
+        as_of=NOW,
+    )
+
+
 def full_truth() -> ReleaseTruth:
     pilot_scope = ReleaseScope(
-        tenant_ids=("pilot-tenant",),
+        tenant_ids=(TENANT,),
         modules=("workforce", "inventory"),
         evidence_ref=_ref("scope", "pilot"),
         owner="pilot-owner",
     )
     activation_scope = ReleaseScope(
-        tenant_ids=("pilot-tenant",),
+        tenant_ids=(TENANT,),
         modules=("workforce", "inventory"),
         evidence_ref=_ref("scope", "activation"),
         owner="release-owner",
     )
     return ReleaseTruth(
-        release_id="eay-rc-1",
+        release_id=RELEASE,
         candidate_sha=CANDIDATE,
         repository_green=True,
         repository_evidence_ref=f"github-status:{CANDIDATE}",
         sre_items={item: True for item in REQUIRED_SRE},
         sre_evidence_refs=_sre_refs(),
         external_items={item: True for item in REQUIRED_EXTERNAL},
-        external_evidence_refs={item: _ref("ledger", item) for item in REQUIRED_EXTERNAL},
+        external_evidence_refs=_external_refs(),
         pilot_scope=pilot_scope,
         pilot_plan_ref=_ref("plan", "pilot-plan"),
         pilot_rollback_ref=_ref("rollback", "pilot-rollback"),
@@ -196,11 +260,16 @@ def full_truth() -> ReleaseTruth:
     )
 
 
-def test_canonical_sre_bridge_requires_real_complete_authority_evidence() -> None:
-    refs = _sre_refs()
-    assert set(refs) == set(REQUIRED_SRE)
-    assert all(value.startswith("sre-sha256:") for value in refs.values())
+def test_canonical_45_55_bridges_produce_release_fingerprints() -> None:
+    sre_refs = _sre_refs()
+    external_refs = _external_refs()
+    assert set(sre_refs) == set(REQUIRED_SRE)
+    assert set(external_refs) == set(REQUIRED_EXTERNAL)
+    assert all(value.startswith("sre-sha256:") for value in sre_refs.values())
+    assert all(value.startswith("ledger-sha256:") for value in external_refs.values())
 
+
+def test_canonical_sre_bridge_rejects_incomplete_or_synthetic_evidence() -> None:
     incomplete_events = _telemetry_events()[:1]
     with pytest.raises(ValueError, match="every required signal"):
         build_observability_item_ref(
@@ -243,7 +312,7 @@ def test_repository_green_alone_can_never_create_rc() -> None:
         next_state(
             ReleaseState.DEVELOPMENT,
             ReleaseTruth(
-                release_id="eay-rc-1",
+                release_id=RELEASE,
                 candidate_sha=CANDIDATE,
                 repository_green=True,
                 repository_evidence_ref=f"github-status:{CANDIDATE}",
@@ -253,7 +322,7 @@ def test_repository_green_alone_can_never_create_rc() -> None:
 
 def test_boolean_only_external_or_sre_truth_cannot_create_rc() -> None:
     truth = ReleaseTruth(
-        release_id="eay-rc-1",
+        release_id=RELEASE,
         candidate_sha=CANDIDATE,
         repository_green=True,
         repository_evidence_ref=f"github-status:{CANDIDATE}",
@@ -290,7 +359,7 @@ def test_release_chain_requires_scoped_pilot_activation_and_stabilization() -> N
     active = next_state(
         ReleaseState.PILOT_ACCEPTED,
         truth,
-        tenant_ids=("pilot-tenant",),
+        tenant_ids=(TENANT,),
         modules=("workforce",),
     )
     assert active == ReleaseState.PRODUCTION_ACTIVE
@@ -333,7 +402,7 @@ def test_pilot_signoff_and_external_refs_are_hash_bound() -> None:
         next_state(
             ReleaseState.PILOT_ACCEPTED,
             replace(truth, signoff_evidence_refs=bad_signoff),
-            tenant_ids=("pilot-tenant",),
+            tenant_ids=(TENANT,),
             modules=("inventory",),
         )
 

@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Verify historical 1-10..1-14 category admission and exact-head binding
+      - name: Verify historical 1-10..1-25 exact-head admission and binding
         run: python scripts/ci/migrate_legacy_exact_head_headers.py --check
       - name: Verify domain admission and historical trigger policy
         run: python scripts/ci/apply_ci_admission_control.py --check
@@ -46,5 +46,21 @@ jobs:
         run: python scripts/ci/apply_exact_head_concurrency.py --check
       - name: Verify Inventory and DockOS admission separation
         run: python scripts/ci/apply_inventory_admission_control.py --check
+      - name: Verify Inventory migration-chain gate
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/eay-inventory-migration-contract.yml')
+          text = path.read_text(encoding='utf-8')
+          head = text.split('jobs:', 1)[0]
+          assert 'backend/migrations/*inventory*.sql' in head
+          assert 'cancel-in-progress: true' in head
+          assert 'github.event.pull_request.number' in head
+          assert "find backend/migrations -maxdepth 1 -type f -name '*inventory*.sql' | sort" in text
+          assert 'inventory_schema_migrations WHERE version=${version}' in text
+          assert '004_inventory_location_completion.sql' in text
+          assert 'inventory_guard_location_event_v4_trigger' in text
+          print('INVENTORY_MIGRATION_CHAIN_CI=PASS')
+          PY
       - name: Reject malformed whitespace or conflict markers
         run: git diff --check

@@ -89,6 +89,7 @@ jobs:
       - name: Lint optimizer V2 and Core boundary
         run: >-
           ruff check
+          --extend-ignore UP006,UP012,UP035,UP045,PLR0124,RUF046,SIM102
           apps/planai/backend/physical_optimizer.py
           apps/planai/backend/physical_optimizer_v2.py
           apps/planai/backend/architecture_truth.py

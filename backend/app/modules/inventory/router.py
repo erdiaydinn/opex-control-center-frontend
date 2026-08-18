@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.modules.workforce.active_shift import ActiveShiftAuthorityError, resolve_active_shift
 from app.modules.workforce.authorization import is_action_allowed
+from .explanation import explanation_context
 from .location_completion import (
     completion_readiness,
     filter_completed_terminal_tasks,
@@ -356,6 +357,26 @@ def production_reconciliation(
     except ValueError as error:
         raise HTTPException(status_code=400, detail="Geçerli document UUID zorunludur.") from error
     return run(reconciliation, production_principal(request, x_eay_device_id), parsed)
+
+
+@router.get("/v1/documents/{document_id}/explanation-context")
+def production_explanation_context(
+    document_id: str,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production explanation endpoint etkin değil.")
+    require_verified_identity(request, "approveInventory")
+    try:
+        parsed_document_id = UUID(document_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Geçerli document UUID zorunludur.") from error
+    return run(
+        explanation_context,
+        production_principal(request, x_eay_device_id),
+        parsed_document_id,
+    )
 
 
 @router.post("/v1/documents/{document_id}/transition")

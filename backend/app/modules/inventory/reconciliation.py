@@ -12,7 +12,7 @@ def reconciliation(
     principal: Any,
     document_id: UUID,
 ) -> dict[str, Any]:
-    """Read authoritative reconciliation without cross-document barcode joins."""
+    """Read authoritative reconciliation without cross-document or abandoned-attempt joins."""
     principal.validate()
     from .production import connect
 
@@ -40,12 +40,25 @@ def reconciliation(
                  FROM inventory_expected_stock
                  WHERE tenant_id=%s AND document_id=%s
                ), counted AS (
-                 SELECT barcode,sum(quantity) AS counted_quantity
-                 FROM inventory_events
-                 WHERE tenant_id=%s AND document_id=%s
-                   AND event_type IN ('SCAN','UNEXPECTED_SKU')
-                   AND barcode IS NOT NULL
-                 GROUP BY barcode
+                 SELECT e.barcode,sum(e.quantity) AS counted_quantity
+                 FROM inventory_events e
+                 LEFT JOIN inventory_mission_attempts a
+                   ON a.tenant_id=e.tenant_id AND a.attempt_id=e.attempt_id
+                 WHERE e.tenant_id=%s AND e.document_id=%s
+                   AND e.event_type IN ('SCAN','UNEXPECTED_SKU')
+                   AND e.barcode IS NOT NULL
+                   AND (
+                     a.state='COMPLETED'
+                     OR (
+                       e.attempt_id IS NULL
+                       AND NOT EXISTS (
+                         SELECT 1 FROM inventory_mission_attempts any_attempt
+                         WHERE any_attempt.tenant_id=e.tenant_id
+                           AND any_attempt.document_id=e.document_id
+                       )
+                     )
+                   )
+                 GROUP BY e.barcode
                )
                SELECT COALESCE(s.sku,'UNEXPECTED') AS sku,
                       COALESCE(s.barcode,c.barcode) AS barcode,

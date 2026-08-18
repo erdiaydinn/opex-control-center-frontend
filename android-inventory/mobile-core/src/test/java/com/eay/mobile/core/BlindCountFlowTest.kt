@@ -57,7 +57,11 @@ class BlindCountFlowTest {
         val confirmed = BlindCountFlow.confirmItem(session, target)
         assertTrue(confirmed.accepted)
         assertEquals(12, confirmed.evidence!!.quantity)
-        assertEquals(BlindCountStep.COMPLETE, confirmed.session.step)
+        assertEquals(BlindCountStep.SCAN_ITEM, confirmed.session.step)
+
+        val completed = BlindCountFlow.completeLocation(confirmed.session, target)
+        assertTrue(completed.accepted)
+        assertEquals(BlindCountStep.COMPLETE, completed.session.step)
     }
 
     @Test

@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -131,8 +132,9 @@ fun BlindCountScreen(
                     state.confirmedLines,
                     it,
                 )
-            } ?: stringResource(
-                R.string.blind_count_completed_lines,
+            } ?: pluralStringResource(
+                R.plurals.blind_count_completed_lines,
+                state.confirmedLines,
                 state.confirmedLines,
             ),
             style = MaterialTheme.typography.bodyLarge,
@@ -152,7 +154,11 @@ private fun SyncStatus(state: FieldSyncVisualState, pendingCount: Int) {
     val label = when (state) {
         FieldSyncVisualState.SYNCED -> stringResource(R.string.field_sync_synced)
         FieldSyncVisualState.OFFLINE -> stringResource(R.string.field_sync_offline)
-        FieldSyncVisualState.PENDING -> stringResource(R.string.field_sync_pending, pendingCount)
+        FieldSyncVisualState.PENDING -> pluralStringResource(
+            R.plurals.field_sync_pending,
+            pendingCount,
+            pendingCount,
+        )
         FieldSyncVisualState.QUARANTINED -> stringResource(R.string.field_sync_quarantined)
     }
     val accessibilityLabel = stringResource(R.string.field_sync_description, label)

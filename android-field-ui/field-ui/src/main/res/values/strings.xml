@@ -3,11 +3,17 @@
     <string name="field_next_missions">Next missions</string>
     <string name="field_sync_synced">Synced</string>
     <string name="field_sync_offline">Offline</string>
-    <string name="field_sync_pending">%1$d pending</string>
+    <plurals name="field_sync_pending">
+        <item quantity="one">%1$d pending item</item>
+        <item quantity="other">%1$d pending items</item>
+    </plurals>
     <string name="field_sync_quarantined">Review required</string>
     <string name="field_sync_description">Sync status: %1$s</string>
     <string name="blind_count_observed_quantity">Observed quantity</string>
-    <string name="blind_count_completed_lines">%1$d lines completed</string>
+    <plurals name="blind_count_completed_lines">
+        <item quantity="one">%1$d line completed</item>
+        <item quantity="other">%1$d lines completed</item>
+    </plurals>
     <string name="blind_count_progress">%1$d / %2$d</string>
     <string name="blind_count_confirm">Confirm quantity</string>
 </resources>

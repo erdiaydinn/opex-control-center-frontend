@@ -1,21 +1,26 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "truth_contract": {
-    "repository_green_requires_evidence_ref": true,
-    "sre_item_requires_evidence_ref": true,
-    "external_item_requires_evidence_ref": true,
-    "pilot_metric_requires_evidence_ref": true,
-    "production_signoff_requires_evidence_ref": true,
+    "candidate_sha_exact_40_hex": true,
+    "repository_status_bound_to_candidate_sha": true,
+    "sre_item_requires_sha256_evidence_ref": true,
+    "external_item_requires_ledger_sha256_ref": true,
+    "pilot_metric_requires_sha256_evidence_ref": true,
+    "production_signoff_requires_sha256_evidence_ref": true,
     "repository_or_synthetic_can_satisfy_external_acceptance": false
   },
   "release_requirements": {
     "production_candidate": {
       "repository_green": true,
       "external_items": [49, 50, 51, 52, 53, 54, 55],
-      "sre_items": [45, 46, 47, 48]
+      "sre_items": [45, 46, 47, 48],
+      "candidate_binding": "EXACT_GITHUB_SHA"
     },
     "pilot": {
       "requires": "PRODUCTION_CANDIDATE",
+      "scope": "TENANT_MODULE_CONTROLLED",
+      "plan_evidence": "SHA256_BOUND",
+      "rollback_evidence": "SHA256_BOUND",
       "measure": [
         "error_budget",
         "task_success",
@@ -30,10 +35,21 @@
     "production": {
       "requires": "PILOT_ACCEPTED",
       "signoffs": ["security", "dr", "identity", "real_data", "module_owner"],
-      "activation": "TENANT_MODULE_CONTROLLED"
+      "activation": "TENANT_MODULE_CONTROLLED",
+      "activation_must_be_within_pilot_scope": true,
+      "plan_evidence": "SHA256_BOUND",
+      "rollback_evidence": "SHA256_BOUND"
     },
     "stabilization": {
       "requires": "PRODUCTION_ACTIVE",
+      "acceptance_metrics": [
+        "error_budget",
+        "incident_rate",
+        "reconciliation",
+        "support_backlog",
+        "no_open_p0",
+        "rollback_readiness"
+      ],
       "queues": [
         "bugs",
         "friction",
@@ -46,7 +62,10 @@
       ]
     },
     "category_leadership": {
-      "loop": ["DISCOVER", "PROVE_VALUE", "BUILD", "TEST", "PILOT", "MEASURE", "IMPROVE"]
+      "requires": "STABILIZATION_ACCEPTED",
+      "state": "CATEGORY_LEADERSHIP",
+      "loop": ["DISCOVER", "PROVE_VALUE", "BUILD", "TEST", "PILOT", "MEASURE", "IMPROVE"],
+      "benchmark_evidence": "SHA256_BOUND"
     }
   }
 }

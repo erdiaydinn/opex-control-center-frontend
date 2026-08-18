@@ -83,7 +83,7 @@ def upgrade() -> None:
                    OR NOT COALESCE(dna_geometry, FALSE)
                    OR dna_store IS DISTINCT FROM NEW.store_code
                 THEN
-                    RAISE EXCEPTION 'Planogram approval requires approved attested Store DNA for the same store';
+    RAISE EXCEPTION 'Planogram approval requires approved attested Store DNA for the same store';
                 END IF;
             END IF;
             RETURN NEW;

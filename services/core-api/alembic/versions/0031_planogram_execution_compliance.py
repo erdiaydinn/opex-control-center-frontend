@@ -239,7 +239,7 @@ def upgrade() -> None:
                 WHERE tenant_id=NEW.tenant_id AND id=NEW.store_dna_version_id;
                 IF dna_status IS DISTINCT FROM 'approved' OR NOT COALESCE(dna_geometry, FALSE)
                    OR dna_store IS DISTINCT FROM NEW.store_code THEN
-                    RAISE EXCEPTION 'Planogram approval requires approved attested Store DNA for the same store';
+    RAISE EXCEPTION 'Planogram approval requires approved attested Store DNA for the same store';
                 END IF;
             END IF;
             RETURN NEW;
@@ -278,7 +278,8 @@ def upgrade() -> None:
         "planogram_compliance_observations",
     ):
         op.execute(
-            f"""CREATE OR REPLACE FUNCTION {table_name}_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+            f"""CREATE OR REPLACE FUNCTION {table_name}_append_only()
+            RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN RAISE EXCEPTION '{table_name} is append-only'; END; $$"""
         )
         op.execute(

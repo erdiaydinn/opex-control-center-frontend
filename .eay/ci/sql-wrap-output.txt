@@ -1,5 +1,8 @@
 E501_INPUT_FILES=2
-SQL_WRAP_CHANGED_FILES=0
+SQL_WRAP_FILE=/home/runner/work/opex-control-center-frontend/opex-control-center-frontend/services/core-api/alembic/versions/0031_planogram_execution_compliance.py TOKENS=1
+SQL_WRAP_FILE=/home/runner/work/opex-control-center-frontend/opex-control-center-frontend/services/core-api/alembic/versions/0035_planogram_plan_lifecycle_hardening.py TOKENS=1
+PLANOGRAM_APPEND_ONLY_HEADER_REPAIR=APPLIED
+SQL_WRAP_CHANGED_FILES=2
 COMPILE_EXIT_CODE=0
 services/core-api/app/core/ai_orders_v2_source_comparison.py:38: SyntaxWarning: invalid escape sequence '\`'
   FROM \`curated_data_shared_coredata_business.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS\`

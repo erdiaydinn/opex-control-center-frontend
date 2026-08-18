@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
   push:
     branches:
       - product/eay-category-leadership-v1

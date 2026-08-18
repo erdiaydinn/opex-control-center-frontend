@@ -4,12 +4,17 @@ The live-reality ingestion layer decides whether source observations may become
 company truth. This module answers the next question: whether the resulting
 truth is sufficient for a specific decision or executive claim.
 
-A model cannot waive missing, stale or conflicted required evidence. The gate
-returns structured reasons and never manufactures defaults for absent facts.
+A model cannot waive missing, stale or conflicted required evidence. Readiness
+receipts are integrity-bound to the exact WorldSnapshot and truth requirement;
+they cannot be detached from the evaluated truth surface without failing model
+validation. This is integrity protection, not an identity signature: production
+issuance still belongs inside the trusted EAY runtime boundary.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from enum import Enum
 
 from pydantic import BaseModel, Field, model_validator
@@ -38,6 +43,16 @@ class DecisionTruthStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+def _canonical_hash(payload: dict) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 class DecisionTruthRequirement(BaseModel):
     requirement_id: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)
@@ -56,6 +71,9 @@ class DecisionTruthRequirement(BaseModel):
         if any(":" not in key for key in self.required_field_keys):
             raise ValueError("decision_truth_field_key_must_include_entity")
         return self
+
+    def fingerprint(self) -> str:
+        return _canonical_hash(self.model_dump(mode="json"))
 
 
 class SourceReadinessReceipt(BaseModel):
@@ -81,6 +99,48 @@ class DecisionTruthReceipt(BaseModel):
     conflicted_required_field_keys: tuple[str, ...] = ()
     reasons: tuple[str, ...] = ()
     firm_claim_authorized: bool = False
+    world_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    requirement_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    receipt_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def receipt_is_integrity_bound_and_semantically_consistent(self) -> "DecisionTruthReceipt":
+        expected = _canonical_hash(
+            self.model_dump(mode="json", exclude={"receipt_fingerprint"})
+        )
+        if self.receipt_fingerprint != expected:
+            raise ValueError("decision_truth_receipt_fingerprint_mismatch")
+
+        issue_sets = (
+            self.missing_required_binding_ids,
+            self.degraded_required_binding_ids,
+            self.stale_required_binding_ids,
+            self.conflicted_required_binding_ids,
+            self.missing_required_field_keys,
+            self.conflicted_required_field_keys,
+        )
+        has_required_issue = any(issue_sets)
+        if self.status is DecisionTruthStatus.PROCEED:
+            if not self.firm_claim_authorized:
+                raise ValueError("decision_truth_proceed_requires_firm_claim_authority")
+            if has_required_issue or self.reasons:
+                raise ValueError("decision_truth_proceed_cannot_contain_required_truth_issue")
+        elif self.firm_claim_authorized:
+            raise ValueError("decision_truth_nonproceed_cannot_authorize_firm_claim")
+        if self.status is DecisionTruthStatus.BLOCKED and not (has_required_issue or self.reasons):
+            raise ValueError("decision_truth_blocked_requires_reason")
+        return self
+
+
+def _sealed_decision_truth_receipt(**payload) -> DecisionTruthReceipt:
+    draft = DecisionTruthReceipt.model_construct(
+        **payload,
+        receipt_fingerprint="0" * 64,
+    )
+    fingerprint = _canonical_hash(
+        draft.model_dump(mode="json", exclude={"receipt_fingerprint"})
+    )
+    return DecisionTruthReceipt(**payload, receipt_fingerprint=fingerprint)
 
 
 def _field_key(receipt: LiveBindingReceipt) -> str | None:
@@ -151,7 +211,8 @@ def evaluate_decision_truth_readiness(
     """Evaluate whether live company truth is sufficient for a decision.
 
     Required sources and fields are explicit. A language model or caller cannot
-    reinterpret SOURCE_UNAVAILABLE/STALE/CONFLICT as success.
+    reinterpret SOURCE_UNAVAILABLE/STALE/CONFLICT as success. The returned
+    receipt is integrity-bound to the exact world snapshot and requirement.
     """
 
     if snapshot.tenant_id != requirement.tenant_id:
@@ -239,7 +300,7 @@ def evaluate_decision_truth_readiness(
     else:
         status = DecisionTruthStatus.PROCEED
 
-    return DecisionTruthReceipt(
+    return _sealed_decision_truth_receipt(
         requirement_id=requirement.requirement_id,
         tenant_id=requirement.tenant_id,
         status=status,
@@ -252,4 +313,6 @@ def evaluate_decision_truth_readiness(
         conflicted_required_field_keys=tuple(conflicted_fields),
         reasons=tuple(sorted(set(reasons))),
         firm_claim_authorized=status is DecisionTruthStatus.PROCEED,
+        world_snapshot_fingerprint=snapshot.world.fingerprint,
+        requirement_fingerprint=requirement.fingerprint(),
     )

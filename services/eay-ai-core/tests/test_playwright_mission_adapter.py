@@ -20,7 +20,8 @@ from app.playwright_mission_adapter import (
 
 
 class FakeSession:
-    def __init__(self, *, fail_action_id=None):
+    def __init__(self, *, auth_context_ref="auth://corporate-session", fail_action_id=None):
+        self.auth_context_ref = auth_context_ref
         self.fail_action_id = fail_action_id
         self.goto_calls = []
         self.actions = []
@@ -37,6 +38,7 @@ class FakeSession:
             action_id=action.action_id,
             application_id="synthetic-portal",
             tenant_scope_ref="tenant://YS_TR",
+            auth_context_ref=self.auth_context_ref,
             locator_kind=action.locator.kind,
             action_kind=action.kind,
             completed=True,

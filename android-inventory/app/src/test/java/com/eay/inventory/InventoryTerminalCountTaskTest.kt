@@ -9,48 +9,65 @@ import org.junit.Test
 
 class InventoryTerminalCountTaskTest {
     @Test
-    fun `location mission maps to blind target and durable event context`() {
+    fun `location mission maps to blind target only after exact claim`() {
         val task = task(locationId = " a-04 ")
-
         val target = task.blindCountTarget()
-        val context = task.eventContext()
+        val context = task.eventContext(claim(locationId = "A-04"))
 
         assertEquals("inventory.count:mission-1", target.missionId)
         assertEquals(BlindCountLocationToken.hash("A-04"), target.locationTokenHash)
         assertEquals("22222222-2222-4222-8222-222222222222", context.documentId)
         assertEquals("SHIFT-20260818-001", context.activeShiftId)
+        assertEquals("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", context.attemptId)
+        assertEquals("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", context.leaseId)
         assertEquals(" a-04 ", context.locationId)
         assertEquals(MobileRuntimeProfile.EAY_TERMINAL, task.runtimeProfile)
     }
 
     @Test
+    fun `mismatched server claim fails closed`() {
+        val task = task()
+        assertThrows(IllegalArgumentException::class.java) {
+            task.eventContext(claim(locationId = "B-05"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            task.eventContext(claim(activeShiftId = "SHIFT-OTHER"))
+        }
+    }
+
+    @Test
     fun `task contract contains no expected stock authority`() {
-        val fields = InventoryTerminalCountTask::class.java.declaredFields
-            .map { it.name.lowercase() }
+        val fields = InventoryTerminalCountTask::class.java.declaredFields.map { it.name.lowercase() }
         assertTrue(
             fields.none {
-                it.contains("expected") ||
-                    it.contains("systemstock") ||
-                    it.contains("cost") ||
-                    it.contains("variance") ||
-                    it.contains("sku")
+                it.contains("expected") || it.contains("systemstock") || it.contains("cost") ||
+                    it.contains("variance") || it.contains("sku")
             },
         )
     }
 
     @Test
     fun `missing server shift provenance fails closed`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            task(activeShiftId = "")
-        }
+        assertThrows(IllegalArgumentException::class.java) { task(activeShiftId = "") }
     }
 
     @Test
     fun `non counting task fails closed`() {
-        assertThrows(IllegalArgumentException::class.java) {
-            task(state = "APPROVED")
-        }
+        assertThrows(IllegalArgumentException::class.java) { task(state = "APPROVED") }
     }
+
+    private fun claim(
+        locationId: String = "A-04",
+        activeShiftId: String = "SHIFT-20260818-001",
+    ) = InventoryMissionAttemptClaim(
+        attemptId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        leaseId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        documentId = "22222222-2222-4222-8222-222222222222",
+        locationId = locationId,
+        activeShiftId = activeShiftId,
+        validFrom = "2026-08-18T15:00:00Z",
+        expiresAt = "2026-08-18T15:15:00Z",
+    )
 
     private fun task(
         locationId: String = "A-04",

@@ -14,10 +14,13 @@ DATABASE="$APP/InventoryDatabase.kt"
 QUEUE="$APP/InventoryOfflineQueue.kt"
 COUNT_CONTROLLER="$APP/BlindCountTerminalController.kt"
 COUNT_TASK="$APP/InventoryTerminalCountTask.kt"
+TASK_CLIENT="$APP/InventoryTerminalTaskClient.kt"
 COUNT_CONTROLLER_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/BlindCountTerminalControllerTest.kt"
 COUNT_TASK_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalCountTaskTest.kt"
+TASK_CLIENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryTerminalTaskClientTest.kt"
 ANDROID_EVENT_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/OfflineContractTest.kt"
 BACKEND_EVENT_TEST="$ROOT/backend/tests/test_inventory_terminal_event_hash_contract.py"
+BACKEND_TASK_TEST="$ROOT/backend/tests/test_inventory_terminal_task_contract.py"
 GOLDEN_HASH="83fa7ef91803244218d6851f0ed217f66d9641d46e419fad79eb0b749c1dc291"
 
 required="
@@ -45,10 +48,13 @@ $DATABASE
 $QUEUE
 $COUNT_CONTROLLER
 $COUNT_TASK
+$TASK_CLIENT
 $COUNT_CONTROLLER_TEST
 $COUNT_TASK_TEST
+$TASK_CLIENT_TEST
 $ANDROID_EVENT_TEST
 $BACKEND_EVENT_TEST
+$BACKEND_TASK_TEST
 $PY_CORE/mobile_policy.py
 $PY_CORE/mobile_policy_signing.py
 $PY_CORE/mobile_device_trust.py
@@ -96,10 +102,20 @@ grep -q 'eventSink.enqueueConfirmedCount' "$COUNT_CONTROLLER"
 grep -q 'catch (_: RetryableCountPersistenceException)' "$COUNT_CONTROLLER"
 grep -q 'InventoryTerminalCountTask' "$COUNT_TASK"
 grep -q 'BlindCountLocationToken.hash(locationId)' "$COUNT_TASK"
+grep -q 'PinnedApi.client' "$TASK_CLIENT"
+grep -q 'AccessTokenMemory.freshOrNull' "$TASK_CLIENT"
+grep -q 'ManagedDeviceIdentity' "$TASK_CLIENT"
+grep -q 'X-EAY-Device-ID' "$TASK_CLIENT"
+grep -q '/api/inventory/v1/terminal/tasks' "$TASK_CLIENT"
+grep -q 'CONTRACT_REJECTED' "$TASK_CLIENT"
+grep -q 'expected_quantity' "$TASK_CLIENT"
+grep -q 'Duplicate terminal mission ID' "$TASK_CLIENT"
 grep -q 'reuses exact event identity' "$COUNT_CONTROLLER_TEST"
 grep -q 'not mislabeled as retryable' "$COUNT_CONTROLLER_TEST"
+grep -q 'no anonymous fallback' "$TASK_CLIENT_TEST"
 grep -q "$GOLDEN_HASH" "$ANDROID_EVENT_TEST"
 grep -q "$GOLDEN_HASH" "$BACKEND_EVENT_TEST"
+grep -q 'location-bound' "$BACKEND_TASK_TEST"
 grep -q 'MOBILE_POLICY_ALGORITHM = "ES256"' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MAX_SIGNED_POLICY_LIFETIME_SECONDS = 300' "$PY_CORE/mobile_policy_signing.py"
 grep -q 'MobileDeviceState.REPLACED' "$ROOT/services/core-api/tests/test_mobile_device_trust.py"
@@ -112,6 +128,11 @@ fi
 
 if grep -R -n -E '(access|refresh|id)_token[[:space:]]*=[[:space:]]*"[^"$]+' "$CORE"; then
   echo "literal credential-like value detected in mobile core" >&2
+  exit 1
+fi
+
+if grep -n -E 'OkHttpClient|CertificatePinner|newBuilder\(' "$TASK_CLIENT"; then
+  echo "terminal task client must reuse PinnedApi instead of creating transport authority" >&2
   exit 1
 fi
 

@@ -13,9 +13,12 @@ on:
       - "ops/mobile/**"
       - "backend/app/modules/inventory/router.py"
       - "backend/app/modules/inventory/production.py"
+      - "backend/app/modules/workforce/active_shift.py"
       - "backend/tests/test_inventory_production_identity_authority.py"
+      - "backend/tests/test_inventory_terminal_active_shift_gate.py"
       - "backend/tests/test_inventory_terminal_event_hash_contract.py"
       - "backend/tests/test_inventory_terminal_task_contract.py"
+      - "backend/tests/test_workforce_active_shift_authority.py"
       - "services/core-api/app/core/mobile_device_trust.py"
       - "services/core-api/app/core/mobile_policy.py"
       - "services/core-api/app/core/mobile_policy_signing.py"
@@ -54,7 +57,7 @@ jobs:
       - name: Install Core API test surface
         working-directory: services/core-api
         run: python -m pip install -e '.[dev]'
-      - name: Lint mobile authority, device trust and terminal contracts
+      - name: Lint mobile authority, device trust, shift and terminal contracts
         run: >-
           ruff check
           services/core-api/app/core/mobile_device_trust.py
@@ -63,7 +66,10 @@ jobs:
           services/core-api/tests/test_mobile_device_trust.py
           services/core-api/tests/test_mobile_policy.py
           services/core-api/tests/test_mobile_policy_signing.py
+          backend/app/modules/workforce/active_shift.py
+          backend/tests/test_workforce_active_shift_authority.py
           backend/tests/test_inventory_production_identity_authority.py
+          backend/tests/test_inventory_terminal_active_shift_gate.py
           backend/tests/test_inventory_terminal_event_hash_contract.py
           backend/tests/test_inventory_terminal_task_contract.py
       - name: Prove mobile authority fail-closed behavior
@@ -73,10 +79,12 @@ jobs:
           tests/test_mobile_device_trust.py
           tests/test_mobile_policy.py
           tests/test_mobile_policy_signing.py
-      - name: Prove production Inventory identity, event hash and task contracts
+      - name: Prove Workforce active-shift and production Inventory contracts
         run: >-
           pytest -q
+          backend/tests/test_workforce_active_shift_authority.py
           backend/tests/test_inventory_production_identity_authority.py
+          backend/tests/test_inventory_terminal_active_shift_gate.py
           backend/tests/test_inventory_terminal_event_hash_contract.py
           backend/tests/test_inventory_terminal_task_contract.py
 

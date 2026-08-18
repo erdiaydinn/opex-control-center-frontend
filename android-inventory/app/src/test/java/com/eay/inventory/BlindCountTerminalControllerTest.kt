@@ -60,6 +60,24 @@ class BlindCountTerminalControllerTest {
     }
 
     @Test
+    fun `expired lease blocks count before durable queue write`() = runBlocking {
+        val sink = RecordingSink()
+        val controller = controller(
+            sink = sink,
+            occurredAt = "2026-08-18T15:16:00Z",
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+
+        val result = controller.confirmItem()
+
+        assertEquals(BlindCountControllerCode.DENY_LEASE_EXPIRED, result.code)
+        assertEquals(BlindCountStep.CONFIRM_ITEM, result.session.step)
+        assertTrue(sink.lineAttempts.isEmpty())
+    }
+
+    @Test
     fun `location completion advances only after durable queue insert`() = runBlocking {
         val sink = RecordingSink()
         val controller = controller(
@@ -80,6 +98,22 @@ class BlindCountTerminalControllerTest {
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":0"))
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
         assertTrue(result.durableEvent!!.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
+    }
+
+    @Test
+    fun `expired lease blocks location completion before durable queue write`() = runBlocking {
+        val sink = RecordingSink()
+        val controller = controller(
+            sink = sink,
+            occurredAt = "2026-08-18T15:16:00Z",
+        )
+        controller.onAcceptedScan(locationScan("A-04"))
+
+        val result = controller.completeLocation()
+
+        assertEquals(BlindCountControllerCode.DENY_LEASE_EXPIRED, result.code)
+        assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
+        assertTrue(sink.completionAttempts.isEmpty())
     }
 
     @Test
@@ -155,6 +189,7 @@ class BlindCountTerminalControllerTest {
                 locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
             ),
             eventContext = context(missionId = "mission-1", locationId = "B-05"),
+            leaseValidUntil = LEASE_VALID_UNTIL,
             eventSink = sink,
         )
 
@@ -184,6 +219,7 @@ class BlindCountTerminalControllerTest {
                     locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
                 ),
                 eventContext = context(missionId = "mission-2"),
+                leaseValidUntil = LEASE_VALID_UNTIL,
                 eventSink = RecordingSink(),
             )
         }
@@ -201,6 +237,7 @@ class BlindCountTerminalControllerTest {
             targetLineCount = targetLineCount,
         ),
         eventContext = context(),
+        leaseValidUntil = LEASE_VALID_UNTIL,
         eventSink = sink,
         eventIdFactory = { eventId },
         occurredAtFactory = { occurredAt },
@@ -303,5 +340,6 @@ class BlindCountTerminalControllerTest {
         private const val DOCUMENT_ID = "22222222-2222-4222-8222-222222222222"
         private const val ATTEMPT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         private const val LEASE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        private const val LEASE_VALID_UNTIL = "2026-08-18T15:15:00Z"
     }
 }

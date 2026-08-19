@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   ai-frozen-authority:
-    name: Frozen #15 AI authority
+    name: "Frozen #15 AI authority"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -53,7 +53,7 @@ jobs:
           pytest -q $tests
 
   core-frozen-authority:
-    name: Frozen #16 Core authority
+    name: "Frozen #16 Core authority"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -147,7 +147,7 @@ jobs:
           pytest -q $tests
 
   identity-gateway-security:
-    name: Frozen #16 identity signing and secret runtime
+    name: "Frozen #16 identity signing and secret runtime"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

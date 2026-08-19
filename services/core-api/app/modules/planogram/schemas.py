@@ -37,6 +37,50 @@ class PlanogramPreviewRequest(BaseModel):
     order_baskets: list[PlanogramOrderBasket] = Field(default_factory=list, max_length=5000)
 
 
+class PlanogramStoreScanElement(BaseModel):
+    """Normalized geometry emitted by a native camera/LiDAR/AR adapter."""
+
+    element_id: str = Field(min_length=1, max_length=120)
+    element_type: Literal[
+        "wall",
+        "column",
+        "door",
+        "opening",
+        "chiller",
+        "freezer",
+        "fixture",
+        "unknown",
+    ]
+    x_m: float = Field(ge=0, le=500)
+    y_m: float = Field(ge=0, le=500)
+    width_m: float = Field(gt=0, le=500)
+    depth_m: float = Field(gt=0, le=500)
+    rotation_deg: float = Field(default=0, ge=-360, le=360)
+    confidence: float = Field(ge=0, le=1)
+    label: str | None = Field(default=None, max_length=160)
+
+
+class PlanogramStoreScanPreviewRequest(BaseModel):
+    """Unattested measured scan input; raw image/video bytes are never accepted here."""
+
+    store_code: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
+    provider: Literal["apple_roomplan", "arcore_depth", "cad_import", "manual_survey"]
+    source_ref: str = Field(min_length=3, max_length=500)
+    floor_width_m: float = Field(gt=0, le=500)
+    floor_depth_m: float = Field(gt=0, le=500)
+    elements: list[PlanogramStoreScanElement] = Field(min_length=1, max_length=5000)
+
+    @field_validator("elements")
+    @classmethod
+    def unique_scan_element_ids(
+        cls, value: list[PlanogramStoreScanElement]
+    ) -> list[PlanogramStoreScanElement]:
+        ids = [item.element_id for item in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate scan element id")
+        return value
+
+
 class FixtureInventorySeed(BaseModel):
     fixture_type: str = Field(min_length=1, max_length=80)
     count: int = Field(ge=0, le=1000)

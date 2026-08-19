@@ -33,7 +33,10 @@ android {
 dependencies {
     api(project(":mobile-presentation-contracts"))
 
-    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    // Production Inventory remains on AGP 8.7.x. Keep this compatibility build on the
+    // Compose 1.8.x line so Android Lint and the Kotlin analysis API stay binary-compatible.
+    // The standalone android-field-ui build remains the forward/latest compatibility gate.
+    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")

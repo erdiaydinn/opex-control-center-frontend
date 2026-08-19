@@ -73,7 +73,18 @@ def _rule() -> TimelineReplanRule:
     )
 
 
-def _read_lane(*, mission_id: str = "mission-inventory-v1") -> ParallelMissionLane:
+def _resource_rule() -> TimelineReplanRule:
+    return TimelineReplanRule(
+        event_type="eay.company.inventory.changed",
+        affected_resource_refs=(RESOURCE,),
+    )
+
+
+def _read_lane(
+    *,
+    mission_id: str = "mission-inventory-v1",
+    requires_truth: bool = True,
+) -> ParallelMissionLane:
     step = MissionStep(step_id="read", description="read current inventory")
     definition = MissionDefinition(
         mission_id=mission_id,
@@ -90,7 +101,9 @@ def _read_lane(*, mission_id: str = "mission-inventory-v1") -> ParallelMissionLa
                 step_id="read",
                 kind=MissionExecutionKind.CAPABILITY,
                 capability_ref="company.inventory.read",
-                decision_truth_requirement_id="truth.inventory.v2",
+                decision_truth_requirement_id=(
+                    "truth.inventory.v2" if requires_truth else None
+                ),
             ),
         ),
         exclusive_resource_refs=(RESOURCE,),
@@ -165,7 +178,7 @@ def _bindings() -> dict[str, ParallelLaneBindings]:
 
 
 @pytest.mark.asyncio
-async def test_verified_timeline_change_replans_fresh_lane_then_executes_canonical_runtime():
+async def test_replanned_lane_still_requires_fresh_live_truth_receipt_before_execution():
     original = _candidate("objective://inventory", _read_lane())
     replacement = _read_lane(mission_id="mission-inventory-v2")
 
@@ -191,7 +204,42 @@ async def test_verified_timeline_change_replans_fresh_lane_then_executes_canonic
     executed = result.execution.objective_rounds[0].results[0]
     assert executed.summary is not None
     assert executed.summary.checkpoint.mission_id == "mission-inventory-v2"
+    assert executed.summary.checkpoint.sequence == 0
+    assert executed.summary.blockers == ("live_company_truth_receipt_missing:read",)
+
+
+@pytest.mark.asyncio
+async def test_resource_only_replan_executes_fresh_replacement_through_canonical_runtime():
+    original = _candidate(
+        "objective://inventory-resource-read",
+        _read_lane(mission_id="mission-resource-v1", requires_truth=False),
+    )
+    replacement = _read_lane(
+        mission_id="mission-resource-v2",
+        requires_truth=False,
+    )
+
+    result = await execute_timeline_replanned_multi_objective_round(
+        candidates=(original,),
+        events=(_event(),),
+        rules=(_resource_rule(),),
+        replacements_by_objective={
+            original.objective_ref: {replacement.lane_id: replacement}
+        },
+        bindings=MultiObjectiveBindings(
+            by_objective={original.objective_ref: _bindings()}
+        ),
+        active_leases=(),
+        now=NOW,
+    )
+
+    assert result.preparation.decisions[0].disposition is TimelineSwarmReplanDisposition.REPLANNED
+    assert result.execution is not None
+    executed = result.execution.objective_rounds[0].results[0]
+    assert executed.summary is not None
+    assert executed.summary.checkpoint.mission_id == "mission-resource-v2"
     assert executed.summary.checkpoint.sequence > 0
+    assert executed.summary.blockers == ()
 
 
 @pytest.mark.asyncio
@@ -218,15 +266,11 @@ async def test_missing_fresh_replacement_holds_stale_objective_instead_of_execut
 @pytest.mark.asyncio
 async def test_attempted_side_effect_objective_is_held_for_review_not_replanned_or_replayed():
     candidate = _candidate("objective://inventory-write", _attempted_write_lane())
-    rule = TimelineReplanRule(
-        event_type="eay.company.inventory.changed",
-        affected_resource_refs=(RESOURCE,),
-    )
 
     result = await execute_timeline_replanned_multi_objective_round(
         candidates=(candidate,),
         events=(_event(),),
-        rules=(rule,),
+        rules=(_resource_rule(),),
         replacements_by_objective={},
         bindings=MultiObjectiveBindings(by_objective={}),
         active_leases=(),
@@ -262,6 +306,8 @@ def test_replacement_for_unknown_objective_fails_closed_before_any_execution():
             candidates=(candidate,),
             events=(_event(),),
             rules=(_rule(),),
-            replacements_by_objective={"objective://invented": {"inventory-read": _read_lane()}},
+            replacements_by_objective={
+                "objective://invented": {"inventory-read": _read_lane()}
+            },
             now=NOW,
         )

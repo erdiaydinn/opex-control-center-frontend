@@ -8,17 +8,17 @@ on:
       - "src/modules/control-center/commandCenterModules.js"
       - "scripts/test-audit-product-states.mjs"
       - "services/core-api/app/modules/audit/**"
-      - "services/core-api/tests/test_audit_scope_contracts.py"
-      - "services/core-api/tests/test_audit_assurance_contracts.py"
-      - "services/core-api/tests/test_audit_accountability_contracts.py"
-      - "services/core-api/tests/test_audit_intelligence_contracts.py"
-      - "services/core-api/tests/test_audit_evidence_object_contracts.py"
+      - "services/core-api/app/modules/field_intelligence/evidence_object_read.py"
+      - "services/core-api/tests/test_audit_*.py"
       - "services/core-api/app/core/permission_catalog.py"
       - "services/core-api/app/budget_main.py"
       - "services/core-api/alembic/versions/0046_audit_operating_system.py"
       - "services/core-api/alembic/versions/0047_audit_privacy_verification.py"
       - "services/core-api/alembic/versions/0048_audit_assurance_routing.py"
       - "services/core-api/alembic/versions/0049_audit_location_accountability.py"
+      - "services/core-api/alembic/versions/0050_audit_evidence_binding_integrity.py"
+      - "services/core-api/alembic/versions/0051_audit_server_privacy_authority.py"
+      - "services/core-api/alembic/versions/0052_audit_vision_inference_authority.py"
       - ".github/workflows/eay-audit-ci.yml"
   push:
     branches:
@@ -48,7 +48,7 @@ jobs:
       - run: npm run build
 
   audit-api-static:
-    name: Audit API / migration static gates
+    name: Audit API / cumulative authority gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -72,31 +72,55 @@ jobs:
         run: pytest -q tests/test_audit_intelligence_contracts.py
       - name: Evidence object contracts
         run: pytest -q tests/test_audit_evidence_object_contracts.py
+      - name: Evidence binding contracts
+        run: pytest -q tests/test_audit_evidence_binding_contracts.py
+      - name: Privacy authority contracts
+        run: >-
+          pytest -q
+          tests/test_audit_privacy_verification_runtime.py
+          tests/test_audit_private_evidence_read.py
+          tests/test_audit_privacy_authority_contracts.py
+      - name: Vision authorization contracts
+        run: pytest -q tests/test_audit_vision_authorization_contracts.py
       - name: Compile audit authority
         run: >-
           python -m compileall -q
           app/modules/audit
+          app/modules/field_intelligence/evidence_object_read.py
           app/core/permission_catalog.py
           app/budget_main.py
           alembic/versions/0046_audit_operating_system.py
           alembic/versions/0047_audit_privacy_verification.py
           alembic/versions/0048_audit_assurance_routing.py
           alembic/versions/0049_audit_location_accountability.py
+          alembic/versions/0050_audit_evidence_binding_integrity.py
+          alembic/versions/0051_audit_server_privacy_authority.py
+          alembic/versions/0052_audit_vision_inference_authority.py
       - name: Ruff application boundaries
         run: >-
           ruff check
           app/modules/audit/authorization.py
+          app/modules/audit/control_contracts.py
+          app/modules/audit/evidence_binding_schemas.py
           app/modules/audit/evidence_object_routes.py
           app/modules/audit/intelligence_routes.py
+          app/modules/audit/privacy_verification_runtime.py
           app/modules/audit/routes.py
           app/modules/audit/resource_scope.py
           app/modules/audit/run_authority.py
           app/modules/audit/schemas.py
+          app/modules/audit/vision_model_proof.py
+          app/modules/field_intelligence/evidence_object_read.py
           tests/test_audit_scope_contracts.py
           tests/test_audit_assurance_contracts.py
           tests/test_audit_accountability_contracts.py
           tests/test_audit_intelligence_contracts.py
           tests/test_audit_evidence_object_contracts.py
+          tests/test_audit_evidence_binding_contracts.py
+          tests/test_audit_privacy_verification_runtime.py
+          tests/test_audit_private_evidence_read.py
+          tests/test_audit_privacy_authority_contracts.py
+          tests/test_audit_vision_authorization_contracts.py
           app/core/permission_catalog.py
           app/budget_main.py
       - name: Ruff Audit repository authority
@@ -107,11 +131,19 @@ jobs:
         run: ruff check --ignore E501 app/modules/audit/assurance.py
       - name: Ruff Audit intelligence authority
         run: ruff check --ignore E501 app/modules/audit/intelligence.py
-      - name: Ruff migration 0046
-        run: ruff check --ignore E501 alembic/versions/0046_audit_operating_system.py
-      - name: Ruff migration 0047
-        run: ruff check --ignore E501 alembic/versions/0047_audit_privacy_verification.py
-      - name: Ruff migration 0048
-        run: ruff check --ignore E501 alembic/versions/0048_audit_assurance_routing.py
-      - name: Ruff migration 0049
-        run: ruff check --ignore E501 alembic/versions/0049_audit_location_accountability.py
+      - name: Ruff Audit evidence binding authority
+        run: ruff check --ignore E501 app/modules/audit/evidence_binding.py
+      - name: Ruff Audit privacy verification service
+        run: ruff check --ignore E501 app/modules/audit/privacy_verification_service.py
+      - name: Ruff Audit vision authorization authority
+        run: ruff check --ignore E501 app/modules/audit/vision_inference_authorization.py
+      - name: Ruff migrations 0046-0052
+        run: >-
+          ruff check --ignore E501
+          alembic/versions/0046_audit_operating_system.py
+          alembic/versions/0047_audit_privacy_verification.py
+          alembic/versions/0048_audit_assurance_routing.py
+          alembic/versions/0049_audit_location_accountability.py
+          alembic/versions/0050_audit_evidence_binding_integrity.py
+          alembic/versions/0051_audit_server_privacy_authority.py
+          alembic/versions/0052_audit_vision_inference_authority.py

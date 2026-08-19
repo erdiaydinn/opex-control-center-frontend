@@ -19,6 +19,8 @@ on:
       - "services/eay-ai-core/tests/test_governed_tool_execution_authorization.py"
       - "services/eay-ai-core/tests/test_tool_execution.py"
       - "services/eay-ai-core/tests/test_voice_governed_tool_adapter.py"
+      - "config/eay_frozen_authority_coverage_matrix_v1.json"
+      - "scripts/validate_frozen_authority_coverage.py"
       - ".github/workflows/jarvis-platform-security-consolidation-ci.yml"
       - "docs/security/JARVIS_PLATFORM_SECURITY_CONSOLIDATION_V1.md"
   workflow_dispatch:
@@ -52,6 +54,10 @@ jobs:
           --health-retries 12
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
@@ -119,6 +125,10 @@ jobs:
           --health-retries 12
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
@@ -183,6 +193,10 @@ jobs:
         working-directory: services/eay-ai-core
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
@@ -190,6 +204,8 @@ jobs:
           cache-dependency-path: services/eay-ai-core/pyproject.toml
       - name: Install AI Core
         run: python -m pip install -e ".[dev]"
+      - name: Validate frozen authority matrix paths
+        run: python ../../scripts/validate_frozen_authority_coverage.py
       - name: Compile governed execution
         run: python -m compileall -q app tests
       - name: Ruff governed execution
@@ -210,3 +226,46 @@ jobs:
           tests/test_governed_tool_execution_adoption.py
       - name: Full AI Core regression
         run: pytest -q
+
+  frozen-authority-coverage:
+    name: Frozen #15/#16 authority coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Validate frozen source heads, capability paths and evidence paths
+        run: python scripts/validate_frozen_authority_coverage.py
+      - name: Ruff coverage validator
+        run: ruff check scripts/validate_frozen_authority_coverage.py
+      - name: Revalidate frozen Phase 1 authority on current head
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          tests="$(python ../../scripts/validate_frozen_authority_coverage.py --print-core-tests)"
+          test -n "$tests"
+          pytest -q $tests

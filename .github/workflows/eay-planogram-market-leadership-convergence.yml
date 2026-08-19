@@ -15,6 +15,7 @@ on:
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramScanAnnotationMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
@@ -32,6 +33,7 @@ on:
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramScanAnnotationMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
@@ -118,10 +120,13 @@ jobs:
           services/core-api/app/modules/planogram/scenario_adapter.py
           services/core-api/app/modules/planogram/scenario_router.py
           services/core-api/app/modules/planogram/scenario_schemas.py
+          services/core-api/app/modules/planogram/schemas.py
           services/core-api/app/modules/planogram/shelf_scan.py
           services/core-api/app/modules/planogram/shelf_scan_router.py
           services/core-api/app/modules/planogram/shelf_scan_schemas.py
           services/core-api/app/modules/planogram/store_scan.py
+          services/core-api/app/modules/planogram/store_scan_annotation.py
+          services/core-api/app/modules/planogram/store_scan_review_router.py
           services/core-api/tests/test_planogram_cad_authorization.py
           services/core-api/tests/test_planogram_candidate_economics_api.py
           services/core-api/tests/test_planogram_economics_api.py
@@ -132,6 +137,7 @@ jobs:
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_store_scan_contract.py
+          services/core-api/tests/test_planogram_store_scan_annotation.py
       - name: Spatial V2 and V1 truth convergence
         working-directory: apps/planai/backend
         run: >-
@@ -169,16 +175,18 @@ jobs:
           services/core-api/tests/test_planogram_physical_layout_v5_contract.py
           services/core-api/tests/test_planogram_scenario_replay_api.py
           services/core-api/tests/test_planogram_store_scan_contract.py
+          services/core-api/tests/test_planogram_store_scan_annotation.py
       - name: Shelf Scan uncertainty runtime and execution truth convergence
         run: >-
           python -m pytest -q
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_master26_execution.py
-      - name: Interactive engineering CFO Pareto basket Store Scan Picker Eye and route convergence
+      - name: Interactive engineering CFO Pareto basket Store Scan annotation Picker Eye and route convergence
         run: |
           node scripts/test-planogram-candidate-baskets.mjs
           node scripts/test-planogram-store-scan-ui.mjs
+          node scripts/test-planogram-scan-annotation.mjs
           node scripts/test-planogram-picker-eye-assets.mjs
           node scripts/test-planogram-economics-ui.mjs
           node scripts/test-planogram-scenario-portfolio.mjs
@@ -204,6 +212,7 @@ jobs:
               '/v1/planogram/blind-benchmark-preview',
               '/v1/planogram/cad-preview',
               '/v1/planogram/store-scan/normalize-preview',
+              '/v1/planogram/store-scan/annotate-preview',
               '/v1/planogram/physical-layout-search-preview',
               '/v1/planogram/physical-layout-candidate-preview',
               '/v1/planogram/physical-layout-economics-preview',
@@ -219,6 +228,8 @@ jobs:
           print('PLANOGRAM_STORE_SCAN_REVIEW_UI=PASS')
           print('PLANOGRAM_STORE_SCAN_RAW_MEDIA_PERSISTED=FALSE')
           print('PLANOGRAM_STORE_SCAN_AUTO_STORE_DNA_PROMOTION=FALSE')
+          print('PLANOGRAM_STORE_SCAN_VISUAL_ANNOTATION=PASS')
+          print('PLANOGRAM_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE')
           print('PLANOGRAM_PICKER_EYE_ASSET_PREVIEW=PASS')
           print('PLANOGRAM_REMOTE_PREVIEW_ASSET_URLS=BLOCKED')
           print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')

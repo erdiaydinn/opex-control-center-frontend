@@ -63,7 +63,10 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "privacy_verification_event_id"],
-            ["audit_redaction_verification_events.tenant_id", "audit_redaction_verification_events.id"],
+            [
+                "audit_redaction_verification_events.tenant_id",
+                "audit_redaction_verification_events.id",
+            ],
             ondelete="RESTRICT",
             name="fk_audit_vision_auth_privacy_event",
         ),

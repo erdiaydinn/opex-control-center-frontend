@@ -22,12 +22,13 @@ from .assurance import (
     standards_decide_assurance_case,
 )
 from .authorization import AuditScope, require_audit_scope, scope_allows_location
+from .evidence_binding import bind_server_evidence_to_redaction_receipt
+from .evidence_binding_schemas import AuditEvidenceBindingCreate
 from .repository import (
     AuditConflictError,
     AuditRepositoryError,
     activate_program,
     append_assurance_review,
-    append_redaction_receipt,
     create_action,
     create_program,
     get_location,
@@ -46,7 +47,6 @@ from .schemas import (
     AuditManagerAssuranceDecision,
     AuditProgramActivate,
     AuditProgramCreate,
-    AuditRedactionReceiptCreate,
     AuditRunStart,
     AuditStandardsAssuranceDecision,
 )
@@ -265,26 +265,23 @@ async def get_audit_runs(
 )
 async def post_redaction_receipt(
     audit_run_id: UUID,
-    payload: AuditRedactionReceiptCreate,
+    payload: AuditEvidenceBindingCreate,
     principal: AuditViewer,
 ) -> dict[str, object]:
     scope = require_audit_scope(principal, "action:audit:submitEvidence")
     await _require_run_scope(principal, scope, audit_run_id)
-    await _require_location(principal, scope, payload.location_id)
     try:
-        receipt = await append_redaction_receipt(
+        return await bind_server_evidence_to_redaction_receipt(
             str(principal.tenant_id),
             audit_run_id,
-            payload,
+            field_evidence_receipt_id=payload.field_evidence_receipt_id,
+            source_fingerprint=payload.source_fingerprint,
+            privacy_policy_version=payload.privacy_policy_version,
+            detector_model_ref=payload.detector_model_ref,
+            device_id=payload.device_id,
         )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
-    return {
-        **receipt,
-        "client_redaction_received": True,
-        "server_privacy_verified": False,
-        "vision_inference_authorized": False,
-    }
 
 
 @router.post(

@@ -10,7 +10,9 @@ on:
       - "services/core-api/app/core/localization.py"
       - "services/core-api/app/modules/academy/**"
       - "services/core-api/alembic/versions/*academy*.py"
+      - "services/core-api/alembic/versions/0048_product_role_provisioning.py"
       - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_product_role_provisioning.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "docs/ACADEMY_*.md"
       - "ops/load/k6-academy-*.js"
@@ -23,7 +25,9 @@ on:
       - "services/core-api/app/core/localization.py"
       - "services/core-api/app/modules/academy/**"
       - "services/core-api/alembic/versions/*academy*.py"
+      - "services/core-api/alembic/versions/0048_product_role_provisioning.py"
       - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_product_role_provisioning.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "docs/ACADEMY_*.md"
       - "ops/load/k6-academy-*.js"
@@ -104,7 +108,7 @@ jobs:
       - name: Central SQL execution boundary
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
       - name: Compile Academy
-        run: python -m compileall -q services/core-api/app/modules/academy services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py
+        run: python -m compileall -q services/core-api/app/modules/academy services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py services/core-api/tests/test_product_role_provisioning.py
       - name: Assert one cumulative Alembic head before migration
         working-directory: services/core-api
         shell: bash
@@ -113,7 +117,7 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "0047_academy_scenario_content_binding"
+          test "${heads[0]}" = "0048_product_role_provisioning"
       - name: Migrate through cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head
@@ -129,7 +133,7 @@ jobs:
               )
               try:
                   head = await connection.fetchval("SELECT version_num FROM alembic_version")
-                  assert head == "0047_academy_scenario_content_binding", head
+                  assert head == "0048_product_role_provisioning", head
                   rows = await connection.fetch(
                       "SELECT relname,relrowsecurity,relforcerowsecurity "
                       "FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'"
@@ -161,8 +165,8 @@ jobs:
 
           asyncio.run(main())
           PY
-      - name: Academy lifecycle gates
-        run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py
+      - name: Academy lifecycle and new-tenant product-role gates
+        run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py services/core-api/tests/test_product_role_provisioning.py
 
   platform-regression:
     runs-on: ubuntu-latest
@@ -229,7 +233,7 @@ jobs:
           set -euo pipefail
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "0047_academy_scenario_content_binding"
+          test "${heads[0]}" = "0048_product_role_provisioning"
       - name: Migrate clean database through cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head
@@ -299,7 +303,7 @@ jobs:
       - name: Migrate, seed, dump and restore Academy evidence
         run: |
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"
-          (cd services/core-api && alembic heads | grep -qx '0047_academy_scenario_content_binding (head)')
+          (cd services/core-api && alembic heads | grep -qx '0048_product_role_provisioning (head)')
           (cd services/core-api && alembic upgrade head)
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
           SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
@@ -350,4 +354,5 @@ jobs:
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_document_chunks WHERE locale='fa';" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_playback_receipts';" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_scenario_run_events';" | grep -qx 1
-          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0047_academy_scenario_content_binding
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM roles WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND key IN ('academy_learner','academy_instructor','academy_admin') AND is_system IS TRUE;" | grep -qx 3
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0048_product_role_provisioning

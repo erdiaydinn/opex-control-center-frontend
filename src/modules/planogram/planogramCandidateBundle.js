@@ -1,3 +1,5 @@
+import { normalizePlanogramAssetManifest } from "./planogramAssetManifest.js";
+
 const PREVIEW_MODES = new Set(["HYBRID", "CATEGORY", "ABC", "BRAND"]);
 const MAX_PRODUCTS = 5000;
 const MAX_BASKETS = 5000;
@@ -47,12 +49,18 @@ export function normalizeCandidateBundle(payload) {
     orderBaskets.push(basket);
   }
 
+  const assetManifest = payload.asset_manifest == null
+    ? null
+    : normalizePlanogramAssetManifest(payload.asset_manifest);
+  if (payload.asset_manifest != null && !assetManifest) return null;
+
   return {
     products: payload.products,
     layout: payload.layout,
     store_dna: payload.store_dna,
     mode,
     order_baskets: orderBaskets,
+    ...(assetManifest ? { asset_manifest: assetManifest } : {}),
   };
 }
 

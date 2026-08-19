@@ -3,6 +3,14 @@ from uuid import UUID
 
 import pytest
 
+from app.core.localization import (
+    CONTENT_LOCALE_SET,
+    CONTENT_RTL_LOCALES,
+    SUPPORTED_LOCALE_SET,
+    canonicalize_content_locale,
+    canonicalize_locale,
+    content_direction,
+)
 from app.core.security import Principal
 from app.modules.academy.media import (
     AcademyMediaConfig,
@@ -10,7 +18,13 @@ from app.modules.academy.media import (
     issue_playback_token,
     verify_playback_token,
 )
-from app.modules.academy.schemas import ContentCreateRequest, QuestionCreate, QuestionOptionCreate
+from app.modules.academy.schemas import (
+    ContentCreateRequest,
+    DocumentChunkCreate,
+    QuestionAnswerRequest,
+    QuestionCreate,
+    QuestionOptionCreate,
+)
 
 TENANT = UUID("00000000-0000-0000-0000-00000000a001")
 MEDIA = UUID("00000000-0000-0000-0000-00000000b001")
@@ -28,31 +42,69 @@ def principal() -> Principal:
     )
 
 
-def test_locales_are_restricted_to_eay_ten_locale_contract() -> None:
-    ContentCreateRequest(
+def test_ui_release_locales_stay_narrow_while_academy_content_expands() -> None:
+    expected_ui_locales = {
+        "tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"
+    }
+    expected_extended_examples = {"fa", "ru", "ja", "ur", "ckb", "zh-Hans", "pt-PT"}
+    assert set(SUPPORTED_LOCALE_SET) == expected_ui_locales
+    assert expected_extended_examples.issubset(CONTENT_LOCALE_SET)
+    assert canonicalize_locale("fa-IR") is None
+    assert canonicalize_content_locale("fa-IR") == "fa"
+    assert canonicalize_content_locale("pt_BR") == "pt-BR"
+    assert canonicalize_content_locale("zh-CN") == "zh-Hans"
+
+
+def test_academy_content_locales_normalize_bcp47_aliases() -> None:
+    payload = ContentCreateRequest(
         content_type="sop",
         slug="safe-work",
         title_i18n={
-            "tr": "Güvenli Çalışma",
-            "en": "Safe Work",
-            "de": "Sicheres Arbeiten",
-            "ar": "العمل الآمن",
-            "fr": "Travail sûr",
-            "es": "Trabajo seguro",
-            "it": "Lavoro sicuro",
-            "nl": "Veilig werken",
-            "pl": "Bezpieczna praca",
-            "pt-BR": "Trabalho seguro",
+            "tr-TR": "Güvenli Çalışma",
+            "en-US": "Safe Work",
+            "fa-IR": "کار ایمن",
+            "ja-JP": "安全な作業",
+            "ur-PK": "محفوظ کام",
         },
         version_label="2026.1",
+        locale="fa-IR",
     )
+    assert payload.locale == "fa"
+    assert set(payload.title_i18n) == {"tr", "en", "fa", "ja", "ur"}
+
+    chunk = DocumentChunkCreate(
+        chunk_ordinal=1,
+        locale="ckb-IQ",
+        text_content="ڕێنمایی سەلامەتی",
+    )
+    assert chunk.locale == "ckb"
+    assert QuestionAnswerRequest(question="روش چیست؟", locale="fa-IR").locale == "fa"
+
     with pytest.raises(ValueError, match="Unsupported locales"):
         ContentCreateRequest(
             content_type="sop",
             slug="unsupported-locale",
-            title_i18n={"ja": "安全な作業"},
+            title_i18n={"xx-ZZ": "unsupported"},
             version_label="1",
         )
+
+
+def test_duplicate_locale_aliases_fail_closed() -> None:
+    with pytest.raises(ValueError, match="Duplicate locale after normalization"):
+        ContentCreateRequest(
+            content_type="sop",
+            slug="duplicate-locale",
+            title_i18n={"tr": "A", "tr-TR": "B"},
+            version_label="1",
+        )
+
+
+def test_content_rtl_is_not_arabic_only() -> None:
+    expected_rtl_locales = {"ar", "fa", "ur", "ckb", "he", "ps"}
+    assert set(CONTENT_RTL_LOCALES) == expected_rtl_locales
+    for locale in ("ar", "fa-IR", "ur-PK", "ckb-IQ", "he-IL", "ps-AF"):
+        assert content_direction(locale) == "rtl"
+    assert content_direction("tr-TR") == "ltr"
 
 
 def test_single_choice_requires_exactly_one_correct_option() -> None:

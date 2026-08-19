@@ -12,9 +12,11 @@ RES="$ROOT/android-inventory/app/src/main/res"
 RECOVERY="$APP/InventoryRecoveryContract.kt"
 RECOVERY_PRESENTATION="$APP/InventoryRecoveryPresentation.kt"
 TASK_RECOVERY_PRESENTATION="$APP/InventoryTaskFetchRecoveryPresentation.kt"
+MISSION_RECOVERY_PRESENTATION="$APP/InventoryMissionExecutionRecoveryPresentation.kt"
 MAIN="$APP/MainActivity.kt"
 RECOVERY_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryContractTest.kt"
 RECOVERY_PRESENTATION_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryPresentationTest.kt"
+MISSION_RECOVERY_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryMissionExecutionRecoveryPresentationTest.kt"
 SESSION_ADAPTER_TEST="$ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/SessionRecoveryPresentationAdapterTest.kt"
 
 for file in \
@@ -26,9 +28,11 @@ for file in \
   "$RECOVERY" \
   "$RECOVERY_PRESENTATION" \
   "$TASK_RECOVERY_PRESENTATION" \
+  "$MISSION_RECOVERY_PRESENTATION" \
   "$MAIN" \
   "$RECOVERY_TEST" \
   "$RECOVERY_PRESENTATION_TEST" \
+  "$MISSION_RECOVERY_TEST" \
   "$SESSION_ADAPTER_TEST"; do
   test -f "$file" || { echo "missing terminal recovery contract: $file" >&2; exit 1; }
 done
@@ -51,6 +55,11 @@ grep -q 'unsupportedDurableUiIntentsBecomeIntegrityBlockWithoutAction' "$RECOVER
 grep -q 'InventoryTaskFetchCode.AUTH_REQUIRED' "$TASK_RECOVERY_PRESENTATION"
 grep -q 'FieldRecoveryActionKind.SIGN_IN_AGAIN' "$TASK_RECOVERY_PRESENTATION"
 grep -q 'FieldRecoveryActionKind.RELOAD_MISSIONS' "$TASK_RECOVERY_PRESENTATION"
+grep -q 'InventoryMissionClaimCode.BUSINESS_CONFLICT' "$MISSION_RECOVERY_PRESENTATION"
+grep -q 'fun leaseExpiredPolicy' "$MISSION_RECOVERY_PRESENTATION"
+grep -q 'FieldRecoveryActionKind.RELOAD_MISSIONS' "$MISSION_RECOVERY_PRESENTATION"
+grep -q 'expired lease requires fresh mission reload not client lease extension' "$MISSION_RECOVERY_TEST"
+grep -q 'device and authority rejection expose no client recovery mutation' "$MISSION_RECOVERY_TEST"
 grep -q 'session recovery exposes sign in without durable evidence fields' "$SESSION_ADAPTER_TEST"
 grep -q 'session recovery exposes read only mission reload' "$SESSION_ADAPTER_TEST"
 
@@ -58,10 +67,13 @@ grep -q 'InventoryRecoveryContract.summarize(unsettled)' "$MAIN"
 grep -q 'localRecoverySummary' "$MAIN"
 grep -q 'sessionRecoveryBanner' "$MAIN"
 grep -q 'InventoryTaskFetchRecoveryPresentation.banner' "$MAIN"
+grep -q 'InventoryMissionExecutionRecoveryPresentation.claimBanner' "$MAIN"
+grep -q 'InventoryMissionExecutionRecoveryPresentation.leaseExpiredBanner' "$MAIN"
 grep -q 'sessionRecovery = sessionRecoveryBanner' "$MAIN"
 grep -q 'onRecoveryAction = { action -> handleRecoveryAction(action) }' "$MAIN"
 grep -q 'FieldRecoveryActionKind.SIGN_IN_AGAIN' "$MAIN"
 grep -q 'FieldRecoveryActionKind.RELOAD_MISSIONS' "$MAIN"
+grep -q 'taskSelectionEnabled = false' "$MAIN"
 grep -q 'recovery = recoveryBanner' "$MAIN"
 grep -q '!globallyBlocked' "$MAIN"
 grep -q 'sessionRecoveryBanner == null' "$MAIN"
@@ -71,6 +83,13 @@ if grep -R -n -E 'dao\.(retry|delete|quarantine)|events\(\)\.(retry|delete)|reas
   "$ROOT/android-inventory/field-ui-runtime/src/main" \
   "$ROOT/android-inventory/field-presentation-adapter/src/main"; then
   echo "recovery presentation crossed into mutation or authority state" >&2
+  exit 1
+fi
+
+if grep -R -n -E 'extendLease|renewLease|reviveLease|rebindLease|reassignMission' \
+  "$MISSION_RECOVERY_PRESENTATION" \
+  "$MAIN"; then
+  echo "mission recovery attempted to create client lease authority" >&2
   exit 1
 fi
 

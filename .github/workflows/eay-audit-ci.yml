@@ -62,14 +62,16 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e '.[dev]'
-      - name: Focused Audit scope, assurance, accountability, intelligence and evidence tests
-        run: >-
-          pytest -q
-          tests/test_audit_scope_contracts.py
-          tests/test_audit_assurance_contracts.py
-          tests/test_audit_accountability_contracts.py
-          tests/test_audit_intelligence_contracts.py
-          tests/test_audit_evidence_object_contracts.py
+      - name: Scope contracts
+        run: pytest -q tests/test_audit_scope_contracts.py
+      - name: Assurance contracts
+        run: pytest -q tests/test_audit_assurance_contracts.py
+      - name: Accountability contracts
+        run: pytest -q tests/test_audit_accountability_contracts.py
+      - name: Intelligence contracts
+        run: pytest -q tests/test_audit_intelligence_contracts.py
+      - name: Evidence object contracts
+        run: pytest -q tests/test_audit_evidence_object_contracts.py
       - name: Compile audit authority
         run: >-
           python -m compileall -q

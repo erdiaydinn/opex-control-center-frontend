@@ -1,0 +1,40 @@
+name: EAY Audit Privacy Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/modules/audit/privacy_verification_runtime.py"
+      - "services/core-api/tests/test_audit_privacy_verification_runtime.py"
+      - ".github/workflows/eay-audit-privacy-runtime-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-intelligence-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  privacy-runtime:
+    name: Hash / privacy fail-closed verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - run: pytest -q tests/test_audit_privacy_verification_runtime.py
+      - run: >-
+          ruff check
+          app/modules/audit/privacy_verification_runtime.py
+          tests/test_audit_privacy_verification_runtime.py
+      - run: >-
+          python -m compileall -q
+          app/modules/audit/privacy_verification_runtime.py

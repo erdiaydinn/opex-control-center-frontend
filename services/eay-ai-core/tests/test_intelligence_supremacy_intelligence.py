@@ -179,7 +179,11 @@ def test_missing_live_truth_forces_investigate_before_stronger_model():
         blockers=("live_company_truth_receipt_missing",),
     )
     gaps = identify_knowledge_gaps(world=world, hypotheses=None, decision=decision)
-    live_gap = next(item.gap_id for item in gaps if item.startswith("decision:live_company_"))
+    live_gap = next(
+        item.gap_id
+        for item in gaps
+        if item.gap_id.startswith("decision:live_company_")
+    )
     read = InvestigationCandidate(
         investigation_id="investigation://authorized-live-read",
         kind=InvestigationKind.COMPANY_READ,

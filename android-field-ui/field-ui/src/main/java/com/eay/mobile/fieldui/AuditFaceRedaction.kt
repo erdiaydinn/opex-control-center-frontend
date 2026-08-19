@@ -54,11 +54,12 @@ data class AuditFrameRedactionResult(
  *
  * EAY intentionally uses VIDEO mode here instead of LIVE_STREAM. MediaPipe live-stream
  * tasks may drop input frames to reduce latency; a privacy boundary cannot treat a dropped
- * frame as anonymized. Live detection may later power preview hints, but evidence promotion
- * remains blocked until every decoded canonical frame has a synchronous processing result.
+ * frame as anonymized. The detector cannot initialize until the packaged model asset passes
+ * explicit SHA-256, byte-count, provenance and license admission.
  */
 class MediaPipeAuditFaceDetector private constructor(
     private val detector: FaceDetector,
+    val modelReceipt: AuditModelAssetReceipt,
 ) : Closeable {
 
     fun detectVideoFrame(bitmap: Bitmap, timestampMs: Long): List<AuditFaceRegion> {
@@ -75,32 +76,23 @@ class MediaPipeAuditFaceDetector private constructor(
     }
 
     companion object {
-        const val DEFAULT_MODEL_ASSET = "face_detection_short_range.tflite"
         const val DEFAULT_MIN_CONFIDENCE = 0.65f
 
         fun create(
             context: Context,
-            modelAssetPath: String = DEFAULT_MODEL_ASSET,
+            modelPolicy: AuditModelAssetPolicy,
             minDetectionConfidence: Float = DEFAULT_MIN_CONFIDENCE,
         ): MediaPipeAuditFaceDetector {
-            require(modelAssetPath.isNotBlank()) { "modelAssetPath must not be blank" }
             require(minDetectionConfidence in 0f..1f) {
                 "minDetectionConfidence must be between 0 and 1"
             }
 
             try {
-                // Do not silently download models. The reviewed asset must already be present in
-                // the application package and is expected to be fingerprint-verified by the host.
-                context.assets.open(modelAssetPath).use { input ->
-                    if (input.available() <= 0) {
-                        throw AuditPrivacyInitializationException(
-                            "Reviewed face-redaction model asset is empty",
-                        )
-                    }
+                val receipt = AuditModelAssetAdmission.verify(modelPolicy) {
+                    context.assets.open(modelPolicy.assetPath)
                 }
-
                 val baseOptions = BaseOptions.builder()
-                    .setModelAssetPath(modelAssetPath)
+                    .setModelAssetPath(modelPolicy.assetPath)
                     .build()
                 val options = FaceDetector.FaceDetectorOptions.builder()
                     .setBaseOptions(baseOptions)
@@ -108,10 +100,11 @@ class MediaPipeAuditFaceDetector private constructor(
                     .setMinDetectionConfidence(minDetectionConfidence)
                     .build()
                 return MediaPipeAuditFaceDetector(
-                    FaceDetector.createFromOptions(context, options),
+                    detector = FaceDetector.createFromOptions(context, options),
+                    modelReceipt = receipt,
                 )
-            } catch (error: AuditPrivacyInitializationException) {
-                throw error
+            } catch (error: AuditModelAssetAdmissionException) {
+                throw AuditPrivacyInitializationException(error.message ?: "Privacy model rejected", error)
             } catch (error: Exception) {
                 throw AuditPrivacyInitializationException(
                     "Face-redaction detector could not initialize; audit media remains blocked",

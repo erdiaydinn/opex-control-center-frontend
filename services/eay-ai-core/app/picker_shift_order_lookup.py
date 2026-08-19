@@ -134,7 +134,9 @@ class PickerShiftOrderLookupRequest(BaseModel):
             item = str(raw).strip().lower()
             if not item or item == "order_id":
                 continue
-            if len(item) > 80 or any(not (char.isalnum() or char in {"-", "_"}) for char in item):
+            if len(item) > 80 or any(
+                not (char.isalnum() or char in {"-", "_"}) for char in item
+            ):
                 raise ValueError("picker_shift_lookup_invalid_order_id")
             if item not in normalized:
                 normalized.append(item)
@@ -164,8 +166,10 @@ class PickerShiftOrderLookupRow(BaseModel):
 
     @model_validator(mode="after")
     def local_datetime_is_bound(self) -> "PickerShiftOrderLookupRow":
-        if self.order_created_at_lt.tzinfo is None or self.order_created_at_lt.utcoffset() is None:
-            raise ValueError("picker_shift_lookup_order_time_requires_timezone")
+        _require_aware(
+            self.order_created_at_lt,
+            "picker_shift_lookup_order_time_requires_timezone",
+        )
         return self
 
 
@@ -204,7 +208,7 @@ class PickerShiftOrderLookupExecution(BaseModel):
 class PickerShiftOrderLookupReceipt(BaseModel):
     contract: str = PICKER_SHIFT_ORDER_LOOKUP_CONTRACT
     operation_ref: str = PICKER_SHIFT_ORDER_LOOKUP_OPERATION_REF
-    tenant_id: str
+    tenant_id: str = Field(min_length=1)
     execution_identity_ref: str = Field(min_length=1)
     job_ref: str = Field(min_length=1)
     project_ref: str = Field(min_length=1)
@@ -223,20 +227,49 @@ class PickerShiftOrderLookupReceipt(BaseModel):
 
     @model_validator(mode="after")
     def receipt_is_integral_and_non_authoritative(self) -> "PickerShiftOrderLookupReceipt":
-        _require_aware(self.started_at, "picker_shift_lookup_receipt_started_at_requires_timezone")
-        _require_aware(self.completed_at, "picker_shift_lookup_receipt_completed_at_requires_timezone")
+        _require_aware(
+            self.started_at,
+            "picker_shift_lookup_receipt_started_at_requires_timezone",
+        )
+        _require_aware(
+            self.completed_at,
+            "picker_shift_lookup_receipt_completed_at_requires_timezone",
+        )
         if self.truth_authority_granted:
             raise ValueError("picker_shift_lookup_receipt_never_grants_truth_authority")
         if self.execution_authority_granted:
             raise ValueError("picker_shift_lookup_receipt_never_grants_execution_authority")
-        expected = _receipt_fingerprint(_receipt_payload(self, include_fingerprint=False))
+        expected = _receipt_fingerprint(
+            _receipt_payload_values(
+                contract=self.contract,
+                operation_ref=self.operation_ref,
+                tenant_id=self.tenant_id,
+                execution_identity_ref=self.execution_identity_ref,
+                job_ref=self.job_ref,
+                project_ref=self.project_ref,
+                location=self.location,
+                query_fingerprint=self.query_fingerprint,
+                schema_fingerprint=self.schema_fingerprint,
+                started_at=self.started_at,
+                completed_at=self.completed_at,
+                row_count=self.row_count,
+                total_bytes_processed=self.total_bytes_processed,
+                total_bytes_billed=self.total_bytes_billed,
+                success=self.success,
+                truth_authority_granted=self.truth_authority_granted,
+                execution_authority_granted=self.execution_authority_granted,
+            )
+        )
         if self.fingerprint != expected:
             raise ValueError("picker_shift_lookup_receipt_fingerprint_mismatch")
         return self
 
 
 class PickerShiftOrderLookupRunner(Protocol):
-    def run(self, request: PickerShiftOrderLookupRequest) -> PickerShiftOrderLookupExecution: ...
+    def run(
+        self,
+        request: PickerShiftOrderLookupRequest,
+    ) -> PickerShiftOrderLookupExecution: ...
 
 
 ReceiptRecorder = Callable[[PickerShiftOrderLookupReceipt], None]
@@ -247,15 +280,52 @@ def _require_aware(value: datetime, error: str) -> None:
         raise ValueError(error)
 
 
-def _receipt_payload(
-    receipt: PickerShiftOrderLookupReceipt,
+def _canonical_utc(value: datetime) -> str:
+    _require_aware(value, "picker_shift_lookup_fingerprint_datetime_requires_timezone")
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _receipt_payload_values(
     *,
-    include_fingerprint: bool,
+    contract: str,
+    operation_ref: str,
+    tenant_id: str,
+    execution_identity_ref: str,
+    job_ref: str,
+    project_ref: str,
+    location: str,
+    query_fingerprint: str,
+    schema_fingerprint: str,
+    started_at: datetime,
+    completed_at: datetime,
+    row_count: int,
+    total_bytes_processed: int,
+    total_bytes_billed: int,
+    success: bool,
+    truth_authority_granted: bool,
+    execution_authority_granted: bool,
 ) -> dict[str, Any]:
-    payload = receipt.model_dump(mode="json")
-    if not include_fingerprint:
-        payload.pop("fingerprint", None)
-    return payload
+    """Canonical receipt payload shared by construction and integrity validation."""
+
+    return {
+        "contract": str(contract),
+        "operation_ref": str(operation_ref),
+        "tenant_id": str(tenant_id),
+        "execution_identity_ref": str(execution_identity_ref),
+        "job_ref": str(job_ref),
+        "project_ref": str(project_ref),
+        "location": str(location),
+        "query_fingerprint": str(query_fingerprint),
+        "schema_fingerprint": str(schema_fingerprint),
+        "started_at": _canonical_utc(started_at),
+        "completed_at": _canonical_utc(completed_at),
+        "row_count": int(row_count),
+        "total_bytes_processed": int(total_bytes_processed),
+        "total_bytes_billed": int(total_bytes_billed),
+        "success": bool(success),
+        "truth_authority_granted": bool(truth_authority_granted),
+        "execution_authority_granted": bool(execution_authority_granted),
+    }
 
 
 def _receipt_fingerprint(payload: dict[str, Any]) -> str:
@@ -264,15 +334,14 @@ def _receipt_fingerprint(payload: dict[str, Any]) -> str:
 
 
 def _schema_fingerprint(schema) -> str:
-    normalized = []
-    for field in schema or ():
-        normalized.append(
-            {
-                "name": str(getattr(field, "name", "")),
-                "field_type": str(getattr(field, "field_type", "")),
-                "mode": str(getattr(field, "mode", "")),
-            }
-        )
+    normalized = [
+        {
+            "name": str(getattr(field, "name", "")),
+            "field_type": str(getattr(field, "field_type", "")),
+            "mode": str(getattr(field, "mode", "")),
+        }
+        for field in (schema or ())
+    ]
     canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -299,15 +368,13 @@ def _assert_static_query_is_read_only() -> None:
         raise RuntimeError("picker_shift_lookup_static_query_contains_mutation")
     if f"`{PICKER_SHIFT_ORDER_LOOKUP_TABLE}`" not in PICKER_SHIFT_ORDER_LOOKUP_SQL:
         raise RuntimeError("picker_shift_lookup_static_query_table_drift")
-    if "@order_ids" not in PICKER_SHIFT_ORDER_LOOKUP_SQL:
-        raise RuntimeError("picker_shift_lookup_static_query_order_ids_not_parameterized")
-    for parameter in ("@global_entity_id", "@start_date", "@end_date"):
+    for parameter in ("@order_ids", "@global_entity_id", "@start_date", "@end_date"):
         if parameter not in PICKER_SHIFT_ORDER_LOOKUP_SQL:
             raise RuntimeError("picker_shift_lookup_static_query_parameter_missing")
 
 
 class GoogleBigQueryPickerShiftOrderLookupRunner:
-    """Real BigQuery SDK runner. Credentials are resolved only by Google ADC at runtime."""
+    """Real BigQuery SDK runner. Credentials resolve only through Google ADC."""
 
     def __init__(
         self,
@@ -317,6 +384,8 @@ class GoogleBigQueryPickerShiftOrderLookupRunner:
         client=None,
     ) -> None:
         _assert_static_query_is_read_only()
+        if project_id != PICKER_SHIFT_ORDER_LOOKUP_PROJECT:
+            raise ValueError("picker_shift_lookup_project_not_reviewed")
         self.project_id = project_id
         self.location = location
         self._client = client
@@ -335,6 +404,7 @@ class GoogleBigQueryPickerShiftOrderLookupRunner:
         return bigquery.Client(project=self.project_id)
 
     def run(self, request: PickerShiftOrderLookupRequest) -> PickerShiftOrderLookupExecution:
+        _assert_static_query_is_read_only()
         bigquery = self._bigquery()
         client = self._client_or_default()
         job_config = bigquery.QueryJobConfig(
@@ -344,7 +414,9 @@ class GoogleBigQueryPickerShiftOrderLookupRunner:
             query_parameters=[
                 bigquery.ArrayQueryParameter("order_ids", "STRING", list(request.order_ids)),
                 bigquery.ScalarQueryParameter(
-                    "global_entity_id", "STRING", request.global_entity_id
+                    "global_entity_id",
+                    "STRING",
+                    request.global_entity_id,
                 ),
                 bigquery.ScalarQueryParameter("start_date", "DATE", request.start_date),
                 bigquery.ScalarQueryParameter("end_date", "DATE", request.end_date),
@@ -369,14 +441,22 @@ class GoogleBigQueryPickerShiftOrderLookupRunner:
             PickerShiftOrderLookupRow(
                 order_id=str(row["order_id"]).strip().lower(),
                 rooster_employee_id=(
-                    None if row["rooster_employee_id"] is None else str(row["rooster_employee_id"])
+                    None
+                    if row["rooster_employee_id"] is None
+                    else str(row["rooster_employee_id"])
                 ),
                 user_id=None if row["user_id"] is None else str(row["user_id"]),
                 rooster_rider_id=(
-                    None if row["rooster_rider_id"] is None else str(row["rooster_rider_id"])
+                    None
+                    if row["rooster_rider_id"] is None
+                    else str(row["rooster_rider_id"])
                 ),
-                shopper_id=None if row["shopper_id"] is None else str(row["shopper_id"]),
-                warehouse_id=None if row["warehouse_id"] is None else str(row["warehouse_id"]),
+                shopper_id=(
+                    None if row["shopper_id"] is None else str(row["shopper_id"])
+                ),
+                warehouse_id=(
+                    None if row["warehouse_id"] is None else str(row["warehouse_id"])
+                ),
                 order_created_at_lt=_local_datetime(row["order_created_at_lt"]),
             )
             for row in rows
@@ -397,7 +477,7 @@ class GoogleBigQueryPickerShiftOrderLookupRunner:
 
 @dataclass(frozen=True)
 class PickerShiftOrderLookupPreparedExecutor:
-    """One reviewed request bound to the generic prepared-company-read protocol."""
+    """Bind one reviewed request to the generic prepared-company-read protocol."""
 
     request: PickerShiftOrderLookupRequest
     runner: PickerShiftOrderLookupRunner
@@ -421,46 +501,51 @@ class PickerShiftOrderLookupPreparedExecutor:
             raise ValueError("picker_shift_lookup_plan_operation_mismatch")
         if plan.execution_identity_ref != self.execution_identity_ref:
             raise ValueError("picker_shift_lookup_execution_identity_mismatch")
-        if any(field not in PICKER_SHIFT_ORDER_LOOKUP_ALLOWED_FIELDS for field in plan.requested_fields):
+        if any(
+            field not in PICKER_SHIFT_ORDER_LOOKUP_ALLOWED_FIELDS
+            for field in plan.requested_fields
+        ):
             raise ValueError("picker_shift_lookup_requested_field_not_allowed")
 
         execution = self.runner.run(self.request)
         if execution.completed_at < plan.requested_at:
             raise ValueError("picker_shift_lookup_execution_predates_plan")
+        if execution.project_ref != PICKER_SHIFT_ORDER_LOOKUP_PROJECT:
+            raise ValueError("picker_shift_lookup_execution_project_drift")
 
-        job_ref = (
-            f"bigquery-job://{execution.project_ref}/{execution.location}/{execution.job_id}"
+        job_ref = f"bigquery-job://{execution.project_ref}/{execution.location}/{execution.job_id}"
+        receipt_payload = _receipt_payload_values(
+            contract=PICKER_SHIFT_ORDER_LOOKUP_CONTRACT,
+            operation_ref=PICKER_SHIFT_ORDER_LOOKUP_OPERATION_REF,
+            tenant_id=self.request.tenant_id,
+            execution_identity_ref=self.execution_identity_ref,
+            job_ref=job_ref,
+            project_ref=execution.project_ref,
+            location=execution.location,
+            query_fingerprint=PICKER_SHIFT_ORDER_LOOKUP_QUERY_FINGERPRINT,
+            schema_fingerprint=execution.schema_fingerprint,
+            started_at=execution.started_at,
+            completed_at=execution.completed_at,
+            row_count=len(execution.rows),
+            total_bytes_processed=execution.total_bytes_processed,
+            total_bytes_billed=execution.total_bytes_billed,
+            success=True,
+            truth_authority_granted=False,
+            execution_authority_granted=False,
         )
-        receipt_draft = {
-            "contract": PICKER_SHIFT_ORDER_LOOKUP_CONTRACT,
-            "operation_ref": PICKER_SHIFT_ORDER_LOOKUP_OPERATION_REF,
-            "tenant_id": self.request.tenant_id,
-            "execution_identity_ref": self.execution_identity_ref,
-            "job_ref": job_ref,
-            "project_ref": execution.project_ref,
-            "location": execution.location,
-            "query_fingerprint": PICKER_SHIFT_ORDER_LOOKUP_QUERY_FINGERPRINT,
-            "schema_fingerprint": execution.schema_fingerprint,
-            "started_at": execution.started_at.isoformat(),
-            "completed_at": execution.completed_at.isoformat(),
-            "row_count": len(execution.rows),
-            "total_bytes_processed": execution.total_bytes_processed,
-            "total_bytes_billed": execution.total_bytes_billed,
-            "success": True,
-            "truth_authority_granted": False,
-            "execution_authority_granted": False,
-        }
         receipt = PickerShiftOrderLookupReceipt.model_validate(
-            {**receipt_draft, "fingerprint": _receipt_fingerprint(receipt_draft)}
+            {
+                **receipt_payload,
+                "fingerprint": _receipt_fingerprint(receipt_payload),
+            }
         )
         self.receipt_recorder(receipt)
 
-        fields: list[ReadOnlySourceField] = []
         requested = set(plan.requested_fields)
+        fields: list[ReadOnlySourceField] = []
         for row in execution.rows:
-            entity_id = f"order:{row.order_id}"
-            valid_from = row.order_created_at_lt
             values = row.model_dump()
+            entity_id = f"order:{row.order_id}"
             for field_name in PICKER_SHIFT_ORDER_LOOKUP_ALLOWED_FIELDS:
                 if field_name not in requested:
                     continue
@@ -469,7 +554,7 @@ class PickerShiftOrderLookupPreparedExecutor:
                         entity_id=entity_id,
                         field_name=field_name,
                         value=values[field_name],
-                        valid_from=valid_from,
+                        valid_from=row.order_created_at_lt,
                         confidence=1.0,
                     )
                 )

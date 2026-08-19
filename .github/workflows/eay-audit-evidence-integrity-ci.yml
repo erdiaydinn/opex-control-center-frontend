@@ -58,13 +58,4 @@ jobs:
         run: ruff check --ignore E501 alembic/versions/0050_audit_evidence_binding_integrity.py
       - name: Verify migration lineage
         run: >-
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('alembic/versions/0050_audit_evidence_binding_integrity.py').read_text()
-          assert 'down_revision: str = "0049_audit_location_accountability"' in p
-          assert 'field_evidence_receipt_id' in p
-          assert 'redacted_object_sha256' in p
-          assert 'redacted_object_byte_size' in p
-          assert 'uq_audit_redaction_field_receipt_binding' in p
-          print('Audit evidence binding migration lineage: PASS')
-          PY
+          python -c "from pathlib import Path; p=Path('alembic/versions/0050_audit_evidence_binding_integrity.py').read_text(); assert 'down_revision: str = \"0049_audit_location_accountability\"' in p; assert 'field_evidence_receipt_id' in p; assert 'redacted_object_sha256' in p; assert 'redacted_object_byte_size' in p; assert 'uq_audit_redaction_field_receipt_binding' in p; print('Audit evidence binding migration lineage: PASS')"

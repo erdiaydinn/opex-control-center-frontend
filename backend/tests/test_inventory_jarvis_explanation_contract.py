@@ -30,6 +30,7 @@ def test_explanation_context_is_read_only_and_tenant_warehouse_scoped() -> None:
     assert "inventory_events" in rendered
     assert "inventory_revisions" in rendered
     assert "inventory_audit" in rendered
+    assert "inventory_mission_lease_closures" in rendered
     assert '"read_only": True' in source
     assert "INSERT INTO" not in source
     assert "UPDATE inventory_" not in source
@@ -39,10 +40,14 @@ def test_explanation_context_is_read_only_and_tenant_warehouse_scoped() -> None:
 def test_explanation_context_excludes_prompt_injection_and_sensitive_raw_fields() -> None:
     source = EXPLANATION.read_text(encoding="utf-8")
     assert '"free_text_excluded": True' in source
+    assert '"recovery_reasons_free_text_excluded": True' in source
     assert "SELECT e.event_type,e.location_id" in source
     assert '"events": authoritative_events' in source
     assert '"authoritative_events": authoritative_events' in source
     assert '"abandoned_attempt_events_excluded_from_stock_truth": True' in source
+    assert '"superseded_attempt_evidence_preserved": True' in source
+    assert '"lease_closure_lifecycle"' in source
+    assert "SELECT c.state,count(*)::integer AS closure_count" in source
     assert "a.state='COMPLETED'" in source
     assert "SELECT revision,state,snapshot_hash,created_at" in source
     assert "SELECT action,previous_hash,hash,occurred_at" in source
@@ -51,6 +56,8 @@ def test_explanation_context_excludes_prompt_injection_and_sensitive_raw_fields(
     assert "device_id" not in source
     assert "SELECT action,record" not in source
     assert "SELECT revision,state,reason" not in source
+    assert "c.reason" not in source
+    assert "close_reason" not in source
 
 
 def test_explanation_context_has_deterministic_integrity_fingerprint() -> None:
@@ -61,6 +68,8 @@ def test_explanation_context_has_deterministic_integrity_fingerprint() -> None:
     assert "context_fingerprint" in explanation
     assert "inventory_completed_attempt_truth" in explanation
     assert "attempt_lifecycle" in explanation
+    assert "lease_closure_lifecycle" in explanation
+    assert 'schema_version\': 3' in explanation or 'schema_version": 3' in EXPLANATION.read_text(encoding="utf-8")
 
 
 def test_production_route_requires_supervisor_authority_and_never_accepts_client_scope() -> None:

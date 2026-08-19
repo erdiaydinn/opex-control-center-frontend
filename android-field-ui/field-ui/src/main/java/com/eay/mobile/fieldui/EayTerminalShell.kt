@@ -35,9 +35,9 @@ fun EayTerminalShell(
     header: FieldShellHeader,
     missions: List<FieldMissionCardModel>,
     onMissionOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
     recovery: FieldRecoveryBannerModel? = null,
     onRecoveryAction: (FieldRecoveryActionKind) -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
         LazyColumn(

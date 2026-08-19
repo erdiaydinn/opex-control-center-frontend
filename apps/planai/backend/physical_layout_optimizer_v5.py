@@ -7,7 +7,8 @@ optimizer for every valid alternative.
 
 This is intentionally conservative:
 - only fixtures explicitly marked ``relocatable=true`` participate;
-- fixture physical/storage signatures must match exactly;
+- fixture and shelf physical/capability signatures must match exactly;
+- cold/utility fixtures require explicit relocation attestation;
 - measured Architecture V1 hard gates are re-run after every relocation;
 - baseline is always retained;
 - no CAPEX or installation authority is inferred;
@@ -38,6 +39,10 @@ SPATIAL_FIELDS = (
     "center_x_m",
     "center_y_m",
     "rotation_deg",
+)
+UTILITY_ATTESTATION_FIELDS = (
+    "utility_relocation_attested",
+    "relocation_utility_attested",
 )
 
 
@@ -85,14 +90,57 @@ def _module_dimensions(module: dict[str, Any]) -> tuple[float, float]:
     return round(width, 4), round(depth, 4)
 
 
+def _shelf_signature(shelf: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        round(_number(shelf.get("shelf_width_cm")), 3),
+        round(_number(shelf.get("shelf_height_cm")), 3),
+        round(_number(shelf.get("shelf_depth_cm")), 3),
+        round(_number(shelf.get("max_weight_kg")), 3),
+        _text(shelf.get("allowed_storage_type")).upper(),
+        _text(shelf.get("zone_type")).lower(),
+    )
+
+
+def _requires_utility_attestation(module: dict[str, Any]) -> bool:
+    if any(
+        _truthy(module.get(field))
+        for field in (
+            "requires_power",
+            "requires_plumbing",
+            "requires_network",
+            "requires_drain",
+        )
+    ):
+        return True
+    fixture = _text(
+        module.get("fixture_type")
+        or module.get("fixture_class")
+        or module.get("module_type")
+    ).lower()
+    storage = _text(module.get("storage_type")).upper()
+    return any(
+        token in fixture
+        for token in ("chill", "cool", "freez", "refriger", "cold")
+    ) or storage in {"CHILLED", "FROZEN", "COLD"}
+
+
+def _utility_relocation_attested(module: dict[str, Any]) -> bool:
+    return any(_truthy(module.get(field)) for field in UTILITY_ATTESTATION_FIELDS)
+
+
 def _fixture_signature(module: dict[str, Any]) -> tuple[Any, ...] | None:
     if not _truthy(module.get("relocatable")):
         return None
+    if _requires_utility_attestation(module) and not _utility_relocation_attested(
+        module
+    ):
+        return None
+
     width, depth = _module_dimensions(module)
     if width <= 0 or depth <= 0:
         return None
     shelves = module.get("shelves") or []
-    rotation = round(_number(module.get("rotation_deg")) % 360.0, 3)
+    shelf_profile = tuple(_shelf_signature(shelf or {}) for shelf in shelves)
     return (
         _text(
             module.get("fixture_type")
@@ -102,12 +150,17 @@ def _fixture_signature(module: dict[str, Any]) -> tuple[Any, ...] | None:
         _text(module.get("storage_type")).upper(),
         width,
         depth,
-        len(shelves),
-        rotation,
+        shelf_profile,
+        _truthy(module.get("requires_power")),
+        _truthy(module.get("requires_plumbing")),
+        _truthy(module.get("requires_network")),
+        _truthy(module.get("requires_drain")),
     )
 
 
-def _module_refs(layout: dict[str, Any]) -> list[tuple[int, int, str, dict[str, Any]]]:
+def _module_refs(
+    layout: dict[str, Any],
+) -> list[tuple[int, int, str, dict[str, Any]]]:
     result = []
     for aisle_index, aisle in enumerate(layout.get("aisles", []) or []):
         for module_index, module in enumerate(aisle.get("modules", []) or []):
@@ -143,10 +196,10 @@ def _swap_spatial_pose(
     right_key: str,
 ) -> dict[str, Any]:
     candidate = deepcopy(layout)
-    index = {
-        key: module
-        for _, _, key, module in _module_refs(candidate)
-    }
+    index = {key: module for _, _, key, module in _module_refs(candidate)}
+    if left_key not in index or right_key not in index or left_key == right_key:
+        raise ValueError("invalid_relocation_pair")
+
     left = index[left_key]
     right = index[right_key]
     left_pose = {field: left.get(field) for field in SPATIAL_FIELDS}
@@ -184,10 +237,14 @@ def _layout_fingerprint(layout: dict[str, Any]) -> str:
 
 def _selected_meta(result: dict[str, Any]) -> dict[str, Any]:
     market = result.get("market_search_optimizer")
-    if isinstance(market, dict) and isinstance(market.get("selected_objective"), dict):
+    if isinstance(market, dict) and isinstance(
+        market.get("selected_objective"), dict
+    ):
         return market
     picker = result.get("picker_tour_optimizer")
-    if isinstance(picker, dict) and isinstance(picker.get("selected_objective"), dict):
+    if isinstance(picker, dict) and isinstance(
+        picker.get("selected_objective"), dict
+    ):
         return picker
     return {}
 
@@ -218,6 +275,52 @@ def _candidate_summary(
         "allocation_candidate_count": meta.get("candidate_count"),
         "production_authority": False,
     }
+
+
+def _inactive_result(
+    *,
+    baseline: dict[str, Any],
+    layout: dict[str, Any],
+    reason: str,
+    max_layout_candidates: int,
+    max_allocation_candidates: int,
+) -> dict[str, Any]:
+    result = deepcopy(baseline)
+    result["physical_layout"] = deepcopy(layout)
+    result["physical_layout_optimizer"] = {
+        "optimizer_version": PHYSICAL_LAYOUT_OPTIMIZER_VERSION,
+        "allowed": True,
+        "effective": False,
+        "reason": reason,
+        "production_authority": False,
+        "physical_relocation_authority": False,
+        "installation_approved": False,
+        "baseline_preserved": True,
+        "improved": False,
+        "selected_layout_label": "baseline",
+        "selected_layout_fingerprint": _layout_fingerprint(layout),
+        "baseline_layout_fingerprint": _layout_fingerprint(layout),
+        "selected_moved_modules": [],
+        "layout_candidate_budget": max_layout_candidates,
+        "allocation_candidate_budget_per_layout": max_allocation_candidates,
+        "eligible_relocation_pair_count": 0,
+        "evaluated_layout_count": 1,
+        "rejected_layout_count": 0,
+        "candidates": [
+            _candidate_summary(
+                label="baseline",
+                layout=layout,
+                result=baseline,
+                moved_modules=[],
+            )
+        ],
+        "alternatives": [],
+        "evidence_boundary": (
+            "no eligible equivalent relocatable fixture pair was available; "
+            "baseline remains unchanged"
+        ),
+    }
+    return result
 
 
 def optimize_physical_layout(
@@ -296,6 +399,16 @@ def optimize_physical_layout(
             },
         }
 
+    pairs = _relocation_pairs(layout)
+    if not pairs:
+        return _inactive_result(
+            baseline=baseline,
+            layout=layout,
+            reason="no_eligible_relocation_pairs",
+            max_layout_candidates=max_layout_candidates,
+            max_allocation_candidates=max_allocation_candidates,
+        )
+
     candidates: list[
         tuple[
             tuple[float, ...],
@@ -316,7 +429,6 @@ def optimize_physical_layout(
         )
     ]
     rejected: list[dict[str, Any]] = []
-    pairs = _relocation_pairs(layout)
     for order, (left_key, right_key) in enumerate(
         pairs[: max(0, max_layout_candidates - 1)],
         start=1,
@@ -364,7 +476,9 @@ def optimize_physical_layout(
         )
 
     selected = min(candidates, key=lambda row: (row[0], row[1]))
-    selected_key, _, selected_label, selected_layout, selected_result, moved = selected
+    selected_key, _, selected_label, selected_layout, selected_result, moved = (
+        selected
+    )
     baseline_key = objective_v3.objective_key(baseline_objective)
     if selected_key > baseline_key:
         selected_key = baseline_key
@@ -407,8 +521,9 @@ def optimize_physical_layout(
         "candidates": summaries,
         "alternatives": summaries[:MAX_ALTERNATIVES],
         "evidence_boundary": (
-            "relocation search covers only explicitly relocatable equivalent fixtures; "
-            "CAPEX, installer feasibility and live KPI effects remain external"
+            "relocation search covers only explicitly relocatable equivalent "
+            "fixtures; CAPEX, utilities, installer feasibility and live KPI "
+            "effects remain external"
         ),
         "promotion_blockers": [
             "physical_fixture_move_cost_attestation_required",

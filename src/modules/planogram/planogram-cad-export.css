@@ -1,0 +1,98 @@
+.eay-planogram-cad {
+  margin-top: 1rem;
+  padding: 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--border, #303442) 82%, #38bdf8 18%);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface, #11131a) 94%, #0ea5e9 6%);
+}
+
+.eay-planogram-cad > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.eay-planogram-cad > header > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.eay-planogram-cad > header strong,
+.eay-planogram-cad > header span {
+  display: block;
+}
+
+.eay-planogram-cad > header span {
+  margin-top: 0.2rem;
+  color: var(--muted, #9ca3af);
+  font-size: 0.8rem;
+}
+
+.eay-planogram-cad-badge {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 38rem;
+  margin: 0 !important;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, transparent);
+  border-radius: 10px;
+  color: #fbbf24 !important;
+  background: color-mix(in srgb, #b45309 12%, transparent);
+}
+
+.eay-planogram-cad > p {
+  margin: 0.7rem 0 0;
+  color: var(--muted, #a8aebc);
+  font-size: 0.8rem;
+}
+
+.eay-planogram-cad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+}
+
+.eay-planogram-cad-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border, #303442);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface, #11131a) 88%, #38bdf8 12%);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.eay-planogram-cad-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.eay-planogram-cad-actions button:focus-visible {
+  outline: 3px solid color-mix(in srgb, #38bdf8 68%, white 32%);
+  outline-offset: 2px;
+}
+
+.eay-planogram-cad-note { color: #fbbf24 !important; }
+.eay-planogram-cad-error { color: #fecaca !important; }
+.eay-planogram-cad-success { color: #86efac !important; }
+
+@media (max-width: 760px) {
+  .eay-planogram-cad > header { flex-direction: column; }
+  .eay-planogram-cad-badge { max-width: 100%; }
+  .eay-planogram-cad-actions button { width: 100%; }
+}
+
+@media (forced-colors: active) {
+  .eay-planogram-cad,
+  .eay-planogram-cad-badge,
+  .eay-planogram-cad-actions button { border: 1px solid CanvasText; }
+}

@@ -73,7 +73,7 @@ class TemplateToolExecutionRequest(BaseModel):
     max_rows: int = Field(default=500, ge=1, le=5000)
 
     @model_validator(mode="after")
-    def validate_grant_token(self) -> "TemplateToolExecutionRequest":
+    def validate_grant_token(self) -> TemplateToolExecutionRequest:
         token = self.grant_token.get_secret_value()
         if not 32 <= len(token) <= 256:
             raise ValueError("platform_tool_grant_invalid")
@@ -236,8 +236,9 @@ def _activation_provenance(
         raise ValueError(
             "kpi_activation_provenance_prerequisites_required"
         )
+    metric = str(payload.arguments.get("metric") or "")
     return provenance_from_activation(
-        metric=str(payload.arguments.get("metric") or ""),
+        metric=metric,
         semantic_verification=semantic_verification,
         schema_verification=schema_verification,
         runtime_activation=runtime_activation,

@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: jarvis-cyber-defense-${{ github.ref }}
@@ -38,8 +38,6 @@ jobs:
         working-directory: services/eay-ai-core
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: product/jarvis-context-intelligence-v1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
@@ -47,100 +45,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-      - name: One-shot exact cyber lint correction on Jarvis feature branch
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          replacements = {
-              "app/company_detection_coverage_intelligence.py": [
-                  (
-                      '''        if self.status is CompanyTelemetryCapabilityStatus.MISSING:\n            if self.telemetry_ref is not None or self.detection_rule_refs:\n                raise ValueError("company_detection_missing_cannot_claim_live_telemetry")\n''',
-                      '''        if (\n            self.status is CompanyTelemetryCapabilityStatus.MISSING\n            and (self.telemetry_ref is not None or self.detection_rule_refs)\n        ):\n            raise ValueError("company_detection_missing_cannot_claim_live_telemetry")\n''',
-                  ),
-              ],
-              "app/cyber_current_threat_context_intelligence.py": [
-                  (
-                      '''            if not self.attack_freshness_receipt_id or not self.attack_freshness_fingerprint:\n                if self.attack_release_current:\n                    raise ValueError("current_threat_attack_current_requires_freshness_receipt")\n''',
-                      '''            if (\n                not self.attack_freshness_receipt_id\n                or not self.attack_freshness_fingerprint\n            ) and self.attack_release_current:\n                raise ValueError("current_threat_attack_current_requires_freshness_receipt")\n''',
-                  ),
-              ],
-              "app/cyber_detection_assurance_intelligence.py": [
-                  (
-                      '''        if self.status is SecurityAssuranceStatus.PASS:\n            if self.missing_component_ids or self.degraded_component_ids or self.unverified_component_ids:\n                raise ValueError("cyber_detection_assurance_pass_cannot_have_gaps")\n''',
-                      '''        if self.status is SecurityAssuranceStatus.PASS and (\n            self.missing_component_ids\n            or self.degraded_component_ids\n            or self.unverified_component_ids\n        ):\n            raise ValueError("cyber_detection_assurance_pass_cannot_have_gaps")\n''',
-                  ),
-              ],
-              "app/cyber_incident_disclosure.py": [
-                  (
-                      '''        elif self.level is CyberIncidentDisclosureLevel.NONE:\n            if self.operational_impact_message_ref is not None:\n                raise ValueError("cyber_incident_none_disclosure_cannot_include_message")\n''',
-                      '''        elif (\n            self.level is CyberIncidentDisclosureLevel.NONE\n            and self.operational_impact_message_ref is not None\n        ):\n            raise ValueError("cyber_incident_none_disclosure_cannot_include_message")\n''',
-                  ),
-              ],
-              "app/cyber_epss_feed_runtime.py": [
-                  (
-                      'raise ValueError("cyber_epss_feed_data_list_required")',
-                      'raise TypeError("cyber_epss_feed_data_list_required")',
-                  ),
-                  (
-                      'raise ValueError("cyber_epss_feed_data_item_must_be_object")',
-                      'raise TypeError("cyber_epss_feed_data_item_must_be_object")',
-                  ),
-              ],
-              "app/cyber_threat_feed_normalization.py": [
-                  ('raise ValueError("cyber_cisa_kev_vulnerabilities_required")', 'raise TypeError("cyber_cisa_kev_vulnerabilities_required")'),
-                  ('raise ValueError("cyber_cisa_kev_entry_invalid")', 'raise TypeError("cyber_cisa_kev_entry_invalid")'),
-                  ('raise ValueError("cyber_nvd_vulnerabilities_required")', 'raise TypeError("cyber_nvd_vulnerabilities_required")'),
-                  ('raise ValueError("cyber_nvd_cve_entry_invalid")', 'raise TypeError("cyber_nvd_cve_entry_invalid")'),
-                  ('raise ValueError("cyber_attack_stix_objects_required")', 'raise TypeError("cyber_attack_stix_objects_required")'),
-                  ('raise ValueError("cyber_attack_stix_object_invalid")', 'raise TypeError("cyber_attack_stix_object_invalid")'),
-                  ('raise ValueError("cyber_feed_identifier_list_invalid")', 'raise TypeError("cyber_feed_identifier_list_invalid")'),
-                  ('        raise ValueError(error)\n    try:\n        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)\n', '        raise TypeError(error)\n    try:\n        return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)\n'),
-                  ('        raise ValueError(error)\n    try:\n        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))\n', '        raise TypeError(error)\n    try:\n        parsed = datetime.fromisoformat(value)\n'),
-              ],
-              "app/cyber_threat_feed_runtime.py": [
-                  ('raise ValueError("cyber_feed_cisa_vulnerabilities_missing")', 'raise TypeError("cyber_feed_cisa_vulnerabilities_missing")'),
-                  ('raise ValueError("cyber_feed_cisa_item_invalid")', 'raise TypeError("cyber_feed_cisa_item_invalid")'),
-                  ('raise ValueError("cyber_feed_nvd_vulnerabilities_missing")', 'raise TypeError("cyber_feed_nvd_vulnerabilities_missing")'),
-                  ('raise ValueError("cyber_feed_nvd_item_invalid")', 'raise TypeError("cyber_feed_nvd_item_invalid")'),
-                  ('raise ValueError("cyber_feed_mitre_objects_missing")', 'raise TypeError("cyber_feed_mitre_objects_missing")'),
-                  ('raise ValueError("cyber_feed_date_missing")', 'raise TypeError("cyber_feed_date_missing")'),
-              ],
-          }
-
-          changed = []
-          for filename, rules in replacements.items():
-              path = Path(filename)
-              text = path.read_text(encoding="utf-8")
-              original = text
-              for old, new in rules:
-                  count = text.count(old)
-                  if count != 1:
-                      raise RuntimeError(
-                          f"exact lint correction expected one match: {filename}: {old!r}; got {count}"
-                      )
-                  text = text.replace(old, new, 1)
-              if text != original:
-                  path.write_text(text, encoding="utf-8")
-                  changed.append(filename)
-
-          print("CYBER_EXACT_LINT_CHANGED=" + ",".join(changed))
-          PY
-          python -m ruff check \
-            app/cyber_*.py \
-            app/company_detection_coverage_intelligence.py \
-            tests/test_cyber_*.py \
-            tests/test_company_detection_coverage_intelligence.py \
-            --fix
-          cyber_paths=(app/cyber_*.py app/company_detection_coverage_intelligence.py tests/test_cyber_*.py tests/test_company_detection_coverage_intelligence.py)
-          if ! git diff --quiet -- "${cyber_paths[@]}"; then
-            git diff --check -- "${cyber_paths[@]}"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -- "${cyber_paths[@]}"
-            git commit -m "style(jarvis): clear cyber Ruff quality debt"
-            git push origin HEAD:product/jarvis-context-intelligence-v1
-          fi
       - name: Ruff cyber defense surface
         run: |
           set +e

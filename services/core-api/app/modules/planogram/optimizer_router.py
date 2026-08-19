@@ -16,6 +16,9 @@ from app.modules.planogram.engine_adapter import (
     generate_market_leadership_benchmark_preview,
     generate_optimized_preview,
 )
+from app.modules.planogram.physical_layout_adapter import (
+    generate_physical_layout_search_preview,
+)
 from app.modules.planogram.schemas import PlanogramPreviewRequest
 
 router = APIRouter(prefix="/v1/planogram", tags=["planogram"])
@@ -103,6 +106,53 @@ async def post_planogram_market_benchmark_preview(
     }
 
 
+@router.post("/physical-layout-search-preview")
+async def post_planogram_physical_layout_search_preview(
+    payload: PlanogramPreviewRequest,
+    principal: Optimizer,
+    max_layout_candidates: Annotated[int, Query(ge=1, le=32)] = 16,
+    max_allocation_candidates: Annotated[int, Query(ge=8, le=24)] = 12,
+) -> dict[str, object]:
+    """Search bounded fixture relocations as proposals, never executable moves."""
+    baskets = [basket.model_dump(mode="python") for basket in payload.order_baskets]
+    if not baskets:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Physical layout search requires anonymized SKU baskets",
+        )
+
+    try:
+        result = generate_physical_layout_search_preview(
+            products=payload.products,
+            layout=payload.layout,
+            store_dna=payload.store_dna,
+            orders=baskets,
+            mode=payload.mode,
+            max_layout_candidates=max_layout_candidates,
+            max_allocation_candidates=max_allocation_candidates,
+        )
+    except PlanogramEngineUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Planogram physical layout search is unavailable",
+        ) from exc
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "subject": principal.subject,
+        "preview_only": True,
+        "input_authority": "request_supplied_unattested",
+        "relocation_policy_authority": "request_supplied_unattested",
+        "basket_authority": "request_supplied_observed_or_test_unattested",
+        "observed_basket_input_count": len(baskets),
+        "production_release_allowed": False,
+        "physical_relocation_execution_allowed": False,
+        "installation_approval_allowed": False,
+        "capex_approval_allowed": False,
+        "result": result,
+    }
+
+
 @router.post("/blind-benchmark-preview")
 async def post_planogram_blind_benchmark_preview(
     payload: PlanogramBlindBenchmarkRequest,
@@ -168,7 +218,11 @@ async def post_planogram_cad_preview(
             detail="Measured Planogram CAD preview is unavailable",
         ) from exc
 
-    optimizer_meta = optimized.get("picker_tour_optimizer") or optimized.get("optimizer") or {}
+    optimizer_meta = (
+        optimized.get("picker_tour_optimizer")
+        or optimized.get("optimizer")
+        or {}
+    )
     return {
         "tenant_id": str(principal.tenant_id),
         "subject": principal.subject,

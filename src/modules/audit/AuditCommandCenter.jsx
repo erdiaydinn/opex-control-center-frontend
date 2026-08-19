@@ -22,6 +22,7 @@ import { apiGet } from "../../api/client.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import { auditCopy } from "./auditMessages.js";
 import "./AuditCommandCenter.css";
+import "./AuditLiveTruth.css";
 
 const KPI = [
   { key: "critical", icon: TriangleAlert, tone: "danger" },

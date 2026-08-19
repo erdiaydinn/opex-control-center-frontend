@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 
 from app.core.jarvis_execution_admission import (
     JarvisAdmissionConcurrencyLimited,
+    JarvisAdmissionInvalid,
     JarvisAdmissionRateLimited,
     JarvisExecutionAdmissionSettings,
     RedisJarvisExecutionAdmissionStore,
@@ -56,7 +57,7 @@ def test_admission_lease_policy_is_bounded() -> None:
         maximum_lease_ttl_seconds=180,
     ) == 135
 
-    with pytest.raises(Exception, match="lease capacity"):
+    with pytest.raises(JarvisAdmissionInvalid, match="lease capacity"):
         broker_lease_ttl_seconds(
             180,
             maximum_lease_ttl_seconds=180,

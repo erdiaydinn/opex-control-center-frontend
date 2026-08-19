@@ -41,8 +41,14 @@ AuditViewer = Annotated[Principal, Depends(require_permission("module:audit:view
 
 def _raise_repository_error(exc: AuditRepositoryError) -> None:
     if isinstance(exc, AuditConflictError):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=str(exc),
+    ) from exc
 
 
 async def _require_location(
@@ -52,7 +58,10 @@ async def _require_location(
 ) -> dict[str, object]:
     location = await get_location(str(principal.tenant_id), location_id)
     if not location or not bool(location.get("active")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit location not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audit location not found",
+        )
     if not scope_allows_location(
         scope,
         location_id=location_id,
@@ -91,7 +100,12 @@ async def post_activate_audit_program(
 ) -> dict[str, object]:
     require_audit_scope(principal, "action:audit:manageStandards")
     try:
-        return await activate_program(str(principal.tenant_id), program_key, version, payload)
+        return await activate_program(
+            str(principal.tenant_id),
+            program_key,
+            version,
+            payload,
+        )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
 
@@ -124,7 +138,10 @@ async def get_audit_runs(
     )
 
 
-@router.post("/runs/{audit_run_id}/redaction-receipts", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/runs/{audit_run_id}/redaction-receipts",
+    status_code=status.HTTP_201_CREATED,
+)
 async def post_redaction_receipt(
     audit_run_id: UUID,
     payload: AuditRedactionReceiptCreate,
@@ -134,7 +151,9 @@ async def post_redaction_receipt(
     await _require_location(principal, scope, payload.location_id)
     try:
         receipt = await append_redaction_receipt(
-            str(principal.tenant_id), audit_run_id, payload
+            str(principal.tenant_id),
+            audit_run_id,
+            payload,
         )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
@@ -146,7 +165,10 @@ async def post_redaction_receipt(
     }
 
 
-@router.post("/runs/{audit_run_id}/auditor-decisions", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/runs/{audit_run_id}/auditor-decisions",
+    status_code=status.HTTP_201_CREATED,
+)
 async def post_auditor_decision(
     audit_run_id: UUID,
     payload: AuditDecisionEventCreate,
@@ -160,7 +182,10 @@ async def post_auditor_decision(
         )
     try:
         return await append_decision_event(
-            str(principal.tenant_id), principal.subject, audit_run_id, payload
+            str(principal.tenant_id),
+            principal.subject,
+            audit_run_id,
+            payload,
         )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
@@ -175,7 +200,10 @@ async def post_audit_action(
     require_audit_scope(principal, "action:audit:createAction")
     try:
         return await create_action(
-            str(principal.tenant_id), principal.subject, audit_run_id, payload
+            str(principal.tenant_id),
+            principal.subject,
+            audit_run_id,
+            payload,
         )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
@@ -199,21 +227,28 @@ async def patch_audit_action(
         _raise_repository_error(exc)
 
 
-@router.post("/runs/{audit_run_id}/assurance-reviews", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/runs/{audit_run_id}/assurance-reviews",
+    status_code=status.HTTP_201_CREATED,
+)
 async def post_assurance_review(
     audit_run_id: UUID,
     payload: AuditAssuranceReviewCreate,
     principal: AuditViewer,
 ) -> dict[str, object]:
     require_audit_scope(principal, "action:audit:reviewDisagreement")
-    if payload.state == "OPERATIONS_STANDARDS_REVIEW" and "audit_standards" not in principal.roles:
+    standards_review = payload.state == "OPERATIONS_STANDARDS_REVIEW"
+    if standards_review and "audit_standards" not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Operations Standards review requires Audit Standards role",
         )
     try:
         return await append_assurance_review(
-            str(principal.tenant_id), principal.subject, audit_run_id, payload
+            str(principal.tenant_id),
+            principal.subject,
+            audit_run_id,
+            payload,
         )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)

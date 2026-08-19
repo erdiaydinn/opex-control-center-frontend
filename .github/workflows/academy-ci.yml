@@ -10,6 +10,7 @@ on:
       - 'services/core-api/app/main_academy.py'
       - 'services/core-api/alembic/versions/0009_academy_foundation.py'
       - 'services/core-api/alembic/versions/0010_academy_audit_idempotency.py'
+      - 'services/core-api/alembic/versions/0011_academy_locale_expansion.py'
       - 'services/core-api/tests/test_academy_*.py'
       - 'services/core-api/Dockerfile'
       - '.github/workflows/academy-ci.yml'
@@ -79,11 +80,13 @@ jobs:
           async def main():
               c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
               try:
-                  assert await c.fetchval('SELECT version_num FROM alembic_version') == '0010_academy_audit_idempotency'
+                  assert await c.fetchval('SELECT version_num FROM alembic_version') == '0011_academy_locale_expansion'
                   rows=await c.fetch("SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'")
                   assert rows and all(r['relrowsecurity'] and r['relforcerowsecurity'] for r in rows), rows
                   role=await c.fetchrow("SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='opex_runtime'")
                   assert role and not role['rolsuper'] and not role['rolbypassrls']
+                  locale_columns=await c.fetch("SELECT table_name, character_maximum_length FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('academy_content_versions','academy_document_chunks') AND column_name='locale'")
+                  assert len(locale_columns) == 2 and all(row['character_maximum_length'] == 16 for row in locale_columns), locale_columns
               finally: await c.close()
           asyncio.run(main())
           PY
@@ -167,10 +170,11 @@ jobs:
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
           SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
           INSERT INTO tenants(id,slug,display_name) VALUES('00000000-0000-0000-0000-00000000d001','dr-tenant','DR Tenant');
-          INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by) VALUES('00000000-0000-0000-0000-00000000d001','sop','dr-evidence','{"en":"DR evidence"}','published','ci');
+          INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by) VALUES('00000000-0000-0000-0000-00000000d001','sop','dr-evidence','{"en":"DR evidence","fa":"مدرک بازیابی"}','published','ci');
+          INSERT INTO academy_content_versions(tenant_id,content_id,version_label,version_number,locale,status,created_by) SELECT '00000000-0000-0000-0000-00000000d001',id,'2026.1',1,'fa','published','ci' FROM academy_content_items WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND slug='dr-evidence';
           SQL
           pg_dump -h localhost -U opex_migrator -d opex_test --format=custom --no-owner --no-privileges -f /tmp/academy.dump
           createdb -h localhost -U opex_migrator opex_restore
           pg_restore -h localhost -U opex_migrator -d opex_restore --no-owner --no-privileges /tmp/academy.dump
-          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT 1 FROM academy_content_items WHERE slug='dr-evidence';"
-          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0010_academy_audit_idempotency';"
+          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT 1 FROM academy_content_versions WHERE locale='fa';"
+          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0011_academy_locale_expansion';"

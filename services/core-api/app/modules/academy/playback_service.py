@@ -16,7 +16,11 @@ from app.modules.academy.media import (
     load_media_config,
     media_unavailable_http,
 )
-from app.modules.academy.repository import get_media_asset, record_learning_event
+from app.modules.academy.repository import (
+    get_blocking_checkpoint,
+    get_media_asset,
+    record_learning_event,
+)
 from app.modules.academy.repository_playback import (
     close_playback_session,
     commit_playback_heartbeat,
@@ -108,6 +112,7 @@ async def start_verified_playback(
         "verified_watch_ms": int(playback["verified_watch_ms"]),
         "forward_seek_policy": "deny-unverified",
         "background_policy": "no-forward-credit-while-hidden",
+        "checkpoint_policy": "hard-stop-before-required-checkpoint",
         "evidence_authority": "server-receipts",
         "download_protection": "friction-not-guarantee",
     }
@@ -164,6 +169,27 @@ async def record_verified_heartbeat(
                 "max_seek_position_ms": verified_until + seek_tolerance,
             },
         )
+
+    checkpoint = await get_blocking_checkpoint(
+        session,
+        principal,
+        enrollment_id=state["enrollment_id"],
+        content_version_id=state["content_version_id"],
+        requested_position_ms=payload.to_position_ms,
+    )
+    if checkpoint is not None:
+        checkpoint_at_ms = int(checkpoint["checkpoint_at_ms"])
+        if verified_until < checkpoint_at_ms <= payload.to_position_ms:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Required checkpoint blocks playback continuation",
+                    "quiz_id": str(checkpoint["quiz_id"]),
+                    "checkpoint_at_ms": checkpoint_at_ms,
+                    "quiz_version": checkpoint["version_number"],
+                    "max_seek_position_ms": checkpoint_at_ms,
+                },
+            )
 
     position_delta = payload.to_position_ms - payload.from_position_ms
     if payload.visibility == "hidden" and position_delta > 0:

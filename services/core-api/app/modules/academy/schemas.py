@@ -4,24 +4,19 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Locale = Literal["tr", "en", "de", "ar"]
+from app.modules.academy.localization import normalize_i18n_map, normalize_locale
+
+Locale = str
 ContentType = Literal["document", "video", "sop"]
 PublicationStatus = Literal["draft", "published", "retired"]
 
 
 def _validate_i18n(value: dict[str, str], *, required: bool = True) -> dict[str, str]:
-    allowed = {"tr", "en", "de", "ar"}
-    invalid = set(value) - allowed
-    if invalid:
-        raise ValueError(f"Unsupported locales: {', '.join(sorted(invalid))}")
-    normalized = {
-        key: text.strip()
-        for key, text in value.items()
-        if isinstance(text, str) and text.strip()
-    }
-    if required and not normalized:
-        raise ValueError("At least one non-empty localized value is required")
-    return normalized
+    return normalize_i18n_map(value, required=required)
+
+
+def _validate_locale(value: str) -> str:
+    return normalize_locale(value)
 
 
 class ContentCreateRequest(BaseModel):
@@ -50,6 +45,11 @@ class ContentCreateRequest(BaseModel):
     def validate_description_i18n(cls, value: dict[str, str]) -> dict[str, str]:
         return _validate_i18n(value, required=False)
 
+    @field_validator("locale")
+    @classmethod
+    def validate_locale(cls, value: str) -> str:
+        return _validate_locale(value)
+
 
 class ContentVersionCreateRequest(BaseModel):
     version_label: str = Field(min_length=1, max_length=80)
@@ -62,6 +62,11 @@ class ContentVersionCreateRequest(BaseModel):
     duration_ms: int | None = Field(default=None, ge=0)
     accessibility_metadata: dict[str, object] = Field(default_factory=dict)
     status: PublicationStatus = "draft"
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale(cls, value: str) -> str:
+        return _validate_locale(value)
 
 
 class MediaAssetCreateRequest(BaseModel):
@@ -215,6 +220,11 @@ class DocumentChunkCreate(BaseModel):
     source_anchor: str | None = Field(default=None, max_length=500)
     metadata: dict[str, object] = Field(default_factory=dict)
 
+    @field_validator("locale")
+    @classmethod
+    def validate_locale(cls, value: str) -> str:
+        return _validate_locale(value)
+
 
 class DocumentIngestRequest(BaseModel):
     content_version_id: UUID
@@ -225,6 +235,11 @@ class QuestionAnswerRequest(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     locale: Locale = "tr"
     top_k: int = Field(default=5, ge=1, le=10)
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale(cls, value: str) -> str:
+        return _validate_locale(value)
 
 
 class PlaybackAuthorization(BaseModel):

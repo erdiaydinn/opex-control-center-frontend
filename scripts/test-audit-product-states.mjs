@@ -23,7 +23,7 @@ requireCondition(app.includes('path="/audit"'), "Audit route is missing");
 requireCondition(app.includes('moduleKey="field_intelligence"'), "Audit foundation route must stay permission-bound");
 requireCondition(catalog.includes('id: "audit"') && catalog.includes('route: "/audit"'), "Audit command-center module is missing");
 requireCondition(workspace.includes('data-audit-truth-state="unbound"'), "Audit UI must expose its live-truth boundary");
-requireCondition(workspace.includes("Live truth required"), "Empty KPI state must not be replaced with synthetic business metrics");
+requireCondition(workspace.includes('t("noLiveData")'), "Empty KPI state must remain localized and truth-bound rather than synthetic");
 requireCondition(css.includes("prefers-reduced-motion"), "Audit experience must respect reduced motion");
 
 const locales = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"];

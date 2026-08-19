@@ -4,11 +4,11 @@ from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
-from app.core.localization import SUPPORTED_LOCALE_SET, canonicalize_locale
+from app.core.localization import canonicalize_content_locale
 
 
 def _validate_locale(value: str) -> str:
-    canonical = canonicalize_locale(value)
+    canonical = canonicalize_content_locale(value)
     if canonical is None:
         raise ValueError("Unsupported locale")
     return canonical
@@ -29,12 +29,23 @@ PublicationStatus = Literal["draft", "published", "retired"]
 
 
 def _validate_i18n(value: dict[str, str], *, required: bool = True) -> dict[str, str]:
-    invalid = set(value) - SUPPORTED_LOCALE_SET
-    if invalid:
-        raise ValueError(f"Unsupported locales: {', '.join(sorted(invalid))}")
-    normalized = {
-        key: text.strip() for key, text in value.items() if isinstance(text, str) and text.strip()
-    }
+    normalized: dict[str, str] = {}
+    unsupported: list[str] = []
+
+    for raw_locale, raw_text in value.items():
+        locale = canonicalize_content_locale(raw_locale)
+        if locale is None:
+            unsupported.append(raw_locale)
+            continue
+        if locale in normalized:
+            raise ValueError(
+                f"Duplicate locale after normalization: {raw_locale} resolves to {locale}"
+            )
+        if isinstance(raw_text, str) and raw_text.strip():
+            normalized[locale] = raw_text.strip()
+
+    if unsupported:
+        raise ValueError(f"Unsupported locales: {', '.join(sorted(unsupported))}")
     if required and not normalized:
         raise ValueError("At least one non-empty localized value is required")
     return normalized

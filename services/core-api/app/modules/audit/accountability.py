@@ -214,13 +214,15 @@ async def assign_location_manager(
         current_row = current.first()
         if current_row is None and payload.expected_version is not None:
             raise AuditConflictError("manager assignment does not exist")
-        if current_row is not None:
-            if payload.expected_version is None:
-                raise AuditConflictError(
-                    "existing manager assignment requires expected_version"
-                )
-            if current_row.version != payload.expected_version:
-                raise AuditConflictError("manager assignment version conflict")
+        if current_row is not None and payload.expected_version is None:
+            raise AuditConflictError(
+                "existing manager assignment requires expected_version"
+            )
+        if (
+            current_row is not None
+            and current_row.version != payload.expected_version
+        ):
+            raise AuditConflictError("manager assignment version conflict")
 
         if current_row is None:
             result = await connection.execute(

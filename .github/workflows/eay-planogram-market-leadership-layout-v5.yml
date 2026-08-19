@@ -6,7 +6,9 @@ on:
       - product/planogram-market-leadership-v1
     paths:
       - "apps/planai/backend/physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/physical_economics.py"
       - "apps/planai/backend/tests/test_physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/tests/test_physical_economics.py"
       - "apps/planai/backend/physical_optimizer_v4.py"
       - "apps/planai/backend/physical_optimizer_v3.py"
       - "apps/planai/backend/architecture_truth.py"
@@ -19,7 +21,9 @@ on:
       - product/eay-category-leadership-v1
     paths:
       - "apps/planai/backend/physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/physical_economics.py"
       - "apps/planai/backend/tests/test_physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/tests/test_physical_economics.py"
       - "apps/planai/backend/physical_optimizer_v4.py"
       - "apps/planai/backend/physical_optimizer_v3.py"
       - "apps/planai/backend/architecture_truth.py"
@@ -53,18 +57,25 @@ jobs:
         run: |
           python -m pip install -r apps/planai/backend/requirements.txt
           python -m pip install -e "./services/core-api[dev]"
-      - name: Compile and lint physical-layout search
+      - name: Compile and lint physical-layout search and economics
         run: |
-          python -m py_compile apps/planai/backend/physical_layout_optimizer_v5.py
+          python -m py_compile \
+            apps/planai/backend/physical_layout_optimizer_v5.py \
+            apps/planai/backend/physical_economics.py
           ruff check \
             apps/planai/backend/physical_layout_optimizer_v5.py \
+            apps/planai/backend/physical_economics.py \
             apps/planai/backend/tests/test_physical_layout_optimizer_v5.py \
+            apps/planai/backend/tests/test_physical_economics.py \
             services/core-api/app/modules/planogram/physical_layout_adapter.py \
             services/core-api/app/modules/planogram/optimizer_router.py \
             services/core-api/tests/test_planogram_physical_layout_v5_contract.py
       - name: V5 relocation red-team acceptance
         working-directory: apps/planai/backend
         run: python -m pytest -q tests/test_physical_layout_optimizer_v5.py
+      - name: Evidence-bound CFO economics acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_physical_economics.py
       - name: Preserve V4 allocation and V3 basket truth
         working-directory: apps/planai/backend
         run: >-
@@ -89,4 +100,5 @@ jobs:
           print('PLANOGRAM_V5_PHYSICAL_RELOCATION_AUTHORITY=FALSE')
           print('PLANOGRAM_V5_INSTALLATION_APPROVAL=FALSE')
           print('PLANOGRAM_V5_CAPEX_ATTESTATION=REQUIRED')
+          print('PLANOGRAM_V5_FINANCE_APPROVAL=FALSE')
           PY

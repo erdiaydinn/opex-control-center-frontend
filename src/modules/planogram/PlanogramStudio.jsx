@@ -23,6 +23,7 @@ import { normalizeCandidateBundle } from "./planogramCandidateBundle.js";
 import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramEconomicsPanel from "./PlanogramEconomicsPanel.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
+import PlanogramScenarioPortfolio from "./PlanogramScenarioPortfolio.jsx";
 import "./planogram-native.css";
 import "./planogram-operations.css";
 import "./planogram-preview.css";
@@ -328,6 +329,14 @@ export default function PlanogramStudio() {
                         : o("optimizerBaseline")
                       : o("optimizerBlocked")}
                   </p>
+                ) : null}
+                {optimizerMeta ? (
+                  <PlanogramScenarioPortfolio
+                    candidate={candidate}
+                    locale={locale}
+                    formatNumber={formatNumber}
+                    canCreate={canCreatePreview}
+                  />
                 ) : null}
                 {optimizerMeta ? (
                   <PlanogramCadExport

@@ -20,6 +20,9 @@ android {
         abortOnError = true
         warningsAsErrors = true
         checkReleaseBuilds = true
+        // Dependency freshness is governed by Repository Intelligence + exact pin review.
+        // Treating "a newer version exists" as a build failure would conflict with that policy.
+        disable += setOf("GradleDependency", "NewerVersionAvailable")
     }
 }
 
@@ -34,15 +37,14 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
 
-    // Native capture foundation. Keep every CameraX artifact on one reviewed stable version.
     implementation("androidx.camera:camera-core:$cameraXVersion")
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
     implementation("androidx.camera:camera-view:$cameraXVersion")
     implementation("androidx.camera:camera-video:$cameraXVersion")
 
-    // Privacy preprocessing candidate. The model asset remains separately governed and fingerprinted.
-    // Never replace this with `latest.release`: upgrades require repository/eval review.
+    // Reviewed upstream sample currently uses tasks-vision 1.0.0.
+    // Model assets remain separately governed/fingerprinted; no runtime download is allowed.
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

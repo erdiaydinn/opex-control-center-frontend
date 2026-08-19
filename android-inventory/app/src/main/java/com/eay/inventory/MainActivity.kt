@@ -24,6 +24,8 @@ import com.eay.mobile.core.ScannerSource
 import com.eay.mobile.fieldui.runtime.EayTerminalRuntimeView
 import com.eay.mobile.presentation.FieldMissionVisualKind
 import com.eay.mobile.presentation.FieldMissionVisualPriority
+import com.eay.mobile.presentation.FieldRecoveryActionKind
+import com.eay.mobile.presentation.FieldSessionRecoveryBannerModel
 import com.eay.mobile.presentation.FieldSyncVisualState
 import com.eay.mobile.presentation.adapter.BlindCountPresentationCopy
 import com.eay.mobile.presentation.adapter.FieldPresentationAdapter
@@ -49,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private var loadedTasks: List<InventoryTerminalCountTask> = emptyList()
     private var localMissionTruth: Map<String, InventoryLocalCompletionState> = emptyMap()
     private var localRecoverySummary: InventoryRecoverySummary? = null
+    private var sessionRecoveryBanner: FieldSessionRecoveryBannerModel? = null
     private var activeTask: InventoryTerminalCountTask? = null
     private var activeController: BlindCountTerminalController? = null
     private var taskSelectionEnabled = true
@@ -147,7 +150,11 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (
             AccessTokenMemory.freshOrNull() != null &&
-            (loadedTasks.isNotEmpty() || localRecoverySummary != null)
+            (
+                loadedTasks.isNotEmpty() ||
+                    localRecoverySummary != null ||
+                    sessionRecoveryBanner != null
+                )
         ) {
             loadTerminalTasks()
         }
@@ -249,6 +256,7 @@ class MainActivity : AppCompatActivity() {
         loadedTasks = emptyList()
         localMissionTruth = emptyMap()
         localRecoverySummary = null
+        sessionRecoveryBanner = null
         activeTask = null
         activeController = null
         taskSelectionEnabled = true
@@ -256,32 +264,36 @@ class MainActivity : AppCompatActivity() {
         hideExecutionControls()
         Thread {
             val result = taskClient.fetch()
-            val localProjectionResult = if (result.accepted) {
-                runCatching {
-                    runBlocking {
-                        val unsettled = InventoryDatabase.get(this@MainActivity)
-                            .events()
-                            .unsettledBefore(Long.MAX_VALUE)
-                        InventoryLocalMissionTruth.classify(result.tasks, unsettled) to
-                            InventoryRecoveryContract.summarize(unsettled)
+            val localProjectionResult = runCatching {
+                runBlocking {
+                    val unsettled = InventoryDatabase.get(this@MainActivity)
+                        .events()
+                        .unsettledBefore(Long.MAX_VALUE)
+                    val missionTruth = if (result.accepted) {
+                        InventoryLocalMissionTruth.classify(result.tasks, unsettled)
+                    } else {
+                        emptyMap()
                     }
+                    missionTruth to InventoryRecoveryContract.summarize(unsettled)
                 }
-            } else {
-                Result.success(
-                    emptyMap<String, InventoryLocalCompletionState>() to null,
-                )
             }
             runOnUiThread {
-                if (!result.accepted) {
-                    status.text = getString(R.string.terminal_task_fetch_failed, result.code.name)
-                    return@runOnUiThread
-                }
                 val projection = localProjectionResult.getOrElse {
                     status.text = getString(R.string.terminal_contract_blocked)
                     return@runOnUiThread
                 }
                 localMissionTruth = projection.first
                 localRecoverySummary = projection.second
+                if (!result.accepted) {
+                    sessionRecoveryBanner = InventoryTaskFetchRecoveryPresentation.banner(
+                        this,
+                        result.code,
+                    )
+                    status.text = getString(R.string.terminal_task_fetch_failed, result.code.name)
+                    renderTasks(emptyList())
+                    return@runOnUiThread
+                }
+                sessionRecoveryBanner = null
                 renderTasks(result.tasks)
             }
         }.start()
@@ -289,7 +301,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderTasks(tasks: List<InventoryTerminalCountTask>) {
         loadedTasks = tasks
-        if (tasks.isEmpty() && localRecoverySummary == null) {
+        if (
+            tasks.isEmpty() &&
+            localRecoverySummary == null &&
+            sessionRecoveryBanner == null
+        ) {
             fieldUi.clear()
             fieldUi.visibility = View.GONE
             status.text = getString(R.string.terminal_no_tasks)
@@ -393,6 +409,7 @@ class MainActivity : AppCompatActivity() {
             header = header,
             missions = missions,
             recovery = recoveryBanner,
+            sessionRecovery = sessionRecoveryBanner,
             onMissionOpen = missionOpen@{ missionId ->
                 if (!taskSelectionEnabled || globallyBlocked) return@missionOpen
                 val task = loadedTasks.firstOrNull { it.missionId == missionId }
@@ -403,7 +420,19 @@ class MainActivity : AppCompatActivity() {
                     selectTask(task)
                 }
             },
+            onRecoveryAction = { action -> handleRecoveryAction(action) },
         )
+    }
+
+    private fun handleRecoveryAction(action: FieldRecoveryActionKind) {
+        when (action) {
+            FieldRecoveryActionKind.NONE -> Unit
+            FieldRecoveryActionKind.SIGN_IN_AGAIN -> {
+                AccessTokenMemory.clear()
+                startOidc()
+            }
+            FieldRecoveryActionKind.RELOAD_MISSIONS -> loadTerminalTasks()
+        }
     }
 
     private fun selectTask(task: InventoryTerminalCountTask) {
@@ -649,7 +678,11 @@ class MainActivity : AppCompatActivity() {
     private fun setTaskSelectionEnabled(enabled: Boolean) {
         taskSelectionEnabled = enabled
         if (
-            (loadedTasks.isNotEmpty() || localRecoverySummary != null) &&
+            (
+                loadedTasks.isNotEmpty() ||
+                    localRecoverySummary != null ||
+                    sessionRecoveryBanner != null
+                ) &&
             activeController == null
         ) {
             renderMissionSurface()

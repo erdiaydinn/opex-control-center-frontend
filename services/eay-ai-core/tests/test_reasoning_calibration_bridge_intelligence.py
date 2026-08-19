@@ -92,17 +92,21 @@ def _approved_snapshot(multipliers, *, maximum_spread=0.30):
     )
 
 
-def _decision(*, blockers=(), readiness=DecisionReadiness.READY):
+def _decision(*, blockers=(), readiness=DecisionReadiness.PREPARE):
     return ExecutiveDecisionPacket(
         decision_id="decision://current",
-        tenant_id=TENANT,
         readiness=readiness,
-        recommendation="review demand pressure",
-        rationale_refs=("evidence://decision",),
+        confidence_cap=0.85,
+        top_signal_ids=("signal://demand",),
+        safe_prepare_action_ids=(),
+        approval_gated_action_ids=(),
+        automatic_external_execution_allowed=False,
+        human_review_required=False,
         blockers=tuple(blockers),
-        confidence=0.85,
+        warnings=(),
+        decision_truth_status=None,
+        truth_requirement_id=None,
         firm_company_claim_authorized=True,
-        external_action_authorized=False,
     )
 
 

@@ -1,9 +1,12 @@
 package com.eay.mobile.fieldui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.os.Handler
 import android.os.Looper
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
@@ -25,6 +28,7 @@ import java.io.Closeable
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 
 class AuditCameraXController(
     private val context: Context,
@@ -32,15 +36,20 @@ class AuditCameraXController(
     private val mainExecutor: Executor = Executor { command ->
         Handler(Looper.getMainLooper()).post(command)
     }
+    private val analysisExecutor = Executors.newSingleThreadExecutor()
     private val rawLeases = linkedSetOf<AuditRawVideoCapture>()
     private var provider: ProcessCameraProvider? = null
     private var videoCapture: VideoCapture<Recorder>? = null
+    private var imageAnalysis: ImageAnalysis? = null
     private var recording: Recording? = null
 
     fun bind(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
         lensFacing: Int = CameraSelector.LENS_FACING_BACK,
+        frameProcessor: AuditLocalRedactedFrameProcessor? = null,
+        activeStepId: () -> String? = { null },
+        onRedactedEvidenceFrame: (AuditRedactedEvidenceFrame) -> Unit = {},
         onReady: () -> Unit = {},
         onError: (Throwable) -> Unit = {},
     ) {
@@ -65,12 +74,70 @@ class AuditCameraXController(
                         .requireLensFacing(lensFacing)
                         .build()
 
+                    imageAnalysis?.clearAnalyzer()
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, video)
+
+                    val analysis = frameProcessor?.let { processor ->
+                        ImageAnalysis.Builder()
+                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                            .also { useCase ->
+                                useCase.setAnalyzer(analysisExecutor) { image ->
+                                    val timestampMs = image.imageInfo.timestamp / 1_000_000L
+                                    val bitmap = try {
+                                        image.toBitmap()
+                                    } catch (error: Throwable) {
+                                        image.close()
+                                        mainExecutor.execute { onError(error) }
+                                        return@setAnalyzer
+                                    }
+                                    var orientedBitmap: Bitmap = bitmap
+                                    try {
+                                        orientedBitmap = bitmap.rotateForAudit(
+                                            image.imageInfo.rotationDegrees,
+                                        )
+                                        val evidence = processor.process(
+                                            stepId = activeStepId(),
+                                            source = orientedBitmap,
+                                            timestampMs = timestampMs,
+                                        )
+                                        if (evidence != null) {
+                                            mainExecutor.execute {
+                                                onRedactedEvidenceFrame(evidence)
+                                            }
+                                        }
+                                    } catch (error: Throwable) {
+                                        mainExecutor.execute { onError(error) }
+                                    } finally {
+                                        if (orientedBitmap !== bitmap) {
+                                            orientedBitmap.recycle()
+                                        }
+                                        bitmap.recycle()
+                                        image.close()
+                                    }
+                                }
+                            }
+                    }
+
+                    if (analysis == null) {
+                        cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, video)
+                    } else {
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            selector,
+                            preview,
+                            video,
+                            analysis,
+                        )
+                    }
                     provider = cameraProvider
                     videoCapture = video
+                    imageAnalysis = analysis
                     onReady()
                 } catch (error: Throwable) {
+                    imageAnalysis?.clearAnalyzer()
+                    imageAnalysis = null
                     videoCapture = null
                     onError(error)
                 }
@@ -145,6 +212,8 @@ class AuditCameraXController(
     override fun close() {
         recording?.close()
         recording = null
+        imageAnalysis?.clearAnalyzer()
+        imageAnalysis = null
         rawLeases.toList().forEach { lease ->
             lease.discardIfOpen()
             rawLeases -= lease
@@ -152,6 +221,7 @@ class AuditCameraXController(
         provider?.unbindAll()
         provider = null
         videoCapture = null
+        analysisExecutor.shutdownNow()
     }
 
     private fun newRawCapture(): AuditRawVideoCapture {
@@ -184,6 +254,9 @@ fun EayAuditCameraSurface(
     lifecycleOwner: LifecycleOwner,
     modifier: Modifier = Modifier,
     lensFacing: Int = CameraSelector.LENS_FACING_BACK,
+    frameProcessor: AuditLocalRedactedFrameProcessor? = null,
+    activeStepId: () -> String? = { null },
+    onRedactedEvidenceFrame: (AuditRedactedEvidenceFrame) -> Unit = {},
     onReady: () -> Unit = {},
     onError: (Throwable) -> Unit = {},
 ) {
@@ -200,6 +273,9 @@ fun EayAuditCameraSurface(
                 lifecycleOwner = lifecycleOwner,
                 previewView = previewView,
                 lensFacing = lensFacing,
+                frameProcessor = frameProcessor,
+                activeStepId = activeStepId,
+                onRedactedEvidenceFrame = onRedactedEvidenceFrame,
                 onReady = onReady,
                 onError = onError,
             )
@@ -224,4 +300,11 @@ fun EayAuditCameraSurface(
         onReady = onReady,
         onError = onError,
     )
+}
+
+private fun Bitmap.rotateForAudit(rotationDegrees: Int): Bitmap {
+    val normalized = ((rotationDegrees % 360) + 360) % 360
+    if (normalized == 0) return this
+    val matrix = Matrix().apply { postRotate(normalized.toFloat()) }
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
 }

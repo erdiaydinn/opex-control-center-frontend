@@ -293,7 +293,10 @@ async def authorize_vision_inference(
         existing_row = existing.mappings().first()
         if existing_row is not None:
             if existing_row["consumed_at"] is not None:
-                return VisionAuthorizationDecision("blocked", "vision_authorization_already_consumed")
+                return VisionAuthorizationDecision(
+                    "blocked",
+                    "vision_authorization_already_consumed",
+                )
             validity = await connection.execute(
                 text("SELECT :expires_at > CURRENT_TIMESTAMP AS valid"),
                 {"expires_at": existing_row["expires_at"]},
@@ -324,7 +327,8 @@ async def authorize_vision_inference(
                         capabilities, authorization_fingerprint, expires_at
                     ) VALUES (
                         CAST(:tenant_id AS UUID), CAST(:audit_run_id AS UUID), :item_key,
-                        CAST(:redaction_receipt_id AS UUID), CAST(:privacy_verification_event_id AS UUID),
+                        CAST(:redaction_receipt_id AS UUID),
+                        CAST(:privacy_verification_event_id AS UUID),
                         :program_key, :program_version, :question_control_fingerprint,
                         :model_record_id, :artifact_sha256, :artifact_provenance_fingerprint,
                         :production_promotion_fingerprint, :production_release_proof_fingerprint,
@@ -347,7 +351,9 @@ async def authorize_vision_inference(
                     "artifact_sha256": proof.artifact_sha256,
                     "artifact_provenance_fingerprint": proof.artifact_provenance_fingerprint,
                     "production_promotion_fingerprint": proof.production_promotion_fingerprint,
-                    "production_release_proof_fingerprint": proof.production_release_proof_fingerprint,
+                    "production_release_proof_fingerprint": (
+                        proof.production_release_proof_fingerprint
+                    ),
                     "capabilities": json.dumps(list(capabilities), separators=(",", ":")),
                     "authorization_fingerprint": auth_fingerprint,
                 },
@@ -421,5 +427,7 @@ async def consume_vision_inference_authorization(
         )
         row = result.mappings().first()
         if row is None:
-            raise AuditRepositoryError("vision inference authorization unavailable, expired, or consumed")
+            raise AuditRepositoryError(
+                "vision inference authorization unavailable, expired, or consumed"
+            )
         return dict(row)

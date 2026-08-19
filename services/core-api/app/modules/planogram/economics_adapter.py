@@ -46,9 +46,15 @@ def generate_physical_layout_economics_preview(
         max_layout_candidates=max_layout_candidates,
         max_allocation_candidates=max_allocation_candidates,
     )
-    evaluator = getattr(_load_physical_economics(), "evaluate_physical_layout_economics", None)
+    evaluator = getattr(
+        _load_physical_economics(),
+        "evaluate_physical_layout_economics",
+        None,
+    )
     if not callable(evaluator):
-        raise PlanogramEngineUnavailable("Planogram physical-layout economics entrypoint is unavailable")
+        raise PlanogramEngineUnavailable(
+            "Planogram physical-layout economics entrypoint is unavailable"
+        )
 
     economics = evaluator(
         physical_layout_result=physical_layout,
@@ -57,11 +63,17 @@ def generate_physical_layout_economics_preview(
     if not isinstance(economics, dict):
         raise PlanogramEngineUnavailable("Planogram economics returned invalid data")
     if economics.get("production_evidence") is not False:
-        raise PlanogramEngineUnavailable("Planogram economics violated production-evidence boundary")
+        raise PlanogramEngineUnavailable(
+            "Planogram economics violated production-evidence boundary"
+        )
     if economics.get("finance_approved") is not False:
-        raise PlanogramEngineUnavailable("Planogram economics violated finance-approval boundary")
+        raise PlanogramEngineUnavailable(
+            "Planogram economics violated finance-approval boundary"
+        )
     if economics.get("investment_decision_allowed") is not False:
-        raise PlanogramEngineUnavailable("Planogram economics violated investment-authority boundary")
+        raise PlanogramEngineUnavailable(
+            "Planogram economics violated investment-authority boundary"
+        )
 
     return {
         "physical_layout": physical_layout,

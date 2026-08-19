@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, ShieldCheck, TrendingUp } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
 import { translatePlanogramEconomics } from "../../platform/i18n/planogramEconomicsMessages.js";
 import {
   normalizePlanogramEconomicsAssumptions,
+  safePlanogramCandidateEconomicsPreview,
   safePlanogramEconomicsPreview,
 } from "./planogramEconomicsAssumptions.js";
 import "./planogram-economics.css";
@@ -30,6 +31,7 @@ export default function PlanogramEconomicsPanel({
   formatNumber,
   canCreate,
   canApprove,
+  layoutFingerprint = "",
 }) {
   const inputRef = useRef(null);
   const t = useMemo(
@@ -42,9 +44,18 @@ export default function PlanogramEconomicsPanel({
   const [running, setRunning] = useState(false);
   const [response, setResponse] = useState(null);
 
+  const fingerprint = String(layoutFingerprint || "").trim().toLowerCase();
+  const fingerprintReady = !fingerprint || /^[0-9a-f]{64}$/.test(fingerprint);
   const basketCount = candidate?.order_baskets?.length || 0;
   const permissionReady = Boolean(canCreate && canApprove);
-  const canRun = Boolean(candidate && assumptions && basketCount > 0 && permissionReady && !running);
+  const canRun = Boolean(
+    candidate
+    && assumptions
+    && basketCount > 0
+    && permissionReady
+    && fingerprintReady
+    && !running
+  );
   const economics = response?.result?.economics || null;
   const scenarios = Array.isArray(economics?.scenarios) ? economics.scenarios : [];
   const sourceManifest = economics?.source_manifest || {};
@@ -52,6 +63,11 @@ export default function PlanogramEconomicsPanel({
     () => (value) => moneyFormatter(locale, assumptions?.currency || "EUR").format(Number(value || 0)),
     [assumptions?.currency, locale]
   );
+
+  useEffect(() => {
+    setResponse(null);
+    setError("");
+  }, [fingerprint]);
 
   const readAssumptions = useCallback(async (event) => {
     const file = event.target.files?.[0];
@@ -83,11 +99,18 @@ export default function PlanogramEconomicsPanel({
     setResponse(null);
     setError("");
     try {
-      const raw = await apiPost("/v1/planogram/physical-layout-economics-preview", {
+      const endpoint = fingerprint
+        ? "/v1/planogram/physical-layout-candidate-economics-preview"
+        : "/v1/planogram/physical-layout-economics-preview";
+      const payload = {
         ...candidate,
+        ...(fingerprint ? { layout_fingerprint: fingerprint } : {}),
         economics: assumptions,
-      });
-      const safe = safePlanogramEconomicsPreview(raw);
+      };
+      const raw = await apiPost(endpoint, payload);
+      const safe = fingerprint
+        ? safePlanogramCandidateEconomicsPreview(raw, fingerprint)
+        : safePlanogramEconomicsPreview(raw);
       if (!safe) throw new Error("economics_authority_boundary_failed");
       setResponse(safe);
     } catch {
@@ -95,7 +118,7 @@ export default function PlanogramEconomicsPanel({
     } finally {
       setRunning(false);
     }
-  }, [assumptions, canRun, candidate, t]);
+  }, [assumptions, canRun, candidate, fingerprint, t]);
 
   return (
     <section className="eay-planogram-economics" aria-busy={running ? "true" : "false"}>

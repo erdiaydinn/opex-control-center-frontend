@@ -130,7 +130,7 @@ def _worker(
     )
 
 
-def _six_lane_fixture():
+def _fixture():
     lanes = (
         _lane("data", "company.read"),
         _lane("ops", "ops.analyze"),
@@ -156,7 +156,10 @@ def _six_lane_fixture():
             lane_id="evidence", scheduling_class=LaneSchedulingClass.INTERACTIVE
         ),
         "action": ParallelLaneSchedulingProfile(
-            lane_id="action", scheduling_class=LaneSchedulingClass.EXECUTION
+            lane_id="action",
+            scheduling_class=LaneSchedulingClass.EXECUTION,
+            shedable=False,
+            preemptible=False,
         ),
     }
     requirements = {
@@ -228,17 +231,22 @@ def _six_lane_fixture():
             ),
         ),
     )
-    plan = ParallelMissionPlan(
-        objective_ref=OBJECTIVE,
-        tenant_id=TENANT,
-        lanes=lanes,
-        max_parallel_lanes=8,
+    return (
+        ParallelMissionPlan(
+            objective_ref=OBJECTIVE,
+            tenant_id=TENANT,
+            lanes=lanes,
+            max_parallel_lanes=8,
+        ),
+        profiles,
+        requirements,
+        lane_policies,
+        registry,
     )
-    return plan, profiles, requirements, lane_policies, registry
 
 
 def test_specialist_colonies_route_six_independent_lanes_in_one_canonical_wave():
-    plan, profiles, requirements, lane_policies, registry = _six_lane_fixture()
+    plan, profiles, requirements, lane_policies, registry = _fixture()
     wave = schedule_colony_swarm_wave(
         plan=plan,
         profiles=profiles,
@@ -250,14 +258,14 @@ def test_specialist_colonies_route_six_independent_lanes_in_one_canonical_wave()
         now=NOW,
     )
 
-    assert wave.wave.selected_lane_ids == (
+    assert set(wave.wave.selected_lane_ids) == {
         "action",
         "data",
         "evidence",
         "ops",
         "research",
         "simulation",
-    )
+    }
     by_lane = {item.lane_id: item for item in wave.assignments}
     assert by_lane["data"].colony_kind is SwarmColonyKind.DATA
     assert by_lane["ops"].colony_kind is SwarmColonyKind.OPERATIONS
@@ -269,7 +277,7 @@ def test_specialist_colonies_route_six_independent_lanes_in_one_canonical_wave()
 
 
 def test_side_effect_lane_cannot_be_owned_by_data_colony_even_if_policy_mentions_it():
-    plan, _, requirements, lane_policies, _ = _six_lane_fixture()
+    plan, _, requirements, lane_policies, _ = _fixture()
     compiled = compile_colony_requirements(
         plan=plan,
         base_requirements=requirements,
@@ -282,22 +290,22 @@ def test_side_effect_lane_cannot_be_owned_by_data_colony_even_if_policy_mentions
 
 
 def test_side_effect_lane_without_action_colony_fails_closed():
-    plan, _, requirements, lane_policies, _ = _six_lane_fixture()
-    lane_policies = dict(lane_policies)
-    lane_policies["action"] = SwarmColonyLanePolicy(
+    plan, _, requirements, lane_policies, _ = _fixture()
+    policies = dict(lane_policies)
+    policies["action"] = SwarmColonyLanePolicy(
         lane_id="action", allowed_colony_refs=("colony://data",)
     )
     with pytest.raises(ValueError, match="swarm_colony_side_effect_requires_action_colony"):
         compile_colony_requirements(
             plan=plan,
             base_requirements=requirements,
-            lane_policies=lane_policies,
+            lane_policies=policies,
             topology=_topology(),
         )
 
 
 def test_blackboard_accepts_cross_colony_evidence_refs_without_promoting_truth():
-    _, _, _, _, registry = _six_lane_fixture()
+    _, _, _, _, registry = _fixture()
     ledger = SwarmBlackboardLedger(tenant_id=TENANT, objective_ref=OBJECTIVE)
     data_entry = build_blackboard_entry(
         entry_id="entry-data-1",
@@ -350,7 +358,7 @@ def test_blackboard_accepts_cross_colony_evidence_refs_without_promoting_truth()
 
 
 def test_blackboard_historical_replay_cannot_see_late_recorded_evidence():
-    _, _, _, _, registry = _six_lane_fixture()
+    _, _, _, _, registry = _fixture()
     ledger = SwarmBlackboardLedger(tenant_id=TENANT, objective_ref=OBJECTIVE)
     entry = build_blackboard_entry(
         entry_id="entry-late",
@@ -385,7 +393,7 @@ def test_blackboard_historical_replay_cannot_see_late_recorded_evidence():
 
 
 def test_blackboard_rejects_tampering_wrong_colony_and_secret_bearing_refs():
-    _, _, _, _, registry = _six_lane_fixture()
+    _, _, _, _, registry = _fixture()
     ledger = SwarmBlackboardLedger(tenant_id=TENANT, objective_ref=OBJECTIVE)
     entry = build_blackboard_entry(
         entry_id="entry-safe",

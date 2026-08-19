@@ -68,7 +68,12 @@ object InventoryRecoveryPresentation {
             InventoryRecoveryIntent.SIGN_IN_AGAIN,
             InventoryRecoveryIntent.RELOAD_MISSIONS,
             InventoryRecoveryIntent.NONE,
-            -> error("Unsupported durable recovery intent: ${summary.primaryIntent}")
+            -> InventoryRecoveryPresentationPolicy(
+                severity = FieldRecoveryVisualSeverity.SECURITY,
+                titleRes = R.string.terminal_recovery_title_security,
+                messageRes = R.string.terminal_recovery_integrity,
+                blocksNewMissionStarts = true,
+            )
         }
 
     fun banner(

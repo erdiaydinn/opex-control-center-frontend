@@ -7,43 +7,64 @@ PRESENTATION="$ROOT/mobile-presentation-contracts/src/main/kotlin/com/eay/mobile
 FIELD_UI="$ROOT/android-field-ui/field-ui/src/main/java/com/eay/mobile/fieldui/EayTerminalShell.kt"
 RUNTIME="$ROOT/android-inventory/field-ui-runtime/src/main/java/com/eay/mobile/fieldui/runtime/EayTerminalRuntimeView.kt"
 ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapter.kt"
+SESSION_ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/eay/mobile/presentation/adapter/SessionRecoveryPresentationAdapter.kt"
 RES="$ROOT/android-inventory/app/src/main/res"
 RECOVERY="$APP/InventoryRecoveryContract.kt"
 RECOVERY_PRESENTATION="$APP/InventoryRecoveryPresentation.kt"
+TASK_RECOVERY_PRESENTATION="$APP/InventoryTaskFetchRecoveryPresentation.kt"
 MAIN="$APP/MainActivity.kt"
 RECOVERY_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryContractTest.kt"
 RECOVERY_PRESENTATION_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryPresentationTest.kt"
+SESSION_ADAPTER_TEST="$ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/SessionRecoveryPresentationAdapterTest.kt"
 
 for file in \
   "$PRESENTATION" \
   "$FIELD_UI" \
   "$RUNTIME" \
   "$ADAPTER" \
+  "$SESSION_ADAPTER" \
   "$RECOVERY" \
   "$RECOVERY_PRESENTATION" \
+  "$TASK_RECOVERY_PRESENTATION" \
   "$MAIN" \
   "$RECOVERY_TEST" \
-  "$RECOVERY_PRESENTATION_TEST"; do
+  "$RECOVERY_PRESENTATION_TEST" \
+  "$SESSION_ADAPTER_TEST"; do
   test -f "$file" || { echo "missing terminal recovery contract: $file" >&2; exit 1; }
 done
 
 grep -q 'FieldRecoveryBannerModel' "$PRESENTATION"
+grep -q 'FieldSessionRecoveryBannerModel' "$PRESENTATION"
 grep -q 'FieldRecoveryActionKind' "$PRESENTATION"
 grep -q 'RecoveryBanner' "$FIELD_UI"
+grep -q 'SessionRecoveryBanner' "$FIELD_UI"
 grep -q 'recovery = current.model.recovery' "$RUNTIME"
+grep -q 'sessionRecovery = current.model.sessionRecovery' "$RUNTIME"
 grep -q 'fun recoveryBanner' "$ADAPTER"
+grep -q 'SessionRecoveryPresentationAdapter' "$SESSION_ADAPTER"
 grep -q 'AUTH_BINDING_CHANGED' "$RECOVERY"
 grep -q 'REQUEST_SECURITY_REVIEW' "$RECOVERY"
 grep -q 'authBindingMismatchCannotBeFixedBySigningInAgain' "$RECOVERY_TEST"
 grep -q 'quarantinedEvidenceNeverBecomesClientRetry' "$RECOVERY_TEST"
 grep -q 'blocksNewMissionStarts' "$RECOVERY_PRESENTATION"
 grep -q 'unsupportedDurableUiIntentsBecomeIntegrityBlockWithoutAction' "$RECOVERY_PRESENTATION_TEST"
+grep -q 'InventoryTaskFetchCode.AUTH_REQUIRED' "$TASK_RECOVERY_PRESENTATION"
+grep -q 'FieldRecoveryActionKind.SIGN_IN_AGAIN' "$TASK_RECOVERY_PRESENTATION"
+grep -q 'FieldRecoveryActionKind.RELOAD_MISSIONS' "$TASK_RECOVERY_PRESENTATION"
+grep -q 'session recovery exposes sign in without durable evidence fields' "$SESSION_ADAPTER_TEST"
+grep -q 'session recovery exposes read only mission reload' "$SESSION_ADAPTER_TEST"
 
 grep -q 'InventoryRecoveryContract.summarize(unsettled)' "$MAIN"
 grep -q 'localRecoverySummary' "$MAIN"
+grep -q 'sessionRecoveryBanner' "$MAIN"
+grep -q 'InventoryTaskFetchRecoveryPresentation.banner' "$MAIN"
+grep -q 'sessionRecovery = sessionRecoveryBanner' "$MAIN"
+grep -q 'onRecoveryAction = { action -> handleRecoveryAction(action) }' "$MAIN"
+grep -q 'FieldRecoveryActionKind.SIGN_IN_AGAIN' "$MAIN"
+grep -q 'FieldRecoveryActionKind.RELOAD_MISSIONS' "$MAIN"
 grep -q 'recovery = recoveryBanner' "$MAIN"
 grep -q '!globallyBlocked' "$MAIN"
-grep -q 'tasks.isEmpty() && localRecoverySummary == null' "$MAIN"
+grep -q 'sessionRecoveryBanner == null' "$MAIN"
 
 if grep -R -n -E 'dao\.(retry|delete|quarantine)|events\(\)\.(retry|delete)|reassign_terminal|supersede_attempt|payloadHash|authBindingId|tenantId|employeeId|deviceId|leaseId|attemptId' \
   "$ROOT/android-field-ui/field-ui/src/main" \

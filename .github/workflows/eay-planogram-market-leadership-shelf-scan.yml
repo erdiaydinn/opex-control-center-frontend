@@ -8,6 +8,7 @@ on:
       - "services/core-api/app/modules/planogram/shelf_scan.py"
       - "services/core-api/app/modules/planogram/execution.py"
       - "services/core-api/tests/test_planogram_shelf_scan.py"
+      - "services/core-api/tests/test_planogram_master26_execution.py"
       - ".github/workflows/eay-planogram-market-leadership-shelf-scan.yml"
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
       - "services/core-api/app/modules/planogram/shelf_scan.py"
       - "services/core-api/app/modules/planogram/execution.py"
       - "services/core-api/tests/test_planogram_shelf_scan.py"
+      - "services/core-api/tests/test_planogram_master26_execution.py"
       - ".github/workflows/eay-planogram-market-leadership-shelf-scan.yml"
 
 permissions:
@@ -44,13 +46,14 @@ jobs:
           python -m py_compile services/core-api/app/modules/planogram/shelf_scan.py
           ruff check \
             services/core-api/app/modules/planogram/shelf_scan.py \
-            services/core-api/tests/test_planogram_shelf_scan.py
+            services/core-api/tests/test_planogram_shelf_scan.py \
+            services/core-api/tests/test_planogram_master26_execution.py
       - name: Shelf Scan uncertainty and absence acceptance
         working-directory: services/core-api
         run: python -m pytest -q tests/test_planogram_shelf_scan.py
-      - name: Preserve execution compliance contract
+      - name: Preserve canonical execution compliance contract
         working-directory: services/core-api
-        run: python -m pytest -q tests/test_planogram_execution_unit.py
+        run: python -m pytest -q tests/test_planogram_master26_execution.py
       - name: Prove no auto-truth from computer vision
         working-directory: services/core-api
         run: |

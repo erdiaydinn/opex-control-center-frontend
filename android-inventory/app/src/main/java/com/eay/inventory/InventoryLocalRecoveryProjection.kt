@@ -10,14 +10,19 @@ data class InventoryLocalRecoveryProjection(
  * from that immutable snapshot. No counter is guessed from UI/controller state.
  */
 object InventoryLocalRecoveryProjectionReader {
+    fun project(
+        tasks: List<InventoryTerminalCountTask>,
+        unsettled: List<OfflineEvent>,
+    ): InventoryLocalRecoveryProjection = InventoryLocalRecoveryProjection(
+        missionTruth = InventoryLocalMissionTruth.classify(tasks, unsettled),
+        recovery = InventoryRecoveryContract.summarize(unsettled),
+    )
+
     suspend fun read(
         database: InventoryDatabase,
         tasks: List<InventoryTerminalCountTask>,
     ): InventoryLocalRecoveryProjection {
         val unsettled = database.events().unsettledBefore(Long.MAX_VALUE)
-        return InventoryLocalRecoveryProjection(
-            missionTruth = InventoryLocalMissionTruth.classify(tasks, unsettled),
-            recovery = InventoryRecoveryContract.summarize(unsettled),
-        )
+        return project(tasks, unsettled)
     }
 }

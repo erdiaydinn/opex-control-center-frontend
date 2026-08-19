@@ -46,3 +46,11 @@ class PlanogramPhysicalEconomicsPreviewRequest(PlanogramPreviewRequest):
     model_config = ConfigDict(extra="forbid")
 
     economics: PlanogramEconomicsAssumptions
+
+
+class PlanogramPhysicalCandidateEconomicsPreviewRequest(
+    PlanogramPhysicalEconomicsPreviewRequest
+):
+    model_config = ConfigDict(extra="forbid")
+
+    layout_fingerprint: str = Field(pattern=r"^[0-9a-fA-F]{64}$")

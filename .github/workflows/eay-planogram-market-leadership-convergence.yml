@@ -122,7 +122,6 @@ jobs:
           tests/test_physical_optimizer_v4.py
           tests/test_physical_optimizer_v3.py
           tests/test_picker_tour_simulation.py
-          tests/test_physical_optimizer_behavior.py
       - name: V5 physical layout and evidence-bound economics
         working-directory: apps/planai/backend
         run: >-

@@ -98,6 +98,17 @@ def _load_optimizer() -> ModuleType:
     return _module_from_root("physical_optimizer_v3", root)
 
 
+@lru_cache(maxsize=1)
+def _load_market_search_optimizer() -> ModuleType:
+    root, _, _, _ = _load_modules()
+    optimizer_path = root / "physical_optimizer_v4.py"
+    if not optimizer_path.is_file():
+        raise PlanogramEngineUnavailable(
+            "Experimental Planogram market-search optimizer V4 is unavailable"
+        )
+    return _module_from_root("physical_optimizer_v4", root)
+
+
 def engine_status() -> dict[str, Any]:
     """Return non-sensitive deployment status for the canonical library."""
     root, engine, physical_truth, physical_engine = _load_modules()
@@ -116,6 +127,18 @@ def engine_status() -> dict[str, Any]:
             "production_authority": False,
             "route_objective": "measured-basket-picker-tour-v1",
             "requires_observed_baskets": True,
+        },
+        "market_search_benchmark": {
+            "available": (root / "physical_optimizer_v4.py").is_file(),
+            "contract": "physical-plan-optimizer-v4-bounded-search",
+            "preview_only": True,
+            "production_authority": False,
+            "requires_observed_baskets": True,
+            "promotion_requires": [
+                "blind_expert_benchmark",
+                "real_store_kpi_backtest",
+                "field_acceptance",
+            ],
         },
         "source_modules": {
             "engine": Path(engine.__file__ or "").name,
@@ -183,3 +206,132 @@ def generate_optimized_preview(
     if not isinstance(result, dict) or not isinstance(result.get("optimizer"), dict):
         raise PlanogramEngineUnavailable("Canonical Planogram optimizer returned an invalid result")
     return result
+
+
+def _objective_delta(
+    canonical: dict[str, float | int],
+    experimental: dict[str, float | int],
+) -> dict[str, float]:
+    names = (
+        "hard_violation_count",
+        "weighted_unplaced_sales",
+        "unplaced_sku_count",
+        "tour_unsimulated_order_count",
+        "tour_p95_m",
+        "tour_average_m",
+        "coverage_shortfall",
+        "brand_fragmentation",
+        "capacity_pressure",
+    )
+    return {
+        name: round(float(experimental.get(name) or 0.0) - float(canonical.get(name) or 0.0), 6)
+        for name in names
+    }
+
+
+def generate_market_leadership_benchmark_preview(
+    *,
+    products: list[dict[str, Any]],
+    layout: dict[str, Any],
+    store_dna: dict[str, Any],
+    mode: str,
+    orders: list[dict[str, Any]],
+    max_candidates: int = 24,
+) -> dict[str, Any]:
+    """Compare canonical V3 and experimental V4 on identical unattested evidence.
+
+    The comparison is intentionally incapable of promoting V4. It exists to
+    produce a repeatable, same-input benchmark before any blind expert or field
+    KPI evaluation. Raw order/customer identity is not part of the Core request
+    contract; only anonymized SKU baskets reach this adapter.
+    """
+    if not orders:
+        raise PlanogramEngineUnavailable(
+            "Market-leadership benchmark requires observed or test SKU baskets"
+        )
+
+    canonical_optimizer = _load_optimizer()
+    market_optimizer = _load_market_search_optimizer()
+    canonical_optimize = getattr(canonical_optimizer, "optimize_production_plan", None)
+    market_optimize = getattr(market_optimizer, "optimize_production_plan", None)
+    objective_key = getattr(canonical_optimizer, "objective_key", None)
+    if not callable(canonical_optimize) or not callable(market_optimize) or not callable(objective_key):
+        raise PlanogramEngineUnavailable("Planogram benchmark optimizer contract is unavailable")
+
+    canonical = canonical_optimize(
+        products,
+        layout,
+        store_dna,
+        mode=mode,
+        orders=orders,
+    )
+    experimental = market_optimize(
+        products,
+        layout,
+        store_dna,
+        mode=mode,
+        orders=orders,
+        max_candidates=max_candidates,
+    )
+    canonical_meta = canonical.get("picker_tour_optimizer") or {}
+    experimental_meta = experimental.get("market_search_optimizer") or {}
+    canonical_objective = canonical_meta.get("selected_objective")
+    experimental_objective = experimental_meta.get("selected_objective")
+
+    comparison_available = isinstance(canonical_objective, dict) and isinstance(
+        experimental_objective, dict
+    )
+    if comparison_available:
+        canonical_rank = objective_key(canonical_objective)
+        experimental_rank = objective_key(experimental_objective)
+        if experimental_rank < canonical_rank:
+            winner = "experimental_v4"
+        elif canonical_rank < experimental_rank:
+            winner = "canonical_v3"
+        else:
+            winner = "tie"
+        delta = _objective_delta(canonical_objective, experimental_objective)
+    else:
+        winner = "unavailable"
+        delta = {}
+
+    return {
+        "benchmark_contract": "planogram-v3-v4-same-evidence-benchmark-v1",
+        "preview_only": True,
+        "production_authority": False,
+        "production_evidence": False,
+        "comparison_available": comparison_available,
+        "winner_on_repository_objective": winner,
+        "objective_delta_experimental_minus_canonical": delta,
+        "canonical_v3": {
+            "optimizer_version": canonical_meta.get("optimizer_version"),
+            "allowed": canonical_meta.get("allowed"),
+            "effective": canonical_meta.get("effective"),
+            "selected_strategy": canonical_meta.get("selected_strategy"),
+            "candidate_count": canonical_meta.get("candidate_count"),
+            "selected_objective": canonical_objective,
+            "selected_tour": canonical_meta.get("selected_tour"),
+        },
+        "experimental_v4": {
+            "optimizer_version": experimental_meta.get("optimizer_version"),
+            "allowed": experimental_meta.get("allowed"),
+            "effective": experimental_meta.get("effective"),
+            "selected_strategy": experimental_meta.get("selected_strategy"),
+            "candidate_count": experimental_meta.get("candidate_count"),
+            "search_budget": experimental_meta.get("search_budget"),
+            "pareto_frontier_count": experimental_meta.get("pareto_frontier_count"),
+            "selected_objective": experimental_objective,
+            "selected_tour": experimental_meta.get("selected_tour"),
+            "alternatives": experimental_meta.get("alternatives") or [],
+        },
+        "promotion_allowed": False,
+        "promotion_blockers": [
+            "blind_expert_benchmark_required",
+            "real_store_kpi_backtest_required",
+            "field_acceptance_required",
+        ],
+        "evidence_boundary": (
+            "repository objective comparison is necessary but insufficient; "
+            "V4 cannot replace V3 without blind expert and real-store evidence"
+        ),
+    }

@@ -76,12 +76,17 @@ class AuditProgramActivate(StrictModel):
     effective_from: datetime
 
 
+class AuditLocationManagerAssignmentCreate(StrictModel):
+    manager_membership_id: UUID
+    source_ref: str = Field(min_length=1, max_length=500)
+    expected_version: int | None = Field(default=None, gt=0)
+
+
 class AuditRunStart(StrictModel):
     program_key: str = Field(min_length=1, max_length=120)
     program_version: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)
     field_mission_id: UUID | None = None
-    manager_subject: str | None = Field(default=None, max_length=255)
     source_mode: Literal[
         "checklist",
         "photo",

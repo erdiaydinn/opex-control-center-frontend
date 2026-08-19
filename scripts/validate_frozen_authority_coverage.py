@@ -94,6 +94,7 @@ ALLOWED_EVIDENCE_LANES = {
     "ai-core-execution",
     "frozen-authority-coverage",
     "identity-gateway-security",
+    "core-authority+audit-evidence",
 }
 
 
@@ -295,15 +296,21 @@ def selected_tests(matrix: dict, *, lane: str, prefix: str) -> list[str]:
 def main() -> int:
     matrix = validate()
     if "--print-core-tests" in sys.argv:
-        print(
-            " ".join(
-                selected_tests(
-                    matrix,
-                    lane="frozen-authority-coverage",
-                    prefix="services/core-api/",
-                )
+        core_tests = set(
+            selected_tests(
+                matrix,
+                lane="frozen-authority-coverage",
+                prefix="services/core-api/",
             )
         )
+        core_tests.update(
+            selected_tests(
+                matrix,
+                lane="core-authority+audit-evidence",
+                prefix="services/core-api/",
+            )
+        )
+        print(" ".join(sorted(core_tests)))
         return 0
     if "--print-ai-tests" in sys.argv:
         print(

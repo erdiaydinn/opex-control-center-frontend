@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ from .kpi_result_validation import (
 from .kpi_runtime_contracts import verify_kpi_runtime_activation
 from .kpi_semantics import verify_semantic_contract
 from .platform_tool_authorizer import (
+    PlatformToolAdmissionReleaseError,
     PlatformToolAuthorizationContractError,
     PlatformToolAuthorizationDenied,
     PlatformToolAuthorizationIndeterminate,
@@ -44,6 +46,8 @@ from .query_templates import compile_tool_plan
 from .regulatory_impact import resolve_verified_regulatory_impact
 from .schema_contracts import verify_kpi_schema
 from .tool_contracts import ToolName, ToolPlan, build_tool_plan
+
+logger = logging.getLogger(__name__)
 
 
 class TemplateToolExecutionRequest(BaseModel):
@@ -69,7 +73,7 @@ class TemplateToolExecutionRequest(BaseModel):
     max_rows: int = Field(default=500, ge=1, le=5000)
 
     @model_validator(mode="after")
-    def validate_grant_token(self) -> TemplateToolExecutionRequest:
+    def validate_grant_token(self) -> "TemplateToolExecutionRequest":
         token = self.grant_token.get_secret_value()
         if not 32 <= len(token) <= 256:
             raise ValueError("platform_tool_grant_invalid")
@@ -446,7 +450,7 @@ async def authorize_and_execute_with_adapter(
     audit_store: ExecutionAuditStore,
     legal_db_path: Path | None = None,
 ) -> TemplateToolExecutionResult:
-    """Consume one Platform grant, then execute exactly once if authorized."""
+    """Consume one Platform grant, execute once, then release admission."""
 
     plan = build_tool_plan(payload.tool, payload.arguments)
     authorization_context = await authorizer.authorize(
@@ -454,14 +458,25 @@ async def authorize_and_execute_with_adapter(
         plan=plan,
         reason=payload.reason,
     )
-    return execute_with_adapter(
-        payload,
-        authorization_context=authorization_context,
-        adapter=adapter,
-        audit_store=audit_store,
-        plan=plan,
-        legal_db_path=legal_db_path,
-    )
+    try:
+        return execute_with_adapter(
+            payload,
+            authorization_context=authorization_context,
+            adapter=adapter,
+            audit_store=audit_store,
+            plan=plan,
+            legal_db_path=legal_db_path,
+        )
+    finally:
+        try:
+            await authorizer.release_admission(authorization_context)
+        except PlatformToolAdmissionReleaseError:
+            # Do not mask a known execution result/outcome. The Platform lease
+            # expires by Redis server time even if early release is unavailable.
+            logger.warning(
+                "Jarvis admission lease was not released early",
+                exc_info=True,
+            )
 
 
 class TemplateBigQueryAdapter(GoogleBigQueryAdapter):

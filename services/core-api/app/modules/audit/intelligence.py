@@ -86,6 +86,24 @@ async def build_audit_intelligence_receipt(
                     FROM audit_assurance_cases c
                     JOIN scoped_runs sr
                       ON sr.tenant_id = c.tenant_id AND sr.id = c.audit_run_id
+                ), latest_privacy_verification AS (
+                    SELECT DISTINCT ON (v.redaction_receipt_id)
+                           v.redaction_receipt_id, v.verification_status
+                    FROM audit_redaction_verification_events v
+                    WHERE v.tenant_id = CAST(:tenant_id AS UUID)
+                    ORDER BY v.redaction_receipt_id, v.verified_at DESC, v.id DESC
+                ), media_runs AS (
+                    SELECT id
+                    FROM scoped_runs
+                    WHERE source_mode IN ('photo','video','guided_video','mixed')
+                ), verified_media_runs AS (
+                    SELECT DISTINCT rr.audit_run_id
+                    FROM audit_redaction_receipts rr
+                    JOIN media_runs mr ON mr.id = rr.audit_run_id
+                    JOIN latest_privacy_verification pv
+                      ON pv.redaction_receipt_id = rr.id
+                     AND pv.verification_status = 'verified'
+                    WHERE rr.tenant_id = CAST(:tenant_id AS UUID)
                 )
                 SELECT
                     (SELECT COUNT(*) FROM scoped_runs)::integer AS total_runs,
@@ -113,7 +131,18 @@ async def build_audit_intelligence_receipt(
                       AS standards_review_cases,
                     (SELECT COUNT(*) FROM assurance
                       WHERE state LIKE '%UNASSIGNED')::integer
-                      AS unassigned_assurance_cases
+                      AS unassigned_assurance_cases,
+                    (SELECT COUNT(*) FROM media_runs)::integer AS media_runs,
+                    (SELECT COUNT(*) FROM verified_media_runs)::integer
+                      AS privacy_verified_media_runs,
+                    CASE
+                      WHEN (SELECT COUNT(*) FROM media_runs) = 0 THEN NULL
+                      ELSE ROUND(
+                        100.0 * (SELECT COUNT(*) FROM verified_media_runs)
+                        / (SELECT COUNT(*) FROM media_runs),
+                        2
+                      )
+                    END AS evidence_coverage_percent
                 """
             ),
             values,
@@ -183,6 +212,8 @@ async def build_audit_intelligence_receipt(
             "audit_runs",
             "audit_actions",
             "audit_assurance_cases",
+            "audit_redaction_receipts",
+            "audit_redaction_verification_events",
             "field_locations",
         ],
         "calculation_version": "audit.intelligence.summary.v1",

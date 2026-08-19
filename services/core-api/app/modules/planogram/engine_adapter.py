@@ -255,7 +255,11 @@ def generate_market_leadership_benchmark_preview(
     canonical_optimize = getattr(canonical_optimizer, "optimize_production_plan", None)
     market_optimize = getattr(market_optimizer, "optimize_production_plan", None)
     objective_key = getattr(canonical_optimizer, "objective_key", None)
-    if not callable(canonical_optimize) or not callable(market_optimize) or not callable(objective_key):
+    if (
+        not callable(canonical_optimize)
+        or not callable(market_optimize)
+        or not callable(objective_key)
+    ):
         raise PlanogramEngineUnavailable("Planogram benchmark optimizer contract is unavailable")
 
     canonical = canonical_optimize(

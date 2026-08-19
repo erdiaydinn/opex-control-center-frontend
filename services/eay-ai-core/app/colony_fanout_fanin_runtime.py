@@ -1,14 +1,14 @@
 """Evidence-bound fan-out/fan-in composition for specialist Jarvis colonies.
 
 The canonical swarm already executes independent lanes concurrently. This module
-adds the missing convergence boundary: worker-produced artifacts may be published
-to the shared blackboard, an explicitly reviewed Evidence colony verifies an
-independent producer quorum, and only a verified bundle may become an executive
-synthesis candidate.
+adds the convergence boundary: actual worker-produced artifacts may be published
+to the shared blackboard, a reviewed Evidence colony verifies producer independence
+and claim consistency, and only a verified bundle may become an executive synthesis
+candidate.
 
-This module never executes tools, never promotes Company World truth and never
-creates a second confidence/verifier stack. Final natural-language answer quality
-still belongs to the existing grounded evidence/guard/critic pipeline.
+This layer never executes tools, promotes Company World truth, proves causality or
+creates a second confidence/verifier stack. Final answer quality remains owned by
+the canonical grounded evidence/guard/critic pipeline.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import hashlib
 import json
 from datetime import datetime
 from enum import Enum
-from typing import Mapping
+from typing import Any, Mapping
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -58,8 +58,6 @@ class ExecutiveSynthesisStatus(str, Enum):
 
 
 class ColonyLaneArtifactPublication(BaseModel):
-    """Reference-only artifact emitted by one actually assigned swarm lane."""
-
     contract: str = COLONY_FANOUT_FANIN_CONTRACT
     lane_id: str = Field(min_length=1)
     entry_id: str = Field(min_length=1)
@@ -83,8 +81,6 @@ class ColonyLaneArtifactPublication(BaseModel):
 
 
 class EvidenceColonyReview(BaseModel):
-    """Identity-bound review action by a worker in the reviewed Evidence colony."""
-
     contract: str = COLONY_FANOUT_FANIN_CONTRACT
     review_id: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)
@@ -110,8 +106,6 @@ class EvidenceColonyReview(BaseModel):
 
 
 class ColonyFanInPolicy(BaseModel):
-    """Reviewed convergence policy for one tenant/objective."""
-
     contract: str = COLONY_FANOUT_FANIN_CONTRACT
     tenant_id: str = Field(min_length=1)
     objective_ref: str = Field(min_length=1)
@@ -164,8 +158,6 @@ class ColonyFanInPolicy(BaseModel):
 
 
 class ColonyEvidenceClaimBinding(BaseModel):
-    """Opaque proposition stance bound to one exact blackboard entry fingerprint."""
-
     contract: str = COLONY_FANOUT_FANIN_CONTRACT
     entry_id: str = Field(min_length=1)
     entry_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -174,8 +166,6 @@ class ColonyEvidenceClaimBinding(BaseModel):
 
 
 class ColonyEvidenceBundle(BaseModel):
-    """Evidence Colony output; verified means quorum/integrity, never Company truth."""
-
     contract: str = COLONY_FANOUT_FANIN_CONTRACT
     tenant_id: str
     objective_ref: str
@@ -217,7 +207,10 @@ class ColonyEvidenceBundle(BaseModel):
                 "colony_evidence_bundle_entry_fingerprints_must_be_unique",
             ),
             (self.proposition_refs, "colony_evidence_bundle_propositions_must_be_unique"),
-            (self.grounded_evidence_refs, "colony_evidence_bundle_evidence_refs_must_be_unique"),
+            (
+                self.grounded_evidence_refs,
+                "colony_evidence_bundle_evidence_refs_must_be_unique",
+            ),
             (self.artifact_refs, "colony_evidence_bundle_artifacts_must_be_unique"),
             (self.blockers, "colony_evidence_bundle_blockers_must_be_unique"),
         ):
@@ -230,8 +223,6 @@ class ColonyEvidenceBundle(BaseModel):
 
 
 class ExecutiveSynthesisCandidate(BaseModel):
-    """Observable candidate handed to the existing grounded answer pipeline."""
-
     contract: str = COLONY_FANOUT_FANIN_CONTRACT
     tenant_id: str
     objective_ref: str
@@ -272,21 +263,42 @@ def _require_aware(value: datetime, error: str) -> None:
         raise ValueError(error)
 
 
-def _fingerprint(payload: Mapping) -> str:
+def _normalize_payload(value: Any) -> Any:
+    """Canonicalize builder and validated-model payloads identically.
+
+    Pydantic's JSON mode serializes UTC datetimes with ``Z`` while a hand-built
+    ``datetime.isoformat()`` value uses ``+00:00``. Hashing those two representations
+    directly creates false integrity failures. We normalize from Python values on both
+    sides so enums, tuples and timezone-aware datetimes have one deterministic form.
+    """
+
+    if isinstance(value, BaseModel):
+        return _normalize_payload(value.model_dump(mode="python"))
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {str(key): _normalize_payload(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_normalize_payload(item) for item in value]
+    return value
+
+
+def _fingerprint(payload: Mapping[str, Any]) -> str:
     canonical = json.dumps(
-        payload,
+        _normalize_payload(payload),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
-        default=str,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _model_payload(model: BaseModel) -> dict:
-    payload = model.model_dump(mode="json")
+def _model_payload(model: BaseModel) -> dict[str, Any]:
+    payload = model.model_dump(mode="python")
     payload.pop("fingerprint", None)
-    return payload
+    return _normalize_payload(payload)
 
 
 def _worker_colony_ref(
@@ -324,7 +336,9 @@ def _validate_review_identity(
         raise ValueError("colony_fanin_review_objective_mismatch")
     if review.evidence_colony_ref != policy.evidence_colony_ref:
         raise ValueError("colony_fanin_review_colony_mismatch")
-    colonies = [item for item in topology.colonies if item.colony_ref == policy.evidence_colony_ref]
+    colonies = [
+        item for item in topology.colonies if item.colony_ref == policy.evidence_colony_ref
+    ]
     if len(colonies) != 1 or colonies[0].kind is not SwarmColonyKind.EVIDENCE:
         raise ValueError("colony_fanin_review_requires_evidence_colony")
     worker_colony = _worker_colony_ref(
@@ -426,7 +440,7 @@ def verify_colony_evidence(
     topology: SwarmColonyTopology,
     as_of: datetime,
 ) -> ColonyEvidenceBundle:
-    """Evidence Colony verifies integrity, independence and contradictions fail-closed."""
+    """Verify integrity, producer independence and contradictions fail-closed."""
 
     _require_aware(as_of, "colony_fanin_as_of_requires_timezone")
     if ledger.tenant_id != policy.tenant_id or ledger.objective_ref != policy.objective_ref:
@@ -440,7 +454,9 @@ def verify_colony_evidence(
         topology=topology,
     )
 
-    if len({(item.entry_id, item.proposition_ref, item.stance) for item in claims}) != len(claims):
+    if len(
+        {(item.entry_id, item.proposition_ref, item.stance) for item in claims}
+    ) != len(claims):
         raise ValueError("colony_fanin_claim_bindings_must_be_unique")
 
     visible = _rehydrate_visible_entries(ledger=ledger, as_of=as_of)
@@ -449,7 +465,9 @@ def verify_colony_evidence(
     allowed_kinds = set(policy.allowed_entry_kinds)
 
     selected_entries: dict[str, SwarmBlackboardEntry] = {}
-    proposition_stances: dict[str, dict[ColonyEvidenceStance, set[str]]] = {}
+    proposition_stances: dict[
+        str, dict[ColonyEvidenceStance, set[str]]
+    ] = {}
     blockers: list[str] = []
 
     for claim in claims:
@@ -531,7 +549,7 @@ def verify_colony_evidence(
     artifact_refs = tuple(dict.fromkeys(item.artifact_ref for item in entries))
     proposition_refs = tuple(sorted(proposition_stances))
 
-    draft = {
+    draft: dict[str, Any] = {
         "contract": COLONY_FANOUT_FANIN_CONTRACT,
         "tenant_id": policy.tenant_id,
         "objective_ref": policy.objective_ref,
@@ -569,7 +587,7 @@ def build_executive_synthesis_candidate(
         *bundle.blockers,
         "executive_synthesis_requires_verified_colony_evidence",
     )
-    draft = {
+    draft: dict[str, Any] = {
         "contract": COLONY_FANOUT_FANIN_CONTRACT,
         "tenant_id": bundle.tenant_id,
         "objective_ref": bundle.objective_ref,

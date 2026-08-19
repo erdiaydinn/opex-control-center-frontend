@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var scannerReceiverRegistered = false
     private var loadedTasks: List<InventoryTerminalCountTask> = emptyList()
     private var localMissionTruth: Map<String, InventoryLocalCompletionState> = emptyMap()
+    private var localRecoverySummary: InventoryRecoverySummary? = null
     private var activeTask: InventoryTerminalCountTask? = null
     private var activeController: BlindCountTerminalController? = null
     private var taskSelectionEnabled = true
@@ -144,7 +145,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (AccessTokenMemory.freshOrNull() != null && loadedTasks.isNotEmpty()) {
+        if (
+            AccessTokenMemory.freshOrNull() != null &&
+            (loadedTasks.isNotEmpty() || localRecoverySummary != null)
+        ) {
             loadTerminalTasks()
         }
     }
@@ -244,6 +248,7 @@ class MainActivity : AppCompatActivity() {
         fieldUi.visibility = View.GONE
         loadedTasks = emptyList()
         localMissionTruth = emptyMap()
+        localRecoverySummary = null
         activeTask = null
         activeController = null
         taskSelectionEnabled = true
@@ -251,28 +256,32 @@ class MainActivity : AppCompatActivity() {
         hideExecutionControls()
         Thread {
             val result = taskClient.fetch()
-            val localTruthResult = if (result.accepted) {
+            val localProjectionResult = if (result.accepted) {
                 runCatching {
                     runBlocking {
                         val unsettled = InventoryDatabase.get(this@MainActivity)
                             .events()
                             .unsettledBefore(Long.MAX_VALUE)
-                        InventoryLocalMissionTruth.classify(result.tasks, unsettled)
+                        InventoryLocalMissionTruth.classify(result.tasks, unsettled) to
+                            InventoryRecoveryContract.summarize(unsettled)
                     }
                 }
             } else {
-                Result.success(emptyMap())
+                Result.success(
+                    emptyMap<String, InventoryLocalCompletionState>() to null,
+                )
             }
             runOnUiThread {
                 if (!result.accepted) {
                     status.text = getString(R.string.terminal_task_fetch_failed, result.code.name)
                     return@runOnUiThread
                 }
-                val truth = localTruthResult.getOrElse {
+                val projection = localProjectionResult.getOrElse {
                     status.text = getString(R.string.terminal_contract_blocked)
                     return@runOnUiThread
                 }
-                localMissionTruth = truth
+                localMissionTruth = projection.first
+                localRecoverySummary = projection.second
                 renderTasks(result.tasks)
             }
         }.start()
@@ -280,23 +289,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderTasks(tasks: List<InventoryTerminalCountTask>) {
         loadedTasks = tasks
-        if (tasks.isEmpty()) {
+        if (tasks.isEmpty() && localRecoverySummary == null) {
             fieldUi.clear()
             fieldUi.visibility = View.GONE
             status.text = getString(R.string.terminal_no_tasks)
             return
         }
-        status.text = getString(R.string.terminal_no_mission)
+        status.text = if (tasks.isEmpty()) {
+            getString(R.string.terminal_no_tasks)
+        } else {
+            getString(R.string.terminal_no_mission)
+        }
         renderMissionSurface()
     }
 
     private fun renderMissionSurface() {
-        if (loadedTasks.isEmpty()) return
-
+        val recoverySummary = localRecoverySummary
+        val recoveryPolicy = recoverySummary?.let(InventoryRecoveryPresentation::policy)
         val localStates = loadedTasks.map { task ->
             localMissionTruth[task.missionId] ?: InventoryLocalCompletionState.OPEN
         }
         val syncState = when {
+            (recoverySummary?.quarantinedEventCount ?: 0) > 0 -> {
+                FieldSyncVisualState.QUARANTINED
+            }
+            (recoverySummary?.pendingEventCount ?: 0) > 0 -> {
+                FieldSyncVisualState.PENDING
+            }
             localStates.any { it == InventoryLocalCompletionState.REQUIRES_REVIEW } -> {
                 FieldSyncVisualState.QUARANTINED
             }
@@ -305,12 +324,16 @@ class MainActivity : AppCompatActivity() {
             }
             else -> FieldSyncVisualState.SYNCED
         }
-        val pendingCount = localStates.count { it != InventoryLocalCompletionState.OPEN }
+        val pendingCount = recoverySummary?.affectedEventCount
+            ?: localStates.count { it != InventoryLocalCompletionState.OPEN }
+        val warehouseLabel = loadedTasks
+            .map { it.warehouseId.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" · ")
+            .ifBlank { getString(R.string.terminal_no_tasks) }
         val header = FieldPresentationAdapter.shellHeader(
-            locationLabel = loadedTasks
-                .map { it.warehouseId.trim() }
-                .distinct()
-                .joinToString(" · "),
+            locationLabel = warehouseLabel,
             deviceLabel = getString(com.eay.mobile.fieldui.R.string.eay_terminal_brand),
             runtimeProfile = MobileRuntimeProfile.EAY_TERMINAL,
             sync = SyncPresentationSummary(
@@ -318,6 +341,7 @@ class MainActivity : AppCompatActivity() {
                 pendingCount = pendingCount,
             ),
         )
+        val globallyBlocked = recoveryPolicy?.blocksNewMissionStarts == true
         val missions = loadedTasks.map { task ->
             val localState = localMissionTruth[task.missionId]
                 ?: InventoryLocalCompletionState.OPEN
@@ -355,17 +379,22 @@ class MainActivity : AppCompatActivity() {
                     priority = FieldMissionVisualPriority.NORMAL,
                     primaryActionLabel = actionLabel,
                     enabled = taskSelectionEnabled &&
+                        !globallyBlocked &&
                         localState == InventoryLocalCompletionState.OPEN,
                 ),
             )
+        }
+        val recoveryBanner = recoverySummary?.let {
+            InventoryRecoveryPresentation.banner(this, it)
         }
 
         fieldUi.visibility = View.VISIBLE
         fieldUi.renderTerminal(
             header = header,
             missions = missions,
+            recovery = recoveryBanner,
             onMissionOpen = missionOpen@{ missionId ->
-                if (!taskSelectionEnabled) return@missionOpen
+                if (!taskSelectionEnabled || globallyBlocked) return@missionOpen
                 val task = loadedTasks.firstOrNull { it.missionId == missionId }
                     ?: return@missionOpen
                 val localState = localMissionTruth[missionId]
@@ -576,6 +605,21 @@ class MainActivity : AppCompatActivity() {
                             localMissionTruth = localMissionTruth + (
                                 task.missionId to InventoryLocalCompletionState.AWAITING_SERVER
                             )
+                            val currentRecovery = localRecoverySummary
+                            localRecoverySummary = if (currentRecovery == null) {
+                                InventoryRecoverySummary(
+                                    severity = InventoryRecoverySeverity.INFO,
+                                    primaryIntent = InventoryRecoveryIntent.WAIT_FOR_AUTO_RETRY,
+                                    affectedEventCount = 1,
+                                    quarantinedEventCount = 0,
+                                    pendingEventCount = 1,
+                                )
+                            } else {
+                                currentRecovery.copy(
+                                    affectedEventCount = currentRecovery.affectedEventCount + 1,
+                                    pendingEventCount = currentRecovery.pendingEventCount + 1,
+                                )
+                            }
                             renderTasks(loadedTasks)
                             status.text = getString(R.string.terminal_location_complete_queued)
                         }
@@ -604,7 +648,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setTaskSelectionEnabled(enabled: Boolean) {
         taskSelectionEnabled = enabled
-        if (loadedTasks.isNotEmpty() && activeController == null) {
+        if (
+            (loadedTasks.isNotEmpty() || localRecoverySummary != null) &&
+            activeController == null
+        ) {
             renderMissionSurface()
         }
     }

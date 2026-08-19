@@ -62,13 +62,18 @@ class AuditProgramCreate(StrictModel):
     settings: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_name_i18n(self) -> AuditProgramCreate:
+    def validate_program_contract(self) -> AuditProgramCreate:
         blank = any(
             not key.strip() or not value.strip()
             for key, value in self.name_i18n.items()
         )
         if blank:
             raise ValueError("program localized names must not be blank")
+        # Lazy import avoids making the generic schema module depend on Audit control types at
+        # import time while still rejecting malformed versioned standards before persistence.
+        from .control_contracts import parse_question_controls
+
+        parse_question_controls(self.settings)
         return self
 
 

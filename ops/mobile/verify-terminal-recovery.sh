@@ -9,9 +9,21 @@ RUNTIME="$ROOT/android-inventory/field-ui-runtime/src/main/java/com/eay/mobile/f
 ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/java/com/eay/mobile/presentation/adapter/FieldPresentationAdapter.kt"
 RES="$ROOT/android-inventory/app/src/main/res"
 RECOVERY="$APP/InventoryRecoveryContract.kt"
+RECOVERY_PRESENTATION="$APP/InventoryRecoveryPresentation.kt"
+MAIN="$APP/MainActivity.kt"
 RECOVERY_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryContractTest.kt"
+RECOVERY_PRESENTATION_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryPresentationTest.kt"
 
-for file in "$PRESENTATION" "$FIELD_UI" "$RUNTIME" "$ADAPTER" "$RECOVERY" "$RECOVERY_TEST"; do
+for file in \
+  "$PRESENTATION" \
+  "$FIELD_UI" \
+  "$RUNTIME" \
+  "$ADAPTER" \
+  "$RECOVERY" \
+  "$RECOVERY_PRESENTATION" \
+  "$MAIN" \
+  "$RECOVERY_TEST" \
+  "$RECOVERY_PRESENTATION_TEST"; do
   test -f "$file" || { echo "missing terminal recovery contract: $file" >&2; exit 1; }
 done
 
@@ -24,6 +36,14 @@ grep -q 'AUTH_BINDING_CHANGED' "$RECOVERY"
 grep -q 'REQUEST_SECURITY_REVIEW' "$RECOVERY"
 grep -q 'authBindingMismatchCannotBeFixedBySigningInAgain' "$RECOVERY_TEST"
 grep -q 'quarantinedEvidenceNeverBecomesClientRetry' "$RECOVERY_TEST"
+grep -q 'blocksNewMissionStarts' "$RECOVERY_PRESENTATION"
+grep -q 'unsupportedDurableUiIntentsBecomeIntegrityBlockWithoutAction' "$RECOVERY_PRESENTATION_TEST"
+
+grep -q 'InventoryRecoveryContract.summarize(unsettled)' "$MAIN"
+grep -q 'localRecoverySummary' "$MAIN"
+grep -q 'recovery = recoveryBanner' "$MAIN"
+grep -q '!globallyBlocked' "$MAIN"
+grep -q 'tasks.isEmpty() && localRecoverySummary == null' "$MAIN"
 
 if grep -R -n -E 'dao\.(retry|delete|quarantine)|events\(\)\.(retry|delete)|reassign_terminal|supersede_attempt|payloadHash|authBindingId|tenantId|employeeId|deviceId|leaseId|attemptId' \
   "$ROOT/android-field-ui/field-ui/src/main" \

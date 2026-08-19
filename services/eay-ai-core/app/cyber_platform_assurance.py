@@ -1,17 +1,9 @@
-"""Defensive platform-assurance planning for EAY Jarvis.
+"""Defensive, evidence-bound platform security assurance for EAY Jarvis.
 
-Jarvis may test EAY, but the test harness must not become an offensive execution
-shortcut. This contract turns security verification into evidence-bound,
-non-destructive work that can run in repository CI, sandbox, staging, or an
-explicitly authorized read-only production session.
-
-The standard references are guidance anchors, not proof:
-- OWASP ASVS 5.0.0 supplies application-security verification coverage;
-- NIST CSF 2.0 supplies risk/governance outcome coverage;
-- EAY invariants enforce tenant isolation, truth boundaries and side-effect safety.
-
-No test in this contract generates exploits, captures credentials, mutates
-production, or grants execution authority.
+Jarvis can continuously test EAY repository/sandbox/staging controls and can
+perform explicitly authorized read-only production verification. This contract
+never creates exploit payloads, captures credentials, mutates production,
+automatically remediates, or grants execution authority.
 """
 
 from __future__ import annotations
@@ -26,11 +18,15 @@ from pydantic import BaseModel, Field, model_validator
 
 CYBER_PLATFORM_ASSURANCE_CONTRACT = "eay-cyber-platform-assurance-v1"
 
+# Match credential/offensive material, not harmless semantic labels such as
+# ``session-binding`` or ``secret-safe-observability``.
 _UNSAFE_REF = re.compile(
-    r"(?i)(?:bearer(?:[-_: ]|$)|api[_-]?key|password|passwd|secret(?:[-_: ]|$)|"
-    r"session(?:id)?(?:[-_: ]|$)|cookie(?:[-_: ]|$)|signed[_-]?url|"
-    r"x-goog-signature|x-amz-signature|exploit[_-]?payload|reverse[_-]?shell|"
-    r"credential[_-]?dump|persistence[_-]?payload|ransomware[_-]?payload|shellcode)"
+    r"(?i)(?:bearer(?:[-_: ]|$)|api[_-]?key|password|passwd|"
+    r"secret(?:[_-]?(?:value|material|credential)|:)|"
+    r"session(?:id|[_-]?(?:token|cookie|secret))(?:[-_: ]|$)|"
+    r"cookie(?:[-_: ]|$)|signed[_-]?url|x-goog-signature|x-amz-signature|"
+    r"exploit[_-]?payload|reverse[_-]?shell|credential[_-]?dump|"
+    r"persistence[_-]?payload|ransomware[_-]?payload|shellcode)"
 )
 
 
@@ -100,9 +96,7 @@ class SecurityAssuranceTestCase(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def test_case_is_defensive_and_non_authoritative(
-        self,
-    ) -> "SecurityAssuranceTestCase":
+    def validate_security_test(self) -> "SecurityAssuranceTestCase":
         if len(self.standards) != len(set(self.standards)):
             raise ValueError("cyber_assurance_standards_must_be_unique")
         if len(self.evidence_requirements) != len(set(self.evidence_requirements)):
@@ -117,13 +111,15 @@ class SecurityAssuranceTestCase(BaseModel):
             raise ValueError("cyber_assurance_production_mutation_forbidden")
         if self.execution_authority_granted:
             raise ValueError("cyber_assurance_never_grants_execution_authority")
-        for ref in (
-            self.test_id,
-            self.target_ref,
-            self.invariant_ref,
-            *self.evidence_requirements,
-        ):
-            _safe_ref(ref, "cyber_assurance_unsafe_reference_forbidden")
+        _validate_refs(
+            (
+                self.test_id,
+                self.target_ref,
+                self.invariant_ref,
+                *self.evidence_requirements,
+            ),
+            "cyber_assurance_unsafe_reference_forbidden",
+        )
         _verify(self, "cyber_assurance_test_fingerprint_mismatch")
         return self
 
@@ -142,7 +138,7 @@ class SecurityAssurancePlan(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def plan_is_safe_and_exact_revision_bound(self) -> "SecurityAssurancePlan":
+    def validate_security_plan(self) -> "SecurityAssurancePlan":
         if len({test.test_id for test in self.tests}) != len(self.tests):
             raise ValueError("cyber_assurance_duplicate_test_id")
         for test in self.tests:
@@ -162,8 +158,10 @@ class SecurityAssurancePlan(BaseModel):
             raise ValueError("cyber_assurance_plan_auto_remediation_forbidden")
         if self.execution_authority_granted:
             raise ValueError("cyber_assurance_plan_never_grants_execution_authority")
-        for ref in (self.plan_id, self.repository_ref, self.revision_ref):
-            _safe_ref(ref, "cyber_assurance_plan_unsafe_reference_forbidden")
+        _validate_refs(
+            (self.plan_id, self.repository_ref, self.revision_ref),
+            "cyber_assurance_plan_unsafe_reference_forbidden",
+        )
         _verify(self, "cyber_assurance_plan_fingerprint_mismatch")
         return self
 
@@ -184,21 +182,109 @@ class SecurityAssuranceFinding(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def finding_is_evidence_bound(self) -> "SecurityAssuranceFinding":
+    def validate_security_finding(self) -> "SecurityAssuranceFinding":
         if len(self.evidence_refs) != len(set(self.evidence_refs)):
             raise ValueError("cyber_assurance_finding_evidence_refs_must_be_unique")
         if self.control_verified != (self.status is SecurityAssuranceStatus.PASS):
             raise ValueError("cyber_assurance_control_verified_requires_pass")
         if self.remediation_authority_granted:
-            raise ValueError(
-                "cyber_assurance_finding_never_grants_remediation_authority"
-            )
+            raise ValueError("cyber_assurance_finding_never_grants_remediation_authority")
         if self.execution_authority_granted:
             raise ValueError("cyber_assurance_finding_never_grants_execution_authority")
-        for ref in (self.finding_id, self.plan_id, self.test_id, *self.evidence_refs):
-            _safe_ref(ref, "cyber_assurance_finding_unsafe_reference_forbidden")
+        _validate_refs(
+            (self.finding_id, self.plan_id, self.test_id, *self.evidence_refs),
+            "cyber_assurance_finding_unsafe_reference_forbidden",
+        )
         _verify(self, "cyber_assurance_finding_fingerprint_mismatch")
         return self
+
+
+_CASES: tuple[tuple[str, SecurityControlFamily, str, str, tuple[str, ...]], ...] = (
+    (
+        "authn-session-binding",
+        SecurityControlFamily.AUTHENTICATION,
+        "identity/session-binding",
+        "authenticated-session-is-bound-to-the-exact-principal-and-context",
+        ("test-receipt:authn", "evidence:session-binding"),
+    ),
+    (
+        "authz-fail-closed",
+        SecurityControlFamily.AUTHORIZATION,
+        "policy/authorization-boundary",
+        "missing-or-mismatched-authority-fails-before-tool-or-write-execution",
+        ("test-receipt:authz", "evidence:deny-before-execution"),
+    ),
+    (
+        "tenant-zero-leak",
+        SecurityControlFamily.TENANT_ISOLATION,
+        "data/tenant-boundary",
+        "company-a-evidence-cannot-read-elevate-or-disclose-company-b",
+        ("test-receipt:tenant-isolation", "evidence:cross-tenant-zero-leak"),
+    ),
+    (
+        "secret-safe-observability",
+        SecurityControlFamily.SECRET_HANDLING,
+        "observability/logging",
+        "credentials-and-sensitive-material-never-enter-memory-audit-or-traces",
+        ("test-receipt:secret-safety", "evidence:redaction-boundary"),
+    ),
+    (
+        "input-and-query-boundary",
+        SecurityControlFamily.INPUT_BOUNDARY,
+        "runtime/input-boundary",
+        "model-controlled-input-cannot-expand-reviewed-query-or-tool-scope",
+        ("test-receipt:input-boundary", "evidence:static-query-or-schema"),
+    ),
+    (
+        "authoritative-data-read",
+        SecurityControlFamily.DATA_ACCESS,
+        "data/authoritative-read",
+        "firm-company-claims-require-current-authoritative-company-evidence",
+        ("test-receipt:data-truth", "evidence:live-company-receipt"),
+    ),
+    (
+        "side-effect-integrity",
+        SecurityControlFamily.SIDE_EFFECT_SAFETY,
+        "runtime/side-effect-boundary",
+        "writes-require-idempotency-effect-verification-and-reconciliation",
+        ("test-receipt:side-effect", "evidence:verified-effect"),
+    ),
+    (
+        "audit-tamper-evidence",
+        SecurityControlFamily.AUDITABILITY,
+        "audit/integrity",
+        "security-and-execution-receipts-fail-closed-after-tampering",
+        ("test-receipt:audit-integrity", "evidence:fingerprint-rejection"),
+    ),
+    (
+        "supply-presence-not-exposure",
+        SecurityControlFamily.SUPPLY_CHAIN,
+        "software/supply-chain",
+        "repository-or-build-presence-never-becomes-deployed-company-exposure",
+        ("test-receipt:supply-chain", "evidence:deployment-attestation-boundary"),
+    ),
+    (
+        "global-threat-not-company-risk",
+        SecurityControlFamily.CYBER_PRIORITY,
+        "cyber/priority-boundary",
+        "global-threat-signals-never-confirm-company-risk-without-current-exposure",
+        ("test-receipt:cyber-priority", "evidence:company-priority-receipt"),
+    ),
+    (
+        "incident-need-to-know",
+        SecurityControlFamily.INCIDENT_DISCLOSURE,
+        "cyber/incident-disclosure",
+        "incident-details-stay-company-bound-and-explicit-principal-scoped",
+        ("test-receipt:incident-disclosure", "evidence:audience-policy"),
+    ),
+    (
+        "recovery-no-blind-replay",
+        SecurityControlFamily.RECOVERY,
+        "runtime/recovery",
+        "ambiguous-or-partial-side-effects-are-reconciled-before-any-retry",
+        ("test-receipt:recovery", "evidence:no-blind-replay"),
+    ),
+)
 
 
 def build_eay_platform_security_plan(
@@ -208,93 +294,6 @@ def build_eay_platform_security_plan(
     revision_ref: str,
     environment: SecurityAssuranceEnvironment = SecurityAssuranceEnvironment.REPOSITORY,
 ) -> SecurityAssurancePlan:
-    specs = (
-        (
-            "authn-session-binding",
-            SecurityControlFamily.AUTHENTICATION,
-            "identity/session-binding",
-            "authenticated-session-is-bound-to-the-exact-principal-and-context",
-            ("test-receipt:authn", "evidence:session-binding"),
-        ),
-        (
-            "authz-fail-closed",
-            SecurityControlFamily.AUTHORIZATION,
-            "policy/authorization-boundary",
-            "missing-or-mismatched-authority-fails-before-tool-or-write-execution",
-            ("test-receipt:authz", "evidence:deny-before-execution"),
-        ),
-        (
-            "tenant-zero-leak",
-            SecurityControlFamily.TENANT_ISOLATION,
-            "data/tenant-boundary",
-            "company-a-evidence-cannot-read-elevate-or-disclose-company-b",
-            ("test-receipt:tenant-isolation", "evidence:cross-tenant-zero-leak"),
-        ),
-        (
-            "secret-safe-observability",
-            SecurityControlFamily.SECRET_HANDLING,
-            "observability/logging",
-            "credentials-and-sensitive-material-never-enter-memory-audit-or-traces",
-            ("test-receipt:secret-safety", "evidence:redaction-boundary"),
-        ),
-        (
-            "input-and-query-boundary",
-            SecurityControlFamily.INPUT_BOUNDARY,
-            "runtime/input-boundary",
-            "model-controlled-input-cannot-expand-reviewed-query-or-tool-scope",
-            ("test-receipt:input-boundary", "evidence:static-query-or-schema"),
-        ),
-        (
-            "authoritative-data-read",
-            SecurityControlFamily.DATA_ACCESS,
-            "data/authoritative-read",
-            "firm-company-claims-require-current-authoritative-company-evidence",
-            ("test-receipt:data-truth", "evidence:live-company-receipt"),
-        ),
-        (
-            "side-effect-integrity",
-            SecurityControlFamily.SIDE_EFFECT_SAFETY,
-            "runtime/side-effect-boundary",
-            "writes-require-idempotency-effect-verification-and-reconciliation",
-            ("test-receipt:side-effect", "evidence:verified-effect"),
-        ),
-        (
-            "audit-tamper-evidence",
-            SecurityControlFamily.AUDITABILITY,
-            "audit/integrity",
-            "security-and-execution-receipts-fail-closed-after-tampering",
-            ("test-receipt:audit-integrity", "evidence:fingerprint-rejection"),
-        ),
-        (
-            "supply-presence-not-exposure",
-            SecurityControlFamily.SUPPLY_CHAIN,
-            "software/supply-chain",
-            "repository-or-build-presence-never-becomes-deployed-company-exposure",
-            ("test-receipt:supply-chain", "evidence:deployment-attestation-boundary"),
-        ),
-        (
-            "global-threat-not-company-risk",
-            SecurityControlFamily.CYBER_PRIORITY,
-            "cyber/priority-boundary",
-            "global-threat-signals-never-confirm-company-risk-without-current-exposure",
-            ("test-receipt:cyber-priority", "evidence:company-priority-receipt"),
-        ),
-        (
-            "incident-need-to-know",
-            SecurityControlFamily.INCIDENT_DISCLOSURE,
-            "cyber/incident-disclosure",
-            "incident-details-stay-company-bound-and-explicit-principal-scoped",
-            ("test-receipt:incident-disclosure", "evidence:audience-policy"),
-        ),
-        (
-            "recovery-no-blind-replay",
-            SecurityControlFamily.RECOVERY,
-            "runtime/recovery",
-            "ambiguous-or-partial-side-effects-are-reconciled-before-any-retry",
-            ("test-receipt:recovery", "evidence:no-blind-replay"),
-        ),
-    )
-
     tests = tuple(
         _build_test_case(
             test_id=test_id,
@@ -304,7 +303,7 @@ def build_eay_platform_security_plan(
             evidence_requirements=evidence,
             environment=environment,
         )
-        for test_id, family, target, invariant, evidence in specs
+        for test_id, family, target, invariant, evidence in _CASES
     )
     draft = {
         "contract": CYBER_PLATFORM_ASSURANCE_CONTRACT,
@@ -362,23 +361,21 @@ def _build_test_case(
     environment: SecurityAssuranceEnvironment,
 ) -> SecurityAssuranceTestCase:
     if environment is SecurityAssuranceEnvironment.PRODUCTION_READ_ONLY:
-        probe_mode = SecurityProbeMode.AUTHORIZED_READ_ONLY
+        mode = SecurityProbeMode.AUTHORIZED_READ_ONLY
     elif environment is SecurityAssuranceEnvironment.SANDBOX:
-        probe_mode = SecurityProbeMode.SANDBOX_ADVERSARIAL
+        mode = SecurityProbeMode.SANDBOX_ADVERSARIAL
     else:
-        probe_mode = SecurityProbeMode.CONTRACT_TEST
-
-    standards = (
-        SecurityStandard.OWASP_ASVS_5_0_0,
-        SecurityStandard.NIST_CSF_2_0,
-        SecurityStandard.EAY_SECURITY_BOUNDARY,
-    )
+        mode = SecurityProbeMode.CONTRACT_TEST
     draft = {
         "contract": CYBER_PLATFORM_ASSURANCE_CONTRACT,
         "test_id": test_id,
-        "standards": [standard.value for standard in standards],
+        "standards": [
+            SecurityStandard.OWASP_ASVS_5_0_0.value,
+            SecurityStandard.NIST_CSF_2_0.value,
+            SecurityStandard.EAY_SECURITY_BOUNDARY.value,
+        ],
         "control_family": control_family.value,
-        "probe_mode": probe_mode.value,
+        "probe_mode": mode.value,
         "target_ref": target_ref,
         "invariant_ref": invariant_ref,
         "evidence_requirements": list(evidence_requirements),
@@ -391,9 +388,10 @@ def _build_test_case(
     return SecurityAssuranceTestCase.model_validate(_sealed(draft))
 
 
-def _safe_ref(value: str, error: str) -> None:
-    if _UNSAFE_REF.search(value):
-        raise ValueError(error)
+def _validate_refs(values: tuple[str, ...], error: str) -> None:
+    for value in values:
+        if _UNSAFE_REF.search(value):
+            raise ValueError(error)
 
 
 def _payload(model: BaseModel) -> dict[str, Any]:

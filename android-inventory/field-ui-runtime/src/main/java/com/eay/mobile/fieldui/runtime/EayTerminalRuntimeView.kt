@@ -13,6 +13,8 @@ import com.eay.mobile.fieldui.BlindCountUiState
 import com.eay.mobile.fieldui.EayFieldTheme
 import com.eay.mobile.fieldui.EayTerminalShell
 import com.eay.mobile.presentation.FieldMissionCardModel
+import com.eay.mobile.presentation.FieldRecoveryActionKind
+import com.eay.mobile.presentation.FieldRecoveryBannerModel
 import com.eay.mobile.presentation.FieldRuntimeSurface
 import com.eay.mobile.presentation.FieldShellHeader
 
@@ -30,6 +32,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
 ) : AbstractComposeView(context, attrs) {
     private var surface by mutableStateOf<RuntimeSurface>(RuntimeSurface.Empty)
     private var onMissionOpenCallback: (String) -> Unit = {}
+    private var onRecoveryActionCallback: (FieldRecoveryActionKind) -> Unit = {}
     private var onQuantityChangedCallback: (String) -> Unit = {}
     private var onConfirmQuantityCallback: () -> Unit = {}
 
@@ -40,10 +43,19 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
     fun renderTerminal(
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,
+        recovery: FieldRecoveryBannerModel? = null,
         onMissionOpen: (String) -> Unit,
+        onRecoveryAction: (FieldRecoveryActionKind) -> Unit = {},
     ) {
         onMissionOpenCallback = onMissionOpen
-        surface = RuntimeSurface.Terminal(FieldUiRuntimeMapper.terminal(header, missions))
+        onRecoveryActionCallback = onRecoveryAction
+        surface = RuntimeSurface.Terminal(
+            FieldUiRuntimeMapper.terminal(
+                header = header,
+                missions = missions,
+                recovery = recovery,
+            ),
+        )
     }
 
     fun renderBlindCount(
@@ -68,7 +80,9 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                 is RuntimeSurface.Terminal -> EayTerminalShell(
                     header = current.model.header,
                     missions = current.model.missions,
+                    recovery = current.model.recovery,
                     onMissionOpen = { missionId -> onMissionOpenCallback(missionId) },
+                    onRecoveryAction = { action -> onRecoveryActionCallback(action) },
                 )
                 is RuntimeSurface.BlindCount -> BlindCountScreen(
                     state = current.state,
@@ -83,6 +97,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
 internal data class RuntimeTerminalModel(
     val header: FieldShellHeader,
     val missions: List<FieldMissionCardModel>,
+    val recovery: FieldRecoveryBannerModel?,
 )
 
 internal sealed interface RuntimeSurface {
@@ -102,6 +117,7 @@ internal object FieldUiRuntimeMapper {
     fun terminal(
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,
+        recovery: FieldRecoveryBannerModel? = null,
     ): RuntimeTerminalModel {
         require(header.runtimeSurface == FieldRuntimeSurface.EAY_TERMINAL) {
             "EAY Terminal runtime requires an EAY_TERMINAL presentation surface"
@@ -109,6 +125,7 @@ internal object FieldUiRuntimeMapper {
         return RuntimeTerminalModel(
             header = header,
             missions = missions.toList(),
+            recovery = recovery,
         )
     }
 }

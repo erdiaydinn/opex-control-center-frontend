@@ -1,7 +1,11 @@
 """Budget- and load-aware scheduling in front of Jarvis parallel missions.
 
-The scheduler decides which independent mission lanes are admitted to the next
-parallel wave. It does not execute missions and never grants execution authority.
+The pure scheduler decides which independent mission lanes are admitted to the
+next parallel wave and never grants execution authority. A separate composition
+function may execute that admitted wave, but it delegates every selected lane to
+the existing parallel mission orchestrator rather than creating a second mission
+runtime.
+
 Resource/idempotency conflict rules remain aligned with the parallel mission
 orchestrator, while deadline, concurrency-weight, cost-budget and overload
 shedding decisions stay explicit and deterministic.
@@ -20,7 +24,13 @@ from typing import Mapping
 from pydantic import BaseModel, Field, model_validator
 
 from .mission_runtime import MissionStatus
-from .parallel_mission_orchestration import ParallelMissionLane, ParallelMissionPlan
+from .parallel_mission_orchestration import (
+    ParallelLaneBindings,
+    ParallelMissionLane,
+    ParallelMissionPlan,
+    ParallelMissionRound,
+    execute_parallel_mission_round,
+)
 
 PARALLEL_MISSION_SCHEDULER_CONTRACT = "eay-parallel-mission-scheduler-v1"
 
@@ -75,6 +85,31 @@ class ScheduledParallelWave(BaseModel):
             raise ValueError("parallel_scheduler_never_grants_execution_authority")
         if len(self.selected_lane_ids) != len(set(self.selected_lane_ids)):
             raise ValueError("parallel_scheduler_selected_lanes_must_be_unique")
+        return self
+
+
+class ScheduledParallelExecutionRound(BaseModel):
+    contract: str = PARALLEL_MISSION_SCHEDULER_CONTRACT
+    schedule: ScheduledParallelWave
+    execution: ParallelMissionRound | None = None
+    execution_authority_granted: bool = False
+
+    @model_validator(mode="after")
+    def composition_preserves_scheduler_boundary(self) -> "ScheduledParallelExecutionRound":
+        if self.execution_authority_granted:
+            raise ValueError("scheduled_parallel_execution_never_grants_shared_authority")
+        if self.execution is None:
+            if self.schedule.selected_lane_ids:
+                raise ValueError("scheduled_parallel_execution_missing_for_selected_wave")
+            return self
+        if self.execution.objective_ref != self.schedule.objective_ref:
+            raise ValueError("scheduled_parallel_execution_objective_mismatch")
+        if self.execution.tenant_id != self.schedule.tenant_id:
+            raise ValueError("scheduled_parallel_execution_tenant_mismatch")
+        if set(self.execution.selected_lane_ids) != set(self.schedule.selected_lane_ids):
+            raise ValueError("scheduled_parallel_execution_selection_drift")
+        if self.execution.shared_execution_authority_granted:
+            raise ValueError("scheduled_parallel_execution_shared_authority_forbidden")
         return self
 
 
@@ -210,4 +245,48 @@ def schedule_parallel_wave(
         deferred=deferred,
         total_concurrency_weight=total_weight,
         total_cost_units=total_cost,
+    )
+
+
+async def execute_scheduled_parallel_round(
+    *,
+    plan: ParallelMissionPlan,
+    profiles: Mapping[str, ParallelLaneSchedulingProfile],
+    policy: ParallelSchedulingPolicy,
+    bindings: Mapping[str, ParallelLaneBindings],
+    now: datetime,
+    max_transitions_per_lane: int = 100,
+) -> ScheduledParallelExecutionRound:
+    """Schedule first, then execute only admitted lanes via the canonical runtime."""
+
+    schedule = schedule_parallel_wave(
+        plan=plan,
+        profiles=profiles,
+        policy=policy,
+        now=now,
+    )
+    if not schedule.selected_lane_ids:
+        return ScheduledParallelExecutionRound(schedule=schedule)
+
+    lane_map = {lane.lane_id: lane for lane in plan.lanes}
+    selected_lanes = tuple(lane_map[lane_id] for lane_id in schedule.selected_lane_ids)
+    selected_plan = ParallelMissionPlan(
+        objective_ref=plan.objective_ref,
+        tenant_id=plan.tenant_id,
+        lanes=selected_lanes,
+        max_parallel_lanes=len(selected_lanes),
+    )
+    selected_bindings = {
+        lane_id: bindings[lane_id]
+        for lane_id in schedule.selected_lane_ids
+        if lane_id in bindings
+    }
+    execution = await execute_parallel_mission_round(
+        plan=selected_plan,
+        bindings=selected_bindings,
+        max_transitions_per_lane=max_transitions_per_lane,
+    )
+    return ScheduledParallelExecutionRound(
+        schedule=schedule,
+        execution=execution,
     )

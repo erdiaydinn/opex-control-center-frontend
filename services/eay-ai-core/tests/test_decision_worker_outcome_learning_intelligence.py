@@ -84,7 +84,12 @@ def _lane_bundle(*, decision_evidence_ref: str = DECISION_EVIDENCE, explicit_sco
     spec = MissionExecutionSpec(
         step_id="forecast",
         kind=MissionExecutionKind.REASONING,
-        intelligence_task="forecasting",
+        intelligence_task={
+            "task_id": "forecasting",
+            "complexity": "standard",
+            "risk": "medium",
+            "privacy": "internal",
+        },
         prompt="forecast demand",
     )
     lane = ParallelMissionLane(

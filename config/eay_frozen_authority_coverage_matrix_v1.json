@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "canonical_pr": 163,
+  "canonical_branch": "agent/jarvis-platform-security-consolidation-v1",
+  "historical_sources": [
+    {
+      "pr": 15,
+      "head_sha": "9e1422df2a584b71593c2f6188d26c8ab4ab4c15",
+      "frozen": true,
+      "direct_ancestor_of_canonical": false,
+      "disposition": "historical_source_requires_capability_revalidation"
+    },
+    {
+      "pr": 16,
+      "head_sha": "6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d",
+      "frozen": true,
+      "direct_ancestor_of_canonical": true,
+      "disposition": "ancestry_preserved_requires_regression_revalidation"
+    }
+  ],
+  "proof_boundary": [
+    "Repository ancestry, current canonical implementation paths and automated tests are software evidence only.",
+    "Synthetic or CI evidence is not production BigQuery, corporate OIDC, production-shaped infrastructure, field-device or WORM evidence.",
+    "Historical PR #15 and #16 remain frozen and are never modified by this convergence.",
+    "A capability may be covered only when current canonical paths and current evidence tests both exist."
+  ],
+  "capabilities": [
+    {
+      "id": "ai_core.legal.temporal_grounded_rag",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/legal_engine.py",
+        "services/eay-ai-core/app/legal_temporal.py",
+        "services/eay-ai-core/app/grounded_chat.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_legal_engine.py",
+        "services/eay-ai-core/tests/test_legal_temporal.py",
+        "services/eay-ai-core/tests/test_historical_legal_rag_evals.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Historical/as-of legal behavior is testable; reviewed production legal-corpus freshness remains external evidence."
+    },
+    {
+      "id": "ai_core.regulatory.authority_lineage_conflict",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/regulatory_authority.py",
+        "services/eay-ai-core/app/regulatory_lineage.py",
+        "services/eay-ai-core/app/regulatory_impact.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_regulatory_authority.py",
+        "services/eay-ai-core/tests/test_regulatory_lineage.py",
+        "services/eay-ai-core/tests/test_grounded_temporal.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Regulatory lineage logic is software evidence; live authoritative-source ingestion freshness remains external."
+    },
+    {
+      "id": "ai_core.bigquery.governed_named_query_execution",
+      "source_prs": [15],
+      "disposition": "ported_and_strengthened",
+      "canonical_paths": [
+        "services/eay-ai-core/app/bigquery_safe_executor.py",
+        "services/eay-ai-core/app/query_templates.py",
+        "services/eay-ai-core/app/tool_execution.py",
+        "services/eay-ai-core/app/platform_tool_authorizer.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_bigquery_safe_executor.py",
+        "services/eay-ai-core/tests/test_query_templates.py",
+        "services/eay-ai-core/tests/test_governed_tool_execution_authorization.py",
+        "services/eay-ai-core/tests/test_tool_execution.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Governed execution contracts are covered; real authorized read-only production BigQuery observation remains external."
+    },
+    {
+      "id": "ai_core.kpi.schema_semantics_activation",
+      "source_prs": [15],
+      "disposition": "ported_and_strengthened",
+      "canonical_paths": [
+        "services/eay-ai-core/app/kpi_registry.py",
+        "services/eay-ai-core/app/kpi_schema_evidence.py",
+        "services/eay-ai-core/app/kpi_semantics.py",
+        "services/eay-ai-core/app/kpi_registry_promotion_gate.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_kpi_registry.py",
+        "services/eay-ai-core/tests/test_kpi_schema_evidence.py",
+        "services/eay-ai-core/tests/test_kpi_semantics.py",
+        "services/eay-ai-core/tests/test_kpi_registry_promotion_gate.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Schema/semantic gates are covered; production_ready remains false until real production schema evidence passes."
+    },
+    {
+      "id": "ai_core.learning.training_human_gate",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/training_gate.py",
+        "services/eay-ai-core/app/training_job_registry.py",
+        "services/eay-ai-core/app/learning_quality.py",
+        "services/eay-ai-core/app/teacher_quality.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_training_gate.py",
+        "services/eay-ai-core/tests/test_training_job_spec.py",
+        "services/eay-ai-core/tests/test_learning_quality.py",
+        "services/eay-ai-core/tests/test_teacher_quality.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Training/review gates are covered; no autonomous production-weight promotion is claimed."
+    },
+    {
+      "id": "ai_core.model_registry.license_promotion_canary",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/model_registry.py",
+        "services/eay-ai-core/app/license_gate.py",
+        "services/eay-ai-core/app/model_promotion_gate.py",
+        "services/eay-ai-core/app/canary_evals.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_model_registry.py",
+        "services/eay-ai-core/tests/test_license_gate.py",
+        "services/eay-ai-core/tests/test_model_artifact_promotion.py",
+        "services/eay-ai-core/tests/test_canary_evals.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Registry/license/canary gates are software evidence; production artifact deployment remains separately governed."
+    },
+    {
+      "id": "ai_core.vision.provenance_human_review",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/vision_audit.py",
+        "services/eay-ai-core/app/vision_provenance.py",
+        "services/eay-ai-core/app/vision_review_lineage.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_vision_audit.py",
+        "services/eay-ai-core/tests/test_vision_provenance.py",
+        "services/eay-ai-core/tests/test_vision_review_lineage.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Vision provenance/review lifecycle is covered; field camera/device quality remains external."
+    },
+    {
+      "id": "ai_core.repository_intelligence.provenance",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/repository_intelligence.py",
+        "services/eay-ai-core/app/repository_provenance.py",
+        "services/eay-ai-core/config/repository_intelligence_registry.json"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_repository_intelligence.py",
+        "services/eay-ai-core/tests/test_repository_provenance.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Repository provenance contracts are covered; remote upstream freshness is independently re-observed when needed."
+    },
+    {
+      "id": "ai_core.voice.governed_tool_execution",
+      "source_prs": [15],
+      "disposition": "ported_and_strengthened",
+      "canonical_paths": [
+        "services/eay-ai-core/app/voice_governed_tool_adapter.py",
+        "services/eay-ai-core/app/voice_release_gate.py",
+        "services/eay-ai-core/app/voice_tool_execution_provenance.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_voice_governed_tool_adapter.py",
+        "services/eay-ai-core/tests/test_voice_release_gate.py",
+        "services/eay-ai-core/tests/test_voice_tool_execution_provenance.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Governed voice-to-tool authority is covered; real microphone/device/latency production acceptance remains external."
+    },
+    {
+      "id": "ai_core.privacy.safety_observability",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/privacy_guard.py",
+        "services/eay-ai-core/app/safety_evals.py",
+        "services/eay-ai-core/app/observability.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_privacy_guard.py",
+        "services/eay-ai-core/tests/test_safety_evals.py",
+        "services/eay-ai-core/tests/test_guardrails.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Privacy/safety/observability controls are software evidence, not production privacy certification."
+    },
+    {
+      "id": "security.tenant_rbac_rls_boundary",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_revalidated",
+      "canonical_paths": [
+        "services/core-api/app/core/permission_catalog.py",
+        "services/core-api/app/core/security.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_api_tenant_isolation.py",
+        "services/core-api/tests/test_membership_authorization_boundary.py",
+        "services/core-api/tests/test_rbac_matrix.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "Tenant/RBAC software boundaries are revalidated; production role grants and live RLS operational evidence remain external."
+    },
+    {
+      "id": "security.oidc_external_identity_preauth",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_revalidated",
+      "canonical_paths": [
+        "services/core-api/app/core/security.py",
+        "services/identity-gateway/app/security.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_external_identity_resolution.py",
+        "services/core-api/tests/test_preauth_provider_resolver.py",
+        "services/core-api/tests/test_identity_foundation_adversarial.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "OIDC/pre-auth logic is covered; corporate IdP enrollment and production JWKS availability are external."
+    },
+    {
+      "id": "security.internal_service_identity_replay",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_strengthened",
+      "canonical_paths": [
+        "services/core-api/app/core/internal_identity.py",
+        "services/core-api/app/core/internal_service_replay.py",
+        "services/core-api/app/core/jarvis_service_identity.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_internal_service_auth_dependency.py",
+        "services/core-api/tests/test_internal_service_replay.py",
+        "services/core-api/tests/test_jarvis_service_identity.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "Signed internal identity/replay protection is covered; production key custody and rotation evidence remain external."
+    },
+    {
+      "id": "security.browser_frontend_authorization_boundary",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_revalidated",
+      "canonical_paths": [
+        "src/auth/authorizationStore.js",
+        "src/auth/tokenStore.js",
+        "src/api/client.js"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_frontend_authorization_boundary.py",
+        "services/core-api/tests/test_frontend_browser_trust_boundary.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "Frontend trust/persistence policy is repository-tested; managed-browser/device acceptance remains external."
+    },
+    {
+      "id": "security.network_tls_cors_proxy_boundary",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_revalidated",
+      "canonical_paths": [
+        "infra/nginx/platform.production.conf.template",
+        "services/core-api/app/core/client_ip.py",
+        "services/core-api/app/core/config.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_compose_network_boundary.py",
+        "services/core-api/tests/test_cors_runtime_boundary.py",
+        "services/core-api/tests/test_production_tls_boundary.py",
+        "services/core-api/tests/test_trusted_proxy_boundary.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "Network policy is covered in CI; external ingress, certificates and production proxy topology remain external."
+    },
+    {
+      "id": "security.sql_database_role_boundary",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_revalidated",
+      "canonical_paths": [
+        "services/core-api/alembic/versions/0004_ai_reader_role.py",
+        "services/core-api/app/core/resources.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_ai_database_role_boundary.py",
+        "services/core-api/tests/test_sql_access_boundary.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "DB role/query boundaries are covered; production database IAM/credential proof remains external."
+    },
+    {
+      "id": "security.dockos_quarantine_platform_boundary",
+      "source_prs": [16],
+      "disposition": "ancestry_preserved_and_revalidated",
+      "canonical_paths": [
+        "src/modules/DockOS/dockosApi.js",
+        "src/modules/DockOS/dockosPermissions.js",
+        "services/platform-alerts/app/main.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_dockos_gateway_quarantine.py",
+        "services/core-api/tests/test_permission_catalog.py"
+      ],
+      "evidence_lane": "frozen-authority-coverage",
+      "truth_boundary": "Legacy DockOS trust-boundary quarantine is covered; live integration topology remains external."
+    },
+    {
+      "id": "security.jarvis.grant_admission_audit_envelope",
+      "source_prs": [16],
+      "reference_prs": [30, 35, 36, 161, 163],
+      "disposition": "ancestry_preserved_and_strengthened",
+      "canonical_paths": [
+        "services/core-api/app/core/jarvis_grant_idempotency.py",
+        "services/core-api/app/core/jarvis_execution_admission.py",
+        "services/core-api/app/core/jarvis_service_identity.py",
+        "services/core-api/alembic/versions/0045_jarvis_audit_hash_chain.py"
+      ],
+      "evidence_tests": [
+        "services/core-api/tests/test_jarvis_platform_security_consolidation.py",
+        "services/core-api/tests/test_jarvis_audit_hash_chain.py",
+        "services/core-api/tests/test_ai_tool_audit_fail_closed.py"
+      ],
+      "evidence_lane": "core-authority+audit-evidence",
+      "truth_boundary": "Current Jarvis envelope has Redis/PostgreSQL CI acceptance; it is tamper-evident software evidence, not WORM or production infrastructure evidence."
+    }
+  ]
+}

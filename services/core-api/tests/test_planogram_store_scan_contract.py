@@ -75,7 +75,13 @@ def test_store_scan_preserves_truth_boundary_and_separates_fixture_evidence() ->
     assert result["promotable_to_store_dna"] is False
     assert result["recognized_fixture_count"] == 1
     assert result["architecture_preview"]["source"] == "lidar_scan"
+    assert result["architecture_v2_preview"]["source"] == "lidar_scan"
+    assert result["architecture_v2_preview_available"] is True
     assert {row["element_type"] for row in result["architecture_preview"]["elements"]} == {
+        "wall",
+        "door",
+    }
+    assert {row["element_type"] for row in result["architecture_v2_preview"]["elements"]} == {
         "wall",
         "door",
     }
@@ -84,13 +90,26 @@ def test_store_scan_preserves_truth_boundary_and_separates_fixture_evidence() ->
     assert "human_scan_review_required" in result["blockers"]
 
 
-def test_non_orthogonal_scan_is_not_silently_quantized_into_authority() -> None:
+def test_non_orthogonal_scan_is_preserved_in_v2_without_fake_v1_authority() -> None:
     result = normalize_store_scan(payload(wall_rotation=17).model_dump(mode="python"))
 
     assert result["unsupported_rotation_count"] == 1
-    assert "scan_contains_non_orthogonal_geometry" in result["blockers"]
+    assert "store_dna_v1_cannot_promote_non_orthogonal_geometry" in result["blockers"]
+    assert result["architecture_v2_preview_available"] is True
+    wall = next(
+        row
+        for row in result["architecture_v2_preview"]["elements"]
+        if row["element_id"] == "wall-1"
+    )
+    assert wall["rotation_deg"] == 17
+    assert wall["center_x_m"] == 6
+    assert wall["center_y_m"] == pytest.approx(0.05)
+    assert all(
+        row["element_id"] != "wall-1"
+        for row in result["architecture_preview"]["elements"]
+    )
     assert any(
-        warning.startswith("scan_non_orthogonal_geometry_requires_architecture_v2:wall-1")
+        warning == "scan_non_orthogonal_preserved_in_v2:wall-1"
         for warning in result["warnings"]
     )
 

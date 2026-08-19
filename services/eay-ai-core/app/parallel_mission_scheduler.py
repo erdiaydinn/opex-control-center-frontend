@@ -6,9 +6,9 @@ function may execute that admitted wave, but it delegates every selected lane to
 the existing parallel mission orchestrator rather than creating a second mission
 runtime.
 
-Resource/idempotency conflict rules remain aligned with the parallel mission
-orchestrator, while deadline, concurrency-weight, cost-budget and overload
-shedding decisions stay explicit and deterministic.
+Resource/idempotency conflict rules are imported from the canonical parallel
+orchestrator so deadline, cost or overload scheduling cannot silently diverge
+from the base mission safety semantics.
 
 Pending side-effect lanes may be deferred before they start, but they may never
 be marked shedable or preemptible. This avoids turning load shedding into an
@@ -30,6 +30,7 @@ from .parallel_mission_orchestration import (
     ParallelMissionPlan,
     ParallelMissionRound,
     execute_parallel_mission_round,
+    parallel_lane_conflict_blockers,
 )
 
 PARALLEL_MISSION_SCHEDULER_CONTRACT = "eay-parallel-mission-scheduler-v1"
@@ -158,22 +159,6 @@ def _ranking_key(
     return (0, profile.deadline_at.timestamp(), -lane.priority, lane.lane_id)
 
 
-def _conflict_blockers(
-    lane: ParallelMissionLane,
-    selected: tuple[ParallelMissionLane, ...],
-) -> tuple[str, ...]:
-    lane_resources = set(lane.exclusive_resource_refs)
-    lane_keys = set(lane.pending_idempotency_keys())
-    blockers: list[str] = []
-    for other in selected:
-        shared_resources = lane_resources & set(other.exclusive_resource_refs)
-        if shared_resources and (lane.has_pending_side_effect() or other.has_pending_side_effect()):
-            blockers.append("parallel_resource_conflict")
-        if lane_keys & set(other.pending_idempotency_keys()):
-            blockers.append("parallel_idempotency_conflict")
-    return tuple(dict.fromkeys(blockers))
-
-
 def schedule_parallel_wave(
     *,
     plan: ParallelMissionPlan,
@@ -219,7 +204,7 @@ def schedule_parallel_wave(
             deferred[lane.lane_id] = ("parallel_capacity_deferred",)
             continue
 
-        conflicts = _conflict_blockers(lane, tuple(selected))
+        conflicts = parallel_lane_conflict_blockers(lane, tuple(selected))
         if conflicts:
             deferred[lane.lane_id] = conflicts
             continue

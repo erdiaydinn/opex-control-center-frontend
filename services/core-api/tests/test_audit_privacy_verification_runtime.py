@@ -1,8 +1,11 @@
 import hashlib
 
+import pytest
+
 from app.modules.audit.privacy_verification_runtime import (
     AuditPrivacyScanResult,
     AuditPrivacyVerificationRuntime,
+    AuditServerPrivacyVerification,
 )
 
 
@@ -27,7 +30,7 @@ def expected(content: bytes) -> tuple[str, int]:
     return hashlib.sha256(content).hexdigest(), len(content)
 
 
-def test_verified_requires_matching_bytes_and_zero_sensitive_regions() -> None:
+def test_verified_passes_privacy_only_and_never_authorizes_vision() -> None:
     content = b"sanitized-jpeg"
     digest, size = expected(content)
     result = AuditPrivacyVerificationRuntime().verify_jpeg(
@@ -37,7 +40,8 @@ def test_verified_requires_matching_bytes_and_zero_sensitive_regions() -> None:
         scanner=Scanner(),
     )
     assert result.status == "verified"
-    assert result.vision_inference_authorized is True
+    assert result.privacy_gate_passed is True
+    assert result.vision_inference_authorized is False
 
 
 def test_hash_or_size_mismatch_is_tampered_and_never_authorized() -> None:
@@ -49,6 +53,7 @@ def test_hash_or_size_mismatch_is_tampered_and_never_authorized() -> None:
         scanner=Scanner(),
     )
     assert result.status == "tampered"
+    assert result.privacy_gate_passed is False
     assert result.vision_inference_authorized is False
 
 
@@ -62,6 +67,7 @@ def test_detected_face_rejects_sanitized_evidence() -> None:
         scanner=Scanner(faces=1),
     )
     assert result.status == "rejected"
+    assert result.privacy_gate_passed is False
     assert result.vision_inference_authorized is False
 
 
@@ -75,6 +81,7 @@ def test_sensitive_region_rejects_evidence_even_without_face() -> None:
         scanner=Scanner(sensitive=1),
     )
     assert result.status == "rejected"
+    assert result.privacy_gate_passed is False
     assert result.vision_inference_authorized is False
 
 
@@ -88,6 +95,7 @@ def test_scanner_failure_blocks_instead_of_guessing() -> None:
         scanner=Scanner(fail=True),
     )
     assert result.status == "blocked"
+    assert result.privacy_gate_passed is False
     assert result.vision_inference_authorized is False
 
 
@@ -95,8 +103,32 @@ def test_missing_content_blocks() -> None:
     result = AuditPrivacyVerificationRuntime().verify_jpeg(
         content=b"",
         expected_sha256=hashlib.sha256(b"").hexdigest(),
-        expected_byte_size=0,
+        expected_byte_size=1,
         scanner=Scanner(),
     )
     assert result.status == "blocked"
+    assert result.privacy_gate_passed is False
     assert result.vision_inference_authorized is False
+
+
+def test_privacy_receipt_rejects_any_attempt_to_grant_vision_authority() -> None:
+    with pytest.raises(ValueError, match="cannot grant downstream vision"):
+        AuditServerPrivacyVerification(
+            status="verified",
+            reason="invalid authority escalation",
+            observed_sha256="a" * 64,
+            observed_byte_size=1,
+            scan=None,
+            privacy_gate_passed=True,
+            vision_inference_authorized=True,
+        )
+
+
+def test_scanner_fingerprint_must_be_lowercase_sha256() -> None:
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        AuditPrivacyScanResult(
+            detected_face_count=0,
+            detected_sensitive_region_count=0,
+            scanner_model_ref="scanner:test",
+            scanner_model_fingerprint="B" * 64,
+        )

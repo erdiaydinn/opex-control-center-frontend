@@ -62,6 +62,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Mobile fail-closed static contract
         run: sh ops/mobile/verify-mobile-foundation.sh
+      - name: Terminal recovery security and locale contract
+        run: sh ops/mobile/verify-terminal-recovery.sh
       - name: Preserve canonical Inventory Android hardening
         run: sh ops/inventory/verify-android-production.sh
 

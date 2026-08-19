@@ -35,6 +35,7 @@ data class BlindCountPresentationCopy(
     val locationLabel: String,
     val stepLabel: String,
     val scannedItemLabel: String? = null,
+    val observedQuantityText: String? = null,
 )
 
 data class SyncPresentationSummary(
@@ -135,7 +136,8 @@ object FieldPresentationAdapter {
             locationLabel = copy.locationLabel,
             stepLabel = copy.stepLabel,
             scannedItemLabel = copy.scannedItemLabel,
-            observedQuantityText = session.currentQuantity?.toString().orEmpty(),
+            observedQuantityText = copy.observedQuantityText
+                ?: session.currentQuantity?.toString().orEmpty(),
             confirmedLines = session.confirmedLineCount,
             totalLines = target.targetLineCount,
             syncState = syncState,

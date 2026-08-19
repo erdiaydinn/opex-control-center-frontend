@@ -8,10 +8,8 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -27,6 +25,7 @@ import com.eay.mobile.fieldui.runtime.EayTerminalRuntimeView
 import com.eay.mobile.presentation.FieldMissionVisualKind
 import com.eay.mobile.presentation.FieldMissionVisualPriority
 import com.eay.mobile.presentation.FieldSyncVisualState
+import com.eay.mobile.presentation.adapter.BlindCountPresentationCopy
 import com.eay.mobile.presentation.adapter.FieldPresentationAdapter
 import com.eay.mobile.presentation.adapter.MissionIntentPresentation
 import com.eay.mobile.presentation.adapter.SyncPresentationSummary
@@ -40,8 +39,6 @@ import net.openid.appauth.ResponseTypeValues
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
     private lateinit var fieldUi: EayTerminalRuntimeView
-    private lateinit var quantityInput: EditText
-    private lateinit var confirmQuantity: Button
     private lateinit var finishLocation: Button
     private val auth by lazy { AuthorizationService(this) }
     private val taskClient by lazy { InventoryTerminalTaskClient(this) }
@@ -54,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private var activeTask: InventoryTerminalCountTask? = null
     private var activeController: BlindCountTerminalController? = null
     private var taskSelectionEnabled = true
+    private var quantityDraft = ""
 
     private val scannerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -99,18 +97,6 @@ class MainActivity : AppCompatActivity() {
         fieldUi = EayTerminalRuntimeView(this).apply {
             visibility = View.GONE
         }
-        quantityInput = EditText(this).apply {
-            hint = getString(R.string.terminal_quantity_hint)
-            inputType = InputType.TYPE_CLASS_NUMBER
-            minimumHeight = dp(64)
-            visibility = View.GONE
-        }
-        confirmQuantity = Button(this).apply {
-            text = getString(R.string.terminal_confirm_quantity)
-            minimumHeight = dp(64)
-            visibility = View.GONE
-            setOnClickListener { submitObservedQuantity() }
-        }
         finishLocation = Button(this).apply {
             text = getString(R.string.terminal_finish_location)
             minimumHeight = dp(64)
@@ -139,8 +125,6 @@ class MainActivity : AppCompatActivity() {
                     1f,
                 ),
             )
-            addView(quantityInput)
-            addView(confirmQuantity)
             addView(finishLocation)
         }
         setContentView(content)
@@ -263,6 +247,7 @@ class MainActivity : AppCompatActivity() {
         activeTask = null
         activeController = null
         taskSelectionEnabled = true
+        quantityDraft = ""
         hideExecutionControls()
         Thread {
             val result = taskClient.fetch()
@@ -397,6 +382,7 @@ class MainActivity : AppCompatActivity() {
         hideExecutionControls()
         activeTask = null
         activeController = null
+        quantityDraft = ""
         status.text = getString(R.string.terminal_saving)
         Thread {
             val claim = missionClaimClient.claim(task)
@@ -431,46 +417,79 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderStep(step: BlindCountStep) {
         val task = activeTask ?: return
-        fieldUi.visibility = View.GONE
         when (step) {
             BlindCountStep.SCAN_LOCATION -> {
+                hideBlindCountSurface(clearDraft = true)
                 hideExecutionControls()
                 status.text = getString(R.string.terminal_scan_location, task.locationId.trim())
             }
             BlindCountStep.SCAN_ITEM -> {
-                hideQuantityEntry()
+                hideBlindCountSurface(clearDraft = true)
                 finishLocation.visibility = View.VISIBLE
                 finishLocation.isEnabled = true
                 status.text = getString(R.string.terminal_scan_item)
             }
             BlindCountStep.ENTER_QUANTITY -> {
                 finishLocation.visibility = View.GONE
-                quantityInput.visibility = View.VISIBLE
-                confirmQuantity.visibility = View.VISIBLE
-                confirmQuantity.isEnabled = true
                 status.text = getString(R.string.terminal_enter_quantity)
-                quantityInput.requestFocus()
+                renderBlindCountQuantity()
             }
             BlindCountStep.CONFIRM_ITEM -> {
                 finishLocation.visibility = View.GONE
-                quantityInput.visibility = View.VISIBLE
-                confirmQuantity.visibility = View.VISIBLE
-                status.text = getString(R.string.terminal_saving)
+                renderBlindCountQuantity()
             }
             BlindCountStep.COMPLETE -> {
+                hideBlindCountSurface(clearDraft = true)
                 hideExecutionControls()
                 status.text = getString(R.string.terminal_complete)
             }
         }
     }
 
-    private fun submitObservedQuantity() {
+    private fun renderBlindCountQuantity() {
+        val task = activeTask ?: return
+        val controller = activeController ?: return
+        val session = controller.session()
+        if (
+            session.step != BlindCountStep.ENTER_QUANTITY &&
+            session.step != BlindCountStep.CONFIRM_ITEM
+        ) {
+            return
+        }
+        val state = FieldPresentationAdapter.blindCount(
+            session = session,
+            target = task.blindCountTarget(),
+            copy = BlindCountPresentationCopy(
+                locationLabel = task.locationId.trim(),
+                stepLabel = getString(R.string.terminal_enter_quantity),
+                scannedItemLabel = task.name,
+                observedQuantityText = quantityDraft,
+            ),
+            syncState = FieldSyncVisualState.SYNCED,
+        )
+        fieldUi.visibility = View.VISIBLE
+        fieldUi.renderBlindCount(
+            state = state,
+            onQuantityChanged = { draft ->
+                val normalized = draft.filter { it.isDigit() }.take(6)
+                if (normalized != quantityDraft) {
+                    quantityDraft = normalized
+                    renderBlindCountQuantity()
+                }
+            },
+            onConfirmQuantity = {
+                submitObservedQuantity(quantityDraft)
+            },
+        )
+    }
+
+    private fun submitObservedQuantity(quantityText: String) {
         val controller = activeController ?: run {
             status.text = getString(R.string.terminal_no_mission)
             return
         }
         if (controller.session().step == BlindCountStep.ENTER_QUANTITY) {
-            val quantity = quantityInput.text.toString().toIntOrNull()
+            val quantity = quantityText.toIntOrNull()
             if (quantity == null) {
                 status.text = getString(R.string.terminal_invalid_quantity)
                 return
@@ -485,7 +504,8 @@ class MainActivity : AppCompatActivity() {
             status.text = getString(R.string.terminal_contract_blocked)
             return
         }
-        confirmQuantity.isEnabled = false
+        fieldUi.clear()
+        fieldUi.visibility = View.GONE
         status.text = getString(R.string.terminal_saving)
         Thread {
             val result = runCatching { runBlocking { controller.confirmItem() } }
@@ -493,16 +513,15 @@ class MainActivity : AppCompatActivity() {
                 result.onSuccess { confirmation ->
                     when (confirmation.code) {
                         BlindCountControllerCode.OK -> {
-                            quantityInput.text.clear()
-                            hideQuantityEntry()
+                            quantityDraft = ""
                             finishLocation.visibility = View.VISIBLE
                             finishLocation.isEnabled = true
                             InventorySyncWorker.enqueue(this)
                             status.text = getString(R.string.terminal_saved_next)
                         }
                         BlindCountControllerCode.PERSIST_RETRY -> {
-                            confirmQuantity.isEnabled = true
                             status.text = getString(R.string.terminal_persist_retry)
+                            renderBlindCountQuantity()
                         }
                         else -> blockCurrentMission()
                     }
@@ -552,6 +571,7 @@ class MainActivity : AppCompatActivity() {
                             activeTask = null
                             activeController = null
                             taskSelectionEnabled = true
+                            quantityDraft = ""
                             hideExecutionControls()
                             localMissionTruth = localMissionTruth + (
                                 task.missionId to InventoryLocalCompletionState.AWAITING_SERVER
@@ -576,6 +596,7 @@ class MainActivity : AppCompatActivity() {
         activeTask = null
         activeController = null
         taskSelectionEnabled = true
+        quantityDraft = ""
         hideExecutionControls()
         renderTasks(loadedTasks)
         status.text = getString(R.string.terminal_contract_blocked)
@@ -588,14 +609,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun hideQuantityEntry() {
-        quantityInput.visibility = View.GONE
-        confirmQuantity.visibility = View.GONE
-        confirmQuantity.isEnabled = true
+    private fun hideBlindCountSurface(clearDraft: Boolean) {
+        if (clearDraft) quantityDraft = ""
+        fieldUi.clear()
+        fieldUi.visibility = View.GONE
     }
 
     private fun hideExecutionControls() {
-        hideQuantityEntry()
         finishLocation.visibility = View.GONE
         finishLocation.isEnabled = true
     }

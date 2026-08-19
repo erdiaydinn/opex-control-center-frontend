@@ -21,15 +21,23 @@ grep -R -q 'AuthorizationRequest' "$source_root"
 grep -R -q 'com.eay.inventory.SCAN' "$source_root"
 test -f "$locale_contract" || { echo "missing canonical localization contract" >&2; exit 1; }
 
-# The production task surface must use the shared typed Compose boundary. The Compose callback is
-# presentation-only and must still return to the existing signed server mission claim path.
+# The production task and quantity-entry surfaces must use the shared typed Compose boundary.
+# Compose callbacks remain presentation-only and return to the existing signed claim/controller path.
 grep -q 'EayTerminalRuntimeView' "$main_activity"
 grep -q 'FieldPresentationAdapter.missionIntentCard' "$main_activity"
+grep -q 'fieldUi.renderBlindCount' "$main_activity"
+grep -q 'BlindCountPresentationCopy' "$main_activity"
 grep -q 'missionClaimClient.claim' "$main_activity"
+grep -q 'controller.enterQuantity' "$main_activity"
+grep -q 'controller.confirmItem()' "$main_activity"
 grep -q 'implementation(project(":field-presentation-adapter"))' "$app_gradle"
 grep -q 'implementation(project(":field-ui-runtime"))' "$app_gradle"
 if grep -q 'taskList.addView' "$main_activity"; then
   echo "legacy parallel task-button rendering must not bypass the shared Compose presentation boundary" >&2
+  exit 1
+fi
+if grep -q -E 'quantityInput|confirmQuantity|EditText' "$main_activity"; then
+  echo "legacy View-based quantity entry must not bypass the shared Compose blind-count surface" >&2
   exit 1
 fi
 

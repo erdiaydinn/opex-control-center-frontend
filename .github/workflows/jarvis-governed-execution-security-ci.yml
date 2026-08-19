@@ -1,5 +1,6 @@
 name: EAY Jarvis Governed Execution Security
 
+# Read-only exact-head gate for the governed execution consolidation.
 on:
   pull_request:
     branches:

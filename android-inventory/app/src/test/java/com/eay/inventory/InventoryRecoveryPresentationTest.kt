@@ -54,8 +54,17 @@ class InventoryRecoveryPresentationTest {
         }
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun durableEvidenceCannotInventSignInRecovery() {
-        InventoryRecoveryPresentation.policy(summary(InventoryRecoveryIntent.SIGN_IN_AGAIN))
+    @Test
+    fun unsupportedDurableUiIntentsBecomeIntegrityBlockWithoutAction() {
+        listOf(
+            InventoryRecoveryIntent.SIGN_IN_AGAIN,
+            InventoryRecoveryIntent.RELOAD_MISSIONS,
+            InventoryRecoveryIntent.NONE,
+        ).forEach { intent ->
+            val policy = InventoryRecoveryPresentation.policy(summary(intent))
+            assertEquals(FieldRecoveryVisualSeverity.SECURITY, policy.severity)
+            assertTrue(policy.blocksNewMissionStarts)
+            assertEquals(FieldRecoveryActionKind.NONE, policy.actionKind)
+        }
     }
 }

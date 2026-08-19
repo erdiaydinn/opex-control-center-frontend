@@ -26,10 +26,10 @@ import "./AuditCommandCenter.css";
 import "./AuditLiveTruth.css";
 
 const KPI = [
-  { key: "critical", icon: TriangleAlert, tone: "danger" },
-  { key: "overdue", icon: CalendarDays, tone: "warning" },
-  { key: "repeat", icon: ClipboardCheck, tone: "violet" },
-  { key: "coverage", icon: FileCheck2, tone: "success" },
+  { key: "critical", fact: "critical_open_actions", icon: TriangleAlert, tone: "danger" },
+  { key: "overdue", fact: "overdue_actions", icon: CalendarDays, tone: "warning" },
+  { key: "repeat", fact: "repeat_findings", icon: ClipboardCheck, tone: "violet" },
+  { key: "coverage", fact: "evidence_coverage_percent", icon: FileCheck2, tone: "success", percent: true },
 ];
 
 const FLOW = [
@@ -39,16 +39,25 @@ const FLOW = [
   { icon: CheckCircle2, titleKey: "verification", bodyKey: "verificationBody", badge: "VERIFIED" },
 ];
 
-function StatCard({ item, t }) {
+function StatCard({ item, intelligence, t }) {
   const Icon = item.icon;
+  const rawValue = intelligence.state === "connected" ? intelligence.facts?.[item.fact] : null;
+  const hasValue = rawValue !== null && rawValue !== undefined;
+  const value = hasValue ? `${rawValue}${item.percent ? "%" : ""}` : "—";
+  const note = intelligence.state === "connected"
+    ? t("deterministicReceipt")
+    : intelligence.state === "forbidden"
+      ? t("intelligenceUnavailable")
+      : t("noLiveData");
+
   return (
-    <article className={`audit-stat audit-stat--${item.tone}`}>
+    <article className={`audit-stat audit-stat--${item.tone}`} data-intelligence-state={intelligence.state}>
       <div className="audit-stat__top">
         <span className="audit-stat__icon"><Icon size={18} /></span>
         <span className="audit-stat__label">{t(item.key)}</span>
       </div>
-      <div className="audit-stat__value">—</div>
-      <div className="audit-stat__note">{t("noLiveData")}</div>
+      <div className="audit-stat__value">{value}</div>
+      <div className="audit-stat__note">{note}</div>
     </article>
   );
 }
@@ -151,6 +160,11 @@ function AuditCommandCenter() {
     programs: [],
     runs: [],
   });
+  const [intelligence, setIntelligence] = useState({
+    state: "loading",
+    facts: null,
+    receiptFingerprint: null,
+  });
 
   const refreshLiveTruth = useCallback(async () => {
     setLive((current) => ({ ...current, state: "loading" }));
@@ -172,9 +186,36 @@ function AuditCommandCenter() {
     }
   }, []);
 
+  const refreshIntelligence = useCallback(async () => {
+    setIntelligence((current) => ({ ...current, state: "loading" }));
+    try {
+      const payload = await apiGet("/v1/audit/intelligence/summary");
+      if (
+        payload?.receipt_type !== "audit_intelligence_summary"
+        || payload?.llm_computed_metrics !== false
+        || !payload?.facts
+        || !payload?.receipt_fingerprint
+      ) {
+        throw new Error("Audit intelligence receipt is invalid.");
+      }
+      setIntelligence({
+        state: "connected",
+        facts: payload.facts,
+        receiptFingerprint: payload.receipt_fingerprint,
+      });
+    } catch (error) {
+      setIntelligence({
+        state: error?.status === 403 ? "forbidden" : "error",
+        facts: null,
+        receiptFingerprint: null,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     refreshLiveTruth();
-  }, [refreshLiveTruth]);
+    refreshIntelligence();
+  }, [refreshIntelligence, refreshLiveTruth]);
 
   const scrollToAssurance = useCallback(() => {
     document.getElementById("audit-assurance")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -185,6 +226,7 @@ function AuditCommandCenter() {
       className="audit-shell"
       data-eay-product-state="ready"
       data-audit-truth-state={live.state}
+      data-audit-intelligence-state={intelligence.state}
     >
       <header className="audit-hero">
         <div>
@@ -213,11 +255,16 @@ function AuditCommandCenter() {
       </nav>
 
       <section className="audit-kpis" aria-label={t("eyebrow")}>
-        {KPI.map((item) => <StatCard key={item.key} item={item} t={t} />)}
+        {KPI.map((item) => (
+          <StatCard key={item.key} item={item} intelligence={intelligence} t={t} />
+        ))}
       </section>
 
       <section className="audit-grid audit-grid--top">
-        <AuditLiveTruth live={live} locale={locale} t={t} onRefresh={refreshLiveTruth} />
+        <AuditLiveTruth live={live} locale={locale} t={t} onRefresh={() => {
+          refreshLiveTruth();
+          refreshIntelligence();
+        }} />
 
         <aside className="audit-panel audit-panel--jarvis">
           <div className="audit-jarvis__icon"><Bot size={24} /></div>

@@ -60,7 +60,7 @@ class ActionCorrelationDecision(BaseModel):
     action_ref: str
     correlated: bool = False
     ambiguous: bool = False
-    best_score: float = Field(ge=0.0, le=1.0)
+    best_score: float | None = Field(default=None, ge=0.0, le=1.0)
     selected_exchange: ObservedHttpExchange | None = None
     alternatives: tuple[CorrelationCandidate, ...] = ()
     blockers: tuple[str, ...] = ()
@@ -71,6 +71,8 @@ class ActionCorrelationDecision(BaseModel):
             raise ValueError("api_action_correlation_cannot_be_ambiguous")
         if self.correlated and self.selected_exchange is None:
             raise ValueError("api_action_correlation_requires_selected_exchange")
+        if (self.correlated or self.ambiguous or self.selected_exchange is not None) and self.best_score is None:
+            raise ValueError("api_action_correlation_requires_best_score")
         return self
 
 

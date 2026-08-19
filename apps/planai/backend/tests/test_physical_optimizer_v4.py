@@ -157,7 +157,9 @@ def benchmark_store_dna(*, schema_version: int = 1) -> dict:
                 {
                     "element_id": "EXIT",
                     "element_type": "picker_exit",
-                    "x_m": 9.0,
+                    # Return-to-origin picking makes fixture distance observable;
+                    # a through-route exit would make collinear fixtures degenerate.
+                    "x_m": 0.25,
                     "y_m": 0.25,
                     "width_m": 0.5,
                     "depth_m": 0.5,

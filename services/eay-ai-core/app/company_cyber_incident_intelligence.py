@@ -1,10 +1,9 @@
 """Company-bound cyber incident assessment and defensive planning.
 
-This layer closes a critical reasoning gap between public threat knowledge and
-company response. A vulnerability, KEV entry, ATT&CK technique or lone alert
-never proves compromise. Incident confirmation requires strong company evidence,
-and even a confirmed incident grants no execution authority or threat-actor
-attribution.
+Public threat knowledge, company exposure, company incidents and response
+authority are intentionally separate. A KEV entry, ATT&CK mapping or lone alert
+never proves compromise. Strong company evidence may confirm an incident, but
+this layer never proves actor attribution, causality or execution authority.
 """
 
 from __future__ import annotations
@@ -93,6 +92,11 @@ class CompanySecuritySignal(BaseModel):
         _aware(self.recorded_at, "cyber_signal_recorded_at_requires_timezone")
         if self.recorded_at < self.observed_at:
             raise ValueError("cyber_signal_recorded_at_predates_observation")
+        if (
+            self.evidence_strength is SecurityEvidenceStrength.HUMAN_CONFIRMATION
+            and self.source_family is not SecuritySourceFamily.HUMAN
+        ):
+            raise ValueError("cyber_human_confirmation_requires_human_source")
         if self.compromise_confirmed:
             raise ValueError("cyber_signal_never_confirms_compromise")
         if self.threat_actor_attribution_proven:
@@ -103,14 +107,8 @@ class CompanySecuritySignal(BaseModel):
             (self.evidence_refs, "cyber_signal_evidence_refs_must_be_unique"),
             (self.asset_refs, "cyber_signal_asset_refs_must_be_unique"),
             (self.exposure_refs, "cyber_signal_exposure_refs_must_be_unique"),
-            (
-                self.threat_record_refs,
-                "cyber_signal_threat_record_refs_must_be_unique",
-            ),
-            (
-                self.attack_technique_ids,
-                "cyber_signal_attack_techniques_must_be_unique",
-            ),
+            (self.threat_record_refs, "cyber_signal_threat_refs_must_be_unique"),
+            (self.attack_technique_ids, "cyber_signal_attack_ids_must_be_unique"),
         ):
             _unique(values, error)
         for technique_id in self.attack_technique_ids:
@@ -124,8 +122,7 @@ class CompanySecuritySignal(BaseModel):
             *self.threat_record_refs,
         ):
             _safe_ref(ref, "cyber_signal_unsafe_reference_forbidden")
-        if self.fingerprint != _fingerprint(_payload(self)):
-            raise ValueError("cyber_signal_fingerprint_mismatch")
+        _verify_fingerprint(self, "cyber_signal_fingerprint_mismatch")
         return self
 
 
@@ -173,8 +170,7 @@ class CompanyIncidentAssessment(BaseModel):
             raise ValueError("cyber_incident_never_self_proves_causality")
         if self.execution_authority_granted:
             raise ValueError("cyber_incident_never_grants_execution_authority")
-        if self.fingerprint != _fingerprint(_payload(self)):
-            raise ValueError("cyber_incident_fingerprint_mismatch")
+        _verify_fingerprint(self, "cyber_incident_fingerprint_mismatch")
         return self
 
 
@@ -207,15 +203,11 @@ class DefensiveControlCandidate(BaseModel):
             raise ValueError("cyber_control_mutation_requires_human_approval")
         if self.execution_authority_granted:
             raise ValueError("cyber_control_never_grants_execution_authority")
-        for ref in (
-            self.candidate_id,
-            self.incident_id,
-            *self.target_refs,
-            *self.evidence_refs,
-        ):
+        # candidate_id is generated below from a fingerprint; user/company
+        # evidence still passes the strict secret/offensive-reference filter.
+        for ref in (self.incident_id, *self.target_refs, *self.evidence_refs):
             _safe_ref(ref, "cyber_control_unsafe_reference_forbidden")
-        if self.fingerprint != _fingerprint(_payload(self)):
-            raise ValueError("cyber_control_fingerprint_mismatch")
+        _verify_fingerprint(self, "cyber_control_fingerprint_mismatch")
         return self
 
 
@@ -239,9 +231,9 @@ class CompanyCyberDefensePlan(BaseModel):
         if incident.identity.fingerprint != identity.fingerprint:
             raise ValueError("cyber_defense_plan_incident_company_mismatch")
         seen: set[str] = set()
-        for candidate in self.candidates:
+        for raw in self.candidates:
             candidate = DefensiveControlCandidate.model_validate(
-                candidate.model_dump(mode="json")
+                raw.model_dump(mode="json")
             )
             if candidate.candidate_id in seen:
                 raise ValueError("cyber_defense_plan_duplicate_candidate_id")
@@ -256,8 +248,7 @@ class CompanyCyberDefensePlan(BaseModel):
             raise ValueError("cyber_defense_plan_never_permits_automatic_execution")
         if self.execution_authority_granted:
             raise ValueError("cyber_defense_plan_never_grants_execution_authority")
-        if self.fingerprint != _fingerprint(_payload(self)):
-            raise ValueError("cyber_defense_plan_fingerprint_mismatch")
+        _verify_fingerprint(self, "cyber_defense_plan_fingerprint_mismatch")
         return self
 
 
@@ -295,9 +286,7 @@ def build_company_security_signal(
         "threat_actor_attribution_proven": False,
         "execution_authority_granted": False,
     }
-    return CompanySecuritySignal.model_validate(
-        {**draft, "fingerprint": _fingerprint(draft)}
-    )
+    return CompanySecuritySignal.model_validate(_sealed(draft))
 
 
 def assess_company_incident(
@@ -331,43 +320,37 @@ def assess_company_incident(
         for signal in eligible
         if signal.evidence_strength is not SecurityEvidenceStrength.HUMAN_CONFIRMATION
     }
-    has_human_confirmation = any(
+    human_confirmed = any(
         signal.evidence_strength is SecurityEvidenceStrength.HUMAN_CONFIRMATION
         and signal.source_family is SecuritySourceFamily.HUMAN
         for signal in eligible
     )
-    has_verified_detection = any(
+    verified = any(
         signal.evidence_strength is SecurityEvidenceStrength.VERIFIED_DETECTION
         for signal in eligible
     )
-    has_correlated = any(
+    correlated = any(
         signal.evidence_strength is SecurityEvidenceStrength.CORRELATED
         for signal in eligible
     )
 
-    reasons: list[str] = []
-    if has_human_confirmation:
+    if human_confirmed:
         status = IncidentStatus.CONFIRMED
-        reasons.append("human_incident_confirmation")
-    elif has_verified_detection and len(families) >= 2:
+        reasons = ["human_incident_confirmation"]
+    elif verified and len(families) >= 2:
         status = IncidentStatus.CONFIRMED
-        reasons.extend(
-            (
-                "verified_company_detection",
-                "independent_company_signal_quorum",
-            )
-        )
-    elif has_verified_detection or has_correlated or len(families) >= 2:
+        reasons = ["verified_company_detection", "independent_company_signal_quorum"]
+    elif verified or correlated or len(families) >= 2:
         status = IncidentStatus.SUSPICIOUS
-        if has_verified_detection:
-            reasons.append("verified_detection_without_independent_quorum")
-        elif has_correlated:
-            reasons.append("correlated_company_security_signal")
+        if verified:
+            reasons = ["verified_detection_without_independent_quorum"]
+        elif correlated:
+            reasons = ["correlated_company_security_signal"]
         else:
-            reasons.append("multiple_independent_observations")
+            reasons = ["multiple_independent_observations"]
     else:
         status = IncidentStatus.UNCONFIRMED
-        reasons.append("single_or_weak_company_observation")
+        reasons = ["single_or_weak_company_observation"]
 
     techniques = tuple(
         sorted(
@@ -396,9 +379,7 @@ def assess_company_incident(
         "causal_claim_proven": False,
         "execution_authority_granted": False,
     }
-    return CompanyIncidentAssessment.model_validate(
-        {**draft, "fingerprint": _fingerprint(draft)}
-    )
+    return CompanyIncidentAssessment.model_validate(_sealed(draft))
 
 
 def build_company_cyber_defense_plan(
@@ -421,6 +402,8 @@ def build_company_cyber_defense_plan(
         signal = CompanySecuritySignal.model_validate(raw.model_dump(mode="json"))
         if signal.identity.fingerprint != identity.fingerprint:
             raise ValueError("cyber_defense_plan_cross_company_signal_forbidden")
+        if signal.signal_id in signal_by_id:
+            raise ValueError("cyber_defense_plan_duplicate_signal_id")
         signal_by_id[signal.signal_id] = signal
     if set(signal_by_id) != set(incident.signal_ids):
         raise ValueError("cyber_defense_plan_signal_set_mismatch")
@@ -449,25 +432,20 @@ def build_company_cyber_defense_plan(
                 for ref in signal.asset_refs
             }
         )
-    )
-    if not asset_refs:
-        asset_refs = (f"incident:{incident.incident_id}",)
+    ) or (f"incident:{incident.incident_id}",)
 
-    proposals: list[tuple[DefensiveAction, tuple[str, ...], str]] = [
+    families = {signal.source_family for signal in signal_by_id.values()}
+    types = {signal.signal_type for signal in signal_by_id.values()}
+    proposals: list[tuple[DefensiveAction, str]] = [
         (
             DefensiveAction.INCREASE_TELEMETRY,
-            asset_refs,
             "preserve_and_increase_defensive_observability",
         )
     ]
-    families = {signal.source_family for signal in signal_by_id.values()}
-    types = {signal.signal_type for signal in signal_by_id.values()}
-
     if incident.attack_technique_ids:
         proposals.append(
             (
                 DefensiveAction.DEPLOY_DETECTION_RULE,
-                asset_refs,
                 "mapped_attack_technique_detection_candidate",
             )
         )
@@ -475,7 +453,6 @@ def build_company_cyber_defense_plan(
         proposals.append(
             (
                 DefensiveAction.PATCH_OR_UPDATE,
-                asset_refs,
                 "verified_or_suspected_vulnerability_exposure",
             )
         )
@@ -484,12 +461,10 @@ def build_company_cyber_defense_plan(
             (
                 (
                     DefensiveAction.REVOKE_SESSION_CANDIDATE,
-                    asset_refs,
                     "identity_risk_session_containment_candidate",
                 ),
                 (
                     DefensiveAction.ROTATE_CREDENTIAL_CANDIDATE,
-                    asset_refs,
                     "identity_risk_credential_rotation_candidate",
                 ),
             )
@@ -498,7 +473,6 @@ def build_company_cyber_defense_plan(
         proposals.append(
             (
                 DefensiveAction.ISOLATE_ASSET_CANDIDATE,
-                asset_refs,
                 "endpoint_containment_candidate",
             )
         )
@@ -506,7 +480,6 @@ def build_company_cyber_defense_plan(
         proposals.append(
             (
                 DefensiveAction.WAF_OR_IPS_RULE_CANDIDATE,
-                asset_refs,
                 "network_containment_candidate",
             )
         )
@@ -514,7 +487,6 @@ def build_company_cyber_defense_plan(
         proposals.append(
             (
                 DefensiveAction.DISABLE_VULNERABLE_INTEGRATION_CANDIDATE,
-                asset_refs,
                 "supply_chain_integration_containment_candidate",
             )
         )
@@ -522,25 +494,27 @@ def build_company_cyber_defense_plan(
         proposals.append(
             (
                 DefensiveAction.BACKUP_RESTORE_READINESS,
-                asset_refs,
                 "confirmed_incident_recovery_readiness",
             )
         )
 
     candidates: list[DefensiveControlCandidate] = []
     seen_actions: set[DefensiveAction] = set()
-    for action, targets, reason in proposals:
+    for action, reason in proposals:
         if action in seen_actions:
             continue
         seen_actions.add(action)
+        candidate_key = hashlib.sha256(
+            f"{incident.fingerprint}|{action.value}".encode("utf-8")
+        ).hexdigest()[:24]
         draft = {
             "contract": COMPANY_CYBER_INCIDENT_CONTRACT,
-            "candidate_id": f"{incident.incident_id}:{action.value}",
+            "candidate_id": f"control:{candidate_key}",
             "identity": identity.model_dump(mode="json"),
             "incident_id": incident.incident_id,
             "incident_fingerprint": incident.fingerprint,
             "action": action.value,
-            "target_refs": list(targets),
+            "target_refs": list(asset_refs),
             "evidence_refs": list(evidence_refs),
             "reason_code": reason,
             "requires_human_approval": _action_is_mutating(action),
@@ -548,11 +522,7 @@ def build_company_cyber_defense_plan(
             "candidate_only": True,
             "execution_authority_granted": False,
         }
-        candidates.append(
-            DefensiveControlCandidate.model_validate(
-                {**draft, "fingerprint": _fingerprint(draft)}
-            )
-        )
+        candidates.append(DefensiveControlCandidate.model_validate(_sealed(draft)))
 
     plan_draft = {
         "contract": COMPANY_CYBER_INCIDENT_CONTRACT,
@@ -563,9 +533,7 @@ def build_company_cyber_defense_plan(
         "automatic_execution_permitted": False,
         "execution_authority_granted": False,
     }
-    return CompanyCyberDefensePlan.model_validate(
-        {**plan_draft, "fingerprint": _fingerprint(plan_draft)}
-    )
+    return CompanyCyberDefensePlan.model_validate(_sealed(plan_draft))
 
 
 def _action_is_mutating(action: DefensiveAction) -> bool:
@@ -599,6 +567,15 @@ def _payload(model: BaseModel) -> dict[str, Any]:
     payload = model.model_dump(mode="json")
     payload.pop("fingerprint", None)
     return payload
+
+
+def _sealed(payload: dict[str, Any]) -> dict[str, Any]:
+    return {**payload, "fingerprint": _fingerprint(payload)}
+
+
+def _verify_fingerprint(model: BaseModel, error: str) -> None:
+    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+        raise ValueError(error)
 
 
 def _fingerprint(payload: dict[str, Any]) -> str:

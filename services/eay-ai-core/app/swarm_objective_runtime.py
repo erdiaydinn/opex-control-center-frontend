@@ -5,6 +5,11 @@ canonical mission runtime, carries forward only validated MissionCheckpoints, de
 unhealthy workers, and re-schedules remaining work. Resolved deferrals stay in round
 history; final blockers contain only unresolved stopping reasons.
 
+A worker assignment is a bounded lease. By default one worker may advance a lane by
+one durable transition before control returns to checkpoint/health/scheduling. This
+prevents one unhealthy runtime from consuming a mission retry budget before the swarm
+can quarantine it or route the same durable lane to another worker.
+
 The runtime is bounded and fail-closed. It never re-enables quarantined workers,
 never grants shared execution authority, and never replays an ambiguous side effect.
 """
@@ -154,12 +159,14 @@ async def execute_swarm_objective_until_stable(
     health_policy: WorkerHealthPolicy | None = None,
     existing_health_records: Mapping[str, SwarmWorkerHealthRecord] | None = None,
     max_rounds: int = 16,
-    max_transitions_per_lane: int = 100,
+    max_transitions_per_worker_lease: int = 1,
 ) -> SwarmObjectiveExecution:
     """Advance a large worker-bound objective until terminal, blocked or bounded."""
 
     if max_rounds < 1:
         raise ValueError("swarm_objective_max_rounds_must_be_positive")
+    if max_transitions_per_worker_lease < 1:
+        raise ValueError("swarm_objective_worker_lease_transition_budget_must_be_positive")
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("swarm_objective_now_requires_timezone")
     if registry.tenant_id != plan.tenant_id:
@@ -205,7 +212,7 @@ async def execute_swarm_objective_until_stable(
             policy=current_policy,
             worker_bindings=worker_bindings,
             now=now,
-            max_transitions_per_lane=max_transitions_per_lane,
+            max_transitions_per_lane=max_transitions_per_worker_lease,
         )
         rounds.append(round_result)
         last_round_blockers = _round_blockers(round_result)

@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
@@ -16,7 +17,6 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -64,7 +64,7 @@ class AuditCameraXController(
                         .setQualitySelector(
                             QualitySelector.from(
                                 Quality.HD,
-                                QualitySelector.FALLBACK_STRATEGY_HIGHER_QUALITY_OR_LOWER_THAN,
+                                FallbackStrategy.lowerQualityOrHigherThan(Quality.HD),
                             ),
                         )
                         .build()

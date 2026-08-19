@@ -21,6 +21,7 @@ from .repository import AuditRepositoryError
 
 PrivateEvidenceReader = Callable[..., Awaitable[bytes]]
 SERVER_PRIVACY_VERIFIER_REF = "eay.audit.server_privacy.v1"
+SERVER_PRIVACY_AUTHORITY_VERSION = "server_privacy_v2"
 
 
 def _fingerprint(
@@ -36,6 +37,7 @@ def _fingerprint(
     scan = result.scan
     payload = {
         "audit_run_id": str(audit_run_id),
+        "authority_version": SERVER_PRIVACY_AUTHORITY_VERSION,
         "detected_face_count": scan.detected_face_count if scan else None,
         "detected_sensitive_region_count": (
             scan.detected_sensitive_region_count if scan else None
@@ -183,7 +185,6 @@ async def verify_bound_redaction_receipt(
     )
     scan = verification.scan
 
-    # Re-read immutable bindings after the network/scanner boundary before publishing authority.
     rebound = await _load_bound_receipt(
         tenant_id=tenant_id,
         audit_run_id=audit_run_id,
@@ -203,13 +204,15 @@ async def verify_bound_redaction_receipt(
                 """
                 INSERT INTO audit_redaction_verification_events (
                     tenant_id, redaction_receipt_id, verification_status,
-                    verifier_ref, verification_fingerprint, reason,
+                    verifier_ref, verification_authority_version,
+                    verification_fingerprint, reason,
                     observed_sha256, observed_byte_size,
                     scanner_model_ref, scanner_model_fingerprint,
                     detected_face_count, detected_sensitive_region_count
                 ) VALUES (
                     CAST(:tenant_id AS UUID), CAST(:redaction_receipt_id AS UUID),
-                    :verification_status, :verifier_ref, :verification_fingerprint, :reason,
+                    :verification_status, :verifier_ref, :verification_authority_version,
+                    :verification_fingerprint, :reason,
                     :observed_sha256, :observed_byte_size,
                     :scanner_model_ref, :scanner_model_fingerprint,
                     :detected_face_count, :detected_sensitive_region_count
@@ -222,6 +225,7 @@ async def verify_bound_redaction_receipt(
                 "redaction_receipt_id": str(redaction_receipt_id),
                 "verification_status": verification.status,
                 "verifier_ref": SERVER_PRIVACY_VERIFIER_REF,
+                "verification_authority_version": SERVER_PRIVACY_AUTHORITY_VERSION,
                 "verification_fingerprint": verification_fingerprint,
                 "reason": verification.reason,
                 "observed_sha256": verification.observed_sha256,
@@ -242,6 +246,7 @@ async def verify_bound_redaction_receipt(
         "verification_event_id": str(row["id"]),
         "verified_at": row["verified_at"],
         "verification_status": verification.status,
+        "verification_authority_version": SERVER_PRIVACY_AUTHORITY_VERSION,
         "verification_fingerprint": verification_fingerprint,
         "privacy_gate_passed": verification.privacy_gate_passed,
         "server_privacy_verified": verification.status == "verified",

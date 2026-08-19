@@ -160,11 +160,11 @@ jobs:
           from app.modules.planogram.shelf_scan import DEFAULT_MIN_DETECTION_CONFIDENCE
           paths = app.openapi()['paths']
           required = {
-              '/v1/planogram/optimizer-preview',
+              '/v1/planogram/optimize-preview',
               '/v1/planogram/market-benchmark-preview',
-              '/v1/planogram/blind-benchmark',
+              '/v1/planogram/blind-benchmark-preview',
               '/v1/planogram/cad-preview',
-              '/v1/planogram/physical-layout-preview',
+              '/v1/planogram/physical-layout-search-preview',
               '/v1/planogram/shelf-scan-preview',
           }
           assert required <= set(paths), sorted(required - set(paths))

@@ -10,6 +10,7 @@ from app.global_lane_lease_broker import (
     release_global_lane_lease,
 )
 from app.global_objective_arbiter import GlobalObjectiveCandidate
+from app.intelligence_router import IntelligenceTask, PrivacyLevel, TaskComplexity, TaskRisk
 from app.mission_execution import MissionExecutionKind, MissionExecutionSpec
 from app.mission_runtime import MissionDefinition, MissionStep, new_checkpoint
 from app.parallel_mission_orchestration import ParallelMissionLane, ParallelMissionPlan
@@ -43,6 +44,16 @@ def _lane(
     spec = MissionExecutionSpec(
         step_id="step",
         kind=(MissionExecutionKind.CAPABILITY if mutating else MissionExecutionKind.REASONING),
+        intelligence_task=(
+            None
+            if mutating
+            else IntelligenceTask(
+                task_id=f"read-{lane_id}",
+                complexity=TaskComplexity.STANDARD,
+                risk=TaskRisk.LOW,
+                privacy=PrivacyLevel.INTERNAL,
+            )
+        ),
         capability_ref="capability://write" if mutating else None,
         prompt=None if mutating else "read",
     )

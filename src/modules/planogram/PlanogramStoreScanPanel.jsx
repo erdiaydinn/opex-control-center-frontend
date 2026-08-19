@@ -4,6 +4,7 @@ import { FileScan, ScanLine, ShieldCheck, TriangleAlert } from "lucide-react";
 import { apiPost } from "../../api/client.js";
 import { translatePlanogramStoreScan } from "../../platform/i18n/planogramStoreScanMessages.js";
 import { rotatedRectSvgPoints, svgPointString } from "./planogramEngineering2D.js";
+import PlanogramScanAnnotationWorkspace from "./PlanogramScanAnnotationWorkspace.jsx";
 import {
   normalizePlanogramStoreScanBundle,
   safePlanogramStoreScanPreview,
@@ -183,6 +184,12 @@ export default function PlanogramStoreScanPanel({ locale, formatNumber, canCreat
               {warnings.length ? <ul>{warnings.map((row) => <li key={row}><code>{row}</code></li>)}</ul> : <p>{t("none")}</p>}
             </article>
           </div>
+          <PlanogramScanAnnotationWorkspace
+            scanBundle={bundle}
+            scanResponse={response}
+            locale={locale}
+            canCreate={canCreate}
+          />
         </div>
       ) : null}
     </section>

@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -49,8 +49,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! sdkmanager --install "platform-tools" "platforms;android-37"; then
-            echo "Android API 37 installation failed. Available API/build-tools packages:" >&2
+          if ! sdkmanager --install "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"; then
+            echo "Android API 37.0 installation failed. Available API/build-tools packages:" >&2
             sdkmanager --list | grep -E 'platforms;android-|build-tools;' | tail -n 120 >&2 || true
             exit 1
           fi

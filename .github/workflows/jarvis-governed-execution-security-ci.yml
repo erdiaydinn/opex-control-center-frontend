@@ -1,0 +1,79 @@
+name: EAY Jarvis Governed Execution Security
+
+on:
+  pull_request:
+    branches:
+      - product/jarvis-context-intelligence-v1
+    paths:
+      - "services/eay-ai-core/app/bigquery_safe_executor.py"
+      - "services/eay-ai-core/app/jarvis_jwks_export.py"
+      - "services/eay-ai-core/app/jarvis_runtime.py"
+      - "services/eay-ai-core/app/jarvis_service_identity.py"
+      - "services/eay-ai-core/app/platform_tool_authorizer.py"
+      - "services/eay-ai-core/app/tool_execution.py"
+      - "services/eay-ai-core/app/voice_governed_tool_adapter.py"
+      - "services/eay-ai-core/tests/test_governed_tool_execution_adoption.py"
+      - "services/eay-ai-core/tests/test_governed_tool_execution_authorization.py"
+      - "services/eay-ai-core/tests/test_kpi_semantics.py"
+      - "services/eay-ai-core/tests/test_public_api_surface.py"
+      - "services/eay-ai-core/tests/test_schema_contracts.py"
+      - "services/eay-ai-core/tests/test_tool_execution.py"
+      - "services/eay-ai-core/tests/test_voice_governed_tool_adapter.py"
+      - ".github/workflows/jarvis-governed-execution-security-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governed-execution:
+    name: Governed AI Core execution authority and full regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install canonical AI Core runtime and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Compile governed execution surface
+        run: python -m compileall -q app tests
+      - name: Targeted governed execution Ruff
+        run: >-
+          python -m ruff check
+          app/bigquery_safe_executor.py
+          app/jarvis_jwks_export.py
+          app/jarvis_runtime.py
+          app/jarvis_service_identity.py
+          app/platform_tool_authorizer.py
+          app/tool_execution.py
+          app/voice_governed_tool_adapter.py
+          tests/test_governed_tool_execution_adoption.py
+          tests/test_governed_tool_execution_authorization.py
+          tests/test_kpi_semantics.py
+          tests/test_public_api_surface.py
+          tests/test_schema_contracts.py
+          tests/test_tool_execution.py
+          tests/test_voice_governed_tool_adapter.py
+      - name: Governed execution adversarial contracts
+        run: >-
+          python -m pytest -q
+          tests/test_governed_tool_execution_adoption.py
+          tests/test_governed_tool_execution_authorization.py
+          tests/test_kpi_semantics.py
+          tests/test_public_api_surface.py
+          tests/test_schema_contracts.py
+          tests/test_tool_execution.py
+          tests/test_voice_governed_tool_adapter.py
+      - name: Full EAY AI Core regression
+        run: python -m pytest -q

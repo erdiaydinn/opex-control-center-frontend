@@ -5,9 +5,28 @@ on:
     branches:
       - release/platform-convergence-academy-v0.1
       - release/platform-convergence-v0.1
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/modules/academy/**"
+      - "services/core-api/alembic/versions/*academy*.py"
+      - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "docs/ACADEMY_*.md"
+      - "ops/load/k6-academy-*.js"
+      - ".github/workflows/academy-convergence-ci.yml"
   pull_request:
     branches:
       - release/platform-convergence-v0.1
+    paths:
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/modules/academy/**"
+      - "services/core-api/alembic/versions/*academy*.py"
+      - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "docs/ACADEMY_*.md"
+      - "ops/load/k6-academy-*.js"
+      - ".github/workflows/academy-convergence-ci.yml"
 
 permissions:
   contents: read
@@ -93,11 +112,11 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "0018_academy_product_roles"
+          test "${heads[0]}" = "0045_academy_content_locale_expansion"
       - name: Migrate through cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head
-      - name: Assert FORCE RLS and runtime posture
+      - name: Assert FORCE RLS runtime posture and locale storage
         run: |
           python - <<'PY'
           import asyncio
@@ -109,7 +128,7 @@ jobs:
               )
               try:
                   head = await connection.fetchval("SELECT version_num FROM alembic_version")
-                  assert head == "0018_academy_product_roles", head
+                  assert head == "0045_academy_content_locale_expansion", head
                   rows = await connection.fetch(
                       "SELECT relname,relrowsecurity,relforcerowsecurity "
                       "FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'"
@@ -120,6 +139,15 @@ jobs:
                       "SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='opex_runtime'"
                   )
                   assert role and not role["rolsuper"] and not role["rolbypassrls"]
+                  locale_columns = await connection.fetch(
+                      "SELECT table_name, character_maximum_length "
+                      "FROM information_schema.columns "
+                      "WHERE table_schema='public' "
+                      "AND table_name IN ('academy_content_versions','academy_document_chunks') "
+                      "AND column_name='locale'"
+                  )
+                  assert len(locale_columns) == 2
+                  assert all(row["character_maximum_length"] == 16 for row in locale_columns)
               finally:
                   await connection.close()
 
@@ -193,7 +221,7 @@ jobs:
           set -euo pipefail
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "0018_academy_product_roles"
+          test "${heads[0]}" = "0045_academy_content_locale_expansion"
       - name: Migrate clean database through cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head
@@ -260,20 +288,56 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
           python -m pip install -e "./services/core-api[dev]"
-      - name: Migrate, seed, dump and restore Academy evidence
+      - name: Migrate, seed, dump and restore Academy multilingual evidence
         run: |
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"
-          (cd services/core-api && alembic heads | grep -qx '0018_academy_product_roles (head)')
+          (cd services/core-api && alembic heads | grep -qx '0045_academy_content_locale_expansion (head)')
           (cd services/core-api && alembic upgrade head)
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
           SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
           INSERT INTO tenants(id,slug,display_name)
           VALUES('00000000-0000-0000-0000-00000000d001','academy-dr','Academy DR');
           INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by)
-          VALUES('00000000-0000-0000-0000-00000000d001','sop','dr-evidence','{"en":"DR evidence"}','published','ci');
+          VALUES(
+            '00000000-0000-0000-0000-00000000d001',
+            'sop',
+            'dr-evidence',
+            '{"en":"DR evidence","fa":"مدرک بازیابی"}',
+            'published',
+            'ci'
+          );
+          INSERT INTO academy_content_versions(
+            tenant_id,content_id,version_label,version_number,locale,status,created_by
+          )
+          SELECT
+            '00000000-0000-0000-0000-00000000d001',
+            id,
+            '2026.1',
+            1,
+            'fa',
+            'published',
+            'ci'
+          FROM academy_content_items
+          WHERE tenant_id='00000000-0000-0000-0000-00000000d001'
+            AND slug='dr-evidence';
+          INSERT INTO academy_document_chunks(
+            tenant_id,content_version_id,chunk_ordinal,locale,heading,text_content,source_page
+          )
+          SELECT
+            '00000000-0000-0000-0000-00000000d001',
+            id,
+            1,
+            'fa',
+            'بازیابی',
+            'این مدرک برای آزمون بازیابی چندزبانه است.',
+            1
+          FROM academy_content_versions
+          WHERE tenant_id='00000000-0000-0000-0000-00000000d001'
+            AND locale='fa';
           SQL
           pg_dump -h localhost -U opex_migrator -d opex_test --format=custom --no-owner --no-privileges -f /tmp/academy.dump
           createdb -h localhost -U opex_migrator opex_restore
           pg_restore -h localhost -U opex_migrator -d opex_restore --no-owner --no-privileges /tmp/academy.dump
-          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_content_items WHERE slug='dr-evidence';" | grep -qx 1
-          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0018_academy_product_roles
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_content_versions WHERE locale='fa';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_document_chunks WHERE locale='fa';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0045_academy_content_locale_expansion

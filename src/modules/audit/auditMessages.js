@@ -1,100 +1,48 @@
 const COPY = {
   tr: {
-    moduleTitle: "EAY Audit",
-    moduleDescription: "Görsel, video ve operasyon gerçekliğini birleştiren denetim komuta merkezi.",
-    moduleMeta: "Audit Intelligence",
-    eyebrow: "EAY Audit Intelligence",
-    title: "Denetim Komuta Merkezi",
-    subtitle: "Standartları, kanıtı, aksiyonları ve Jarvis değerlendirmesini tek bir doğrulanabilir akışta yönetin.",
-    preview: "Foundation Preview — canlı şirket verisi bağlanmadan metrikler örneklenmez.",
-    start: "Denetim Başlat",
-    standards: "Standartlar",
-    schedule: "Planlama",
-    audits: "Denetimler",
-    actions: "Aksiyonlar",
-    intelligence: "Jarvis",
-    locations: "Lokasyonlar",
-    critical: "Kritik Bulgular",
-    overdue: "Geciken Aksiyonlar",
-    repeat: "Tekrar Eden Bulgular",
-    coverage: "Kanıt Kapsamı",
-    noLiveData: "Canlı audit truth henüz bağlı değil",
-    noLiveDataBody: "Bu ekran sahte KPI üretmez. İlk gerçek denetim veya yetkili veri kaynağı geldiğinde özetler burada oluşur.",
-    connect: "Truth kaynağını bağla",
-    jarvisTitle: "Jarvis Denetim Brifingi",
-    jarvisBody: "Canlı veri geldiğinde Jarvis; tekrar eden riskleri, AI–denetçi ayrışmalarını, SLA ihlallerini ve lokasyon kümelerini burada açıklar.",
-    askJarvis: "Jarvis'e sor",
-    attention: "Dikkat Gerektirenler",
-    evidence: "Evidence & Privacy",
-    redaction: "Yüz/PII anonimleştirme zorunlu",
-    redactionBody: "Fotoğraf veya video AI hattına girmeden önce redaction receipt üretmelidir. Yüz tanıma yapılmaz.",
-    verification: "Kapanış doğrulaması",
-    verificationBody: "Tamamlandı, kapandı demek değildir. Yeni kanıt AI veya yetkili insan tarafından doğrulanmadan aksiyon kapanmaz.",
-    disagreement: "AI ↔ Denetçi Güvence Akışı",
-    disagreementBody: "AI ve denetçi farklı karar verirse olay denetçi bazında kaydedilir, yönetici incelemesine ve gerekirse Operasyon Standartları'na yükselir.",
-    videoAudit: "Video Audit",
-    videoAuditBody: "Soru göstermeden yönlendirilmiş çekim: giriş → kahve → fırın → raf → soğuk alan. Sistem yalnız yeterli kanıt bulunan kontrolleri sonuçlandırır.",
-    truthBoundary: "Truth Boundary",
-    truthBoundaryBody: "AI confidence tek başına audit truth değildir. Kaynak, zaman, lokasyon, model, kural ve insan kararı birlikte saklanır.",
-    actionView: "Intelligence View",
-    actionViewBody: "Table / Kanban / Calendar'ın ötesinde tekrar, SLA riski, closure verification ve kök-neden kümelerini gösterir.",
+    moduleTitle: "EAY Audit", moduleDescription: "Görsel, video ve operasyon gerçekliğini birleştiren denetim komuta merkezi.", moduleMeta: "Audit Intelligence", eyebrow: "EAY Audit Intelligence", title: "Denetim Komuta Merkezi", subtitle: "Standartları, kanıtı, aksiyonları ve Jarvis değerlendirmesini tek bir doğrulanabilir akışta yönetin.", preview: "Foundation Preview — canlı şirket verisi bağlanmadan metrikler örneklenmez.", start: "Denetim Başlat", standards: "Standartlar", schedule: "Planlama", audits: "Denetimler", actions: "Aksiyonlar", intelligence: "Jarvis", locations: "Lokasyonlar", critical: "Kritik Bulgular", overdue: "Geciken Aksiyonlar", repeat: "Tekrar Eden Bulgular", coverage: "Kanıt Kapsamı", noLiveData: "Canlı audit truth henüz bağlı değil", noLiveDataBody: "Bu ekran sahte KPI üretmez. İlk gerçek denetim veya yetkili veri kaynağı geldiğinde özetler burada oluşur.", connect: "Truth kaynağını bağla", jarvisTitle: "Jarvis Denetim Brifingi", jarvisBody: "Canlı veri geldiğinde Jarvis; tekrar eden riskleri, AI–denetçi ayrışmalarını, SLA ihlallerini ve lokasyon kümelerini burada açıklar.", askJarvis: "Jarvis'e sor", attention: "Dikkat Gerektirenler", evidence: "Evidence & Privacy", redaction: "Yüz/PII anonimleştirme zorunlu", redactionBody: "Fotoğraf veya video AI hattına girmeden önce redaction receipt üretmelidir. Yüz tanıma yapılmaz.", verification: "Kapanış doğrulaması", verificationBody: "Tamamlandı, kapandı demek değildir. Yeni kanıt AI veya yetkili insan tarafından doğrulanmadan aksiyon kapanmaz.", disagreement: "AI ↔ Denetçi Güvence Akışı", disagreementBody: "AI ve denetçi farklı karar verirse olay denetçi bazında kaydedilir, yönetici incelemesine ve gerekirse Operasyon Standartları'na yükselir.", videoAudit: "Video Audit", videoAuditBody: "Soru göstermeden yönlendirilmiş çekim: giriş → kahve → fırın → raf → soğuk alan. Sistem yalnız yeterli kanıt bulunan kontrolleri sonuçlandırır.", truthBoundary: "Truth Boundary", truthBoundaryBody: "AI confidence tek başına audit truth değildir. Kaynak, zaman, lokasyon, model, kural ve insan kararı birlikte saklanır.", actionView: "Intelligence View", actionViewBody: "Table / Kanban / Calendar'ın ötesinde tekrar, SLA riski, closure verification ve kök-neden kümelerini gösterir.",
   },
   en: {
-    moduleTitle: "EAY Audit",
-    moduleDescription: "Audit command center combining visual, video and operational truth.",
-    moduleMeta: "Audit Intelligence",
-    eyebrow: "EAY Audit Intelligence",
-    title: "Audit Command Center",
-    subtitle: "Manage standards, evidence, actions and Jarvis assessment in one verifiable flow.",
-    preview: "Foundation Preview — metrics stay empty until live company truth is connected.",
-    start: "Start Audit",
-    standards: "Standards",
-    schedule: "Scheduling",
-    audits: "Audits",
-    actions: "Actions",
-    intelligence: "Jarvis",
-    locations: "Locations",
-    critical: "Critical Findings",
-    overdue: "Overdue Actions",
-    repeat: "Repeat Findings",
-    coverage: "Evidence Coverage",
-    noLiveData: "Live audit truth is not connected yet",
-    noLiveDataBody: "This surface never invents KPIs. Summaries appear only after a real audit or an authorized source is connected.",
-    connect: "Connect truth source",
-    jarvisTitle: "Jarvis Audit Briefing",
-    jarvisBody: "Once live data is available, Jarvis explains recurring risks, AI–auditor disagreements, SLA breaches and location clusters here.",
-    askJarvis: "Ask Jarvis",
-    attention: "Needs Attention",
-    evidence: "Evidence & Privacy",
-    redaction: "Face/PII redaction required",
-    redactionBody: "Photo or video must produce a redaction receipt before entering the AI pipeline. Face recognition is not used.",
-    verification: "Closure verification",
-    verificationBody: "Completed is not closed. An action stays open until fresh evidence is verified by AI or an authorized reviewer.",
-    disagreement: "AI ↔ Auditor Assurance",
-    disagreementBody: "When AI and auditor disagree, the event is recorded per auditor, routed to the manager and escalated to Operations Standards when needed.",
-    videoAudit: "Video Audit",
-    videoAuditBody: "Guided capture without exposing questions: entrance → coffee → oven → shelves → cold zone. Only controls with sufficient evidence are concluded.",
-    truthBoundary: "Truth Boundary",
-    truthBoundaryBody: "AI confidence alone is not audit truth. Source, time, location, model, rule and human decision remain linked.",
-    actionView: "Intelligence View",
-    actionViewBody: "Beyond Table / Kanban / Calendar: recurrence, SLA risk, closure verification and root-cause clusters.",
+    moduleTitle: "EAY Audit", moduleDescription: "Audit command center combining visual, video and operational truth.", moduleMeta: "Audit Intelligence", eyebrow: "EAY Audit Intelligence", title: "Audit Command Center", subtitle: "Manage standards, evidence, actions and Jarvis assessment in one verifiable flow.", preview: "Foundation Preview — metrics stay empty until live company truth is connected.", start: "Start Audit", standards: "Standards", schedule: "Scheduling", audits: "Audits", actions: "Actions", intelligence: "Jarvis", locations: "Locations", critical: "Critical Findings", overdue: "Overdue Actions", repeat: "Repeat Findings", coverage: "Evidence Coverage", noLiveData: "Live audit truth is not connected yet", noLiveDataBody: "This surface never invents KPIs. Summaries appear only after a real audit or an authorized source is connected.", connect: "Connect truth source", jarvisTitle: "Jarvis Audit Briefing", jarvisBody: "Once live data is available, Jarvis explains recurring risks, AI–auditor disagreements, SLA breaches and location clusters here.", askJarvis: "Ask Jarvis", attention: "Needs Attention", evidence: "Evidence & Privacy", redaction: "Face/PII redaction required", redactionBody: "Photo or video must produce a redaction receipt before entering the AI pipeline. Face recognition is not used.", verification: "Closure verification", verificationBody: "Completed is not closed. An action stays open until fresh evidence is verified by AI or an authorized reviewer.", disagreement: "AI ↔ Auditor Assurance", disagreementBody: "When AI and auditor disagree, the event is recorded per auditor, routed to the manager and escalated to Operations Standards when needed.", videoAudit: "Video Audit", videoAuditBody: "Guided capture without exposing questions: entrance → coffee → oven → shelves → cold zone. Only controls with sufficient evidence are concluded.", truthBoundary: "Truth Boundary", truthBoundaryBody: "AI confidence alone is not audit truth. Source, time, location, model, rule and human decision remain linked.", actionView: "Intelligence View", actionViewBody: "Beyond Table / Kanban / Calendar: recurrence, SLA risk, closure verification and root-cause clusters.",
   },
-  de: {},
-  ar: {},
 };
 
-COPY.de = { ...COPY.en, moduleDescription: "Audit-Kommandozentrale für visuelle, Video- und operative Evidenz.", title: "Audit-Kommandozentrale" };
-COPY.ar = { ...COPY.en, moduleDescription: "مركز قيادة للتدقيق يجمع الأدلة المرئية والفيديو والحقيقة التشغيلية.", title: "مركز قيادة التدقيق" };
+const localizedOverrides = {
+  de: { moduleDescription: "Audit-Kommandozentrale für visuelle, Video- und operative Evidenz.", title: "Audit-Kommandozentrale", start: "Audit starten", standards: "Standards", schedule: "Planung", audits: "Audits", actions: "Maßnahmen", locations: "Standorte", critical: "Kritische Befunde", overdue: "Überfällige Maßnahmen", repeat: "Wiederholte Befunde", coverage: "Evidenzabdeckung", askJarvis: "Jarvis fragen", attention: "Handlungsbedarf", redaction: "Gesichts-/PII-Anonymisierung erforderlich", verification: "Abschlussprüfung", disagreement: "AI ↔ Auditor Assurance", videoAudit: "Video-Audit" },
+  ar: { moduleDescription: "مركز قيادة للتدقيق يجمع الأدلة المرئية والفيديو والحقيقة التشغيلية.", title: "مركز قيادة التدقيق", start: "بدء التدقيق", standards: "المعايير", schedule: "الجدولة", audits: "عمليات التدقيق", actions: "الإجراءات", locations: "المواقع", critical: "نتائج حرجة", overdue: "إجراءات متأخرة", repeat: "نتائج متكررة", coverage: "تغطية الأدلة", askJarvis: "اسأل Jarvis", attention: "يتطلب الانتباه", redaction: "إخفاء الوجه/البيانات الشخصية إلزامي", verification: "التحقق من الإغلاق", disagreement: "ضمان AI ↔ المدقق", videoAudit: "تدقيق بالفيديو" },
+  fr: { moduleDescription: "Centre de commande d'audit réunissant preuves visuelles, vidéo et vérité opérationnelle.", title: "Centre de commande d'audit", start: "Démarrer l'audit", standards: "Standards", schedule: "Planification", audits: "Audits", actions: "Actions", locations: "Sites", critical: "Constats critiques", overdue: "Actions en retard", repeat: "Constats récurrents", coverage: "Couverture des preuves", askJarvis: "Demander à Jarvis", attention: "À surveiller", redaction: "Anonymisation visage/PII obligatoire", verification: "Vérification de clôture", disagreement: "Assurance AI ↔ Auditeur", videoAudit: "Audit vidéo" },
+  es: { moduleDescription: "Centro de mando de auditoría que combina evidencia visual, vídeo y realidad operativa.", title: "Centro de mando de auditoría", start: "Iniciar auditoría", standards: "Estándares", schedule: "Planificación", audits: "Auditorías", actions: "Acciones", locations: "Ubicaciones", critical: "Hallazgos críticos", overdue: "Acciones vencidas", repeat: "Hallazgos repetidos", coverage: "Cobertura de evidencia", askJarvis: "Preguntar a Jarvis", attention: "Requiere atención", redaction: "Anonimización de rostro/PII obligatoria", verification: "Verificación de cierre", disagreement: "Garantía AI ↔ Auditor", videoAudit: "Auditoría de vídeo" },
+  it: { moduleDescription: "Centro di comando audit che unisce evidenze visive, video e verità operativa.", title: "Centro di comando audit", start: "Avvia audit", standards: "Standard", schedule: "Pianificazione", audits: "Audit", actions: "Azioni", locations: "Sedi", critical: "Rilievi critici", overdue: "Azioni scadute", repeat: "Rilievi ricorrenti", coverage: "Copertura evidenze", askJarvis: "Chiedi a Jarvis", attention: "Richiede attenzione", redaction: "Anonimizzazione volto/PII obbligatoria", verification: "Verifica chiusura", disagreement: "Garanzia AI ↔ Auditor", videoAudit: "Video audit" },
+  nl: { moduleDescription: "Audit-commandocentrum dat visueel bewijs, video en operationele waarheid combineert.", title: "Audit-commandocentrum", start: "Audit starten", standards: "Standaarden", schedule: "Planning", audits: "Audits", actions: "Acties", locations: "Locaties", critical: "Kritieke bevindingen", overdue: "Achterstallige acties", repeat: "Herhaalde bevindingen", coverage: "Bewijsdekking", askJarvis: "Vraag Jarvis", attention: "Aandacht vereist", redaction: "Gezichts-/PII-anonimisering verplicht", verification: "Sluitingsverificatie", disagreement: "AI ↔ Auditor Assurance", videoAudit: "Video-audit" },
+  pl: { moduleDescription: "Centrum dowodzenia audytem łączące dowody wizualne, wideo i prawdę operacyjną.", title: "Centrum dowodzenia audytem", start: "Rozpocznij audyt", standards: "Standardy", schedule: "Planowanie", audits: "Audyty", actions: "Działania", locations: "Lokalizacje", critical: "Krytyczne ustalenia", overdue: "Zaległe działania", repeat: "Powtarzające się ustalenia", coverage: "Pokrycie dowodowe", askJarvis: "Zapytaj Jarvis", attention: "Wymaga uwagi", redaction: "Anonimizacja twarzy/PII obowiązkowa", verification: "Weryfikacja zamknięcia", disagreement: "AI ↔ Auditor Assurance", videoAudit: "Audyt wideo" },
+  "pt-BR": { moduleDescription: "Centro de comando de auditoria que combina evidência visual, vídeo e verdade operacional.", title: "Centro de comando de auditoria", start: "Iniciar auditoria", standards: "Padrões", schedule: "Agendamento", audits: "Auditorias", actions: "Ações", locations: "Locais", critical: "Achados críticos", overdue: "Ações atrasadas", repeat: "Achados recorrentes", coverage: "Cobertura de evidências", askJarvis: "Perguntar ao Jarvis", attention: "Requer atenção", redaction: "Anonimização de rosto/PII obrigatória", verification: "Verificação de encerramento", disagreement: "Garantia AI ↔ Auditor", videoAudit: "Auditoria por vídeo" },
+};
+
+for (const [locale, overrides] of Object.entries(localizedOverrides)) COPY[locale] = { ...COPY.en, ...overrides };
+
+function normalizedLocale(locale) {
+  const raw = String(locale || "tr");
+  if (COPY[raw]) return raw;
+  const base = raw.split("-")[0].toLowerCase();
+  return COPY[base] ? base : "en";
+}
 
 export function auditCopy(locale, key) {
-  const lang = String(locale || "tr").split("-")[0].toLowerCase();
-  return COPY[lang]?.[key] || COPY.en[key] || key;
+  return COPY[normalizedLocale(locale)]?.[key] || COPY.en[key] || key;
 }
 
 export function localizeAuditModule(locale) {
-  return {
-    title: auditCopy(locale, "moduleTitle"),
-    description: auditCopy(locale, "moduleDescription"),
-    meta: auditCopy(locale, "moduleMeta"),
-  };
+  return { title: auditCopy(locale, "moduleTitle"), description: auditCopy(locale, "moduleDescription"), meta: auditCopy(locale, "moduleMeta") };
+}
+
+export function auditMessageCoverage(locales = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"]) {
+  const canonical = Object.keys(COPY.en).sort();
+  const missing = {};
+  const extra = {};
+  for (const locale of locales) {
+    const keys = Object.keys(COPY[locale] || {}).sort();
+    missing[locale] = canonical.filter((key) => !keys.includes(key));
+    extra[locale] = keys.filter((key) => !canonical.includes(key));
+  }
+  return { missing, extra };
 }

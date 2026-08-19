@@ -16,6 +16,7 @@ on:
       - "scripts/test-planogram-digital-twin.mjs"
       - "scripts/test-planogram-engineering-2d.mjs"
       - "scripts/test-planogram-route-explainability.mjs"
+      - "scripts/test-planogram-candidate-baskets.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
 
@@ -54,6 +55,8 @@ jobs:
           console.log('MASTER_27_AUTHORITY=PASS');
           console.log('MASTER_27_EXTERNAL_EVIDENCE=REQUIRED');
           NODE
+      - name: Anonymous basket Studio evidence boundary
+        run: node scripts/test-planogram-candidate-baskets.mjs
       - name: Digital twin truth and market-quality renderer contract
         run: node scripts/test-planogram-digital-twin.mjs
       - name: Engineering 2D arbitrary-angle and scale contract
@@ -93,6 +96,7 @@ jobs:
       - name: Truth boundary
         run: |
           echo 'MASTER_27_REPOSITORY_RENDERER=IMPLEMENTED'
+          echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'
           echo 'MASTER_27_ARBITRARY_ANGLE_2D_GEOMETRY=IMPLEMENTED'
           echo 'MASTER_27_ENGINEERING_DIMENSION_SCALE_LAYER=IMPLEMENTED'
           echo 'MASTER_27_FACING_AWARE_OPEN_FIXTURE_RENDERER=IMPLEMENTED'

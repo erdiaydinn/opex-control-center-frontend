@@ -5,15 +5,21 @@ It performs one global resource/idempotency safety pass, assigns reviewed worker
 then partitions the safe wave into small shards. Shards execute concurrently, while
 each shard delegates mission semantics to the canonical parallel orchestrator.
 
-This avoids creating a second tool/authorization runtime: swarm routing is capacity
-and capability routing only. It never grants truth, permission or business authority.
+Worker-bound execution resolves the actual lane runtime from the assigned worker id.
+This makes quarantine/draining meaningful: a later round can route the same durable
+lane to a different worker runtime without changing business authority. Legacy
+lane-bound execution remains available for compatibility and uses the same admitted
+wave executor.
+
+No swarm path grants truth, permission or business authority.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Mapping
+from typing import Callable, Mapping
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -99,11 +105,7 @@ class SwarmWave(BaseModel):
         assignment_ids = [item.lane_id for item in self.assignments]
         if assignment_ids != selected:
             raise ValueError("swarm_assignment_selection_mismatch")
-        shard_lane_ids = [
-            item.lane_id
-            for shard in self.shards
-            for item in shard.assignments
-        ]
+        shard_lane_ids = [item.lane_id for shard in self.shards for item in shard.assignments]
         if shard_lane_ids != selected:
             raise ValueError("swarm_shard_selection_mismatch")
         return self
@@ -127,6 +129,15 @@ class SwarmExecutionRound(BaseModel):
         if any(item.shared_execution_authority_granted for item in self.shard_rounds):
             raise ValueError("swarm_execution_shared_authority_forbidden")
         return self
+
+
+SwarmLaneBindingResolver = Callable[[ParallelMissionLane], ParallelLaneBindings]
+
+
+@dataclass(frozen=True)
+class SwarmWorkerRuntimeBinding:
+    worker_id: str
+    resolve_lane_binding: SwarmLaneBindingResolver
 
 
 def _terminal(lane: ParallelMissionLane) -> bool:
@@ -224,7 +235,6 @@ def schedule_swarm_wave(
         if _terminal(lane):
             deferred[lane.lane_id] = ("parallel_lane_terminal",)
             continue
-
         if (
             policy.overload_mode
             and profile.shedable
@@ -232,7 +242,6 @@ def schedule_swarm_wave(
         ):
             deferred[lane.lane_id] = ("swarm_overload_shed",)
             continue
-
         if len(selected) >= policy.max_active_workers:
             deferred[lane.lane_id] = ("swarm_active_worker_capacity_deferred",)
             continue
@@ -241,16 +250,12 @@ def schedule_swarm_wave(
         if conflicts:
             deferred[lane.lane_id] = conflicts
             continue
-
         if total_weight + profile.concurrency_weight > policy.max_total_concurrency_weight:
             deferred[lane.lane_id] = ("swarm_weight_capacity_deferred",)
             continue
-
         if total_cost + profile.estimated_cost_units > policy.max_round_cost_units:
             deferred[lane.lane_id] = (
-                "swarm_cost_budget_shed"
-                if profile.shedable
-                else "swarm_cost_budget_deferred",
+                "swarm_cost_budget_shed" if profile.shedable else "swarm_cost_budget_deferred",
             )
             continue
 
@@ -266,9 +271,7 @@ def schedule_swarm_wave(
             continue
 
         selected.append(lane)
-        assignments.append(
-            SwarmAssignment(lane_id=lane.lane_id, worker_id=worker.worker_id)
-        )
+        assignments.append(SwarmAssignment(lane_id=lane.lane_id, worker_id=worker.worker_id))
         assigned_counts[worker.worker_id] = assigned_counts.get(worker.worker_id, 0) + 1
         total_weight += profile.concurrency_weight
         total_cost += profile.estimated_cost_units
@@ -287,33 +290,18 @@ def schedule_swarm_wave(
     )
 
 
-async def execute_swarm_round(
+async def _execute_admitted_wave(
     *,
     plan: ParallelMissionPlan,
-    profiles: Mapping[str, ParallelLaneSchedulingProfile],
-    requirements: Mapping[str, SwarmLaneRequirement],
-    registry: SwarmWorkerRegistry,
-    policy: SwarmExecutionPolicy,
-    bindings: Mapping[str, ParallelLaneBindings],
-    now: datetime,
-    max_transitions_per_lane: int = 100,
+    wave: SwarmWave,
+    lane_bindings: Mapping[str, ParallelLaneBindings],
+    max_transitions_per_lane: int,
 ) -> SwarmExecutionRound:
-    """Execute globally admitted shards concurrently via the canonical runtime."""
-
-    wave = schedule_swarm_wave(
-        plan=plan,
-        profiles=profiles,
-        requirements=requirements,
-        registry=registry,
-        policy=policy,
-        now=now,
-    )
-    missing_bindings = set(wave.selected_lane_ids) - set(bindings)
+    missing_bindings = set(wave.selected_lane_ids) - set(lane_bindings)
     if missing_bindings:
         raise ValueError(
             "swarm_selected_lane_binding_missing:" + ",".join(sorted(missing_bindings))
         )
-
     if not wave.shards:
         return SwarmExecutionRound(wave=wave, shard_rounds=(), results=())
 
@@ -328,7 +316,7 @@ async def execute_swarm_round(
             lanes=lanes,
             max_parallel_lanes=len(lanes),
         )
-        shard_bindings = {lane_id: bindings[lane_id] for lane_id in lane_ids}
+        shard_bindings = {lane_id: lane_bindings[lane_id] for lane_id in lane_ids}
         return await execute_parallel_mission_round(
             plan=shard_plan,
             bindings=shard_bindings,
@@ -349,4 +337,79 @@ async def execute_swarm_round(
         wave=wave,
         shard_rounds=shard_rounds,
         results=ordered_results,
+    )
+
+
+async def execute_swarm_round(
+    *,
+    plan: ParallelMissionPlan,
+    profiles: Mapping[str, ParallelLaneSchedulingProfile],
+    requirements: Mapping[str, SwarmLaneRequirement],
+    registry: SwarmWorkerRegistry,
+    policy: SwarmExecutionPolicy,
+    bindings: Mapping[str, ParallelLaneBindings],
+    now: datetime,
+    max_transitions_per_lane: int = 100,
+) -> SwarmExecutionRound:
+    """Compatibility path using lane-bound runtimes after global swarm admission."""
+
+    wave = schedule_swarm_wave(
+        plan=plan,
+        profiles=profiles,
+        requirements=requirements,
+        registry=registry,
+        policy=policy,
+        now=now,
+    )
+    return await _execute_admitted_wave(
+        plan=plan,
+        wave=wave,
+        lane_bindings=bindings,
+        max_transitions_per_lane=max_transitions_per_lane,
+    )
+
+
+async def execute_worker_bound_swarm_round(
+    *,
+    plan: ParallelMissionPlan,
+    profiles: Mapping[str, ParallelLaneSchedulingProfile],
+    requirements: Mapping[str, SwarmLaneRequirement],
+    registry: SwarmWorkerRegistry,
+    policy: SwarmExecutionPolicy,
+    worker_bindings: Mapping[str, SwarmWorkerRuntimeBinding],
+    now: datetime,
+    max_transitions_per_lane: int = 100,
+) -> SwarmExecutionRound:
+    """Resolve the actual mission runtime from each globally assigned worker id."""
+
+    wave = schedule_swarm_wave(
+        plan=plan,
+        profiles=profiles,
+        requirements=requirements,
+        registry=registry,
+        policy=policy,
+        now=now,
+    )
+    assignment_map = {item.lane_id: item for item in wave.assignments}
+    lane_map = {item.lane_id: item for item in plan.lanes}
+    required_workers = {item.worker_id for item in wave.assignments}
+    missing_workers = required_workers - set(worker_bindings)
+    if missing_workers:
+        raise ValueError(
+            "swarm_worker_runtime_binding_missing:" + ",".join(sorted(missing_workers))
+        )
+
+    lane_bindings: dict[str, ParallelLaneBindings] = {}
+    for lane_id in wave.selected_lane_ids:
+        assignment = assignment_map[lane_id]
+        runtime = worker_bindings[assignment.worker_id]
+        if runtime.worker_id != assignment.worker_id:
+            raise ValueError("swarm_worker_runtime_binding_identity_mismatch")
+        lane_bindings[lane_id] = runtime.resolve_lane_binding(lane_map[lane_id])
+
+    return await _execute_admitted_wave(
+        plan=plan,
+        wave=wave,
+        lane_bindings=lane_bindings,
+        max_transitions_per_lane=max_transitions_per_lane,
     )

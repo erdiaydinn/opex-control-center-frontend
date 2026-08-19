@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 PrivacyVerificationStatus = Literal["verified", "rejected", "blocked", "tampered"]
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -19,8 +21,8 @@ class AuditPrivacyScanResult:
             raise ValueError("privacy scan counts must be non-negative")
         if not self.scanner_model_ref.strip():
             raise ValueError("scanner_model_ref must not be blank")
-        if len(self.scanner_model_fingerprint) != 64:
-            raise ValueError("scanner_model_fingerprint must be SHA-256")
+        if not _SHA256_RE.fullmatch(self.scanner_model_fingerprint):
+            raise ValueError("scanner_model_fingerprint must be lowercase SHA-256")
 
 
 class AuditPrivacyEvidenceScanner(Protocol):
@@ -34,16 +36,29 @@ class AuditServerPrivacyVerification:
     observed_sha256: str
     observed_byte_size: int
     scan: AuditPrivacyScanResult | None
-    vision_inference_authorized: bool
+    privacy_gate_passed: bool
+    vision_inference_authorized: bool = False
+
+    def __post_init__(self) -> None:
+        if not _SHA256_RE.fullmatch(self.observed_sha256):
+            raise ValueError("observed_sha256 must be lowercase SHA-256")
+        if self.observed_byte_size < 0:
+            raise ValueError("observed_byte_size must be non-negative")
+        if self.privacy_gate_passed != (self.status == "verified"):
+            raise ValueError("privacy gate may pass only for a verified server privacy result")
+        if self.vision_inference_authorized:
+            raise ValueError(
+                "privacy verification cannot grant downstream vision inference authority"
+            )
 
 
 class AuditPrivacyVerificationRuntime:
-    """Verify sanitized evidence bytes before any vision inference authority exists.
+    """Verify sanitized evidence bytes without granting model execution authority.
 
-    This runtime does not read storage and does not write verification events by itself. The
-    internal worker must supply bytes from the private evidence store and persist the resulting
-    receipt only after this function returns. Missing storage-read authority therefore cannot be
-    misrepresented as a successful verification.
+    This runtime owns exactly one question: did the server read the immutable sanitized object and
+    did an admitted privacy scanner find no privacy-sensitive regions? Even a VERIFIED result is
+    only a privacy prerequisite. A separate governed vision-inference layer must still prove
+    tenant scope, evidence-contract eligibility and model admission before any model is invoked.
     """
 
     def verify_jpeg(
@@ -54,6 +69,17 @@ class AuditPrivacyVerificationRuntime:
         expected_byte_size: int,
         scanner: AuditPrivacyEvidenceScanner,
     ) -> AuditServerPrivacyVerification:
+        if not _SHA256_RE.fullmatch(expected_sha256):
+            raise ValueError("expected_sha256 must be lowercase SHA-256")
+        if expected_byte_size <= 0:
+            return AuditServerPrivacyVerification(
+                status="blocked",
+                reason="immutable private evidence byte size is unavailable",
+                observed_sha256=hashlib.sha256(content).hexdigest(),
+                observed_byte_size=len(content),
+                scan=None,
+                privacy_gate_passed=False,
+            )
         if not content:
             return AuditServerPrivacyVerification(
                 status="blocked",
@@ -61,7 +87,7 @@ class AuditPrivacyVerificationRuntime:
                 observed_sha256=hashlib.sha256(b"").hexdigest(),
                 observed_byte_size=0,
                 scan=None,
-                vision_inference_authorized=False,
+                privacy_gate_passed=False,
             )
 
         observed_sha256 = hashlib.sha256(content).hexdigest()
@@ -73,7 +99,7 @@ class AuditPrivacyVerificationRuntime:
                 observed_sha256=observed_sha256,
                 observed_byte_size=observed_byte_size,
                 scan=None,
-                vision_inference_authorized=False,
+                privacy_gate_passed=False,
             )
 
         try:
@@ -85,7 +111,7 @@ class AuditPrivacyVerificationRuntime:
                 observed_sha256=observed_sha256,
                 observed_byte_size=observed_byte_size,
                 scan=None,
-                vision_inference_authorized=False,
+                privacy_gate_passed=False,
             )
 
         if scan.detected_face_count > 0 or scan.detected_sensitive_region_count > 0:
@@ -95,7 +121,7 @@ class AuditPrivacyVerificationRuntime:
                 observed_sha256=observed_sha256,
                 observed_byte_size=observed_byte_size,
                 scan=scan,
-                vision_inference_authorized=False,
+                privacy_gate_passed=False,
             )
 
         return AuditServerPrivacyVerification(
@@ -104,5 +130,5 @@ class AuditPrivacyVerificationRuntime:
             observed_sha256=observed_sha256,
             observed_byte_size=observed_byte_size,
             scan=scan,
-            vision_inference_authorized=True,
+            privacy_gate_passed=True,
         )

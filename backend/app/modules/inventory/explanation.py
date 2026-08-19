@@ -86,6 +86,19 @@ def explanation_context(
             (principal.tenant_id, document_id),
         ).fetchall()
 
+        lease_closure_rows = db.execute(
+            """SELECT c.state,count(*)::integer AS closure_count,
+                      min(c.closed_at) AS first_closed_at,max(c.closed_at) AS last_closed_at
+               FROM inventory_mission_lease_closures c
+               JOIN inventory_mission_leases l
+                 ON l.tenant_id=c.tenant_id AND l.lease_id=c.lease_id
+               JOIN inventory_mission_attempts a
+                 ON a.tenant_id=l.tenant_id AND a.attempt_id=l.attempt_id
+               WHERE c.tenant_id=%s AND a.document_id=%s
+               GROUP BY c.state ORDER BY c.state""",
+            (principal.tenant_id, document_id),
+        ).fetchall()
+
         revision_rows = db.execute(
             """SELECT revision,state,snapshot_hash,created_at
                FROM inventory_revisions
@@ -150,11 +163,13 @@ def explanation_context(
 
     authoritative_events = [dict(row) for row in event_rows]
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "source": "inventory_completed_attempt_truth",
         "read_only": True,
         "free_text_excluded": True,
+        "recovery_reasons_free_text_excluded": True,
         "abandoned_attempt_events_excluded_from_stock_truth": True,
+        "superseded_attempt_evidence_preserved": True,
         "tenant_id": principal.tenant_id,
         "document_id": str(document_id),
         "warehouse_id": document["warehouse_id"],
@@ -164,10 +179,11 @@ def explanation_context(
             "updated_at": document["updated_at"],
         },
         # Keep the established `events` key for downstream compatibility while
-        # making its new authority semantics explicit for new consumers.
+        # making its authority semantics explicit for new consumers.
         "events": authoritative_events,
         "authoritative_events": authoritative_events,
         "attempt_lifecycle": [dict(row) for row in attempt_rows],
+        "lease_closure_lifecycle": [dict(row) for row in lease_closure_rows],
         "revisions": [dict(row) for row in revision_rows],
         "audit_entries": [dict(row) for row in audit_rows],
         "audit_chain_scope": "tenant_global_filtered_to_document",

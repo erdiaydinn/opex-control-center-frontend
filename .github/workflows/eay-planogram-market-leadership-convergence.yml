@@ -16,6 +16,7 @@ on:
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
       - "src/platform/i18n/planogramScanAnnotationMessages.js"
+      - "src/platform/i18n/planogramScannedTwinMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
@@ -34,6 +35,7 @@ on:
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
       - "src/platform/i18n/planogramScanAnnotationMessages.js"
+      - "src/platform/i18n/planogramScannedTwinMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
@@ -182,11 +184,12 @@ jobs:
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_master26_execution.py
-      - name: Interactive engineering CFO Pareto basket Store Scan annotation Picker Eye and route convergence
+      - name: Interactive engineering CFO Pareto basket Store Scan annotation Scanned Twin Picker Eye and route convergence
         run: |
           node scripts/test-planogram-candidate-baskets.mjs
           node scripts/test-planogram-store-scan-ui.mjs
           node scripts/test-planogram-scan-annotation.mjs
+          node scripts/test-planogram-scanned-twin.mjs
           node scripts/test-planogram-picker-eye-assets.mjs
           node scripts/test-planogram-economics-ui.mjs
           node scripts/test-planogram-scenario-portfolio.mjs
@@ -230,6 +233,8 @@ jobs:
           print('PLANOGRAM_STORE_SCAN_AUTO_STORE_DNA_PROMOTION=FALSE')
           print('PLANOGRAM_STORE_SCAN_VISUAL_ANNOTATION=PASS')
           print('PLANOGRAM_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE')
+          print('PLANOGRAM_SCANNED_DIGITAL_TWIN=PASS')
+          print('PLANOGRAM_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED')
           print('PLANOGRAM_PICKER_EYE_ASSET_PREVIEW=PASS')
           print('PLANOGRAM_REMOTE_PREVIEW_ASSET_URLS=BLOCKED')
           print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')

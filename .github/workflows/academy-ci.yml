@@ -11,7 +11,9 @@ on:
       - 'services/core-api/alembic/versions/0009_academy_foundation.py'
       - 'services/core-api/alembic/versions/0010_academy_audit_idempotency.py'
       - 'services/core-api/alembic/versions/0011_academy_locale_expansion.py'
+      - 'services/core-api/alembic/versions/0012_academy_localization_policy.py'
       - 'services/core-api/tests/test_academy_*.py'
+      - 'services/core-api/tests/test_sql_access_boundary.py'
       - 'services/core-api/Dockerfile'
       - '.github/workflows/academy-ci.yml'
       - 'docs/ACADEMY_*.md'
@@ -80,7 +82,7 @@ jobs:
           async def main():
               c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
               try:
-                  assert await c.fetchval('SELECT version_num FROM alembic_version') == '0011_academy_locale_expansion'
+                  assert await c.fetchval('SELECT version_num FROM alembic_version') == '0012_academy_localization_policy'
                   rows=await c.fetch("SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'")
                   assert rows and all(r['relrowsecurity'] and r['relforcerowsecurity'] for r in rows), rows
                   role=await c.fetchrow("SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='opex_runtime'")
@@ -170,6 +172,7 @@ jobs:
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
           SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
           INSERT INTO tenants(id,slug,display_name) VALUES('00000000-0000-0000-0000-00000000d001','dr-tenant','DR Tenant');
+          INSERT INTO academy_localization_policies(tenant_id,default_locale,enabled_locales,revision,updated_by) VALUES('00000000-0000-0000-0000-00000000d001','fa',ARRAY['fa','en']::varchar(16)[],1,'ci');
           INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by) VALUES('00000000-0000-0000-0000-00000000d001','sop','dr-evidence','{"en":"DR evidence","fa":"مدرک بازیابی"}','published','ci');
           INSERT INTO academy_content_versions(tenant_id,content_id,version_label,version_number,locale,status,created_by) SELECT '00000000-0000-0000-0000-00000000d001',id,'2026.1',1,'fa','published','ci' FROM academy_content_items WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND slug='dr-evidence';
           SQL
@@ -177,4 +180,5 @@ jobs:
           createdb -h localhost -U opex_migrator opex_restore
           pg_restore -h localhost -U opex_migrator -d opex_restore --no-owner --no-privileges /tmp/academy.dump
           psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT 1 FROM academy_content_versions WHERE locale='fa';"
-          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0011_academy_locale_expansion';"
+          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT 1 FROM academy_localization_policies WHERE default_locale='fa' AND enabled_locales @> ARRAY['fa','en']::varchar(16)[];"
+          psql -h localhost -U opex_migrator -d opex_restore -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version WHERE version_num='0012_academy_localization_policy';"

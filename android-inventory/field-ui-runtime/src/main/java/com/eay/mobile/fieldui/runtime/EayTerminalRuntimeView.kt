@@ -12,17 +12,17 @@ import com.eay.mobile.fieldui.BlindCountScreen
 import com.eay.mobile.fieldui.BlindCountUiState
 import com.eay.mobile.fieldui.EayFieldTheme
 import com.eay.mobile.fieldui.EayTerminalShell
-import com.eay.mobile.fieldui.TerminalHeader
-import com.eay.mobile.fieldui.TerminalMissionCard
-import com.eay.mobile.presentation.TerminalScreenModel
+import com.eay.mobile.presentation.FieldMissionCardModel
+import com.eay.mobile.presentation.FieldRuntimeSurface
+import com.eay.mobile.presentation.FieldShellHeader
 
 /**
  * View-system boundary around the shared Compose field UI.
  *
- * The executable Inventory app sees this as a normal Android View and passes only
- * presentation models plus bounded user-intent callbacks. Authentication, tenant,
- * device, scanner, lease, offline queue and mutation authority stay in the proven
- * Inventory runtime and never become Compose-owned state.
+ * The executable Inventory app passes only canonical presentation-safe models plus
+ * bounded user-intent callbacks. Authentication, tenant, device, scanner, lease,
+ * offline queue and mutation authority stay in the proven Inventory runtime and
+ * never become Compose-owned state.
  */
 class EayTerminalRuntimeView @JvmOverloads constructor(
     context: Context,
@@ -30,7 +30,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
 ) : AbstractComposeView(context, attrs) {
     private var surface by mutableStateOf<RuntimeSurface>(RuntimeSurface.Empty)
     private var onMissionOpenCallback: (String) -> Unit = {}
-    private var onQuantityChangedCallback: (Int?) -> Unit = {}
+    private var onQuantityChangedCallback: (String) -> Unit = {}
     private var onConfirmQuantityCallback: () -> Unit = {}
 
     init {
@@ -38,16 +38,17 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
     }
 
     fun renderTerminal(
-        model: TerminalScreenModel,
+        header: FieldShellHeader,
+        missions: List<FieldMissionCardModel>,
         onMissionOpen: (String) -> Unit,
     ) {
         onMissionOpenCallback = onMissionOpen
-        surface = RuntimeSurface.Terminal(FieldUiRuntimeMapper.terminal(model))
+        surface = RuntimeSurface.Terminal(FieldUiRuntimeMapper.terminal(header, missions))
     }
 
     fun renderBlindCount(
         state: BlindCountUiState,
-        onQuantityChanged: (Int?) -> Unit,
+        onQuantityChanged: (String) -> Unit,
         onConfirmQuantity: () -> Unit,
     ) {
         onQuantityChangedCallback = onQuantityChanged
@@ -71,8 +72,8 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                 )
                 is RuntimeSurface.BlindCount -> BlindCountScreen(
                     state = current.state,
-                    onQuantityChanged = { quantity -> onQuantityChangedCallback(quantity) },
-                    onConfirmQuantity = { onConfirmQuantityCallback() },
+                    onQuantityChange = { value -> onQuantityChangedCallback(value) },
+                    onConfirm = { onConfirmQuantityCallback() },
                 )
             }
         }
@@ -80,8 +81,8 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
 }
 
 internal data class RuntimeTerminalModel(
-    val header: TerminalHeader,
-    val missions: List<TerminalMissionCard>,
+    val header: FieldShellHeader,
+    val missions: List<FieldMissionCardModel>,
 )
 
 internal sealed interface RuntimeSurface {
@@ -90,22 +91,24 @@ internal sealed interface RuntimeSurface {
     data class BlindCount(val state: BlindCountUiState) : RuntimeSurface
 }
 
+/**
+ * Compatibility guard, not a second presentation/authorization mapper.
+ *
+ * The canonical FieldPresentationAdapter already produces the safe header and mission
+ * models. This boundary only prevents an EAY One surface from being rendered by the
+ * rugged-terminal view and snapshots the presentation list for Compose rendering.
+ */
 internal object FieldUiRuntimeMapper {
-    fun terminal(model: TerminalScreenModel): RuntimeTerminalModel = RuntimeTerminalModel(
-        header = TerminalHeader(
-            locationLabel = "",
-            deviceLabel = "",
-            syncIndicator = model.syncIndicator,
-        ),
-        missions = model.missions.map { mission ->
-            TerminalMissionCard(
-                missionId = mission.missionId,
-                kind = mission.title,
-                locationLabel = mission.subtitle,
-                progressLabel = mission.progressLabel ?: mission.etaLabel,
-                statusLabel = mission.blockedReason,
-                enabled = mission.enabled,
-            )
-        },
-    )
+    fun terminal(
+        header: FieldShellHeader,
+        missions: List<FieldMissionCardModel>,
+    ): RuntimeTerminalModel {
+        require(header.runtimeSurface == FieldRuntimeSurface.EAY_TERMINAL) {
+            "EAY Terminal runtime requires an EAY_TERMINAL presentation surface"
+        }
+        return RuntimeTerminalModel(
+            header = header,
+            missions = missions.toList(),
+        )
+    }
 }

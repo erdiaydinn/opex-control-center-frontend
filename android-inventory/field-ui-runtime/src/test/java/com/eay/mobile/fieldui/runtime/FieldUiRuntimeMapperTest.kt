@@ -1,76 +1,72 @@
 package com.eay.mobile.fieldui.runtime
 
-import com.eay.mobile.presentation.FieldPresentationNetworkState
-import com.eay.mobile.presentation.MissionCardPresentationModel
-import com.eay.mobile.presentation.MobileRuntimeProfile
-import com.eay.mobile.presentation.TerminalScreenModel
+import com.eay.mobile.presentation.FieldMissionCardModel
+import com.eay.mobile.presentation.FieldMissionVisualKind
+import com.eay.mobile.presentation.FieldMissionVisualPriority
+import com.eay.mobile.presentation.FieldRuntimeSurface
+import com.eay.mobile.presentation.FieldShellHeader
+import com.eay.mobile.presentation.FieldSyncVisualState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FieldUiRuntimeMapperTest {
     @Test
-    fun `terminal mapper preserves only presentation mission data`() {
-        val mapped = FieldUiRuntimeMapper.terminal(
-            TerminalScreenModel(
-                runtimeProfile = MobileRuntimeProfile.EAY_TERMINAL,
-                offline = false,
-                queueDepth = 0,
-                syncIndicator = "Synced",
-                missions = listOf(
-                    MissionCardPresentationModel(
-                        missionId = "inventory.count:abc",
-                        missionType = "COUNT",
-                        title = "Cycle count",
-                        subtitle = "A-04",
-                        progressLabel = "1 / 4",
-                        etaLabel = "~8 min",
-                        enabled = true,
-                        blockedReason = null,
-                    ),
-                ),
-            ),
-        )
+    fun `terminal mapper preserves canonical presentation-safe models`() {
+        val header = terminalHeader()
+        val mission = mission(enabled = true)
 
-        assertEquals("Synced", mapped.header.syncIndicator)
-        assertEquals("", mapped.header.locationLabel)
-        assertEquals("", mapped.header.deviceLabel)
-        assertEquals(1, mapped.missions.size)
-        val mission = mapped.missions.single()
-        assertEquals("inventory.count:abc", mission.missionId)
-        assertEquals("Cycle count", mission.kind)
-        assertEquals("A-04", mission.locationLabel)
-        assertEquals("1 / 4", mission.progressLabel)
-        assertNull(mission.statusLabel)
-        assertTrue(mission.enabled)
+        val mapped = FieldUiRuntimeMapper.terminal(header, listOf(mission))
+
+        assertEquals(header, mapped.header)
+        assertEquals(listOf(mission), mapped.missions)
+        assertEquals(FieldRuntimeSurface.EAY_TERMINAL, mapped.header.runtimeSurface)
+        assertTrue(mapped.missions.single().enabled)
     }
 
     @Test
-    fun `blocked mission remains non executable in Compose model`() {
+    fun `blocked mission remains non executable in runtime model`() {
         val mapped = FieldUiRuntimeMapper.terminal(
-            TerminalScreenModel(
-                runtimeProfile = MobileRuntimeProfile.EAY_TERMINAL,
-                offline = true,
-                queueDepth = 2,
-                syncIndicator = FieldPresentationNetworkState.QUARANTINED.name,
-                missions = listOf(
-                    MissionCardPresentationModel(
-                        missionId = "inventory.count:blocked",
-                        missionType = "COUNT",
-                        title = "Cycle count",
-                        subtitle = "B-02",
-                        progressLabel = null,
-                        etaLabel = null,
-                        enabled = false,
-                        blockedReason = "Review required",
-                    ),
-                ),
-            ),
+            terminalHeader(syncState = FieldSyncVisualState.QUARANTINED, pendingCount = 2),
+            listOf(mission(enabled = false)),
         )
 
         assertFalse(mapped.missions.single().enabled)
-        assertEquals("Review required", mapped.missions.single().statusLabel)
+        assertEquals(FieldSyncVisualState.QUARANTINED, mapped.header.syncState)
+        assertEquals(2, mapped.header.pendingCount)
     }
+
+    @Test
+    fun `terminal runtime rejects eay one presentation surface`() {
+        val eayOneHeader = terminalHeader().copy(runtimeSurface = FieldRuntimeSurface.EAY_ONE)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            FieldUiRuntimeMapper.terminal(eayOneHeader, listOf(mission(enabled = true)))
+        }
+    }
+
+    private fun terminalHeader(
+        syncState: FieldSyncVisualState = FieldSyncVisualState.SYNCED,
+        pendingCount: Int = 0,
+    ) = FieldShellHeader(
+        locationLabel = "Fulya",
+        deviceLabel = "Zebra-001",
+        runtimeSurface = FieldRuntimeSurface.EAY_TERMINAL,
+        syncState = syncState,
+        pendingCount = pendingCount,
+    )
+
+    private fun mission(enabled: Boolean) = FieldMissionCardModel(
+        missionId = "inventory.count:abc",
+        title = "Cycle count",
+        subtitle = "A-04",
+        kind = FieldMissionVisualKind.COUNT,
+        priority = FieldMissionVisualPriority.HIGH,
+        progressCurrent = 1,
+        progressTotal = 4,
+        primaryActionLabel = "Open",
+        enabled = enabled,
+    )
 }

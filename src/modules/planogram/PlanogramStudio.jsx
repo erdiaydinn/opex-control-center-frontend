@@ -23,6 +23,7 @@ import { normalizeCandidateBundle } from "./planogramCandidateBundle.js";
 import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramEconomicsPanel from "./PlanogramEconomicsPanel.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
+import PlanogramPickerEyePreview from "./PlanogramPickerEyePreview.jsx";
 import PlanogramScenarioPortfolio from "./PlanogramScenarioPortfolio.jsx";
 import PlanogramStoreScanPanel from "./PlanogramStoreScanPanel.jsx";
 import "./planogram-native.css";
@@ -322,6 +323,9 @@ export default function PlanogramStudio() {
                 ) : null}
                 {engineResult?.planogram ? (
                   <PlanogramDigitalTwin engineResult={engineResult} candidate={candidate} locale={locale} formatNumber={formatNumber} />
+                ) : null}
+                {engineResult?.planogram ? (
+                  <PlanogramPickerEyePreview engineResult={engineResult} candidate={candidate} locale={locale} formatNumber={formatNumber} />
                 ) : null}
                 <div className="eay-planogram-preview-blockers">
                   <strong>{p("blockers")}</strong>

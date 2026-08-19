@@ -92,6 +92,33 @@ export function safePhysicalLayoutPortfolioResponse(response) {
   return response;
 }
 
+export function safePhysicalLayoutCandidateReplayResponse(response, expectedFingerprint) {
+  if (!isPlainObject(response) || !isPlainObject(response.result)) return null;
+  if (response.preview_only !== true || response.result.preview_only !== true) return null;
+  if (response.result.available !== true) return null;
+  if (!isPlainObject(response.result.physical_layout) || !isPlainObject(response.result.optimizer_result)) {
+    return null;
+  }
+  const fingerprint = String(response.result.layout_fingerprint || "").trim().toLowerCase();
+  if (!fingerprint || fingerprint !== String(expectedFingerprint || "").trim().toLowerCase()) {
+    return null;
+  }
+  const requiredFalse = [
+    response.production_release_allowed,
+    response.physical_relocation_execution_allowed,
+    response.installation_approval_allowed,
+    response.capex_approval_allowed,
+    response.result.production_authority,
+    response.result.execution_authority,
+    response.result.physical_relocation_authority,
+    response.result.installation_approved,
+    response.result.capex_approved,
+    response.result.global_optimum_claim,
+  ];
+  if (requiredFalse.some((value) => value !== false)) return null;
+  return response;
+}
+
 export function buildPlanogramScenarioPortfolio(result) {
   const optimizer = result?.physical_layout_optimizer;
   if (!isPlainObject(optimizer) || !Array.isArray(optimizer.candidates)) {

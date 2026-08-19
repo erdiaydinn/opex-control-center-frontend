@@ -21,9 +21,12 @@ from app.modules.academy.media import (
 from app.modules.academy.schemas import (
     ContentCreateRequest,
     DocumentChunkCreate,
+    InteractionSetCreateRequest,
+    PlaybackHeartbeatRequest,
     QuestionAnswerRequest,
     QuestionCreate,
     QuestionOptionCreate,
+    ScenarioCreateRequest,
 )
 
 TENANT = UUID("00000000-0000-0000-0000-00000000a001")
@@ -105,6 +108,102 @@ def test_content_rtl_is_not_arabic_only() -> None:
     for locale in ("ar", "fa-IR", "ur-PK", "ckb-IQ", "he-IL", "ps-AF"):
         assert content_direction(locale) == "rtl"
     assert content_direction("tr-TR") == "ltr"
+
+
+def test_verified_playback_heartbeat_contract_rejects_reverse_ranges() -> None:
+    with pytest.raises(ValueError, match="to_position_ms"):
+        PlaybackHeartbeatRequest(
+            sequence_no=1,
+            from_position_ms=5000,
+            to_position_ms=4000,
+            client_elapsed_ms=1000,
+        )
+
+
+def test_interaction_authoring_rejects_duplicate_node_keys() -> None:
+    with pytest.raises(ValueError, match="node_key values must be unique"):
+        InteractionSetCreateRequest(
+            content_version_id=VERSION,
+            version_number=1,
+            source_fingerprint="a" * 64,
+            nodes=[
+                {"node_key": "stop", "node_type": "checkpoint", "at_ms": 1000},
+                {"node_key": "stop", "node_type": "hotspot", "at_ms": 2000},
+            ],
+        )
+
+
+def test_scenario_authoring_requires_valid_closed_graph() -> None:
+    scenario = ScenarioCreateRequest(
+        content_version_id=VERSION,
+        scenario_key="inbound-damaged-case",
+        version_number=1,
+        title_i18n={"tr-TR": "Hasarlı ürün senaryosu", "en-US": "Damaged item scenario"},
+        entry_node_key="start",
+        source_fingerprint="b" * 64,
+        nodes=[
+            {"node_key": "start", "node_type": "decision", "prompt_i18n": {"tr": "Ne yaparsın?"}},
+            {
+                "node_key": "done",
+                "node_type": "outcome",
+                "terminal": True,
+                "terminal_outcome": "completed",
+            },
+            {
+                "node_key": "retry",
+                "node_type": "outcome",
+                "terminal": True,
+                "terminal_outcome": "remediation",
+            },
+        ],
+        edges=[
+            {
+                "from_node_key": "start",
+                "choice_key": "reject",
+                "to_node_key": "done",
+                "label_i18n": {"tr": "Hasarlı olarak ayır"},
+                "score_delta": 100,
+                "correct": True,
+            },
+            {
+                "from_node_key": "start",
+                "choice_key": "accept",
+                "to_node_key": "retry",
+                "label_i18n": {"tr": "Stoğa al"},
+                "correct": False,
+            },
+        ],
+        status="published",
+    )
+    assert scenario.title_i18n["tr"] == "Hasarlı ürün senaryosu"
+    assert scenario.title_i18n["en"] == "Damaged item scenario"
+
+    with pytest.raises(ValueError, match="reference declared nodes"):
+        ScenarioCreateRequest(
+            content_version_id=VERSION,
+            scenario_key="invalid-edge",
+            version_number=1,
+            title_i18n={"en": "Invalid"},
+            entry_node_key="start",
+            source_fingerprint="c" * 64,
+            nodes=[
+                {"node_key": "start", "node_type": "decision"},
+                {
+                    "node_key": "done",
+                    "node_type": "outcome",
+                    "terminal": True,
+                    "terminal_outcome": "completed",
+                },
+            ],
+            edges=[
+                {
+                    "from_node_key": "start",
+                    "choice_key": "bad",
+                    "to_node_key": "missing",
+                    "label_i18n": {"en": "Bad"},
+                }
+            ],
+        )
 
 
 def test_single_choice_requires_exactly_one_correct_option() -> None:

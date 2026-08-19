@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 import blind_benchmark as blind
+import blind_benchmark_v2 as blind_v2
 import physical_optimizer_v4 as v4
 
 
@@ -392,17 +393,43 @@ def test_real_candidate_evaluation_rewards_nearer_fast_sku_under_same_truth() ->
     assert near["objective"]["tour_average_m"] < far["objective"]["tour_average_m"]
 
 
-def test_blind_benchmark_refuses_architecture_v2_until_picker_tour_support_exists() -> None:
-    result = blind.benchmark_candidates(
-        products=[benchmark_product("FAST"), benchmark_product("SLOW")],
-        layout=benchmark_layout(),
-        store_dna=benchmark_store_dna(schema_version=2),
-        orders=[{"skus": ["FAST"]}],
+def test_oriented_v2_blind_benchmark_preserves_real_angles_and_route_ranking() -> None:
+    layout = benchmark_layout()
+    layout["aisles"][0]["modules"][0]["rotation_deg"] = 17.0
+    layout["aisles"][0]["modules"][1]["rotation_deg"] = 343.0
+    store_dna = benchmark_store_dna(schema_version=2)
+    store_dna["architecture"]["elements"].append(
+        {
+            "element_id": "WALL-17",
+            "element_type": "wall",
+            "x_m": 4.0,
+            "y_m": 4.0,
+            "width_m": 1.5,
+            "depth_m": 0.1,
+            "rotation_deg": 17.0,
+        }
+    )
+    result = blind_v2.benchmark_candidates_v2(
+        products=[
+            benchmark_product("FAST", sales=100),
+            benchmark_product("SLOW", sales=1),
+        ],
+        layout=layout,
+        store_dna=store_dna,
+        orders=[{"skus": ["FAST"]}, {"skus": ["FAST", "SLOW"]}],
         candidate_a=benchmark_candidate(1),
         candidate_b=benchmark_candidate(2),
     )
 
-    assert result["available"] is False
-    assert result["reason"] == "architecture_v2_picker_benchmark_pending"
-    assert result["market_leadership_proven"] is False
+    assert result["available"] is True
+    assert result["spatial_contract"] == "store-architecture-v2-oriented-polygons"
+    assert result["non_orthogonal_element_count"] == 1
+    assert result["non_orthogonal_module_count"] == 2
+    assert result["winner_on_repository_objective"] == "A"
+    assert result["candidate_a"]["tour"]["coverage_pct"] == 100.0
+    assert result["candidate_a"]["tour_evidence"]["simulation_version"] == (
+        "picker-tour-simulation-v2-oriented-polygons"
+    )
+    assert result["production_authority"] is False
     assert result["production_evidence"] is False
+    assert result["market_leadership_proven"] is False

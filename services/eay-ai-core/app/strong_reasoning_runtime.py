@@ -264,7 +264,7 @@ class StrongReasoningRuntime:
                     allowed_claim_keys=set(claim_keys),
                     allowed_evidence_refs=set(allowed_evidence_refs),
                     paid_usage_receipt_ref=(
-                        f"paid-usage://{governed.paid_usage.receipt_id}"
+                        governed.paid_usage.usage_ref
                         if governed.paid_usage is not None
                         else None
                     ),
@@ -406,22 +406,25 @@ def _parse_one_receipt(
         return None
 
     output_fingerprint = hashlib.sha256(receipt.output_text.encode("utf-8")).hexdigest()
-    proposal = EngineProposal(
-        proposal_id=f"proposal://{receipt.task_id}/{receipt.engine_id}/{output_fingerprint[:16]}",
-        engine_id=receipt.engine_id,
-        provider_key=provider_key,
-        answer_ref=f"engine-answer://{output_fingerprint}",
-        claims=tuple(
-            EngineClaim(
-                claim_key=item.claim_key,
-                statement=item.statement,
-                confidence=item.confidence,
-                evidence_refs=item.evidence_refs,
-            )
-            for item in payload.claims
-        ),
-        proposed_action_refs=payload.proposed_action_refs,
-    )
+    try:
+        proposal = EngineProposal(
+            proposal_id=f"proposal://{receipt.task_id}/{receipt.engine_id}/{output_fingerprint[:16]}",
+            engine_id=receipt.engine_id,
+            provider_key=provider_key,
+            answer_ref=f"engine-answer://{output_fingerprint}",
+            claims=tuple(
+                EngineClaim(
+                    claim_key=item.claim_key,
+                    statement=item.statement,
+                    confidence=item.confidence,
+                    evidence_refs=item.evidence_refs,
+                )
+                for item in payload.claims
+            ),
+            proposed_action_refs=payload.proposed_action_refs,
+        )
+    except ValidationError:
+        return None
     critiques = tuple(
         EngineCritique(
             critique_id=f"critique://{receipt.engine_id}/{index}/{output_fingerprint[:16]}",

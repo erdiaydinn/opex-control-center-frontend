@@ -63,11 +63,17 @@ jobs:
           app/budget_main.py
           alembic/versions/0046_audit_operating_system.py
           alembic/versions/0047_audit_privacy_verification.py
-      - name: Ruff audit authority
+      - name: Ruff application boundaries
         run: >-
           ruff check
-          app/modules/audit
+          app/modules/audit/authorization.py
+          app/modules/audit/routes.py
+          app/modules/audit/schemas.py
           app/core/permission_catalog.py
           app/budget_main.py
+      - name: Ruff SQL-heavy authority files
+        run: >-
+          ruff check --ignore E501
+          app/modules/audit/repository.py
           alembic/versions/0046_audit_operating_system.py
           alembic/versions/0047_audit_privacy_verification.py

@@ -23,6 +23,7 @@ on:
       - "services/eay-ai-core/tests/test_voice_governed_tool_adapter.py"
       - "src/modules/planogram/PlanogramStudio.jsx"
       - "config/eay_frozen_authority_coverage_matrix_v1.json"
+      - "config/eay_frozen_authority_coverage_extension_v2.json"
       - "scripts/validate_frozen_authority_coverage.py"
       - ".github/workflows/jarvis-platform-security-consolidation-ci.yml"
       - "docs/security/JARVIS_PLATFORM_SECURITY_CONSOLIDATION_V1.md"
@@ -220,6 +221,12 @@ jobs:
           tests/test_tool_execution.py
           tests/test_voice_governed_tool_adapter.py
           tests/test_governed_tool_execution_adoption.py
+      - name: Revalidate frozen AI Core authority on current head
+        shell: bash
+        run: |
+          tests="$(python ../../scripts/validate_frozen_authority_coverage.py --print-ai-tests)"
+          test -n "$tests"
+          pytest -q $tests
       - name: Governed execution adversarial acceptance
         run: >-
           pytest -q
@@ -231,7 +238,7 @@ jobs:
         run: pytest -q
 
   frozen-authority-coverage:
-    name: Frozen #15/#16 authority coverage
+    name: "Frozen #15/#16 authority coverage"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

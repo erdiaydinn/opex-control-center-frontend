@@ -31,7 +31,13 @@ def principal() -> Principal:
 
 
 def request() -> PlanogramPhysicalCandidateEconomicsPreviewRequest:
-    range_row = {"low": 1, "base": 1, "high": 1, "source_ref": "src://evidence", "attested": True}
+    range_row = {
+        "low": 1,
+        "base": 1,
+        "high": 1,
+        "source_ref": "src://evidence",
+        "attested": True,
+    }
     return PlanogramPhysicalCandidateEconomicsPreviewRequest(
         products=[{"sku": "SKU-1"}],
         layout={"aisles": []},
@@ -44,7 +50,15 @@ def request() -> PlanogramPhysicalCandidateEconomicsPreviewRequest:
             "operating_days_per_year": range_row,
             "effective_seconds_per_meter": range_row,
             "loaded_labor_cost_per_hour": range_row,
-            "capex_items": [{"label": "move", "amount": 1, "currency": "EUR", "source_ref": "quote://move", "attested": True}],
+            "capex_items": [
+                {
+                    "label": "move",
+                    "amount": 1,
+                    "currency": "EUR",
+                    "source_ref": "quote://move",
+                    "attested": True,
+                }
+            ],
         },
     )
 
@@ -116,7 +130,9 @@ async def test_router_passes_fingerprint_and_sourced_assumptions_only(monkeypatc
     assert captured["layout_fingerprint"] == FINGERPRINT
     assert captured["orders"] == [{"skus": ["SKU-1"]}]
     assert "route_saving_m" not in captured
-    assert response["candidate_selection_authority"] == "server_recomputed_fingerprint_match_only"
+    assert response["candidate_selection_authority"] == (
+        "server_recomputed_fingerprint_match_only"
+    )
     assert response["finance_approval_allowed"] is False
     assert response["realized_savings_proven"] is False
 
@@ -137,6 +153,11 @@ def test_adapter_rejects_candidate_finance_authority_leak(monkeypatch) -> None:
     )
     with pytest.raises(PlanogramEngineUnavailable, match="finance-approval boundary"):
         economics_adapter.generate_physical_layout_candidate_economics_preview(
-            products=[], layout={}, store_dna={}, orders=[], mode="HYBRID",
-            layout_fingerprint=FINGERPRINT, assumptions={},
+            products=[],
+            layout={},
+            store_dna={},
+            orders=[],
+            mode="HYBRID",
+            layout_fingerprint=FINGERPRINT,
+            assumptions={},
         )

@@ -213,7 +213,10 @@ for (const [needle, label] of [
   ["mesh.rotation.y = (-element.rotationDeg", "arbitrary-angle architecture rotation in 3D"],
   ["group.rotation.y = (-module.rotationDeg", "arbitrary-angle fixture rotation in 3D"],
   ["data-coordinate-authority", "coordinate truth rendering"],
-  ["footprintWidthM", "backend-equivalent rotated footprint rendering"],
+  ["rotatedRectSvgPoints", "true arbitrary-angle polygon projection in 2D"],
+  ["data-rotation-deg", "rotation evidence on 2D geometry"],
+  ["eay-twin-engineering-dimensions", "engineering floor dimensions"],
+  ["eay-twin-scale-bar", "engineering scale bar"],
   ["eay-twin-egress-clearance", "emergency-exit clearance rendering"],
   ["aria-selected", "accessible 2D/3D tabs"],
   ["tabIndex = 0", "keyboard-focusable 3D canvas"],
@@ -222,6 +225,12 @@ for (const [needle, label] of [
   if (!renderer.includes(needle)) fail(`Digital twin renderer missing ${label}: ${needle}`);
 }
 
+if (renderer.includes("const width = element.footprintWidthM * scale")) {
+  fail("2D architecture must not regress to arbitrary-angle AABB rendering.");
+}
+if (renderer.includes("const width = Math.max(module.footprintWidthM * scale, 10)")) {
+  fail("2D fixtures must not regress to arbitrary-angle AABB rendering.");
+}
 if (renderer.includes("const perRow = Math.max(1, Math.ceil(Math.sqrt(products.length)))")) {
   fail("3D product rendering must not regress to square-root debug-grid placement.");
 }
@@ -236,6 +245,8 @@ if (studio.includes("production_release_allowed ?") || renderer.includes("produc
 }
 for (const rule of [
   "eay-twin-egress-clearance",
+  "eay-twin-engineering-dimensions",
+  "eay-twin-scale-bar",
   "@media (prefers-reduced-motion: reduce)",
   "@media (forced-colors: active)",
   ":focus-visible",

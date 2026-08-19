@@ -23,6 +23,8 @@ from .privacy_verification_runtime import (
 )
 from .privacy_verification_service import (
     SERVER_PRIVACY_AUTHORITY_VERSION,
+)
+from .privacy_verification_service import (
     _fingerprint as privacy_verification_fingerprint,
 )
 from .repository import AuditConflictError, AuditRepositoryError
@@ -293,9 +295,7 @@ async def authorize_vision_inference(
             if existing_row["consumed_at"] is not None:
                 return VisionAuthorizationDecision("blocked", "vision_authorization_already_consumed")
             validity = await connection.execute(
-                text(
-                    """SELECT :expires_at > CURRENT_TIMESTAMP AS valid"""
-                ),
+                text("SELECT :expires_at > CURRENT_TIMESTAMP AS valid"),
                 {"expires_at": existing_row["expires_at"]},
             )
             if not bool(validity.scalar_one()):

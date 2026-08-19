@@ -38,6 +38,14 @@ ActionStatus = Literal[
     "rejected",
     "closed",
 ]
+AssuranceManagerDisposition = Literal["AI_CONFIRMED", "AUDITOR_CONFIRMED"]
+AssuranceStandardsDisposition = Literal[
+    "AI_CONFIRMED",
+    "AUDITOR_CONFIRMED",
+    "STANDARD_CHANGED",
+    "MODEL_REVIEW_REQUIRED",
+    "NO_CHANGE",
+]
 
 
 class AuditProgramCreate(StrictModel):
@@ -163,11 +171,17 @@ class AuditAssuranceReviewCreate(StrictModel):
         "OPERATIONS_STANDARDS_REVIEW",
         "RESOLVED",
     ]
-    disposition: Literal[
-        "AI_CONFIRMED",
-        "AUDITOR_CONFIRMED",
-        "STANDARD_CHANGED",
-        "MODEL_REVIEW_REQUIRED",
-        "NO_CHANGE",
-    ]
+    disposition: AssuranceStandardsDisposition
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class AuditManagerAssuranceDecision(StrictModel):
+    expected_version: int = Field(gt=0)
+    disposition: AssuranceManagerDisposition
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class AuditStandardsAssuranceDecision(StrictModel):
+    expected_version: int = Field(gt=0)
+    disposition: AssuranceStandardsDisposition
     reason: str = Field(min_length=1, max_length=4000)

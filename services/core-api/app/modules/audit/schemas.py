@@ -87,6 +87,8 @@ class AuditRunStart(StrictModel):
     program_version: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)
     field_mission_id: UUID | None = None
+    # Compatibility only: caller identity is never accepted as manager authority.
+    manager_subject: None = None
     source_mode: Literal[
         "checklist",
         "photo",

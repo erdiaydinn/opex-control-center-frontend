@@ -99,14 +99,19 @@ jobs:
           tests/test_audit_evidence_object_contracts.py
           app/core/permission_catalog.py
           app/budget_main.py
-      - name: Ruff SQL-heavy authority files
-        run: >-
-          ruff check --ignore E501
-          app/modules/audit/repository.py
-          app/modules/audit/accountability.py
-          app/modules/audit/assurance.py
-          app/modules/audit/intelligence.py
-          alembic/versions/0046_audit_operating_system.py
-          alembic/versions/0047_audit_privacy_verification.py
-          alembic/versions/0048_audit_assurance_routing.py
-          alembic/versions/0049_audit_location_accountability.py
+      - name: Ruff Audit repository authority
+        run: ruff check --ignore E501 app/modules/audit/repository.py
+      - name: Ruff Audit accountability authority
+        run: ruff check --ignore E501 app/modules/audit/accountability.py
+      - name: Ruff Audit assurance authority
+        run: ruff check --ignore E501 app/modules/audit/assurance.py
+      - name: Ruff Audit intelligence authority
+        run: ruff check --ignore E501 app/modules/audit/intelligence.py
+      - name: Ruff migration 0046
+        run: ruff check --ignore E501 alembic/versions/0046_audit_operating_system.py
+      - name: Ruff migration 0047
+        run: ruff check --ignore E501 alembic/versions/0047_audit_privacy_verification.py
+      - name: Ruff migration 0048
+        run: ruff check --ignore E501 alembic/versions/0048_audit_assurance_routing.py
+      - name: Ruff migration 0049
+        run: ruff check --ignore E501 alembic/versions/0049_audit_location_accountability.py

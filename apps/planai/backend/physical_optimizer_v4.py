@@ -71,13 +71,8 @@ def search_profiles() -> tuple[tuple[str, dict[str, float] | None], ...]:
             if key in seen:
                 continue
             seen.add(key)
-            profiles.append(
-                (
-                    f"search::pick-{picking_factor:.2f}::availability-"
-                    f"{availability_factor:.2f}",
-                    normalized,
-                )
-            )
+            profile_name = f"search::pick-{picking_factor:.2f}::availability-{availability_factor:.2f}"
+            profiles.append((profile_name, normalized))
 
     # Explicitly probe safer ergonomic/replenishment corners as well as speed.
     for name, changes in (
@@ -259,7 +254,7 @@ def optimize_production_plan(
         }
         return result
 
-    Candidate = tuple[
+    candidate_type = tuple[
         int,
         str,
         dict[str, Any],
@@ -267,7 +262,7 @@ def optimize_production_plan(
         dict[str, Any],
         dict[str, Any],
     ]
-    candidates: list[Candidate] = [
+    candidates: list[candidate_type] = [
         (
             0,
             "baseline",

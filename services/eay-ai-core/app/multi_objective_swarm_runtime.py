@@ -313,18 +313,19 @@ async def execute_multi_objective_lane_round(
         original_lane = original_lane_map.get(_lane_key(lease.objective_ref, lease.lane_id))
         if objective_round is None or original_lane is None:
             raise ValueError("multi_objective_runtime_lease_execution_binding_missing")
+        checkpoint_release_time = max(
+            (
+                item.summary.checkpoint.checkpointed_at
+                for item in objective_round.results
+                if item.lane_id == lease.lane_id and item.summary is not None
+            ),
+            default=now,
+        )
         resolved = _lease_release_from_result(
             lease=lease,
             original_lane=original_lane,
             result_round=objective_round,
-            released_at=max(
-                (
-                    item.summary.checkpoint.checkpointed_at
-                    for item in objective_round.results
-                    if item.lane_id == lease.lane_id and item.summary is not None
-                ),
-                default=now,
-            ),
+            released_at=max(now, checkpoint_release_time),
         )
         if resolved is None:
             held.append(lease)

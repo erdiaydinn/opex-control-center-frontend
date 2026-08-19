@@ -367,7 +367,12 @@ def upgrade() -> None:
                 ON DELETE CASCADE,
             CONSTRAINT ck_academy_scenario_event_sequence CHECK (sequence_no > 0),
             CONSTRAINT ck_academy_scenario_event_type
-                CHECK (event_type IN ('started', 'decision', 'task', 'completed', 'failed', 'remediation')),
+                CHECK (
+                    event_type IN (
+                        'started', 'decision', 'task', 'completed',
+                        'failed', 'remediation'
+                    )
+                ),
             CONSTRAINT uq_academy_scenario_event_sequence
                 UNIQUE (tenant_id, run_id, sequence_no),
             CONSTRAINT uq_academy_scenario_event_tenant_id UNIQUE (tenant_id, id)
@@ -407,16 +412,20 @@ def upgrade() -> None:
         f"GRANT SELECT, INSERT ON academy_playback_receipts TO {RUNTIME_ROLE}"
     )
     op.execute(
-        f"GRANT SELECT, INSERT, UPDATE ON academy_interaction_sets, academy_interaction_nodes TO {RUNTIME_ROLE}"
+        "GRANT SELECT, INSERT, UPDATE ON academy_interaction_sets, "
+        f"academy_interaction_nodes TO {RUNTIME_ROLE}"
     )
     op.execute(
-        f"GRANT SELECT, INSERT, UPDATE ON academy_scenarios, academy_scenario_nodes, academy_scenario_edges, academy_scenario_runs TO {RUNTIME_ROLE}"
+        "GRANT SELECT, INSERT, UPDATE ON academy_scenarios, academy_scenario_nodes, "
+        "academy_scenario_edges, academy_scenario_runs "
+        f"TO {RUNTIME_ROLE}"
     )
     op.execute(
         f"GRANT SELECT, INSERT ON academy_scenario_run_events TO {RUNTIME_ROLE}"
     )
     op.execute(
-        f"REVOKE UPDATE, DELETE ON academy_playback_receipts, academy_scenario_run_events FROM {RUNTIME_ROLE}"
+        "REVOKE UPDATE, DELETE ON academy_playback_receipts, "
+        f"academy_scenario_run_events FROM {RUNTIME_ROLE}"
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from secrets import token_hex
 from typing import Any
 from uuid import UUID
@@ -56,7 +56,7 @@ async def start_verified_playback(
     except AcademyMediaUnavailable as exc:
         raise media_unavailable_http(exc) from exc
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     playback = await create_playback_session(
         session,
         principal,
@@ -125,7 +125,7 @@ async def record_verified_heartbeat(
     if state is None:
         raise HTTPException(status_code=404, detail="Verified playback session not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if state["status"] != "active" or state["expires_at"] <= now:
         raise HTTPException(status_code=409, detail="Verified playback session is not active")
 
@@ -198,9 +198,12 @@ async def record_verified_heartbeat(
 
     # Rewatching already-verified material is allowed but never double-counted.
     new_verified_until = verified_until
-    if payload.visibility != "hidden" and payload.to_position_ms > verified_until:
-        if payload.from_position_ms <= verified_until + seek_tolerance:
-            new_verified_until = payload.to_position_ms
+    if (
+        payload.visibility != "hidden"
+        and payload.to_position_ms > verified_until
+        and payload.from_position_ms <= verified_until + seek_tolerance
+    ):
+        new_verified_until = payload.to_position_ms
     if duration_ms:
         new_verified_until = min(duration_ms, new_verified_until)
     accepted_advance = max(0, new_verified_until - verified_until)

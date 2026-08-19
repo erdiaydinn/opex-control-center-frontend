@@ -40,9 +40,10 @@ data class FieldShellHeader(
 }
 
 /**
- * Presentation-only recovery explanation. It intentionally cannot represent a
- * retry/delete/rebind/reassign mutation. Only bounded local UI intents that must
- * re-enter existing authority paths are representable.
+ * Presentation-only recovery explanation for durable evidence.
+ *
+ * It intentionally cannot represent retry/delete/rebind/reassign mutations. Only
+ * bounded local UI intents that must re-enter existing authority paths are representable.
  */
 data class FieldRecoveryBannerModel(
     val severity: FieldRecoveryVisualSeverity,
@@ -58,6 +59,34 @@ data class FieldRecoveryBannerModel(
         require(affectedEventCount > 0)
         require((actionKind == FieldRecoveryActionKind.NONE) == actionLabel.isNullOrBlank()) {
             "Recovery action kind and label must either both be absent or both be present"
+        }
+    }
+}
+
+/**
+ * Presentation-only recovery for session/read-only mission discovery failures.
+ *
+ * This is deliberately a different type from durable-evidence recovery: it carries
+ * no event count or evidence identity and can only request a fresh sign-in or a
+ * read-only mission reload. It cannot retry, mutate, delete or rebind queued events.
+ */
+data class FieldSessionRecoveryBannerModel(
+    val severity: FieldRecoveryVisualSeverity,
+    val title: String,
+    val message: String,
+    val actionKind: FieldRecoveryActionKind = FieldRecoveryActionKind.NONE,
+    val actionLabel: String? = null,
+) {
+    init {
+        require(title.isNotBlank())
+        require(message.isNotBlank())
+        require(actionKind in setOf(
+            FieldRecoveryActionKind.NONE,
+            FieldRecoveryActionKind.SIGN_IN_AGAIN,
+            FieldRecoveryActionKind.RELOAD_MISSIONS,
+        ))
+        require((actionKind == FieldRecoveryActionKind.NONE) == actionLabel.isNullOrBlank()) {
+            "Session recovery action kind and label must either both be absent or both be present"
         }
     }
 }

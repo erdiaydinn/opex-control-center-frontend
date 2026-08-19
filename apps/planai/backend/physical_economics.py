@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -63,7 +64,7 @@ def _range_assumption(
     high = _number(row.get("high"), float("nan"))
 
     values = (low, base, high)
-    if any(value != value for value in values):
+    if any(math.isnan(value) for value in values):
         blockers.append(f"{name}_range_missing")
     else:
         threshold_ok = all(
@@ -119,7 +120,8 @@ def _route_delta(result: dict[str, Any]) -> tuple[dict[str, float] | None, list[
     baseline_p95 = _number(baseline.get("tour_p95_m"), float("nan"))
     selected_p95 = _number(selected.get("tour_p95_m"), float("nan"))
     coverage = _number(selected.get("tour_coverage_pct"), 0.0)
-    if any(value != value for value in (baseline_avg, selected_avg, baseline_p95, selected_p95)):
+    route_metrics = (baseline_avg, selected_avg, baseline_p95, selected_p95)
+    if any(math.isnan(value) for value in route_metrics):
         return None, ["route_metrics_missing"]
     if coverage < 100.0:
         return None, ["selected_route_coverage_incomplete"]
@@ -154,7 +156,7 @@ def _capex(
         source_ref = _text(row.get("source_ref"))
         attested = row.get("attested") is True
         label = _text(row.get("label")) or f"item-{index + 1}"
-        if amount != amount or amount < 0:
+        if math.isnan(amount) or amount < 0:
             blockers.append(f"capex_amount_invalid:index:{index}")
             continue
         if row_currency != currency:

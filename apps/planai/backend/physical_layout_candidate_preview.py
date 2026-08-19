@@ -73,6 +73,16 @@ def preview_physical_layout_candidate(
     )
     meta = search.get("physical_layout_optimizer") or {}
     candidates = meta.get("candidates") or []
+    baseline_summary = next(
+        (
+            row
+            for row in candidates
+            if isinstance(row, dict)
+            and str(row.get("label") or "") == "baseline"
+            and row.get("production_authority") is False
+        ),
+        None,
+    )
     summary = next(
         (
             row
@@ -145,6 +155,7 @@ def preview_physical_layout_candidate(
         "available": True,
         "preview_only": True,
         "layout_fingerprint": fingerprint,
+        "baseline_candidate_summary": deepcopy(baseline_summary),
         "candidate_summary": deepcopy(summary),
         "physical_layout": candidate_layout,
         "optimizer_result": candidate_result,

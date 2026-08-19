@@ -13,7 +13,6 @@ import java.io.Closeable
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
-import kotlin.math.min
 
 class AuditPrivacyInitializationException(message: String, cause: Throwable? = null) :
     IllegalStateException(message, cause)
@@ -30,13 +29,25 @@ data class AuditFaceRegion(
     fun isValid(): Boolean = left >= 0 && top >= 0 && width > 0 && height > 0
 }
 
+data class AuditFrameCoverageResult(
+    val frameSequence: Long,
+    val timestampMs: Long,
+    val processed: Boolean,
+)
+
 data class AuditFrameRedactionResult(
     val frameSequence: Long,
     val timestampMs: Long,
     val redactedBitmap: Bitmap,
     val detectedFaceCount: Int,
     val processed: Boolean,
-)
+) {
+    fun coverage(): AuditFrameCoverageResult = AuditFrameCoverageResult(
+        frameSequence = frameSequence,
+        timestampMs = timestampMs,
+        processed = processed,
+    )
+}
 
 /**
  * Synchronous face detector used for canonical evidence processing.
@@ -180,7 +191,9 @@ class AuditRedactionCoverageLedger(
         require(expectedFrameCount > 0L) { "expectedFrameCount must be positive" }
     }
 
-    fun record(result: AuditFrameRedactionResult) {
+    fun record(result: AuditFrameRedactionResult) = record(result.coverage())
+
+    fun record(result: AuditFrameCoverageResult) {
         if (!result.processed) {
             block("frame_${result.frameSequence}_was_not_processed")
             return

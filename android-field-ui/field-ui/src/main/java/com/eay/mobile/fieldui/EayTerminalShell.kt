@@ -37,6 +37,7 @@ fun EayTerminalShell(
     onMissionOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
     recovery: FieldRecoveryBannerModel? = null,
+    sessionRecovery: FieldSessionRecoveryBannerModel? = null,
     onRecoveryAction: (FieldRecoveryActionKind) -> Unit = {},
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
@@ -62,6 +63,14 @@ fun EayTerminalShell(
                     }
                 }
             }
+            sessionRecovery?.let { recoveryModel ->
+                item {
+                    SessionRecoveryBanner(
+                        model = recoveryModel,
+                        onAction = onRecoveryAction,
+                    )
+                }
+            }
             recovery?.let { recoveryModel ->
                 item {
                     RecoveryBanner(
@@ -70,11 +79,13 @@ fun EayTerminalShell(
                     )
                 }
             }
-            item {
-                Text(
-                    text = stringResource(R.string.field_next_missions),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
+            if (missions.isNotEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.field_next_missions),
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                }
             }
             items(missions, key = { it.missionId }) { mission ->
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -117,7 +128,41 @@ private fun RecoveryBanner(
     model: FieldRecoveryBannerModel,
     onAction: (FieldRecoveryActionKind) -> Unit,
 ) {
-    val container = when (model.severity) {
+    RecoveryCard(
+        severity = model.severity,
+        title = model.title,
+        message = model.message,
+        actionKind = model.actionKind,
+        actionLabel = model.actionLabel,
+        onAction = onAction,
+    )
+}
+
+@Composable
+private fun SessionRecoveryBanner(
+    model: FieldSessionRecoveryBannerModel,
+    onAction: (FieldRecoveryActionKind) -> Unit,
+) {
+    RecoveryCard(
+        severity = model.severity,
+        title = model.title,
+        message = model.message,
+        actionKind = model.actionKind,
+        actionLabel = model.actionLabel,
+        onAction = onAction,
+    )
+}
+
+@Composable
+private fun RecoveryCard(
+    severity: FieldRecoveryVisualSeverity,
+    title: String,
+    message: String,
+    actionKind: FieldRecoveryActionKind,
+    actionLabel: String?,
+    onAction: (FieldRecoveryActionKind) -> Unit,
+) {
+    val container = when (severity) {
         FieldRecoveryVisualSeverity.INFO,
         FieldRecoveryVisualSeverity.ATTENTION,
         -> MaterialTheme.colorScheme.surfaceVariant
@@ -134,11 +179,11 @@ private fun RecoveryBanner(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(model.title, style = MaterialTheme.typography.titleLarge)
-            Text(model.message, style = MaterialTheme.typography.bodyLarge)
-            model.actionLabel?.let { label ->
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(message, style = MaterialTheme.typography.bodyLarge)
+            actionLabel?.let { label ->
                 Button(
-                    onClick = { onAction(model.actionKind) },
+                    onClick = { onAction(actionKind) },
                     modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
                 ) {
                     Text(label)

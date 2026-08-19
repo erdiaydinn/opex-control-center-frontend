@@ -61,6 +61,7 @@ def test_explanation_context_excludes_prompt_injection_and_sensitive_raw_fields(
 
 
 def test_explanation_context_has_deterministic_integrity_fingerprint() -> None:
+    source = EXPLANATION.read_text(encoding="utf-8")
     rendered = ast.unparse(_function(EXPLANATION, "_fingerprint"))
     assert "sort_keys=True" in rendered
     assert "sha256" in rendered
@@ -69,7 +70,7 @@ def test_explanation_context_has_deterministic_integrity_fingerprint() -> None:
     assert "inventory_completed_attempt_truth" in explanation
     assert "attempt_lifecycle" in explanation
     assert "lease_closure_lifecycle" in explanation
-    assert 'schema_version\': 3' in explanation or 'schema_version": 3' in EXPLANATION.read_text(encoding="utf-8")
+    assert '"schema_version": 3' in source
 
 
 def test_production_route_requires_supervisor_authority_and_never_accepts_client_scope() -> None:

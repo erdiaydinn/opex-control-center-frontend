@@ -38,7 +38,13 @@ def _number(value: Any) -> float | None:
 def _nearest_orthogonal(value: float) -> tuple[int, float]:
     normalized = value % 360.0
     candidates = (0.0, 90.0, 180.0, 270.0)
-    selected = min(candidates, key=lambda candidate: min(abs(normalized - candidate), 360.0 - abs(normalized - candidate)))
+    selected = min(
+        candidates,
+        key=lambda candidate: min(
+            abs(normalized - candidate),
+            360.0 - abs(normalized - candidate),
+        ),
+    )
     distance = min(abs(normalized - selected), 360.0 - abs(normalized - selected))
     return int(selected), distance
 

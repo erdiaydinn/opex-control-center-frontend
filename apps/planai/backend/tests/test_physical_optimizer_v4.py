@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import blind_benchmark as blind
 import physical_optimizer_v4 as v4
 
 
@@ -32,6 +33,183 @@ def tour(p95: float = 40.0) -> dict:
         "p90_m": max(0.0, p95 - 1),
         "p95_m": p95,
         "max_m": p95 + 2,
+    }
+
+
+def benchmark_product(sku: str, *, width_cm: float = 8.0, sales: float = 10.0) -> dict:
+    return {
+        "sku": sku,
+        "product_name": sku,
+        "brand": "Benchmark",
+        "category_l1": "Snacks",
+        "category_l2": "Snacks",
+        "catalog_storage_condition_raw": "RAF",
+        "storage_type": "RAF",
+        "width_cm": width_cm,
+        "height_cm": 18.0,
+        "depth_cm": 6.0,
+        "weight_kg": 0.2,
+        "sales_qty_7d": sales,
+        "dimension_source": "master",
+        "image_url": f"https://example.test/{sku}.jpg",
+        "catalog_global_product_id": f"CAT-{sku}",
+    }
+
+
+def benchmark_layout() -> dict:
+    return {
+        "aisles": [
+            {
+                "aisle_id": "A",
+                "modules": [
+                    {
+                        "module_id": 1,
+                        "x_m": 2.0,
+                        "y_m": 1.0,
+                        "width_m": 1.0,
+                        "depth_m": 0.5,
+                        "side": "L",
+                        "module_type": "regular_shelf",
+                        "storage_type": "AMBIENT",
+                        "shelves": [
+                            {
+                                "shelf_no": 1,
+                                "shelf_width_cm": 100,
+                                "shelf_height_cm": 35,
+                                "shelf_depth_cm": 50,
+                                "max_weight_kg": 45,
+                                "zone_type": "eye",
+                                "allowed_storage_type": "AMBIENT",
+                            }
+                        ],
+                    },
+                    {
+                        "module_id": 2,
+                        "x_m": 7.0,
+                        "y_m": 1.0,
+                        "width_m": 1.0,
+                        "depth_m": 0.5,
+                        "side": "R",
+                        "module_type": "regular_shelf",
+                        "storage_type": "AMBIENT",
+                        "shelves": [
+                            {
+                                "shelf_no": 1,
+                                "shelf_width_cm": 100,
+                                "shelf_height_cm": 35,
+                                "shelf_depth_cm": 50,
+                                "max_weight_kg": 45,
+                                "zone_type": "eye",
+                                "allowed_storage_type": "AMBIENT",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ]
+    }
+
+
+def benchmark_store_dna(*, schema_version: int = 1) -> dict:
+    coordinate_system = "cartesian_m" if schema_version == 1 else "cartesian_m_centered_rect"
+    return {
+        "source": "user_approved_store_dna",
+        "store_code": "TEST",
+        "picker_aisle_width_m": 1.2,
+        "aisle_module_config": [
+            {
+                "aisle_id": "A",
+                "left_modules": [
+                    {
+                        "module_id": 1,
+                        "side": "L",
+                        "fixture_type": "steel_rack",
+                        "shelf_count": 1,
+                    }
+                ],
+                "right_modules": [
+                    {
+                        "module_id": 2,
+                        "side": "R",
+                        "fixture_type": "steel_rack",
+                        "shelf_count": 1,
+                    }
+                ],
+            }
+        ],
+        "architecture": {
+            "schema_version": schema_version,
+            "coordinate_system": coordinate_system,
+            "source": "manual_survey",
+            "source_ref": f"survey://BENCHMARK/v{schema_version}",
+            "floor_width_m": 10.0,
+            "floor_depth_m": 6.0,
+            "elements": [
+                {
+                    "element_id": "ENTRY",
+                    "element_type": "picker_entry",
+                    "x_m": 0.25,
+                    "y_m": 0.25,
+                    "width_m": 0.5,
+                    "depth_m": 0.5,
+                    "rotation_deg": 0,
+                },
+                {
+                    "element_id": "EXIT",
+                    "element_type": "picker_exit",
+                    "x_m": 9.0,
+                    "y_m": 0.25,
+                    "width_m": 0.5,
+                    "depth_m": 0.5,
+                    "rotation_deg": 0,
+                },
+            ],
+        },
+    }
+
+
+def benchmark_candidate(module_for_fast_sku: int) -> dict:
+    other_module = 2 if module_for_fast_sku == 1 else 1
+    return {
+        "planogram": {
+            "aisles": [
+                {
+                    "aisle_id": "A",
+                    "modules": [
+                        {
+                            "module_id": module_for_fast_sku,
+                            "side": "L" if module_for_fast_sku == 1 else "R",
+                            "module_type": "regular_shelf",
+                            "storage_type": "AMBIENT",
+                            "shelves": [
+                                {
+                                    "shelf_no": 1,
+                                    "shelf_width_cm": 100,
+                                    "zone_type": "eye",
+                                    "allowed_storage_type": "AMBIENT",
+                                    "products": [{"sku": "FAST", "facing_count": 1}],
+                                }
+                            ],
+                        },
+                        {
+                            "module_id": other_module,
+                            "side": "R" if other_module == 2 else "L",
+                            "module_type": "regular_shelf",
+                            "storage_type": "AMBIENT",
+                            "shelves": [
+                                {
+                                    "shelf_no": 1,
+                                    "shelf_width_cm": 100,
+                                    "zone_type": "eye",
+                                    "allowed_storage_type": "AMBIENT",
+                                    "products": [{"sku": "SLOW", "facing_count": 1}],
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ]
+        }
     }
 
 
@@ -150,3 +328,79 @@ def test_hard_violation_always_beats_shorter_tour(monkeypatch) -> None:
 def test_candidate_budget_is_bounded() -> None:
     assert v4.MAX_SEARCH_CANDIDATES == 32
     assert len(v4.search_profiles()) <= v4.MAX_SEARCH_CANDIDATES
+
+
+def test_blind_candidate_cannot_override_master_dimensions_and_capacity_truth() -> None:
+    prepared = blind.prepare_production_products(
+        [benchmark_product("FAST", width_cm=60), benchmark_product("SLOW", width_cm=50)]
+    )
+    candidate = benchmark_candidate(1)
+    products = candidate["planogram"]["aisles"][0]["modules"][0]["shelves"][0]["products"]
+    products[0]["width_cm"] = 1
+    products[0]["facing_count"] = 2
+    second = candidate["planogram"]["aisles"][0]["modules"][1]["shelves"][0]["products"]
+    second.append({"sku": "FAST"})
+    second.append({"sku": "UNKNOWN"})
+
+    hydrated = blind._hydrate_candidate(
+        candidate=candidate,
+        prepared_products=prepared,
+        layout=benchmark_layout(),
+    )
+
+    assert hydrated["available"] is True
+    assert "candidate_shelf_capacity_overflow" in hydrated["blockers"]
+    assert any(blocker.startswith("candidate_duplicate_sku_placement:FAST") for blocker in hydrated["blockers"])
+    assert any(blocker.startswith("candidate_unknown_sku:UNKNOWN") for blocker in hydrated["blockers"])
+    fast = hydrated["result"]["planogram"]["aisles"][0]["modules"][0]["shelves"][0]["products"][0]
+    assert fast["width_cm"] == 60
+    assert fast["facing_count"] == 2
+
+
+def test_real_candidate_evaluation_rewards_nearer_fast_sku_under_same_truth() -> None:
+    prepared = blind.prepare_production_products(
+        [benchmark_product("FAST", sales=100), benchmark_product("SLOW", sales=1)]
+    )
+    orders = [
+        {"skus": ["FAST"]},
+        {"skus": ["FAST"]},
+        {"skus": ["FAST", "SLOW"]},
+    ]
+    near = blind._candidate_evaluation(
+        candidate=benchmark_candidate(1),
+        prepared_products=prepared,
+        layout=benchmark_layout(),
+        store_dna=benchmark_store_dna(),
+        orders=orders,
+    )
+    far = blind._candidate_evaluation(
+        candidate=benchmark_candidate(2),
+        prepared_products=prepared,
+        layout=benchmark_layout(),
+        store_dna=benchmark_store_dna(),
+        orders=orders,
+    )
+
+    assert near["available"] is True
+    assert far["available"] is True
+    assert near["objective"]["hard_violation_count"] == 0
+    assert far["objective"]["hard_violation_count"] == 0
+    assert near["tour"]["coverage_pct"] == 100.0
+    assert far["tour"]["coverage_pct"] == 100.0
+    assert near["objective"]["tour_average_m"] < far["objective"]["tour_average_m"]
+
+
+def test_blind_benchmark_refuses_architecture_v2_until_picker_tour_support_exists() -> None:
+    result = blind.benchmark_candidates(
+        products=[benchmark_product("FAST"), benchmark_product("SLOW")],
+        layout=benchmark_layout(),
+        store_dna=benchmark_store_dna(schema_version=2),
+        orders=[{"skus": ["FAST"]}],
+        candidate_a=benchmark_candidate(1),
+        candidate_b=benchmark_candidate(2),
+    )
+
+    assert result["available"] is False
+    assert result["reason"] == "architecture_v2_picker_benchmark_pending"
+    assert result["market_leadership_proven"] is False
+    assert result["production_evidence"] is False

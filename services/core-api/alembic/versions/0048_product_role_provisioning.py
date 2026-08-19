@@ -171,8 +171,8 @@ def upgrade() -> None:
         AS $body$
         DECLARE
             role_record record;
-            role_id uuid;
-            permission_key varchar;
+            provisioned_role_id uuid;
+            provisioned_permission_key varchar;
         BEGIN
             FOR role_record IN
                 SELECT *
@@ -185,21 +185,24 @@ def upgrade() -> None:
                 ON CONFLICT (tenant_id, key)
                 DO UPDATE SET name=EXCLUDED.name
                 WHERE roles.is_system IS TRUE
-                RETURNING id INTO role_id;
+                RETURNING id INTO provisioned_role_id;
 
-                IF role_id IS NULL THEN
+                IF provisioned_role_id IS NULL THEN
                     RAISE EXCEPTION
                         'Canonical product role collision for tenant % role %',
                         NEW.id,
                         role_record.role_key;
                 END IF;
 
-                FOREACH permission_key IN ARRAY role_record.permissions
+                FOREACH provisioned_permission_key IN ARRAY role_record.permissions
                 LOOP
                     INSERT INTO role_permissions (
                         tenant_id, role_id, permission_key, scope
                     ) VALUES (
-                        NEW.id, role_id, permission_key, '{{}}'::jsonb
+                        NEW.id,
+                        provisioned_role_id,
+                        provisioned_permission_key,
+                        '{{}}'::jsonb
                     )
                     ON CONFLICT (tenant_id, role_id, permission_key)
                     DO UPDATE SET scope='{{}}'::jsonb;

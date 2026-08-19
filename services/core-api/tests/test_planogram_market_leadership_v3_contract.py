@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
+import app.modules.planogram.cad_adapter as cad_adapter
 import app.modules.planogram.engine_adapter as engine_adapter
 import app.modules.planogram.optimizer_router as optimizer_router
 from app.core.security import Principal
@@ -76,6 +77,86 @@ def objective(*, p95: float, average: float) -> dict[str, float | int]:
 
 def objective_key(row: dict[str, float | int]) -> tuple[float, ...]:
     return tuple(float(row[name]) for name in OBJECTIVE_ORDER)
+
+
+def v2_cad_inputs() -> tuple[dict, dict, dict]:
+    layout = {
+        "store_code": "TEST",
+        "aisles": [
+            {
+                "aisle_id": "A",
+                "modules": [
+                    {
+                        "module_id": "1",
+                        "x_m": 2.0,
+                        "y_m": 2.0,
+                        "width_m": 1.0,
+                        "depth_m": 0.5,
+                        "rotation_deg": 17.0,
+                    }
+                ],
+            }
+        ],
+    }
+    store_dna = {
+        "store_code": "TEST",
+        "architecture": {
+            "schema_version": 2,
+            "coordinate_system": "cartesian_m_centered_rect",
+            "source": "manual_survey",
+            "source_ref": "survey://TEST/v2",
+            "floor_width_m": 10.0,
+            "floor_depth_m": 8.0,
+            "elements": [
+                {
+                    "element_id": "ENTRY",
+                    "element_type": "picker_entry",
+                    "x_m": 0.2,
+                    "y_m": 0.2,
+                    "width_m": 0.5,
+                    "depth_m": 0.5,
+                    "rotation_deg": 0.0,
+                },
+                {
+                    "element_id": "WALL-17",
+                    "element_type": "wall",
+                    "x_m": 6.0,
+                    "y_m": 5.0,
+                    "width_m": 2.0,
+                    "depth_m": 0.1,
+                    "rotation_deg": 17.0,
+                },
+            ],
+        },
+    }
+    optimizer_result = {
+        "planogram": {
+            "aisles": [
+                {
+                    "aisle_id": "A",
+                    "modules": [
+                        {
+                            "module_id": "1",
+                            "shelves": [
+                                {
+                                    "shelf_no": 1,
+                                    "products": [{"sku": "SKU-1"}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
+        "architecture_route_objective_v2": {
+            "contract": "architecture-polygon-astar-v2",
+            "preview_only": True,
+            "available": True,
+            "distance_m": 4.5,
+            "path_m": [[0.45, 0.45], [1.0, 1.0], [2.5, 2.25]],
+        },
+    }
+    return optimizer_result, layout, store_dna
 
 
 def test_order_basket_contract_normalizes_skus_and_excludes_order_identity() -> None:
@@ -217,3 +298,75 @@ async def test_v4_benchmark_router_preserves_truth_boundary(monkeypatch) -> None
     assert response["production_release_allowed"] is False
     assert response["experimental_optimizer_production_authority"] is False
     assert response["benchmark"]["promotion_allowed"] is False
+
+
+def test_measured_v2_cad_adapter_emits_svg_and_dxf_without_field_authority() -> None:
+    optimizer_result, layout, store_dna = v2_cad_inputs()
+    cad_adapter._load_cad_exporter.cache_clear()
+    cad_adapter._load_dxf_exporter.cache_clear()
+
+    drawing = cad_adapter.generate_cad_preview_document(
+        optimizer_result=optimizer_result,
+        layout=layout,
+        store_dna=store_dna,
+        include_dxf=True,
+    )
+
+    assert drawing["available"] is True
+    assert drawing["preview_only"] is True
+    assert drawing["production_authority"] is False
+    assert drawing["production_evidence"] is False
+    assert drawing["installation_approved"] is False
+    assert drawing["spatial_contract"] == "store-architecture-v2-oriented-polygons"
+    assert drawing["architecture_element_count"] == 2
+    assert drawing["fixture_count"] == 1
+    assert drawing["route_count"] == 1
+    assert "EAY_ARCH_WALL" in drawing["layers"]
+    assert "EAY_FIXTURE" in drawing["layers"]
+    assert 'id="EAY_DIMENSION"' in drawing["svg"]
+    assert 'data-id="WALL-17"' in drawing["svg"]
+    assert drawing["dxf_included"] is True
+    assert drawing["dxf_contract"] == "planogram-measured-dxf-preview-v1"
+    assert "SECTION" in drawing["dxf"]
+    assert "EAY_FIXTURE" in drawing["dxf"]
+    assert "EAY_ARCH_WALL" in drawing["dxf"]
+
+
+@pytest.mark.asyncio
+async def test_cad_router_never_grants_installation_or_release_authority(monkeypatch) -> None:
+    optimized, _, _ = v2_cad_inputs()
+    captured = {}
+
+    def fake_optimizer(**kwargs):
+        return {
+            **optimized,
+            "picker_tour_optimizer": {
+                "optimizer_version": "physical-plan-optimizer-v3-picker-tour",
+                "selected_strategy": "test",
+            },
+        }
+
+    def fake_cad(**kwargs):
+        captured.update(kwargs)
+        return {
+            "contract": "planogram-measured-cad-preview-v1",
+            "available": True,
+            "preview_only": True,
+            "production_authority": False,
+            "installation_approved": False,
+            "svg": "<svg/>",
+            "dxf": None,
+        }
+
+    monkeypatch.setattr(optimizer_router, "generate_optimized_preview", fake_optimizer)
+    monkeypatch.setattr(optimizer_router, "generate_cad_preview_document", fake_cad)
+    response = await optimizer_router.post_planogram_cad_preview(
+        base_request(order_baskets=[{"skus": ["SKU-1"]}]),
+        principal(),
+        False,
+    )
+
+    assert captured["include_dxf"] is False
+    assert response["production_release_allowed"] is False
+    assert response["installation_approval_allowed"] is False
+    assert response["drawing"]["production_authority"] is False

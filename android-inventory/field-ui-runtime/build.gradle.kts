@@ -36,8 +36,10 @@ dependencies {
     // Production Inventory remains on AGP 8.7.x. Keep this compatibility build on the
     // Compose 1.8.x line so Android Lint and the Kotlin analysis API stay binary-compatible.
     // The standalone android-field-ui build remains the forward/latest compatibility gate.
-    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
-    implementation("androidx.compose.ui:ui")
+    // Compose UI is part of this module's public ABI because EayTerminalRuntimeView publicly
+    // extends AbstractComposeView; consumers must see that supertype on their compile classpath.
+    api(platform("androidx.compose:compose-bom:2025.06.01"))
+    api("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")

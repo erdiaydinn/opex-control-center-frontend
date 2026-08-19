@@ -41,8 +41,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: yes | sdkmanager --licenses >/dev/null || true
+
       - name: Install Android API 37
-        run: sdkmanager "platforms;android-37" "build-tools;37.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! sdkmanager --install "platform-tools" "platforms;android-37"; then
+            echo "Android API 37 installation failed. Available API/build-tools packages:" >&2
+            sdkmanager --list | grep -E 'platforms;android-|build-tools;' | tail -n 120 >&2 || true
+            exit 1
+          fi
 
       - name: Set up reviewed Gradle
         uses: gradle/actions/setup-gradle@v4

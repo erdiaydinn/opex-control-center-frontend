@@ -1,0 +1,182 @@
+.eay-planogram-economics {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+
+.eay-planogram-economics > header,
+.eay-planogram-economics > header > div,
+.eay-planogram-economics-controls,
+.eay-planogram-economics-boundary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eay-planogram-economics > header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.eay-planogram-economics > header h3,
+.eay-planogram-economics > header p {
+  margin: 0;
+}
+
+.eay-planogram-economics > header p {
+  margin-top: 4px;
+  max-width: 760px;
+  opacity: 0.75;
+}
+
+.eay-planogram-economics > header > span {
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.eay-planogram-economics-controls {
+  flex-wrap: wrap;
+}
+
+.eay-planogram-economics-controls label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.eay-planogram-economics-controls label input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.eay-planogram-economics-controls > div {
+  min-width: 220px;
+  flex: 1;
+  font-size: 0.88rem;
+  opacity: 0.78;
+}
+
+.eay-planogram-economics-controls button {
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+
+.eay-planogram-economics-note,
+.eay-planogram-economics-error {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.eay-planogram-economics-error {
+  font-weight: 700;
+}
+
+.eay-planogram-economics-result {
+  display: grid;
+  gap: 16px;
+}
+
+.eay-planogram-economics-boundary {
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.eay-planogram-economics-boundary > div {
+  display: grid;
+  gap: 3px;
+}
+
+.eay-planogram-economics-boundary span {
+  font-size: 0.83rem;
+  opacity: 0.78;
+}
+
+.eay-planogram-economics-table-wrap {
+  overflow-x: auto;
+}
+
+.eay-planogram-economics table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.eay-planogram-economics th,
+.eay-planogram-economics td {
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  text-align: end;
+  white-space: nowrap;
+}
+
+.eay-planogram-economics th:first-child,
+.eay-planogram-economics td:first-child {
+  text-align: start;
+}
+
+.eay-planogram-economics-provenance {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: 14px;
+}
+
+.eay-planogram-economics-provenance > div,
+.eay-planogram-economics-blockers {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 14px;
+}
+
+.eay-planogram-economics-provenance dl {
+  display: grid;
+  grid-template-columns: minmax(140px, auto) minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.eay-planogram-economics-provenance dt,
+.eay-planogram-economics-provenance dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.eay-planogram-economics-provenance code,
+.eay-planogram-economics-blockers code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (max-width: 780px) {
+  .eay-planogram-economics > header,
+  .eay-planogram-economics-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .eay-planogram-economics > header > span {
+    white-space: normal;
+  }
+
+  .eay-planogram-economics-provenance {
+    grid-template-columns: 1fr;
+  }
+}

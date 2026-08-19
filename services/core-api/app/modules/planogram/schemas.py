@@ -6,6 +6,27 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 
+class PlanogramOrderBasket(BaseModel):
+    """Anonymized observed/test basket used only for preview optimization.
+
+    Raw customer/order identity is intentionally excluded from this API shape.
+    Repeated SKU values are allowed because they can represent item quantity.
+    """
+
+    skus: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("skus")
+    @classmethod
+    def validate_skus(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw in value:
+            sku = str(raw).strip().upper()
+            if not sku or len(sku) > 160:
+                raise ValueError("Basket SKU must be between 1 and 160 characters")
+            normalized.append(sku)
+        return normalized
+
+
 class PlanogramPreviewRequest(BaseModel):
     """Unattested candidate input for deterministic preview only."""
 
@@ -13,6 +34,7 @@ class PlanogramPreviewRequest(BaseModel):
     layout: dict[str, Any]
     store_dna: dict[str, Any]
     mode: Literal["HYBRID", "CATEGORY", "ABC", "BRAND"] = "HYBRID"
+    order_baskets: list[PlanogramOrderBasket] = Field(default_factory=list, max_length=5000)
 
 
 class FixtureInventorySeed(BaseModel):

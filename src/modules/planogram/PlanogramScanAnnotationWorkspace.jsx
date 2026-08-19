@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Crosshair, ShieldCheck, Trash2 } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
@@ -13,6 +13,7 @@ import "./planogram-scan-annotation.css";
 
 const SVG_WIDTH = 920;
 const SVG_HEIGHT = 520;
+const KEYBOARD_STEP_M = 0.25;
 
 function projectionFor(architecture) {
   const padding = 38;
@@ -40,6 +41,13 @@ function pointFromClick(event, projection, architecture) {
   return [xM, yM];
 }
 
+function clampPoint(point, architecture) {
+  return [
+    Math.max(0, Math.min(point[0], architecture.floor_width_m)),
+    Math.max(0, Math.min(point[1], architecture.floor_depth_m)),
+  ];
+}
+
 export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanResponse, locale, canCreate }) {
   const t = useMemo(() => (key) => translatePlanogramScanAnnotation(locale, key), [locale]);
   const scan = scanResponse?.store_scan || null;
@@ -48,12 +56,14 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
     () => (architecture?.elements || []).filter((row) => row.element_type === "opening"),
     [architecture]
   );
+  const sequenceRef = useRef(0);
   const [classifications, setClassifications] = useState({});
   const [tool, setTool] = useState("picker_entry");
   const [widthM, setWidthM] = useState(annotationToolDefaults("picker_entry").widthM);
   const [depthM, setDepthM] = useState(annotationToolDefaults("picker_entry").depthM);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [annotations, setAnnotations] = useState([]);
+  const [keyboardPoint, setKeyboardPoint] = useState(null);
   const [reviewNote, setReviewNote] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -71,17 +81,17 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
     setDepthM(defaults.depthM);
   }, []);
 
-  const placeAnnotation = useCallback((event) => {
-    if (!architecture || !projection || !canCreate) return;
-    const point = pointFromClick(event, projection, architecture);
-    if (!point) return;
+  const addAtPoint = useCallback((point) => {
+    if (!architecture || !canCreate || !point) return;
+    const bounded = clampPoint(point, architecture);
     const boundedWidth = Math.max(0.05, Math.min(Number(widthM) || 0.05, architecture.floor_width_m));
     const boundedDepth = Math.max(0.05, Math.min(Number(depthM) || 0.05, architecture.floor_depth_m));
+    sequenceRef.current += 1;
     const next = {
-      element_id: `human-${tool}-${Date.now()}-${annotations.length + 1}`,
+      element_id: `human-${tool}-${sequenceRef.current}`,
       element_type: tool,
-      center_x_m: Number(point[0].toFixed(3)),
-      center_y_m: Number(point[1].toFixed(3)),
+      center_x_m: Number(bounded[0].toFixed(3)),
+      center_y_m: Number(bounded[1].toFixed(3)),
       width_m: Number(boundedWidth.toFixed(3)),
       depth_m: Number(boundedDepth.toFixed(3)),
       rotation_deg: Number(rotationDeg) || 0,
@@ -95,7 +105,32 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
         : current;
       return [...withoutUnique, next];
     });
-  }, [annotations.length, architecture, canCreate, depthM, projection, rotationDeg, tool, widthM]);
+  }, [architecture, canCreate, depthM, rotationDeg, tool, widthM]);
+
+  const placeAnnotation = useCallback((event) => {
+    if (!architecture || !projection || !canCreate) return;
+    const point = pointFromClick(event, projection, architecture);
+    if (!point) return;
+    setKeyboardPoint(point);
+    addAtPoint(point);
+  }, [addAtPoint, architecture, canCreate, projection]);
+
+  const handleMapKeyDown = useCallback((event) => {
+    if (!architecture || !canCreate) return;
+    const current = keyboardPoint || [architecture.floor_width_m / 2, architecture.floor_depth_m / 2];
+    let next = current;
+    if (event.key === "ArrowLeft") next = [current[0] - KEYBOARD_STEP_M, current[1]];
+    else if (event.key === "ArrowRight") next = [current[0] + KEYBOARD_STEP_M, current[1]];
+    else if (event.key === "ArrowUp") next = [current[0], current[1] + KEYBOARD_STEP_M];
+    else if (event.key === "ArrowDown") next = [current[0], current[1] - KEYBOARD_STEP_M];
+    else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      addAtPoint(current);
+      return;
+    } else return;
+    event.preventDefault();
+    setKeyboardPoint(clampPoint(next, architecture));
+  }, [addAtPoint, architecture, canCreate, keyboardPoint]);
 
   const runReview = useCallback(async () => {
     if (!scanBundle || !scan?.scan_fingerprint || running || !canCreate) return;
@@ -130,6 +165,12 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
 
   if (!scanBundle || !scan || !architecture || !projection) return null;
   const reviewedResult = reviewed?.result || null;
+  const keyboardCircle = keyboardPoint
+    ? {
+        cx: projection.offsetX + keyboardPoint[0] * projection.scale,
+        cy: projection.offsetY + (architecture.floor_depth_m - keyboardPoint[1]) * projection.scale,
+      }
+    : null;
 
   return (
     <section className="eay-scan-annotation">
@@ -170,9 +211,11 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
       <svg
         className="eay-scan-annotation-map"
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-        role="application"
-        aria-label={t("title")}
+        role="button"
+        tabIndex={0}
+        aria-label={t("placeHint")}
         onClick={placeAnnotation}
+        onKeyDown={handleMapKeyDown}
       >
         <rect
           x={projection.offsetX}
@@ -209,6 +252,7 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
             <title>{t(element.element_type)}</title>
           </polygon>
         ))}
+        {keyboardCircle ? <circle cx={keyboardCircle.cx} cy={keyboardCircle.cy} r="7" className="eay-scan-annotation-cursor" /> : null}
       </svg>
 
       <div className="eay-scan-annotation-list">

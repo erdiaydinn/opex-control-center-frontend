@@ -447,8 +447,15 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 val claimedTask = claim.task
                 if (!claim.accepted || claimedTask == null) {
-                    setTaskSelectionEnabled(true)
-                    status.text = getString(R.string.terminal_task_fetch_failed, claim.code.name)
+                    val recovery = InventoryMissionExecutionRecoveryPresentation.claimBanner(
+                        this,
+                        claim.code,
+                    )
+                    if (recovery != null) {
+                        recoverCurrentMission(recovery, claim.code.name)
+                    } else {
+                        blockCurrentMission()
+                    }
                     return@runOnUiThread
                 }
                 val controller = runCatching {
@@ -581,6 +588,12 @@ class MainActivity : AppCompatActivity() {
                             status.text = getString(R.string.terminal_persist_retry)
                             renderBlindCountQuantity()
                         }
+                        BlindCountControllerCode.DENY_LEASE_EXPIRED -> {
+                            recoverCurrentMission(
+                                InventoryMissionExecutionRecoveryPresentation.leaseExpiredBanner(this),
+                                "LEASE_EXPIRED",
+                            )
+                        }
                         else -> blockCurrentMission()
                     }
                 }.onFailure {
@@ -656,6 +669,12 @@ class MainActivity : AppCompatActivity() {
                             finishLocation.isEnabled = true
                             status.text = getString(R.string.terminal_completion_retry)
                         }
+                        BlindCountControllerCode.DENY_LEASE_EXPIRED -> {
+                            recoverCurrentMission(
+                                InventoryMissionExecutionRecoveryPresentation.leaseExpiredBanner(this),
+                                "LEASE_EXPIRED",
+                            )
+                        }
                         else -> blockCurrentMission()
                     }
                 }.onFailure {
@@ -663,6 +682,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun recoverCurrentMission(
+        recovery: FieldSessionRecoveryBannerModel,
+        statusCode: String,
+    ) {
+        activeTask = null
+        activeController = null
+        taskSelectionEnabled = false
+        quantityDraft = ""
+        sessionRecoveryBanner = recovery
+        hideExecutionControls()
+        renderTasks(loadedTasks)
+        status.text = getString(R.string.terminal_task_fetch_failed, statusCode)
     }
 
     private fun blockCurrentMission() {

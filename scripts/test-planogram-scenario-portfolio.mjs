@@ -5,6 +5,7 @@ import { SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
 import { PLANOGRAM_SCENARIO_MESSAGES } from "../src/platform/i18n/planogramScenarioMessages.js";
 import {
   buildPlanogramScenarioPortfolio,
+  safePhysicalLayoutCandidateReplayResponse,
   safePhysicalLayoutPortfolioResponse,
 } from "../src/modules/planogram/planogramScenarioPortfolio.js";
 
@@ -115,19 +116,68 @@ for (const mutate of [
   }
 }
 
+const replayFingerprint = "a".repeat(64);
+const safeReplay = {
+  preview_only: true,
+  production_release_allowed: false,
+  physical_relocation_execution_allowed: false,
+  installation_approval_allowed: false,
+  capex_approval_allowed: false,
+  result: {
+    available: true,
+    preview_only: true,
+    layout_fingerprint: replayFingerprint,
+    physical_layout: { aisles: [] },
+    optimizer_result: { planogram: { aisles: [] } },
+    production_authority: false,
+    execution_authority: false,
+    physical_relocation_authority: false,
+    installation_approved: false,
+    capex_approved: false,
+    global_optimum_claim: false,
+  },
+};
+if (!safePhysicalLayoutCandidateReplayResponse(safeReplay, replayFingerprint)) {
+  fail("Safe fingerprint-replayed scenario was rejected.");
+}
+if (safePhysicalLayoutCandidateReplayResponse(safeReplay, "b".repeat(64)) !== null) {
+  fail("Scenario twin accepted a mismatched fingerprint.");
+}
+for (const mutate of [
+  (row) => { row.result.available = false; },
+  (row) => { row.physical_relocation_execution_allowed = true; },
+  (row) => { row.result.execution_authority = true; },
+  (row) => { row.result.global_optimum_claim = true; },
+]) {
+  const forged = structuredClone(safeReplay);
+  mutate(forged);
+  if (safePhysicalLayoutCandidateReplayResponse(forged, replayFingerprint) !== null) {
+    fail("Scenario twin accepted replay authority or truth drift.");
+  }
+}
+
 const component = fs.readFileSync("src/modules/planogram/PlanogramScenarioPortfolio.jsx", "utf8");
 for (const needle of [
   "/v1/planogram/physical-layout-search-preview",
+  "/v1/planogram/physical-layout-candidate-preview",
   "safePhysicalLayoutPortfolioResponse",
+  "safePhysicalLayoutCandidateReplayResponse",
   "buildPlanogramScenarioPortfolio",
   "candidate?.order_baskets?.length",
   "layout_fingerprint",
+  "<PlanogramDigitalTwin",
 ]) {
   if (!component.includes(needle)) fail(`Scenario UI contract missing: ${needle}`);
+}
+if (component.includes("candidate_layout")) {
+  fail("Scenario UI must never submit a client-selected candidate layout.");
+}
+if (component.includes('replace("plan-", "Plan ")')) {
+  fail("Scenario plan label regressed to a hard-coded English prefix.");
 }
 const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
 if (!studio.includes("<PlanogramScenarioPortfolio")) {
   fail("Planogram Studio does not expose the V5 scenario portfolio.");
 }
 
-console.log("Planogram V5 Pareto decision-portfolio boundary: PASS");
+console.log("Planogram V5 Pareto portfolio and fingerprint-replayed twin boundary: PASS");

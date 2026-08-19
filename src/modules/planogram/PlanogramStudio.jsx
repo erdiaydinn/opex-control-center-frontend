@@ -25,7 +25,7 @@ import "./planogram-operations.css";
 import "./planogram-preview.css";
 
 const PLANOGRAM_FEATURES = ["layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"];
-const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete"];
+const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"];
 const PREVIEW_MODES = new Set(["HYBRID", "CATEGORY", "ABC", "BRAND"]);
 const MAX_PREVIEW_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -121,158 +121,115 @@ export default function PlanogramStudio() {
       return;
     }
 
+    let parsed;
     try {
-      const parsed = JSON.parse(await file.text());
-      const normalized = normalizeCandidateBundle(parsed);
-      if (!normalized) throw new Error("invalid_bundle");
-      setCandidate(normalized);
-      setCandidateName(file.name);
+      parsed = JSON.parse(await file.text());
     } catch {
-      setCandidateError(p("fileInvalid"));
+      setCandidateError(p("invalidJson"));
       event.target.value = "";
+      return;
     }
+
+    const normalized = normalizeCandidateBundle(parsed);
+    if (!normalized) {
+      setCandidateError(p("invalidBundle"));
+      event.target.value = "";
+      return;
+    }
+
+    setCandidate(normalized);
+    setCandidateName(file.name);
   }, [p]);
 
   const runPreview = useCallback(async () => {
-    if (!candidate || !canCreatePreview || previewRunning || optimizerRunning) return;
+    if (!candidate || !canCreatePreview) return;
     setPreviewRunning(true);
-    setPreview(null);
     setPreviewError("");
     try {
       setPreview(await apiPost("/v1/planogram/preview", candidate));
-    } catch {
-      setPreviewError(p("previewError"));
+    } catch (err) {
+      setPreview(null);
+      setPreviewError(err?.message || p("previewFailed"));
     } finally {
       setPreviewRunning(false);
     }
-  }, [canCreatePreview, candidate, optimizerRunning, p, previewRunning]);
+  }, [candidate, canCreatePreview, p]);
 
-  const runOptimizerPreview = useCallback(async () => {
-    if (!candidate || !canCreatePreview || previewRunning || optimizerRunning) return;
+  const runOptimizer = useCallback(async () => {
+    if (!candidate || !canCreatePreview) return;
     setOptimizerRunning(true);
-    setPreview(null);
     setPreviewError("");
     try {
-      setPreview(await apiPost("/v1/planogram/optimize-preview", candidate));
-    } catch {
-      setPreviewError(p("previewError"));
+      setPreview(await apiPost("/v1/planogram/picker-tour/simulate", candidate));
+    } catch (err) {
+      setPreview(null);
+      setPreviewError(err?.message || p("optimizerFailed"));
     } finally {
       setOptimizerRunning(false);
     }
-  }, [canCreatePreview, candidate, optimizerRunning, p, previewRunning]);
-
-  const productState = loading ? "loading" : error ? "error" : data ? "ready" : "empty";
-  const engineResult = preview?.engine_result || preview?.optimizer_result || null;
-  const optimizerMeta = preview?.optimizer_result?.optimizer || null;
-  const blockers = Array.isArray(engineResult?.physical_truth?.blockers)
-    ? engineResult.physical_truth.blockers
-    : [];
+  }, [candidate, canCreatePreview, p]);
 
   return (
-    <main
-      className="eay-planogram-native"
-      aria-busy={loading ? "true" : "false"}
-      data-eay-product-state={productState}
-    >
-      <header className="eay-planogram-head">
-        <button type="button" onClick={() => navigate("/")} aria-label={t("back")}>
-          <ArrowLeft className="eay-planogram-back-icon" size={18} aria-hidden="true" />
-          {t("back")}
-        </button>
+    <main className="planogram-native" data-testid="planogram-studio">
+      <header className="planogram-native__header">
         <div>
-          <span>{t("coreAuthority")}</span>
+          <button className="planogram-native__back" type="button" onClick={() => navigate("/")}>
+            <ArrowLeft size={18} aria-hidden="true" />
+            <span>{t("back")}</span>
+          </button>
+          <p className="planogram-native__eyebrow">EAY · Planogram</p>
           <h1>{t("title")}</h1>
           <p>{t("subtitle")}</p>
         </div>
-        <span className="eay-planogram-gate">
-          <ShieldCheck size={17} aria-hidden="true" />
-          {t("securityBoundary")}
-        </span>
+        <button className="planogram-native__refresh" type="button" onClick={load}>
+          <RefreshCw size={18} aria-hidden="true" />
+          <span>{t("refresh")}</span>
+        </button>
       </header>
 
-      {loading ? (
-        <section className="eay-planogram-state" data-eay-product-state="loading" role="status" aria-live="polite" aria-atomic="true">
-          <RefreshCw className="spin" size={20} aria-hidden="true" />
-          {t("loading")}
-        </section>
-      ) : null}
-
-      {!loading && error ? (
-        <section className="eay-planogram-state" data-eay-product-state="error" role="alert" aria-atomic="true">
+      {loading ? <div className="planogram-native__state">{t("loading")}</div> : null}
+      {error ? (
+        <div className="planogram-native__state planogram-native__state--error" role="alert">
+          <TriangleAlert size={20} aria-hidden="true" />
           <span>{error}</span>
-          <button type="button" onClick={load}>{t("retry")}</button>
-        </section>
+        </div>
       ) : null}
 
-      {!loading && !error && !data ? (
-        <section className="eay-planogram-state" data-eay-product-state="empty" role="status" aria-live="polite" aria-atomic="true">
-          <span>{t("loadError")}</span>
-          <button type="button" onClick={load}>{t("retry")}</button>
-        </section>
-      ) : null}
-
-      {data && !loading && !error ? (
-        <div data-eay-product-state="ready">
-          <section className="eay-planogram-summary">
-            <article>
-              <Boxes size={21} aria-hidden="true" />
+      {!loading && !error && data ? (
+        <>
+          <section className="planogram-native__grid">
+            <article className="planogram-native__card">
+              <ShieldCheck size={22} aria-hidden="true" />
+              <span>{t("auth")}</span>
+              <strong>{data.auth_mode || "—"}</strong>
+            </article>
+            <article className="planogram-native__card">
+              <LockKeyhole size={22} aria-hidden="true" />
+              <span>{t("tenant")}</span>
+              <strong>{data.tenant_isolation || "—"}</strong>
+            </article>
+            <article className="planogram-native__card">
+              <Boxes size={22} aria-hidden="true" />
+              <span>{t("catalog")}</span>
+              <strong>{formatNumber(data.catalog_rows || 0)}</strong>
+            </article>
+            <article className="planogram-native__card">
+              <Ruler size={22} aria-hidden="true" />
               <span>{t("engine")}</span>
-              <strong>{data.engine?.contract}</strong>
-              <small>{t("libraryMode")}</small>
-            </article>
-            <article>
-              <LockKeyhole size={21} aria-hidden="true" />
-              <span>{t("productionBlocked")}</span>
-              <strong>{data.production_ready ? "READY" : "BLOCKED"}</strong>
-              <small>{t("solverBlocked")}</small>
-            </article>
-            <article>
-              <CheckCircle2 size={21} aria-hidden="true" />
-              <span>{t("securityBoundary")}</span>
-              <strong>{data.engine?.legacy_bridge_enabled ? "LEGACY" : "CORE"}</strong>
-              <small>{t("legacyOff")}</small>
+              <strong>{data.engine_version || "—"}</strong>
             </article>
           </section>
 
-          <section className="eay-planogram-evidence">
-            <header>
-              <div><Ruler size={22} aria-hidden="true" /><span>{t("physicalTruth")}</span></div>
-              <strong>{t("externalRequired")}</strong>
-            </header>
-            <div className="eay-planogram-evidence-grid">
-              {(data.physical_truth?.required_evidence || []).map((item) => (
-                <article key={item}><TriangleAlert size={18} aria-hidden="true" /><span>{t(item)}</span></article>
-              ))}
-            </div>
-          </section>
-
-          <section className="eay-planogram-generation">
-            <LockKeyhole size={24} aria-hidden="true" />
-            <div><strong>{t("generationBlocked")}</strong><p>{t("requiredEvidence")}</p></div>
-            <button type="button" disabled>{t("solverBlocked")}</button>
-          </section>
-
-          <PlanogramOperationsPanel
-            locale={locale}
-            formatNumber={formatNumber}
-            canAction={canAction}
-          />
-
-          <section
-            className="eay-planogram-preview"
-            aria-busy={previewRunning || optimizerRunning ? "true" : "false"}
-          >
-            <header>
+          <section className="planogram-native__workspace">
+            <div className="planogram-native__upload">
               <div>
-                <FileJson2 size={22} aria-hidden="true" />
-                <div><h2>{p("candidatePreview")}</h2><p>{p("candidateHint")}</p></div>
+                <p className="planogram-native__eyebrow">{p("candidateEyebrow")}</p>
+                <h2>{p("candidateTitle")}</h2>
+                <p>{p("candidateDescription")}</p>
               </div>
-              <span>{p("previewOnly")}</span>
-            </header>
-
-            <div className="eay-planogram-preview-controls">
-              <label className="eay-planogram-file-control">
-                <span>{p("uploadBundle")}</span>
+              <label className="planogram-native__file">
+                <FileJson2 size={20} aria-hidden="true" />
+                <span>{p("chooseFile")}</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -280,90 +237,44 @@ export default function PlanogramStudio() {
                   onChange={readCandidate}
                 />
               </label>
-              <div className="eay-planogram-file-state" role="status" aria-live="polite">
-                {candidate
-                  ? p("fileLoaded", {
-                      name: candidateName,
-                      products: formatNumber(candidate.products.length),
-                    })
-                  : p("noFile")}
-              </div>
-              <button type="button" onClick={clearCandidate} disabled={!candidate && !candidateError && !preview}>
-                {p("clear")}
-              </button>
-              <button
-                type="button"
-                className="eay-planogram-preview-run"
-                onClick={runPreview}
-                disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}
-              >
-                {previewRunning ? p("runningPreview") : p("runPreview")}
-              </button>
-              <button
-                type="button"
-                className="eay-planogram-preview-run"
-                onClick={runOptimizerPreview}
-                disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}
-              >
-                {optimizerRunning ? o("optimizerRunning") : o("optimizerPreview")}
-              </button>
+              {candidateName ? <p>{p("selectedFile", { name: candidateName })}</p> : null}
+              {candidateError ? <p role="alert">{candidateError}</p> : null}
+              {candidate ? (
+                <div className="planogram-native__candidate-actions">
+                  <button type="button" onClick={clearCandidate}>{p("clear")}</button>
+                  <button
+                    type="button"
+                    disabled={!canCreatePreview || previewRunning}
+                    onClick={runPreview}
+                  >
+                    <CheckCircle2 size={18} aria-hidden="true" />
+                    {previewRunning ? p("running") : p("runPreview")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canCreatePreview || optimizerRunning}
+                    onClick={runOptimizer}
+                  >
+                    <CheckCircle2 size={18} aria-hidden="true" />
+                    {optimizerRunning ? p("running") : p("runOptimizer")}
+                  </button>
+                </div>
+              ) : null}
+              {!canCreatePreview ? <p role="status">{p("createPermissionRequired")}</p> : null}
+              {previewError ? <p role="alert">{previewError}</p> : null}
             </div>
 
-            {!canCreatePreview ? (
-              <p className="eay-planogram-preview-note">{p("createPermissionRequired")}</p>
-            ) : null}
-            {candidateError ? <p className="eay-planogram-preview-error" role="alert">{candidateError}</p> : null}
-            {previewError ? <p className="eay-planogram-preview-error" role="alert">{previewError}</p> : null}
-
             {preview ? (
-              <div className="eay-planogram-preview-result" role="status" aria-live="polite" aria-atomic="true">
-                <div className="eay-planogram-preview-truth">
-                  <strong>{p("previewReady")}</strong>
-                  <span>{p("unattested")}</span>
-                  <span>{p("productionReleaseBlocked")}</span>
-                  {optimizerMeta ? <span>{o("previewStillUnattested")}</span> : null}
-                </div>
-                <div className="eay-planogram-preview-metrics">
-                  <div><span>{p("productsCount")}</span><strong>{formatNumber(candidate?.products?.length || 0)}</strong></div>
-                  <div><span>{p("placed")}</span><strong>{formatNumber(engineResult?.summary?.placed || 0)}</strong></div>
-                  <div><span>{p("unplaced")}</span><strong>{formatNumber(engineResult?.summary?.unplaced || 0)}</strong></div>
-                  <div><span>{p("mode")}</span><strong>{candidate?.mode || "—"}</strong></div>
-                  {optimizerMeta ? (
-                    <>
-                      <div><span>{o("optimizerStrategy")}</span><strong>{optimizerMeta.selected_strategy}</strong></div>
-                      <div><span>{o("optimizerCandidates")}</span><strong>{formatNumber(optimizerMeta.candidate_count || 0)}</strong></div>
-                    </>
-                  ) : null}
-                </div>
-                {optimizerMeta ? (
-                  <p className="eay-planogram-preview-note">
-                    {optimizerMeta.allowed
-                      ? optimizerMeta.improved
-                        ? o("optimizerImproved")
-                        : o("optimizerBaseline")
-                      : o("optimizerBlocked")}
-                  </p>
-                ) : null}
-                {engineResult?.planogram ? (
-                  <PlanogramDigitalTwin
-                    engineResult={engineResult}
-                    candidate={candidate}
-                    locale={locale}
-                    formatNumber={formatNumber}
-                  />
-                ) : null}
-                <div className="eay-planogram-preview-blockers">
-                  <strong>{p("blockers")}</strong>
-                  {blockers.length ? (
-                    <ul>{blockers.map((blocker) => <li key={blocker}><code>{blocker}</code></li>)}</ul>
-                  ) : (
-                    <p>{p("noBlockers")}</p>
-                  )}
-                </div>
+              <PlanogramDigitalTwin preview={preview} locale={locale} />
+            ) : (
+              <div className="planogram-native__preview-empty">
+                <p>{p("previewEmpty")}</p>
               </div>
-            ) : null}
+            )}
           </section>
-        </div>
+
+          <PlanogramOperationsPanel data={data} t={o} />
+        </>
       ) : null}
     </main>
   );

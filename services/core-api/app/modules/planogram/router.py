@@ -30,6 +30,7 @@ from app.modules.planogram.schemas import (
     PlanogramStoreDnaDraftRequest,
     PlanogramStoreDnaRejectRequest,
     PlanogramStoreDnaRevisionRequest,
+    PlanogramStoreScanPreviewRequest,
 )
 from app.modules.planogram.store_dna import (
     DEFAULT_AISLE_COUNT,
@@ -43,6 +44,7 @@ from app.modules.planogram.store_dna import (
     normalize_store_code,
     summarize_store_dna,
 )
+from app.modules.planogram.store_scan import normalize_store_scan
 
 router = APIRouter(prefix="/v1/planogram", tags=["planogram"])
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
@@ -133,6 +135,24 @@ async def post_planogram_preview(
         "input_authority": "request_supplied_unattested",
         "production_release_allowed": False,
         "engine_result": result,
+    }
+
+
+@router.post("/store-scan/normalize-preview")
+async def post_store_scan_normalize_preview(
+    payload: PlanogramStoreScanPreviewRequest,
+    principal: Creator,
+) -> dict[str, object]:
+    """Normalize measured camera/LiDAR/AR geometry without granting Store DNA truth."""
+    result = normalize_store_scan(payload.model_dump(mode="python"))
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "subject": principal.subject,
+        "store_code": normalize_store_code(payload.store_code),
+        "preview_only": True,
+        "input_authority": "request_supplied_measured_scan_unattested",
+        "production_release_allowed": False,
+        "store_scan": result,
     }
 
 

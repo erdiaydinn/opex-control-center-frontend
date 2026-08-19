@@ -7,6 +7,7 @@ from app.modules.planogram.economics_router import router as planogram_economics
 from app.modules.planogram.execution_router import router as planogram_execution_router
 from app.modules.planogram.optimizer_router import router as planogram_optimizer_router
 from app.modules.planogram.router import router as planogram_router
+from app.modules.planogram.scenario_router import router as planogram_scenario_router
 from app.modules.planogram.shelf_scan_router import router as planogram_shelf_scan_router
 
 app.include_router(budget_router)
@@ -16,3 +17,4 @@ app.include_router(planogram_optimizer_router)
 app.include_router(planogram_execution_router)
 app.include_router(planogram_shelf_scan_router)
 app.include_router(planogram_economics_router)
+app.include_router(planogram_scenario_router)

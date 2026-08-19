@@ -17,8 +17,12 @@ const app = fs.readFileSync("src/App.jsx", "utf8");
 const catalog = fs.readFileSync("src/modules/control-center/commandCenterModules.js", "utf8");
 const workspace = fs.readFileSync("src/modules/audit/AuditCommandCenter.jsx", "utf8");
 const css = fs.readFileSync("src/modules/audit/AuditCommandCenter.css", "utf8");
+const liveCss = fs.readFileSync("src/modules/audit/AuditLiveTruth.css", "utf8");
 const permissions = fs.readFileSync("services/core-api/app/core/permission_catalog.py", "utf8");
+const routes = fs.readFileSync("services/core-api/app/modules/audit/routes.py", "utf8");
+const resourceScope = fs.readFileSync("services/core-api/app/modules/audit/resource_scope.py", "utf8");
 const migration = fs.readFileSync("services/core-api/alembic/versions/0046_audit_operating_system.py", "utf8");
+const privacyMigration = fs.readFileSync("services/core-api/alembic/versions/0047_audit_privacy_verification.py", "utf8");
 
 requireCondition(app.includes('lazy(() => import("./modules/audit/AuditCommandCenter.jsx"))'), "Audit workspace must remain lazy-loaded");
 requireCondition(app.includes('path="/audit"'), "Audit route is missing");
@@ -31,9 +35,20 @@ requireCondition(migration.includes('"audit_redaction_receipts"'), "Audit privac
 requireCondition(migration.includes('"audit_item_decision_events"'), "Audit decision history authority is missing");
 requireCondition(migration.includes('"audit_assurance_reviews"'), "Audit assurance authority is missing");
 requireCondition(migration.includes('processed_frame_count = frame_count'), "Video redaction coverage must fail closed in the database");
-requireCondition(workspace.includes('data-audit-truth-state="unbound"'), "Audit UI must expose its live-truth boundary");
+requireCondition(privacyMigration.includes('"audit_redaction_verification_events"'), "Server privacy-verification authority is missing");
+
+requireCondition(workspace.includes('apiGet("/v1/audit/programs")'), "Desktop Audit must read authoritative program truth");
+requireCondition(workspace.includes('apiGet("/v1/audit/runs?limit=100")'), "Desktop Audit must read authoritative run truth");
+requireCondition(workspace.includes('data-audit-truth-state={live.state}'), "Audit UI must expose live truth state without inventing connection");
 requireCondition(workspace.includes('t("noLiveData")'), "Empty KPI state must remain localized and truth-bound rather than synthetic");
-requireCondition(css.includes("prefers-reduced-motion"), "Audit experience must respect reduced motion");
+requireCondition(workspace.includes('state: "error", programs: [], runs: []'), "Audit live-data failure must fail visibly closed");
+requireCondition(css.includes("prefers-reduced-motion") && liveCss.includes("prefers-reduced-motion"), "Audit experience must respect reduced motion");
+
+requireCondition(routes.includes("await _require_run_scope(principal, scope, audit_run_id)"), "Run-scoped Audit writes must enforce resource authorization");
+requireCondition(routes.includes("await _require_action_scope(principal, scope, action_id)"), "Action updates must enforce resource authorization");
+requireCondition(resourceScope.includes("JOIN audit_runs ar") && resourceScope.includes("JOIN field_locations fl"), "Audit resource scope must resolve from DB authority");
+requireCondition(routes.includes('detail="Public action endpoint cannot assert AI verification authority"'), "Public humans must not spoof AI verification authority");
+requireCondition(routes.includes('"action:audit:manageStandards"') && !routes.includes('"audit_standards" not in principal.roles'), "Standards escalation must use canonical permissions, not hard-coded role names");
 
 const locales = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"];
 const coverage = auditMessageCoverage(locales);

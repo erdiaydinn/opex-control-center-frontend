@@ -38,6 +38,26 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(tmp_path:
     monkeypatch.setenv('OPEX_ACADEMY_MEDIA_SIGNING_SECRET_FILE', str(key))
     monkeypatch.setenv('OPEX_ACADEMY_MEDIA_TOKEN_TTL_SECONDS', '90')
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost') as c:
+        initial_home = await c.get('/v1/academy/me')
+        assert initial_home.status_code == 200
+        assert initial_home.json()['localization']['policy']['configured'] is False
+        assert initial_home.json()['localization']['policy']['revision'] == 0
+
+        policy = await c.put('/v1/academy/admin/localization', json={
+            'default_locale':'fa-IR',
+            'enabled_locales':['fa-IR','en-US','tr-TR','ar'],
+            'expected_revision':0,
+        })
+        assert policy.status_code == 200, policy.text
+        assert policy.json()['default_locale'] == 'fa'
+        assert policy.json()['enabled_locales'] == ['fa','en','tr','ar']
+        assert policy.json()['revision'] == 1
+        stale_policy = await c.put('/v1/academy/admin/localization', json={
+            'default_locale':'tr','enabled_locales':['tr'],'expected_revision':0,
+        })
+        assert stale_policy.status_code == 409
+        assert stale_policy.json()['detail']['current_revision'] == 1
+
         video = (await c.post('/v1/academy/admin/content', json={
             'content_type':'video','slug':'safety-video','title_i18n':{'tr':'Güvenlik','en':'Safety','ar':'سلامة'},
             'version_label':'2026.1','locale':'tr','source_sha256':'1'*64,'duration_ms':10000,
@@ -60,7 +80,12 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(tmp_path:
             'prompt_i18n':{'tr':'Dur?','en':'Stop?'},'options':[{'label_i18n':{'en':'No'},'is_correct':False},
             {'label_i18n':{'en':'Yes'},'is_correct':True}]}]})
         assert quiz.status_code == 201, quiz.text; quiz_id = quiz.json()['id']
-        home = await c.get('/v1/academy/me'); assert home.status_code == 200; assert home.json()['direction_by_locale']['ar'] == 'rtl'
+        home = await c.get('/v1/academy/me')
+        assert home.status_code == 200
+        assert home.json()['locales'] == ['fa','en','tr','ar']
+        assert home.json()['direction_by_locale']['fa'] == 'rtl'
+        assert home.json()['direction_by_locale']['ar'] == 'rtl'
+        assert home.json()['localization']['policy']['configured'] is True
         enrollment = home.json()['enrollments'][0]['id']
         play = await c.post(f"/v1/academy/media/{media.json()['id']}/playback-authorization")
         assert play.status_code == 200 and play.json()['expires_in_seconds'] == 90
@@ -103,14 +128,21 @@ async def test_academy_lifecycle_rls_media_concurrency_and_grounded_qa(tmp_path:
         assert answer['sources'][0]['version_label'] == 'v3.2' and answer['sources'][0]['source_sha256'] == 'a'*64
         isolated = (await c.post('/v1/academy/knowledge/answer', headers={'X-Test-Tenant':'b'}, json={'question':'Acil durumda çıkış rotası nedir?','locale':'tr'})).json()
         assert isolated['supported'] is False and isolated['sources'] == []
+        tenant_b_home = await c.get('/v1/academy/me', headers={'X-Test-Tenant':'b'})
+        assert tenant_b_home.status_code == 200
+        assert tenant_b_home.json()['localization']['policy']['configured'] is False
+        assert tenant_b_home.json()['localization']['policy']['default_locale'] == 'tr'
+        assert 'fa' not in tenant_b_home.json()['locales']
         revoked = await c.post(f'/v1/academy/admin/enrollments/{enrollment}/revoke-completion', json={'reason':'Safety review invalidated completion'})
         assert revoked.status_code == 200 and (await c.post(f'/v1/academy/enrollments/{enrollment}/complete')).status_code == 409
 
     async with engine.begin() as db:
         await db.execute(text("SELECT set_config('app.tenant_id', :v, true)"), {'v': str(B)})
         assert await db.scalar(text('SELECT count(*) FROM academy_content_items')) == 0
+        assert await db.scalar(text('SELECT count(*) FROM academy_localization_policies')) == 0
 
 
 def test_production_composition_contains_academy_routes():
     paths = set(app.openapi()['paths'])
     assert '/v1/academy/me' in paths and '/v1/academy/knowledge/answer' in paths
+    assert '/v1/academy/admin/localization' in paths

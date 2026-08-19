@@ -63,9 +63,11 @@ class CurrentThreatContextReceipt(BaseModel):
         self,
     ) -> CurrentThreatContextReceipt:
         if self.attack_context_present:
-            if not self.attack_freshness_receipt_id or not self.attack_freshness_fingerprint:
-                if self.attack_release_current:
-                    raise ValueError("current_threat_attack_current_requires_freshness_receipt")
+            if (
+                not self.attack_freshness_receipt_id
+                or not self.attack_freshness_fingerprint
+            ) and self.attack_release_current:
+                raise ValueError("current_threat_attack_current_requires_freshness_receipt")
             if self.current_global_reasoning_allowed != self.attack_release_current:
                 raise ValueError("current_threat_attack_context_requires_current_release")
         else:

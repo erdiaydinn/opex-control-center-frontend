@@ -102,7 +102,7 @@ def normalize_cisa_kev_payload(
     _validate_observation(feed_ref=feed_ref, observed_at=observed_at)
     vulnerabilities = payload.get("vulnerabilities")
     if not isinstance(vulnerabilities, list):
-        raise ValueError("cyber_cisa_kev_vulnerabilities_required")
+        raise TypeError("cyber_cisa_kev_vulnerabilities_required")
     declared_count = payload.get("count")
     if declared_count is not None and declared_count != len(vulnerabilities):
         raise ValueError("cyber_cisa_kev_count_mismatch")
@@ -110,7 +110,7 @@ def normalize_cisa_kev_payload(
     records: list[ThreatKnowledgeRecord] = []
     for item in vulnerabilities:
         if not isinstance(item, dict):
-            raise ValueError("cyber_cisa_kev_entry_invalid")
+            raise TypeError("cyber_cisa_kev_entry_invalid")
         cve_id = _required_cve(item.get("cveID"))
         date_added = _parse_date(item.get("dateAdded"), "cyber_cisa_kev_date_added_invalid")
         product_ref = _product_hash(item.get("vendorProject"), item.get("product"))
@@ -146,12 +146,12 @@ def normalize_nvd_cve_payload(
     _validate_observation(feed_ref=feed_ref, observed_at=observed_at)
     vulnerabilities = payload.get("vulnerabilities")
     if not isinstance(vulnerabilities, list):
-        raise ValueError("cyber_nvd_vulnerabilities_required")
+        raise TypeError("cyber_nvd_vulnerabilities_required")
 
     records: list[ThreatKnowledgeRecord] = []
     for wrapper in vulnerabilities:
         if not isinstance(wrapper, dict) or not isinstance(wrapper.get("cve"), dict):
-            raise ValueError("cyber_nvd_cve_entry_invalid")
+            raise TypeError("cyber_nvd_cve_entry_invalid")
         cve = wrapper["cve"]
         cve_id = _required_cve(cve.get("id"))
         # NVD API 2.0 commonly serializes UTC timestamps without an explicit
@@ -191,13 +191,13 @@ def normalize_mitre_attack_stix_payload(
     _validate_observation(feed_ref=feed_ref, observed_at=observed_at)
     objects = payload.get("objects")
     if not isinstance(objects, list):
-        raise ValueError("cyber_attack_stix_objects_required")
+        raise TypeError("cyber_attack_stix_objects_required")
 
     records: list[ThreatKnowledgeRecord] = []
     ignored = 0
     for item in objects:
         if not isinstance(item, dict):
-            raise ValueError("cyber_attack_stix_object_invalid")
+            raise TypeError("cyber_attack_stix_object_invalid")
         if (
             item.get("type") != "attack-pattern"
             or item.get("revoked") is True
@@ -285,7 +285,7 @@ def _identifier_list(value: Any, pattern: re.Pattern[str]) -> tuple[str, ...]:
     if value in (None, ""):
         return ()
     if not isinstance(value, list):
-        raise ValueError("cyber_feed_identifier_list_invalid")
+        raise TypeError("cyber_feed_identifier_list_invalid")
     return tuple(
         sorted(
             {
@@ -351,7 +351,7 @@ def _product_hash(vendor: Any, product: Any) -> str | None:
 
 def _parse_date(value: Any, error: str) -> datetime:
     if not isinstance(value, str):
-        raise ValueError(error)
+        raise TypeError(error)
     try:
         return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
     except ValueError as exc:
@@ -360,9 +360,9 @@ def _parse_date(value: Any, error: str) -> datetime:
 
 def _parse_datetime(value: Any, error: str, *, assume_utc: bool = False) -> datetime:
     if not isinstance(value, str):
-        raise ValueError(error)
+        raise TypeError(error)
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(error) from exc
     if parsed.tzinfo is None and assume_utc:

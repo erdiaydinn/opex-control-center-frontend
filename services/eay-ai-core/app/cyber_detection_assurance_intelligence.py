@@ -81,9 +81,12 @@ class CyberDetectionAssuranceFinding(BaseModel):
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if self.control_verified != (self.status is SecurityAssuranceStatus.PASS):
             raise ValueError("cyber_detection_assurance_pass_flag_mismatch")
-        if self.status is SecurityAssuranceStatus.PASS:
-            if self.missing_component_ids or self.degraded_component_ids or self.unverified_component_ids:
-                raise ValueError("cyber_detection_assurance_pass_cannot_have_gaps")
+        if self.status is SecurityAssuranceStatus.PASS and (
+            self.missing_component_ids
+            or self.degraded_component_ids
+            or self.unverified_component_ids
+        ):
+            raise ValueError("cyber_detection_assurance_pass_cannot_have_gaps")
         if self.status is SecurityAssuranceStatus.FAIL and not (
             self.missing_component_ids or self.degraded_component_ids
         ):

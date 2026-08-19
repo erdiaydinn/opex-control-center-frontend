@@ -86,9 +86,11 @@ class CompanyTelemetryCapabilityObservation(BaseModel):
             CompanyTelemetryCapabilityStatus.DEGRADED,
         } and self.telemetry_ref is None:
             raise ValueError("company_detection_available_or_degraded_requires_telemetry_ref")
-        if self.status is CompanyTelemetryCapabilityStatus.MISSING:
-            if self.telemetry_ref is not None or self.detection_rule_refs:
-                raise ValueError("company_detection_missing_cannot_claim_live_telemetry")
+        if (
+            self.status is CompanyTelemetryCapabilityStatus.MISSING
+            and (self.telemetry_ref is not None or self.detection_rule_refs)
+        ):
+            raise ValueError("company_detection_missing_cannot_claim_live_telemetry")
         if not self.firm_company_telemetry_claim_authorized:
             raise ValueError("company_detection_observation_must_be_evidence_claim")
         if self.deployment_authority_granted:

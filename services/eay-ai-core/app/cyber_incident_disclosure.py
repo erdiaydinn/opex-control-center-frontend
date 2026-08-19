@@ -124,9 +124,11 @@ class CyberIncidentDisclosureDecision(BaseModel):
         if self.level is CyberIncidentDisclosureLevel.OPERATIONAL_IMPACT_ONLY:
             if self.operational_impact_message_ref is None:
                 raise ValueError("cyber_incident_operational_impact_message_required")
-        elif self.level is CyberIncidentDisclosureLevel.NONE:
-            if self.operational_impact_message_ref is not None:
-                raise ValueError("cyber_incident_none_disclosure_cannot_include_message")
+        elif (
+            self.level is CyberIncidentDisclosureLevel.NONE
+            and self.operational_impact_message_ref is not None
+        ):
+            raise ValueError("cyber_incident_none_disclosure_cannot_include_message")
         return self
 
 

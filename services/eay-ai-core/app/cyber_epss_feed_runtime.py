@@ -219,14 +219,14 @@ def ingest_epss_api_payload(
         raise ValueError("cyber_epss_feed_upstream_status_not_ok")
     raw_data = payload.get("data")
     if not isinstance(raw_data, list):
-        raise ValueError("cyber_epss_feed_data_list_required")
+        raise TypeError("cyber_epss_feed_data_list_required")
 
     requested = set(requested_cve_ids)
     observations: list[EpssObservation] = []
     seen: set[str] = set()
     for raw in raw_data:
         if not isinstance(raw, dict):
-            raise ValueError("cyber_epss_feed_data_item_must_be_object")
+            raise TypeError("cyber_epss_feed_data_item_must_be_object")
         cve_id = str(raw.get("cve", "")).upper()
         _cve(cve_id, "cyber_epss_feed_invalid_cve_id")
         if cve_id not in requested:

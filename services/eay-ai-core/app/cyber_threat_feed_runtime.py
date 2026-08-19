@@ -399,11 +399,11 @@ def _normalize_cisa_kev(
 ) -> tuple[ThreatKnowledgeRecord, ...]:
     raw_items = payload.get("vulnerabilities")
     if not isinstance(raw_items, list):
-        raise ValueError("cyber_feed_cisa_vulnerabilities_missing")
+        raise TypeError("cyber_feed_cisa_vulnerabilities_missing")
     records: list[ThreatKnowledgeRecord] = []
     for item in raw_items:
         if not isinstance(item, dict):
-            raise ValueError("cyber_feed_cisa_item_invalid")
+            raise TypeError("cyber_feed_cisa_item_invalid")
         cve = _required_cve(item.get("cveID"))
         published_at = _date_to_datetime(item.get("dateAdded"))
         vendor = _slug(str(item.get("vendorProject") or "unknown-vendor"))
@@ -432,11 +432,11 @@ def _normalize_nvd(
 ) -> tuple[ThreatKnowledgeRecord, ...]:
     raw_items = payload.get("vulnerabilities")
     if not isinstance(raw_items, list):
-        raise ValueError("cyber_feed_nvd_vulnerabilities_missing")
+        raise TypeError("cyber_feed_nvd_vulnerabilities_missing")
     records: list[ThreatKnowledgeRecord] = []
     for wrapper in raw_items:
         if not isinstance(wrapper, dict) or not isinstance(wrapper.get("cve"), dict):
-            raise ValueError("cyber_feed_nvd_item_invalid")
+            raise TypeError("cyber_feed_nvd_item_invalid")
         cve_obj = wrapper["cve"]
         cve = _required_cve(cve_obj.get("id"))
         published_at = _parse_datetime(cve_obj.get("published"))
@@ -463,7 +463,7 @@ def _normalize_mitre_attack(
 ) -> tuple[ThreatKnowledgeRecord, ...]:
     raw_items = payload.get("objects")
     if not isinstance(raw_items, list):
-        raise ValueError("cyber_feed_mitre_objects_missing")
+        raise TypeError("cyber_feed_mitre_objects_missing")
     records: list[ThreatKnowledgeRecord] = []
     for item in raw_items:
         if not isinstance(item, dict) or item.get("type") != "attack-pattern":
@@ -580,7 +580,7 @@ def _parse_datetime(value: Any) -> datetime:
 
 def _date_to_datetime(value: Any) -> datetime:
     if not isinstance(value, str):
-        raise ValueError("cyber_feed_date_missing")
+        raise TypeError("cyber_feed_date_missing")
     parsed = date.fromisoformat(value)
     return datetime(parsed.year, parsed.month, parsed.day, tzinfo=UTC)
 

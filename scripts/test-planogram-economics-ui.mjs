@@ -13,8 +13,9 @@ function fail(message) {
   process.exit(1);
 }
 
+const localeCodes = SUPPORTED_LOCALES.map((locale) => locale.code);
 const englishKeys = Object.keys(PLANOGRAM_ECONOMICS_MESSAGES.en).sort();
-for (const locale of SUPPORTED_LOCALES) {
+for (const locale of localeCodes) {
   const table = PLANOGRAM_ECONOMICS_MESSAGES[locale];
   if (!table) fail(`Missing Planogram economics locale: ${locale}`);
   const keys = Object.keys(table).sort();

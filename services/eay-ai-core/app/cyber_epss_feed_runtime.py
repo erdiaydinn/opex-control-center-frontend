@@ -58,7 +58,7 @@ class EpssFeedBinding(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def binding_is_exact_read_only_lookup(self) -> "EpssFeedBinding":
+    def binding_is_exact_read_only_lookup(self) -> EpssFeedBinding:
         if self.endpoint_ref != FIRST_EPSS_API_ENDPOINT:
             raise ValueError("cyber_epss_feed_endpoint_not_reviewed")
         if self.method != "GET":
@@ -104,7 +104,7 @@ class EpssFeedObservationReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_bounded_and_non_authoritative(self) -> "EpssFeedObservationReceipt":
+    def receipt_is_bounded_and_non_authoritative(self) -> EpssFeedObservationReceipt:
         _aware(self.observed_at, "cyber_epss_feed_observed_at_requires_timezone")
         _unique(self.requested_cve_ids, "cyber_epss_feed_requested_cves_must_be_unique")
         _unique(self.returned_cve_ids, "cyber_epss_feed_returned_cves_must_be_unique")
@@ -148,7 +148,7 @@ class EpssFeedIngestionResult(BaseModel):
     @model_validator(mode="after")
     def result_contains_only_normalized_likelihood_observations(
         self,
-    ) -> "EpssFeedIngestionResult":
+    ) -> EpssFeedIngestionResult:
         receipt = EpssFeedObservationReceipt.model_validate(
             self.receipt.model_dump(mode="json")
         )
@@ -338,7 +338,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

@@ -96,7 +96,7 @@ class SecurityAssuranceTestCase(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_security_test(self) -> "SecurityAssuranceTestCase":
+    def validate_security_test(self) -> SecurityAssuranceTestCase:
         if len(self.standards) != len(set(self.standards)):
             raise ValueError("cyber_assurance_standards_must_be_unique")
         if len(self.evidence_requirements) != len(set(self.evidence_requirements)):
@@ -138,7 +138,7 @@ class SecurityAssurancePlan(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_security_plan(self) -> "SecurityAssurancePlan":
+    def validate_security_plan(self) -> SecurityAssurancePlan:
         if len({test.test_id for test in self.tests}) != len(self.tests):
             raise ValueError("cyber_assurance_duplicate_test_id")
         for test in self.tests:
@@ -182,7 +182,7 @@ class SecurityAssuranceFinding(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_security_finding(self) -> "SecurityAssuranceFinding":
+    def validate_security_finding(self) -> SecurityAssuranceFinding:
         if len(self.evidence_refs) != len(set(self.evidence_refs)):
             raise ValueError("cyber_assurance_finding_evidence_refs_must_be_unique")
         if self.control_verified != (self.status is SecurityAssuranceStatus.PASS):
@@ -405,7 +405,7 @@ def _sealed(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

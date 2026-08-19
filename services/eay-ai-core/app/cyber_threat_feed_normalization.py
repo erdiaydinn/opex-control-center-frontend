@@ -48,7 +48,7 @@ class ThreatFeedNormalizationReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_non_authoritative(self) -> "ThreatFeedNormalizationReceipt":
+    def receipt_is_non_authoritative(self) -> ThreatFeedNormalizationReceipt:
         _aware(self.observed_at, "cyber_feed_observed_at_requires_timezone")
         _safe_ref(self.feed_ref)
         if len(self.record_fingerprints) != len(set(self.record_fingerprints)):
@@ -75,7 +75,7 @@ class NormalizedThreatFeed(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def feed_is_integral(self) -> "NormalizedThreatFeed":
+    def feed_is_integral(self) -> NormalizedThreatFeed:
         receipt = ThreatFeedNormalizationReceipt.model_validate(
             self.receipt.model_dump(mode="json")
         )
@@ -344,7 +344,7 @@ def _product_hash(vendor: Any, product: Any) -> str | None:
     if not isinstance(vendor, str) or not isinstance(product, str):
         return None
     digest = hashlib.sha256(
-        f"{vendor.strip()}|{product.strip()}".encode("utf-8")
+        f"{vendor.strip()}|{product.strip()}".encode()
     ).hexdigest()
     return f"product:sha256:{digest}"
 

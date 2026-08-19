@@ -61,7 +61,7 @@ class CurrentThreatContextReceipt(BaseModel):
     @model_validator(mode="after")
     def context_is_freshness_gated_and_non_authoritative(
         self,
-    ) -> "CurrentThreatContextReceipt":
+    ) -> CurrentThreatContextReceipt:
         if self.attack_context_present:
             if not self.attack_freshness_receipt_id or not self.attack_freshness_fingerprint:
                 if self.attack_release_current:
@@ -190,7 +190,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

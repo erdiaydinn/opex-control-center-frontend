@@ -81,7 +81,7 @@ class CyberBenchmarkProfile(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def profile_is_complete_and_non_authoritative(self) -> "CyberBenchmarkProfile":
+    def profile_is_complete_and_non_authoritative(self) -> CyberBenchmarkProfile:
         expected_tasks = {item for item in CyberBenchmarkTaskFamily}
         if set(self.task_families) != expected_tasks:
             raise ValueError("cyber_benchmark_task_families_must_be_complete")
@@ -127,7 +127,7 @@ class CyberBenchmarkComparison(BaseModel):
     blockers: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def comparison_cannot_overclaim(self) -> "CyberBenchmarkComparison":
+    def comparison_cannot_overclaim(self) -> CyberBenchmarkComparison:
         if self.production_security_superiority_claim_allowed:
             raise ValueError("cyber_benchmark_never_proves_production_security_superiority")
         if self.benchmark_superiority_claim_allowed:
@@ -332,7 +332,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

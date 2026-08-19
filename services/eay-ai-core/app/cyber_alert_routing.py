@@ -63,7 +63,7 @@ class CyberAlertRoutingDecision(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def routing_is_private_and_non_authoritative(self) -> "CyberAlertRoutingDecision":
+    def routing_is_private_and_non_authoritative(self) -> CyberAlertRoutingDecision:
         if self.notification_send_authority_granted:
             raise ValueError("cyber_alert_routing_never_grants_notification_send_authority")
         if self.execution_authority_granted:
@@ -234,7 +234,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

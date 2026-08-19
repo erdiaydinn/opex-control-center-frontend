@@ -104,7 +104,7 @@ class DefensivePriorityReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_integral_and_defensive(self) -> "DefensivePriorityReceipt":
+    def receipt_is_integral_and_defensive(self) -> DefensivePriorityReceipt:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.as_of, "cyber_priority_as_of_requires_timezone")
         if not self.advisory_only:
@@ -456,7 +456,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify_fingerprint(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

@@ -79,7 +79,7 @@ class ThreatFeedBinding(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def binding_is_fixed_read_only_and_non_authoritative(self) -> "ThreatFeedBinding":
+    def binding_is_fixed_read_only_and_non_authoritative(self) -> ThreatFeedBinding:
         expected_source = {
             ThreatFeedKind.CISA_KEV_JSON: ThreatIntelligenceSource.CISA_KEV,
             ThreatFeedKind.NVD_CVE_API: ThreatIntelligenceSource.NVD,
@@ -132,7 +132,7 @@ class ThreatFeedObservation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def observation_is_secret_safe_and_non_authoritative(self) -> "ThreatFeedObservation":
+    def observation_is_secret_safe_and_non_authoritative(self) -> ThreatFeedObservation:
         _aware(self.observed_at, "cyber_feed_observed_at_requires_timezone")
         if self.status is ThreatFeedObservationStatus.SUCCESS and self.content_sha256 is None:
             raise ValueError("cyber_feed_success_requires_content_digest")
@@ -164,7 +164,7 @@ class ThreatFeedIngestionResult(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def result_is_normalized_only(self) -> "ThreatFeedIngestionResult":
+    def result_is_normalized_only(self) -> ThreatFeedIngestionResult:
         observation = ThreatFeedObservation.model_validate(
             self.observation.model_dump(mode="json")
         )
@@ -203,7 +203,7 @@ class ThreatFeedRefreshPlan(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def plan_is_parallel_but_non_authoritative(self) -> "ThreatFeedRefreshPlan":
+    def plan_is_parallel_but_non_authoritative(self) -> ThreatFeedRefreshPlan:
         _aware(self.as_of, "cyber_feed_refresh_as_of_requires_timezone")
         if not self.may_run_in_parallel:
             raise ValueError("cyber_feed_refresh_is_parallel_by_design")
@@ -623,7 +623,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -31,7 +31,7 @@ from app.cyber_defense_priority_intelligence import (
     verify_defensive_priority_receipt,
 )
 
-NOW = datetime(2026, 8, 19, 18, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 19, 18, 30, tzinfo=UTC)
 
 
 def _identity(suffix: str = "a"):

@@ -77,7 +77,7 @@ class CyberDetectionAssuranceFinding(BaseModel):
     @model_validator(mode="after")
     def finding_is_evidence_bound_and_non_authoritative(
         self,
-    ) -> "CyberDetectionAssuranceFinding":
+    ) -> CyberDetectionAssuranceFinding:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if self.control_verified != (self.status is SecurityAssuranceStatus.PASS):
             raise ValueError("cyber_detection_assurance_pass_flag_mismatch")
@@ -238,7 +238,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

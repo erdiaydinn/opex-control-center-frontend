@@ -63,7 +63,7 @@ class AttackReleaseFeedBinding(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def binding_is_exact_release_and_non_authoritative(self) -> "AttackReleaseFeedBinding":
+    def binding_is_exact_release_and_non_authoritative(self) -> AttackReleaseFeedBinding:
         _release(self.release_ref, "attack_release_feed_invalid_release")
         expected = build_mitre_cti_release_endpoint(self.release_ref)
         if self.endpoint_ref != expected:
@@ -108,7 +108,7 @@ class AttackReleaseFeedObservation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def observation_is_exact_and_secret_safe(self) -> "AttackReleaseFeedObservation":
+    def observation_is_exact_and_secret_safe(self) -> AttackReleaseFeedObservation:
         _release(self.release_ref, "attack_release_feed_invalid_release")
         _aware(self.observed_at, "attack_release_feed_observed_at_requires_timezone")
         if self.endpoint_ref != build_mitre_cti_release_endpoint(self.release_ref):
@@ -140,7 +140,7 @@ class AttackReleaseFeedIngestionResult(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def result_reuses_canonical_threat_records(self) -> "AttackReleaseFeedIngestionResult":
+    def result_reuses_canonical_threat_records(self) -> AttackReleaseFeedIngestionResult:
         observation = AttackReleaseFeedObservation.model_validate(
             self.observation.model_dump(mode="json")
         )
@@ -285,7 +285,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

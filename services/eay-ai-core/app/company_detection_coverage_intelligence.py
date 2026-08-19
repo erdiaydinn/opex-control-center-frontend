@@ -73,7 +73,7 @@ class CompanyTelemetryCapabilityObservation(BaseModel):
     @model_validator(mode="after")
     def observation_is_company_bound_and_evidenced(
         self,
-    ) -> "CompanyTelemetryCapabilityObservation":
+    ) -> CompanyTelemetryCapabilityObservation:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if not _DATA_COMPONENT_ID.fullmatch(self.data_component_id):
             raise ValueError("company_detection_invalid_data_component_id")
@@ -135,7 +135,7 @@ class CompanyDetectionCoverageReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_does_not_turn_unknown_into_gap(self) -> "CompanyDetectionCoverageReceipt":
+    def receipt_does_not_turn_unknown_into_gap(self) -> CompanyDetectionCoverageReceipt:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.as_of, "company_detection_receipt_as_of_requires_timezone")
         component_sets = {
@@ -462,7 +462,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

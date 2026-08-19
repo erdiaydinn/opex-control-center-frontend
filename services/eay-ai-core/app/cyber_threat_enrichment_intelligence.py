@@ -71,7 +71,7 @@ class EpssObservation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def observation_is_probabilistic_and_non_authoritative(self) -> "EpssObservation":
+    def observation_is_probabilistic_and_non_authoritative(self) -> EpssObservation:
         _cve(self.cve_id, "cyber_epss_invalid_cve_id")
         _aware(self.observed_at, "cyber_epss_observed_at_requires_timezone")
         _aware(self.recorded_at, "cyber_epss_recorded_at_requires_timezone")
@@ -109,7 +109,7 @@ class DefensiveTechniqueCoverage(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def coverage_is_detection_only(self) -> "DefensiveTechniqueCoverage":
+    def coverage_is_detection_only(self) -> DefensiveTechniqueCoverage:
         _aware(self.observed_at, "cyber_attack_coverage_observed_at_requires_timezone")
         _aware(self.recorded_at, "cyber_attack_coverage_recorded_at_requires_timezone")
         if self.recorded_at < self.observed_at:
@@ -188,7 +188,7 @@ class GlobalThreatEnrichmentReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_global_and_non_authoritative(self) -> "GlobalThreatEnrichmentReceipt":
+    def receipt_is_global_and_non_authoritative(self) -> GlobalThreatEnrichmentReceipt:
         _cve(self.cve_id, "cyber_enrichment_invalid_cve_id")
         _aware(self.as_of, "cyber_enrichment_as_of_requires_timezone")
         _unique(self.threat_record_ids, "cyber_enrichment_record_ids_must_be_unique")
@@ -549,7 +549,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

@@ -24,7 +24,10 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from app.company_context_boundary import CompanyIdentity
-from app.company_cyber_incident_intelligence import CompanyIncidentAssessment, IncidentStatus
+from app.company_cyber_incident_intelligence import (
+    CompanyIncidentAssessment,
+    IncidentStatus,
+)
 
 CYBER_INCIDENT_DISCLOSURE_CONTRACT = "eay-cyber-incident-disclosure-v1"
 
@@ -59,7 +62,7 @@ class CyberIncidentAudiencePolicy(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def policy_is_explicit_and_non_authoritative(self) -> "CyberIncidentAudiencePolicy":
+    def policy_is_explicit_and_non_authoritative(self) -> CyberIncidentAudiencePolicy:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if self.role_based_full_disclosure_allowed:
             raise ValueError("cyber_incident_role_based_full_disclosure_forbidden")
@@ -86,7 +89,7 @@ class CyberIncidentRecipient(BaseModel):
     principal_ref: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def recipient_is_safe(self) -> "CyberIncidentRecipient":
+    def recipient_is_safe(self) -> CyberIncidentRecipient:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _safe_ref(self.principal_ref, "cyber_incident_unsafe_recipient_reference_forbidden")
         return self
@@ -105,7 +108,7 @@ class CyberIncidentDisclosureDecision(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def decision_cannot_expand_authority(self) -> "CyberIncidentDisclosureDecision":
+    def decision_cannot_expand_authority(self) -> CyberIncidentDisclosureDecision:
         if self.execution_authority_granted:
             raise ValueError("cyber_incident_disclosure_decision_never_grants_execution_authority")
         if self.level is CyberIncidentDisclosureLevel.FULL_INCIDENT:
@@ -248,7 +251,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

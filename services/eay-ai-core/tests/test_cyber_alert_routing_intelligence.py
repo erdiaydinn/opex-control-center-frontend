@@ -5,7 +5,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from app.alert_intelligence import AlertCandidate, PriorAlertState, evaluate_alert_policy
+from app.alert_intelligence import (
+    AlertCandidate,
+    PriorAlertState,
+    evaluate_alert_policy,
+)
 from app.company_context_boundary import build_company_identity
 from app.company_cyber_incident_intelligence import (
     SecurityEvidenceStrength,

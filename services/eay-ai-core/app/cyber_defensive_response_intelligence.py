@@ -107,7 +107,7 @@ class DefensiveResponseCandidate(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def candidate_is_advisory_and_authority_safe(self) -> "DefensiveResponseCandidate":
+    def candidate_is_advisory_and_authority_safe(self) -> DefensiveResponseCandidate:
         mutating = self.action in _MUTATING_ACTIONS
         expected_class = (
             DefensiveResponseMutationClass.MUTATING_DEFENSE_CANDIDATE
@@ -162,7 +162,7 @@ class DefensiveResponsePlan(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def plan_preserves_truth_and_execution_boundaries(self) -> "DefensiveResponsePlan":
+    def plan_preserves_truth_and_execution_boundaries(self) -> DefensiveResponsePlan:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if not self.firm_company_exposure_required_for_mutation:
             raise ValueError("cyber_response_mutation_requires_firm_company_exposure")
@@ -444,7 +444,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

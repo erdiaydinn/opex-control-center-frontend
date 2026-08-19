@@ -56,7 +56,7 @@ class AuthoritativeReleaseObservation(BaseModel):
     @model_validator(mode="after")
     def observation_is_authoritative_source_metadata(
         self,
-    ) -> "AuthoritativeReleaseObservation":
+    ) -> AuthoritativeReleaseObservation:
         _release_tuple(self.release_ref, "threat_source_freshness_invalid_release")
         _aware(self.release_observed_at, "threat_source_freshness_observed_at_requires_timezone")
         _aware(self.recorded_at, "threat_source_freshness_recorded_at_requires_timezone")
@@ -95,7 +95,7 @@ class ThreatSourceFreshnessReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_fail_closed(self) -> "ThreatSourceFreshnessReceipt":
+    def receipt_is_fail_closed(self) -> ThreatSourceFreshnessReceipt:
         _aware(self.as_of, "threat_source_freshness_as_of_requires_timezone")
         _release_tuple(
             self.authoritative_release_ref,
@@ -261,7 +261,7 @@ def _payload(model: BaseModel) -> dict[str, Any]:
 
 
 def _verify(model: BaseModel, error: str) -> None:
-    if getattr(model, "fingerprint") != _fingerprint(_payload(model)):
+    if model.fingerprint != _fingerprint(_payload(model)):
         raise ValueError(error)
 
 

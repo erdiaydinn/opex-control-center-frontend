@@ -111,7 +111,7 @@ class ThreatKnowledgeRecord(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def record_is_integral_and_non_authoritative(self) -> "ThreatKnowledgeRecord":
+    def record_is_integral_and_non_authoritative(self) -> ThreatKnowledgeRecord:
         _aware(self.published_at, "cyber_threat_published_at_requires_timezone")
         _aware(self.recorded_at, "cyber_threat_recorded_at_requires_timezone")
         if self.recorded_at < self.published_at:
@@ -154,7 +154,7 @@ class ThreatKnowledgeLedgerSnapshot(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def ledger_is_integral_and_non_authoritative(self) -> "ThreatKnowledgeLedgerSnapshot":
+    def ledger_is_integral_and_non_authoritative(self) -> ThreatKnowledgeLedgerSnapshot:
         _aware(self.as_of, "cyber_threat_ledger_as_of_requires_timezone")
         seen: set[str] = set()
         for record in self.records:
@@ -193,7 +193,7 @@ class CompanyCyberExposure(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def exposure_is_company_bound_and_non_authoritative(self) -> "CompanyCyberExposure":
+    def exposure_is_company_bound_and_non_authoritative(self) -> CompanyCyberExposure:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.assessed_at, "cyber_exposure_assessed_at_requires_timezone")
         _aware(self.recorded_at, "cyber_exposure_recorded_at_requires_timezone")
@@ -235,7 +235,7 @@ class CyberRiskAssessment(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def assessment_is_advisory(self) -> "CyberRiskAssessment":
+    def assessment_is_advisory(self) -> CyberRiskAssessment:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if not self.advisory_only:
             raise ValueError("cyber_risk_assessment_must_remain_advisory")
@@ -262,7 +262,7 @@ class DefensiveResponseCandidate(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def response_candidate_is_safe_and_non_authoritative(self) -> "DefensiveResponseCandidate":
+    def response_candidate_is_safe_and_non_authoritative(self) -> DefensiveResponseCandidate:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _unique(self.evidence_refs, "cyber_response_evidence_refs_must_be_unique")
         mutating = {

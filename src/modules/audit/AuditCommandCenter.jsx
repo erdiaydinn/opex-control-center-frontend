@@ -18,7 +18,7 @@ import {
   Video,
 } from "lucide-react";
 
-import { apiGet } from "../../api/client.js";
+import { apiFetchWithStatus, apiGet } from "../../api/client.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import AuditAssuranceWorkspace from "./AuditAssuranceWorkspace.jsx";
 import { auditCopy } from "./auditMessages.js";
@@ -44,11 +44,7 @@ function StatCard({ item, intelligence, t }) {
   const rawValue = intelligence.state === "connected" ? intelligence.facts?.[item.fact] : null;
   const hasValue = rawValue !== null && rawValue !== undefined;
   const value = hasValue ? `${rawValue}${item.percent ? "%" : ""}` : "—";
-  const note = intelligence.state === "connected"
-    ? t("deterministicReceipt")
-    : intelligence.state === "forbidden"
-      ? t("intelligenceUnavailable")
-      : t("noLiveData");
+  const note = intelligence.state === "connected" ? t("truthBoundary") : t("noLiveData");
 
   return (
     <article className={`audit-stat audit-stat--${item.tone}`} data-intelligence-state={intelligence.state}>
@@ -188,28 +184,30 @@ function AuditCommandCenter() {
 
   const refreshIntelligence = useCallback(async () => {
     setIntelligence((current) => ({ ...current, state: "loading" }));
-    try {
-      const payload = await apiGet("/v1/audit/intelligence/summary");
-      if (
-        payload?.receipt_type !== "audit_intelligence_summary"
-        || payload?.llm_computed_metrics !== false
-        || !payload?.facts
-        || !payload?.receipt_fingerprint
-      ) {
-        throw new Error("Audit intelligence receipt is invalid.");
-      }
+    const result = await apiFetchWithStatus("/v1/audit/intelligence/summary", { method: "GET" });
+    if (!result.ok) {
       setIntelligence({
-        state: "connected",
-        facts: payload.facts,
-        receiptFingerprint: payload.receipt_fingerprint,
-      });
-    } catch (error) {
-      setIntelligence({
-        state: error?.status === 403 ? "forbidden" : "error",
+        state: result.status === 403 ? "forbidden" : "error",
         facts: null,
         receiptFingerprint: null,
       });
+      return;
     }
+    const payload = result.data;
+    if (
+      payload?.receipt_type !== "audit_intelligence_summary"
+      || payload?.llm_computed_metrics !== false
+      || !payload?.facts
+      || !payload?.receipt_fingerprint
+    ) {
+      setIntelligence({ state: "error", facts: null, receiptFingerprint: null });
+      return;
+    }
+    setIntelligence({
+      state: "connected",
+      facts: payload.facts,
+      receiptFingerprint: payload.receipt_fingerprint,
+    });
   }, []);
 
   useEffect(() => {

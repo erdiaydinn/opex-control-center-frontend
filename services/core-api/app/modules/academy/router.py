@@ -14,6 +14,7 @@ from app.modules.academy.repository import (
     create_manual_enrollment,
     create_media_asset,
     create_quiz,
+    get_localization_policy,
     get_quiz_public_definition,
     grant_entitlement,
     ingest_document_chunks,
@@ -23,6 +24,7 @@ from app.modules.academy.repository import (
     reconcile_role_enrollments,
     record_platform_audit,
     revoke_completion,
+    save_localization_policy,
 )
 from app.modules.academy.schemas import (
     CertificateRevocationRequest,
@@ -31,6 +33,7 @@ from app.modules.academy.schemas import (
     DocumentIngestRequest,
     EntitlementCreateRequest,
     LearningPathCreateRequest,
+    LocalizationPolicyUpdateRequest,
     ManualEnrollmentRequest,
     MediaAssetCreateRequest,
     ProgressUpdateRequest,
@@ -61,14 +64,18 @@ def _request_id(request: Request) -> str:
 async def academy_home(session: TenantSession, principal: Viewer) -> dict[str, object]:
     await require_module(session, principal)
     await reconcile_role_enrollments(session, principal)
-    localization = localization_contract()
+    catalog = localization_contract()
+    policy = await get_localization_policy(session, principal)
     return {
         "tenant_id": str(principal.tenant_id),
         "subject": principal.subject,
-        # Backward-compatible keys for clients already reading the original Academy contract.
-        "locales": localization["core_release_locales"],
-        "direction_by_locale": localization["direction_by_locale"],
-        "localization": localization,
+        # Backward-compatible keys now reflect the tenant-enabled set.
+        "locales": policy["enabled_locales"],
+        "direction_by_locale": {
+            locale: catalog["direction_by_locale"][locale]
+            for locale in policy["enabled_locales"]
+        },
+        "localization": {**catalog, "policy": policy},
         "enrollments": await list_enrollments(session, principal),
         "content": await list_entitled_content(session, principal),
     }
@@ -184,6 +191,46 @@ async def post_knowledge_answer(
     return await answer_question(
         session, principal, request_id=_request_id(request), payload=payload
     )
+
+
+@router.put("/admin/localization")
+async def put_localization_policy(
+    payload: LocalizationPolicyUpdateRequest,
+    request: Request,
+    session: TenantSession,
+    principal: Admin,
+) -> dict[str, object]:
+    await require_module(session, principal)
+    result = await save_localization_policy(
+        session,
+        principal,
+        default_locale=payload.default_locale,
+        enabled_locales=payload.enabled_locales,
+        expected_revision=payload.expected_revision,
+    )
+    if result is None:
+        current = await get_localization_policy(session, principal)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Localization policy revision conflict",
+                "current_revision": current["revision"],
+            },
+        )
+    await record_platform_audit(
+        session,
+        principal,
+        request_id=_request_id(request),
+        action="academy.localization.policy.updated",
+        resource_type="academy_localization_policy",
+        resource_id=str(principal.tenant_id),
+        data={
+            "default_locale": result["default_locale"],
+            "enabled_locales": result["enabled_locales"],
+            "revision": result["revision"],
+        },
+    )
+    return result
 
 
 @router.post("/admin/content", status_code=status.HTTP_201_CREATED)

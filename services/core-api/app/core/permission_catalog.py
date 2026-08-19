@@ -4,6 +4,7 @@ ROUTE_MODULES = frozenset(
     {
         "admin_access",
         "academy",
+        "audit",
         "budget",
         "dockos",
         "field_intelligence",
@@ -21,6 +22,7 @@ MODULE_ADMIN = frozenset(
     {
         "admin_access",
         "academy",
+        "audit",
         "field_intelligence",
         "planogram",
     }
@@ -43,6 +45,21 @@ FEATURES = MappingProxyType(
                 "audiences",
                 "analytics",
                 "liveLearning",
+            }
+        ),
+        "audit": frozenset(
+            {
+                "commandCenter",
+                "audits",
+                "capture",
+                "standards",
+                "actions",
+                "scheduling",
+                "analytics",
+                "assurance",
+                "locations",
+                "reports",
+                "jarvis",
             }
         ),
         "budget": frozenset(
@@ -148,6 +165,22 @@ ACTIONS = MappingProxyType(
             }
         ),
         "ai_assistant": frozenset({"executeOpsRead", "executeCatalogRead", "executeLegalRead"}),
+        "audit": frozenset(
+            {
+                "startAudit",
+                "submitEvidence",
+                "decideItem",
+                "createAction",
+                "updateAction",
+                "submitVerification",
+                "verifyAction",
+                "reviewDisagreement",
+                "manageStandards",
+                "manageScheduling",
+                "manageLocations",
+                "exportResults",
+            }
+        ),
         "budget": frozenset(
             {
                 "createPlan",
@@ -290,6 +323,58 @@ ACADEMY_ADMIN_PERMISSIONS = frozenset(
     }
 )
 
+AUDIT_AUDITOR_PERMISSIONS = frozenset(
+    {
+        module_permission("audit"),
+        feature_permission("audit", "audits"),
+        feature_permission("audit", "capture"),
+        feature_permission("audit", "actions"),
+        action_permission("audit", "startAudit"),
+        action_permission("audit", "submitEvidence"),
+        action_permission("audit", "decideItem"),
+        action_permission("audit", "createAction"),
+        action_permission("audit", "updateAction"),
+        action_permission("audit", "submitVerification"),
+    }
+)
+AUDIT_MANAGER_PERMISSIONS = frozenset(
+    set(AUDIT_AUDITOR_PERMISSIONS)
+    | {
+        feature_permission("audit", "commandCenter"),
+        feature_permission("audit", "scheduling"),
+        feature_permission("audit", "analytics"),
+        feature_permission("audit", "assurance"),
+        feature_permission("audit", "locations"),
+        feature_permission("audit", "reports"),
+        feature_permission("audit", "jarvis"),
+        action_permission("audit", "verifyAction"),
+        action_permission("audit", "reviewDisagreement"),
+        action_permission("audit", "manageScheduling"),
+        action_permission("audit", "exportResults"),
+    }
+)
+AUDIT_STANDARDS_PERMISSIONS = frozenset(
+    set(AUDIT_MANAGER_PERMISSIONS)
+    | {
+        module_permission("audit", "admin"),
+        feature_permission("audit", "standards"),
+        action_permission("audit", "manageStandards"),
+        action_permission("audit", "manageLocations"),
+    }
+)
+AUDIT_EXECUTIVE_PERMISSIONS = frozenset(
+    {
+        module_permission("audit"),
+        feature_permission("audit", "commandCenter"),
+        feature_permission("audit", "audits"),
+        feature_permission("audit", "actions"),
+        feature_permission("audit", "analytics"),
+        feature_permission("audit", "reports"),
+        feature_permission("audit", "jarvis"),
+        action_permission("audit", "exportResults"),
+    }
+)
+
 FIELD_WORKER_PERMISSIONS = frozenset(
     {
         module_permission("field_intelligence"),
@@ -362,6 +447,10 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "academy_learner": ACADEMY_LEARNER_PERMISSIONS,
         "academy_instructor": ACADEMY_INSTRUCTOR_PERMISSIONS,
         "academy_admin": ACADEMY_ADMIN_PERMISSIONS,
+        "audit_auditor": AUDIT_AUDITOR_PERMISSIONS,
+        "audit_manager": AUDIT_MANAGER_PERMISSIONS,
+        "audit_standards": AUDIT_STANDARDS_PERMISSIONS,
+        "audit_executive": AUDIT_EXECUTIVE_PERMISSIONS,
         "field_worker": FIELD_WORKER_PERMISSIONS,
         "field_manager": FIELD_MANAGER_PERMISSIONS,
         "planogram_editor": PLANOGRAM_EDITOR_PERMISSIONS,

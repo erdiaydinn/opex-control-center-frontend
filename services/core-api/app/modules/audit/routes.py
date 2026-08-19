@@ -8,13 +8,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.authorization import require_permission
 from app.core.security import Principal
 
+from .assurance import (
+    append_auditor_decision_and_route,
+    auditor_assurance_summary,
+    get_assurance_case,
+    list_assurance_cases,
+    manager_decide_assurance_case,
+    standards_decide_assurance_case,
+)
 from .authorization import AuditScope, require_audit_scope, scope_allows_location
 from .repository import (
     AuditConflictError,
     AuditRepositoryError,
     activate_program,
     append_assurance_review,
-    append_decision_event,
     append_redaction_receipt,
     create_action,
     create_program,
@@ -30,10 +37,12 @@ from .schemas import (
     AuditActionUpdate,
     AuditAssuranceReviewCreate,
     AuditDecisionEventCreate,
+    AuditManagerAssuranceDecision,
     AuditProgramActivate,
     AuditProgramCreate,
     AuditRedactionReceiptCreate,
     AuditRunStart,
+    AuditStandardsAssuranceDecision,
 )
 
 router = APIRouter(prefix="/v1/audit", tags=["audit"])
@@ -118,6 +127,19 @@ async def _require_action_scope(
         scope,
         location,
         not_found_detail="Audit action not found",
+    )
+
+
+async def _require_assurance_case_scope(
+    principal: Principal,
+    scope: AuditScope,
+    case_id: UUID,
+) -> dict[str, object]:
+    case = await get_assurance_case(str(principal.tenant_id), case_id)
+    return _require_resolved_resource_scope(
+        scope,
+        case,
+        not_found_detail="Audit assurance case not found",
     )
 
 
@@ -230,7 +252,7 @@ async def post_auditor_decision(
             detail="Public auditor endpoint cannot assert AI/manager/standards authority",
         )
     try:
-        return await append_decision_event(
+        return await append_auditor_decision_and_route(
             str(principal.tenant_id),
             principal.subject,
             audit_run_id,
@@ -283,6 +305,72 @@ async def patch_audit_action(
         _raise_repository_error(exc)
 
 
+@router.get("/assurance/cases")
+async def get_assurance_cases(
+    principal: AuditViewer,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict[str, object]]:
+    scope = require_audit_scope(principal, "feature:audit:assurance")
+    return await list_assurance_cases(
+        str(principal.tenant_id),
+        location_ids=scope.location_ids,
+        regions=scope.regions,
+        unrestricted=scope.unrestricted,
+        limit=limit,
+    )
+
+
+@router.get("/assurance/auditors")
+async def get_auditor_assurance_summary(
+    principal: AuditViewer,
+) -> list[dict[str, object]]:
+    scope = require_audit_scope(principal, "feature:audit:assurance")
+    return await auditor_assurance_summary(
+        str(principal.tenant_id),
+        location_ids=scope.location_ids,
+        regions=scope.regions,
+        unrestricted=scope.unrestricted,
+    )
+
+
+@router.post("/assurance/cases/{case_id}/manager-decision")
+async def post_manager_assurance_decision(
+    case_id: UUID,
+    payload: AuditManagerAssuranceDecision,
+    principal: AuditViewer,
+) -> dict[str, object]:
+    scope = require_audit_scope(principal, "action:audit:reviewDisagreement")
+    await _require_assurance_case_scope(principal, scope, case_id)
+    try:
+        return await manager_decide_assurance_case(
+            str(principal.tenant_id),
+            principal.subject,
+            case_id,
+            payload,
+        )
+    except AuditRepositoryError as exc:
+        _raise_repository_error(exc)
+
+
+@router.post("/assurance/cases/{case_id}/standards-decision")
+async def post_standards_assurance_decision(
+    case_id: UUID,
+    payload: AuditStandardsAssuranceDecision,
+    principal: AuditViewer,
+) -> dict[str, object]:
+    scope = require_audit_scope(principal, "action:audit:manageStandards")
+    await _require_assurance_case_scope(principal, scope, case_id)
+    try:
+        return await standards_decide_assurance_case(
+            str(principal.tenant_id),
+            principal.subject,
+            case_id,
+            payload,
+        )
+    except AuditRepositoryError as exc:
+        _raise_repository_error(exc)
+
+
 @router.post(
     "/runs/{audit_run_id}/assurance-reviews",
     status_code=status.HTTP_201_CREATED,
@@ -292,6 +380,8 @@ async def post_assurance_review(
     payload: AuditAssuranceReviewCreate,
     principal: AuditViewer,
 ) -> dict[str, object]:
+    """Legacy append-only review endpoint; current-state routing uses assurance cases."""
+
     standards_review = payload.state == "OPERATIONS_STANDARDS_REVIEW"
     permission = (
         "action:audit:manageStandards"

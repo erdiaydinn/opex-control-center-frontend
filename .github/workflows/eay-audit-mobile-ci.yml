@@ -65,10 +65,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE 'latest\.release|\+(["'"'])' android-field-ui --include='*.gradle' --include='*.gradle.kts'; then
-            echo "Dynamic Android dependency detected; exact versions are required." >&2
-            exit 1
-          fi
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          bad = []
+          root = Path("android-field-ui")
+          paths = sorted({*root.rglob("*.gradle"), *root.rglob("*.gradle.kts")})
+          dynamic_version = re.compile(r'''["'][^"'\n]*:[^"'\n]*\+["']''')
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              for line_no, line in enumerate(text.splitlines(), 1):
+                  if "latest.release" in line or dynamic_version.search(line):
+                      bad.append(f"{path}:{line_no}:{line.strip()}")
+          if bad:
+              print("\n".join(bad))
+              raise SystemExit("Dynamic Android dependency detected; exact versions are required.")
+          print("Android dependency pinning: PASS")
+          PY
 
       - name: Compile native audit surface
         run: gradle -p android-field-ui :field-ui:compileDebugKotlin --stacktrace

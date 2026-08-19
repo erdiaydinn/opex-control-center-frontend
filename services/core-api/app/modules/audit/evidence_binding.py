@@ -24,12 +24,11 @@ async def bind_server_evidence_to_redaction_receipt(
     detector_model_ref: str,
     device_id: str | None,
 ) -> dict[str, object]:
-    """Bind a client redaction claim to a server-issued private evidence receipt.
+    """Bind client provenance to one server-issued private evidence receipt.
 
-    The client cannot choose the canonical redacted evidence reference. The server resolves the
-    Field evidence receipt and proves it belongs to the same Audit run mission/location before
-    creating the Audit redaction receipt. This does *not* verify the raw source fingerprint and
-    does not authorize AI inference.
+    The sanitized object hash/size is server-proven through the existing Field evidence
+    authority. The raw source fingerprint remains client provenance only. Neither fact grants
+    server privacy verification or downstream vision-inference authority.
     """
 
     async with engine.begin() as connection:
@@ -57,14 +56,15 @@ async def bind_server_evidence_to_redaction_receipt(
         field_result = await connection.execute(
             text(
                 """
-                SELECT id, mission_id, location_id, field_key, media_type,
-                       sha256, byte_size, storage_provider, storage_key,
-                       client_submission_id, created_at
+                SELECT receipt_id, mission_id, location_id, field_key, media_type,
+                       sha256, byte_size, storage_provider, storage_receipt_hash,
+                       client_submission_id, received_at, expires_at
                 FROM field_evidence_object_receipts
                 WHERE tenant_id = CAST(:tenant_id AS UUID)
-                  AND id = CAST(:field_evidence_receipt_id AS UUID)
+                  AND receipt_id = CAST(:field_evidence_receipt_id AS UUID)
                   AND mission_id = CAST(:mission_id AS UUID)
                   AND location_id = :location_id
+                  AND expires_at > CURRENT_TIMESTAMP
                 LIMIT 1
                 """
             ),
@@ -78,35 +78,40 @@ async def bind_server_evidence_to_redaction_receipt(
         field_receipt = field_result.first()
         if not field_receipt:
             raise AuditRepositoryError(
-                "private evidence receipt does not belong to this audit run mission/location"
+                "active private evidence receipt does not belong to this audit run mission/location"
             )
+        if field_receipt.storage_provider != "private_gateway":
+            raise AuditRepositoryError("Audit evidence must come from the private Field gateway")
         if field_receipt.media_type != "image/jpeg":
             raise AuditRepositoryError(
                 "Audit redaction binding currently accepts sanitized image/jpeg evidence only"
             )
         if not field_receipt.sha256 or len(field_receipt.sha256) != 64:
             raise AuditRepositoryError("private evidence receipt has no valid server hash")
+        if not field_receipt.storage_receipt_hash or len(field_receipt.storage_receipt_hash) != 64:
+            raise AuditRepositoryError("private evidence receipt has no valid gateway receipt hash")
         if not field_receipt.byte_size or field_receipt.byte_size <= 0:
             raise AuditRepositoryError("private evidence receipt has no valid server byte size")
 
-        canonical_ref = f"field-evidence-receipt:{field_receipt.id}"
+        canonical_ref = f"field-evidence-receipt:{field_receipt.receipt_id}"
         existing_result = await connection.execute(
             text(
                 """
-                SELECT id, source_fingerprint, redacted_evidence_ref,
-                       privacy_policy_version, detector_model_ref,
-                       frame_count, processed_frame_count, created_at
+                SELECT id, field_evidence_receipt_id, source_fingerprint,
+                       redacted_evidence_ref, redacted_object_sha256,
+                       redacted_object_byte_size, privacy_policy_version,
+                       detector_model_ref, frame_count, processed_frame_count, created_at
                 FROM audit_redaction_receipts
                 WHERE tenant_id = CAST(:tenant_id AS UUID)
                   AND audit_run_id = CAST(:audit_run_id AS UUID)
-                  AND redacted_evidence_ref = :redacted_evidence_ref
+                  AND field_evidence_receipt_id = CAST(:field_evidence_receipt_id AS UUID)
                 LIMIT 1
                 """
             ),
             {
                 "tenant_id": tenant_id,
                 "audit_run_id": str(audit_run_id),
-                "redacted_evidence_ref": canonical_ref,
+                "field_evidence_receipt_id": str(field_receipt.receipt_id),
             },
         )
         existing = existing_result.first()
@@ -115,13 +120,21 @@ async def bind_server_evidence_to_redaction_receipt(
                 raise AuditConflictError(
                     "private evidence receipt is already bound to different source provenance"
                 )
+            if (
+                existing.redacted_evidence_ref != canonical_ref
+                or existing.redacted_object_sha256 != field_receipt.sha256
+                or existing.redacted_object_byte_size != field_receipt.byte_size
+            ):
+                raise AuditConflictError(
+                    "private evidence receipt no longer matches immutable Audit binding integrity"
+                )
             return {
                 **_dict(existing),
-                "field_evidence_receipt_id": str(field_receipt.id),
-                "redacted_object_sha256": field_receipt.sha256,
-                "redacted_object_byte_size": field_receipt.byte_size,
+                "field_evidence_receipt_id": str(field_receipt.receipt_id),
+                "field_key": field_receipt.field_key,
                 "redacted_object_hash_verified": True,
                 "source_fingerprint_verified": False,
+                "client_redaction_claim_only": True,
                 "server_privacy_verified": False,
                 "vision_inference_authorized": False,
                 "idempotent_replay": True,
@@ -134,17 +147,23 @@ async def bind_server_evidence_to_redaction_receipt(
                     tenant_id, audit_run_id, location_id, device_id,
                     media_kind, source_fingerprint, redacted_evidence_ref,
                     privacy_policy_version, detector_model_ref,
-                    frame_count, processed_frame_count
+                    frame_count, processed_frame_count,
+                    field_evidence_receipt_id, redacted_object_sha256,
+                    redacted_object_byte_size
                 ) VALUES (
                     CAST(:tenant_id AS UUID), CAST(:audit_run_id AS UUID),
                     :location_id, :device_id, 'image', :source_fingerprint,
                     :redacted_evidence_ref, :privacy_policy_version,
-                    :detector_model_ref, 1, 1
+                    :detector_model_ref, 1, 1,
+                    CAST(:field_evidence_receipt_id AS UUID), :redacted_object_sha256,
+                    :redacted_object_byte_size
                 )
                 RETURNING id, audit_run_id, location_id, device_id,
                           media_kind, source_fingerprint, redacted_evidence_ref,
                           privacy_policy_version, detector_model_ref,
-                          frame_count, processed_frame_count, created_at
+                          frame_count, processed_frame_count,
+                          field_evidence_receipt_id, redacted_object_sha256,
+                          redacted_object_byte_size, created_at
                 """
             ),
             {
@@ -156,17 +175,19 @@ async def bind_server_evidence_to_redaction_receipt(
                 "redacted_evidence_ref": canonical_ref,
                 "privacy_policy_version": privacy_policy_version,
                 "detector_model_ref": detector_model_ref,
+                "field_evidence_receipt_id": str(field_receipt.receipt_id),
+                "redacted_object_sha256": field_receipt.sha256,
+                "redacted_object_byte_size": field_receipt.byte_size,
             },
         )
         bound = _dict(insert_result.one())
         return {
             **bound,
-            "field_evidence_receipt_id": str(field_receipt.id),
+            "field_evidence_receipt_id": str(field_receipt.receipt_id),
             "field_key": field_receipt.field_key,
-            "redacted_object_sha256": field_receipt.sha256,
-            "redacted_object_byte_size": field_receipt.byte_size,
             "redacted_object_hash_verified": True,
             "source_fingerprint_verified": False,
+            "client_redaction_claim_only": True,
             "server_privacy_verified": False,
             "vision_inference_authorized": False,
             "idempotent_replay": False,

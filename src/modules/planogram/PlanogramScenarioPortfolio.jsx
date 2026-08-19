@@ -3,8 +3,10 @@ import { GitCompareArrows, ShieldCheck } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
 import { translatePlanogramScenario } from "../../platform/i18n/planogramScenarioMessages.js";
+import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import {
   buildPlanogramScenarioPortfolio,
+  safePhysicalLayoutCandidateReplayResponse,
   safePhysicalLayoutPortfolioResponse,
 } from "./planogramScenarioPortfolio.js";
 import "./planogram-scenario-portfolio.css";
@@ -19,6 +21,9 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [portfolio, setPortfolio] = useState(null);
+  const [replayingFingerprint, setReplayingFingerprint] = useState("");
+  const [scenarioPreview, setScenarioPreview] = useState(null);
+  const [scenarioPreviewError, setScenarioPreviewError] = useState("");
   const basketCount = candidate?.order_baskets?.length || 0;
   const canRun = Boolean(candidate && canCreate && basketCount > 0 && !running);
 
@@ -27,6 +32,8 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
     setRunning(true);
     setError("");
     setPortfolio(null);
+    setScenarioPreview(null);
+    setScenarioPreviewError("");
     try {
       const raw = await apiPost("/v1/planogram/physical-layout-search-preview", candidate);
       const safe = safePhysicalLayoutPortfolioResponse(raw);
@@ -41,8 +48,37 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
     }
   }, [canRun, candidate, t]);
 
+  const openTwin = useCallback(async (plan) => {
+    const fingerprint = String(plan?.candidate?.layout_fingerprint || "").trim().toLowerCase();
+    if (!candidate || !canCreate || !basketCount || !fingerprint || replayingFingerprint) return;
+    setReplayingFingerprint(fingerprint);
+    setScenarioPreview(null);
+    setScenarioPreviewError("");
+    try {
+      const raw = await apiPost("/v1/planogram/physical-layout-candidate-preview", {
+        ...candidate,
+        layout_fingerprint: fingerprint,
+      });
+      const safe = safePhysicalLayoutCandidateReplayResponse(raw, fingerprint);
+      if (!safe) throw new Error("scenario_replay_authority_boundary_failed");
+      setScenarioPreview({
+        planId: plan.planId,
+        fingerprint,
+        engineResult: safe.result.optimizer_result,
+        candidate: {
+          ...candidate,
+          layout: safe.result.physical_layout,
+        },
+      });
+    } catch {
+      setScenarioPreviewError(t("twinUnavailable"));
+    } finally {
+      setReplayingFingerprint("");
+    }
+  }, [basketCount, canCreate, candidate, replayingFingerprint, t]);
+
   return (
-    <section className="eay-planogram-scenario" aria-busy={running ? "true" : "false"}>
+    <section className="eay-planogram-scenario" aria-busy={running || Boolean(replayingFingerprint) ? "true" : "false"}>
       <header>
         <div>
           <GitCompareArrows size={20} aria-hidden="true" />
@@ -55,7 +91,7 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
       </header>
 
       <div className="eay-planogram-scenario-actions">
-        <button type="button" onClick={run} disabled={!canRun}>
+        <button type="button" onClick={run} disabled={!canRun || Boolean(replayingFingerprint)}>
           {running ? t("running") : t("run")}
         </button>
         {!canCreate ? <span>{t("permissionRequired")}</span> : null}
@@ -75,10 +111,12 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
             {portfolio.plans.map((plan) => {
               const candidateRow = plan.candidate;
               const objective = candidateRow.objective || {};
+              const fingerprint = String(candidateRow.layout_fingerprint || "").toLowerCase();
+              const replaying = replayingFingerprint === fingerprint;
               return (
                 <article key={plan.planId} data-frontier={plan.onFrontier ? "true" : "false"}>
                   <header>
-                    <strong>{plan.planId.replace("plan-", "Plan ")}</strong>
+                    <strong>{t("plan")} {plan.planId.slice(-1).toUpperCase()}</strong>
                     {plan.onFrontier ? <span>{t("frontier")}</span> : null}
                   </header>
                   <div className="eay-planogram-scenario-roles">
@@ -101,10 +139,44 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
                     <span>{t("fingerprint")}</span>
                     <code>{candidateRow.layout_fingerprint}</code>
                   </div>
+                  <button
+                    type="button"
+                    className="eay-planogram-scenario-twin-button"
+                    onClick={() => openTwin(plan)}
+                    disabled={!canCreate || !basketCount || Boolean(replayingFingerprint)}
+                  >
+                    {replaying ? t("openingTwin") : t("openTwin")}
+                  </button>
                 </article>
               );
             })}
           </div>
+
+          {scenarioPreviewError ? (
+            <p className="eay-planogram-scenario-error" role="alert">{scenarioPreviewError}</p>
+          ) : null}
+
+          {scenarioPreview ? (
+            <div className="eay-planogram-scenario-twin" role="status" aria-live="polite">
+              <header>
+                <div>
+                  <strong>{t("twinTitle")}</strong>
+                  <span>{t("plan")} {scenarioPreview.planId.slice(-1).toUpperCase()}</span>
+                </div>
+                <div>
+                  <span>{t("selectedFingerprint")}</span>
+                  <code>{scenarioPreview.fingerprint}</code>
+                </div>
+              </header>
+              <p>{t("twinBoundary")}</p>
+              <PlanogramDigitalTwin
+                engineResult={scenarioPreview.engineResult}
+                candidate={scenarioPreview.candidate}
+                locale={locale}
+                formatNumber={formatNumber}
+              />
+            </div>
+          ) : null}
 
           <div className="eay-planogram-scenario-boundary">
             <ShieldCheck size={18} aria-hidden="true" />

@@ -154,8 +154,9 @@ jobs:
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_master26_execution.py
-      - name: Interactive engineering 2D 3D and route convergence
+      - name: Interactive engineering 2D 3D basket and route convergence
         run: |
+          node scripts/test-planogram-candidate-baskets.mjs
           node scripts/test-planogram-digital-twin.mjs
           node scripts/test-planogram-engineering-2d.mjs
           node scripts/test-planogram-route-explainability.mjs
@@ -187,6 +188,7 @@ jobs:
               assert forbidden not in properties
           assert DEFAULT_MIN_DETECTION_CONFIDENCE >= 0.8
           print('PLANOGRAM_MARKET_LEADERSHIP_CONVERGENCE_REPOSITORY=PASS')
+          print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')
           print('PLANOGRAM_BLIND_ENGINE_REAL_SIMULATOR_RED_TEAM=PASS')
           print('PLANOGRAM_CAD_CREATE_EXPORT_DUAL_AUTHORITY=PASS')
           print('PLANOGRAM_ECONOMICS_CREATE_APPROVE_DUAL_AUTHORITY=PASS')

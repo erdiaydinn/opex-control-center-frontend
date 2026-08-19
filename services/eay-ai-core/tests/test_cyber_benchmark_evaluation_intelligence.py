@@ -47,28 +47,38 @@ def _good_value(metric_name: str) -> float:
     return 1.0
 
 
+def _case_result(
+    *,
+    profile,
+    metric_name: str,
+    index: int,
+    system_id: str = "jarvis",
+    environment_fingerprint: str = ENVIRONMENT,
+    case_fingerprint: str | None = None,
+):
+    return build_cyber_benchmark_case_result(
+        profile=profile,
+        case_id=f"case:{metric_name}:{index:02d}",
+        case_fingerprint=case_fingerprint or _case_fingerprint(metric_name, index),
+        metric_name=metric_name,
+        system_id=system_id,
+        system_version="2026.08.19",
+        environment_fingerprint=environment_fingerprint,
+        observed_value=_good_value(metric_name),
+        adjudication_method=CyberBenchmarkAdjudicationMethod.DETERMINISTIC,
+        evidence_ref=f"cyberbench-evidence:{metric_name}:{index:02d}",
+        adjudicator_ref="cyberbench-adjudicator:deterministic-v1",
+        reviewed_at=NOW,
+    )
+
+
 def _results(*, profile=None, count: int = CYBER_BENCHMARK_MIN_CASES_PER_METRIC):
     profile = profile or _profile()
-    results = []
-    for metric in profile.metrics:
-        for index in range(count):
-            results.append(
-                build_cyber_benchmark_case_result(
-                    profile=profile,
-                    case_id=f"case:{metric.metric_name}:{index:02d}",
-                    case_fingerprint=_case_fingerprint(metric.metric_name, index),
-                    metric_name=metric.metric_name,
-                    system_id="jarvis",
-                    system_version="2026.08.19",
-                    environment_fingerprint=ENVIRONMENT,
-                    observed_value=_good_value(metric.metric_name),
-                    adjudication_method=CyberBenchmarkAdjudicationMethod.DETERMINISTIC,
-                    evidence_ref=f"cyberbench-evidence:{metric.metric_name}:{index:02d}",
-                    adjudicator_ref="cyberbench-adjudicator:deterministic-v1",
-                    reviewed_at=NOW,
-                )
-            )
-    return tuple(results)
+    return tuple(
+        _case_result(profile=profile, metric_name=metric.metric_name, index=index)
+        for metric in profile.metrics
+        for index in range(count)
+    )
 
 
 def test_case_level_evidence_compiles_all_metrics_only_after_twenty_unique_cases_each():
@@ -159,10 +169,9 @@ def test_missing_metric_cannot_be_hidden_by_aggregate_scores():
 
 def test_metric_with_fewer_than_twenty_unique_cases_fails_closed():
     profile = _profile()
-    results = list(_results(profile=profile))
     results = [
         item
-        for item in results
+        for item in _results(profile=profile)
         if not (
             item.metric_name == "company_risk_precision"
             and item.case_id.endswith(":19")
@@ -189,8 +198,12 @@ def test_duplicate_case_fingerprint_cannot_inflate_sample_count():
     profile = _profile()
     results = list(_results(profile=profile))
     first = results[0]
-    results[1] = results[1].model_copy(
-        update={"case_fingerprint": first.case_fingerprint}
+    second = results[1]
+    results[1] = _case_result(
+        profile=profile,
+        metric_name=second.metric_name,
+        index=1,
+        case_fingerprint=first.case_fingerprint,
     )
     with pytest.raises(
         ValueError,
@@ -202,7 +215,13 @@ def test_duplicate_case_fingerprint_cannot_inflate_sample_count():
 def test_mixed_system_or_environment_results_cannot_be_combined():
     profile = _profile()
     results = list(_results(profile=profile))
-    results[-1] = results[-1].model_copy(update={"system_id": "peer-frontier"})
+    last = results[-1]
+    results[-1] = _case_result(
+        profile=profile,
+        metric_name=last.metric_name,
+        index=19,
+        system_id="peer-frontier",
+    )
     with pytest.raises(
         ValueError,
         match="cyber_benchmark_evaluation_system_or_environment_mismatch",
@@ -212,8 +231,17 @@ def test_mixed_system_or_environment_results_cannot_be_combined():
 
 def test_profile_binding_cannot_be_swapped_after_case_adjudication():
     profile = _profile()
+    other_profile = default_cyber_benchmark_profile(
+        profile_id="cyberbench:evaluation:other-v1",
+        evidence_class=CyberBenchmarkEvidenceClass.AUTHORIZED_SANDBOX,
+    )
     results = list(_results(profile=profile))
-    results[0] = results[0].model_copy(update={"profile_fingerprint": "f" * 64})
+    first = results[0]
+    results[0] = _case_result(
+        profile=other_profile,
+        metric_name=first.metric_name,
+        index=0,
+    )
     with pytest.raises(ValueError, match="cyber_benchmark_evaluation_profile_mismatch"):
         compile_cyber_benchmark_evaluation(profile=profile, results=tuple(results))
 

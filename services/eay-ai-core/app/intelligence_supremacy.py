@@ -526,7 +526,7 @@ def build_learning_calibration_candidate(
         "decision_type": decision_type,
         "proposed_confidence_multiplier": assessment.suggested_confidence_multiplier,
         "outcome_evidence_refs": list(assessment.learning_evidence_refs),
-        "recorded_at": recorded_at.isoformat(),
+        "recorded_at": recorded_at.isoformat().replace("+00:00", "Z"),
         "automatic_model_weight_update_allowed": False,
         "automatic_policy_update_allowed": False,
         "active": False,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
 
@@ -36,7 +35,8 @@ from app.picker_shift_order_lookup import (
 from app.world_model import TruthClass
 
 NOW = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
-IDENTITY = "workload-identity://corp/bigquery-readonly"
+PRINCIPAL_EMAIL = "corp-bigquery-readonly@fulfillment-dwh-production.iam.gserviceaccount.com"
+IDENTITY = f"google-principal://{PRINCIPAL_EMAIL}"
 ENVIRONMENT = "production"
 
 
@@ -59,7 +59,10 @@ def _request(order_ids=("MLRN-2627-BMXL", "h962-2630-bxqj")):
     )
 
 
-def _execution() -> PickerShiftOrderLookupExecution:
+def _execution(
+    *,
+    observed_identity: str = IDENTITY,
+) -> PickerShiftOrderLookupExecution:
     return PickerShiftOrderLookupExecution(
         rows=(
             PickerShiftOrderLookupRow(
@@ -88,6 +91,7 @@ def _execution() -> PickerShiftOrderLookupExecution:
         job_id="job-picker-lookup-001",
         project_ref="fulfillment-dwh-production",
         location="EU",
+        observed_execution_identity_ref=observed_identity,
         statement_type="SELECT",
         started_at=NOW + timedelta(seconds=1),
         completed_at=NOW + timedelta(seconds=3),
@@ -116,15 +120,16 @@ def _policy() -> LiveSourceBindingPolicy:
 
 
 def test_picker_lookup_request_normalizes_large_order_batch_and_static_sql_is_parameterized():
-    order_ids = tuple(f"TEST-{index:04d}" for index in range(300)) + ("test-0001", "order_id")
+    order_ids = tuple(f"TEST-{index:04d}" for index in range(300)) + (
+        "test-0001",
+        "order_id",
+    )
     request = _request(order_ids)
     assert len(request.order_ids) == 300
     assert request.order_ids[0] == "test-0000"
     assert request.order_ids[-1] == "test-0299"
-    assert "@order_ids" in PICKER_SHIFT_ORDER_LOOKUP_SQL
-    assert "@global_entity_id" in PICKER_SHIFT_ORDER_LOOKUP_SQL
-    assert "@start_date" in PICKER_SHIFT_ORDER_LOOKUP_SQL
-    assert "@end_date" in PICKER_SHIFT_ORDER_LOOKUP_SQL
+    for parameter in ("@order_ids", "@global_entity_id", "@start_date", "@end_date"):
+        assert parameter in PICKER_SHIFT_ORDER_LOOKUP_SQL
     assert "qc_picker_shift_orders" in PICKER_SHIFT_ORDER_LOOKUP_SQL
     upper = " " + " ".join(PICKER_SHIFT_ORDER_LOOKUP_SQL.upper().split()) + " "
     for token in (" INSERT ", " UPDATE ", " DELETE ", " MERGE ", " CREATE ", " DROP "):
@@ -132,7 +137,7 @@ def test_picker_lookup_request_normalizes_large_order_batch_and_static_sql_is_pa
     assert len(PICKER_SHIFT_ORDER_LOOKUP_QUERY_FINGERPRINT) == 64
 
 
-def test_picker_lookup_refuses_cross_tenant_and_unreviewed_window():
+def test_picker_lookup_refuses_cross_tenant_unreviewed_window_and_opaque_identity():
     with pytest.raises(ValueError, match="picker_shift_lookup_only_ys_tr_reviewed"):
         PickerShiftOrderLookupRequest(
             tenant_id="DE_DE",
@@ -147,9 +152,18 @@ def test_picker_lookup_refuses_cross_tenant_and_unreviewed_window():
             start_date=date(2026, 1, 1),
             end_date=date(2026, 7, 31),
         )
+    with pytest.raises(
+        ValueError,
+        match="picker_shift_lookup_execution_identity_must_be_observable_google_principal",
+    ):
+        build_picker_shift_order_lookup_plan(
+            environment_ref=ENVIRONMENT,
+            execution_identity_ref="workload-identity://opaque-alias",
+            requested_at=NOW,
+        )
 
 
-def test_prepared_lookup_emits_secret_safe_job_receipt_and_normalized_fields():
+def test_prepared_lookup_emits_principal_bound_secret_safe_job_receipt():
     receipts = []
     runner = FakeRunner(_execution())
     executor = PickerShiftOrderLookupPreparedExecutor(
@@ -172,6 +186,7 @@ def test_prepared_lookup_emits_secret_safe_job_receipt_and_normalized_fields():
     assert len(receipts) == 1
     receipt = receipts[0]
     assert receipt.success is True
+    assert receipt.execution_identity_ref == IDENTITY
     assert receipt.row_count == 2
     assert receipt.total_bytes_processed == 123456789
     assert receipt.query_fingerprint == PICKER_SHIFT_ORDER_LOOKUP_QUERY_FINGERPRINT
@@ -188,6 +203,31 @@ def test_prepared_lookup_emits_secret_safe_job_receipt_and_normalized_fields():
         "warehouse-fulya",
     ):
         assert sensitive_value not in receipt_json
+
+
+def test_prepared_lookup_rejects_job_executed_by_different_principal_before_receipt():
+    receipts = []
+    wrong_identity = "google-principal://unexpected-user@example.com"
+    runner = FakeRunner(_execution(observed_identity=wrong_identity))
+    executor = PickerShiftOrderLookupPreparedExecutor(
+        request=_request(),
+        runner=runner,
+        execution_identity_ref=IDENTITY,
+        receipt_recorder=receipts.append,
+    )
+    plan = build_picker_shift_order_lookup_plan(
+        environment_ref=ENVIRONMENT,
+        execution_identity_ref=IDENTITY,
+        requested_at=NOW,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="picker_shift_lookup_observed_execution_identity_mismatch",
+    ):
+        executor.execute(plan)
+    assert runner.calls == 1
+    assert receipts == []
 
 
 def test_lookup_composes_with_existing_registry_protocol_and_collection_runtime():
@@ -247,7 +287,10 @@ def test_descriptor_cannot_self_promote_to_field_proven():
     )
     assert descriptor.acceptance is AdapterAcceptance.REPOSITORY_ONLY
     assert descriptor.field_production_verified is False
-    with pytest.raises(ValueError, match="picker_shift_lookup_field_proven_requires_external_attestation"):
+    with pytest.raises(
+        ValueError,
+        match="picker_shift_lookup_field_proven_requires_external_attestation",
+    ):
         build_picker_shift_order_lookup_descriptor(
             environment_ref=ENVIRONMENT,
             execution_identity_ref=IDENTITY,
@@ -292,6 +335,7 @@ class _FakeJob:
     job_id = "real-runner-job-1"
     project = "fulfillment-dwh-production"
     location = "EU"
+    user_email = PRINCIPAL_EMAIL
     statement_type = "SELECT"
     error_result = None
     started = NOW + timedelta(seconds=1)
@@ -342,6 +386,7 @@ def test_real_sdk_runner_shape_submits_only_static_query_with_typed_parameters(m
     execution = runner.run(_request())
 
     assert execution.statement_type == "SELECT"
+    assert execution.observed_execution_identity_ref == IDENTITY
     assert execution.rows[0].order_id == "mlrn-2627-bmxl"
     assert execution.rows[0].order_created_at_lt.utcoffset() == timedelta(hours=3)
     assert len(client.calls) == 1

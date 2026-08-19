@@ -2,6 +2,7 @@ package com.eay.inventory
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class InventoryRecoveryContractTest {
@@ -65,6 +66,18 @@ class InventoryRecoveryContractTest {
             )
             check(result.intent != InventoryRecoveryIntent.WAIT_FOR_AUTO_RETRY)
         }
+    }
+
+    @Test
+    fun authBindingMismatchCannotBeFixedBySigningInAgain() {
+        val result = requireNotNull(
+            InventoryRecoveryContract.classify(
+                event("QUARANTINED", "AUTH_BINDING_CHANGED"),
+            ),
+        )
+        assertEquals(InventoryRecoverySeverity.SECURITY, result.severity)
+        assertEquals(InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW, result.intent)
+        assertNotEquals(InventoryRecoveryIntent.SIGN_IN_AGAIN, result.intent)
     }
 
     @Test

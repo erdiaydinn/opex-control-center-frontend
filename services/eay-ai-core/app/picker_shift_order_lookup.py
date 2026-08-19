@@ -98,6 +98,7 @@ PICKER_SHIFT_ORDER_LOOKUP_QUERY_FINGERPRINT = hashlib.sha256(
 ).hexdigest()
 
 _ISTANBUL = ZoneInfo("Europe/Istanbul")
+_GOOGLE_PRINCIPAL_PREFIX = "google-principal://"
 _FORBIDDEN_SQL_TOKENS = (
     " INSERT ",
     " UPDATE ",
@@ -179,6 +180,7 @@ class PickerShiftOrderLookupExecution(BaseModel):
     job_id: str = Field(min_length=1)
     project_ref: str = Field(min_length=1)
     location: str = Field(min_length=1)
+    observed_execution_identity_ref: str = Field(min_length=1)
     statement_type: str
     started_at: datetime
     completed_at: datetime
@@ -194,6 +196,7 @@ class PickerShiftOrderLookupExecution(BaseModel):
     def execution_is_read_only_and_secret_safe(self) -> "PickerShiftOrderLookupExecution":
         _require_aware(self.started_at, "picker_shift_lookup_started_at_requires_timezone")
         _require_aware(self.completed_at, "picker_shift_lookup_completed_at_requires_timezone")
+        _require_google_principal_ref(self.observed_execution_identity_ref)
         if self.completed_at < self.started_at:
             raise ValueError("picker_shift_lookup_completed_before_started")
         if self.statement_type.upper() != "SELECT":
@@ -235,6 +238,7 @@ class PickerShiftOrderLookupReceipt(BaseModel):
             self.completed_at,
             "picker_shift_lookup_receipt_completed_at_requires_timezone",
         )
+        _require_google_principal_ref(self.execution_identity_ref)
         if self.truth_authority_granted:
             raise ValueError("picker_shift_lookup_receipt_never_grants_truth_authority")
         if self.execution_authority_granted:
@@ -278,6 +282,23 @@ ReceiptRecorder = Callable[[PickerShiftOrderLookupReceipt], None]
 def _require_aware(value: datetime, error: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(error)
+
+
+def _require_google_principal_ref(value: str) -> None:
+    if not value.startswith(_GOOGLE_PRINCIPAL_PREFIX):
+        raise ValueError("picker_shift_lookup_execution_identity_must_be_observable_google_principal")
+    principal = value.removeprefix(_GOOGLE_PRINCIPAL_PREFIX).strip().lower()
+    if not principal or "@" not in principal or any(char.isspace() for char in principal):
+        raise ValueError("picker_shift_lookup_execution_identity_invalid_google_principal")
+
+
+def _principal_ref_from_job(job) -> str:
+    user_email = str(getattr(job, "user_email", "") or "").strip().lower()
+    if not user_email:
+        raise RuntimeError("picker_shift_lookup_bigquery_job_principal_missing")
+    principal_ref = f"{_GOOGLE_PRINCIPAL_PREFIX}{user_email}"
+    _require_google_principal_ref(principal_ref)
+    return principal_ref
 
 
 def _canonical_utc(value: datetime) -> str:
@@ -466,6 +487,7 @@ class GoogleBigQueryPickerShiftOrderLookupRunner:
             job_id=str(getattr(job, "job_id", "") or "unknown-job"),
             project_ref=str(getattr(job, "project", "") or self.project_id),
             location=str(getattr(job, "location", "") or self.location or "unspecified"),
+            observed_execution_identity_ref=_principal_ref_from_job(job),
             statement_type=statement_type,
             started_at=_aware_utc(getattr(job, "started", None)),
             completed_at=_aware_utc(getattr(job, "ended", None)),
@@ -485,6 +507,7 @@ class PickerShiftOrderLookupPreparedExecutor:
     receipt_recorder: ReceiptRecorder
 
     def execute(self, plan: ReadOnlySourcePlan) -> NormalizedCompanyReadResult:
+        _require_google_principal_ref(self.execution_identity_ref)
         if plan.tenant_id != self.request.tenant_id:
             raise ValueError("picker_shift_lookup_plan_tenant_mismatch")
         if plan.binding_id != PICKER_SHIFT_ORDER_LOOKUP_BINDING_ID:
@@ -512,13 +535,15 @@ class PickerShiftOrderLookupPreparedExecutor:
             raise ValueError("picker_shift_lookup_execution_predates_plan")
         if execution.project_ref != PICKER_SHIFT_ORDER_LOOKUP_PROJECT:
             raise ValueError("picker_shift_lookup_execution_project_drift")
+        if execution.observed_execution_identity_ref != self.execution_identity_ref:
+            raise ValueError("picker_shift_lookup_observed_execution_identity_mismatch")
 
         job_ref = f"bigquery-job://{execution.project_ref}/{execution.location}/{execution.job_id}"
         receipt_payload = _receipt_payload_values(
             contract=PICKER_SHIFT_ORDER_LOOKUP_CONTRACT,
             operation_ref=PICKER_SHIFT_ORDER_LOOKUP_OPERATION_REF,
             tenant_id=self.request.tenant_id,
-            execution_identity_ref=self.execution_identity_ref,
+            execution_identity_ref=execution.observed_execution_identity_ref,
             job_ref=job_ref,
             project_ref=execution.project_ref,
             location=execution.location,
@@ -585,6 +610,7 @@ def build_picker_shift_order_lookup_descriptor(
 ) -> CompanySourceAdapterDescriptor:
     """Build the reviewed adapter descriptor; FIELD_PROVEN is never automatic."""
 
+    _require_google_principal_ref(execution_identity_ref)
     if acceptance is AdapterAcceptance.FIELD_PROVEN:
         raise ValueError("picker_shift_lookup_field_proven_requires_external_attestation")
     return CompanySourceAdapterDescriptor(
@@ -616,6 +642,7 @@ def build_picker_shift_order_lookup_plan(
     requested_at: datetime,
     requested_fields: tuple[str, ...] = PICKER_SHIFT_ORDER_LOOKUP_ALLOWED_FIELDS,
 ) -> ReadOnlySourcePlan:
+    _require_google_principal_ref(execution_identity_ref)
     return ReadOnlySourcePlan(
         binding_id=PICKER_SHIFT_ORDER_LOOKUP_BINDING_ID,
         tenant_id="YS_TR",

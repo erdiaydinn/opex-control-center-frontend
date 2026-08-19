@@ -46,24 +46,48 @@ class RecordingAdapter:
         return [{"product_name": "Milk"}]
 
 
+def trusted_context(*, plan, reason: str, arguments_sha256: str | None = None):
+    return TrustedToolExecutionContext(
+        request_id="platform-request-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject="platform:user-1",
+        tool=plan.tool,
+        granted_scopes=tuple(plan.required_scope),
+        data_scope={"store_names": []},
+        data_scope_fingerprint="d" * 64,
+        tenant_entity_ids=("YS_TR",),
+        tenant_query_context_fingerprint="q" * 64,
+        query_contract_id="ops.catalog.v1",
+        query_contract_revision=1,
+        query_contract_fingerprint="c" * 64,
+        execution_scope_fingerprint="e" * 64,
+        authorization_fingerprint="a" * 64,
+        arguments_sha256=(
+            arguments_sha256 or tool_arguments_sha256(plan.arguments)
+        ),
+        reason_sha256=tool_reason_sha256(reason),
+        admission_lease_token=SecretStr("l" * 43),
+        admission_lease_ttl_seconds=135,
+    )
+
+
 class SuccessfulAuthorizer:
     def __init__(self):
         self.calls = 0
+        self.release_calls = 0
         self.grants: list[str] = []
 
     async def authorize(self, *, grant_token, plan, reason):
         self.calls += 1
         self.grants.append(grant_token)
-        return TrustedToolExecutionContext(
-            request_id=f"platform-{self.calls}",
-            tenant_id="11111111-1111-4111-8111-111111111111",
-            actor_subject="platform:user-1",
-            tool=plan.tool,
-            granted_scopes=tuple(plan.required_scope),
-            authorization_fingerprint="a" * 64,
-            arguments_sha256=tool_arguments_sha256(plan.arguments),
-            reason_sha256=tool_reason_sha256(reason),
+        context = trusted_context(plan=plan, reason=reason)
+        return context.model_copy(
+            update={"request_id": f"platform-{self.calls}"}
         )
+
+    async def release_admission(self, context):
+        assert context.admission_lease_token.get_secret_value() == "l" * 43
+        self.release_calls += 1
 
 
 class DenyingAuthorizer:
@@ -79,18 +103,20 @@ class IndeterminateAuthorizer:
 
 
 class ForgingAuthorizer:
+    def __init__(self):
+        self.release_calls = 0
+
     async def authorize(self, *, grant_token, plan, reason):
         del grant_token
-        return TrustedToolExecutionContext(
-            request_id="platform-forged",
-            tenant_id="11111111-1111-4111-8111-111111111111",
-            actor_subject="platform:user-1",
-            tool=plan.tool,
-            granted_scopes=tuple(plan.required_scope),
-            authorization_fingerprint="a" * 64,
+        return trusted_context(
+            plan=plan,
+            reason=reason,
             arguments_sha256="b" * 64,
-            reason_sha256=tool_reason_sha256(reason),
         )
+
+    async def release_admission(self, context):
+        del context
+        self.release_calls += 1
 
 
 def request(*, execute: bool = True) -> TemplateToolExecutionRequest:
@@ -168,6 +194,7 @@ def test_platform_success_authorizes_once_then_executes_once(tmp_path) -> None:
     )
 
     assert authorizer.calls == 1
+    assert authorizer.release_calls == 1
     assert authorizer.grants == ["g" * 43]
     assert adapter.dry_run_calls == 1
     assert adapter.execute_calls == 1
@@ -203,15 +230,17 @@ def test_platform_failure_prevents_any_bigquery_call(
 
 def test_forged_platform_context_is_revalidated_before_bigquery(tmp_path) -> None:
     adapter = RecordingAdapter()
+    authorizer = ForgingAuthorizer()
 
     with pytest.raises(RuntimeError, match="different arguments"):
         run_governed(
             request(),
-            authorizer=ForgingAuthorizer(),
+            authorizer=authorizer,
             adapter=adapter,
             audit_path=tmp_path / "execution.db",
         )
 
+    assert authorizer.release_calls == 1
     assert adapter.dry_run_calls == 0
     assert adapter.execute_calls == 0
 
@@ -231,5 +260,6 @@ def test_executor_failure_after_authorization_never_reauthorizes_grant(
         )
 
     assert authorizer.calls == 1
+    assert authorizer.release_calls == 1
     assert adapter.dry_run_calls == 1
     assert adapter.execute_calls == 0

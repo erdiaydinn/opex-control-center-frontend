@@ -15,7 +15,7 @@ class AttestedRange(BaseModel):
     attested: bool
 
     @model_validator(mode="after")
-    def ordered_range(self) -> "AttestedRange":
+    def ordered_range(self) -> AttestedRange:
         if not self.low <= self.base <= self.high:
             raise ValueError("Economics range must satisfy low <= base <= high")
         return self

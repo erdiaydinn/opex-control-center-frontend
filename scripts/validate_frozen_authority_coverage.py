@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "config/eay_frozen_authority_coverage_matrix_v1.json"
+EXTENSION_PATH = ROOT / "config/eay_frozen_authority_coverage_extension_v2.json"
 
 EXPECTED_SOURCES = {
     15: {
@@ -34,6 +35,19 @@ REQUIRED_CAPABILITIES = {
     "ai_core.repository_intelligence.provenance",
     "ai_core.voice.governed_tool_execution",
     "ai_core.privacy.safety_observability",
+    "ai_core.employment.temporal_policy",
+    "ai_core.payroll.period_policy",
+    "ai_core.company.dataset_domain_governance",
+    "ai_core.tool_intent_contract_router",
+    "ai_core.legal.review_verification_promotion",
+    "ai_core.release.evidence_canary_registry",
+    "ai_core.multilingual.language_learning",
+    "ai_core.training.integrity_manifest_export",
+    "ai_core.model_artifact.provenance_lifecycle",
+    "ai_core.vision.retention_review_lineage",
+    "ai_core.voice.deployment_release_attestation",
+    "ai_core.voice.session_streaming_protocol",
+    "ai_core.schema.source_contracts",
     "security.tenant_rbac_rls_boundary",
     "security.oidc_external_identity_preauth",
     "security.internal_service_identity_replay",
@@ -62,11 +76,38 @@ def fail(message: str) -> None:
     raise SystemExit(f"frozen-authority coverage validation failed: {message}")
 
 
-def load_matrix() -> dict:
+def load_json(path: Path) -> dict:
     try:
-        return json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        fail(f"cannot load {MATRIX_PATH.relative_to(ROOT)}: {exc}")
+        fail(f"cannot load {path.relative_to(ROOT)}: {exc}")
+    if not isinstance(value, dict):
+        fail(f"{path.relative_to(ROOT)} must contain a JSON object")
+    return value
+
+
+def load_matrix() -> dict:
+    matrix = load_json(MATRIX_PATH)
+    extension = load_json(EXTENSION_PATH)
+    expected_base = MATRIX_PATH.relative_to(ROOT).as_posix()
+    if extension.get("schema_version") != 1:
+        fail("coverage extension schema_version must be 1")
+    if extension.get("extends") != expected_base:
+        fail(f"coverage extension must extend {expected_base}")
+    if extension.get("historical_source_prs") != [15]:
+        fail("coverage extension must remain bound to frozen PR #15")
+    boundary = extension.get("proof_boundary")
+    if not isinstance(boundary, str) or len(boundary.strip()) < 48:
+        fail("coverage extension proof_boundary must be explicit")
+    extension_capabilities = extension.get("capabilities")
+    if not isinstance(extension_capabilities, list) or not extension_capabilities:
+        fail("coverage extension capabilities must be a non-empty list")
+    base_capabilities = matrix.get("capabilities")
+    if not isinstance(base_capabilities, list) or not base_capabilities:
+        fail("base capabilities must be a non-empty list")
+    matrix = dict(matrix)
+    matrix["capabilities"] = [*base_capabilities, *extension_capabilities]
+    return matrix
 
 
 def require_file(relative_path: str, *, capability_id: str, kind: str) -> None:
@@ -159,6 +200,9 @@ def validate() -> dict:
     missing = REQUIRED_CAPABILITIES - ids
     if missing:
         fail(f"missing required capabilities: {', '.join(sorted(missing))}")
+    unexpected = ids - REQUIRED_CAPABILITIES
+    if unexpected:
+        fail(f"unreviewed capabilities present: {', '.join(sorted(unexpected))}")
     if represented_sources != set(EXPECTED_SOURCES):
         fail("both frozen PR #15 and #16 must be represented")
 

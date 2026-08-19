@@ -5,6 +5,7 @@ on:
     branches:
       - agent/master-roadmap-27-exact-head-gate
       - product/eay-category-leadership-v1
+      - product/planogram-market-leadership-v1
   pull_request:
     branches:
       - product/eay-product-completion-v1
@@ -52,7 +53,7 @@ jobs:
           console.log('MASTER_27_AUTHORITY=PASS');
           console.log('MASTER_27_EXTERNAL_EVIDENCE=REQUIRED');
           NODE
-      - name: Digital twin truth and renderer contract
+      - name: Digital twin truth and market-quality renderer contract
         run: node scripts/test-planogram-digital-twin.mjs
       - name: Route explainability backend-to-twin contract
         run: node scripts/test-planogram-route-explainability.mjs
@@ -89,6 +90,8 @@ jobs:
       - name: Truth boundary
         run: |
           echo 'MASTER_27_REPOSITORY_RENDERER=IMPLEMENTED'
+          echo 'MASTER_27_FACING_AWARE_OPEN_FIXTURE_RENDERER=IMPLEMENTED'
           echo 'MASTER_27_ROUTE_EXPLAINABILITY=IMPLEMENTED'
           echo 'MASTER_27_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED'
+          echo 'MASTER_27_REAL_PRODUCT_ASSET_FIDELITY=REQUIRED'
           echo 'MASTER_27_PRODUCTION_READY=FALSE'

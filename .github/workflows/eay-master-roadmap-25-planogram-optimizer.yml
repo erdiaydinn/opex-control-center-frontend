@@ -120,7 +120,7 @@ jobs:
           print('MASTER_25_BASKET_AWARE_OPTIMIZER_V3=PASS')
           print('MASTER_25_V2_SAFE_FALLBACK=PASS')
           PY
-      - name: Lint optimizer V3 and Core boundary
+      - name: Lint optimizer V3, Store Scan and Core boundary
         run: >-
           ruff check
           apps/planai/backend/physical_optimizer.py
@@ -136,15 +136,19 @@ jobs:
           apps/planai/backend/tests/test_architecture_route_gate.py
           services/core-api/app/modules/planogram/engine_adapter.py
           services/core-api/app/modules/planogram/optimizer_router.py
+          services/core-api/app/modules/planogram/router.py
           services/core-api/app/modules/planogram/schemas.py
+          services/core-api/app/modules/planogram/store_scan.py
           services/core-api/app/budget_main.py
           services/core-api/tests/test_planogram_master25_optimizer_core.py
           services/core-api/tests/test_planogram_market_leadership_v3_contract.py
-      - name: Core optimizer preview and Master 24 native regression
+          services/core-api/tests/test_planogram_store_scan_contract.py
+      - name: Core optimizer, Store Scan and Master 24 native regression
         run: >-
           python -m pytest -q
           services/core-api/tests/test_planogram_master25_optimizer_core.py
           services/core-api/tests/test_planogram_market_leadership_v3_contract.py
+          services/core-api/tests/test_planogram_store_scan_contract.py
           services/core-api/tests/test_planogram_native_core.py
           services/core-api/tests/test_planogram_master24_store_dna.py
       - name: Prove Core route cannot become production release authority
@@ -153,6 +157,7 @@ jobs:
           from app.budget_main import app
           schema=app.openapi()
           assert '/v1/planogram/optimize-preview' in schema['paths']
+          assert '/v1/planogram/store-scan/normalize-preview' in schema['paths']
           from app.modules.planogram.engine_adapter import engine_status
           status=engine_status()
           assert status['optimizer']['available'] is True
@@ -163,5 +168,6 @@ jobs:
           assert status['optimizer']['requires_observed_baskets'] is True
           print('MASTER_25_CORE_OPTIMIZER_PREVIEW=PASS')
           print('MASTER_25_BASKET_AWARE_ROUTE_GATE=PASS')
+          print('MASTER_25_STORE_SCAN_PREVIEW=PASS')
           print('MASTER_25_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
           PY

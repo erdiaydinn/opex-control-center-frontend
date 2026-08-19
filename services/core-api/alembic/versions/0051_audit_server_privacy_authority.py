@@ -16,6 +16,8 @@ down_revision: str = "0050_audit_evidence_binding_integrity"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+SERVER_AUTHORITY_VERSION = "server_privacy_v2"
+
 
 def upgrade() -> None:
     op.drop_constraint(
@@ -29,6 +31,10 @@ def upgrade() -> None:
         type_="check",
     )
 
+    op.add_column(
+        "audit_redaction_verification_events",
+        sa.Column("verification_authority_version", sa.String(length=64), nullable=True),
+    )
     op.add_column(
         "audit_redaction_verification_events",
         sa.Column("observed_sha256", sa.String(length=64), nullable=True),
@@ -65,6 +71,12 @@ def upgrade() -> None:
         "verification_status = 'verified' OR length(trim(COALESCE(reason,''))) > 0",
     )
     op.create_check_constraint(
+        "ck_audit_privacy_authority_version",
+        "audit_redaction_verification_events",
+        "verification_authority_version IS NULL OR "
+        f"verification_authority_version = '{SERVER_AUTHORITY_VERSION}'",
+    )
+    op.create_check_constraint(
         "ck_audit_privacy_observation_integrity",
         "audit_redaction_verification_events",
         "(observed_sha256 IS NULL AND observed_byte_size IS NULL) OR "
@@ -80,9 +92,15 @@ def upgrade() -> None:
         "AND detected_face_count >= 0 AND detected_sensitive_region_count >= 0)",
     )
     op.create_check_constraint(
+        "ck_audit_privacy_server_authority_complete",
+        "audit_redaction_verification_events",
+        f"verification_authority_version <> '{SERVER_AUTHORITY_VERSION}' OR "
+        "(observed_sha256 IS NOT NULL AND observed_byte_size IS NOT NULL)",
+    )
+    op.create_check_constraint(
         "ck_audit_privacy_verified_has_scanner",
         "audit_redaction_verification_events",
-        "verification_status <> 'verified' OR "
+        "verification_status <> 'verified' OR verification_authority_version IS NULL OR "
         "(observed_sha256 IS NOT NULL AND observed_byte_size IS NOT NULL "
         "AND scanner_model_ref IS NOT NULL AND scanner_model_fingerprint IS NOT NULL "
         "AND detected_face_count = 0 AND detected_sensitive_region_count = 0)",
@@ -90,7 +108,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_audit_privacy_rejected_has_scanner",
         "audit_redaction_verification_events",
-        "verification_status <> 'rejected' OR "
+        "verification_status <> 'rejected' OR verification_authority_version IS NULL OR "
         "(scanner_model_ref IS NOT NULL AND scanner_model_fingerprint IS NOT NULL "
         "AND (detected_face_count > 0 OR detected_sensitive_region_count > 0))",
     )
@@ -108,12 +126,22 @@ def downgrade() -> None:
         type_="check",
     )
     op.drop_constraint(
+        "ck_audit_privacy_server_authority_complete",
+        "audit_redaction_verification_events",
+        type_="check",
+    )
+    op.drop_constraint(
         "ck_audit_privacy_scanner_integrity",
         "audit_redaction_verification_events",
         type_="check",
     )
     op.drop_constraint(
         "ck_audit_privacy_observation_integrity",
+        "audit_redaction_verification_events",
+        type_="check",
+    )
+    op.drop_constraint(
+        "ck_audit_privacy_authority_version",
         "audit_redaction_verification_events",
         type_="check",
     )
@@ -135,6 +163,7 @@ def downgrade() -> None:
         "scanner_model_ref",
         "observed_byte_size",
         "observed_sha256",
+        "verification_authority_version",
     ):
         op.drop_column("audit_redaction_verification_events", column_name)
 

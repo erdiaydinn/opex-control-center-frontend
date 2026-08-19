@@ -1,5 +1,7 @@
 import fs from "node:fs";
 
+import { SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
+import { PLANOGRAM_CAD_MESSAGES } from "../src/platform/i18n/planogramCadMessages.js";
 import {
   engineeringScaleBar,
   rotatedRectSvgPoints,
@@ -95,4 +97,44 @@ for (const rule of [
   if (!css.includes(rule)) fail(`Engineering 2D styling missing: ${rule}`);
 }
 
-console.log("Planogram engineering 2D arbitrary-angle renderer and scale contract: PASS");
+const cad = fs.readFileSync("src/modules/planogram/PlanogramCadExport.jsx", "utf8");
+const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
+const cadCss = fs.readFileSync("src/modules/planogram/planogram-cad-export.css", "utf8");
+for (const [needle, label] of [
+  ["/v1/planogram/cad-preview?include_dxf=", "canonical CAD preview endpoint"],
+  ["assertCadAuthorityBoundary", "client-side authority validation"],
+  ["response?.preview_only !== true", "preview-only response enforcement"],
+  ["response?.production_release_allowed !== false", "production release denial enforcement"],
+  ["response?.installation_approval_allowed !== false", "installation denial enforcement"],
+  ["drawing.production_authority !== false", "drawing production authority denial"],
+  ["drawing.installation_approved !== false", "drawing installation approval denial"],
+  ["canExport", "export permission gate"],
+  ["optimizerMeta", "optimizer-result availability gate"],
+]) {
+  if (!cad.includes(needle)) fail(`CAD export boundary missing ${label}: ${needle}`);
+}
+if (!studio.includes("<PlanogramCadExport")) fail("Planogram Studio does not mount CAD export.");
+if (!studio.includes('canAction("planogram", "export")')) {
+  fail("Planogram Studio CAD export is not permission-gated.");
+}
+if (!cadCss.includes(".eay-planogram-cad-actions button:focus-visible")) {
+  fail("CAD export focus-visible accessibility rule missing.");
+}
+
+const localeCodes = SUPPORTED_LOCALES.map((item) => item.code);
+const expectedCadKeys = Object.keys(PLANOGRAM_CAD_MESSAGES.en).sort();
+for (const locale of localeCodes) {
+  const messages = PLANOGRAM_CAD_MESSAGES[locale];
+  if (!messages) fail(`CAD export locale missing: ${locale}`);
+  const keys = Object.keys(messages).sort();
+  if (JSON.stringify(keys) !== JSON.stringify(expectedCadKeys)) {
+    fail(`CAD export translation key drift for ${locale}.`);
+  }
+  for (const key of expectedCadKeys) {
+    if (typeof messages[key] !== "string" || !messages[key].trim()) {
+      fail(`CAD export translation missing ${locale}.${key}`);
+    }
+  }
+}
+
+console.log("Planogram engineering 2D, localized CAD export and authority boundary contract: PASS");

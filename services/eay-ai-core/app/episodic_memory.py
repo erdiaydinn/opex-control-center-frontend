@@ -82,7 +82,7 @@ class MemoryEpisode(BaseModel):
         return self
 
     def eligible_at(self, as_of: datetime) -> bool:
-        if self.occurred_at > as_of:
+        if self.occurred_at > as_of or self.recorded_at > as_of:
             return False
         if self.retention_class is RetentionClass.LEGAL_HOLD:
             return True
@@ -145,6 +145,9 @@ def recall_episodes(episodes: list[MemoryEpisode], query: MemoryQuery) -> Memory
 
     for episode in episodes:
         if episode.tenant_id != query.tenant_id:
+            continue
+        # Historical recall must not reveal an episode before Jarvis actually recorded it.
+        if episode.recorded_at > query.as_of:
             continue
         if not episode.eligible_at(query.as_of):
             if episode.occurred_at <= query.as_of:

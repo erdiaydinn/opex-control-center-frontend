@@ -27,6 +27,10 @@ Optimizer = Annotated[
     Principal,
     Depends(require_permission("action:planogram:create")),
 ]
+Exporter = Annotated[
+    Principal,
+    Depends(require_permission("action:planogram:export")),
+]
 
 
 @router.post("/optimize-preview")
@@ -194,6 +198,7 @@ async def post_planogram_blind_benchmark_preview(
 async def post_planogram_cad_preview(
     payload: PlanogramPreviewRequest,
     principal: Optimizer,
+    _exporter: Exporter,
     include_dxf: Annotated[bool, Query()] = False,
 ) -> dict[str, object]:
     """Render the selected preview plan as a measured SVG/DXF engineering drawing."""

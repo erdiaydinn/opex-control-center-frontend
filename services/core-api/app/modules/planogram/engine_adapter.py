@@ -92,10 +92,10 @@ def _load_modules() -> tuple[Path, ModuleType, ModuleType, ModuleType]:
 @lru_cache(maxsize=1)
 def _load_optimizer() -> ModuleType:
     root, _, _, _ = _load_modules()
-    optimizer_path = root / "physical_optimizer_v2.py"
+    optimizer_path = root / "physical_optimizer_v3.py"
     if not optimizer_path.is_file():
-        raise PlanogramEngineUnavailable("Canonical Planogram optimizer V2 is unavailable")
-    return _module_from_root("physical_optimizer_v2", root)
+        raise PlanogramEngineUnavailable("Canonical Planogram optimizer V3 is unavailable")
+    return _module_from_root("physical_optimizer_v3", root)
 
 
 def engine_status() -> dict[str, Any]:
@@ -110,10 +110,12 @@ def engine_status() -> dict[str, Any]:
         "production_ai_dimensions_allowed": False,
         "architecture_contract": "store-architecture-v1",
         "optimizer": {
-            "available": (root / "physical_optimizer_v2.py").is_file(),
-            "contract": "physical-plan-optimizer-v2",
+            "available": (root / "physical_optimizer_v3.py").is_file(),
+            "contract": "physical-plan-optimizer-v3-picker-tour",
+            "fallback_contract": "physical-plan-optimizer-v2",
             "production_authority": False,
-            "route_objective": "architecture-grid-astar-v1",
+            "route_objective": "measured-basket-picker-tour-v1",
+            "requires_observed_baskets": True,
         },
         "source_modules": {
             "engine": Path(engine.__file__ or "").name,
@@ -155,11 +157,15 @@ def generate_optimized_preview(
     layout: dict[str, Any],
     store_dna: dict[str, Any],
     mode: str,
+    orders: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Run architecture-aware optimization without granting production authority.
+    """Run basket-aware architecture optimization without production authority.
 
-    The optimizer itself calls the physical production gate for every candidate.
-    Core still treats all HTTP request payloads as unattested preview inputs.
+    V3 uses only caller-supplied observed/test baskets. When baskets or measured
+    architecture are absent, the canonical V3 optimizer delegates to the V2
+    physical optimizer rather than fabricating demand or geometry evidence.
+    Every candidate still passes the physical production gate and Core keeps
+    HTTP payloads unattested and non-releasable.
     """
     optimizer = _load_optimizer()
     optimize = getattr(optimizer, "optimize_production_plan", None)
@@ -167,7 +173,13 @@ def generate_optimized_preview(
         raise PlanogramEngineUnavailable(
             "Canonical Planogram optimizer entrypoint is unavailable"
         )
-    result = optimize(products, layout, store_dna, mode=mode)
+    result = optimize(
+        products,
+        layout,
+        store_dna,
+        mode=mode,
+        orders=orders,
+    )
     if not isinstance(result, dict) or not isinstance(result.get("optimizer"), dict):
         raise PlanogramEngineUnavailable("Canonical Planogram optimizer returned an invalid result")
     return result

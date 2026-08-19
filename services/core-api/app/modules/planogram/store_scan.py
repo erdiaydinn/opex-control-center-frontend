@@ -2,9 +2,8 @@
 
 Native clients may use Apple RoomPlan, ARCore Depth, CAD import or another
 measured capture path. Core does not trust raw scans as Store DNA authority.
-This module converts only high-confidence, currently representable geometry
-into a preview architecture draft and reports every gap that still requires
-human review or a richer geometry contract.
+This module emits both the legacy orthogonal V1 preview and an oriented V2
+preview so arbitrary scan angles are preserved rather than silently snapped.
 """
 
 from __future__ import annotations
@@ -19,9 +18,9 @@ SUPPORTED_PROVIDERS = {
     "cad_import",
     "manual_survey",
 }
-PROMOTABLE_TYPES = {"wall", "column", "door", "chiller", "freezer"}
+V1_PROMOTABLE_TYPES = {"wall", "column", "door", "chiller", "freezer"}
+V2_GEOMETRY_TYPES = V1_PROMOTABLE_TYPES | {"opening"}
 STRUCTURAL_TYPES = {"wall", "column", "door", "opening"}
-ORTHOGONAL_ROTATIONS = (0.0, 90.0, 180.0, 270.0, 360.0)
 ORTHOGONAL_TOLERANCE_DEG = 2.0
 MIN_STRUCTURAL_CONFIDENCE = 0.75
 MIN_EQUIPMENT_CONFIDENCE = 0.65
@@ -49,6 +48,14 @@ def _nearest_orthogonal(value: float) -> tuple[int, float]:
     return int(selected), distance
 
 
+def _source(provider: str) -> str:
+    if provider in {"apple_roomplan", "arcore_depth"}:
+        return "lidar_scan"
+    if provider == "cad_import":
+        return "cad_import"
+    return "manual_survey"
+
+
 def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
     provider = str(payload.get("provider") or "").strip().lower()
     source_ref = str(payload.get("source_ref") or "").strip()
@@ -62,16 +69,22 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         blockers.append("scan_provider_unsupported")
     if not source_ref:
         blockers.append("scan_source_ref_missing")
-    if floor_width_m is None or floor_width_m <= 0 or floor_depth_m is None or floor_depth_m <= 0:
+    if (
+        floor_width_m is None
+        or floor_width_m <= 0
+        or floor_depth_m is None
+        or floor_depth_m <= 0
+    ):
         blockers.append("scan_floorplate_invalid")
     if not isinstance(scan_elements, list) or not scan_elements:
         blockers.append("scan_elements_missing")
         scan_elements = []
 
-    promoted: list[dict[str, Any]] = []
+    v1_elements: list[dict[str, Any]] = []
+    v2_elements: list[dict[str, Any]] = []
     recognized_fixtures: list[dict[str, Any]] = []
     low_confidence_count = 0
-    unsupported_rotation_count = 0
+    non_orthogonal_count = 0
     unsupported_type_count = 0
 
     for index, raw in enumerate(scan_elements):
@@ -89,7 +102,11 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         rotation = _number(raw.get("rotation_deg"))
         rotation = rotation if rotation is not None else 0.0
 
-        if None in (x_m, y_m, width_m, depth_m) or width_m <= 0 or depth_m <= 0:
+        if (
+            None in (x_m, y_m, width_m, depth_m)
+            or width_m <= 0
+            or depth_m <= 0
+        ):
             warnings.append(f"scan_element_geometry_invalid:{element_id}")
             continue
 
@@ -107,8 +124,8 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
             recognized_fixtures.append(
                 {
                     "element_id": element_id,
-                    "x_m": x_m,
-                    "y_m": y_m,
+                    "center_x_m": x_m + width_m / 2.0,
+                    "center_y_m": y_m + depth_m / 2.0,
                     "width_m": width_m,
                     "depth_m": depth_m,
                     "rotation_deg": rotation,
@@ -118,45 +135,60 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
             )
             continue
 
-        if element_type == "opening":
-            # Openings are retained as scan evidence but are not silently turned
-            # into doors; operational semantics require human confirmation.
+        if element_type not in V2_GEOMETRY_TYPES:
             unsupported_type_count += 1
-            warnings.append(f"scan_opening_requires_classification:{element_id}")
-            continue
-
-        if element_type not in PROMOTABLE_TYPES:
-            unsupported_type_count += 1
-            warnings.append(f"scan_element_type_not_promotable:{element_id}:{element_type}")
-            continue
-
-        orthogonal, angular_error = _nearest_orthogonal(rotation)
-        if angular_error > ORTHOGONAL_TOLERANCE_DEG:
-            unsupported_rotation_count += 1
             warnings.append(
-                f"scan_non_orthogonal_geometry_requires_architecture_v2:{element_id}"
+                f"scan_element_type_not_representable:{element_id}:{element_type}"
             )
             continue
 
-        promoted.append(
+        v2_elements.append(
             {
                 "element_id": element_id,
                 "element_type": element_type,
-                "x_m": x_m,
-                "y_m": y_m,
+                "center_x_m": x_m + width_m / 2.0,
+                "center_y_m": y_m + depth_m / 2.0,
                 "width_m": width_m,
                 "depth_m": depth_m,
-                "rotation_deg": orthogonal,
+                "rotation_deg": rotation,
                 "clearance_m": 0.0,
                 "label": raw.get("label"),
                 "scan_confidence": confidence,
             }
         )
 
-    if not any(item["element_type"] == "wall" for item in promoted):
+        if element_type == "opening":
+            # V2 can preserve an opening's geometry, but operational semantics
+            # still require a person to classify it as door/exit/etc.
+            warnings.append(f"scan_opening_requires_classification:{element_id}")
+            continue
+
+        orthogonal, angular_error = _nearest_orthogonal(rotation)
+        if angular_error > ORTHOGONAL_TOLERANCE_DEG:
+            non_orthogonal_count += 1
+            warnings.append(f"scan_non_orthogonal_preserved_in_v2:{element_id}")
+            continue
+
+        if element_type in V1_PROMOTABLE_TYPES:
+            v1_elements.append(
+                {
+                    "element_id": element_id,
+                    "element_type": element_type,
+                    "x_m": x_m,
+                    "y_m": y_m,
+                    "width_m": width_m,
+                    "depth_m": depth_m,
+                    "rotation_deg": orthogonal,
+                    "clearance_m": 0.0,
+                    "label": raw.get("label"),
+                    "scan_confidence": confidence,
+                }
+            )
+
+    if not any(item["element_type"] == "wall" for item in v2_elements):
         blockers.append("scan_wall_geometry_missing")
-    if unsupported_rotation_count:
-        blockers.append("scan_contains_non_orthogonal_geometry")
+    if non_orthogonal_count:
+        blockers.append("store_dna_v1_cannot_promote_non_orthogonal_geometry")
 
     # Store Scan cannot infer operational authority. These anchors are explicit
     # human/operational annotations before a draft may enter maker/checker flow.
@@ -169,17 +201,26 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     architecture_preview = None
-    if floor_width_m and floor_depth_m and promoted:
+    architecture_v2_preview = None
+    if floor_width_m and floor_depth_m and v1_elements:
         architecture_preview = {
             "schema_version": 1,
             "coordinate_system": "cartesian_m",
-            "source": "lidar_scan" if provider in {"apple_roomplan", "arcore_depth"} else (
-                "cad_import" if provider == "cad_import" else "manual_survey"
-            ),
+            "source": _source(provider),
             "source_ref": source_ref,
             "floor_width_m": floor_width_m,
             "floor_depth_m": floor_depth_m,
-            "elements": promoted,
+            "elements": v1_elements,
+        }
+    if floor_width_m and floor_depth_m and v2_elements:
+        architecture_v2_preview = {
+            "schema_version": 2,
+            "coordinate_system": "cartesian_m_centered_rect",
+            "source": _source(provider),
+            "source_ref": source_ref,
+            "floor_width_m": floor_width_m,
+            "floor_depth_m": floor_depth_m,
+            "elements": v2_elements,
         }
 
     return {
@@ -189,12 +230,15 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "raw_media_persisted": False,
         "production_evidence": False,
         "architecture_preview": architecture_preview,
+        "architecture_v2_preview": architecture_v2_preview,
+        "architecture_v2_preview_available": architecture_v2_preview is not None,
         "recognized_fixture_count": len(recognized_fixtures),
         "recognized_fixtures": recognized_fixtures,
         "scan_element_count": len(scan_elements),
-        "promoted_element_count": len(promoted),
+        "v1_promoted_element_count": len(v1_elements),
+        "v2_preserved_element_count": len(v2_elements),
         "low_confidence_count": low_confidence_count,
-        "unsupported_rotation_count": unsupported_rotation_count,
+        "unsupported_rotation_count": non_orthogonal_count,
         "unsupported_type_count": unsupported_type_count,
         "promotable_to_store_dna": False,
         "blockers": list(dict.fromkeys(blockers)),

@@ -7,18 +7,18 @@ storage and independent key custody remain separate production controls.
 
 from __future__ import annotations
 
+import hashlib
+import os
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import hashlib
-import os
 from pathlib import Path
-import re
 from typing import Any
 from uuid import UUID, uuid4
 
 import jwt
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 AUDIT_CHECKPOINT_TYP = "eay-audit-checkpoint+jwt"

@@ -10,6 +10,10 @@ one durable transition before control returns to checkpoint/health/scheduling. T
 prevents one unhealthy runtime from consuming a mission retry budget before the swarm
 can quarantine it or route the same durable lane to another worker.
 
+Evidence-based routing preferences may guide worker selection inside the already
+eligible worker set. Health degradation always wins: a preferred worker that becomes
+draining or suspended is excluded by canonical eligibility in the next round.
+
 The runtime is bounded and fail-closed. It never re-enables quarantined workers,
 never grants shared execution authority, and never replays an ambiguous side effect.
 """
@@ -38,10 +42,8 @@ from .swarm_worker_health import (
     update_swarm_worker_health,
     worker_health_observations_from_round,
 )
-from .swarm_worker_registry import (
-    SwarmLaneRequirement,
-    SwarmWorkerRegistry,
-)
+from .swarm_worker_registry import SwarmLaneRequirement, SwarmWorkerRegistry
+from .worker_task_routing import WorkerTaskRoutingPreference
 
 SWARM_OBJECTIVE_RUNTIME_CONTRACT = "eay-swarm-objective-runtime-v1"
 
@@ -158,6 +160,7 @@ async def execute_swarm_objective_until_stable(
     now: datetime,
     health_policy: WorkerHealthPolicy | None = None,
     existing_health_records: Mapping[str, SwarmWorkerHealthRecord] | None = None,
+    routing_preferences: Mapping[str, WorkerTaskRoutingPreference] | None = None,
     max_rounds: int = 16,
     max_transitions_per_worker_lease: int = 1,
 ) -> SwarmObjectiveExecution:
@@ -213,6 +216,7 @@ async def execute_swarm_objective_until_stable(
             worker_bindings=worker_bindings,
             now=now,
             max_transitions_per_lane=max_transitions_per_worker_lease,
+            routing_preferences=routing_preferences,
         )
         rounds.append(round_result)
         last_round_blockers = _round_blockers(round_result)

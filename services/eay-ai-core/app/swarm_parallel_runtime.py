@@ -11,6 +11,10 @@ lane to a different worker runtime without changing business authority. Legacy
 lane-bound execution remains available for compatibility and uses the same admitted
 wave executor.
 
+Evidence-based routing preferences may reorder only the workers that are already
+eligible under tenant/capability/scheduling/health rules. A preference can never make
+a draining, suspended or otherwise ineligible worker executable.
+
 No swarm path grants truth, permission or business authority.
 """
 
@@ -43,6 +47,7 @@ from .swarm_worker_registry import (
     SwarmWorkerRegistry,
     eligible_swarm_workers,
 )
+from .worker_task_routing import WorkerTaskRoutingPreference
 
 SWARM_PARALLEL_RUNTIME_CONTRACT = "eay-swarm-parallel-runtime-v1"
 
@@ -161,6 +166,7 @@ def _pick_worker(
     *,
     candidates: tuple[SwarmWorkerDescriptor, ...],
     assigned_counts: Mapping[str, int],
+    preference: WorkerTaskRoutingPreference | None = None,
 ) -> SwarmWorkerDescriptor | None:
     available = [
         item
@@ -169,9 +175,20 @@ def _pick_worker(
     ]
     if not available:
         return None
+
+    preference_rank = (
+        {worker_id: index for index, worker_id in enumerate(preference.ordered_worker_ids)}
+        if preference is not None
+        else {}
+    )
+    fallback_rank = len(preference_rank) + 1
     return min(
         available,
-        key=lambda item: (assigned_counts.get(item.worker_id, 0), item.worker_id),
+        key=lambda item: (
+            preference_rank.get(item.worker_id, fallback_rank),
+            assigned_counts.get(item.worker_id, 0),
+            item.worker_id,
+        ),
     )
 
 
@@ -192,6 +209,26 @@ def _build_shards(
     return tuple(shards)
 
 
+def _validated_routing_preferences(
+    *,
+    plan: ParallelMissionPlan,
+    routing_preferences: Mapping[str, WorkerTaskRoutingPreference] | None,
+) -> dict[str, WorkerTaskRoutingPreference]:
+    preferences = dict(routing_preferences or {})
+    lane_ids = {item.lane_id for item in plan.lanes}
+    unknown = set(preferences) - lane_ids
+    if unknown:
+        raise ValueError("swarm_routing_preference_unknown_lane")
+    for lane_id, preference in preferences.items():
+        if preference.lane_id != lane_id:
+            raise ValueError("swarm_routing_preference_lane_mismatch")
+        if preference.tenant_id != plan.tenant_id:
+            raise ValueError("swarm_routing_preference_tenant_mismatch")
+        if preference.execution_authority_granted:
+            raise ValueError("swarm_routing_preference_authority_forbidden")
+    return preferences
+
+
 def schedule_swarm_wave(
     *,
     plan: ParallelMissionPlan,
@@ -200,6 +237,7 @@ def schedule_swarm_wave(
     registry: SwarmWorkerRegistry,
     policy: SwarmExecutionPolicy,
     now: datetime,
+    routing_preferences: Mapping[str, WorkerTaskRoutingPreference] | None = None,
 ) -> SwarmWave:
     """Globally admit a safe wave before any shard begins execution."""
 
@@ -213,6 +251,10 @@ def schedule_swarm_wave(
         raise ValueError("swarm_profiles_must_cover_plan_exactly")
     if set(requirements) != set(lane_map):
         raise ValueError("swarm_requirements_must_cover_plan_exactly")
+    preferences = _validated_routing_preferences(
+        plan=plan,
+        routing_preferences=routing_preferences,
+    )
 
     for lane_id, lane in lane_map.items():
         lane_preemption_allowed(lane=lane, profile=profiles[lane_id])
@@ -265,7 +307,11 @@ def schedule_swarm_wave(
             profile=profile,
             requirement=requirement,
         )
-        worker = _pick_worker(candidates=candidates, assigned_counts=assigned_counts)
+        worker = _pick_worker(
+            candidates=candidates,
+            assigned_counts=assigned_counts,
+            preference=preferences.get(lane.lane_id),
+        )
         if worker is None:
             deferred[lane.lane_id] = ("swarm_worker_unavailable",)
             continue
@@ -350,6 +396,7 @@ async def execute_swarm_round(
     bindings: Mapping[str, ParallelLaneBindings],
     now: datetime,
     max_transitions_per_lane: int = 100,
+    routing_preferences: Mapping[str, WorkerTaskRoutingPreference] | None = None,
 ) -> SwarmExecutionRound:
     """Compatibility path using lane-bound runtimes after global swarm admission."""
 
@@ -360,6 +407,7 @@ async def execute_swarm_round(
         registry=registry,
         policy=policy,
         now=now,
+        routing_preferences=routing_preferences,
     )
     return await _execute_admitted_wave(
         plan=plan,
@@ -379,6 +427,7 @@ async def execute_worker_bound_swarm_round(
     worker_bindings: Mapping[str, SwarmWorkerRuntimeBinding],
     now: datetime,
     max_transitions_per_lane: int = 100,
+    routing_preferences: Mapping[str, WorkerTaskRoutingPreference] | None = None,
 ) -> SwarmExecutionRound:
     """Resolve the actual mission runtime from each globally assigned worker id."""
 
@@ -389,6 +438,7 @@ async def execute_worker_bound_swarm_round(
         registry=registry,
         policy=policy,
         now=now,
+        routing_preferences=routing_preferences,
     )
     assignment_map = {item.lane_id: item for item in wave.assignments}
     lane_map = {item.lane_id: item for item in plan.lanes}

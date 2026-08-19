@@ -18,6 +18,7 @@ import { translatePlanogram } from "../../platform/i18n/planogramMessages.js";
 import { translatePlanogramOperations } from "../../platform/i18n/planogramOperationsMessages.js";
 import { translatePlanogramPreview } from "../../platform/i18n/planogramPreviewMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import PlanogramCadExport from "./PlanogramCadExport.jsx";
 import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import "./planogram-native.css";
@@ -343,6 +344,14 @@ export default function PlanogramStudio() {
                         : o("optimizerBaseline")
                       : o("optimizerBlocked")}
                   </p>
+                ) : null}
+                {optimizerMeta ? (
+                  <PlanogramCadExport
+                    candidate={candidate}
+                    optimizerMeta={optimizerMeta}
+                    locale={locale}
+                    canExport={canAction("planogram", "export")}
+                  />
                 ) : null}
                 {engineResult?.planogram ? (
                   <PlanogramDigitalTwin

@@ -18,6 +18,7 @@ on:
   pull_request:
     branches:
       - release/platform-convergence-v0.1
+      - product/eay-product-completion-v1
     paths:
       - "services/core-api/app/core/localization.py"
       - "services/core-api/app/modules/academy/**"

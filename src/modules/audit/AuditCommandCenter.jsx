@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Bot,
@@ -10,6 +10,7 @@ import {
   FileCheck2,
   MapPinned,
   Play,
+  RefreshCw,
   ScanEye,
   ShieldCheck,
   Sparkles,
@@ -17,6 +18,7 @@ import {
   Video,
 } from "lucide-react";
 
+import { apiGet } from "../../api/client.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import { auditCopy } from "./auditMessages.js";
 import "./AuditCommandCenter.css";
@@ -49,12 +51,135 @@ function StatCard({ item, t }) {
   );
 }
 
+function localizedProgramName(program, locale) {
+  const names = program?.name_i18n;
+  if (!names || typeof names !== "object") return program?.program_key || "—";
+  const rawLocale = String(locale || "tr");
+  const baseLocale = rawLocale.split("-")[0];
+  return names[rawLocale] || names[baseLocale] || names.en || names.tr || program?.program_key || "—";
+}
+
+function AuditLiveTruth({ live, locale, t, onRefresh }) {
+  const activePrograms = useMemo(
+    () => live.programs.filter((program) => program?.status === "active"),
+    [live.programs],
+  );
+  const visibleRuns = live.runs.slice(0, 4);
+  const connected = live.state === "connected" || live.state === "connected-empty";
+
+  return (
+    <article className="audit-panel audit-panel--truth" data-audit-live-state={live.state}>
+      <div className="audit-panel__heading">
+        <div>
+          <span className="audit-kicker">{t("truthBoundary")}</span>
+          <h2>{connected ? t("audits") : t("noLiveData")}</h2>
+        </div>
+        <span className={`audit-status audit-status--${live.state}`} aria-live="polite">
+          <span aria-hidden="true" /> {live.state.toUpperCase()}
+        </span>
+      </div>
+
+      {connected ? (
+        <>
+          <p>{t("truthBoundaryBody")}</p>
+          <div className="audit-live-grid">
+            <section className="audit-live-column" aria-label={t("audits")}>
+              <div className="audit-live-column__heading">{t("audits")}</div>
+              {visibleRuns.length > 0 ? visibleRuns.map((run) => (
+                <div className="audit-live-row" key={String(run.id)}>
+                  <div>
+                    <strong>{run.location_name || run.location_id || "—"}</strong>
+                    <span>{run.program_key || "—"} · v{run.program_version ?? "—"}</span>
+                  </div>
+                  <div className="audit-live-row__meta">
+                    <span>{String(run.status || "—").replaceAll("_", " ")}</span>
+                    <time dateTime={run.started_at || undefined}>
+                      {run.started_at ? new Date(run.started_at).toLocaleString(locale) : "—"}
+                    </time>
+                  </div>
+                </div>
+              )) : <div className="audit-live-empty">{t("noLiveData")}</div>}
+            </section>
+
+            <section className="audit-live-column" aria-label={t("standards")}>
+              <div className="audit-live-column__heading">{t("standards")}</div>
+              {activePrograms.length > 0 ? activePrograms.slice(0, 4).map((program) => (
+                <div className="audit-live-row" key={`${program.program_key}:${program.version}`}>
+                  <div>
+                    <strong>{localizedProgramName(program, locale)}</strong>
+                    <span>{program.program_key} · v{program.version}</span>
+                  </div>
+                  <div className="audit-live-row__meta">
+                    <span>{program.status}</span>
+                    <time dateTime={program.effective_from || undefined}>
+                      {program.effective_from ? new Date(program.effective_from).toLocaleDateString(locale) : "—"}
+                    </time>
+                  </div>
+                </div>
+              )) : <div className="audit-live-empty">{t("noLiveData")}</div>}
+            </section>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>{t("noLiveDataBody")}</p>
+          <div className="audit-truth-map" aria-hidden="true">
+            <div className="audit-pulse audit-pulse--one" />
+            <div className="audit-pulse audit-pulse--two" />
+            <div className="audit-pulse audit-pulse--three" />
+            <div className="audit-truth-map__line" />
+            <MapPinned size={32} />
+          </div>
+        </>
+      )}
+
+      <button className="audit-link" type="button" onClick={onRefresh} disabled={live.state === "loading"}>
+        <RefreshCw size={15} className={live.state === "loading" ? "is-spinning" : ""} />
+        {t("connect")} <ArrowRight size={16} />
+      </button>
+    </article>
+  );
+}
+
 function AuditCommandCenter() {
   const { locale } = usePlatformPreferences();
   const t = (key) => auditCopy(locale, key);
+  const [live, setLive] = useState({
+    state: "loading",
+    programs: [],
+    runs: [],
+  });
+
+  const refreshLiveTruth = useCallback(async () => {
+    setLive((current) => ({ ...current, state: "loading" }));
+    try {
+      const [programsPayload, runsPayload] = await Promise.all([
+        apiGet("/v1/audit/programs"),
+        apiGet("/v1/audit/runs?limit=100"),
+      ]);
+      if (!Array.isArray(programsPayload) || !Array.isArray(runsPayload)) {
+        throw new Error("Audit API returned an invalid truth payload.");
+      }
+      setLive({
+        state: programsPayload.length > 0 || runsPayload.length > 0 ? "connected" : "connected-empty",
+        programs: programsPayload,
+        runs: runsPayload,
+      });
+    } catch {
+      setLive({ state: "error", programs: [], runs: [] });
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshLiveTruth();
+  }, [refreshLiveTruth]);
 
   return (
-    <main className="audit-shell" data-eay-product-state="ready" data-audit-truth-state="unbound">
+    <main
+      className="audit-shell"
+      data-eay-product-state="ready"
+      data-audit-truth-state={live.state}
+    >
       <header className="audit-hero">
         <div>
           <div className="audit-eyebrow"><Sparkles size={15} /> {t("eyebrow")}</div>
@@ -63,8 +188,8 @@ function AuditCommandCenter() {
           <div className="audit-preview"><ShieldCheck size={15} /> {t("preview")}</div>
         </div>
         <div className="audit-hero__actions">
-          <button className="audit-btn audit-btn--secondary" type="button"><CalendarDays size={17} /> {t("schedule")}</button>
-          <button className="audit-btn audit-btn--primary" type="button"><Play size={17} /> {t("start")}</button>
+          <button className="audit-btn audit-btn--secondary" type="button" disabled><CalendarDays size={17} /> {t("schedule")}</button>
+          <button className="audit-btn audit-btn--primary" type="button" disabled><Play size={17} /> {t("start")}</button>
         </div>
       </header>
 
@@ -79,24 +204,7 @@ function AuditCommandCenter() {
       </section>
 
       <section className="audit-grid audit-grid--top">
-        <article className="audit-panel audit-panel--truth">
-          <div className="audit-panel__heading">
-            <div>
-              <span className="audit-kicker">{t("truthBoundary")}</span>
-              <h2>{t("noLiveData")}</h2>
-            </div>
-            <span className="audit-status" aria-label={t("noLiveData")}><span aria-hidden="true" /> —</span>
-          </div>
-          <p>{t("noLiveDataBody")}</p>
-          <div className="audit-truth-map" aria-hidden="true">
-            <div className="audit-pulse audit-pulse--one" />
-            <div className="audit-pulse audit-pulse--two" />
-            <div className="audit-pulse audit-pulse--three" />
-            <div className="audit-truth-map__line" />
-            <MapPinned size={32} />
-          </div>
-          <button className="audit-link" type="button">{t("connect")} <ArrowRight size={16} /></button>
-        </article>
+        <AuditLiveTruth live={live} locale={locale} t={t} onRefresh={refreshLiveTruth} />
 
         <aside className="audit-panel audit-panel--jarvis">
           <div className="audit-jarvis__icon"><Bot size={24} /></div>

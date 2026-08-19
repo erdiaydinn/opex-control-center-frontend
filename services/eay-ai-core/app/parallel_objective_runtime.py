@@ -12,6 +12,10 @@ The runtime is bounded and fail-closed:
 - overload or truth-gated empty waves surface blockers rather than busy-looping;
 - round budget exhaustion is explicit;
 - scheduling/execution still never grants shared business authority.
+
+Round history preserves transient deferrals. Final ``blockers`` contains only
+unresolved reasons from the stopping round so a conflict resolved in a later
+round is not misreported as an active blocker.
 """
 
 from __future__ import annotations
@@ -23,7 +27,11 @@ from typing import Mapping
 from pydantic import BaseModel, Field, model_validator
 
 from .mission_runtime import MissionStatus
-from .parallel_mission_orchestration import ParallelLaneBindings, ParallelMissionLane, ParallelMissionPlan
+from .parallel_mission_orchestration import (
+    ParallelLaneBindings,
+    ParallelMissionLane,
+    ParallelMissionPlan,
+)
 from .parallel_mission_scheduler import (
     ParallelLaneSchedulingProfile,
     ParallelSchedulingPolicy,
@@ -149,8 +157,8 @@ async def execute_parallel_objective_until_stable(
 
     current = plan
     rounds: list[ScheduledParallelExecutionRound] = []
-    blockers: list[str] = []
     total_transitions = 0
+    last_round_blockers: tuple[str, ...] = ()
 
     terminal = _terminal_status(current)
     if terminal is not None:
@@ -164,7 +172,9 @@ async def execute_parallel_objective_until_stable(
         )
 
     for _ in range(max_rounds):
-        before_sequences = {lane.lane_id: lane.checkpoint.sequence for lane in current.lanes}
+        before_sequences = {
+            lane.lane_id: lane.checkpoint.sequence for lane in current.lanes
+        }
         round_result = await execute_scheduled_parallel_round(
             plan=current,
             profiles=profiles,
@@ -174,13 +184,14 @@ async def execute_parallel_objective_until_stable(
             max_transitions_per_lane=max_transitions_per_lane,
         )
         rounds.append(round_result)
-        blockers.extend(_round_blockers(round_result))
+        last_round_blockers = _round_blockers(round_result)
         transitions = _round_transition_count(round_result)
         total_transitions += transitions
         current = _apply_round_checkpoints(plan=current, result=round_result)
 
         terminal = _terminal_status(current)
         if terminal is not None:
+            unresolved = () if terminal is ParallelObjectiveStatus.COMPLETED else last_round_blockers
             return ParallelObjectiveExecution(
                 objective_ref=current.objective_ref,
                 tenant_id=current.tenant_id,
@@ -188,16 +199,17 @@ async def execute_parallel_objective_until_stable(
                 final_plan=current,
                 rounds=tuple(rounds),
                 total_transitions_executed=total_transitions,
-                blockers=tuple(dict.fromkeys(blockers)),
+                blockers=unresolved,
             )
 
-        after_sequences = {lane.lane_id: lane.checkpoint.sequence for lane in current.lanes}
+        after_sequences = {
+            lane.lane_id: lane.checkpoint.sequence for lane in current.lanes
+        }
         sequence_progress = any(
             after_sequences[lane_id] > sequence
             for lane_id, sequence in before_sequences.items()
         )
         if transitions == 0 or not sequence_progress:
-            blockers.append("parallel_objective_no_progress")
             return ParallelObjectiveExecution(
                 objective_ref=current.objective_ref,
                 tenant_id=current.tenant_id,
@@ -205,10 +217,11 @@ async def execute_parallel_objective_until_stable(
                 final_plan=current,
                 rounds=tuple(rounds),
                 total_transitions_executed=total_transitions,
-                blockers=tuple(dict.fromkeys(blockers)),
+                blockers=tuple(
+                    dict.fromkeys((*last_round_blockers, "parallel_objective_no_progress"))
+                ),
             )
 
-    blockers.append("parallel_objective_round_budget_exhausted")
     return ParallelObjectiveExecution(
         objective_ref=current.objective_ref,
         tenant_id=current.tenant_id,
@@ -216,5 +229,9 @@ async def execute_parallel_objective_until_stable(
         final_plan=current,
         rounds=tuple(rounds),
         total_transitions_executed=total_transitions,
-        blockers=tuple(dict.fromkeys(blockers)),
+        blockers=tuple(
+            dict.fromkeys(
+                (*last_round_blockers, "parallel_objective_round_budget_exhausted")
+            )
+        ),
     )

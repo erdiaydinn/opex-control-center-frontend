@@ -6,6 +6,11 @@ import {
   buildPlanogramDigitalTwinModel,
   PLANOGRAM_DIGITAL_TWIN_LIMITS,
 } from "./planogramDigitalTwinModel.js";
+import {
+  engineeringScaleBar,
+  rotatedRectSvgPoints,
+  svgPointString,
+} from "./planogramEngineering2D.js";
 import "./planogram-digital-twin.css";
 
 const SVG_WIDTH = 1000;
@@ -57,7 +62,7 @@ function moduleHeight(module) {
 function Twin2D({ model, t, formatNumber }) {
   const ratio = model.floor.depthM / Math.max(model.floor.widthM, 0.1);
   const height = clamp(Math.round(SVG_WIDTH * ratio), SVG_MIN_HEIGHT, SVG_MAX_HEIGHT);
-  const padding = 34;
+  const padding = 56;
   const usableWidth = SVG_WIDTH - padding * 2;
   const usableHeight = height - padding * 2;
   const scale = Math.min(
@@ -66,8 +71,21 @@ function Twin2D({ model, t, formatNumber }) {
   );
   const offsetX = (SVG_WIDTH - model.floor.widthM * scale) / 2;
   const offsetY = (height - model.floor.depthM * scale) / 2;
-  const y = (value, depth = 0) => offsetY + (model.floor.depthM - value - depth) * scale;
+  const y = (value) => offsetY + (model.floor.depthM - value) * scale;
+  const projection = {
+    offsetX,
+    offsetY,
+    floorDepthM: model.floor.depthM,
+    scale,
+  };
   const routeHotspots = model.route?.available ? model.route.hotspots.slice(0, VISIBLE_ROUTE_PATHS) : [];
+  const floorRightX = offsetX + model.floor.widthM * scale;
+  const floorBottomY = offsetY + model.floor.depthM * scale;
+  const widthDimensionY = Math.min(height - 18, floorBottomY + 24);
+  const depthDimensionX = Math.max(18, offsetX - 24);
+  const scaleBar = engineeringScaleBar({ floorWidthM: model.floor.widthM, scale });
+  const scaleBarStartX = floorRightX - scaleBar.pixels;
+  const scaleBarY = offsetY + 18;
 
   return (
     <div className="eay-twin-2d-wrap">
@@ -80,16 +98,48 @@ function Twin2D({ model, t, formatNumber }) {
         <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} className="eay-twin-floor" />
         <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} fill="url(#eay-twin-grid)" pointerEvents="none" />
 
+        <g className="eay-twin-engineering-dimensions" aria-hidden="true">
+          <line x1={offsetX} y1={floorBottomY} x2={offsetX} y2={widthDimensionY} />
+          <line x1={floorRightX} y1={floorBottomY} x2={floorRightX} y2={widthDimensionY} />
+          <line x1={offsetX} y1={widthDimensionY} x2={floorRightX} y2={widthDimensionY} />
+          <text x={(offsetX + floorRightX) / 2} y={widthDimensionY - 5}>{formatNumber(model.floor.widthM)} m</text>
+          <line x1={offsetX} y1={offsetY} x2={depthDimensionX} y2={offsetY} />
+          <line x1={offsetX} y1={floorBottomY} x2={depthDimensionX} y2={floorBottomY} />
+          <line x1={depthDimensionX} y1={offsetY} x2={depthDimensionX} y2={floorBottomY} />
+          <text
+            x={depthDimensionX - 6}
+            y={(offsetY + floorBottomY) / 2}
+            transform={`rotate(-90 ${depthDimensionX - 6} ${(offsetY + floorBottomY) / 2})`}
+          >
+            {formatNumber(model.floor.depthM)} m
+          </text>
+          <line className="eay-twin-scale-bar" x1={scaleBarStartX} y1={scaleBarY} x2={floorRightX} y2={scaleBarY} />
+          <line className="eay-twin-scale-tick" x1={scaleBarStartX} y1={scaleBarY - 5} x2={scaleBarStartX} y2={scaleBarY + 5} />
+          <line className="eay-twin-scale-tick" x1={floorRightX} y1={scaleBarY - 5} x2={floorRightX} y2={scaleBarY + 5} />
+          <text x={(scaleBarStartX + floorRightX) / 2} y={scaleBarY - 7}>{formatNumber(scaleBar.meters)} m</text>
+        </g>
+
         {model.elements.map((element) => {
-          const width = element.footprintWidthM * scale;
-          const depth = element.footprintDepthM * scale;
-          const x = offsetX + element.xM * scale;
-          const top = y(element.yM, element.footprintDepthM);
-          const clearance = element.type === "emergency_exit" ? element.clearanceM * scale : 0;
+          const points = svgPointString(rotatedRectSvgPoints({
+            centerXM: element.centerXM,
+            centerYM: element.centerYM,
+            widthM: element.widthM,
+            depthM: element.depthM,
+            rotationDeg: element.rotationDeg,
+          }, projection));
+          const clearancePoints = element.type === "emergency_exit" && element.clearanceM > 0
+            ? svgPointString(rotatedRectSvgPoints({
+              centerXM: element.centerXM,
+              centerYM: element.centerYM,
+              widthM: element.widthM + element.clearanceM * 2,
+              depthM: element.depthM + element.clearanceM * 2,
+              rotationDeg: element.rotationDeg,
+            }, projection))
+            : "";
           return (
-            <g key={`element-${element.id}`}>
-              {clearance > 0 ? <rect x={x - clearance} y={top - clearance} width={width + clearance * 2} height={depth + clearance * 2} rx="5" className="eay-twin-egress-clearance" /> : null}
-              <rect x={x} y={top} width={width} height={depth} rx="3" className={`eay-twin-architecture eay-twin-architecture--${architectureClass(element.type)}`} />
+            <g key={`element-${element.id}`} data-rotation-deg={element.rotationDeg}>
+              {clearancePoints ? <polygon points={clearancePoints} className="eay-twin-egress-clearance" /> : null}
+              <polygon points={points} className={`eay-twin-architecture eay-twin-architecture--${architectureClass(element.type)}`} />
               <title>{`${t("architecture")}: ${element.type} · ${element.id}`}</title>
             </g>
           );
@@ -120,23 +170,25 @@ function Twin2D({ model, t, formatNumber }) {
         ) : null}
 
         {model.modules.map((module) => {
-          const width = Math.max(module.footprintWidthM * scale, 10);
-          const depth = Math.max(module.footprintDepthM * scale, 8);
-          const x = offsetX + module.xM * scale;
-          const top = y(module.yM, module.footprintDepthM);
+          const points = svgPointString(rotatedRectSvgPoints({
+            centerXM: module.centerXM,
+            centerYM: module.centerYM,
+            widthM: module.widthM,
+            depthM: module.depthM,
+            rotationDeg: module.rotationDeg,
+          }, projection));
+          const labelX = offsetX + module.centerXM * scale;
+          const labelY = y(module.centerYM);
+          const visibleSize = Math.max(module.widthM * scale, module.depthM * scale);
           return (
-            <g key={module.key}>
-              <rect
-                x={x}
-                y={top}
-                width={width}
-                height={depth}
-                rx="4"
+            <g key={module.key} data-rotation-deg={module.rotationDeg}>
+              <polygon
+                points={points}
                 className={`eay-twin-module eay-twin-module--${fixtureClass(module.fixtureType)}${module.routeHotspot ? " is-route-hotspot" : ""}`}
                 data-coordinate-authority={module.coordinateAuthority}
                 data-route-rank={module.routeHotspot?.rank || undefined}
               />
-              {width > 54 && depth > 20 ? <text x={x + width / 2} y={top + depth / 2 + 4} className="eay-twin-module-label">{module.aisleId} · {module.moduleId}</text> : null}
+              {visibleSize > 54 ? <text x={labelX} y={labelY + 4} className="eay-twin-module-label">{module.aisleId} · {module.moduleId}</text> : null}
               <title>{`${module.aisleId} / ${module.moduleId} · ${t("products")}: ${formatNumber(module.productCount)}${module.routeDistanceM != null ? ` · ${formatNumber(module.routeDistanceM)} m` : ""}`}</title>
             </g>
           );

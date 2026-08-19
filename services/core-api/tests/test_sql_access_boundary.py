@@ -54,6 +54,8 @@ ACADEMY_RUNTIME_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_entitlement.py", "is_module_entitled"),
     ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"),
     ("modules/academy/repository_knowledge.py", "ingest_document_chunks"),
+    ("modules/academy/repository_localization.py", "get_localization_policy"),
+    ("modules/academy/repository_localization.py", "save_localization_policy"),
     ("modules/academy/repository_path.py", "create_learning_path"),
     ("modules/academy/repository_path.py", "grant_entitlement"),
     ("modules/academy/repository_progress.py", "get_progress_target"),
@@ -89,6 +91,7 @@ EXECUTION_CALLS = {
     "fetch", "fetchrow", "fetchval", "stream", "stream_scalars",
 }
 ENGINE_CALLS = {"create_engine", "create_async_engine"}
+DIRECT_DB_DRIVERS = {"asyncpg", "psycopg", "psycopg2", "pg8000"}
 
 
 def _call_name(node: ast.Call) -> str | None:
@@ -146,11 +149,11 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name in {"asyncpg", "psycopg", "psycopg2", "pg8000"}:
+                    if alias.name.split(".", 1)[0] in DIRECT_DB_DRIVERS:
                         violations.append(f"{relative}:{node.lineno} direct database driver import")
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module.split(".", 1)[0] in {"asyncpg", "psycopg", "psycopg2", "pg8000"}:
+                if module.split(".", 1)[0] in DIRECT_DB_DRIVERS:
                     violations.append(f"{relative}:{node.lineno} direct database driver import")
 
     assert not violations, (
@@ -216,6 +219,8 @@ EXPECTED_EXECUTION_CALL_COUNTS = {
     ("modules/academy/repository_entitlement.py", "is_module_entitled"): 1,
     ("modules/academy/repository_idempotency_claim.py", "claim_idempotency_key"): 2,
     ("modules/academy/repository_knowledge.py", "ingest_document_chunks"): 3,
+    ("modules/academy/repository_localization.py", "get_localization_policy"): 1,
+    ("modules/academy/repository_localization.py", "save_localization_policy"): 1,
     ("modules/academy/repository_path.py", "create_learning_path"): 3,
     ("modules/academy/repository_path.py", "grant_entitlement"): 1,
     ("modules/academy/repository_progress.py", "get_progress_target"): 1,
@@ -269,7 +274,11 @@ def test_raw_sql_text_must_be_static_literal() -> None:
 def test_execution_sql_sources_are_static_reviewed() -> None:
     violations: list[str] = []
 
-    def source_is_static(node: ast.AST, assignments: dict[str, list[ast.AST]], seen: set[str] | None = None) -> bool:
+    def source_is_static(
+        node: ast.AST,
+        assignments: dict[str, list[ast.AST]],
+        seen: set[str] | None = None,
+    ) -> bool:
         seen = set() if seen is None else set(seen)
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return True
@@ -301,7 +310,11 @@ def test_execution_sql_sources_are_static_reviewed() -> None:
                     for target in node.targets:
                         if isinstance(target, ast.Name):
                             assignments.setdefault(target.id, []).append(node.value)
-                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+                if (
+                    isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name)
+                    and node.value is not None
+                ):
                     assignments.setdefault(node.target.id, []).append(node.value)
             for node in ast.walk(function):
                 if not isinstance(node, ast.Call) or _call_name(node) not in EXECUTION_CALLS:

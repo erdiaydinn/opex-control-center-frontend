@@ -173,6 +173,34 @@ class QuizCreateRequest(BaseModel):
         return self
 
 
+class LocalizationPolicyUpdateRequest(BaseModel):
+    default_locale: Locale
+    enabled_locales: list[Locale] = Field(min_length=1, max_length=64)
+    expected_revision: int = Field(ge=0)
+
+    @field_validator("default_locale")
+    @classmethod
+    def validate_default_locale(cls, value: str) -> str:
+        return _validate_locale(value)
+
+    @field_validator("enabled_locales")
+    @classmethod
+    def validate_enabled_locales(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw in value:
+            locale = _validate_locale(raw)
+            if locale in normalized:
+                raise ValueError(f"Duplicate enabled locale after normalization: {locale}")
+            normalized.append(locale)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_default_enabled(self) -> "LocalizationPolicyUpdateRequest":
+        if self.default_locale not in self.enabled_locales:
+            raise ValueError("Default locale must be included in enabled locales")
+        return self
+
+
 class EntitlementCreateRequest(BaseModel):
     resource_type: Literal["content", "path"]
     resource_id: UUID

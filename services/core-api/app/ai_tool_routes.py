@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from app.ai_data_scope_admin_routes import router as ai_data_scope_admin_router
 from app.ai_tenant_query_context_routes import router as ai_tenant_query_context_router
@@ -29,9 +29,29 @@ from app.core.ai_tool_grants import (
     AiToolGrantTenantContextUnavailable,
     AiToolGrantUnavailable,
     RedisAiToolGrantStore,
+    canonical_arguments_sha256,
+    canonical_reason_sha256,
 )
 from app.core.audit import build_audit_event
 from app.core.config import get_settings
+from app.core.jarvis_execution_admission import (
+    JarvisAdmissionConcurrencyLimited,
+    JarvisAdmissionInvalid,
+    JarvisAdmissionLease,
+    JarvisAdmissionRateLimited,
+    JarvisAdmissionUnavailable,
+    JarvisExecutionAdmissionSettings,
+    RedisJarvisExecutionAdmissionStore,
+)
+from app.core.jarvis_grant_idempotency import (
+    JarvisGrantIdempotencyConflict,
+    JarvisGrantIdempotencyInvalid,
+    JarvisGrantIdempotencyReplay,
+    JarvisGrantIdempotencyReservation,
+    JarvisGrantIdempotencyUnavailable,
+    RedisJarvisGrantIdempotencyStore,
+    grant_issue_request_fingerprint,
+)
 from app.core.jarvis_service_identity import VerifiedJarvisService
 from app.core.jarvis_service_security import require_fresh_jarvis_service
 from app.core.resources import redis_client, write_audit_event
@@ -41,8 +61,12 @@ router = APIRouter()
 router.include_router(ai_data_scope_admin_router)
 router.include_router(ai_tenant_query_context_router)
 
-_ai_tool_grant_store = RedisAiToolGrantStore(
-    redis_client
+_ai_tool_grant_store = RedisAiToolGrantStore(redis_client)
+_grant_idempotency_store = RedisJarvisGrantIdempotencyStore(redis_client)
+_admission_settings = JarvisExecutionAdmissionSettings()
+_admission_store = RedisJarvisExecutionAdmissionStore(
+    redis_client,
+    _admission_settings,
 )
 
 
@@ -102,6 +126,17 @@ class InternalAiToolAuthorizationResponse(BaseModel):
     authorization_fingerprint: str
     arguments_sha256: str
     reason_sha256: str
+    admission_lease_token: str
+    admission_lease_ttl_seconds: int
+
+
+class InternalAiToolAdmissionReleaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    admission_lease_token: str = Field(
+        min_length=32,
+        max_length=256,
+    )
 
 
 def _ai_tool_access_denied() -> HTTPException:
@@ -130,6 +165,41 @@ def _tenant_query_context_unavailable() -> HTTPException:
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="AI tenant query context is unavailable",
     )
+
+
+def _admission_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="AI tool execution admission authority is unavailable",
+    )
+
+
+async def _release_grant_reservation_safely(
+    reservation: JarvisGrantIdempotencyReservation | None,
+) -> None:
+    if reservation is None:
+        return
+    try:
+        await _grant_idempotency_store.release(reservation)
+    except (
+        JarvisGrantIdempotencyInvalid,
+        JarvisGrantIdempotencyUnavailable,
+    ):
+        # A stale reservation blocks duplicate grant issuance until TTL. That
+        # fail-closed outcome is safer than deleting an ambiguous reservation.
+        return
+
+
+async def _release_admission_safely(
+    lease: JarvisAdmissionLease | None,
+) -> None:
+    if lease is None:
+        return
+    try:
+        await _admission_store.release(lease)
+    except (JarvisAdmissionInvalid, JarvisAdmissionUnavailable):
+        # Concurrency membership is bounded by Redis-server-time TTL.
+        return
 
 
 @router.post(
@@ -164,13 +234,69 @@ async def issue_ai_tool_grant(
             detail="AI tool request is invalid",
         ) from exc
 
+    settings = get_settings()
     try:
         require_ai_query_contract_ready(
             tool=payload.tool,
-            environment=get_settings().environment,
+            environment=settings.environment,
         )
     except AiQueryContractPolicyError as exc:
         raise _query_contract_unavailable() from exc
+
+    idempotency_key = request.headers.get("Idempotency-Key", "").strip()
+    if (
+        settings.environment in {"staging", "production"}
+        and not idempotency_key
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail="Idempotency-Key is required for AI tool grant issuance",
+        )
+
+    reservation: JarvisGrantIdempotencyReservation | None = None
+    if idempotency_key:
+        try:
+            request_fingerprint = grant_issue_request_fingerprint(
+                tenant_id=capability.tenant_id,
+                actor_subject=capability.actor_subject,
+                tool=capability.tool,
+                arguments_sha256=canonical_arguments_sha256(
+                    payload.arguments
+                ),
+                reason_sha256=canonical_reason_sha256(payload.reason),
+                authorization_fingerprint=(
+                    capability.authorization_fingerprint
+                ),
+                data_scope_fingerprint=(
+                    capability.data_scope_fingerprint
+                ),
+            )
+            reservation = await _grant_idempotency_store.reserve(
+                tenant_id=capability.tenant_id,
+                actor_subject=capability.actor_subject,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+        except JarvisGrantIdempotencyInvalid as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="AI tool grant idempotency request is invalid",
+            ) from exc
+        except JarvisGrantIdempotencyReplay as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="AI tool grant issuance replay is blocked",
+            ) from exc
+        except JarvisGrantIdempotencyConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency-Key is bound to another AI request",
+            ) from exc
+        except JarvisGrantIdempotencyUnavailable as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI tool grant idempotency authority is unavailable",
+            ) from exc
 
     try:
         issued = await _ai_tool_grant_store.issue(
@@ -179,13 +305,16 @@ async def issue_ai_tool_grant(
             reason=payload.reason,
         )
     except AiToolGrantInvalid as exc:
+        await _release_grant_reservation_safely(reservation)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="AI tool request is invalid",
         ) from exc
     except AiToolGrantTenantContextUnavailable as exc:
+        await _release_grant_reservation_safely(reservation)
         raise _tenant_query_context_unavailable() from exc
     except AiToolGrantUnavailable as exc:
+        await _release_grant_reservation_safely(reservation)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI tool grant authority is unavailable",
@@ -229,7 +358,7 @@ async def authorize_internal_ai_tool_execution(
         Depends(require_fresh_jarvis_service),
     ],
 ) -> InternalAiToolAuthorizationResponse:
-    """Consume a user grant and return one trusted execution context."""
+    """Consume a Grant V4 token and reserve distributed execution capacity."""
 
     try:
         authorization = await (
@@ -257,7 +386,8 @@ async def authorize_internal_ai_tool_execution(
     binding = authorization.binding
 
     # Deliberately after atomic grant consumption: if downstream readiness is
-    # withdrawn while a grant is outstanding, the stale grant is burned.
+    # withdrawn, rate-limited or unavailable, this grant is burned and cannot
+    # be retried ambiguously.
     try:
         require_ai_query_contract_ready(
             tool=payload.tool,
@@ -265,6 +395,23 @@ async def authorize_internal_ai_tool_execution(
         )
     except AiQueryContractPolicyError as exc:
         raise _query_contract_unavailable() from exc
+
+    admission_lease: JarvisAdmissionLease | None = None
+    try:
+        admission_lease = await _admission_store.acquire(
+            tenant_id=binding.tenant_id,
+            actor_subject=binding.actor_subject,
+        )
+    except (
+        JarvisAdmissionRateLimited,
+        JarvisAdmissionConcurrencyLimited,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="AI tool execution admission limit exceeded",
+        ) from exc
+    except (JarvisAdmissionInvalid, JarvisAdmissionUnavailable) as exc:
+        raise _admission_unavailable() from exc
 
     audit_event = build_audit_event(
         request_id=request.state.request_id,
@@ -310,12 +457,16 @@ async def authorize_internal_ai_tool_execution(
             "execution_scope_fingerprint": (
                 binding.execution_scope_fingerprint
             ),
+            "admission_lease_ttl_seconds": (
+                admission_lease.lease_ttl_seconds
+            ),
         },
     )
 
     try:
         await write_audit_event(audit_event)
     except Exception as exc:
+        await _release_admission_safely(admission_lease)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI tool execution audit is unavailable",
@@ -354,4 +505,39 @@ async def authorize_internal_ai_tool_execution(
         ),
         arguments_sha256=binding.arguments_sha256,
         reason_sha256=binding.reason_sha256,
+        admission_lease_token=(
+            admission_lease.token.get_secret_value()
+        ),
+        admission_lease_ttl_seconds=(
+            admission_lease.lease_ttl_seconds
+        ),
     )
+
+
+@router.post(
+    "/internal/ai/tool-executions/release",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["internal-ai"],
+)
+async def release_internal_ai_tool_execution(
+    payload: InternalAiToolAdmissionReleaseRequest,
+    _jarvis_service: Annotated[
+        VerifiedJarvisService,
+        Depends(require_fresh_jarvis_service),
+    ],
+) -> None:
+    """Release one opaque admission lease after the trusted AI execution."""
+
+    lease = JarvisAdmissionLease(
+        token=SecretStr(payload.admission_lease_token),
+        lease_ttl_seconds=0,
+    )
+    try:
+        await _admission_store.release(lease)
+    except JarvisAdmissionInvalid as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="AI tool admission lease is invalid",
+        ) from exc
+    except JarvisAdmissionUnavailable as exc:
+        raise _admission_unavailable() from exc

@@ -8,6 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.authorization import require_permission
 from app.core.security import Principal
 
+from .accountability import (
+    assign_location_manager,
+    get_location_manager_assignment,
+    list_location_manager_assignments,
+)
 from .assurance import (
     append_auditor_decision_and_route,
     auditor_assurance_summary,
@@ -28,15 +33,16 @@ from .repository import (
     get_location,
     list_programs,
     list_runs,
-    start_run,
     update_action,
 )
 from .resource_scope import get_action_location, get_run_location
+from .run_authority import start_authoritative_run
 from .schemas import (
     AuditActionCreate,
     AuditActionUpdate,
     AuditAssuranceReviewCreate,
     AuditDecisionEventCreate,
+    AuditLocationManagerAssignmentCreate,
     AuditManagerAssuranceDecision,
     AuditProgramActivate,
     AuditProgramCreate,
@@ -179,6 +185,48 @@ async def post_activate_audit_program(
         _raise_repository_error(exc)
 
 
+@router.get("/locations/manager-assignments")
+async def get_location_manager_assignments(
+    principal: AuditViewer,
+) -> list[dict[str, object]]:
+    scope = require_audit_scope(principal, "feature:audit:locations")
+    return await list_location_manager_assignments(
+        str(principal.tenant_id),
+        location_ids=scope.location_ids,
+        regions=scope.regions,
+        unrestricted=scope.unrestricted,
+    )
+
+
+@router.get("/locations/{location_id}/manager-assignment")
+async def get_location_manager(
+    location_id: str,
+    principal: AuditViewer,
+) -> dict[str, object] | None:
+    scope = require_audit_scope(principal, "feature:audit:locations")
+    await _require_location(principal, scope, location_id)
+    return await get_location_manager_assignment(str(principal.tenant_id), location_id)
+
+
+@router.post("/locations/{location_id}/manager-assignment")
+async def post_location_manager_assignment(
+    location_id: str,
+    payload: AuditLocationManagerAssignmentCreate,
+    principal: AuditViewer,
+) -> dict[str, object]:
+    scope = require_audit_scope(principal, "action:audit:manageLocations")
+    await _require_location(principal, scope, location_id)
+    try:
+        return await assign_location_manager(
+            str(principal.tenant_id),
+            principal.subject,
+            location_id,
+            payload,
+        )
+    except AuditRepositoryError as exc:
+        _raise_repository_error(exc)
+
+
 @router.post("/runs", status_code=status.HTTP_201_CREATED)
 async def post_audit_run(
     payload: AuditRunStart,
@@ -187,7 +235,11 @@ async def post_audit_run(
     scope = require_audit_scope(principal, "action:audit:startAudit")
     await _require_location(principal, scope, payload.location_id)
     try:
-        return await start_run(str(principal.tenant_id), principal.subject, payload)
+        return await start_authoritative_run(
+            str(principal.tenant_id),
+            principal.subject,
+            payload,
+        )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
 

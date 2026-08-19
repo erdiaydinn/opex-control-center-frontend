@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import Principal, require_super_admin, require_viewer
 from app.db.session import get_tenant_session
+from app.modules.academy.localization import localization_contract
 from app.modules.academy.repository import (
     create_content,
     create_content_version,
@@ -60,11 +61,14 @@ def _request_id(request: Request) -> str:
 async def academy_home(session: TenantSession, principal: Viewer) -> dict[str, object]:
     await require_module(session, principal)
     await reconcile_role_enrollments(session, principal)
+    localization = localization_contract()
     return {
         "tenant_id": str(principal.tenant_id),
         "subject": principal.subject,
-        "locales": ["tr", "en", "de", "ar"],
-        "direction_by_locale": {"tr": "ltr", "en": "ltr", "de": "ltr", "ar": "rtl"},
+        # Backward-compatible keys for clients already reading the original Academy contract.
+        "locales": localization["core_release_locales"],
+        "direction_by_locale": localization["direction_by_locale"],
+        "localization": localization,
         "enrollments": await list_enrollments(session, principal),
         "content": await list_entitled_content(session, principal),
     }

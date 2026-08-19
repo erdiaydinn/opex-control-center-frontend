@@ -20,7 +20,9 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.LifecycleOwner
@@ -260,27 +262,34 @@ fun EayAuditCameraSurface(
     onReady: () -> Unit = {},
     onError: (Throwable) -> Unit = {},
 ) {
-    AndroidView(
-        modifier = modifier,
-        factory = { viewContext ->
-            PreviewView(viewContext).apply {
-                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }
-        },
-        update = { previewView ->
-            controller.bind(
-                lifecycleOwner = lifecycleOwner,
-                previewView = previewView,
-                lensFacing = lensFacing,
-                frameProcessor = frameProcessor,
-                activeStepId = activeStepId,
-                onRedactedEvidenceFrame = onRedactedEvidenceFrame,
-                onReady = onReady,
-                onError = onError,
-            )
-        },
-    )
+    val currentActiveStepId = rememberUpdatedState(activeStepId)
+    val currentEvidenceCallback = rememberUpdatedState(onRedactedEvidenceFrame)
+    val currentReadyCallback = rememberUpdatedState(onReady)
+    val currentErrorCallback = rememberUpdatedState(onError)
+
+    key(controller, lifecycleOwner, lensFacing, frameProcessor) {
+        AndroidView(
+            modifier = modifier,
+            factory = { viewContext ->
+                PreviewView(viewContext).apply {
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    controller.bind(
+                        lifecycleOwner = lifecycleOwner,
+                        previewView = this,
+                        lensFacing = lensFacing,
+                        frameProcessor = frameProcessor,
+                        activeStepId = { currentActiveStepId.value.invoke() },
+                        onRedactedEvidenceFrame = { frame ->
+                            currentEvidenceCallback.value.invoke(frame)
+                        },
+                        onReady = { currentReadyCallback.value.invoke() },
+                        onError = { error -> currentErrorCallback.value.invoke(error) },
+                    )
+                }
+            },
+        )
+    }
 }
 
 @Composable

@@ -8,17 +8,20 @@ on:
       - "services/core-api/app/ai_tool_routes.py"
       - "services/core-api/app/core/jarvis_execution_admission.py"
       - "services/core-api/app/core/jarvis_grant_idempotency.py"
+      - "services/core-api/app/core/permission_catalog.py"
       - "services/core-api/alembic/versions/0045_jarvis_audit_hash_chain.py"
       - "services/core-api/tests/conftest.py"
       - "services/core-api/tests/test_ai_tool_routes.py"
       - "services/core-api/tests/test_ai_tool_audit_fail_closed.py"
       - "services/core-api/tests/test_jarvis_audit_hash_chain.py"
       - "services/core-api/tests/test_jarvis_platform_security_consolidation.py"
+      - "services/core-api/tests/test_permission_catalog.py"
       - "services/eay-ai-core/app/platform_tool_authorizer.py"
       - "services/eay-ai-core/app/tool_execution.py"
       - "services/eay-ai-core/tests/test_governed_tool_execution_authorization.py"
       - "services/eay-ai-core/tests/test_tool_execution.py"
       - "services/eay-ai-core/tests/test_voice_governed_tool_adapter.py"
+      - "src/modules/planogram/PlanogramStudio.jsx"
       - "config/eay_frozen_authority_coverage_matrix_v1.json"
       - "scripts/validate_frozen_authority_coverage.py"
       - ".github/workflows/jarvis-platform-security-consolidation-ci.yml"
@@ -234,8 +237,24 @@ jobs:
     env:
       OPEX_ENVIRONMENT: test
       OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
       OPEX_REDIS_URL: redis://localhost:6379/0
+      EAY_TEST_MIGRATOR_DSN: postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test
     services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
       redis:
         image: redis:7-alpine
         ports:
@@ -258,6 +277,41 @@ jobs:
           cache-dependency-path: services/core-api/pyproject.toml
       - name: Install Core API
         run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Create non-superuser runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Require one Alembic head
+        working-directory: services/core-api
+        run: |
+          heads=$(alembic heads | grep -c '(head)')
+          test "$heads" -eq 1
+      - name: Apply cumulative migrations
+        working-directory: services/core-api
+        run: alembic upgrade head
       - name: Validate frozen source heads, capability paths and evidence paths
         run: python scripts/validate_frozen_authority_coverage.py
       - name: Ruff coverage validator

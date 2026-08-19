@@ -16,6 +16,7 @@ import com.eay.mobile.presentation.FieldMissionCardModel
 import com.eay.mobile.presentation.FieldRecoveryActionKind
 import com.eay.mobile.presentation.FieldRecoveryBannerModel
 import com.eay.mobile.presentation.FieldRuntimeSurface
+import com.eay.mobile.presentation.FieldSessionRecoveryBannerModel
 import com.eay.mobile.presentation.FieldShellHeader
 
 /**
@@ -44,6 +45,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,
         recovery: FieldRecoveryBannerModel? = null,
+        sessionRecovery: FieldSessionRecoveryBannerModel? = null,
         onMissionOpen: (String) -> Unit,
         onRecoveryAction: (FieldRecoveryActionKind) -> Unit = {},
     ) {
@@ -54,6 +56,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                 header = header,
                 missions = missions,
                 recovery = recovery,
+                sessionRecovery = sessionRecovery,
             ),
         )
     }
@@ -81,6 +84,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                     header = current.model.header,
                     missions = current.model.missions,
                     recovery = current.model.recovery,
+                    sessionRecovery = current.model.sessionRecovery,
                     onMissionOpen = { missionId -> onMissionOpenCallback(missionId) },
                     onRecoveryAction = { action -> onRecoveryActionCallback(action) },
                 )
@@ -98,6 +102,7 @@ internal data class RuntimeTerminalModel(
     val header: FieldShellHeader,
     val missions: List<FieldMissionCardModel>,
     val recovery: FieldRecoveryBannerModel?,
+    val sessionRecovery: FieldSessionRecoveryBannerModel?,
 )
 
 internal sealed interface RuntimeSurface {
@@ -118,6 +123,7 @@ internal object FieldUiRuntimeMapper {
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,
         recovery: FieldRecoveryBannerModel? = null,
+        sessionRecovery: FieldSessionRecoveryBannerModel? = null,
     ): RuntimeTerminalModel {
         require(header.runtimeSurface == FieldRuntimeSurface.EAY_TERMINAL) {
             "EAY Terminal runtime requires an EAY_TERMINAL presentation surface"
@@ -126,6 +132,7 @@ internal object FieldUiRuntimeMapper {
             header = header,
             missions = missions.toList(),
             recovery = recovery,
+            sessionRecovery = sessionRecovery,
         )
     }
 }

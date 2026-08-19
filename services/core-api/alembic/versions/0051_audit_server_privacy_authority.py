@@ -33,7 +33,11 @@ def upgrade() -> None:
 
     op.add_column(
         "audit_redaction_verification_events",
-        sa.Column("verification_authority_version", sa.String(length=64), nullable=True),
+        sa.Column(
+            "verification_authority_version",
+            sa.String(length=64),
+            nullable=True,
+        ),
     )
     op.add_column(
         "audit_redaction_verification_events",
@@ -49,7 +53,11 @@ def upgrade() -> None:
     )
     op.add_column(
         "audit_redaction_verification_events",
-        sa.Column("scanner_model_fingerprint", sa.String(length=64), nullable=True),
+        sa.Column(
+            "scanner_model_fingerprint",
+            sa.String(length=64),
+            nullable=True,
+        ),
     )
     op.add_column(
         "audit_redaction_verification_events",
@@ -57,7 +65,11 @@ def upgrade() -> None:
     )
     op.add_column(
         "audit_redaction_verification_events",
-        sa.Column("detected_sensitive_region_count", sa.Integer(), nullable=True),
+        sa.Column(
+            "detected_sensitive_region_count",
+            sa.Integer(),
+            nullable=True,
+        ),
     )
 
     op.create_check_constraint(
@@ -68,7 +80,8 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_audit_privacy_nonverified_reason",
         "audit_redaction_verification_events",
-        "verification_status = 'verified' OR length(trim(COALESCE(reason,''))) > 0",
+        "verification_status = 'verified' OR "
+        "length(trim(COALESCE(reason,''))) > 0",
     )
     op.create_check_constraint(
         "ck_audit_privacy_authority_version",
@@ -86,10 +99,12 @@ def upgrade() -> None:
         "ck_audit_privacy_scanner_integrity",
         "audit_redaction_verification_events",
         "(scanner_model_ref IS NULL AND scanner_model_fingerprint IS NULL "
-        "AND detected_face_count IS NULL AND detected_sensitive_region_count IS NULL) OR "
+        "AND detected_face_count IS NULL "
+        "AND detected_sensitive_region_count IS NULL) OR "
         "(length(trim(scanner_model_ref)) > 0 "
         "AND scanner_model_fingerprint ~ '^[0-9a-f]{64}$' "
-        "AND detected_face_count >= 0 AND detected_sensitive_region_count >= 0)",
+        "AND detected_face_count >= 0 "
+        "AND detected_sensitive_region_count >= 0)",
     )
     op.create_check_constraint(
         "ck_audit_privacy_server_authority_complete",
@@ -100,17 +115,23 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_audit_privacy_verified_has_scanner",
         "audit_redaction_verification_events",
-        "verification_status <> 'verified' OR verification_authority_version IS NULL OR "
+        "verification_status <> 'verified' OR "
+        "verification_authority_version IS NULL OR "
         "(observed_sha256 IS NOT NULL AND observed_byte_size IS NOT NULL "
-        "AND scanner_model_ref IS NOT NULL AND scanner_model_fingerprint IS NOT NULL "
-        "AND detected_face_count = 0 AND detected_sensitive_region_count = 0)",
+        "AND scanner_model_ref IS NOT NULL "
+        "AND scanner_model_fingerprint IS NOT NULL "
+        "AND detected_face_count = 0 "
+        "AND detected_sensitive_region_count = 0)",
     )
     op.create_check_constraint(
         "ck_audit_privacy_rejected_has_scanner",
         "audit_redaction_verification_events",
-        "verification_status <> 'rejected' OR verification_authority_version IS NULL OR "
-        "(scanner_model_ref IS NOT NULL AND scanner_model_fingerprint IS NOT NULL "
-        "AND (detected_face_count > 0 OR detected_sensitive_region_count > 0))",
+        "verification_status <> 'rejected' OR "
+        "verification_authority_version IS NULL OR "
+        "(scanner_model_ref IS NOT NULL "
+        "AND scanner_model_fingerprint IS NOT NULL "
+        "AND (detected_face_count > 0 "
+        "OR detected_sensitive_region_count > 0))",
     )
 
 
@@ -175,5 +196,6 @@ def downgrade() -> None:
     op.create_check_constraint(
         "ck_audit_privacy_rejection_reason",
         "audit_redaction_verification_events",
-        "verification_status <> 'rejected' OR length(trim(COALESCE(reason,''))) > 0",
+        "verification_status <> 'rejected' OR "
+        "length(trim(COALESCE(reason,''))) > 0",
     )

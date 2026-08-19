@@ -1,7 +1,20 @@
+import sqlite3
+
 import pytest
+from pydantic import ValidationError
 
 from app.bigquery_safe_executor import ExecutionAuditStore
-from app.legal_engine import LegalEngine, LegalInstrumentUpsert, LegalRequirementUpsert
+from app.legal_engine import (
+    LegalEngine,
+    LegalInstrumentUpsert,
+    LegalRequirementUpsert,
+)
+from app.platform_tool_authorizer import (
+    TrustedToolExecutionContext,
+    tool_arguments_sha256,
+    tool_reason_sha256,
+)
+from app.tool_contracts import build_tool_plan
 from app.tool_execution import (
     TemplateBigQueryAdapter,
     TemplateToolExecutionRequest,
@@ -22,7 +35,14 @@ class FakeAdapter:
         self.last_parameters = parameters
         return self.dry_bytes
 
-    def execute(self, sql, parameters, *, timeout_ms, maximum_bytes_billed):
+    def execute(
+        self,
+        sql,
+        parameters,
+        *,
+        timeout_ms,
+        maximum_bytes_billed,
+    ):
         self.last_sql = sql
         self.last_parameters = parameters
         return self.rows
@@ -42,56 +62,164 @@ class FakeBQ:
             self.value = value
 
 
-def test_template_execution_rejects_missing_scope(tmp_path):
+def payload_for(
+    *,
+    tool="catalog_query",
+    arguments=None,
+    reason="catalog lookup",
+    execute=False,
+    **updates,
+):
     payload = TemplateToolExecutionRequest(
-        tool="catalog_query",
-        arguments={"query": "milk", "field": "product", "limit": 10},
-        granted_scopes=[],
-        reason="catalog lookup",
+        tool=tool,
+        arguments=arguments
+        or {"query": "milk", "field": "product", "limit": 10},
+        grant_token="g" * 43,
+        reason=reason,
+        execute=execute,
     )
-    with pytest.raises(PermissionError, match="catalog:read"):
-        prepare_execution(payload)
+    return payload.model_copy(update=updates)
 
 
-def test_template_execution_never_accepts_model_sql(tmp_path):
-    payload = TemplateToolExecutionRequest(
-        tool="catalog_query",
-        arguments={"query": "milk", "field": "product", "limit": 10},
-        granted_scopes=["catalog:read"],
-        reason="catalog lookup",
+def trusted_context(
+    payload: TemplateToolExecutionRequest,
+    *,
+    actor="platform:user-1",
+):
+    plan = build_tool_plan(payload.tool, payload.arguments)
+    return TrustedToolExecutionContext(
+        request_id="platform-auth-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject=actor,
+        tool=plan.tool,
+        granted_scopes=tuple(plan.required_scope),
+        authorization_fingerprint="a" * 64,
+        arguments_sha256=tool_arguments_sha256(plan.arguments),
+        reason_sha256=tool_reason_sha256(payload.reason),
     )
-    request, query_id, scopes, grounding = prepare_execution(payload)
+
+
+def test_template_execution_request_rejects_caller_authority_fields():
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        TemplateToolExecutionRequest(
+            tool="catalog_query",
+            arguments={
+                "query": "milk",
+                "field": "product",
+                "limit": 10,
+            },
+            grant_token="g" * 43,
+            reason="catalog lookup",
+            granted_scopes=["catalog:read"],
+            requested_by="caller:user-1",
+            tenant_id="11111111-1111-4111-8111-111111111111",
+        )
+
+
+def test_template_execution_requires_opaque_platform_grant():
+    with pytest.raises(ValidationError):
+        TemplateToolExecutionRequest(
+            tool="catalog_query",
+            arguments={
+                "query": "milk",
+                "field": "product",
+                "limit": 10,
+            },
+            grant_token="too-short",
+            reason="catalog lookup",
+        )
+
+
+def test_template_execution_rejects_forged_trusted_context():
+    payload = payload_for()
+    context = trusted_context(payload).model_copy(
+        update={"granted_scopes": ("catalog:read", "legal:read")}
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="unexpected scopes",
+    ):
+        prepare_execution(
+            payload,
+            authorization_context=context,
+        )
+
+
+def test_template_execution_never_accepts_model_sql():
+    payload = payload_for()
+    request, query_id, scopes, grounding = prepare_execution(
+        payload,
+        authorization_context=trusted_context(payload),
+    )
     assert query_id == "catalog.lookup.v1"
     assert scopes == ["catalog:read"]
     assert grounding is None
     assert "pandora__vendor_products_qcomm_catalog_details" in request.sql
     assert "milk" not in request.sql
     assert request.parameters["query"] == "milk"
+    assert request.requested_by == "platform:user-1"
+    assert request.tenant_id == "11111111-1111-4111-8111-111111111111"
+    assert request.authorization_request_id == "platform-auth-1"
 
 
-def test_template_execution_runs_bounded_query_and_audits(tmp_path):
+def test_template_execution_runs_bounded_query_and_audits_platform_identity(
+    tmp_path,
+):
     db = tmp_path / "eay.db"
-    payload = TemplateToolExecutionRequest(
-        tool="catalog_query",
-        arguments={"query": "egg", "field": "product", "limit": 10},
-        granted_scopes=["catalog:read"],
-        requested_by="test-user",
+    payload = payload_for(
+        arguments={
+            "query": "egg",
+            "field": "product",
+            "limit": 10,
+        },
         reason="impact review",
         execute=True,
         max_rows=2,
         maximum_bytes_billed=1000,
     )
-    adapter = FakeAdapter(rows=[{"product_name": "Egg", "email": "user@example.com"}])
-    result = execute_with_adapter(payload, adapter=adapter, audit_store=ExecutionAuditStore(db))
+    adapter = FakeAdapter(
+        rows=[
+            {
+                "product_name": "Egg",
+                "email": "user@example.com",
+            }
+        ]
+    )
+    context = trusted_context(payload, actor="platform:voice-user")
+    result = execute_with_adapter(
+        payload,
+        authorization_context=context,
+        adapter=adapter,
+        audit_store=ExecutionAuditStore(db),
+    )
     assert result.query_id == "catalog.lookup.v1"
     assert result.model_authored_sql_allowed is False
     assert result.execution.status == "executed"
     assert "LIMIT 2" in adapter.last_sql
     assert result.execution.rows[0]["email"] != "user@example.com"
 
+    with sqlite3.connect(db) as conn:
+        row = conn.execute(
+            """
+            SELECT requested_by, tenant_id, authorization_request_id,
+                   authorization_fingerprint
+            FROM bigquery_execution_audit
+            WHERE id = ?
+            """,
+            (result.execution.execution_id,),
+        ).fetchone()
+
+    assert row == (
+        "platform:voice-user",
+        "11111111-1111-4111-8111-111111111111",
+        "platform-auth-1",
+        "a" * 64,
+    )
+
 
 def test_tool_semantics_fail_closed_when_template_not_implemented():
-    payload = TemplateToolExecutionRequest(
+    payload = payload_for(
         tool="ops_kpi_query",
         arguments={
             "metric": "nsfr",
@@ -100,15 +228,30 @@ def test_tool_semantics_fail_closed_when_template_not_implemented():
             "stores": [],
             "limit": 20,
         },
-        granted_scopes=["ops:read"],
         reason="nsfr review",
     )
-    with pytest.raises(ValueError, match="metric_template_not_implemented"):
-        prepare_execution(payload)
+    placeholder = TrustedToolExecutionContext(
+        request_id="platform-auth-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject="platform:user-1",
+        tool="ops_kpi_query",
+        granted_scopes=("ops:read",),
+        authorization_fingerprint="a" * 64,
+        arguments_sha256="b" * 64,
+        reason_sha256="c" * 64,
+    )
+    with pytest.raises(
+        ValueError,
+        match="metric_template_not_implemented",
+    ):
+        prepare_execution(
+            payload,
+            authorization_context=placeholder,
+        )
 
 
 def test_regulatory_impact_rejects_caller_authored_topic():
-    payload = TemplateToolExecutionRequest(
+    payload = payload_for(
         tool="regulatory_impact_query",
         arguments={
             "instrument_id": "tgk-1",
@@ -117,14 +260,28 @@ def test_regulatory_impact_rejects_caller_authored_topic():
             "entities": ["sku"],
             "limit": 20,
         },
-        granted_scopes=["legal:read", "catalog:read"],
         reason="impact review",
     )
+    placeholder = TrustedToolExecutionContext(
+        request_id="platform-auth-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject="platform:user-1",
+        tool="regulatory_impact_query",
+        granted_scopes=("catalog:read", "legal:read"),
+        authorization_fingerprint="a" * 64,
+        arguments_sha256="b" * 64,
+        reason_sha256="c" * 64,
+    )
     with pytest.raises(ValueError, match="extra_forbidden"):
-        prepare_execution(payload)
+        prepare_execution(
+            payload,
+            authorization_context=placeholder,
+        )
 
 
-def test_regulatory_impact_resolves_topics_from_verified_effective_instrument(tmp_path):
+def test_regulatory_impact_resolves_topics_from_verified_effective_instrument(
+    tmp_path,
+):
     db = tmp_path / "eay.db"
     engine = LegalEngine(db)
     engine.upsert_instrument(
@@ -152,7 +309,7 @@ def test_regulatory_impact_resolves_topics_from_verified_effective_instrument(tm
             citation="Madde 5",
         )
     )
-    payload = TemplateToolExecutionRequest(
+    payload = payload_for(
         tool="regulatory_impact_query",
         arguments={
             "instrument_id": "tgk-etiket",
@@ -160,20 +317,30 @@ def test_regulatory_impact_resolves_topics_from_verified_effective_instrument(tm
             "entities": ["sku", "category"],
             "limit": 20,
         },
-        granted_scopes=["legal:read", "catalog:read"],
         reason="impact review",
     )
-    request, query_id, scopes, grounding = prepare_execution(payload, legal_db_path=db)
+    request, query_id, scopes, grounding = prepare_execution(
+        payload,
+        authorization_context=trusted_context(payload),
+        legal_db_path=db,
+    )
     assert query_id == "regulatory.impact.v1"
     assert scopes == ["legal:read", "catalog:read"]
-    assert request.parameters["topics"][:2] == ["yumurta", "etiketleme"]
+    assert request.parameters["topics"][:2] == [
+        "yumurta",
+        "etiketleme",
+    ]
     assert grounding["instrument_id"] == "tgk-etiket"
     assert grounding["citation_ids"] == ["tgk-etiket-r1"]
-    assert grounding["source_url"].startswith("https://www.resmigazete.gov.tr/")
+    assert grounding["source_url"].startswith(
+        "https://www.resmigazete.gov.tr/"
+    )
     assert "UNNEST(@topics)" in request.sql
 
 
-def test_regulatory_impact_rejects_unverified_or_not_effective_instrument(tmp_path):
+def test_regulatory_impact_rejects_unverified_or_not_effective_instrument(
+    tmp_path,
+):
     db = tmp_path / "eay.db"
     engine = LegalEngine(db)
     engine.upsert_instrument(
@@ -188,7 +355,7 @@ def test_regulatory_impact_rejects_unverified_or_not_effective_instrument(tmp_pa
             topics=["süt"],
         )
     )
-    payload = TemplateToolExecutionRequest(
+    payload = payload_for(
         tool="regulatory_impact_query",
         arguments={
             "instrument_id": "draft-1",
@@ -196,17 +363,28 @@ def test_regulatory_impact_rejects_unverified_or_not_effective_instrument(tmp_pa
             "entities": ["sku"],
             "limit": 20,
         },
-        granted_scopes=["legal:read", "catalog:read"],
         reason="impact review",
     )
-    with pytest.raises(ValueError, match="verified_effective_legal_instrument_required"):
-        prepare_execution(payload, legal_db_path=db)
+    with pytest.raises(
+        ValueError,
+        match="verified_effective_legal_instrument_required",
+    ):
+        prepare_execution(
+            payload,
+            authorization_context=trusted_context(payload),
+            legal_db_path=db,
+        )
 
 
 def test_template_bigquery_adapter_encodes_array_parameter_without_network():
     adapter = TemplateBigQueryAdapter.__new__(TemplateBigQueryAdapter)
     adapter.bigquery = FakeBQ
-    params = adapter._parameters({"stores": ["Fulya", "Dicle"], "stores_empty": False})
+    params = adapter._parameters(
+        {
+            "stores": ["Fulya", "Dicle"],
+            "stores_empty": False,
+        }
+    )
     assert params[0].type_name == "STRING"
     assert params[0].value == ["Fulya", "Dicle"]
     assert params[1].type_name == "BOOL"

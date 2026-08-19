@@ -5,6 +5,12 @@ import pytest
 from app.bigquery_safe_executor import ExecutionAuditStore
 from app.kpi_registry import get_kpi_definition
 from app.kpi_semantics import get_semantic_contract, verify_semantic_contract
+from app.platform_tool_authorizer import (
+    TrustedToolExecutionContext,
+    tool_arguments_sha256,
+    tool_reason_sha256,
+)
+from app.tool_contracts import build_tool_plan
 from app.tool_execution import TemplateToolExecutionRequest, execute_with_adapter
 
 
@@ -26,13 +32,34 @@ class OrdersAdapter:
         return 100
 
     def execute(self, sql, parameters, *, timeout_ms, maximum_bytes_billed):
-        return [{"date": "2026-08-10", "vendor_name": "Fulya", "orders": 5}]
+        return [
+            {
+                "date": "2026-08-10",
+                "vendor_name": "Fulya",
+                "orders": 5,
+            }
+        ]
+
+
+def _trusted_context(payload: TemplateToolExecutionRequest):
+    plan = build_tool_plan(payload.tool, payload.arguments)
+    return TrustedToolExecutionContext(
+        request_id="platform-orders-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject="platform:user-1",
+        tool=plan.tool,
+        granted_scopes=tuple(plan.required_scope),
+        authorization_fingerprint="a" * 64,
+        arguments_sha256=tool_arguments_sha256(plan.arguments),
+        reason_sha256=tool_reason_sha256(payload.reason),
+    )
 
 
 def test_orders_semantic_contract_is_reviewed_and_fingerprinted():
     definition = get_kpi_definition("orders")
     result = verify_semantic_contract(
-        metric="orders", contract_id=definition.semantic_contract_id
+        metric="orders",
+        contract_id=definition.semantic_contract_id,
     )
     assert result["reviewed"] is True
     assert len(result["fingerprint"]) == 64
@@ -48,27 +75,43 @@ def test_nsfr_contract_pins_precedence_and_semantics_but_schema_stays_separate()
     )
     assert contract.denominator == "successful_orders"
     assert contract.review_state == "reviewed"
-    result = verify_semantic_contract(metric="nsfr", contract_id=definition.semantic_contract_id)
+    result = verify_semantic_contract(
+        metric="nsfr",
+        contract_id=definition.semantic_contract_id,
+    )
     assert result["reviewed"] is True
     assert definition.executable is False
     assert definition.schema_contract_id is None
 
 
 @pytest.mark.parametrize("metric", ["pfr", "refund"])
-def test_nsfr_component_semantics_are_reviewed_without_enabling_execution(metric):
+def test_nsfr_component_semantics_are_reviewed_without_enabling_execution(
+    metric,
+):
     definition = get_kpi_definition(metric)
-    result = verify_semantic_contract(metric=metric, contract_id=definition.semantic_contract_id)
+    result = verify_semantic_contract(
+        metric=metric,
+        contract_id=definition.semantic_contract_id,
+    )
     assert result["reviewed"] is True
     assert definition.executable is False
     assert definition.schema_contract_id is None
 
 
 def test_semantic_contract_rejects_metric_binding_mismatch():
-    with pytest.raises(ValueError, match="kpi_semantic_contract_metric_mismatch"):
-        verify_semantic_contract(metric="refund", contract_id="ops.orders.semantic.v1")
+    with pytest.raises(
+        ValueError,
+        match="kpi_semantic_contract_metric_mismatch",
+    ):
+        verify_semantic_contract(
+            metric="refund",
+            contract_id="ops.orders.semantic.v1",
+        )
 
 
-def test_orders_execution_returns_and_audits_both_contract_fingerprints(tmp_path):
+def test_orders_execution_returns_and_audits_both_contract_fingerprints(
+    tmp_path,
+):
     db = tmp_path / "eay.db"
     payload = TemplateToolExecutionRequest(
         tool="ops_kpi_query",
@@ -79,13 +122,14 @@ def test_orders_execution_returns_and_audits_both_contract_fingerprints(tmp_path
             "stores": ["Fulya"],
             "limit": 20,
         },
-        granted_scopes=["ops:read"],
+        grant_token="g" * 43,
         reason="review orders",
         execute=False,
     )
     adapter = OrdersAdapter()
     result = execute_with_adapter(
         payload,
+        authorization_context=_trusted_context(payload),
         adapter=adapter,
         audit_store=ExecutionAuditStore(db),
     )

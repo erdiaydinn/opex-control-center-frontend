@@ -26,21 +26,13 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executor
 
-/**
- * Handle to raw device-private capture. It is intentionally not an evidence receipt.
- * The file must be deleted after privacy post-processing succeeds or fails.
- */
-data class AuditRawVideoCapture(
-    val captureId: UUID,
-    val privateFile: File,
-)
-
 class AuditCameraXController(
     private val context: Context,
 ) : Closeable {
     private val mainExecutor: Executor = Executor { command ->
         Handler(Looper.getMainLooper()).post(command)
     }
+    private val rawLeases = linkedSetOf<AuditRawVideoCapture>()
     private var provider: ProcessCameraProvider? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
@@ -95,9 +87,10 @@ class AuditCameraXController(
         check(recording == null) { "Audit recording is already active" }
         val video = checkNotNull(videoCapture) { "CameraX audit capture is not bound" }
         val raw = newRawCapture()
+        rawLeases += raw
 
         try {
-            val options = FileOutputOptions.Builder(raw.privateFile).build()
+            val options = FileOutputOptions.Builder(raw.recordingFile()).build()
             val pending = video.output.prepareRecording(context, options)
             recording = pending.start(mainExecutor) { event ->
                 when (event) {
@@ -109,10 +102,24 @@ class AuditCameraXController(
                 }
             }
         } catch (error: Throwable) {
-            raw.privateFile.delete()
+            rawLeases -= raw
+            raw.discardIfOpen()
             recording = null
             onError(error)
         }
+    }
+
+    fun <T> consumeRawCapture(
+        raw: AuditRawVideoCapture,
+        processor: (File) -> T,
+    ): T {
+        check(rawLeases.remove(raw)) { "Raw capture does not belong to this controller" }
+        return raw.consumeAndDelete(processor)
+    }
+
+    fun discardRawCapture(raw: AuditRawVideoCapture) {
+        check(rawLeases.remove(raw)) { "Raw capture does not belong to this controller" }
+        raw.discard()
     }
 
     fun stopRecording() {
@@ -127,6 +134,10 @@ class AuditCameraXController(
     override fun close() {
         recording?.close()
         recording = null
+        rawLeases.toList().forEach { lease ->
+            lease.discardIfOpen()
+            rawLeases -= lease
+        }
         provider?.unbindAll()
         provider = null
         videoCapture = null

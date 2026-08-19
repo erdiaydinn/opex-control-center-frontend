@@ -47,11 +47,34 @@ jobs:
           python -m pip install -e ".[dev]"
       - name: Ruff cyber defense surface
         run: |
+          set +e
           python -m ruff check \
             app/cyber_*.py \
             app/company_detection_coverage_intelligence.py \
             tests/test_cyber_*.py \
-            tests/test_company_detection_coverage_intelligence.py
+            tests/test_company_detection_coverage_intelligence.py \
+            --output-format=json > /tmp/cyber-ruff.json
+          ruff_status=$?
+          python - <<'PY'
+          import collections
+          import json
+
+          with open('/tmp/cyber-ruff.json', encoding='utf-8') as handle:
+              findings = json.load(handle)
+
+          by_code = collections.Counter(item['code'] for item in findings)
+          by_file = collections.Counter(item['filename'] for item in findings)
+          print(f'CYBER_RUFF_TOTAL={len(findings)}')
+          print('CYBER_RUFF_BY_CODE=' + ','.join(f'{code}:{count}' for code, count in sorted(by_code.items())))
+          print('CYBER_RUFF_BY_FILE=' + ','.join(f'{path}:{count}' for path, count in sorted(by_file.items())))
+          for item in findings:
+              location = item['location']
+              print(
+                  f"CYBER_RUFF_FINDING {item['filename']}:{location['row']}:{location['column']} "
+                  f"{item['code']} {item['message']}"
+              )
+          PY
+          exit "$ruff_status"
       - name: Compile cyber defense contracts and adversarial tests
         run: |
           python -m compileall -q \

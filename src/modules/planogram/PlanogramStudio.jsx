@@ -24,6 +24,7 @@ import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramEconomicsPanel from "./PlanogramEconomicsPanel.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import PlanogramScenarioPortfolio from "./PlanogramScenarioPortfolio.jsx";
+import PlanogramStoreScanPanel from "./PlanogramStoreScanPanel.jsx";
 import "./planogram-native.css";
 import "./planogram-operations.css";
 import "./planogram-preview.css";
@@ -32,7 +33,6 @@ const PLANOGRAM_FEATURES = ["layoutView", "layoutEdit", "fixtureEdit", "ruleEdit
 const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete"];
 const MAX_PREVIEW_FILE_BYTES = 10 * 1024 * 1024;
 
-// Phase 1 Security Quarantine remains the canonical boundary: no legacy iframe/token bridge.
 export const PLANOGRAM_SECURITY_CONTRACT = Object.freeze({
   features: PLANOGRAM_FEATURES,
   actions: PLANOGRAM_ACTIONS,
@@ -245,6 +245,12 @@ export default function PlanogramStudio() {
             canAction={canAction}
           />
 
+          <PlanogramStoreScanPanel
+            locale={locale}
+            formatNumber={formatNumber}
+            canCreate={canCreatePreview}
+          />
+
           <section
             className="eay-planogram-preview"
             aria-busy={previewRunning || optimizerRunning ? "true" : "false"}
@@ -260,45 +266,23 @@ export default function PlanogramStudio() {
             <div className="eay-planogram-preview-controls">
               <label className="eay-planogram-file-control">
                 <span>{p("uploadBundle")}</span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  onChange={readCandidate}
-                />
+                <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={readCandidate} />
               </label>
               <div className="eay-planogram-file-state" role="status" aria-live="polite">
                 {candidate
-                  ? p("fileLoaded", {
-                      name: candidateName,
-                      products: formatNumber(candidate.products.length),
-                    })
+                  ? p("fileLoaded", { name: candidateName, products: formatNumber(candidate.products.length) })
                   : p("noFile")}
               </div>
-              <button type="button" onClick={clearCandidate} disabled={!candidate && !candidateError && !preview}>
-                {p("clear")}
-              </button>
-              <button
-                type="button"
-                className="eay-planogram-preview-run"
-                onClick={runPreview}
-                disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}
-              >
+              <button type="button" onClick={clearCandidate} disabled={!candidate && !candidateError && !preview}>{p("clear")}</button>
+              <button type="button" className="eay-planogram-preview-run" onClick={runPreview} disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}>
                 {previewRunning ? p("runningPreview") : p("runPreview")}
               </button>
-              <button
-                type="button"
-                className="eay-planogram-preview-run"
-                onClick={runOptimizerPreview}
-                disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}
-              >
+              <button type="button" className="eay-planogram-preview-run" onClick={runOptimizerPreview} disabled={!candidate || !canCreatePreview || previewRunning || optimizerRunning}>
                 {optimizerRunning ? o("optimizerRunning") : o("optimizerPreview")}
               </button>
             </div>
 
-            {!canCreatePreview ? (
-              <p className="eay-planogram-preview-note">{p("createPermissionRequired")}</p>
-            ) : null}
+            {!canCreatePreview ? <p className="eay-planogram-preview-note">{p("createPermissionRequired")}</p> : null}
             {candidateError ? <p className="eay-planogram-preview-error" role="alert">{candidateError}</p> : null}
             {previewError ? <p className="eay-planogram-preview-error" role="alert">{previewError}</p> : null}
 
@@ -324,54 +308,24 @@ export default function PlanogramStudio() {
                 </div>
                 {optimizerMeta ? (
                   <p className="eay-planogram-preview-note">
-                    {optimizerMeta.allowed
-                      ? optimizerMeta.improved
-                        ? o("optimizerImproved")
-                        : o("optimizerBaseline")
-                      : o("optimizerBlocked")}
+                    {optimizerMeta.allowed ? (optimizerMeta.improved ? o("optimizerImproved") : o("optimizerBaseline")) : o("optimizerBlocked")}
                   </p>
                 ) : null}
                 {optimizerMeta ? (
-                  <PlanogramScenarioPortfolio
-                    candidate={candidate}
-                    locale={locale}
-                    formatNumber={formatNumber}
-                    canCreate={canCreatePreview}
-                    canApprove={canApprovePreview}
-                  />
+                  <PlanogramScenarioPortfolio candidate={candidate} locale={locale} formatNumber={formatNumber} canCreate={canCreatePreview} canApprove={canApprovePreview} />
                 ) : null}
                 {optimizerMeta ? (
-                  <PlanogramCadExport
-                    candidate={candidate}
-                    optimizerMeta={optimizerMeta}
-                    locale={locale}
-                    canExport={canAction("planogram", "export")}
-                  />
+                  <PlanogramCadExport candidate={candidate} optimizerMeta={optimizerMeta} locale={locale} canExport={canAction("planogram", "export")} />
                 ) : null}
                 {optimizerMeta ? (
-                  <PlanogramEconomicsPanel
-                    candidate={candidate}
-                    locale={locale}
-                    formatNumber={formatNumber}
-                    canCreate={canCreatePreview}
-                    canApprove={canApprovePreview}
-                  />
+                  <PlanogramEconomicsPanel candidate={candidate} locale={locale} formatNumber={formatNumber} canCreate={canCreatePreview} canApprove={canApprovePreview} />
                 ) : null}
                 {engineResult?.planogram ? (
-                  <PlanogramDigitalTwin
-                    engineResult={engineResult}
-                    candidate={candidate}
-                    locale={locale}
-                    formatNumber={formatNumber}
-                  />
+                  <PlanogramDigitalTwin engineResult={engineResult} candidate={candidate} locale={locale} formatNumber={formatNumber} />
                 ) : null}
                 <div className="eay-planogram-preview-blockers">
                   <strong>{p("blockers")}</strong>
-                  {blockers.length ? (
-                    <ul>{blockers.map((blocker) => <li key={blocker}><code>{blocker}</code></li>)}</ul>
-                  ) : (
-                    <p>{p("noBlockers")}</p>
-                  )}
+                  {blockers.length ? <ul>{blockers.map((blocker) => <li key={blocker}><code>{blocker}</code></li>)}</ul> : <p>{p("noBlockers")}</p>}
                 </div>
               </div>
             ) : null}

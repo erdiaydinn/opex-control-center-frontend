@@ -5,6 +5,7 @@ on:
     branches:
       - agent/master-roadmap-24-27-exact-head-aggregate
       - product/eay-category-leadership-v1
+      - product/planogram-market-leadership-v1
   pull_request:
     branches:
       - product/eay-category-leadership-v1
@@ -17,9 +18,13 @@ on:
       - "config/eay_master_roadmap_60.json"
       - "src/**/*planogram*"
       - "src/**/Planogram/**"
+      - "scripts/test-planogram-digital-twin.mjs"
+      - "scripts/test-planogram-engineering-2d.mjs"
+      - "scripts/test-planogram-route-explainability.mjs"
       - ".github/workflows/eay-master-roadmap-24-planogram-physical-truth.yml"
       - ".github/workflows/eay-master-roadmap-25-planogram-optimizer.yml"
       - ".github/workflows/eay-master-roadmap-26-planogram-execution-compliance.yml"
+      - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
       - ".github/workflows/eay-master-roadmap-24-27-cumulative-exact-head.yml"
 
 permissions:
@@ -202,9 +207,10 @@ jobs:
           node scripts/test-planogram-operations-ui.mjs
           node scripts/test-planogram-product-states.mjs
           node scripts/test-no-new-hardcoded-ui-strings.mjs
-      - name: Master 27 digital twin and route explainability
+      - name: Master 27 digital twin, engineering 2D and route explainability
         run: |
           node scripts/test-planogram-digital-twin.mjs
+          node scripts/test-planogram-engineering-2d.mjs
           node scripts/test-planogram-route-explainability.mjs
       - name: Production build with dynamic 3D runtime
         run: npm run build -- --manifest
@@ -237,6 +243,7 @@ jobs:
           assert 'fixture_geometry_capacity' in REQUIRED_EVIDENCE
           assert 'physical_truth_attested' not in PlanogramPlanDraftRequest.model_json_schema()['properties']
           print('MASTER_24_27_REPOSITORY_SOFTWARE_ACCEPTANCE=PASS')
+          print('MASTER_24_27_ARBITRARY_ANGLE_2D_GEOMETRY=PASS')
           print('MASTER_24_27_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED')
           print('MASTER_24_27_PRODUCTION_READY=FALSE')
           PY

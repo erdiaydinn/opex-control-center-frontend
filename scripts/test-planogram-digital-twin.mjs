@@ -152,6 +152,12 @@ for (const [needle, label] of [
   ['await import("three")', "dynamic Three.js loading"],
   ['await import("three/examples/jsm/controls/OrbitControls.js")', "dynamic OrbitControls loading"],
   ["InstancedMesh", "bounded product instancing"],
+  ["buildFacingInstances", "facing-aware product placement"],
+  ["productFacingCount", "explicit facing-count rendering"],
+  ["addOpenShelfFixture", "open fixture geometry"],
+  ["MeshPhysicalMaterial", "glass/cold-fixture material"],
+  ["setColorAt", "SKU-distinguishable product facings"],
+  ["ACESFilmicToneMapping", "market-grade tone mapping baseline"],
   ["data-coordinate-authority", "coordinate truth rendering"],
   ["footprintWidthM", "backend-equivalent rotated footprint rendering"],
   ["eay-twin-egress-clearance", "emergency-exit clearance rendering"],
@@ -162,6 +168,12 @@ for (const [needle, label] of [
   if (!renderer.includes(needle)) fail(`Digital twin renderer missing ${label}: ${needle}`);
 }
 
+if (renderer.includes("const perRow = Math.max(1, Math.ceil(Math.sqrt(products.length)))")) {
+  fail("3D product rendering must not regress to square-root debug-grid placement.");
+}
+if (renderer.includes("const frameGeometry = new THREE.BoxGeometry(module.widthM, moduleHeight, module.depthM)")) {
+  fail("3D fixture rendering must not regress to one solid debug box per fixture.");
+}
 if (/from\s+["']three["']/.test(renderer)) {
   fail("Three.js must remain dynamically loaded rather than entering the eager Planogram chunk.");
 }
@@ -177,4 +189,4 @@ for (const rule of [
   if (!css.includes(rule)) fail(`Digital twin accessibility/physical-truth CSS missing: ${rule}`);
 }
 
-console.log("Planogram canonical 2D/3D digital twin truth contract: PASS");
+console.log("Planogram canonical 2D/3D digital twin truth and facing renderer contract: PASS");

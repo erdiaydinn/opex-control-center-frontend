@@ -109,6 +109,15 @@ class AuditCameraXController(
         }
     }
 
+    /**
+     * Transfers raw-media responsibility to the caller without exposing the backing File.
+     * The receiver must call consumeAndDelete() or discard() on the returned one-shot lease.
+     */
+    fun handoffRawCapture(raw: AuditRawVideoCapture): AuditRawVideoCapture {
+        check(rawLeases.remove(raw)) { "Raw capture does not belong to this controller" }
+        return raw
+    }
+
     fun <T> consumeRawCapture(
         raw: AuditRawVideoCapture,
         processor: (File) -> T,
@@ -130,6 +139,8 @@ class AuditCameraXController(
         recording?.close()
         recording = null
     }
+
+    fun isRecording(): Boolean = recording != null
 
     override fun close() {
         recording?.close()
@@ -158,20 +169,24 @@ class AuditCameraXController(
 }
 
 @Composable
+fun rememberAuditCameraXController(): AuditCameraXController {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val controller = remember(context) { AuditCameraXController(context.applicationContext) }
+    DisposableEffect(controller) {
+        onDispose { controller.close() }
+    }
+    return controller
+}
+
+@Composable
 fun EayAuditCameraSurface(
+    controller: AuditCameraXController,
     lifecycleOwner: LifecycleOwner,
     modifier: Modifier = Modifier,
     lensFacing: Int = CameraSelector.LENS_FACING_BACK,
     onReady: () -> Unit = {},
     onError: (Throwable) -> Unit = {},
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val controller = remember(context) { AuditCameraXController(context.applicationContext) }
-
-    DisposableEffect(controller) {
-        onDispose { controller.close() }
-    }
-
     AndroidView(
         modifier = modifier,
         factory = { viewContext ->
@@ -189,5 +204,24 @@ fun EayAuditCameraSurface(
                 onError = onError,
             )
         },
+    )
+}
+
+@Composable
+fun EayAuditCameraSurface(
+    lifecycleOwner: LifecycleOwner,
+    modifier: Modifier = Modifier,
+    lensFacing: Int = CameraSelector.LENS_FACING_BACK,
+    onReady: () -> Unit = {},
+    onError: (Throwable) -> Unit = {},
+) {
+    val controller = rememberAuditCameraXController()
+    EayAuditCameraSurface(
+        controller = controller,
+        lifecycleOwner = lifecycleOwner,
+        modifier = modifier,
+        lensFacing = lensFacing,
+        onReady = onReady,
+        onError = onError,
     )
 }

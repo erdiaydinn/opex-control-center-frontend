@@ -19,6 +19,7 @@ import { translatePlanogramOperations } from "../../platform/i18n/planogramOpera
 import { translatePlanogramPreview } from "../../platform/i18n/planogramPreviewMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import PlanogramCadExport from "./PlanogramCadExport.jsx";
+import { normalizeCandidateBundle } from "./planogramCandidateBundle.js";
 import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import "./planogram-native.css";
@@ -27,7 +28,6 @@ import "./planogram-preview.css";
 
 const PLANOGRAM_FEATURES = ["layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"];
 const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete"];
-const PREVIEW_MODES = new Set(["HYBRID", "CATEGORY", "ABC", "BRAND"]);
 const MAX_PREVIEW_FILE_BYTES = 10 * 1024 * 1024;
 
 // Phase 1 Security Quarantine remains the canonical boundary: no legacy iframe/token bridge.
@@ -36,23 +36,6 @@ export const PLANOGRAM_SECURITY_CONTRACT = Object.freeze({
   actions: PLANOGRAM_ACTIONS,
   legacyBridgeAllowed: false,
 });
-
-function normalizeCandidateBundle(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  if (!Array.isArray(payload.products) || payload.products.length === 0) return null;
-  if (!payload.layout || typeof payload.layout !== "object" || Array.isArray(payload.layout)) return null;
-  if (!payload.store_dna || typeof payload.store_dna !== "object" || Array.isArray(payload.store_dna)) return null;
-
-  const mode = payload.mode == null ? "HYBRID" : String(payload.mode).trim().toUpperCase();
-  if (!PREVIEW_MODES.has(mode)) return null;
-
-  return {
-    products: payload.products,
-    layout: payload.layout,
-    store_dna: payload.store_dna,
-    mode,
-  };
-}
 
 export default function PlanogramStudio() {
   const navigate = useNavigate();

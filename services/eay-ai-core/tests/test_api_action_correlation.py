@@ -115,6 +115,7 @@ def test_requests_outside_bounded_action_window_are_not_correlated():
     )
 
     assert decision.correlated is False
+    assert decision.best_score is None
     assert "api_action_no_network_candidate_in_window" in decision.blockers
 
 

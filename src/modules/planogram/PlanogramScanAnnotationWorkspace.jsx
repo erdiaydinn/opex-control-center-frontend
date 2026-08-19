@@ -9,6 +9,7 @@ import {
   PLANOGRAM_SCAN_ANNOTATION_TOOLS,
   safePlanogramScanAnnotationPreview,
 } from "./planogramScanAnnotation.js";
+import PlanogramScannedDigitalTwin from "./PlanogramScannedDigitalTwin.jsx";
 import "./planogram-scan-annotation.css";
 
 const SVG_WIDTH = 920;
@@ -48,7 +49,13 @@ function clampPoint(point, architecture) {
   ];
 }
 
-export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanResponse, locale, canCreate }) {
+export default function PlanogramScanAnnotationWorkspace({
+  scanBundle,
+  scanResponse,
+  locale,
+  formatNumber,
+  canCreate,
+}) {
   const t = useMemo(() => (key) => translatePlanogramScanAnnotation(locale, key), [locale]);
   const scan = scanResponse?.store_scan || null;
   const architecture = scan?.architecture_v2_preview || null;
@@ -277,6 +284,15 @@ export default function PlanogramScanAnnotationWorkspace({ scanBundle, scanRespo
           <div><span>{t("fingerprint")}</span><code>{reviewedResult.reviewed_draft_fingerprint}</code></div>
           {reviewedResult.blockers?.length ? <ul>{reviewedResult.blockers.map((row) => <li key={row}><code>{row}</code></li>)}</ul> : null}
         </div>
+      ) : null}
+
+      {reviewedResult?.reviewed_draft_ready ? (
+        <PlanogramScannedDigitalTwin
+          reviewedResult={reviewedResult}
+          scan={scan}
+          locale={locale}
+          formatNumber={formatNumber}
+        />
       ) : null}
     </section>
   );

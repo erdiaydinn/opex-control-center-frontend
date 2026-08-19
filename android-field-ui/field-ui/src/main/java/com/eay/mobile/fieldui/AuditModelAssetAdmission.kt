@@ -53,7 +53,9 @@ object AuditModelAssetAdmission {
             }
         }
 
-        val actualSha256 = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+        val actualSha256 = digest.digest().joinToString("") { byte ->
+            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
         if (byteCount != policy.expectedByteCount) {
             throw AuditModelAssetAdmissionException(
                 "Privacy model byte count mismatch; audit media remains blocked",

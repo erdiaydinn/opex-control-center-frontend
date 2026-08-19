@@ -70,6 +70,7 @@ def test_store_scan_preserves_truth_boundary_and_separates_fixture_evidence() ->
 
     assert result["contract"] == "planogram-store-scan-v1"
     assert result["provider"] == "apple_roomplan"
+    assert len(result["scan_fingerprint"]) == 64
     assert result["raw_media_persisted"] is False
     assert result["production_evidence"] is False
     assert result["promotable_to_store_dna"] is False
@@ -88,6 +89,15 @@ def test_store_scan_preserves_truth_boundary_and_separates_fixture_evidence() ->
     assert "picker_entry_annotation_required" in result["blockers"]
     assert "operational_zone_annotation_required" in result["blockers"]
     assert "human_scan_review_required" in result["blockers"]
+
+
+def test_store_scan_fingerprint_is_deterministic_and_geometry_bound() -> None:
+    baseline = normalize_store_scan(payload().model_dump(mode="python"))
+    repeated = normalize_store_scan(payload().model_dump(mode="python"))
+    rotated = normalize_store_scan(payload(wall_rotation=17).model_dump(mode="python"))
+
+    assert baseline["scan_fingerprint"] == repeated["scan_fingerprint"]
+    assert baseline["scan_fingerprint"] != rotated["scan_fingerprint"]
 
 
 def test_non_orthogonal_scan_is_preserved_in_v2_without_fake_v1_authority() -> None:
@@ -123,6 +133,7 @@ async def test_store_scan_route_is_preview_only_and_tenant_bound() -> None:
     assert response["preview_only"] is True
     assert response["input_authority"] == "request_supplied_measured_scan_unattested"
     assert response["production_release_allowed"] is False
+    assert len(response["store_scan"]["scan_fingerprint"]) == 64
     assert response["store_scan"]["next_required_action"] == (
         "human_review_and_operational_annotation"
     )

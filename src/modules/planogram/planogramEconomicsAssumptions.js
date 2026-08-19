@@ -59,6 +59,19 @@ function normalizeCapexItem(raw, currency) {
   };
 }
 
+function topLevelEconomicsAuthorityIsBlocked(response) {
+  const requiredFalse = [
+    response.production_release_allowed,
+    response.physical_relocation_execution_allowed,
+    response.installation_approval_allowed,
+    response.capex_approval_allowed,
+    response.finance_approval_allowed,
+    response.investment_decision_allowed,
+    response.realized_savings_proven,
+  ];
+  return response.preview_only === true && requiredFalse.every((value) => value === false);
+}
+
 export function normalizePlanogramEconomicsAssumptions(payload) {
   if (!isPlainObject(payload) || !exactKeys(payload, ASSUMPTION_FIELDS)) return null;
   const currency = normalizeCurrency(payload.currency);
@@ -93,13 +106,6 @@ export function normalizePlanogramEconomicsAssumptions(payload) {
 export function safePlanogramEconomicsPreview(response) {
   if (!isPlainObject(response) || !isPlainObject(response.result)) return null;
   const requiredFalse = [
-    response.production_release_allowed,
-    response.physical_relocation_execution_allowed,
-    response.installation_approval_allowed,
-    response.capex_approval_allowed,
-    response.finance_approval_allowed,
-    response.investment_decision_allowed,
-    response.realized_savings_proven,
     response.result.production_authority,
     response.result.physical_relocation_authority,
     response.result.installation_approved,
@@ -111,9 +117,30 @@ export function safePlanogramEconomicsPreview(response) {
     response.result.economics?.finance_approved,
     response.result.economics?.investment_decision_allowed,
   ];
-  if (response.preview_only !== true || requiredFalse.some((value) => value !== false)) {
+  if (!topLevelEconomicsAuthorityIsBlocked(response) || requiredFalse.some((value) => value !== false)) {
     return null;
   }
+  return response;
+}
+
+export function safePlanogramCandidateEconomicsPreview(response, expectedFingerprint) {
+  if (!isPlainObject(response) || !isPlainObject(response.result)) return null;
+  const fingerprint = String(expectedFingerprint || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(fingerprint)) return null;
+  if (!topLevelEconomicsAuthorityIsBlocked(response)) return null;
+  if (response.candidate_selection_authority !== "server_recomputed_fingerprint_match_only") return null;
+  if (String(response.result.layout_fingerprint || "").trim().toLowerCase() !== fingerprint) return null;
+
+  const requiredFalse = [
+    response.result.production_evidence,
+    response.result.finance_approved,
+    response.result.investment_decision_allowed,
+    response.result.realized_savings_proven,
+    response.result.economics?.production_evidence,
+    response.result.economics?.finance_approved,
+    response.result.economics?.investment_decision_allowed,
+  ];
+  if (requiredFalse.some((value) => value !== false)) return null;
   return response;
 }
 

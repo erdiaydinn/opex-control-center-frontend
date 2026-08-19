@@ -446,6 +446,12 @@ def _iso(value: datetime) -> str:
 def _payload(model: BaseModel) -> dict[str, Any]:
     payload = model.model_dump(mode="json")
     payload.pop("fingerprint", None)
+    if isinstance(model, DefensivePriorityReceipt):
+        # Pydantic may normalize UTC datetimes to a trailing ``Z`` in JSON mode,
+        # while the sealed draft intentionally uses ``datetime.isoformat()``.
+        # Re-normalize the semantic timestamp before verifying the fingerprint so
+        # equivalent timestamps do not look like tampering.
+        payload["as_of"] = _iso(model.as_of)
     return payload
 
 

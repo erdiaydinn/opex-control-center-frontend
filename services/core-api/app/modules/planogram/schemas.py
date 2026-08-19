@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PlanogramOrderBasket(BaseModel):
@@ -78,6 +78,80 @@ class PlanogramStoreScanPreviewRequest(BaseModel):
         ids = [item.element_id for item in value]
         if len(ids) != len(set(ids)):
             raise ValueError("Duplicate scan element id")
+        return value
+
+
+class PlanogramStoreScanClassification(BaseModel):
+    """Human classification of one measured scan opening."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    element_id: str = Field(min_length=1, max_length=120)
+    classified_type: Literal["door", "emergency_exit"]
+    clearance_m: float = Field(default=0, ge=0, le=20)
+
+
+class PlanogramStoreScanOperationalElement(BaseModel):
+    """Human-annotated operational anchor or zone on measured scan geometry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    element_id: str = Field(min_length=2, max_length=120, pattern=r"^[A-Za-z0-9._:-]+$")
+    element_type: Literal[
+        "picker_entry",
+        "picker_exit",
+        "inbound",
+        "dispatch",
+        "no_go",
+        "technical",
+        "emergency_exit",
+    ]
+    center_x_m: float = Field(ge=0, le=500)
+    center_y_m: float = Field(ge=0, le=500)
+    width_m: float = Field(gt=0, le=500)
+    depth_m: float = Field(gt=0, le=500)
+    rotation_deg: float = Field(default=0, ge=-360, le=360)
+    clearance_m: float = Field(default=0, ge=0, le=20)
+    label: str | None = Field(default=None, max_length=160)
+
+
+class PlanogramStoreScanAnnotationPreviewRequest(BaseModel):
+    """Fingerprint-bound human review of one measured Store Scan capture."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scan: PlanogramStoreScanPreviewRequest
+    expected_scan_fingerprint: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    classifications: list[PlanogramStoreScanClassification] = Field(
+        default_factory=list,
+        max_length=5000,
+    )
+    operational_elements: list[PlanogramStoreScanOperationalElement] = Field(
+        default_factory=list,
+        max_length=200,
+    )
+    review_note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("classifications")
+    @classmethod
+    def unique_classification_targets(
+        cls,
+        value: list[PlanogramStoreScanClassification],
+    ) -> list[PlanogramStoreScanClassification]:
+        ids = [item.element_id for item in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate Store Scan classification target")
+        return value
+
+    @field_validator("operational_elements")
+    @classmethod
+    def unique_operational_element_ids(
+        cls,
+        value: list[PlanogramStoreScanOperationalElement],
+    ) -> list[PlanogramStoreScanOperationalElement]:
+        ids = [item.element_id for item in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate Store Scan operational element id")
         return value
 
 

@@ -17,7 +17,7 @@ from app.modules.field_intelligence.evidence_object_upload import (
 )
 from app.modules.field_intelligence.repository import _set_tenant
 
-from .authorization import require_audit_scope
+from .authorization import require_audit_scope, scope_allows_location
 from .resource_scope import get_run_location
 
 router = APIRouter(prefix="/v1/audit", tags=["audit-evidence-objects"])
@@ -70,7 +70,7 @@ async def post_audit_evidence_object(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit run not found")
     location_id = str(scoped_location.get("location_id") or "")
     region = str(scoped_location.get("region") or "") or None
-    if not scope.allows(location_id=location_id, region=region):
+    if not scope_allows_location(scope, location_id=location_id, region=region):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Audit evidence run is outside authorized scope",

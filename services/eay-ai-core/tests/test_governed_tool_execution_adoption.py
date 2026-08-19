@@ -5,7 +5,6 @@ from pathlib import Path
 
 from app.tool_execution import TemplateToolExecutionRequest
 
-
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 LOW_LEVEL_EXECUTOR = "execute_with_adapter"
 GOVERNED_EXECUTOR = "authorize_and_execute_with_adapter"

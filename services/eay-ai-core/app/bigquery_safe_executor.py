@@ -5,7 +5,7 @@ import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -286,7 +286,7 @@ class ExecutionAuditStore:
                     payload.formula_contract_fingerprint,
                     payload.result_contract_fingerprint,
                     payload.activation_provenance_fingerprint,
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                 ),
             )
         return execution_id
@@ -424,7 +424,7 @@ class GoogleBigQueryAdapter:
     ):
         config = self.bigquery.QueryJobConfig(
             dry_run=dry_run,
-            use_query_cache=False if dry_run else True,
+            use_query_cache=not dry_run,
             query_parameters=self._parameters(parameters),
             job_timeout_ms=timeout_ms,
         )

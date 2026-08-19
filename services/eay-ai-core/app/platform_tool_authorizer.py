@@ -88,8 +88,7 @@ class PlatformToolAuthorizerSettings:
             )
 
         if not (
-            base_url.startswith("http://")
-            or base_url.startswith("https://")
+            base_url.startswith(("http://", "https://"))
         ):
             raise ValueError(
                 "Platform Core base URL must be HTTP(S)"

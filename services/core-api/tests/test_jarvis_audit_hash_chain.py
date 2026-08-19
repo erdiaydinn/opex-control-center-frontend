@@ -50,7 +50,7 @@ async def test_postgres_audit_chain_is_per_tenant_verifiable_and_append_only() -
                 "ai_tool_execution_authorized",
                 "ai_tool",
                 f"execution-{sequence}",
-                "allow",
+                "allowed",
                 f"request-{sequence}-{event_id}",
                 '{"test":true}',
                 sequence,
@@ -114,7 +114,7 @@ async def test_postgres_audit_chain_is_per_tenant_verifiable_and_append_only() -
                     chain_sequence, previous_event_hash, event_hash, event_payload
                 )
                 VALUES (
-                    $1, $2, 'attacker', 'forge', 'audit', 'forged', 'allow',
+                    $1, $2, 'attacker', 'forge', 'audit', 'forged', 'allowed',
                     'forged-request', '{}'::jsonb, clock_timestamp(),
                     999, $3, $3, '{}'
                 )

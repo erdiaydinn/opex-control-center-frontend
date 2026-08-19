@@ -14,7 +14,7 @@ export const commandModules = [
     }),
   },
   {
-    id: "audit", moduleKey: "field_intelligence", titleKey: null, descriptionKey: null, route: "/audit", enabled: true, health: "governed", healthLabelKey: "governed", groupKey: "groupStoreIntelligence", shortcut: "U", icon: "ai", tone: "cyan", metaKey: null, lastUsedKey: "eay_last_audit_intelligence",
+    id: "audit", moduleKey: "audit", titleKey: null, descriptionKey: null, route: "/audit", enabled: true, health: "governed", healthLabelKey: "governed", groupKey: "groupStoreIntelligence", shortcut: "U", icon: "ai", tone: "cyan", metaKey: null, lastUsedKey: "eay_last_audit_intelligence",
     localize: localizeAuditModule,
   },
   {

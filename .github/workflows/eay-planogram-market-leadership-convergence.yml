@@ -15,6 +15,7 @@ on:
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
   pull_request:
@@ -31,6 +32,7 @@ on:
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
 
@@ -173,10 +175,11 @@ jobs:
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_master26_execution.py
-      - name: Interactive engineering CFO Pareto basket Store Scan and route convergence
+      - name: Interactive engineering CFO Pareto basket Store Scan Picker Eye and route convergence
         run: |
           node scripts/test-planogram-candidate-baskets.mjs
           node scripts/test-planogram-store-scan-ui.mjs
+          node scripts/test-planogram-picker-eye-assets.mjs
           node scripts/test-planogram-economics-ui.mjs
           node scripts/test-planogram-scenario-portfolio.mjs
           node scripts/test-planogram-digital-twin.mjs
@@ -216,6 +219,8 @@ jobs:
           print('PLANOGRAM_STORE_SCAN_REVIEW_UI=PASS')
           print('PLANOGRAM_STORE_SCAN_RAW_MEDIA_PERSISTED=FALSE')
           print('PLANOGRAM_STORE_SCAN_AUTO_STORE_DNA_PROMOTION=FALSE')
+          print('PLANOGRAM_PICKER_EYE_ASSET_PREVIEW=PASS')
+          print('PLANOGRAM_REMOTE_PREVIEW_ASSET_URLS=BLOCKED')
           print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')
           print('PLANOGRAM_CFO_ECONOMICS_UI_AUTHORITY_PROVENANCE=PASS')
           print('PLANOGRAM_V5_OPERATIONAL_PARETO_PORTFOLIO=PASS')

@@ -251,7 +251,9 @@ def test_future_recorded_efficiency_cannot_leak_into_historical_routing():
 
 def test_tampered_efficiency_ledger_is_rejected_before_routing():
     ledger = _ledger_with_samples()
-    tampered = ledger.model_copy(update={"tenant_id": "tenant:other"})
+    tampered = ledger.model_copy(
+        update={"generated_at": ledger.generated_at + timedelta(seconds=1)}
+    )
 
     with pytest.raises(ValueError, match="engine_efficiency_ledger_fingerprint_mismatch"):
         select_local_model_with_efficiency(

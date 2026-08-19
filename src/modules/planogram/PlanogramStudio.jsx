@@ -147,9 +147,9 @@ export default function PlanogramStudio() {
     setPreviewError("");
     try {
       setPreview(await apiPost("/v1/planogram/preview", candidate));
-    } catch (err) {
+    } catch {
       setPreview(null);
-      setPreviewError(err?.message || p("previewFailed"));
+      setPreviewError(p("previewError"));
     } finally {
       setPreviewRunning(false);
     }
@@ -161,20 +161,28 @@ export default function PlanogramStudio() {
     setPreviewError("");
     try {
       setPreview(await apiPost("/v1/planogram/picker-tour/simulate", candidate));
-    } catch (err) {
+    } catch {
       setPreview(null);
-      setPreviewError(err?.message || p("optimizerFailed"));
+      setPreviewError(p("optimizerFailed"));
     } finally {
       setOptimizerRunning(false);
     }
   }, [candidate, canCreatePreview, p]);
 
+  const productState = loading ? "loading" : error ? "error" : data ? "ready" : "empty";
+  const engineResult = preview?.engine_result || null;
+
   return (
-    <main className="planogram-native" data-testid="planogram-studio">
+    <main
+      className="planogram-native"
+      data-testid="planogram-studio"
+      data-eay-product-state={productState}
+      aria-busy={loading ? "true" : "false"}
+    >
       <header className="planogram-native__header">
         <div>
           <button className="planogram-native__back" type="button" onClick={() => navigate("/")}>
-            <ArrowLeft size={18} aria-hidden="true" />
+            <ArrowLeft className="eay-planogram-back-icon" size={18} aria-hidden="true" />
             <span>{t("back")}</span>
           </button>
           <p className="planogram-native__eyebrow">EAY · Planogram</p>
@@ -187,16 +195,47 @@ export default function PlanogramStudio() {
         </button>
       </header>
 
-      {loading ? <div className="planogram-native__state">{t("loading")}</div> : null}
-      {error ? (
-        <div className="planogram-native__state planogram-native__state--error" role="alert">
+      {loading ? (
+        <div
+          className="planogram-native__state"
+          data-eay-product-state="loading"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <RefreshCw className="spin" size={20} aria-hidden="true" />
+          <span>{t("loading")}</span>
+        </div>
+      ) : null}
+
+      {!loading && error ? (
+        <div
+          className="planogram-native__state planogram-native__state--error"
+          data-eay-product-state="error"
+          role="alert"
+          aria-atomic="true"
+        >
           <TriangleAlert size={20} aria-hidden="true" />
           <span>{error}</span>
+          <button type="button" onClick={load}>{t("retry")}</button>
+        </div>
+      ) : null}
+
+      {!loading && !error && !data ? (
+        <div
+          className="planogram-native__state"
+          data-eay-product-state="empty"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span>{t("loadError")}</span>
+          <button type="button" onClick={load}>{t("retry")}</button>
         </div>
       ) : null}
 
       {!loading && !error && data ? (
-        <>
+        <div data-eay-product-state="ready">
           <section className="planogram-native__grid">
             <article className="planogram-native__card">
               <ShieldCheck size={22} aria-hidden="true" />
@@ -217,6 +256,11 @@ export default function PlanogramStudio() {
               <Ruler size={22} aria-hidden="true" />
               <span>{t("engine")}</span>
               <strong>{data.engine_version || "—"}</strong>
+            </article>
+            <article className="planogram-native__card">
+              <LockKeyhole size={22} aria-hidden="true" />
+              <span>{t("productionBlocked")}</span>
+              <strong>{data.production_ready ? "READY" : "BLOCKED"}</strong>
             </article>
           </section>
 
@@ -265,7 +309,11 @@ export default function PlanogramStudio() {
             </div>
 
             {preview ? (
-              <PlanogramDigitalTwin preview={preview} locale={locale} />
+              <div role="status" aria-live="polite" aria-atomic="true">
+                <p>{p("productionReleaseBlocked")}</p>
+                <PlanogramDigitalTwin preview={preview} locale={locale} />
+                <span hidden>{engineResult ? "engine-result-present" : "engine-result-absent"}</span>
+              </div>
             ) : (
               <div className="planogram-native__preview-empty">
                 <p>{p("previewEmpty")}</p>
@@ -274,7 +322,7 @@ export default function PlanogramStudio() {
           </section>
 
           <PlanogramOperationsPanel data={data} t={o} />
-        </>
+        </div>
       ) : null}
     </main>
   );

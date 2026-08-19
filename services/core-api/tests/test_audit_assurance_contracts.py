@@ -1,13 +1,12 @@
 from pathlib import Path
 
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 
 from app.modules.audit.schemas import (
     AuditManagerAssuranceDecision,
     AuditStandardsAssuranceDecision,
 )
-
 
 ROOT = Path(__file__).resolve().parents[1]
 

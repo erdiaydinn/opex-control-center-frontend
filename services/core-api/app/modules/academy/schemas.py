@@ -207,6 +207,7 @@ class ScenarioEdgeCreate(BaseModel):
 
 
 class ScenarioCreateRequest(BaseModel):
+    content_version_id: UUID
     scenario_key: str = Field(min_length=2, max_length=160, pattern=r"^[a-z0-9][a-z0-9._-]+$")
     version_number: int = Field(ge=1)
     title_i18n: dict[str, str]
@@ -251,7 +252,7 @@ class ScenarioCreateRequest(BaseModel):
 
 
 class ScenarioStartRequest(BaseModel):
-    enrollment_id: UUID | None = None
+    enrollment_id: UUID
 
 
 class ScenarioDecisionRequest(BaseModel):

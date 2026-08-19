@@ -23,6 +23,17 @@ async def test_postgres_audit_chain_is_per_tenant_verifiable_and_append_only() -
     tenant_a = uuid4()
     tenant_b = uuid4()
     try:
+        await connection.executemany(
+            """
+            INSERT INTO public.tenants(id, slug, display_name)
+            VALUES ($1, $2, $3)
+            """,
+            (
+                (tenant_a, f"audit-a-{tenant_a.hex}", "Audit tenant A"),
+                (tenant_b, f"audit-b-{tenant_b.hex}", "Audit tenant B"),
+            ),
+        )
+
         async def insert_event(tenant_id, sequence: int):
             event_id = uuid4()
             await connection.execute(

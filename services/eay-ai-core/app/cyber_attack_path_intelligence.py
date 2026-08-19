@@ -94,7 +94,7 @@ class CompanyCyberNode(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def node_is_integral_and_defensive(self) -> "CompanyCyberNode":
+    def node_is_integral_and_defensive(self) -> CompanyCyberNode:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.observed_at, "cyber_attack_node_observed_at_requires_timezone")
         _aware(self.recorded_at, "cyber_attack_node_recorded_at_requires_timezone")
@@ -133,7 +133,7 @@ class CompanyCyberRelation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def relation_is_integral_and_non_executing(self) -> "CompanyCyberRelation":
+    def relation_is_integral_and_non_executing(self) -> CompanyCyberRelation:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.observed_at, "cyber_attack_relation_observed_at_requires_timezone")
         _aware(self.recorded_at, "cyber_attack_relation_recorded_at_requires_timezone")
@@ -175,7 +175,7 @@ class CompanyAttackGraphSnapshot(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def graph_is_exact_company_and_time_bound(self) -> "CompanyAttackGraphSnapshot":
+    def graph_is_exact_company_and_time_bound(self) -> CompanyAttackGraphSnapshot:
         identity = CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.as_of, "cyber_attack_graph_as_of_requires_timezone")
         if len(self.nodes) > _MAX_NODES:
@@ -249,7 +249,7 @@ class DefensiveAttackPath(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def path_is_advisory_only(self) -> "DefensiveAttackPath":
+    def path_is_advisory_only(self) -> DefensiveAttackPath:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if len(self.relation_ids) != len(self.node_refs) - 1:
             raise ValueError("cyber_attack_path_topology_mismatch")
@@ -292,7 +292,7 @@ class DefensiveAttackPathSet(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def path_set_is_integral_and_non_authoritative(self) -> "DefensiveAttackPathSet":
+    def path_set_is_integral_and_non_authoritative(self) -> DefensiveAttackPathSet:
         identity = CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         _aware(self.as_of, "cyber_attack_path_set_as_of_requires_timezone")
         _unique(self.entry_node_refs, "cyber_attack_path_entries_must_be_unique")
@@ -337,7 +337,7 @@ class BlastRadiusAssessment(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def assessment_is_defensive_only(self) -> "BlastRadiusAssessment":
+    def assessment_is_defensive_only(self) -> BlastRadiusAssessment:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         for values in (
             self.reachable_node_refs,
@@ -375,7 +375,7 @@ class ControlCutSimulation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def simulation_never_mutates_or_authorizes(self) -> "ControlCutSimulation":
+    def simulation_never_mutates_or_authorizes(self) -> ControlCutSimulation:
         CompanyIdentity.model_validate(self.identity.model_dump(mode="json"))
         if self.mutation_applied:
             raise ValueError("cyber_control_cut_simulation_never_mutates")
@@ -590,7 +590,7 @@ def enumerate_defensive_attack_paths(
         "identity": snapshot.identity.model_dump(mode="json"),
         "graph_fingerprint": snapshot.fingerprint,
         "as_of": _iso(snapshot.as_of),
-        "entry_node_refs": list(sorted(entry_node_refs)),
+        "entry_node_refs": sorted(entry_node_refs),
         "paths": [path.model_dump(mode="json") for path in paths],
         "max_hops": max_hops,
         "max_paths": max_paths,
@@ -688,7 +688,7 @@ def assess_blast_radius(
         "path_set_fingerprint": path_set.fingerprint,
         "priority": priority.value,
         "score": score,
-        "reachable_node_refs": list(sorted(reachable)),
+        "reachable_node_refs": sorted(reachable),
         "reachable_privileged_refs": list(privileged),
         "reachable_crown_jewel_refs": list(crown_jewels),
         "dangerous_path_count": len(path_set.paths),

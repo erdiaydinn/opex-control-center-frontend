@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -34,6 +35,8 @@ fun EayTerminalShell(
     header: FieldShellHeader,
     missions: List<FieldMissionCardModel>,
     onMissionOpen: (String) -> Unit,
+    recovery: FieldRecoveryBannerModel? = null,
+    onRecoveryAction: (FieldRecoveryActionKind) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
@@ -57,6 +60,14 @@ fun EayTerminalShell(
                         Text(header.deviceLabel, style = MaterialTheme.typography.bodyLarge)
                         SyncStatus(header.syncState, header.pendingCount)
                     }
+                }
+            }
+            recovery?.let { recoveryModel ->
+                item {
+                    RecoveryBanner(
+                        model = recoveryModel,
+                        onAction = onRecoveryAction,
+                    )
                 }
             }
             item {
@@ -95,6 +106,42 @@ fun EayTerminalShell(
                             Text(mission.primaryActionLabel)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecoveryBanner(
+    model: FieldRecoveryBannerModel,
+    onAction: (FieldRecoveryActionKind) -> Unit,
+) {
+    val container = when (model.severity) {
+        FieldRecoveryVisualSeverity.INFO,
+        FieldRecoveryVisualSeverity.ATTENTION,
+        -> MaterialTheme.colorScheme.surfaceVariant
+
+        FieldRecoveryVisualSeverity.BLOCKING,
+        FieldRecoveryVisualSeverity.SECURITY,
+        -> MaterialTheme.colorScheme.errorContainer
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = container),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(model.title, style = MaterialTheme.typography.titleLarge)
+            Text(model.message, style = MaterialTheme.typography.bodyLarge)
+            model.actionLabel?.let { label ->
+                Button(
+                    onClick = { onAction(model.actionKind) },
+                    modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
+                ) {
+                    Text(label)
                 }
             }
         }

@@ -21,6 +21,7 @@ import { usePlatformPreferences } from "../../platform/preferences/PlatformPrefe
 import PlanogramCadExport from "./PlanogramCadExport.jsx";
 import { normalizeCandidateBundle } from "./planogramCandidateBundle.js";
 import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
+import PlanogramEconomicsPanel from "./PlanogramEconomicsPanel.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import "./planogram-native.css";
 import "./planogram-operations.css";
@@ -334,6 +335,15 @@ export default function PlanogramStudio() {
                     optimizerMeta={optimizerMeta}
                     locale={locale}
                     canExport={canAction("planogram", "export")}
+                  />
+                ) : null}
+                {optimizerMeta ? (
+                  <PlanogramEconomicsPanel
+                    candidate={candidate}
+                    locale={locale}
+                    formatNumber={formatNumber}
+                    canCreate={canCreatePreview}
+                    canApprove={canAction("planogram", "approve")}
                   />
                 ) : null}
                 {engineResult?.planogram ? (

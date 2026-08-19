@@ -24,6 +24,7 @@ from .repository import (
     start_run,
     update_action,
 )
+from .resource_scope import get_action_location, get_run_location
 from .schemas import (
     AuditActionCreate,
     AuditActionUpdate,
@@ -51,6 +52,31 @@ def _raise_repository_error(exc: AuditRepositoryError) -> None:
     ) from exc
 
 
+def _require_resolved_resource_scope(
+    scope: AuditScope,
+    location: dict[str, object] | None,
+    *,
+    not_found_detail: str,
+) -> dict[str, object]:
+    if not location:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=not_found_detail,
+        )
+    location_id = str(location.get("location_id") or "")
+    region = str(location.get("region") or "") or None
+    if not location_id or not scope_allows_location(
+        scope,
+        location_id=location_id,
+        region=region,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Audit resource is outside authorized scope",
+        )
+    return location
+
+
 async def _require_location(
     principal: Principal,
     scope: AuditScope,
@@ -62,16 +88,37 @@ async def _require_location(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Audit location not found",
         )
-    if not scope_allows_location(
+    return _require_resolved_resource_scope(
         scope,
-        location_id=location_id,
-        region=str(location.get("region") or "") or None,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Audit location is outside authorized scope",
-        )
-    return location
+        location,
+        not_found_detail="Audit location not found",
+    )
+
+
+async def _require_run_scope(
+    principal: Principal,
+    scope: AuditScope,
+    audit_run_id: UUID,
+) -> dict[str, object]:
+    location = await get_run_location(str(principal.tenant_id), audit_run_id)
+    return _require_resolved_resource_scope(
+        scope,
+        location,
+        not_found_detail="Audit run not found",
+    )
+
+
+async def _require_action_scope(
+    principal: Principal,
+    scope: AuditScope,
+    action_id: UUID,
+) -> dict[str, object]:
+    location = await get_action_location(str(principal.tenant_id), action_id)
+    return _require_resolved_resource_scope(
+        scope,
+        location,
+        not_found_detail="Audit action not found",
+    )
 
 
 @router.get("/programs")
@@ -148,6 +195,7 @@ async def post_redaction_receipt(
     principal: AuditViewer,
 ) -> dict[str, object]:
     scope = require_audit_scope(principal, "action:audit:submitEvidence")
+    await _require_run_scope(principal, scope, audit_run_id)
     await _require_location(principal, scope, payload.location_id)
     try:
         receipt = await append_redaction_receipt(
@@ -174,7 +222,8 @@ async def post_auditor_decision(
     payload: AuditDecisionEventCreate,
     principal: AuditViewer,
 ) -> dict[str, object]:
-    require_audit_scope(principal, "action:audit:decideItem")
+    scope = require_audit_scope(principal, "action:audit:decideItem")
+    await _require_run_scope(principal, scope, audit_run_id)
     if payload.decision_source != "AUDITOR":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -197,7 +246,8 @@ async def post_audit_action(
     payload: AuditActionCreate,
     principal: AuditViewer,
 ) -> dict[str, object]:
-    require_audit_scope(principal, "action:audit:createAction")
+    scope = require_audit_scope(principal, "action:audit:createAction")
+    await _require_run_scope(principal, scope, audit_run_id)
     try:
         return await create_action(
             str(principal.tenant_id),
@@ -215,12 +265,18 @@ async def patch_audit_action(
     payload: AuditActionUpdate,
     principal: AuditViewer,
 ) -> dict[str, object]:
+    if payload.status == "ai_verified":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Public action endpoint cannot assert AI verification authority",
+        )
     permission = (
         "action:audit:verifyAction"
-        if payload.status in {"ai_verified", "human_verified", "closed"}
+        if payload.status in {"human_verified", "closed"}
         else "action:audit:updateAction"
     )
-    require_audit_scope(principal, permission)
+    scope = require_audit_scope(principal, permission)
+    await _require_action_scope(principal, scope, action_id)
     try:
         return await update_action(str(principal.tenant_id), action_id, payload)
     except AuditRepositoryError as exc:
@@ -236,13 +292,14 @@ async def post_assurance_review(
     payload: AuditAssuranceReviewCreate,
     principal: AuditViewer,
 ) -> dict[str, object]:
-    require_audit_scope(principal, "action:audit:reviewDisagreement")
     standards_review = payload.state == "OPERATIONS_STANDARDS_REVIEW"
-    if standards_review and "audit_standards" not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operations Standards review requires Audit Standards role",
-        )
+    permission = (
+        "action:audit:manageStandards"
+        if standards_review
+        else "action:audit:reviewDisagreement"
+    )
+    scope = require_audit_scope(principal, permission)
+    await _require_run_scope(principal, scope, audit_run_id)
     try:
         return await append_assurance_review(
             str(principal.tenant_id),

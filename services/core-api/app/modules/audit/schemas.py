@@ -41,7 +41,11 @@ ActionStatus = Literal[
 
 
 class AuditProgramCreate(StrictModel):
-    program_key: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z0-9_.-]+$")
+    program_key: str = Field(
+        min_length=1,
+        max_length=120,
+        pattern=r"^[a-zA-Z0-9_.-]+$",
+    )
     version: int = Field(gt=0)
     name_i18n: dict[str, str] = Field(min_length=1)
     field_template_id: str = Field(min_length=1, max_length=120)
@@ -51,7 +55,11 @@ class AuditProgramCreate(StrictModel):
 
     @model_validator(mode="after")
     def validate_name_i18n(self) -> AuditProgramCreate:
-        if any(not key.strip() or not value.strip() for key, value in self.name_i18n.items()):
+        blank = any(
+            not key.strip() or not value.strip()
+            for key, value in self.name_i18n.items()
+        )
+        if blank:
             raise ValueError("program localized names must not be blank")
         return self
 
@@ -66,7 +74,13 @@ class AuditRunStart(StrictModel):
     location_id: str = Field(min_length=1, max_length=120)
     field_mission_id: UUID | None = None
     manager_subject: str | None = Field(default=None, max_length=255)
-    source_mode: Literal["checklist", "photo", "video", "guided_video", "mixed"] = "checklist"
+    source_mode: Literal[
+        "checklist",
+        "photo",
+        "video",
+        "guided_video",
+        "mixed",
+    ] = "checklist"
 
 
 class AuditDecisionEventCreate(StrictModel):
@@ -82,7 +96,11 @@ class AuditDecisionEventCreate(StrictModel):
     def validate_ai_provenance(self) -> AuditDecisionEventCreate:
         if self.decision_source == "AI" and not self.model_or_rule_ref:
             raise ValueError("AI decisions require model_or_rule_ref")
-        if any(not ref.strip() or len(ref) > 500 for ref in self.evidence_refs):
+        invalid_ref = any(
+            not ref.strip() or len(ref) > 500
+            for ref in self.evidence_refs
+        )
+        if invalid_ref:
             raise ValueError("evidence refs must be non-blank and <= 500 characters")
         return self
 
@@ -125,16 +143,26 @@ class AuditActionUpdate(StrictModel):
 
     @model_validator(mode="after")
     def verified_status_requires_receipts(self) -> AuditActionUpdate:
-        if self.status in {"ai_verified", "human_verified", "closed"} and (
-            not self.closure_evidence_ref or not self.verification_receipt_ref
-        ):
-            raise ValueError("verified/closed actions require closure evidence and verification receipt")
+        verified = self.status in {"ai_verified", "human_verified", "closed"}
+        missing_receipt = (
+            not self.closure_evidence_ref
+            or not self.verification_receipt_ref
+        )
+        if verified and missing_receipt:
+            raise ValueError(
+                "verified/closed actions require closure evidence "
+                "and verification receipt"
+            )
         return self
 
 
 class AuditAssuranceReviewCreate(StrictModel):
     item_key: str = Field(min_length=1, max_length=180)
-    state: Literal["MANAGER_REVIEW", "OPERATIONS_STANDARDS_REVIEW", "RESOLVED"]
+    state: Literal[
+        "MANAGER_REVIEW",
+        "OPERATIONS_STANDARDS_REVIEW",
+        "RESOLVED",
+    ]
     disposition: Literal[
         "AI_CONFIRMED",
         "AUDITOR_CONFIRMED",

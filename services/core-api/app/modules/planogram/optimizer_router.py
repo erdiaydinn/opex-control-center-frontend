@@ -6,6 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.authorization import require_permission
 from app.core.security import Principal
+from app.modules.planogram.benchmark_schemas import PlanogramBlindBenchmarkRequest
+from app.modules.planogram.blind_benchmark_adapter import (
+    generate_blind_benchmark_preview,
+)
 from app.modules.planogram.cad_adapter import generate_cad_preview_document
 from app.modules.planogram.engine_adapter import (
     PlanogramEngineUnavailable,
@@ -95,6 +99,43 @@ async def post_planogram_market_benchmark_preview(
         "observed_basket_input_count": len(baskets),
         "production_release_allowed": False,
         "experimental_optimizer_production_authority": False,
+        "benchmark": benchmark,
+    }
+
+
+@router.post("/blind-benchmark-preview")
+async def post_planogram_blind_benchmark_preview(
+    payload: PlanogramBlindBenchmarkRequest,
+    principal: Optimizer,
+) -> dict[str, object]:
+    """Score anonymous A/B plans without receiving expert-versus-AI identity."""
+    baskets = [basket.model_dump(mode="python") for basket in payload.order_baskets]
+    try:
+        benchmark = generate_blind_benchmark_preview(
+            products=payload.products,
+            layout=payload.layout,
+            store_dna=payload.store_dna,
+            orders=baskets,
+            candidate_a=payload.candidate_a.model_dump(mode="python"),
+            candidate_b=payload.candidate_b.model_dump(mode="python"),
+        )
+    except PlanogramEngineUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Planogram blind benchmark is unavailable",
+        ) from exc
+
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "subject": principal.subject,
+        "preview_only": True,
+        "blind": True,
+        "candidate_identity_fields_accepted": False,
+        "input_authority": "request_supplied_unattested",
+        "basket_authority": "request_supplied_observed_or_test_unattested",
+        "observed_basket_input_count": len(baskets),
+        "production_release_allowed": False,
+        "market_leadership_claim_allowed": False,
         "benchmark": benchmark,
     }
 

@@ -1,8 +1,8 @@
 """At-most-once Platform Core authorization client for Jarvis tools.
 
 The AI Core sends only an opaque user-issued grant plus the exact reviewed
-tool invocation. Tenant, actor identity and permission scopes are recovered by
-Platform Core from the trusted grant record and are never caller supplied.
+tool invocation. Tenant, actor identity, permission scopes, query authority and
+admission capacity are recovered by Platform Core and never caller supplied.
 """
 
 from __future__ import annotations
@@ -15,13 +15,14 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from .jarvis_service_identity import JarvisServiceIdentitySigner
 from .tool_contracts import SCOPES, ToolPlan
 
 JARVIS_SERVICE_ASSERTION_HEADER = "X-OPEX-Jarvis-Service-Assertion"
 AUTHORIZATION_PATH = "/internal/ai/tool-executions/authorize"
+ADMISSION_RELEASE_PATH = "/internal/ai/tool-executions/release"
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -46,6 +47,10 @@ class PlatformToolAuthorizationContractError(
     """Platform response violated the reviewed execution contract."""
 
 
+class PlatformToolAdmissionReleaseError(RuntimeError):
+    """Execution completed but its bounded admission lease did not release."""
+
+
 class TrustedToolExecutionContext(BaseModel):
     model_config = ConfigDict(
         frozen=True,
@@ -63,6 +68,19 @@ class TrustedToolExecutionContext(BaseModel):
     )
     tool: str
     granted_scopes: tuple[str, ...]
+    data_scope: dict[str, Any]
+    data_scope_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    tenant_entity_ids: tuple[str, ...] = Field(
+        min_length=1,
+        max_length=16,
+    )
+    tenant_query_context_fingerprint: str = Field(
+        pattern=SHA256_PATTERN
+    )
+    query_contract_id: str = Field(min_length=1, max_length=160)
+    query_contract_revision: int = Field(ge=1)
+    query_contract_fingerprint: str = Field(pattern=SHA256_PATTERN)
+    execution_scope_fingerprint: str = Field(pattern=SHA256_PATTERN)
     authorization_fingerprint: str = Field(
         pattern=SHA256_PATTERN
     )
@@ -72,6 +90,8 @@ class TrustedToolExecutionContext(BaseModel):
     reason_sha256: str = Field(
         pattern=SHA256_PATTERN
     )
+    admission_lease_token: SecretStr
+    admission_lease_ttl_seconds: int = Field(ge=1, le=300)
 
 
 @dataclass(frozen=True)
@@ -171,6 +191,11 @@ def validate_trusted_tool_execution_context(
             "Platform authorized a different execution reason"
         )
 
+    if len(context.admission_lease_token.get_secret_value()) < 32:
+        raise PlatformToolAuthorizationContractError(
+            "Platform admission lease is invalid"
+        )
+
 
 class PlatformToolAuthorizer:
     """Authorize one reviewed tool invocation without automatic retries."""
@@ -185,6 +210,14 @@ class PlatformToolAuthorizer:
         self._settings = settings
         self._signer = signer
         self._client = client
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            JARVIS_SERVICE_ASSERTION_HEADER: (
+                self._signer.issue_tool_execution_assertion()
+            ),
+            "Content-Type": "application/json",
+        }
 
     async def authorize(
         self,
@@ -213,17 +246,8 @@ class PlatformToolAuthorizer:
             "reason": reason,
         }
 
-        # Fresh machine assertion for exactly this network attempt.
         # There is deliberately no retry loop: a timeout/503 may occur after
         # Platform Core has already consumed the user grant.
-        assertion = (
-            self._signer.issue_tool_execution_assertion()
-        )
-        headers = {
-            JARVIS_SERVICE_ASSERTION_HEADER: assertion,
-            "Content-Type": "application/json",
-        }
-
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(
             base_url=self._settings.base_url,
@@ -235,7 +259,7 @@ class PlatformToolAuthorizer:
                 response = await client.post(
                     AUTHORIZATION_PATH,
                     json=payload,
-                    headers=headers,
+                    headers=self._headers(),
                 )
             except httpx.HTTPError as exc:
                 raise PlatformToolAuthorizationIndeterminate(
@@ -285,3 +309,39 @@ class PlatformToolAuthorizer:
             reason=reason,
         )
         return context
+
+    async def release_admission(
+        self,
+        context: TrustedToolExecutionContext,
+    ) -> None:
+        """Best-effort early release; Redis TTL remains the fail-safe."""
+
+        payload = {
+            "admission_lease_token": (
+                context.admission_lease_token.get_secret_value()
+            )
+        }
+        owns_client = self._client is None
+        client = self._client or httpx.AsyncClient(
+            base_url=self._settings.base_url,
+            timeout=self._settings.timeout_seconds,
+        )
+        try:
+            try:
+                response = await client.post(
+                    ADMISSION_RELEASE_PATH,
+                    json=payload,
+                    headers=self._headers(),
+                )
+            except httpx.HTTPError as exc:
+                raise PlatformToolAdmissionReleaseError(
+                    "Platform admission lease release failed"
+                ) from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        if response.status_code != 204:
+            raise PlatformToolAdmissionReleaseError(
+                "Platform admission lease release was not acknowledged"
+            )

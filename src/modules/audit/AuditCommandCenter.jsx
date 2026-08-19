@@ -44,7 +44,7 @@ function StatCard({ item, t }) {
         <span className="audit-stat__label">{t(item.key)}</span>
       </div>
       <div className="audit-stat__value">—</div>
-      <div className="audit-stat__note">Live truth required</div>
+      <div className="audit-stat__note">{t("noLiveData")}</div>
     </article>
   );
 }
@@ -68,13 +68,13 @@ function AuditCommandCenter() {
         </div>
       </header>
 
-      <nav className="audit-subnav" aria-label="Audit workspace navigation">
+      <nav className="audit-subnav" aria-label={t("title")}>
         {["audits", "actions", "standards", "locations", "intelligence"].map((key, index) => (
           <button key={key} className={index === 0 ? "is-active" : ""} type="button">{t(key)}</button>
         ))}
       </nav>
 
-      <section className="audit-kpis" aria-label="Audit key indicators">
+      <section className="audit-kpis" aria-label={t("eyebrow")}>
         {KPI.map((item) => <StatCard key={item.key} item={item} t={t} />)}
       </section>
 
@@ -82,10 +82,10 @@ function AuditCommandCenter() {
         <article className="audit-panel audit-panel--truth">
           <div className="audit-panel__heading">
             <div>
-              <span className="audit-kicker">LIVE AUDIT TRUTH</span>
+              <span className="audit-kicker">{t("truthBoundary")}</span>
               <h2>{t("noLiveData")}</h2>
             </div>
-            <span className="audit-status"><span /> UNBOUND</span>
+            <span className="audit-status" aria-label={t("noLiveData")}><span aria-hidden="true" /> —</span>
           </div>
           <p>{t("noLiveDataBody")}</p>
           <div className="audit-truth-map" aria-hidden="true">
@@ -101,14 +101,14 @@ function AuditCommandCenter() {
         <aside className="audit-panel audit-panel--jarvis">
           <div className="audit-jarvis__icon"><Bot size={24} /></div>
           <div>
-            <span className="audit-kicker">JARVIS / AUDIT INTELLIGENCE</span>
+            <span className="audit-kicker">{t("moduleMeta")}</span>
             <h2>{t("jarvisTitle")}</h2>
             <p>{t("jarvisBody")}</p>
           </div>
           <div className="audit-jarvis__prompts">
-            <button type="button">“En riskli lokasyonlar?”</button>
-            <button type="button">“AI–denetçi ayrışmaları?”</button>
-            <button type="button">“Tekrar eden bulgular?”</button>
+            <button type="button">{t("critical")}</button>
+            <button type="button">{t("disagreement")}</button>
+            <button type="button">{t("repeat")}</button>
           </div>
           <button className="audit-btn audit-btn--dark" type="button"><Sparkles size={16} /> {t("askJarvis")}</button>
         </aside>
@@ -117,10 +117,10 @@ function AuditCommandCenter() {
       <section className="audit-section">
         <div className="audit-section__heading">
           <div>
-            <span className="audit-kicker">AUDIT OPERATING SYSTEM</span>
+            <span className="audit-kicker">{t("eyebrow")}</span>
             <h2>{t("attention")}</h2>
           </div>
-          <button className="audit-text-action" type="button">Intelligence View <ChevronRight size={16} /></button>
+          <button className="audit-text-action" type="button">{t("actionView")} <ChevronRight size={16} /></button>
         </div>
         <div className="audit-flow">
           {FLOW.map(({ icon: Icon, titleKey, bodyKey, badge }) => (
@@ -138,31 +138,31 @@ function AuditCommandCenter() {
       <section className="audit-grid audit-grid--bottom">
         <article className="audit-panel audit-panel--assurance">
           <div className="audit-assurance__visual" aria-hidden="true">
-            <div><Bot size={20} /><span>AI</span></div>
+            <div><Bot size={20} /></div>
             <span className="audit-assurance__connector">↔</span>
-            <div><ClipboardCheck size={20} /><span>Auditor</span></div>
+            <div><ClipboardCheck size={20} /></div>
             <span className="audit-assurance__connector">→</span>
-            <div><ShieldCheck size={20} /><span>Manager</span></div>
+            <div><ShieldCheck size={20} /></div>
           </div>
-          <span className="audit-kicker">ASSURANCE</span>
+          <span className="audit-kicker">{t("disagreement")}</span>
           <h2>{t("disagreement")}</h2>
           <p>{t("disagreementBody")}</p>
         </article>
         <article className="audit-panel audit-panel--capture">
-          <div className="audit-capture__media">
+          <div className="audit-capture__media" aria-hidden="true">
             <Camera size={24} />
             <div className="audit-capture__timeline">
-              <span className="is-done">Giriş</span>
-              <span className="is-warning">Kahve</span>
-              <span>Fırın</span>
-              <span>Raf</span>
-              <span>Soğuk</span>
+              <span className="is-done" />
+              <span className="is-warning" />
+              <span />
+              <span />
+              <span />
             </div>
           </div>
-          <span className="audit-kicker">MOBILE-FIRST CAPTURE</span>
+          <span className="audit-kicker">{t("videoAudit")}</span>
           <h2>{t("videoAudit")}</h2>
           <p>{t("videoAuditBody")}</p>
-          <div className="audit-capture__foot"><ShieldCheck size={15} /> Privacy redaction before inference</div>
+          <div className="audit-capture__foot"><ShieldCheck size={15} /> {t("redaction")}</div>
         </article>
       </section>
     </main>

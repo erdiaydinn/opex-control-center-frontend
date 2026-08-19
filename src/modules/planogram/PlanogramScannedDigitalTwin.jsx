@@ -38,11 +38,6 @@ function elementColor(type) {
   return colors[type] ?? 0x94a3b8;
 }
 
-function disposeMaterial(material) {
-  if (!material) return;
-  for (const row of Array.isArray(material) ? material : [material]) row?.dispose?.();
-}
-
 function ScannedTwinScene({ architecture, fixtures, preset, t }) {
   const mountRef = useRef(null);
   const [state, setState] = useState("loading");
@@ -97,7 +92,11 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
           const height = elementHeight(type);
           if (type === "picker_entry" || type === "picker_exit") {
             const geometry = new THREE.CylinderGeometry(0.16, 0.16, 0.05, 24);
-            const material = new THREE.MeshStandardMaterial({ color: elementColor(type), emissive: elementColor(type), emissiveIntensity: 0.25 });
+            const material = new THREE.MeshStandardMaterial({
+              color: elementColor(type),
+              emissive: elementColor(type),
+              emissiveIntensity: 0.25,
+            });
             disposables.push(geometry, material);
             const marker = new THREE.Mesh(geometry, material);
             marker.position.set(element.center_x_m, 0.04, element.center_y_m);
@@ -124,7 +123,13 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
 
         for (const fixture of fixtures || []) {
           const geometry = new THREE.BoxGeometry(fixture.width_m, 1.6, fixture.depth_m);
-          const material = new THREE.MeshStandardMaterial({ color: 0xdf1067, roughness: 0.5, metalness: 0.08, transparent: true, opacity: 0.42 });
+          const material = new THREE.MeshStandardMaterial({
+            color: 0xdf1067,
+            roughness: 0.5,
+            metalness: 0.08,
+            transparent: true,
+            opacity: 0.42,
+          });
           disposables.push(geometry, material);
           const mesh = new THREE.Mesh(geometry, material);
           mesh.position.set(fixture.center_x_m, 0.8, fixture.center_y_m);
@@ -135,7 +140,11 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
         }
 
         const picker = (architecture.elements || []).find((row) => row.element_type === "picker_entry");
-        const center = new THREE.Vector3(architecture.floor_width_m / 2, 1.2, architecture.floor_depth_m / 2);
+        const center = new THREE.Vector3(
+          architecture.floor_width_m / 2,
+          1.2,
+          architecture.floor_depth_m / 2
+        );
         if (preset === "picker" && picker) {
           camera.position.set(picker.center_x_m, 1.62, picker.center_y_m);
           const dispatch = (architecture.elements || []).find((row) => row.element_type === "dispatch");
@@ -158,7 +167,10 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.target.copy(center);
-        controls.maxDistance = Math.max(14, Math.max(architecture.floor_width_m, architecture.floor_depth_m) * 2.2);
+        controls.maxDistance = Math.max(
+          14,
+          Math.max(architecture.floor_width_m, architecture.floor_depth_m) * 2.2
+        );
         controls.update();
 
         const resize = () => {
@@ -199,38 +211,62 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
 
   return (
     <div className="eay-scanned-twin-scene">
-      {state === "loading" ? <div className="eay-scanned-twin-state" role="status">{t("loading")}</div> : null}
-      {state === "error" ? <div className="eay-scanned-twin-state is-error" role="alert">{t("error")}</div> : null}
+      {state === "loading" ? (
+        <div className="eay-scanned-twin-state" role="status">{t("loading")}</div>
+      ) : null}
+      {state === "error" ? (
+        <div className="eay-scanned-twin-state is-error" role="alert">{t("error")}</div>
+      ) : null}
       <div ref={mountRef} className="eay-scanned-twin-canvas" data-state={state} />
     </div>
   );
 }
 
-export default function PlanogramScannedDigitalTwin({ reviewedResult, scan, locale, formatNumber }) {
+export default function PlanogramScannedDigitalTwin({
+  reviewedResult,
+  scan,
+  locale,
+  formatNumber,
+}) {
   const t = useMemo(() => (key) => translatePlanogramScannedTwin(locale, key), [locale]);
+  const numberFormat = useMemo(() => {
+    if (typeof formatNumber === "function") return formatNumber;
+    const formatter = new Intl.NumberFormat(locale || "en");
+    return (value) => formatter.format(Number(value || 0));
+  }, [formatNumber, locale]);
   const [preset, setPreset] = useState("overview");
   const architecture = reviewedResult?.reviewed_store_dna_v2_preview?.architecture || null;
   if (!architecture?.elements?.length) return null;
-  const operationalCount = architecture.elements.filter((row) => OPERATIONAL_TYPES.has(row.element_type)).length;
+  const operationalCount = architecture.elements.filter(
+    (row) => OPERATIONAL_TYPES.has(row.element_type)
+  ).length;
   const measuredCount = architecture.elements.length - operationalCount;
   const fixtureCount = scan?.recognized_fixtures?.length || 0;
 
   return (
     <section className="eay-scanned-twin">
       <header>
-        <div><ScanSearch size={21} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>
+        <div>
+          <ScanSearch size={21} aria-hidden="true" />
+          <div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div>
+        </div>
         <span>{t("previewOnly")}</span>
       </header>
       <div className="eay-scanned-twin-metrics">
-        <div><Box size={16} aria-hidden="true" /><span>{t("measuredElements")}</span><strong>{formatNumber(measuredCount)}</strong></div>
-        <div><span>{t("operationalZones")}</span><strong>{formatNumber(operationalCount)}</strong></div>
-        <div><span>{t("fixtures")}</span><strong>{formatNumber(fixtureCount)}</strong></div>
+        <div><Box size={16} aria-hidden="true" /><span>{t("measuredElements")}</span><strong>{numberFormat(measuredCount)}</strong></div>
+        <div><span>{t("operationalZones")}</span><strong>{numberFormat(operationalCount)}</strong></div>
+        <div><span>{t("fixtures")}</span><strong>{numberFormat(fixtureCount)}</strong></div>
       </div>
       <div className="eay-scanned-twin-presets">
         <button type="button" aria-pressed={preset === "overview"} onClick={() => setPreset("overview")}>{t("overview")}</button>
         <button type="button" aria-pressed={preset === "picker"} onClick={() => setPreset("picker")}>{t("pickerView")}</button>
       </div>
-      <ScannedTwinScene architecture={architecture} fixtures={scan?.recognized_fixtures || []} preset={preset} t={t} />
+      <ScannedTwinScene
+        architecture={architecture}
+        fixtures={scan?.recognized_fixtures || []}
+        preset={preset}
+        t={t}
+      />
       <p className="eay-scanned-twin-boundary">{t("boundary")}</p>
     </section>
   );

@@ -11,7 +11,6 @@ data class AuditEvidenceUploadRequest(
     val sha256: String,
     val byteCount: Long,
     val mimeType: String,
-    val openContent: () -> InputStream,
 ) {
     init {
         require(fieldKey.isNotBlank()) { "fieldKey must not be blank" }
@@ -35,7 +34,10 @@ data class AuditEvidenceServerReceipt(
 )
 
 interface AuditEvidenceUploadTransport {
-    fun upload(request: AuditEvidenceUploadRequest): AuditEvidenceServerReceipt
+    fun upload(
+        request: AuditEvidenceUploadRequest,
+        content: InputStream,
+    ): AuditEvidenceServerReceipt
 }
 
 class AuditEvidenceUploadReceiptException(message: String) : IllegalStateException(message)
@@ -63,12 +65,11 @@ class AuditEvidenceUploadCoordinator(
             sha256 = local.sha256,
             byteCount = local.byteCount,
             mimeType = local.mimeType,
-            openContent = {
-                evidenceInputStream(evidence)
-            },
         )
 
-        val server = transport.upload(request)
+        val server = evidence.readForGovernedUpload { input ->
+            transport.upload(request, input)
+        }
         validateServerAck(local, server)
         evidence.acknowledgeAndDelete()
         return server
@@ -104,13 +105,5 @@ class AuditEvidenceUploadCoordinator(
         if (server.publicUrl != null) {
             throw AuditEvidenceUploadReceiptException("Private evidence receipt must not expose a public URL")
         }
-    }
-
-    private fun evidenceInputStream(evidence: AuditRedactedEvidenceObject): InputStream {
-        var stream: InputStream? = null
-        evidence.readForGovernedUpload { input ->
-            stream = input
-        }
-        return requireNotNull(stream) { "Sanitized evidence stream is unavailable" }
     }
 }

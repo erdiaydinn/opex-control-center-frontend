@@ -20,6 +20,7 @@ import {
 
 import { apiGet } from "../../api/client.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import AuditAssuranceWorkspace from "./AuditAssuranceWorkspace.jsx";
 import { auditCopy } from "./auditMessages.js";
 import "./AuditCommandCenter.css";
 import "./AuditLiveTruth.css";
@@ -175,6 +176,10 @@ function AuditCommandCenter() {
     refreshLiveTruth();
   }, [refreshLiveTruth]);
 
+  const scrollToAssurance = useCallback(() => {
+    document.getElementById("audit-assurance")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   return (
     <main
       className="audit-shell"
@@ -195,8 +200,15 @@ function AuditCommandCenter() {
       </header>
 
       <nav className="audit-subnav" aria-label={t("title")}>
-        {["audits", "actions", "standards", "locations", "intelligence"].map((key, index) => (
-          <button key={key} className={index === 0 ? "is-active" : ""} type="button">{t(key)}</button>
+        {["audits", "actions", "standards", "locations", "assurance", "intelligence"].map((key, index) => (
+          <button
+            key={key}
+            className={index === 0 ? "is-active" : ""}
+            type="button"
+            onClick={key === "assurance" ? scrollToAssurance : undefined}
+          >
+            {t(key)}
+          </button>
         ))}
       </nav>
 
@@ -216,7 +228,7 @@ function AuditCommandCenter() {
           </div>
           <div className="audit-jarvis__prompts">
             <button type="button">{t("critical")}</button>
-            <button type="button">{t("disagreement")}</button>
+            <button type="button" onClick={scrollToAssurance}>{t("disagreement")}</button>
             <button type="button">{t("repeat")}</button>
           </div>
           <button className="audit-btn audit-btn--dark" type="button"><Sparkles size={16} /> {t("askJarvis")}</button>
@@ -243,6 +255,8 @@ function AuditCommandCenter() {
           ))}
         </div>
       </section>
+
+      <AuditAssuranceWorkspace locale={locale} t={t} />
 
       <section className="audit-grid audit-grid--bottom">
         <article className="audit-panel audit-panel--assurance">

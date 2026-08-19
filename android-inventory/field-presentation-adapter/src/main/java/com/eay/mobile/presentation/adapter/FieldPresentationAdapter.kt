@@ -16,6 +16,9 @@ import com.eay.mobile.presentation.BlindCountUiState
 import com.eay.mobile.presentation.FieldMissionCardModel
 import com.eay.mobile.presentation.FieldMissionVisualKind
 import com.eay.mobile.presentation.FieldMissionVisualPriority
+import com.eay.mobile.presentation.FieldRecoveryActionKind
+import com.eay.mobile.presentation.FieldRecoveryBannerModel
+import com.eay.mobile.presentation.FieldRecoveryVisualSeverity
 import com.eay.mobile.presentation.FieldRuntimeSurface
 import com.eay.mobile.presentation.FieldShellHeader
 import com.eay.mobile.presentation.FieldSyncVisualState
@@ -41,6 +44,15 @@ data class BlindCountPresentationCopy(
 data class SyncPresentationSummary(
     val state: FieldSyncVisualState,
     val pendingCount: Int,
+)
+
+data class RecoveryPresentationIntent(
+    val severity: FieldRecoveryVisualSeverity,
+    val title: String,
+    val message: String,
+    val affectedEventCount: Int,
+    val actionKind: FieldRecoveryActionKind = FieldRecoveryActionKind.NONE,
+    val actionLabel: String? = null,
 )
 
 /**
@@ -120,6 +132,20 @@ object FieldPresentationAdapter {
             priority = intent.priority,
             primaryActionLabel = intent.primaryActionLabel,
             enabled = intent.enabled,
+        )
+
+    /**
+     * Recovery output is explanation plus a bounded local intent only. There is no
+     * representation for retry/delete/rebind/reassign mutations in this adapter.
+     */
+    fun recoveryBanner(intent: RecoveryPresentationIntent): FieldRecoveryBannerModel =
+        FieldRecoveryBannerModel(
+            severity = intent.severity,
+            title = intent.title,
+            message = intent.message,
+            affectedEventCount = intent.affectedEventCount,
+            actionKind = intent.actionKind,
+            actionLabel = intent.actionLabel,
         )
 
     fun blindCount(

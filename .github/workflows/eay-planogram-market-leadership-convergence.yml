@@ -14,6 +14,7 @@ on:
       - "src/platform/i18n/planogramCadMessages.js"
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
+      - "src/platform/i18n/planogramStoreScanMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
   pull_request:
@@ -29,6 +30,7 @@ on:
       - "src/platform/i18n/planogramCadMessages.js"
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
+      - "src/platform/i18n/planogramStoreScanMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
 
@@ -154,7 +156,7 @@ jobs:
           tests/test_physical_layout_candidate_preview.py
           tests/test_physical_layout_candidate_economics.py
           tests/test_physical_economics.py
-      - name: Core V3 V4 CAD blind V5 replay and economics authority convergence
+      - name: Core V3 V4 CAD blind V5 replay economics and Store Scan authority convergence
         run: >-
           python -m pytest -q
           services/core-api/tests/test_planogram_cad_authorization.py
@@ -171,9 +173,10 @@ jobs:
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_master26_execution.py
-      - name: Interactive engineering CFO Pareto basket and route convergence
+      - name: Interactive engineering CFO Pareto basket Store Scan and route convergence
         run: |
           node scripts/test-planogram-candidate-baskets.mjs
+          node scripts/test-planogram-store-scan-ui.mjs
           node scripts/test-planogram-economics-ui.mjs
           node scripts/test-planogram-scenario-portfolio.mjs
           node scripts/test-planogram-digital-twin.mjs
@@ -197,6 +200,7 @@ jobs:
               '/v1/planogram/market-benchmark-preview',
               '/v1/planogram/blind-benchmark-preview',
               '/v1/planogram/cad-preview',
+              '/v1/planogram/store-scan/normalize-preview',
               '/v1/planogram/physical-layout-search-preview',
               '/v1/planogram/physical-layout-candidate-preview',
               '/v1/planogram/physical-layout-economics-preview',
@@ -209,6 +213,9 @@ jobs:
               assert forbidden not in properties
           assert DEFAULT_MIN_DETECTION_CONFIDENCE >= 0.8
           print('PLANOGRAM_MARKET_LEADERSHIP_CONVERGENCE_REPOSITORY=PASS')
+          print('PLANOGRAM_STORE_SCAN_REVIEW_UI=PASS')
+          print('PLANOGRAM_STORE_SCAN_RAW_MEDIA_PERSISTED=FALSE')
+          print('PLANOGRAM_STORE_SCAN_AUTO_STORE_DNA_PROMOTION=FALSE')
           print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')
           print('PLANOGRAM_CFO_ECONOMICS_UI_AUTHORITY_PROVENANCE=PASS')
           print('PLANOGRAM_V5_OPERATIONAL_PARETO_PORTFOLIO=PASS')

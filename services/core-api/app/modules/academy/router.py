@@ -9,6 +9,7 @@ from app.core.localization import RTL_LOCALES, SUPPORTED_LOCALES
 from app.core.security import Principal
 from app.db.session import get_tenant_session
 from app.modules.academy.admin_router import router as admin_router
+from app.modules.academy.experience_router import router as experience_router
 from app.modules.academy.repository import (
     create_content,
     create_content_version,
@@ -53,6 +54,7 @@ from app.modules.academy.service import (
 
 router = APIRouter(prefix="/v1/academy", tags=["academy"])
 router.include_router(admin_router)
+router.include_router(experience_router)
 
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 Viewer = Annotated[Principal, Depends(require_permission("module:academy:view"))]

@@ -13,6 +13,7 @@ on:
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
       - "src/platform/i18n/planogramCadMessages.js"
       - "src/platform/i18n/planogramEconomicsMessages.js"
+      - "src/platform/i18n/planogramScenarioMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
   pull_request:
@@ -27,6 +28,7 @@ on:
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
       - "src/platform/i18n/planogramCadMessages.js"
       - "src/platform/i18n/planogramEconomicsMessages.js"
+      - "src/platform/i18n/planogramScenarioMessages.js"
       - "scripts/test-planogram*.mjs"
       - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
 
@@ -156,10 +158,11 @@ jobs:
           services/core-api/tests/test_planogram_shelf_scan.py
           services/core-api/tests/test_planogram_shelf_scan_api.py
           services/core-api/tests/test_planogram_master26_execution.py
-      - name: Interactive engineering CFO basket and route convergence
+      - name: Interactive engineering CFO Pareto basket and route convergence
         run: |
           node scripts/test-planogram-candidate-baskets.mjs
           node scripts/test-planogram-economics-ui.mjs
+          node scripts/test-planogram-scenario-portfolio.mjs
           node scripts/test-planogram-digital-twin.mjs
           node scripts/test-planogram-engineering-2d.mjs
           node scripts/test-planogram-route-explainability.mjs
@@ -193,6 +196,9 @@ jobs:
           print('PLANOGRAM_MARKET_LEADERSHIP_CONVERGENCE_REPOSITORY=PASS')
           print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')
           print('PLANOGRAM_CFO_ECONOMICS_UI_AUTHORITY_PROVENANCE=PASS')
+          print('PLANOGRAM_V5_OPERATIONAL_PARETO_PORTFOLIO=PASS')
+          print('PLANOGRAM_V5_GLOBAL_OPTIMUM_CLAIM=FALSE')
+          print('PLANOGRAM_V5_PORTFOLIO_CAPEX_COMPARED=FALSE')
           print('PLANOGRAM_BLIND_ENGINE_REAL_SIMULATOR_RED_TEAM=PASS')
           print('PLANOGRAM_CAD_CREATE_EXPORT_DUAL_AUTHORITY=PASS')
           print('PLANOGRAM_ECONOMICS_CREATE_APPROVE_DUAL_AUTHORITY=PASS')

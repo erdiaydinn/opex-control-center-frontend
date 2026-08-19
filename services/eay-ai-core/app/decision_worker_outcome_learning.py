@@ -2,9 +2,10 @@
 
 A good or bad business outcome must never be assigned to a worker by guesswork.
 This module first proves that a specific worker produced decision evidence inside
-its actually assigned swarm lane. It then requires authoritative outcome truth
-(and strong action proof when an action is involved) before converting prediction
-quality into the existing WorkerTaskOutcomeEvidence contract.
+its actually assigned swarm lane and that the assignment was eligible under the
+canonical registry. It then requires authoritative outcome truth (and strong
+action proof when an action is involved) before converting prediction quality
+into the existing WorkerTaskOutcomeEvidence contract.
 
 Learning can influence ordering only after canonical worker eligibility. It never
 changes model weights, policies, permissions, worker health or execution authority.
@@ -34,7 +35,11 @@ from .real_world_timeline_learning import (
     verified_metric_outcome_event,
 )
 from .swarm_parallel_runtime import SwarmExecutionRound
-from .swarm_worker_registry import SwarmLaneRequirement
+from .swarm_worker_registry import (
+    SwarmLaneRequirement,
+    SwarmWorkerRegistry,
+    eligible_swarm_workers,
+)
 from .worker_task_routing import WorkerTaskOutcomeEvidence
 from .world_model import WorldAssertion
 
@@ -53,6 +58,8 @@ def _hash(payload: object) -> str:
 
 
 def decision_routing_capability_ref(decision_type: str) -> str:
+    """Return a stable, non-semantic capability scope for one decision type."""
+
     normalized = " ".join(decision_type.casefold().split())
     return "decision-type://sha256/" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
@@ -118,20 +125,26 @@ def build_decision_worker_ownership_proof(
     lane: ParallelMissionLane,
     profile: ParallelLaneSchedulingProfile,
     requirement: SwarmLaneRequirement,
+    registry: SwarmWorkerRegistry,
     execution: SwarmExecutionRound,
     decision_evidence_ref: str,
 ) -> DecisionWorkerOwnershipProof:
-    """Prove that one actually assigned worker produced the decision evidence."""
+    """Prove that one actually assigned, eligible worker produced decision evidence."""
 
     decision = DecisionLearningRecord.model_validate(decision.model_dump(mode="json"))
     lane = ParallelMissionLane.model_validate(lane.model_dump(mode="json"))
     profile = ParallelLaneSchedulingProfile.model_validate(profile.model_dump(mode="json"))
     requirement = SwarmLaneRequirement.model_validate(requirement.model_dump(mode="json"))
+    registry = SwarmWorkerRegistry.model_validate(registry.model_dump(mode="json"))
     execution = SwarmExecutionRound.model_validate(execution.model_dump(mode="json"))
 
     if profile.lane_id != lane.lane_id or requirement.lane_id != lane.lane_id:
         raise ValueError("decision_worker_ownership_lane_contract_mismatch")
-    if decision.tenant_id != lane.definition.tenant_id or execution.wave.tenant_id != decision.tenant_id:
+    if (
+        decision.tenant_id != lane.definition.tenant_id
+        or execution.wave.tenant_id != decision.tenant_id
+        or registry.tenant_id != decision.tenant_id
+    ):
         raise ValueError("decision_worker_ownership_tenant_mismatch")
     if decision_evidence_ref not in set(decision.decision_evidence_refs):
         raise ValueError("decision_worker_ownership_evidence_not_in_decision")
@@ -141,6 +154,19 @@ def build_decision_worker_ownership_proof(
     assignments = [item for item in execution.wave.assignments if item.lane_id == lane.lane_id]
     if len(assignments) != 1:
         raise ValueError("decision_worker_ownership_requires_exact_assignment")
+    worker_id = assignments[0].worker_id
+    eligible_ids = {
+        item.worker_id
+        for item in eligible_swarm_workers(
+            registry=registry,
+            lane=lane,
+            profile=profile,
+            requirement=requirement,
+        )
+    }
+    if worker_id not in eligible_ids:
+        raise ValueError("decision_worker_ownership_assignment_not_eligible")
+
     result_map = {item.lane_id: item for item in execution.results}
     result = result_map.get(lane.lane_id)
     if result is None or result.summary is None:
@@ -172,7 +198,6 @@ def build_decision_worker_ownership_proof(
         if expected_scope in set(requirement.required_capability_refs)
         else None
     )
-    worker_id = assignments[0].worker_id
     assignment_ref = (
         "swarm-assignment://"
         + decision.tenant_id

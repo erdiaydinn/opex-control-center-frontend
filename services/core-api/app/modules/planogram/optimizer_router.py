@@ -26,12 +26,14 @@ async def post_planogram_optimize_preview(
     principal: Optimizer,
 ) -> dict[str, object]:
     """Optimize request-supplied data without promoting it to production truth."""
+    baskets = [basket.model_dump(mode="python") for basket in payload.order_baskets]
     try:
         result = generate_optimized_preview(
             products=payload.products,
             layout=payload.layout,
             store_dna=payload.store_dna,
             mode=payload.mode,
+            orders=baskets or None,
         )
     except PlanogramEngineUnavailable as exc:
         raise HTTPException(
@@ -44,6 +46,10 @@ async def post_planogram_optimize_preview(
         "subject": principal.subject,
         "preview_only": True,
         "input_authority": "request_supplied_unattested",
+        "basket_authority": (
+            "request_supplied_observed_or_test_unattested" if baskets else "not_supplied"
+        ),
+        "observed_basket_input_count": len(baskets),
         "production_release_allowed": False,
         "optimizer_result": result,
     }

@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "config/eay_frozen_authority_coverage_matrix_v1.json"
-EXTENSION_PATH = ROOT / "config/eay_frozen_authority_coverage_extension_v2.json"
+EXTENSION_V2_PATH = ROOT / "config/eay_frozen_authority_coverage_extension_v2.json"
+EXTENSION_V3_PATH = ROOT / "config/eay_frozen_authority_coverage_extension_v3.json"
 
 EXPECTED_SOURCES = {
     15: {
@@ -48,6 +49,19 @@ REQUIRED_CAPABILITIES = {
     "ai_core.voice.deployment_release_attestation",
     "ai_core.voice.session_streaming_protocol",
     "ai_core.schema.source_contracts",
+    "ai_core.regulatory.atomic_watch_classifier",
+    "ai_core.rag.evidence_eval_guardrails",
+    "ai_core.kpi.aggregation_dimension_unit_policy",
+    "ai_core.kpi.nsfr_activation",
+    "ai_core.kpi.putaway_activation",
+    "ai_core.kpi.runtime_query_release",
+    "ai_core.kpi.registry_schema_integrity",
+    "ai_core.voice.adapter_candidate_promotion",
+    "ai_core.voice.local_audio_native_runtime",
+    "ai_core.voice.execution_lineage_realtime_bridge",
+    "ai_core.voice.tts_native_streaming",
+    "ai_core.voice.ws_release_freshness",
+    "ai_core.api.public_surface_guardrail",
     "security.tenant_rbac_rls_boundary",
     "security.oidc_external_identity_preauth",
     "security.internal_service_identity_replay",
@@ -56,6 +70,11 @@ REQUIRED_CAPABILITIES = {
     "security.sql_database_role_boundary",
     "security.dockos_quarantine_platform_boundary",
     "security.jarvis.grant_admission_audit_envelope",
+    "security.backup_role_secret_boundary",
+    "security.system_role_bootstrap_integrity",
+    "security.internal_assertion_adoption_contract",
+    "security.core_audit_transactional_boundary",
+    "security.identity_gateway_signing_secret_runtime",
 }
 
 FORBIDDEN_CANONICAL_FRAGMENTS = {
@@ -69,6 +88,12 @@ ALLOWED_DISPOSITIONS = {
     "ported_and_strengthened",
     "ancestry_preserved_and_revalidated",
     "ancestry_preserved_and_strengthened",
+}
+
+ALLOWED_EVIDENCE_LANES = {
+    "ai-core-execution",
+    "frozen-authority-coverage",
+    "identity-gateway-security",
 }
 
 
@@ -86,38 +111,69 @@ def load_json(path: Path) -> dict:
     return value
 
 
-def load_matrix() -> dict:
-    matrix = load_json(MATRIX_PATH)
-    extension = load_json(EXTENSION_PATH)
-    expected_base = MATRIX_PATH.relative_to(ROOT).as_posix()
+def load_extension(
+    path: Path,
+    *,
+    expected_parent: Path,
+    expected_sources: list[int],
+) -> list[dict]:
+    extension = load_json(path)
     if extension.get("schema_version") != 1:
-        fail("coverage extension schema_version must be 1")
-    if extension.get("extends") != expected_base:
-        fail(f"coverage extension must extend {expected_base}")
-    if extension.get("historical_source_prs") != [15]:
-        fail("coverage extension must remain bound to frozen PR #15")
+        fail(f"{path.relative_to(ROOT)} schema_version must be 1")
+    expected_parent_value = expected_parent.relative_to(ROOT).as_posix()
+    if extension.get("extends") != expected_parent_value:
+        fail(f"{path.relative_to(ROOT)} must extend {expected_parent_value}")
+    if extension.get("historical_source_prs") != expected_sources:
+        fail(
+            f"{path.relative_to(ROOT)} historical_source_prs must be "
+            f"{expected_sources}"
+        )
     boundary = extension.get("proof_boundary")
     if not isinstance(boundary, str) or len(boundary.strip()) < 48:
-        fail("coverage extension proof_boundary must be explicit")
-    extension_capabilities = extension.get("capabilities")
-    if not isinstance(extension_capabilities, list) or not extension_capabilities:
-        fail("coverage extension capabilities must be a non-empty list")
+        fail(f"{path.relative_to(ROOT)} proof_boundary must be explicit")
+    capabilities = extension.get("capabilities")
+    if not isinstance(capabilities, list) or not capabilities:
+        fail(f"{path.relative_to(ROOT)} capabilities must be a non-empty list")
+    return capabilities
+
+
+def load_matrix() -> dict:
+    matrix = load_json(MATRIX_PATH)
     base_capabilities = matrix.get("capabilities")
     if not isinstance(base_capabilities, list) or not base_capabilities:
         fail("base capabilities must be a non-empty list")
+
+    v2_capabilities = load_extension(
+        EXTENSION_V2_PATH,
+        expected_parent=MATRIX_PATH,
+        expected_sources=[15],
+    )
+    v3_capabilities = load_extension(
+        EXTENSION_V3_PATH,
+        expected_parent=EXTENSION_V2_PATH,
+        expected_sources=[15, 16],
+    )
+
     matrix = dict(matrix)
-    matrix["capabilities"] = [*base_capabilities, *extension_capabilities]
+    matrix["capabilities"] = [
+        *base_capabilities,
+        *v2_capabilities,
+        *v3_capabilities,
+    ]
     return matrix
 
 
 def require_file(relative_path: str, *, capability_id: str, kind: str) -> None:
-    if not relative_path or Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:
+    path = Path(relative_path)
+    if not relative_path or path.is_absolute() or ".." in path.parts:
         fail(f"{capability_id}: invalid {kind} path {relative_path!r}")
     for fragment in FORBIDDEN_CANONICAL_FRAGMENTS:
         if fragment in relative_path:
-            fail(f"{capability_id}: forbidden historical canonical reference {relative_path}")
-    target = ROOT / relative_path
-    if not target.is_file():
+            fail(
+                f"{capability_id}: forbidden historical canonical reference "
+                f"{relative_path}"
+            )
+    if not (ROOT / relative_path).is_file():
         fail(f"{capability_id}: missing {kind} file {relative_path}")
 
 
@@ -140,7 +196,10 @@ def validate() -> dict:
         observed = by_pr[pr]
         for key, value in expected.items():
             if observed.get(key) != value:
-                fail(f"PR #{pr} {key} mismatch: expected {value!r}, got {observed.get(key)!r}")
+                fail(
+                    f"PR #{pr} {key} mismatch: expected {value!r}, "
+                    f"got {observed.get(key)!r}"
+                )
 
     proof_boundary = matrix.get("proof_boundary")
     if not isinstance(proof_boundary, list) or len(proof_boundary) < 4:
@@ -152,6 +211,7 @@ def validate() -> dict:
 
     ids: set[str] = set()
     represented_sources: set[int] = set()
+    represented_lanes: set[str] = set()
     for capability in capabilities:
         if not isinstance(capability, dict):
             fail("every capability must be an object")
@@ -188,11 +248,17 @@ def validate() -> dict:
             if not isinstance(relative_path, str):
                 fail(f"{capability_id}: evidence test path must be a string")
             if "/tests/test_" not in relative_path or not relative_path.endswith(".py"):
-                fail(f"{capability_id}: evidence path is not an explicit pytest file: {relative_path}")
+                fail(
+                    f"{capability_id}: evidence path is not an explicit pytest file: "
+                    f"{relative_path}"
+                )
             require_file(relative_path, capability_id=capability_id, kind="evidence")
 
-        if not capability.get("evidence_lane"):
-            fail(f"{capability_id}: evidence_lane is required")
+        evidence_lane = capability.get("evidence_lane")
+        if evidence_lane not in ALLOWED_EVIDENCE_LANES:
+            fail(f"{capability_id}: invalid evidence_lane {evidence_lane!r}")
+        represented_lanes.add(evidence_lane)
+
         truth_boundary = capability.get("truth_boundary")
         if not isinstance(truth_boundary, str) or len(truth_boundary.strip()) < 24:
             fail(f"{capability_id}: truth_boundary must be explicit")
@@ -205,39 +271,67 @@ def validate() -> dict:
         fail(f"unreviewed capabilities present: {', '.join(sorted(unexpected))}")
     if represented_sources != set(EXPECTED_SOURCES):
         fail("both frozen PR #15 and #16 must be represented")
+    if represented_lanes != ALLOWED_EVIDENCE_LANES:
+        fail(
+            "all exact-head evidence lanes must remain represented: "
+            + ", ".join(sorted(ALLOWED_EVIDENCE_LANES))
+        )
 
     return matrix
+
+
+def selected_tests(matrix: dict, *, lane: str, prefix: str) -> list[str]:
+    return sorted(
+        {
+            path.removeprefix(prefix)
+            for capability in matrix["capabilities"]
+            if capability["evidence_lane"] == lane
+            for path in capability["evidence_tests"]
+            if path.startswith(prefix)
+        }
+    )
 
 
 def main() -> int:
     matrix = validate()
     if "--print-core-tests" in sys.argv:
-        tests = sorted(
-            {
-                path.removeprefix("services/core-api/")
-                for capability in matrix["capabilities"]
-                if capability["evidence_lane"] == "frozen-authority-coverage"
-                for path in capability["evidence_tests"]
-                if path.startswith("services/core-api/tests/")
-            }
+        print(
+            " ".join(
+                selected_tests(
+                    matrix,
+                    lane="frozen-authority-coverage",
+                    prefix="services/core-api/",
+                )
+            )
         )
-        print(" ".join(tests))
         return 0
     if "--print-ai-tests" in sys.argv:
-        tests = sorted(
-            {
-                path.removeprefix("services/eay-ai-core/")
-                for capability in matrix["capabilities"]
-                if capability["evidence_lane"] == "ai-core-execution"
-                for path in capability["evidence_tests"]
-                if path.startswith("services/eay-ai-core/tests/")
-            }
+        print(
+            " ".join(
+                selected_tests(
+                    matrix,
+                    lane="ai-core-execution",
+                    prefix="services/eay-ai-core/",
+                )
+            )
         )
-        print(" ".join(tests))
         return 0
+    if "--print-identity-tests" in sys.argv:
+        print(
+            " ".join(
+                selected_tests(
+                    matrix,
+                    lane="identity-gateway-security",
+                    prefix="services/identity-gateway/",
+                )
+            )
+        )
+        return 0
+
     print(
         "frozen-authority coverage OK: "
-        f"{len(matrix['capabilities'])} capabilities, frozen PRs #15/#16, all current paths present"
+        f"{len(matrix['capabilities'])} capabilities, frozen PRs #15/#16, "
+        "all current paths present"
     )
     return 0
 

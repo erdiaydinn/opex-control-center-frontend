@@ -6,6 +6,8 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from .ys_tr_cycle_count_intelligence import is_cycle_count_question
+
 ToolName = Literal["ops_kpi_query", "regulatory_impact_query", "catalog_query", "none"]
 
 
@@ -56,6 +58,24 @@ _RULES: list[tuple[ToolName, re.Pattern[str], list[str], float]] = [
 
 def select_tool(message: str) -> ToolIntentResponse:
     text = message.strip()
+
+    # YS_TR cycle-count language is an explicitly reviewed company semantic.
+    # Recognize it deterministically so Jarvis does not depend on a model guess
+    # before entering the governed operational-read path. This selector still
+    # grants no execution authority.
+    if is_cycle_count_question(text):
+        return ToolIntentResponse(
+            tool="ops_kpi_query",
+            confidence=0.97,
+            rationale=(
+                "Reviewed YS_TR cycle-count semantics matched; route to governed "
+                "operational KPI handling. Assignment-week and late-completion "
+                "meaning remain defined by ys-tr-cycle-count-weekly-compliance-v1."
+            ),
+            required_scope=["ops:read"],
+            execution_allowed=False,
+        )
+
     matches: list[tuple[ToolName, list[str], float]] = []
     for tool, pattern, scope, confidence in _RULES:
         if pattern.search(text):

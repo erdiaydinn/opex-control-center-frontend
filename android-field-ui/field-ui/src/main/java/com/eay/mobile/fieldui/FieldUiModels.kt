@@ -12,6 +12,7 @@ typealias FieldSyncVisualState = com.eay.mobile.presentation.FieldSyncVisualStat
 typealias FieldRecoveryVisualSeverity = com.eay.mobile.presentation.FieldRecoveryVisualSeverity
 typealias FieldRecoveryActionKind = com.eay.mobile.presentation.FieldRecoveryActionKind
 typealias FieldRecoveryBannerModel = com.eay.mobile.presentation.FieldRecoveryBannerModel
+typealias FieldSessionRecoveryBannerModel = com.eay.mobile.presentation.FieldSessionRecoveryBannerModel
 typealias FieldShellHeader = com.eay.mobile.presentation.FieldShellHeader
 typealias FieldMissionCardModel = com.eay.mobile.presentation.FieldMissionCardModel
 typealias BlindCountUiState = com.eay.mobile.presentation.BlindCountUiState

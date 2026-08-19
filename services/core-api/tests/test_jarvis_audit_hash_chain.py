@@ -41,7 +41,7 @@ async def test_postgres_audit_chain_is_per_tenant_verifiable_and_append_only() -
                 )
                 VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
-                    clock_timestamp() + ($10::text || ' microseconds')::interval
+                    clock_timestamp() + ($10::bigint * interval '1 microsecond')
                 )
                 """,
                 event_id,

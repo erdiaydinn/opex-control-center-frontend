@@ -377,24 +377,25 @@ async def manager_decide_assurance_case(
             standards_subjects = [row.external_subject for row in members]
 
         next_state = "RESOLVED"
-        resolved_expression = "CURRENT_TIMESTAMP"
         if payload.disposition == "AUDITOR_CONFIRMED":
             next_state = (
                 "OPERATIONS_STANDARDS_REVIEW"
                 if standards_subjects
                 else "OPERATIONS_STANDARDS_UNASSIGNED"
             )
-            resolved_expression = "NULL"
 
         updated_result = await connection.execute(
             text(
-                f"""
+                """
                 UPDATE audit_assurance_cases
                 SET state = :state,
                     manager_disposition = :manager_disposition,
                     version = version + 1,
                     updated_at = CURRENT_TIMESTAMP,
-                    resolved_at = {resolved_expression}
+                    resolved_at = CASE
+                      WHEN :manager_disposition = 'AUDITOR_CONFIRMED' THEN NULL
+                      ELSE CURRENT_TIMESTAMP
+                    END
                 WHERE tenant_id = CAST(:tenant_id AS UUID)
                   AND id = CAST(:case_id AS UUID)
                   AND version = :expected_version

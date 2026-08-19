@@ -137,6 +137,7 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/evidence_object_upload.py", "_authorize_upload"),
     ("modules/field_intelligence/evidence_object_upload.py", "_existing_receipt"),
     ("modules/field_intelligence/evidence_object_upload.py", "upload_private_evidence_object"),
+    ("modules/field_intelligence/evidence_object_read.py", "read_private_evidence_object"),
     # Items 7-10/60 governance security review: exact functions only. Every SQL
     # statement is a static text() literal with bound parameters, each transaction
     # enters canonical app.tenant_id context, and governed tables are FORCE-RLS.
@@ -171,6 +172,51 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
         "modules/field_intelligence/promotion_consumer_session.py",
         "record_consumer_receipt_in_session",
     ),
+}
+
+# Audit security review: exact DB execution functions only. SQLAlchemy text()
+# statements are static literals with bound parameters. Transactions set tenant
+# context before reading/writing RLS-protected Audit/Field tables. Evidence,
+# privacy and vision paths preserve the authority split between storage receipt,
+# privacy verification and model-inference authorization.
+AUDIT_SQL_EXECUTION_POINTS = {
+    ("modules/audit/accountability.py", "_set_tenant"),
+    ("modules/audit/accountability.py", "assign_location_manager"),
+    ("modules/audit/accountability.py", "get_location_manager_assignment"),
+    ("modules/audit/accountability.py", "list_location_manager_assignments"),
+    ("modules/audit/accountability.py", "resolve_location_manager_subject"),
+    ("modules/audit/assurance.py", "_notify"),
+    ("modules/audit/assurance.py", "_set_tenant"),
+    ("modules/audit/assurance.py", "append_auditor_decision_and_route"),
+    ("modules/audit/assurance.py", "auditor_assurance_summary"),
+    ("modules/audit/assurance.py", "get_assurance_case"),
+    ("modules/audit/assurance.py", "list_assurance_cases"),
+    ("modules/audit/assurance.py", "manager_decide_assurance_case"),
+    ("modules/audit/assurance.py", "standards_decide_assurance_case"),
+    ("modules/audit/evidence_binding.py", "bind_server_evidence_to_redaction_receipt"),
+    ("modules/audit/evidence_object_routes.py", "_run_evidence_authority"),
+    ("modules/audit/intelligence.py", "build_audit_intelligence_receipt"),
+    ("modules/audit/privacy_verification_service.py", "_load_bound_receipt"),
+    ("modules/audit/privacy_verification_service.py", "verify_bound_redaction_receipt"),
+    ("modules/audit/repository.py", "_set_tenant"),
+    ("modules/audit/repository.py", "activate_program"),
+    ("modules/audit/repository.py", "append_assurance_review"),
+    ("modules/audit/repository.py", "append_decision_event"),
+    ("modules/audit/repository.py", "append_redaction_receipt"),
+    ("modules/audit/repository.py", "create_action"),
+    ("modules/audit/repository.py", "create_program"),
+    ("modules/audit/repository.py", "get_location"),
+    ("modules/audit/repository.py", "list_programs"),
+    ("modules/audit/repository.py", "list_runs"),
+    ("modules/audit/repository.py", "start_run"),
+    ("modules/audit/repository.py", "update_action"),
+    ("modules/audit/resource_scope.py", "_set_tenant"),
+    ("modules/audit/resource_scope.py", "get_action_location"),
+    ("modules/audit/resource_scope.py", "get_run_location"),
+    ("modules/audit/run_authority.py", "start_authoritative_run"),
+    ("modules/audit/vision_inference_authorization.py", "_load_context"),
+    ("modules/audit/vision_inference_authorization.py", "authorize_vision_inference"),
+    ("modules/audit/vision_inference_authorization.py", "consume_vision_inference_authorization"),
 }
 
 # Master 24-26/60 security review: Planogram SQL is static text() with bound
@@ -210,6 +256,7 @@ ALLOWED_SQL_EXECUTION_POINTS = (
     | BUDGET_SQL_EXECUTION_POINTS
     | ACADEMY_SQL_EXECUTION_POINTS
     | FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS
+    | AUDIT_SQL_EXECUTION_POINTS
     | PLANOGRAM_SQL_EXECUTION_POINTS
 )
 

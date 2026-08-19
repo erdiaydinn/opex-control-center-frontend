@@ -37,18 +37,10 @@ async def build_audit_intelligence_receipt(
     context source only after the caller's normal Audit authorization is resolved.
     """
 
-    if not unrestricted and not location_ids and not regions:
-        scope_predicate = "FALSE"
-    else:
-        scope_predicate = """
-            (
-              :unrestricted
-              OR ar.location_id = ANY(CAST(:location_ids AS VARCHAR[]))
-              OR COALESCE(fl.region, '') = ANY(CAST(:regions AS VARCHAR[]))
-            )
-        """
+    scope_denied = not unrestricted and not location_ids and not regions
     values = {
         "tenant_id": tenant_id,
+        "scope_denied": scope_denied,
         "unrestricted": unrestricted,
         "location_ids": sorted(location_ids or ()),
         "regions": sorted(regions or ()),
@@ -61,14 +53,19 @@ async def build_audit_intelligence_receipt(
         )
         totals_result = await connection.execute(
             text(
-                f"""
+                """
                 WITH scoped_runs AS (
                     SELECT ar.*
                     FROM audit_runs ar
                     JOIN field_locations fl
                       ON fl.tenant_id = ar.tenant_id AND fl.location_id = ar.location_id
                     WHERE ar.tenant_id = CAST(:tenant_id AS UUID)
-                      AND {scope_predicate}
+                      AND NOT :scope_denied
+                      AND (
+                        :unrestricted
+                        OR ar.location_id = ANY(CAST(:location_ids AS VARCHAR[]))
+                        OR COALESCE(fl.region, '') = ANY(CAST(:regions AS VARCHAR[]))
+                      )
                 ), scoped_actions AS (
                     SELECT aa.*
                     FROM audit_actions aa
@@ -151,14 +148,19 @@ async def build_audit_intelligence_receipt(
 
         risk_result = await connection.execute(
             text(
-                f"""
+                """
                 WITH scoped_runs AS (
                     SELECT ar.*, fl.name AS location_name, fl.region
                     FROM audit_runs ar
                     JOIN field_locations fl
                       ON fl.tenant_id = ar.tenant_id AND fl.location_id = ar.location_id
                     WHERE ar.tenant_id = CAST(:tenant_id AS UUID)
-                      AND {scope_predicate}
+                      AND NOT :scope_denied
+                      AND (
+                        :unrestricted
+                        OR ar.location_id = ANY(CAST(:location_ids AS VARCHAR[]))
+                        OR COALESCE(fl.region, '') = ANY(CAST(:regions AS VARCHAR[]))
+                      )
                 ), action_counts AS (
                     SELECT sr.location_id,
                            COUNT(*) FILTER (

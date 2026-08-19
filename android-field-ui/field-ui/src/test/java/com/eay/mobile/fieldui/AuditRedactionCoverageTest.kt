@@ -1,6 +1,5 @@
 package com.eay.mobile.fieldui
 
-import android.graphics.Bitmap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -8,12 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AuditRedactionCoverageTest {
-    private fun result(sequence: Long, processed: Boolean = true): AuditFrameRedactionResult =
-        AuditFrameRedactionResult(
+    private fun result(sequence: Long, processed: Boolean = true): AuditFrameCoverageResult =
+        AuditFrameCoverageResult(
             frameSequence = sequence,
             timestampMs = sequence * 33L,
-            redactedBitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888),
-            detectedFaceCount = 0,
             processed = processed,
         )
 

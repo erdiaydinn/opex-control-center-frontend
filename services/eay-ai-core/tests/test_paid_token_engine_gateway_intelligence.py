@@ -26,6 +26,7 @@ from app.paid_token_engine_gateway import (
 )
 from app.paid_token_governance import (
     PaidTokenGrant,
+    PaidTokenLedgerSnapshot,
     PlatformRole,
     ProviderRateCard,
 )
@@ -174,7 +175,10 @@ def test_admin_granted_frontier_call_is_metered_and_written_to_chargeback_ledger
             json={
                 "id": "resp_paid_1",
                 "output": [
-                    {"type": "message", "content": [{"type": "output_text", "text": "Paid answer"}]}
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Paid answer"}],
+                    }
                 ],
                 "usage": {"input_tokens": 20, "output_tokens": 10},
             },
@@ -215,6 +219,101 @@ def test_admin_granted_frontier_call_is_metered_and_written_to_chargeback_ledger
     assert result.paid_usage.provider_secret_retained is False
     assert "sk-test-super-secret" not in serialized
     assert "Use the approved frontier model" not in serialized
+
+
+def test_executable_local_plan_wins_before_frontier_grant_or_ledger_is_consulted():
+    calls = []
+    ledger_reads = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if request.url.path == "/api/chat":
+            return httpx.Response(
+                200,
+                json={
+                    "message": {"content": "Local first answer"},
+                    "prompt_eval_count": 14,
+                    "eval_count": 5,
+                },
+            )
+        return httpx.Response(500)
+
+    def read_ledger(context, engine_id):
+        ledger_reads.append((context.subject_user_ref, engine_id))
+        raise AssertionError("frontier ledger must not be read while local plan is executable")
+
+    local = _local()
+    frontier = _frontier()
+    base = EngineGateway(
+        [local, frontier],
+        transport_factory=lambda endpoint: httpx.MockTransport(handler),
+        environ={"OPENAI_API_KEY": "secret"},
+    )
+    gateway = AdminGovernedEngineGateway(
+        engine_gateway=base,
+        registrations=(local, frontier),
+        grants=(_grant(),),
+        rate_cards=(_card(),),
+        ledger_reader=read_ledger,
+        usage_writer=lambda usage: (_ for _ in ()).throw(
+            AssertionError("local execution must not create paid usage")
+        ),
+    )
+
+    result = asyncio.run(
+        gateway.invoke_primary(
+            task=_task(),
+            prompt="Prefer zero paid tokens when local is sufficient",
+            context=_context(),
+        )
+    )
+
+    assert result.local_free_execution is True
+    assert result.paid_usage is None
+    assert result.engine_receipt.engine_id == "local"
+    assert ledger_reads == []
+    assert calls == ["http://127.0.0.1:11434/api/chat"]
+
+
+def test_budget_exhausted_frontier_is_filtered_before_any_provider_network_call():
+    calls = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(500)
+
+    registration = _frontier()
+    base = EngineGateway(
+        [registration],
+        transport_factory=lambda endpoint: httpx.MockTransport(handler),
+        environ={"OPENAI_API_KEY": "secret"},
+    )
+    exhausted = PaidTokenLedgerSnapshot(
+        subject_user_ref="user:42",
+        tenant_ref="tenant:customer-a",
+        billing_account_ref="billing:customer-a:user-42",
+        billing_cycle_ref="2026-08",
+        provider_cost_microunits=100_000_000,
+        billable_microunits=150_000_000,
+    )
+    gateway = AdminGovernedEngineGateway(
+        engine_gateway=base,
+        registrations=(registration,),
+        grants=(_grant(),),
+        rate_cards=(_card(),),
+        ledger_reader=lambda context, engine_id: exhausted,
+        usage_writer=lambda usage: None,
+    )
+
+    with pytest.raises(EngineGatewayError, match="paid_token_monthly_provider_cost_limit_exceeded"):
+        asyncio.run(
+            gateway.invoke_primary(
+                task=_task(),
+                prompt="This must be rejected before provider I/O",
+                context=_context(),
+            )
+        )
+    assert calls == []
 
 
 def test_sensitive_task_without_external_processing_authorization_stays_local_and_free():

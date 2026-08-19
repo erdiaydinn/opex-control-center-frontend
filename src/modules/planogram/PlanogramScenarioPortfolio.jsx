@@ -4,6 +4,7 @@ import { GitCompareArrows, ShieldCheck } from "lucide-react";
 import { apiPost } from "../../api/client.js";
 import { translatePlanogramScenario } from "../../platform/i18n/planogramScenarioMessages.js";
 import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
+import PlanogramEconomicsPanel from "./PlanogramEconomicsPanel.jsx";
 import {
   buildPlanogramScenarioPortfolio,
   safePhysicalLayoutCandidateReplayResponse,
@@ -16,7 +17,13 @@ function valueOrDash(value, formatNumber) {
   return Number.isFinite(number) ? formatNumber(number) : "—";
 }
 
-export default function PlanogramScenarioPortfolio({ candidate, locale, formatNumber, canCreate }) {
+export default function PlanogramScenarioPortfolio({
+  candidate,
+  locale,
+  formatNumber,
+  canCreate,
+  canApprove,
+}) {
   const t = useMemo(() => (key) => translatePlanogramScenario(locale, key), [locale]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -174,6 +181,14 @@ export default function PlanogramScenarioPortfolio({ candidate, locale, formatNu
                 candidate={scenarioPreview.candidate}
                 locale={locale}
                 formatNumber={formatNumber}
+              />
+              <PlanogramEconomicsPanel
+                candidate={candidate}
+                locale={locale}
+                formatNumber={formatNumber}
+                canCreate={canCreate}
+                canApprove={canApprove}
+                layoutFingerprint={scenarioPreview.fingerprint}
               />
             </div>
           ) : null}

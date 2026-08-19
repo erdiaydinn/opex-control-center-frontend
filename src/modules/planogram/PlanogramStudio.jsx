@@ -25,7 +25,7 @@ import "./planogram-operations.css";
 import "./planogram-preview.css";
 
 const PLANOGRAM_FEATURES = ["layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"];
-const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete"];
+const PLANOGRAM_ACTIONS = ["view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"];
 const PREVIEW_MODES = new Set(["HYBRID", "CATEGORY", "ABC", "BRAND"]);
 const MAX_PREVIEW_FILE_BYTES = 10 * 1024 * 1024;
 

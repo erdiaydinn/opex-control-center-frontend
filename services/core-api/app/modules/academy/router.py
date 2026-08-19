@@ -10,6 +10,7 @@ from app.core.security import Principal
 from app.db.session import get_tenant_session
 from app.modules.academy.admin_router import router as admin_router
 from app.modules.academy.experience_router import router as experience_router
+from app.modules.academy.progress_service import update_progress
 from app.modules.academy.repository import (
     create_content,
     create_content_version,
@@ -49,7 +50,6 @@ from app.modules.academy.service import (
     complete_enrollment,
     require_module,
     submit_quiz_attempt,
-    update_progress,
 )
 
 router = APIRouter(prefix="/v1/academy", tags=["academy"])

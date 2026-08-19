@@ -26,21 +26,46 @@ def upgrade() -> None:
     op.create_table(
         "audit_vision_inference_authorizations",
         sa.Column("tenant_id", UUID, nullable=False),
-        sa.Column("id", UUID, nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            UUID,
+            nullable=False,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("audit_run_id", UUID, nullable=False),
         sa.Column("item_key", sa.String(length=180), nullable=False),
         sa.Column("redaction_receipt_id", UUID, nullable=False),
         sa.Column("privacy_verification_event_id", UUID, nullable=False),
         sa.Column("program_key", sa.String(length=120), nullable=False),
         sa.Column("program_version", sa.Integer(), nullable=False),
-        sa.Column("question_control_fingerprint", sa.String(length=64), nullable=False),
+        sa.Column(
+            "question_control_fingerprint",
+            sa.String(length=64),
+            nullable=False,
+        ),
         sa.Column("model_record_id", sa.String(length=180), nullable=False),
         sa.Column("artifact_sha256", sa.String(length=64), nullable=False),
-        sa.Column("artifact_provenance_fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("production_promotion_fingerprint", sa.String(length=64), nullable=False),
-        sa.Column("production_release_proof_fingerprint", sa.String(length=64), nullable=False),
+        sa.Column(
+            "artifact_provenance_fingerprint",
+            sa.String(length=64),
+            nullable=False,
+        ),
+        sa.Column(
+            "production_promotion_fingerprint",
+            sa.String(length=64),
+            nullable=False,
+        ),
+        sa.Column(
+            "production_release_proof_fingerprint",
+            sa.String(length=64),
+            nullable=False,
+        ),
         sa.Column("capabilities", JSONB, nullable=False),
-        sa.Column("authorization_fingerprint", sa.String(length=64), nullable=False),
+        sa.Column(
+            "authorization_fingerprint",
+            sa.String(length=64),
+            nullable=False,
+        ),
         sa.Column(
             "issued_at",
             sa.DateTime(timezone=True),
@@ -57,7 +82,10 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["tenant_id", "redaction_receipt_id"],
-            ["audit_redaction_receipts.tenant_id", "audit_redaction_receipts.id"],
+            [
+                "audit_redaction_receipts.tenant_id",
+                "audit_redaction_receipts.id",
+            ],
             ondelete="CASCADE",
             name="fk_audit_vision_auth_redaction",
         ),
@@ -80,13 +108,20 @@ def upgrade() -> None:
             ondelete="RESTRICT",
             name="fk_audit_vision_auth_program",
         ),
-        sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_audit_vision_inference_auth"),
+        sa.PrimaryKeyConstraint(
+            "tenant_id",
+            "id",
+            name="pk_audit_vision_inference_auth",
+        ),
         sa.UniqueConstraint(
             "tenant_id",
             "authorization_fingerprint",
             name="uq_audit_vision_authorization_fingerprint",
         ),
-        sa.CheckConstraint("program_version > 0", name="ck_audit_vision_auth_program_version"),
+        sa.CheckConstraint(
+            "program_version > 0",
+            name="ck_audit_vision_auth_program_version",
+        ),
         sa.CheckConstraint(
             "question_control_fingerprint ~ '^[0-9a-f]{64}$'",
             name="ck_audit_vision_auth_control_fingerprint",
@@ -112,10 +147,14 @@ def upgrade() -> None:
             name="ck_audit_vision_auth_fingerprint",
         ),
         sa.CheckConstraint(
-            "jsonb_typeof(capabilities) = 'array' AND jsonb_array_length(capabilities) > 0",
+            "jsonb_typeof(capabilities) = 'array' "
+            "AND jsonb_array_length(capabilities) > 0",
             name="ck_audit_vision_auth_capabilities",
         ),
-        sa.CheckConstraint("expires_at > issued_at", name="ck_audit_vision_auth_expiry"),
+        sa.CheckConstraint(
+            "expires_at > issued_at",
+            name="ck_audit_vision_auth_expiry",
+        ),
         sa.CheckConstraint(
             "consumed_at IS NULL OR consumed_at >= issued_at",
             name="ck_audit_vision_auth_consumed_at",
@@ -132,8 +171,14 @@ def upgrade() -> None:
         ["tenant_id", "privacy_verification_event_id"],
     )
 
-    op.execute("ALTER TABLE audit_vision_inference_authorizations ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE audit_vision_inference_authorizations FORCE ROW LEVEL SECURITY")
+    op.execute(
+        "ALTER TABLE audit_vision_inference_authorizations "
+        "ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "ALTER TABLE audit_vision_inference_authorizations "
+        "FORCE ROW LEVEL SECURITY"
+    )
     op.execute(
         """CREATE POLICY audit_vision_inference_authorizations_tenant_isolation
         ON audit_vision_inference_authorizations
@@ -141,10 +186,13 @@ def upgrade() -> None:
         WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"""
     )
     op.execute(
-        "GRANT SELECT, INSERT, UPDATE ON TABLE audit_vision_inference_authorizations TO "
+        "GRANT SELECT, INSERT, UPDATE ON TABLE "
+        "audit_vision_inference_authorizations TO " + RUNTIME_ROLE
+    )
+    op.execute(
+        "REVOKE DELETE ON TABLE audit_vision_inference_authorizations FROM "
         + RUNTIME_ROLE
     )
-    op.execute("REVOKE DELETE ON TABLE audit_vision_inference_authorizations FROM " + RUNTIME_ROLE)
 
 
 def downgrade() -> None:

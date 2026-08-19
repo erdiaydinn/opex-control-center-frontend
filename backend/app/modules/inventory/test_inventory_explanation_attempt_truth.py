@@ -187,9 +187,12 @@ class InventoryExplanationAttemptTruthTests(unittest.TestCase):
     def test_abandoned_attempt_is_visible_only_as_lifecycle_not_stock_truth(self) -> None:
         context = explanation_context(self.principal, self.document_id)
 
-        self.assertEqual(context["schema_version"], 2)
+        self.assertEqual(context["schema_version"], 3)
         self.assertEqual(context["source"], "inventory_completed_attempt_truth")
         self.assertTrue(context["abandoned_attempt_events_excluded_from_stock_truth"])
+        self.assertTrue(context["recovery_reasons_free_text_excluded"])
+        self.assertTrue(context["superseded_attempt_evidence_preserved"])
+        self.assertEqual(context["lease_closure_lifecycle"], [])
         self.assertEqual(context["events"], context["authoritative_events"])
 
         lifecycle = {

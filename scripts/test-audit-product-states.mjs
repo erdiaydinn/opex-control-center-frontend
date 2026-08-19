@@ -22,11 +22,15 @@ const liveCss = fs.readFileSync("src/modules/audit/AuditLiveTruth.css", "utf8");
 const assuranceCss = fs.readFileSync("src/modules/audit/AuditAssuranceWorkspace.css", "utf8");
 const permissions = fs.readFileSync("services/core-api/app/core/permission_catalog.py", "utf8");
 const routes = fs.readFileSync("services/core-api/app/modules/audit/routes.py", "utf8");
+const evidenceRoutes = fs.readFileSync("services/core-api/app/modules/audit/evidence_object_routes.py", "utf8");
+const intelligenceRoutes = fs.readFileSync("services/core-api/app/modules/audit/intelligence_routes.py", "utf8");
+const intelligenceAuthority = fs.readFileSync("services/core-api/app/modules/audit/intelligence.py", "utf8");
 const assuranceAuthority = fs.readFileSync("services/core-api/app/modules/audit/assurance.py", "utf8");
 const accountabilityAuthority = fs.readFileSync("services/core-api/app/modules/audit/accountability.py", "utf8");
 const runAuthority = fs.readFileSync("services/core-api/app/modules/audit/run_authority.py", "utf8");
 const schemas = fs.readFileSync("services/core-api/app/modules/audit/schemas.py", "utf8");
 const resourceScope = fs.readFileSync("services/core-api/app/modules/audit/resource_scope.py", "utf8");
+const budgetMain = fs.readFileSync("services/core-api/app/budget_main.py", "utf8");
 const migration = fs.readFileSync("services/core-api/alembic/versions/0046_audit_operating_system.py", "utf8");
 const privacyMigration = fs.readFileSync("services/core-api/alembic/versions/0047_audit_privacy_verification.py", "utf8");
 const assuranceMigration = fs.readFileSync("services/core-api/alembic/versions/0048_audit_assurance_routing.py", "utf8");
@@ -53,8 +57,11 @@ requireCondition(accountabilityMigration.includes("REVOKE DELETE ON TABLE audit_
 
 requireCondition(workspace.includes('apiGet("/v1/audit/programs")'), "Desktop Audit must read authoritative program truth");
 requireCondition(workspace.includes('apiGet("/v1/audit/runs?limit=100")'), "Desktop Audit must read authoritative run truth");
+requireCondition(workspace.includes('apiFetchWithStatus("/v1/audit/intelligence/summary"'), "Desktop Audit must read the deterministic intelligence receipt");
+requireCondition(workspace.includes('payload?.llm_computed_metrics !== false'), "Desktop Audit must reject an intelligence payload that does not prove deterministic metrics");
 requireCondition(workspace.includes("<AuditAssuranceWorkspace"), "Desktop Audit must compose the live assurance workspace");
 requireCondition(workspace.includes('data-audit-truth-state={live.state}'), "Audit UI must expose live truth state without inventing connection");
+requireCondition(workspace.includes('data-audit-intelligence-state={intelligence.state}'), "Audit UI must expose intelligence connection state");
 requireCondition(workspace.includes('t("noLiveData")'), "Empty KPI state must remain localized and truth-bound rather than synthetic");
 requireCondition(workspace.includes('state: "error", programs: [], runs: []'), "Audit live-data failure must fail visibly closed");
 requireCondition(css.includes("prefers-reduced-motion") && liveCss.includes("prefers-reduced-motion") && assuranceCss.includes("prefers-reduced-motion"), "Audit experience must respect reduced motion");
@@ -82,6 +89,24 @@ requireCondition(accountabilityAuthority.includes("m.status = 'active'") && acco
 requireCondition(runAuthority.includes("resolve_location_manager_subject") && runAuthority.includes('"manager_subject": manager_subject'), "Audit run must snapshot server-resolved manager identity");
 requireCondition(!runAuthority.includes("payload.manager_subject"), "Audit run authority must never trust caller manager identity");
 requireCondition(schemas.includes("manager_subject: None = None"), "Legacy manager field must remain null-only to reject spoofed identities");
+
+requireCondition(intelligenceRoutes.includes('prefix="/v1/audit/intelligence"'), "Audit deterministic intelligence route is missing");
+requireCondition(intelligenceRoutes.includes('require_audit_scope(principal, "feature:audit:analytics")'), "Audit intelligence must use analytics scope");
+requireCondition(intelligenceAuthority.includes('"llm_computed_metrics": False'), "Audit metrics must not be computed by an LLM");
+requireCondition(intelligenceAuthority.includes('"calculation_version": "audit.intelligence.summary.v1"'), "Audit metric calculation version is missing");
+requireCondition(intelligenceAuthority.includes("COUNT(DISTINCT aa.audit_run_id) >= 2"), "Repeat finding calculation must require multiple runs");
+requireCondition(intelligenceAuthority.includes("verification_status = 'verified'"), "Evidence coverage must require server privacy verification");
+requireCondition(intelligenceAuthority.includes("receipt_fingerprint"), "Audit intelligence must produce a fingerprinted receipt");
+
+requireCondition(evidenceRoutes.includes('prefix="/v1/audit"'), "Audit private evidence route is missing");
+requireCondition(evidenceRoutes.includes('require_audit_scope(principal, "action:audit:submitEvidence")'), "Audit evidence upload must use submitEvidence scope");
+requireCondition(evidenceRoutes.includes("scope_allows_location"), "Audit evidence upload must reuse canonical Audit scope mapping");
+requireCondition(evidenceRoutes.includes("ar.field_mission_id") && evidenceRoutes.includes("ar.location_id"), "Audit evidence upload must derive mission/location from server run authority");
+requireCondition(evidenceRoutes.includes("upload_private_evidence_object"), "Audit evidence upload must reuse the private Field evidence store authority");
+requireCondition(evidenceRoutes.includes('"client_redaction_claim_only": True'), "Client redaction must remain a claim until server verification");
+requireCondition(evidenceRoutes.includes('"server_privacy_verified": False') && evidenceRoutes.includes('"vision_inference_authorized": False'), "Storage receipt must not authorize vision inference");
+requireCondition(evidenceRoutes.includes('"public_url": None'), "Audit evidence must not expose a public URL");
+requireCondition(budgetMain.includes("audit_evidence_object_router") && budgetMain.includes("app.include_router(audit_evidence_object_router)"), "Audit evidence router must be composed into Platform Core ASGI");
 
 const locales = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"];
 const coverage = auditMessageCoverage(locales);

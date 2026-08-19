@@ -54,6 +54,7 @@ export default function PlanogramStudio() {
     [locale]
   );
   const canCreatePreview = canAction("planogram", "create");
+  const canApprovePreview = canAction("planogram", "approve");
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -336,6 +337,7 @@ export default function PlanogramStudio() {
                     locale={locale}
                     formatNumber={formatNumber}
                     canCreate={canCreatePreview}
+                    canApprove={canApprovePreview}
                   />
                 ) : null}
                 {optimizerMeta ? (
@@ -352,7 +354,7 @@ export default function PlanogramStudio() {
                     locale={locale}
                     formatNumber={formatNumber}
                     canCreate={canCreatePreview}
-                    canApprove={canAction("planogram", "approve")}
+                    canApprove={canApprovePreview}
                   />
                 ) : null}
                 {engineResult?.planogram ? (

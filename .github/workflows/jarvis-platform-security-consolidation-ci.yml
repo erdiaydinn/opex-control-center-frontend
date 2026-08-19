@@ -6,6 +6,7 @@ on:
       - agent/jarvis-security-consolidation-v3
     paths:
       - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/core/audit_checkpoint.py"
       - "services/core-api/app/core/jarvis_execution_admission.py"
       - "services/core-api/app/core/jarvis_grant_idempotency.py"
       - "services/core-api/app/core/permission_catalog.py"
@@ -13,6 +14,7 @@ on:
       - "services/core-api/tests/conftest.py"
       - "services/core-api/tests/test_ai_tool_routes.py"
       - "services/core-api/tests/test_ai_tool_audit_fail_closed.py"
+      - "services/core-api/tests/test_jarvis_audit_checkpoint.py"
       - "services/core-api/tests/test_jarvis_audit_hash_chain.py"
       - "services/core-api/tests/test_jarvis_platform_security_consolidation.py"
       - "services/core-api/tests/test_permission_catalog.py"
@@ -93,7 +95,7 @@ jobs:
           services/core-api/tests/test_ai_tool_audit_fail_closed.py
 
   audit-evidence:
-    name: PostgreSQL tamper-evident audit chain
+    name: PostgreSQL audit chain and signed checkpoint
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -175,13 +177,18 @@ jobs:
       - name: Apply cumulative migrations
         working-directory: services/core-api
         run: alembic upgrade head
-      - name: Ruff audit migration and acceptance
+      - name: Ruff audit chain and checkpoint acceptance
         run: >-
           ruff check
+          services/core-api/app/core/audit_checkpoint.py
           services/core-api/alembic/versions/0045_jarvis_audit_hash_chain.py
+          services/core-api/tests/test_jarvis_audit_checkpoint.py
           services/core-api/tests/test_jarvis_audit_hash_chain.py
-      - name: Tamper-evident per-tenant chain acceptance
-        run: pytest -q services/core-api/tests/test_jarvis_audit_hash_chain.py
+      - name: Tamper-evident chain and signed checkpoint acceptance
+        run: >-
+          pytest -q
+          services/core-api/tests/test_jarvis_audit_hash_chain.py
+          services/core-api/tests/test_jarvis_audit_checkpoint.py
       - name: SQL and audit fail-closed regression
         run: >-
           pytest -q

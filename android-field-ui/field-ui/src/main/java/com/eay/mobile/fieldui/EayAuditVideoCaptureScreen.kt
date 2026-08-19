@@ -51,6 +51,9 @@ data class AuditVideoCaptureCopy(
  * Native capture-first audit experience. This screen is intentionally not the desktop Audit
  * Command Center squeezed into a phone. It exposes only field guidance and capture state; audit
  * questions remain server-owned and are not shown to the person collecting evidence.
+ *
+ * When a privacy frame processor is supplied, CameraX analysis candidates are converted into
+ * redacted evidence frames on device. The UI callback never receives the raw candidate bitmap.
  */
 @Composable
 fun EayAuditVideoCaptureScreen(
@@ -63,6 +66,8 @@ fun EayAuditVideoCaptureScreen(
     onClose: () -> Unit,
     onCaptureError: (Throwable) -> Unit,
     modifier: Modifier = Modifier,
+    frameProcessor: AuditLocalRedactedFrameProcessor? = null,
+    onRedactedEvidenceFrame: (AuditRedactedEvidenceFrame) -> Unit = {},
 ) {
     val controller = rememberAuditCameraXController()
     var cameraReady by remember { mutableStateOf(false) }
@@ -80,6 +85,9 @@ fun EayAuditVideoCaptureScreen(
             controller = controller,
             lifecycleOwner = lifecycleOwner,
             modifier = Modifier.fillMaxSize(),
+            frameProcessor = frameProcessor,
+            activeStepId = { activeStep?.stepId },
+            onRedactedEvidenceFrame = onRedactedEvidenceFrame,
             onReady = {
                 cameraReady = true
                 localError = null
@@ -192,7 +200,6 @@ fun EayAuditVideoCaptureScreen(
                     val active = index == activeIndex
                     Box(
                         modifier = Modifier
-                            .height(5.dp)
                             .size(width = if (active) 30.dp else 18.dp, height = 5.dp)
                             .clip(RoundedCornerShape(99.dp))
                             .background(

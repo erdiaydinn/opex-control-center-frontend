@@ -119,14 +119,16 @@ def test_optimizer_route_is_part_of_canonical_core_contract() -> None:
     assert "/v1/planogram/optimize-preview" in app.openapi()["paths"]
 
 
-def test_engine_status_advertises_architecture_optimizer_without_production_authority() -> None:
+def test_engine_status_advertises_basket_aware_v3_without_production_authority() -> None:
     status = engine_status()
     assert status["architecture_contract"] == "store-architecture-v1"
     assert status["optimizer"] == {
         "available": True,
-        "contract": "physical-plan-optimizer-v2",
+        "contract": "physical-plan-optimizer-v3-picker-tour",
+        "fallback_contract": "physical-plan-optimizer-v2",
         "production_authority": False,
-        "route_objective": "architecture-grid-astar-v1",
+        "route_objective": "measured-basket-picker-tour-v1",
+        "requires_observed_baskets": True,
     }
     # Existing foundation identity remains stable.
     assert status["contract"] == "physical-truth-gated-deterministic-v1"
@@ -139,14 +141,22 @@ async def test_truth_shaped_optimizer_request_is_still_unattested_preview() -> N
     assert response["tenant_id"] == str(TENANT)
     assert response["preview_only"] is True
     assert response["input_authority"] == "request_supplied_unattested"
+    assert response["basket_authority"] == "not_supplied"
+    assert response["observed_basket_input_count"] == 0
     assert response["production_release_allowed"] is False
 
     result = response["optimizer_result"]
+    # V3 deliberately delegates to V2 when no observed/test baskets exist.
     assert result["optimizer"]["optimizer_version"] == "physical-plan-optimizer-v2"
     assert result["optimizer"]["allowed"] is True
     assert result["optimizer"]["candidate_count"] == 8
     assert result["optimizer"]["baseline_preserved"] is True
     assert result["optimizer"]["route_objective"]["basis"] == "legacy_rank_v1"
+    assert result["picker_tour_optimizer"]["optimizer_version"] == (
+        "physical-plan-optimizer-v3-picker-tour"
+    )
+    assert result["picker_tour_optimizer"]["effective"] is False
+    assert result["picker_tour_optimizer"]["reason"] == "order_baskets_missing"
     assert result["solver_optimizer_allowed"] is True
 
 
@@ -163,3 +173,4 @@ async def test_missing_dimensions_cannot_be_optimized_around() -> None:
     assert result["optimizer"]["blocked_by_physical_truth"] is True
     assert result["optimizer"]["candidate_count"] == 1
     assert result["optimizer"]["selected_strategy"] == "baseline"
+    assert result["picker_tour_optimizer"]["effective"] is False

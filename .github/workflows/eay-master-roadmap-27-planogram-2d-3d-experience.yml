@@ -17,6 +17,7 @@ on:
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
       - "src/platform/i18n/planogramScanAnnotationMessages.js"
+      - "src/platform/i18n/planogramScannedTwinMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
       - "scripts/test-planogram-engineering-2d.mjs"
@@ -26,6 +27,7 @@ on:
       - "scripts/test-planogram-scenario-portfolio.mjs"
       - "scripts/test-planogram-store-scan-ui.mjs"
       - "scripts/test-planogram-scan-annotation.mjs"
+      - "scripts/test-planogram-scanned-twin.mjs"
       - "scripts/test-planogram-picker-eye-assets.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
@@ -71,6 +73,8 @@ jobs:
         run: node scripts/test-planogram-store-scan-ui.mjs
       - name: Fingerprint-bound visual Store Scan annotation
         run: node scripts/test-planogram-scan-annotation.mjs
+      - name: Reviewed Store Scan 3D Digital Twin
+        run: node scripts/test-planogram-scanned-twin.mjs
       - name: Picker Eye same-origin asset fidelity boundary
         run: node scripts/test-planogram-picker-eye-assets.mjs
       - name: CFO economics UI authority and provenance boundary
@@ -122,6 +126,8 @@ jobs:
           echo 'MASTER_27_STORE_SCAN_VISUAL_ANNOTATION=IMPLEMENTED'
           echo 'MASTER_27_STORE_SCAN_ANNOTATION_KEYBOARD_ACCESSIBLE=TRUE'
           echo 'MASTER_27_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_DIGITAL_TWIN=IMPLEMENTED'
+          echo 'MASTER_27_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED'
           echo 'MASTER_27_PICKER_EYE_ASSET_PREVIEW=IMPLEMENTED'
           echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'

@@ -17,6 +17,13 @@ enum class FieldMissionVisualKind {
 
 enum class FieldMissionVisualPriority { LOW, NORMAL, HIGH, URGENT }
 enum class FieldSyncVisualState { SYNCED, OFFLINE, PENDING, QUARANTINED }
+enum class FieldRecoveryVisualSeverity { INFO, ATTENTION, BLOCKING, SECURITY }
+
+enum class FieldRecoveryActionKind {
+    NONE,
+    SIGN_IN_AGAIN,
+    RELOAD_MISSIONS,
+}
 
 data class FieldShellHeader(
     val locationLabel: String,
@@ -29,6 +36,29 @@ data class FieldShellHeader(
         require(locationLabel.isNotBlank())
         require(deviceLabel.isNotBlank())
         require(pendingCount >= 0)
+    }
+}
+
+/**
+ * Presentation-only recovery explanation. It intentionally cannot represent a
+ * retry/delete/rebind/reassign mutation. Only bounded local UI intents that must
+ * re-enter existing authority paths are representable.
+ */
+data class FieldRecoveryBannerModel(
+    val severity: FieldRecoveryVisualSeverity,
+    val title: String,
+    val message: String,
+    val affectedEventCount: Int,
+    val actionKind: FieldRecoveryActionKind = FieldRecoveryActionKind.NONE,
+    val actionLabel: String? = null,
+) {
+    init {
+        require(title.isNotBlank())
+        require(message.isNotBlank())
+        require(affectedEventCount > 0)
+        require((actionKind == FieldRecoveryActionKind.NONE) == actionLabel.isNullOrBlank()) {
+            "Recovery action kind and label must either both be absent or both be present"
+        }
     }
 }
 

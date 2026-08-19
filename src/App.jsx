@@ -72,7 +72,7 @@ export default function App() {
           <Route path="/field-intelligence" element={<ProtectedRoute moduleKey="field_intelligence"><FieldIntelligenceWorkspace /></ProtectedRoute>} />
           <Route path="/field-intelligence/mobile" element={<ProtectedRoute moduleKey="field_intelligence"><FieldMobileCapture /></ProtectedRoute>} />
           <Route path="/field-intelligence/governance" element={<ProtectedRoute moduleKey="field_intelligence"><FieldGovernanceWorkspace /></ProtectedRoute>} />
-          <Route path="/audit" element={<ProtectedRoute moduleKey="field_intelligence"><AuditCommandCenter /></ProtectedRoute>} />
+          <Route path="/audit" element={<ProtectedRoute moduleKey="audit"><AuditCommandCenter /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryProductionBoundary /></InventoryUiProvider></ProtectedRoute>} />
           <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
           <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
@@ -81,7 +81,7 @@ export default function App() {
           <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentBootstrapBoundary /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
-          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute></ProtectedRoute>} />
+          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute>} />
           <Route path="/river" element={<Navigate to="/dockos" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -14,11 +14,13 @@ on:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
       - "src/platform/i18n/planogramEconomicsMessages.js"
+      - "src/platform/i18n/planogramScenarioMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
       - "scripts/test-planogram-engineering-2d.mjs"
       - "scripts/test-planogram-route-explainability.mjs"
       - "scripts/test-planogram-candidate-baskets.mjs"
       - "scripts/test-planogram-economics-ui.mjs"
+      - "scripts/test-planogram-scenario-portfolio.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
 
@@ -61,6 +63,8 @@ jobs:
         run: node scripts/test-planogram-candidate-baskets.mjs
       - name: CFO economics UI authority and provenance boundary
         run: node scripts/test-planogram-economics-ui.mjs
+      - name: V5 Pareto decision portfolio boundary
+        run: node scripts/test-planogram-scenario-portfolio.mjs
       - name: Digital twin truth and market-quality renderer contract
         run: node scripts/test-planogram-digital-twin.mjs
       - name: Engineering 2D arbitrary-angle and scale contract
@@ -103,6 +107,9 @@ jobs:
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'
           echo 'MASTER_27_CFO_ECONOMICS_UI=IMPLEMENTED'
           echo 'MASTER_27_CFO_ECONOMICS_REALIZED_SAVINGS=FALSE'
+          echo 'MASTER_27_V5_OPERATIONAL_PARETO_PORTFOLIO=IMPLEMENTED'
+          echo 'MASTER_27_V5_GLOBAL_OPTIMUM_CLAIM=FALSE'
+          echo 'MASTER_27_V5_PORTFOLIO_CAPEX_COMPARED=FALSE'
           echo 'MASTER_27_ARBITRARY_ANGLE_2D_GEOMETRY=IMPLEMENTED'
           echo 'MASTER_27_ENGINEERING_DIMENSION_SCALE_LAYER=IMPLEMENTED'
           echo 'MASTER_27_FACING_AWARE_OPEN_FIXTURE_RENDERER=IMPLEMENTED'

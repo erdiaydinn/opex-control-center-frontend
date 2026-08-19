@@ -152,6 +152,30 @@ def _terminal(lane: ParallelMissionLane) -> bool:
     }
 
 
+def parallel_lane_conflict_blockers(
+    lane: ParallelMissionLane,
+    selected: tuple[ParallelMissionLane, ...],
+) -> tuple[str, ...]:
+    """Return canonical resource/idempotency blockers for one candidate lane.
+
+    Both the base orchestrator and higher-level schedulers must call this helper
+    so safety semantics cannot drift between admission paths.
+    """
+
+    lane_resources = set(lane.exclusive_resource_refs)
+    lane_keys = set(lane.pending_idempotency_keys())
+    blockers: list[str] = []
+    for other in selected:
+        shared_resources = lane_resources & set(other.exclusive_resource_refs)
+        if shared_resources and (
+            lane.has_pending_side_effect() or other.has_pending_side_effect()
+        ):
+            blockers.append("parallel_resource_conflict")
+        if lane_keys & set(other.pending_idempotency_keys()):
+            blockers.append("parallel_idempotency_conflict")
+    return tuple(dict.fromkeys(blockers))
+
+
 def select_parallel_wave(
     plan: ParallelMissionPlan,
 ) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
@@ -169,19 +193,9 @@ def select_parallel_wave(
             deferred[lane.lane_id] = ("parallel_capacity_deferred",)
             continue
 
-        lane_resources = set(lane.exclusive_resource_refs)
-        lane_keys = set(lane.pending_idempotency_keys())
-        blockers: list[str] = []
-        for other in selected:
-            shared_resources = lane_resources & set(other.exclusive_resource_refs)
-            if shared_resources and (
-                lane.has_pending_side_effect() or other.has_pending_side_effect()
-            ):
-                blockers.append("parallel_resource_conflict")
-            if lane_keys & set(other.pending_idempotency_keys()):
-                blockers.append("parallel_idempotency_conflict")
+        blockers = parallel_lane_conflict_blockers(lane, tuple(selected))
         if blockers:
-            deferred[lane.lane_id] = tuple(dict.fromkeys(blockers))
+            deferred[lane.lane_id] = blockers
             continue
         selected.append(lane)
 

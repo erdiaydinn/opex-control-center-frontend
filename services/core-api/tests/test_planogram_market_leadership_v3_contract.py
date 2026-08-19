@@ -5,11 +5,14 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
+import app.modules.planogram.blind_benchmark_adapter as blind_adapter
 import app.modules.planogram.cad_adapter as cad_adapter
 import app.modules.planogram.engine_adapter as engine_adapter
 import app.modules.planogram.optimizer_router as optimizer_router
 from app.core.security import Principal
+from app.modules.planogram.benchmark_schemas import PlanogramBlindBenchmarkRequest
 from app.modules.planogram.schemas import PlanogramPreviewRequest
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
@@ -59,6 +62,53 @@ def base_request(**overrides) -> PlanogramPreviewRequest:
     }
     payload.update(overrides)
     return PlanogramPreviewRequest(**payload)
+
+
+def blind_request(*, schema_version: int = 1) -> PlanogramBlindBenchmarkRequest:
+    plan = {
+        "aisles": [
+            {
+                "aisle_id": "A",
+                "modules": [
+                    {
+                        "module_id": 1,
+                        "shelves": [
+                            {
+                                "shelf_no": 1,
+                                "products": [{"sku": "SKU-1"}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    return PlanogramBlindBenchmarkRequest(
+        products=[
+            {
+                "sku": "SKU-1",
+                "product_name": "Product 1",
+                "width_cm": 10,
+                "height_cm": 20,
+                "depth_cm": 8,
+            }
+        ],
+        layout={"store_code": "TEST", "aisles": [{"aisle_id": "A", "modules": []}]},
+        store_dna={
+            "store_code": "TEST",
+            "architecture": {
+                "schema_version": schema_version,
+                "coordinate_system": (
+                    "cartesian_m"
+                    if schema_version == 1
+                    else "cartesian_m_centered_rect"
+                ),
+            },
+        },
+        order_baskets=[{"skus": [" sku-1 "]}],
+        candidate_a={"planogram": plan},
+        candidate_b={"planogram": plan},
+    )
 
 
 def objective(*, p95: float, average: float) -> dict[str, float | int]:
@@ -164,6 +214,14 @@ def test_order_basket_contract_normalizes_skus_and_excludes_order_identity() -> 
 
     assert request.order_baskets[0].skus == ["SKU-1", "SKU-2"]
     assert "order_id" not in request.order_baskets[0].model_dump()
+
+
+def test_blind_benchmark_schema_forbids_candidate_identity_fields() -> None:
+    payload = blind_request().model_dump(mode="python")
+    payload["candidate_a"]["identity"] = "expert"
+
+    with pytest.raises(ValidationError):
+        PlanogramBlindBenchmarkRequest(**payload)
 
 
 @pytest.mark.asyncio
@@ -298,6 +356,94 @@ async def test_v4_benchmark_router_preserves_truth_boundary(monkeypatch) -> None
     assert response["production_release_allowed"] is False
     assert response["experimental_optimizer_production_authority"] is False
     assert response["benchmark"]["promotion_allowed"] is False
+
+
+def test_blind_adapter_dispatches_v1_and_v2_without_claim_authority(monkeypatch) -> None:
+    calls = []
+
+    def fake_result(version):
+        def run(**kwargs):
+            calls.append((version, kwargs["orders"]))
+            return {
+                "benchmark_version": version,
+                "available": True,
+                "production_evidence": False,
+                "market_leadership_proven": False,
+                "promotion_allowed": False,
+            }
+
+        return run
+
+    monkeypatch.setattr(
+        blind_adapter,
+        "_load_v1_benchmark",
+        lambda: SimpleNamespace(benchmark_candidates=fake_result("v1")),
+    )
+    monkeypatch.setattr(
+        blind_adapter,
+        "_load_v2_benchmark",
+        lambda: SimpleNamespace(benchmark_candidates_v2=fake_result("v2")),
+    )
+
+    for schema_version in (1, 2):
+        request = blind_request(schema_version=schema_version)
+        result = blind_adapter.generate_blind_benchmark_preview(
+            products=request.products,
+            layout=request.layout,
+            store_dna=request.store_dna,
+            orders=[basket.model_dump(mode="python") for basket in request.order_baskets],
+            candidate_a=request.candidate_a.model_dump(mode="python"),
+            candidate_b=request.candidate_b.model_dump(mode="python"),
+        )
+        assert result["architecture_schema_version"] == schema_version
+        assert result["production_authority"] is False
+        assert result["production_evidence"] is False
+        assert result["market_leadership_proven"] is False
+        assert result["promotion_allowed"] is False
+
+    assert calls == [("v1", [{"skus": ["SKU-1"]}]), ("v2", [{"skus": ["SKU-1"]}])]
+
+
+@pytest.mark.asyncio
+async def test_blind_router_never_receives_expert_or_ai_identity(monkeypatch) -> None:
+    captured = {}
+
+    def fake_blind(**kwargs):
+        captured.update(kwargs)
+        return {
+            "benchmark_version": "test",
+            "available": True,
+            "winner_on_repository_objective": "A",
+            "production_authority": False,
+            "production_evidence": False,
+            "market_leadership_proven": False,
+            "promotion_allowed": False,
+        }
+
+    monkeypatch.setattr(
+        optimizer_router,
+        "generate_blind_benchmark_preview",
+        fake_blind,
+    )
+    response = await optimizer_router.post_planogram_blind_benchmark_preview(
+        blind_request(schema_version=2),
+        principal(),
+    )
+
+    assert captured["orders"] == [{"skus": ["SKU-1"]}]
+    assert set(captured) == {
+        "products",
+        "layout",
+        "store_dna",
+        "orders",
+        "candidate_a",
+        "candidate_b",
+    }
+    assert response["blind"] is True
+    assert response["candidate_identity_fields_accepted"] is False
+    assert response["production_release_allowed"] is False
+    assert response["market_leadership_claim_allowed"] is False
+    assert response["benchmark"]["market_leadership_proven"] is False
 
 
 def test_measured_v2_cad_adapter_emits_svg_and_dxf_without_field_authority() -> None:

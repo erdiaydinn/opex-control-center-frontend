@@ -13,16 +13,23 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.eay.mobile.core.BarcodeSymbology
 import com.eay.mobile.core.BlindCountStep
+import com.eay.mobile.core.MobileRuntimeProfile
 import com.eay.mobile.core.ScannerIngressGuard
 import com.eay.mobile.core.ScannerPolicy
 import com.eay.mobile.core.ScannerSource
+import com.eay.mobile.fieldui.runtime.EayTerminalRuntimeView
+import com.eay.mobile.presentation.FieldMissionVisualKind
+import com.eay.mobile.presentation.FieldMissionVisualPriority
+import com.eay.mobile.presentation.FieldSyncVisualState
+import com.eay.mobile.presentation.adapter.FieldPresentationAdapter
+import com.eay.mobile.presentation.adapter.MissionIntentPresentation
+import com.eay.mobile.presentation.adapter.SyncPresentationSummary
 import kotlinx.coroutines.runBlocking
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationService
@@ -32,7 +39,7 @@ import net.openid.appauth.ResponseTypeValues
 /** Production terminal shell. Credentials and stock truth are never collected by the app UI. */
 class MainActivity : AppCompatActivity() {
     private lateinit var status: TextView
-    private lateinit var taskList: LinearLayout
+    private lateinit var fieldUi: EayTerminalRuntimeView
     private lateinit var quantityInput: EditText
     private lateinit var confirmQuantity: Button
     private lateinit var finishLocation: Button
@@ -46,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private var localMissionTruth: Map<String, InventoryLocalCompletionState> = emptyMap()
     private var activeTask: InventoryTerminalCountTask? = null
     private var activeController: BlindCountTerminalController? = null
+    private var taskSelectionEnabled = true
 
     private val scannerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -88,8 +96,8 @@ class MainActivity : AppCompatActivity() {
             minimumHeight = dp(56)
             setOnClickListener { startOidc() }
         }
-        taskList = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        fieldUi = EayTerminalRuntimeView(this).apply {
+            visibility = View.GONE
         }
         quantityInput = EditText(this).apply {
             hint = getString(R.string.terminal_quantity_hint)
@@ -123,12 +131,19 @@ class MainActivity : AppCompatActivity() {
             )
             addView(status)
             addView(signIn)
-            addView(taskList)
+            addView(
+                fieldUi,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f,
+                ),
+            )
             addView(quantityInput)
             addView(confirmQuantity)
             addView(finishLocation)
         }
-        setContentView(ScrollView(this).apply { addView(content) })
+        setContentView(content)
 
         runCatching {
             val managed = ManagedDeviceIdentity(this)
@@ -241,11 +256,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadTerminalTasks() {
         status.text = getString(R.string.terminal_task_loading)
-        taskList.removeAllViews()
+        fieldUi.clear()
+        fieldUi.visibility = View.GONE
         loadedTasks = emptyList()
         localMissionTruth = emptyMap()
         activeTask = null
         activeController = null
+        taskSelectionEnabled = true
         hideExecutionControls()
         Thread {
             val result = taskClient.fetch()
@@ -278,43 +295,101 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderTasks(tasks: List<InventoryTerminalCountTask>) {
         loadedTasks = tasks
-        taskList.removeAllViews()
         if (tasks.isEmpty()) {
+            fieldUi.clear()
+            fieldUi.visibility = View.GONE
             status.text = getString(R.string.terminal_no_tasks)
             return
         }
         status.text = getString(R.string.terminal_no_mission)
-        tasks.forEach { task ->
+        renderMissionSurface()
+    }
+
+    private fun renderMissionSurface() {
+        if (loadedTasks.isEmpty()) return
+
+        val localStates = loadedTasks.map { task ->
+            localMissionTruth[task.missionId] ?: InventoryLocalCompletionState.OPEN
+        }
+        val syncState = when {
+            localStates.any { it == InventoryLocalCompletionState.REQUIRES_REVIEW } -> {
+                FieldSyncVisualState.QUARANTINED
+            }
+            localStates.any { it == InventoryLocalCompletionState.AWAITING_SERVER } -> {
+                FieldSyncVisualState.PENDING
+            }
+            else -> FieldSyncVisualState.SYNCED
+        }
+        val pendingCount = localStates.count { it != InventoryLocalCompletionState.OPEN }
+        val header = FieldPresentationAdapter.shellHeader(
+            locationLabel = loadedTasks
+                .map { it.warehouseId.trim() }
+                .distinct()
+                .joinToString(" · "),
+            deviceLabel = getString(com.eay.mobile.fieldui.R.string.eay_terminal_brand),
+            runtimeProfile = MobileRuntimeProfile.EAY_TERMINAL,
+            sync = SyncPresentationSummary(
+                state = syncState,
+                pendingCount = pendingCount,
+            ),
+        )
+        val missions = loadedTasks.map { task ->
             val localState = localMissionTruth[task.missionId]
                 ?: InventoryLocalCompletionState.OPEN
-            taskList.addView(
-                Button(this).apply {
-                    text = when (localState) {
-                        InventoryLocalCompletionState.OPEN -> getString(
-                            R.string.terminal_task_label,
-                            task.name,
-                            task.locationId.trim(),
-                        )
-                        InventoryLocalCompletionState.AWAITING_SERVER -> getString(
-                            R.string.terminal_task_pending_server,
-                            task.name,
-                            task.locationId.trim(),
-                        )
-                        InventoryLocalCompletionState.REQUIRES_REVIEW -> getString(
-                            R.string.terminal_task_requires_review,
-                            task.name,
-                            task.locationId.trim(),
-                        )
-                    }
-                    minimumHeight = dp(56)
-                    isAllCaps = false
-                    isEnabled = localState == InventoryLocalCompletionState.OPEN
-                    setOnClickListener {
-                        if (localState == InventoryLocalCompletionState.OPEN) selectTask(task)
-                    }
-                },
+            val subtitle = when (localState) {
+                InventoryLocalCompletionState.OPEN -> task.locationId.trim()
+                InventoryLocalCompletionState.AWAITING_SERVER -> getString(
+                    R.string.terminal_task_pending_server,
+                    task.name,
+                    task.locationId.trim(),
+                )
+                InventoryLocalCompletionState.REQUIRES_REVIEW -> getString(
+                    R.string.terminal_task_requires_review,
+                    task.name,
+                    task.locationId.trim(),
+                )
+            }
+            val actionLabel = when (localState) {
+                InventoryLocalCompletionState.OPEN -> getString(
+                    R.string.terminal_scan_location,
+                    task.locationId.trim(),
+                )
+                InventoryLocalCompletionState.AWAITING_SERVER -> getString(
+                    R.string.terminal_location_complete_queued,
+                )
+                InventoryLocalCompletionState.REQUIRES_REVIEW -> getString(
+                    R.string.terminal_contract_blocked,
+                )
+            }
+            FieldPresentationAdapter.missionIntentCard(
+                MissionIntentPresentation(
+                    missionId = task.missionId,
+                    title = task.name,
+                    subtitle = subtitle,
+                    kind = FieldMissionVisualKind.COUNT,
+                    priority = FieldMissionVisualPriority.NORMAL,
+                    primaryActionLabel = actionLabel,
+                    enabled = taskSelectionEnabled &&
+                        localState == InventoryLocalCompletionState.OPEN,
+                ),
             )
         }
+
+        fieldUi.visibility = View.VISIBLE
+        fieldUi.renderTerminal(
+            header = header,
+            missions = missions,
+            onMissionOpen = missionOpen@{ missionId ->
+                if (!taskSelectionEnabled) return@missionOpen
+                val task = loadedTasks.firstOrNull { it.missionId == missionId }
+                    ?: return@missionOpen
+                val localState = localMissionTruth[missionId]
+                    ?: InventoryLocalCompletionState.OPEN
+                if (localState == InventoryLocalCompletionState.OPEN) {
+                    selectTask(task)
+                }
+            },
+        )
     }
 
     private fun selectTask(task: InventoryTerminalCountTask) {
@@ -356,6 +431,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderStep(step: BlindCountStep) {
         val task = activeTask ?: return
+        fieldUi.visibility = View.GONE
         when (step) {
             BlindCountStep.SCAN_LOCATION -> {
                 hideExecutionControls()
@@ -475,6 +551,7 @@ class MainActivity : AppCompatActivity() {
                             InventorySyncWorker.enqueue(this)
                             activeTask = null
                             activeController = null
+                            taskSelectionEnabled = true
                             hideExecutionControls()
                             localMissionTruth = localMissionTruth + (
                                 task.missionId to InventoryLocalCompletionState.AWAITING_SERVER
@@ -498,14 +575,16 @@ class MainActivity : AppCompatActivity() {
     private fun blockCurrentMission() {
         activeTask = null
         activeController = null
+        taskSelectionEnabled = true
         hideExecutionControls()
         renderTasks(loadedTasks)
         status.text = getString(R.string.terminal_contract_blocked)
     }
 
     private fun setTaskSelectionEnabled(enabled: Boolean) {
-        for (index in 0 until taskList.childCount) {
-            taskList.getChildAt(index).isEnabled = enabled
+        taskSelectionEnabled = enabled
+        if (loadedTasks.isNotEmpty() && activeController == null) {
+            renderMissionSurface()
         }
     }
 

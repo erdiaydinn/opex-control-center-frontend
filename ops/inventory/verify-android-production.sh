@@ -4,6 +4,8 @@ set -eu
 source_root="${1:-android-inventory/app/src/main}"
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 locale_contract="$repo_root/config/eay_localization.json"
+main_activity="$source_root/java/com/eay/inventory/MainActivity.kt"
+app_gradle="$repo_root/android-inventory/app/build.gradle.kts"
 
 for forbidden in 'ANDROID_ID' 'EncryptedSharedPreferences' 'HttpURLConnection' 'usesCleartextTraffic="true"' 'username.*password'; do
   if grep -R -n -E "$forbidden" "$source_root"; then
@@ -18,6 +20,18 @@ grep -R -q 'CertificatePinner' "$source_root"
 grep -R -q 'AuthorizationRequest' "$source_root"
 grep -R -q 'com.eay.inventory.SCAN' "$source_root"
 test -f "$locale_contract" || { echo "missing canonical localization contract" >&2; exit 1; }
+
+# The production task surface must use the shared typed Compose boundary. The Compose callback is
+# presentation-only and must still return to the existing signed server mission claim path.
+grep -q 'EayTerminalRuntimeView' "$main_activity"
+grep -q 'FieldPresentationAdapter.missionIntentCard' "$main_activity"
+grep -q 'missionClaimClient.claim' "$main_activity"
+grep -q 'implementation(project(":field-presentation-adapter"))' "$app_gradle"
+grep -q 'implementation(project(":field-ui-runtime"))' "$app_gradle"
+if grep -q 'taskList.addView' "$main_activity"; then
+  echo "legacy parallel task-button rendering must not bypass the shared Compose presentation boundary" >&2
+  exit 1
+fi
 
 python3 - "$source_root/res" "$locale_contract" <<'PY'
 from __future__ import annotations

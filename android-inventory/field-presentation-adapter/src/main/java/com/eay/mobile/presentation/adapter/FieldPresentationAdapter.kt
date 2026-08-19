@@ -43,12 +43,37 @@ data class SyncPresentationSummary(
 )
 
 /**
+ * Presentation-only intent emitted before a server-authoritative mission claim.
+ *
+ * `enabled` means only that the UI may emit a bounded user-intent callback. It is never
+ * execution authority: callers must re-enter the existing server/runtime claim gate before
+ * creating an execution controller. Authority-bearing tenant, actor, device, shift, lease,
+ * token and policy fields are intentionally impossible to represent here.
+ */
+data class MissionIntentPresentation(
+    val missionId: String,
+    val title: String,
+    val subtitle: String = "",
+    val kind: FieldMissionVisualKind,
+    val priority: FieldMissionVisualPriority,
+    val primaryActionLabel: String,
+    val enabled: Boolean,
+) {
+    init {
+        require(missionId.isNotBlank())
+        require(title.isNotBlank())
+        require(primaryActionLabel.isNotBlank())
+    }
+}
+
+/**
  * One-way anti-corruption boundary from authoritative Mobile Core state to render-only UI models.
  *
- * The adapter deliberately cannot grant access. Mission enablement is derived exclusively from
- * MissionGate, which composes mission binding and MobileOperationAdmission. Raw actor, tenant,
- * device, installation, auth-binding, barcode/payload hashes and expected stock never appear in
- * the returned presentation contracts.
+ * The adapter deliberately cannot grant access. Runtime mission enablement is derived exclusively
+ * from MissionGate, which composes mission binding and MobileOperationAdmission. Pre-claim intent
+ * cards are presentation-only and must return to the existing server-authoritative claim path.
+ * Raw actor, tenant, device, installation, auth-binding, barcode/payload hashes and expected stock
+ * never appear in the returned presentation contracts.
  */
 object FieldPresentationAdapter {
     fun missionCard(
@@ -78,6 +103,23 @@ object FieldPresentationAdapter {
             enabled = decision.allowed,
         )
     }
+
+    /**
+     * Maps a presentation-safe claim intent into the shared Compose model.
+     *
+     * This method never evaluates or grants execution permission. Even an enabled card may only
+     * emit a user-intent callback; the existing server mission claim remains mandatory.
+     */
+    fun missionIntentCard(intent: MissionIntentPresentation): FieldMissionCardModel =
+        FieldMissionCardModel(
+            missionId = intent.missionId,
+            title = intent.title,
+            subtitle = intent.subtitle,
+            kind = intent.kind,
+            priority = intent.priority,
+            primaryActionLabel = intent.primaryActionLabel,
+            enabled = intent.enabled,
+        )
 
     fun blindCount(
         session: BlindCountSession,

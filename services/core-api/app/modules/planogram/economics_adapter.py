@@ -25,6 +25,32 @@ def _load_physical_economics() -> ModuleType:
     return _module_from_root("physical_economics", root)
 
 
+@lru_cache(maxsize=1)
+def _load_candidate_economics() -> ModuleType:
+    root, _, _, _ = _load_modules()
+    path = root / "physical_layout_candidate_economics.py"
+    if not path.is_file():
+        raise PlanogramEngineUnavailable(
+            "Planogram fingerprint-bound candidate economics is unavailable"
+        )
+    return _module_from_root("physical_layout_candidate_economics", root)
+
+
+def _validate_economics_authority(economics: dict[str, Any]) -> None:
+    if economics.get("production_evidence") is not False:
+        raise PlanogramEngineUnavailable(
+            "Planogram economics violated production-evidence boundary"
+        )
+    if economics.get("finance_approved") is not False:
+        raise PlanogramEngineUnavailable(
+            "Planogram economics violated finance-approval boundary"
+        )
+    if economics.get("investment_decision_allowed") is not False:
+        raise PlanogramEngineUnavailable(
+            "Planogram economics violated investment-authority boundary"
+        )
+
+
 def generate_physical_layout_economics_preview(
     *,
     products: list[dict[str, Any]],
@@ -62,22 +88,70 @@ def generate_physical_layout_economics_preview(
     )
     if not isinstance(economics, dict):
         raise PlanogramEngineUnavailable("Planogram economics returned invalid data")
-    if economics.get("production_evidence") is not False:
-        raise PlanogramEngineUnavailable(
-            "Planogram economics violated production-evidence boundary"
-        )
-    if economics.get("finance_approved") is not False:
-        raise PlanogramEngineUnavailable(
-            "Planogram economics violated finance-approval boundary"
-        )
-    if economics.get("investment_decision_allowed") is not False:
-        raise PlanogramEngineUnavailable(
-            "Planogram economics violated investment-authority boundary"
-        )
+    _validate_economics_authority(economics)
 
     return {
         "physical_layout": physical_layout,
         "economics": economics,
+        "preview_only": True,
+        "production_authority": False,
+        "physical_relocation_authority": False,
+        "installation_approved": False,
+        "capex_approved": False,
+        "finance_approved": False,
+        "investment_decision_allowed": False,
+        "realized_savings_proven": False,
+    }
+
+
+def generate_physical_layout_candidate_economics_preview(
+    *,
+    products: list[dict[str, Any]],
+    layout: dict[str, Any],
+    store_dna: dict[str, Any],
+    orders: list[dict[str, Any]],
+    mode: str,
+    layout_fingerprint: str,
+    assumptions: dict[str, Any],
+    max_layout_candidates: int = 16,
+    max_allocation_candidates: int = 12,
+) -> dict[str, Any]:
+    """Evaluate economics only after server-side fingerprint replay succeeds."""
+    evaluator = getattr(
+        _load_candidate_economics(),
+        "evaluate_physical_layout_candidate_economics",
+        None,
+    )
+    if not callable(evaluator):
+        raise PlanogramEngineUnavailable(
+            "Planogram candidate economics entrypoint is unavailable"
+        )
+    result = evaluator(
+        products=products,
+        layout=layout,
+        store_dna=store_dna,
+        orders=orders,
+        layout_fingerprint=layout_fingerprint,
+        assumptions=assumptions,
+        mode=mode,
+        max_layout_candidates=max_layout_candidates,
+        max_allocation_candidates=max_allocation_candidates,
+    )
+    if not isinstance(result, dict):
+        raise PlanogramEngineUnavailable(
+            "Planogram candidate economics returned invalid data"
+        )
+    _validate_economics_authority(result)
+    nested = result.get("economics")
+    if isinstance(nested, dict):
+        _validate_economics_authority(nested)
+    if result.get("realized_savings_proven") is not False:
+        raise PlanogramEngineUnavailable(
+            "Planogram candidate economics violated realized-savings boundary"
+        )
+
+    return {
+        **result,
         "preview_only": True,
         "production_authority": False,
         "physical_relocation_authority": False,

@@ -5,6 +5,7 @@ import { SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
 import { PLANOGRAM_ECONOMICS_MESSAGES } from "../src/platform/i18n/planogramEconomicsMessages.js";
 import {
   normalizePlanogramEconomicsAssumptions,
+  safePlanogramCandidateEconomicsPreview,
   safePlanogramEconomicsPreview,
 } from "../src/modules/planogram/planogramEconomicsAssumptions.js";
 
@@ -85,22 +86,82 @@ for (const mutate of [
   }
 }
 
+const fingerprint = "a".repeat(64);
+const safeCandidateResponse = {
+  preview_only: true,
+  production_release_allowed: false,
+  physical_relocation_execution_allowed: false,
+  installation_approval_allowed: false,
+  capex_approval_allowed: false,
+  finance_approval_allowed: false,
+  investment_decision_allowed: false,
+  realized_savings_proven: false,
+  candidate_selection_authority: "server_recomputed_fingerprint_match_only",
+  result: {
+    available: true,
+    preview_only: true,
+    layout_fingerprint: fingerprint,
+    production_evidence: false,
+    finance_approved: false,
+    investment_decision_allowed: false,
+    realized_savings_proven: false,
+    economics: {
+      available: true,
+      production_evidence: false,
+      finance_approved: false,
+      investment_decision_allowed: false,
+      scenarios: [],
+    },
+  },
+};
+if (!safePlanogramCandidateEconomicsPreview(safeCandidateResponse, fingerprint)) {
+  fail("Safe fingerprint-bound candidate economics response was rejected.");
+}
+for (const mutate of [
+  (row) => { row.result.layout_fingerprint = "b".repeat(64); },
+  (row) => { row.candidate_selection_authority = "client_selected"; },
+  (row) => { row.result.realized_savings_proven = true; },
+  (row) => { row.result.economics.finance_approved = true; },
+]) {
+  const forged = structuredClone(safeCandidateResponse);
+  mutate(forged);
+  if (safePlanogramCandidateEconomicsPreview(forged, fingerprint) !== null) {
+    fail("Scenario economics UI accepted fingerprint drift or an authority leak.");
+  }
+}
+
 const panel = fs.readFileSync("src/modules/planogram/PlanogramEconomicsPanel.jsx", "utf8");
 for (const needle of [
   "/v1/planogram/physical-layout-economics-preview",
+  "/v1/planogram/physical-layout-candidate-economics-preview",
   "safePlanogramEconomicsPreview",
+  "safePlanogramCandidateEconomicsPreview",
   "normalizePlanogramEconomicsAssumptions",
   "canCreate && canApprove",
   "candidate?.order_baskets?.length",
+  "layout_fingerprint",
   "economics_fingerprint",
   "source_manifest",
 ]) {
   if (!panel.includes(needle)) fail(`CFO economics panel contract missing: ${needle}`);
 }
 
-const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
-if (!studio.includes("<PlanogramEconomicsPanel")) {
-  fail("Planogram Studio does not expose the CFO economics panel.");
+const scenario = fs.readFileSync("src/modules/planogram/PlanogramScenarioPortfolio.jsx", "utf8");
+for (const needle of [
+  "<PlanogramEconomicsPanel",
+  "layoutFingerprint={scenarioPreview.fingerprint}",
+  "canApprove={canApprove}",
+]) {
+  if (!scenario.includes(needle)) fail(`Scenario economics composition missing: ${needle}`);
 }
 
-console.log("Planogram CFO economics UI authority and provenance boundary: PASS");
+const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
+for (const needle of [
+  "<PlanogramEconomicsPanel",
+  "<PlanogramScenarioPortfolio",
+  "canApprove={canApprovePreview}",
+]) {
+  if (!studio.includes(needle)) fail(`Planogram Studio economics composition missing: ${needle}`);
+}
+
+console.log("Planogram CFO economics UI authority, provenance and scenario fingerprint boundary: PASS");

@@ -27,6 +27,10 @@ from app.modules.academy.repository_content import (
 from app.modules.academy.repository_entitlement import is_module_entitled
 from app.modules.academy.repository_idempotency_claim import claim_idempotency_key
 from app.modules.academy.repository_knowledge import ingest_document_chunks
+from app.modules.academy.repository_localization import (
+    get_localization_policy,
+    save_localization_policy,
+)
 from app.modules.academy.repository_enrollment import (
     create_manual_enrollment,
     list_enrollments,

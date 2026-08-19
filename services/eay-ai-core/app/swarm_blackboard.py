@@ -74,7 +74,27 @@ class SwarmBlackboardEntry(BaseModel):
         for ref in (self.subject_ref, self.artifact_ref, *self.evidence_refs):
             if _looks_secret_bearing(ref):
                 raise ValueError("swarm_blackboard_secret_bearing_reference_forbidden")
-        expected = _entry_fingerprint(_entry_payload(self, include_fingerprint=False))
+        expected = _entry_fingerprint(
+            _entry_payload_values(
+                contract=self.contract,
+                entry_id=self.entry_id,
+                tenant_id=self.tenant_id,
+                objective_ref=self.objective_ref,
+                colony_ref=self.colony_ref,
+                worker_id=self.worker_id,
+                kind=self.kind,
+                subject_ref=self.subject_ref,
+                artifact_ref=self.artifact_ref,
+                evidence_refs=self.evidence_refs,
+                observed_at=self.observed_at,
+                recorded_at=self.recorded_at,
+                confidence=self.confidence,
+                raw_payload_retained=self.raw_payload_retained,
+                credential_material_retained=self.credential_material_retained,
+                truth_authority_granted=self.truth_authority_granted,
+                execution_authority_granted=self.execution_authority_granted,
+            )
+        )
         if self.fingerprint != expected:
             raise ValueError("swarm_blackboard_entry_fingerprint_mismatch")
         return self
@@ -130,11 +150,47 @@ def _looks_secret_bearing(value: str) -> bool:
     return any(marker in lowered for marker in markers)
 
 
-def _entry_payload(entry: SwarmBlackboardEntry, *, include_fingerprint: bool) -> dict:
-    payload = entry.model_dump(mode="json")
-    if not include_fingerprint:
-        payload.pop("fingerprint", None)
-    return payload
+def _entry_payload_values(
+    *,
+    contract: str,
+    entry_id: str,
+    tenant_id: str,
+    objective_ref: str,
+    colony_ref: str,
+    worker_id: str,
+    kind: SwarmBlackboardEntryKind | str,
+    subject_ref: str,
+    artifact_ref: str,
+    evidence_refs: tuple[str, ...] | list[str],
+    observed_at: datetime,
+    recorded_at: datetime,
+    confidence: float,
+    raw_payload_retained: bool,
+    credential_material_retained: bool,
+    truth_authority_granted: bool,
+    execution_authority_granted: bool,
+) -> dict:
+    """Canonical fingerprint payload shared by construction and validation."""
+
+    return {
+        "contract": str(contract),
+        "entry_id": str(entry_id),
+        "tenant_id": str(tenant_id),
+        "objective_ref": str(objective_ref),
+        "colony_ref": str(colony_ref),
+        "worker_id": str(worker_id),
+        "kind": kind.value if isinstance(kind, SwarmBlackboardEntryKind) else str(kind),
+        "subject_ref": str(subject_ref),
+        "artifact_ref": str(artifact_ref),
+        "evidence_refs": [str(item) for item in evidence_refs],
+        "observed_at": observed_at.isoformat(),
+        "recorded_at": recorded_at.isoformat(),
+        "confidence": float(confidence),
+        "raw_payload_retained": bool(raw_payload_retained),
+        "credential_material_retained": bool(credential_material_retained),
+        "truth_authority_granted": bool(truth_authority_granted),
+        "execution_authority_granted": bool(execution_authority_granted),
+    }
 
 
 def _entry_fingerprint(payload: dict) -> str:
@@ -159,27 +215,30 @@ def build_blackboard_entry(
 ) -> SwarmBlackboardEntry:
     """Create a sealed reference-only blackboard entry."""
 
-    draft = {
-        "contract": SWARM_BLACKBOARD_CONTRACT,
-        "entry_id": entry_id,
-        "tenant_id": tenant_id,
-        "objective_ref": objective_ref,
-        "colony_ref": colony_ref,
-        "worker_id": worker_id,
-        "kind": kind.value,
-        "subject_ref": subject_ref,
-        "artifact_ref": artifact_ref,
-        "evidence_refs": list(evidence_refs),
-        "observed_at": observed_at.isoformat(),
-        "recorded_at": recorded_at.isoformat(),
-        "confidence": confidence,
-        "raw_payload_retained": False,
-        "credential_material_retained": False,
-        "truth_authority_granted": False,
-        "execution_authority_granted": False,
-    }
-    fingerprint = _entry_fingerprint(draft)
-    return SwarmBlackboardEntry.model_validate({**draft, "fingerprint": fingerprint})
+    _require_aware(observed_at, "swarm_blackboard_observed_at_requires_timezone")
+    _require_aware(recorded_at, "swarm_blackboard_recorded_at_requires_timezone")
+    payload = _entry_payload_values(
+        contract=SWARM_BLACKBOARD_CONTRACT,
+        entry_id=entry_id,
+        tenant_id=tenant_id,
+        objective_ref=objective_ref,
+        colony_ref=colony_ref,
+        worker_id=worker_id,
+        kind=kind,
+        subject_ref=subject_ref,
+        artifact_ref=artifact_ref,
+        evidence_refs=evidence_refs,
+        observed_at=observed_at,
+        recorded_at=recorded_at,
+        confidence=confidence,
+        raw_payload_retained=False,
+        credential_material_retained=False,
+        truth_authority_granted=False,
+        execution_authority_granted=False,
+    )
+    return SwarmBlackboardEntry.model_validate(
+        {**payload, "fingerprint": _entry_fingerprint(payload)}
+    )
 
 
 def _worker_colony_ref(
@@ -213,7 +272,7 @@ def append_blackboard_entry(
 ) -> SwarmBlackboardLedger:
     """Append one exact worker-produced entry; exact retry is idempotent."""
 
-    # Rehydrate to close model_copy validation bypass before trust decisions.
+    ledger = SwarmBlackboardLedger.model_validate(ledger.model_dump(mode="json"))
     entry = SwarmBlackboardEntry.model_validate(entry.model_dump(mode="json"))
     if entry.tenant_id != ledger.tenant_id or registry.tenant_id != ledger.tenant_id:
         raise ValueError("swarm_blackboard_append_tenant_mismatch")
@@ -233,7 +292,13 @@ def append_blackboard_entry(
         if existing.fingerprint == entry.fingerprint:
             return ledger
         raise ValueError("swarm_blackboard_entry_id_conflict")
-    return ledger.model_copy(update={"entries": (*ledger.entries, entry)})
+    if len(ledger.entries) >= 4096:
+        raise ValueError("swarm_blackboard_capacity_exhausted")
+    return SwarmBlackboardLedger(
+        tenant_id=ledger.tenant_id,
+        objective_ref=ledger.objective_ref,
+        entries=(*ledger.entries, entry),
+    )
 
 
 def visible_blackboard_entries(
@@ -245,6 +310,7 @@ def visible_blackboard_entries(
 ) -> tuple[SwarmBlackboardEntry, ...]:
     """Return only evidence that both happened and was recorded by the replay cutoff."""
 
+    ledger = SwarmBlackboardLedger.model_validate(ledger.model_dump(mode="json"))
     _require_aware(as_of, "swarm_blackboard_as_of_requires_timezone")
     allowed_colonies = set(colony_refs or ())
     allowed_kinds = set(kinds or ())

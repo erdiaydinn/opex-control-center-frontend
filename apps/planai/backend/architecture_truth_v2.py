@@ -1,12 +1,9 @@
-"""Architecture V2 preview primitives for arbitrary-angle measured Store DNA.
+"""Preview-only arbitrary-angle spatial truth for PlanAI.
 
-V1 intentionally remains the production-facing contract while this module is
-benchmarked. V2 fixes the biggest spatial limitation of V1: camera/CAD geometry
-is represented as true oriented polygons rather than being rejected or snapped
-to 0/90/180/270 degrees.
-
-The contract is fail-closed and preview-only. It never upgrades scan evidence to
-production authority by itself.
+Architecture V1 remains the production-facing contract. V2 preserves measured
+camera/CAD angles as oriented polygons so scans are never snapped to an axis and
+adds bounded polygon-aware collision and route evidence for market-leadership
+benchmarking.
 """
 
 from __future__ import annotations
@@ -44,7 +41,13 @@ ARCHITECTURE_TYPES = {
 }
 WALK_BLOCKING_TYPES = {"wall", "column", "no_go", "technical"}
 PLACEMENT_BLOCKING_TYPES = WALK_BLOCKING_TYPES | {"emergency_exit"}
-MEASURED_SOURCES = {"manual_survey", "cad_import", "floorplan_import", "lidar_scan"}
+MEASURED_SOURCES = {
+    "manual_survey",
+    "cad_import",
+    "floorplan_import",
+    "lidar_scan",
+}
+ORTHOGONAL_ROTATIONS = (0.0, 90.0, 180.0, 270.0, 360.0)
 
 
 def _number(value: Any) -> float | None:
@@ -59,6 +62,11 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _is_non_orthogonal(rotation_deg: float) -> bool:
+    rotation = rotation_deg % 360.0
+    return min(abs(rotation - value) for value in ORTHOGONAL_ROTATIONS) > 1e-6
+
+
 def _centered_rect(
     *,
     center_x_m: float,
@@ -70,13 +78,13 @@ def _centered_rect(
 ) -> Polygon | None:
     if width_m <= 0 or depth_m <= 0 or inflate_m < 0:
         return None
-    half_w = width_m / 2.0 + inflate_m
-    half_d = depth_m / 2.0 + inflate_m
+    half_width = width_m / 2.0 + inflate_m
+    half_depth = depth_m / 2.0 + inflate_m
     polygon = box(
-        center_x_m - half_w,
-        center_y_m - half_d,
-        center_x_m + half_w,
-        center_y_m + half_d,
+        center_x_m - half_width,
+        center_y_m - half_depth,
+        center_x_m + half_width,
+        center_y_m + half_depth,
     )
     if rotation_deg % 360.0:
         polygon = rotate(
@@ -88,14 +96,20 @@ def _centered_rect(
     return polygon
 
 
-def _xy_origin_to_center(
+def _center(
+    row: dict[str, Any],
     *,
-    x_m: float,
-    y_m: float,
     width_m: float,
     depth_m: float,
-) -> tuple[float, float]:
-    """Convert legacy lower-left rectangle coordinates to an explicit center."""
+) -> tuple[float, float] | None:
+    center_x = _number(row.get("center_x_m"))
+    center_y = _number(row.get("center_y_m"))
+    if center_x is not None and center_y is not None:
+        return center_x, center_y
+    x_m = _number(row.get("x_m"))
+    y_m = _number(row.get("y_m"))
+    if x_m is None or y_m is None:
+        return None
     return x_m + width_m / 2.0, y_m + depth_m / 2.0
 
 
@@ -108,31 +122,21 @@ def _element_polygon(
     depth = _number(element.get("depth_m"))
     if width is None or depth is None or width <= 0 or depth <= 0:
         return None
-
-    center_x = _number(element.get("center_x_m"))
-    center_y = _number(element.get("center_y_m"))
-    if center_x is None or center_y is None:
-        x_m = _number(element.get("x_m"))
-        y_m = _number(element.get("y_m"))
-        if x_m is None or y_m is None:
-            return None
-        center_x, center_y = _xy_origin_to_center(
-            x_m=x_m,
-            y_m=y_m,
-            width_m=width,
-            depth_m=depth,
-        )
-
+    center = _center(element, width_m=width, depth_m=depth)
+    if center is None:
+        return None
     clearance = 0.0
-    if egress_clearance and _text(element.get("element_type")).lower() == "emergency_exit":
+    if (
+        egress_clearance
+        and _text(element.get("element_type")).lower() == "emergency_exit"
+    ):
         clearance = max(
             DEFAULT_EGRESS_CLEARANCE_M,
             _number(element.get("clearance_m")) or DEFAULT_EGRESS_CLEARANCE_M,
         )
-
     return _centered_rect(
-        center_x_m=center_x,
-        center_y_m=center_y,
+        center_x_m=center[0],
+        center_y_m=center[1],
         width_m=width,
         depth_m=depth,
         rotation_deg=_number(element.get("rotation_deg")) or 0.0,
@@ -161,22 +165,12 @@ def _module_polygon(module: dict[str, Any]) -> Polygon | None:
     width, depth = _module_dimensions(module)
     if width <= 0 or depth <= 0:
         return None
-    center_x = _number(module.get("center_x_m"))
-    center_y = _number(module.get("center_y_m"))
-    if center_x is None or center_y is None:
-        x_m = _number(module.get("x_m"))
-        y_m = _number(module.get("y_m"))
-        if x_m is None or y_m is None:
-            return None
-        center_x, center_y = _xy_origin_to_center(
-            x_m=x_m,
-            y_m=y_m,
-            width_m=width,
-            depth_m=depth,
-        )
+    center = _center(module, width_m=width, depth_m=depth)
+    if center is None:
+        return None
     return _centered_rect(
-        center_x_m=center_x,
-        center_y_m=center_y,
+        center_x_m=center[0],
+        center_y_m=center[1],
         width_m=width,
         depth_m=depth,
         rotation_deg=_number(module.get("rotation_deg")) or 0.0,
@@ -193,7 +187,9 @@ def _fingerprint(architecture: dict[str, Any]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def architecture_truth_report_v2(store_dna: dict[str, Any] | None) -> dict[str, Any]:
+def architecture_truth_report_v2(
+    store_dna: dict[str, Any] | None,
+) -> dict[str, Any]:
     architecture = (store_dna or {}).get("architecture")
     if not isinstance(architecture, dict) or not architecture:
         return {
@@ -207,7 +203,7 @@ def architecture_truth_report_v2(store_dna: dict[str, Any] | None) -> dict[str, 
         }
 
     blockers: list[str] = []
-    if int(_number(architecture.get("schema_version")) or 0) != 2:
+    if round(_number(architecture.get("schema_version")) or 0) != 2:
         blockers.append("architecture_schema_version_unsupported")
     coordinate_system = _text(architecture.get("coordinate_system"))
     if coordinate_system not in {"cartesian_m_centered_rect", "cartesian_m"}:
@@ -217,7 +213,7 @@ def architecture_truth_report_v2(store_dna: dict[str, Any] | None) -> dict[str, 
     floor_depth = _number(architecture.get("floor_depth_m")) or 0.0
     if floor_width <= 0 or floor_depth <= 0:
         blockers.append("architecture_floorplate_invalid")
-    floor = box(0.0, 0.0, max(floor_width, 0.0), max(floor_depth, 0.0))
+    floor = box(0.0, 0.0, max(0.0, floor_width), max(0.0, floor_depth))
 
     elements = architecture.get("elements") or []
     if not isinstance(elements, list):
@@ -243,8 +239,8 @@ def architecture_truth_report_v2(store_dna: dict[str, Any] | None) -> dict[str, 
             continue
         if element_type == "picker_entry":
             picker_entries += 1
-        rotation = (_number(raw.get("rotation_deg")) or 0.0) % 360.0
-        if min(abs(rotation - value) for value in (0.0, 90.0, 180.0, 270.0, 360.0)) > 1e-6:
+        rotation = _number(raw.get("rotation_deg")) or 0.0
+        if _is_non_orthogonal(rotation):
             non_orthogonal_count += 1
         polygon = _element_polygon(raw)
         if polygon is None or polygon.is_empty or not polygon.is_valid:
@@ -254,7 +250,9 @@ def architecture_truth_report_v2(store_dna: dict[str, Any] | None) -> dict[str, 
             blockers.append(f"architecture_element_outside_floorplate:{element_id}")
 
     if invalid:
-        blockers.append("architecture_invalid_elements:" + ",".join(sorted(invalid)[:20]))
+        blockers.append(
+            "architecture_invalid_elements:" + ",".join(sorted(invalid)[:20])
+        )
     if picker_entries == 0:
         blockers.append("architecture_picker_entry_missing")
     elif picker_entries > 1:
@@ -294,7 +292,9 @@ def iter_layout_modules(layout: dict[str, Any] | None):
 def _spatial_module_id(aisle: dict[str, Any], module: dict[str, Any]) -> str:
     module_id = _text(module.get("module_id"))
     aisle_id = _text(aisle.get("aisle_id"))
-    return module_id if "::" in module_id or not aisle_id else f"{aisle_id}::{module_id}"
+    if "::" in module_id or not aisle_id:
+        return module_id
+    return f"{aisle_id}::{module_id}"
 
 
 def layout_architecture_report_v2(
@@ -323,7 +323,9 @@ def layout_architecture_report_v2(
             continue
         polygon = _element_polygon(element, egress_clearance=True)
         if polygon is not None:
-            obstacles.append((element_type, _text(element.get("element_id")), polygon))
+            obstacles.append(
+                (element_type, _text(element.get("element_id")), polygon)
+            )
 
     coordinate_count = 0
     non_orthogonal_module_count = 0
@@ -332,14 +334,17 @@ def layout_architecture_report_v2(
         module_id = _spatial_module_id(aisle, module)
         polygon = _module_polygon(module)
         if polygon is None:
-            violations.append({"type": "module_geometry_missing", "module_id": module_id})
+            violations.append(
+                {"type": "module_geometry_missing", "module_id": module_id}
+            )
             continue
         coordinate_count += 1
-        rotation = (_number(module.get("rotation_deg")) or 0.0) % 360.0
-        if min(abs(rotation - value) for value in (0.0, 90.0, 180.0, 270.0, 360.0)) > 1e-6:
+        if _is_non_orthogonal(_number(module.get("rotation_deg")) or 0.0):
             non_orthogonal_module_count += 1
         if not floor.covers(polygon):
-            violations.append({"type": "module_outside_floorplate", "module_id": module_id})
+            violations.append(
+                {"type": "module_outside_floorplate", "module_id": module_id}
+            )
         for element_type, element_id, obstacle in obstacles:
             if polygon.intersects(obstacle) and not polygon.touches(obstacle):
                 violations.append(
@@ -351,7 +356,9 @@ def layout_architecture_report_v2(
                     }
                 )
 
-    pct = round(coordinate_count * 100.0 / len(modules), 2) if modules else 0.0
+    coverage = (
+        round(coordinate_count * 100.0 / len(modules), 2) if modules else 0.0
+    )
     blockers: list[str] = []
     if modules and coordinate_count != len(modules):
         blockers.append("layout_module_geometry_incomplete")
@@ -363,7 +370,7 @@ def layout_architecture_report_v2(
         "valid": not blockers,
         "module_count": len(modules),
         "coordinate_module_count": coordinate_count,
-        "coordinate_coverage_pct": pct,
+        "coordinate_coverage_pct": coverage,
         "non_orthogonal_module_count": non_orthogonal_module_count,
         "violation_count": len(violations),
         "violations": violations,
@@ -371,7 +378,9 @@ def layout_architecture_report_v2(
     }
 
 
-def _picker_entry_center(architecture: dict[str, Any]) -> tuple[float, float] | None:
+def _picker_entry_center(
+    architecture: dict[str, Any],
+) -> tuple[float, float] | None:
     for element in architecture.get("elements") or []:
         if _text(element.get("element_type")).lower() != "picker_entry":
             continue
@@ -414,7 +423,7 @@ def route_between_points_v2(
     target_y_m: float,
     resolution_m: float = DEFAULT_GRID_RESOLUTION_M,
 ) -> dict[str, Any]:
-    """Compute an explainable 8-neighbour A* route around oriented obstacles."""
+    """Return a bounded 8-neighbour A* route around oriented obstacles."""
     truth = architecture_truth_report_v2(store_dna)
     if not truth["valid"]:
         return {
@@ -424,7 +433,7 @@ def route_between_points_v2(
             "reason": "architecture_v2_invalid",
             "blockers": list(truth["blockers"]),
         }
-    if resolution_m < 0.1 or resolution_m > 1.0:
+    if not 0.1 <= resolution_m <= 1.0:
         return {
             "contract": ROUTE_V2_OBJECTIVE_VERSION,
             "preview_only": True,
@@ -444,7 +453,7 @@ def route_between_points_v2(
 
     width = float(truth["floor_width_m"])
     depth = float(truth["floor_depth_m"])
-    target = (float(target_x_m), float(target_y_m))
+    target = float(target_x_m), float(target_y_m)
     floor = box(0.0, 0.0, width, depth)
     if not floor.covers(Point(*target)):
         return {
@@ -454,8 +463,8 @@ def route_between_points_v2(
             "reason": "target_outside_floorplate",
         }
 
-    cols = max(1, int(round(width / resolution_m)) + 1)
-    rows = max(1, int(round(depth / resolution_m)) + 1)
+    cols = max(1, round(width / resolution_m) + 1)
+    rows = max(1, round(depth / resolution_m) + 1)
     if cols * rows > MAX_ROUTE_GRID_CELLS:
         return {
             "contract": ROUTE_V2_OBJECTIVE_VERSION,
@@ -481,63 +490,63 @@ def route_between_points_v2(
 
     start_cell = to_cell(start)
     target_cell = to_cell(target)
-    if blocked(start_cell):
+    if blocked(start_cell) or blocked(target_cell):
         return {
             "contract": ROUTE_V2_OBJECTIVE_VERSION,
             "preview_only": True,
             "available": False,
-            "reason": "picker_entry_blocked",
-        }
-    if blocked(target_cell):
-        return {
-            "contract": ROUTE_V2_OBJECTIVE_VERSION,
-            "preview_only": True,
-            "available": False,
-            "reason": "target_blocked",
+            "reason": "endpoint_blocked",
         }
 
+    root_two = 2**0.5
     neighbours = (
         (-1, 0, 1.0),
         (1, 0, 1.0),
         (0, -1, 1.0),
         (0, 1, 1.0),
-        (-1, -1, 2**0.5),
-        (-1, 1, 2**0.5),
-        (1, -1, 2**0.5),
-        (1, 1, 2**0.5),
+        (-1, -1, root_two),
+        (-1, 1, root_two),
+        (1, -1, root_two),
+        (1, 1, root_two),
     )
-    open_heap: list[tuple[float, float, tuple[int, int]]] = []
-    heapq.heappush(open_heap, (0.0, 0.0, start_cell))
+    open_heap: list[tuple[float, float, tuple[int, int]]] = [
+        (0.0, 0.0, start_cell)
+    ]
     came_from: dict[tuple[int, int], tuple[int, int]] = {}
-    g_score = {start_cell: 0.0}
+    cost = {start_cell: 0.0}
     visited = 0
 
     while open_heap:
-        _, current_g, current = heapq.heappop(open_heap)
-        if current_g > g_score.get(current, float("inf")) + 1e-12:
+        _, current_cost, current = heapq.heappop(open_heap)
+        if current_cost > cost.get(current, float("inf")) + 1e-12:
             continue
         visited += 1
         if current == target_cell:
             break
-        for dx, dy, step in neighbours:
+        for dx, dy, multiplier in neighbours:
             candidate = current[0] + dx, current[1] + dy
             if not (0 <= candidate[0] < cols and 0 <= candidate[1] < rows):
                 continue
             if blocked(candidate):
                 continue
-            # Prevent diagonal corner cutting through a wall.
-            if dx and dy and (blocked((current[0] + dx, current[1])) or blocked((current[0], current[1] + dy))):
+            if dx and dy:
+                side_x = current[0] + dx, current[1]
+                side_y = current[0], current[1] + dy
+                if blocked(side_x) or blocked(side_y):
+                    continue
+            candidate_cost = current_cost + multiplier * resolution_m
+            if candidate_cost + 1e-12 >= cost.get(candidate, float("inf")):
                 continue
-            tentative = current_g + step * resolution_m
-            if tentative + 1e-12 >= g_score.get(candidate, float("inf")):
-                continue
-            g_score[candidate] = tentative
+            cost[candidate] = candidate_cost
             came_from[candidate] = current
             point = to_point(candidate)
             heuristic = hypot(point[0] - target[0], point[1] - target[1])
-            heapq.heappush(open_heap, (tentative + heuristic, tentative, candidate))
+            heapq.heappush(
+                open_heap,
+                (candidate_cost + heuristic, candidate_cost, candidate),
+            )
 
-    if target_cell not in g_score:
+    if target_cell not in cost:
         return {
             "contract": ROUTE_V2_OBJECTIVE_VERSION,
             "preview_only": True,
@@ -551,13 +560,14 @@ def route_between_points_v2(
         cells.append(came_from[cells[-1]])
     cells.reverse()
     path = [to_point(cell) for cell in cells]
+    straight = hypot(target[0] - start[0], target[1] - start[1])
     return {
         "contract": ROUTE_V2_OBJECTIVE_VERSION,
         "preview_only": True,
         "available": True,
-        "distance_m": round(g_score[target_cell], 3),
-        "straight_line_m": round(hypot(target[0] - start[0], target[1] - start[1]), 3),
-        "detour_m": round(g_score[target_cell] - hypot(target[0] - start[0], target[1] - start[1]), 3),
+        "distance_m": round(cost[target_cell], 3),
+        "straight_line_m": round(straight, 3),
+        "detour_m": round(cost[target_cell] - straight, 3),
         "resolution_m": resolution_m,
         "visited_cells": visited,
         "path_m": _sample_path(path),

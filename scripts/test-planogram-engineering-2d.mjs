@@ -1,3 +1,5 @@
+import fs from "node:fs";
+
 import {
   engineeringScaleBar,
   rotatedRectSvgPoints,
@@ -66,4 +68,31 @@ if (!(bar.meters > 0 && bar.pixels > 0 && bar.pixels <= 150)) {
   fail("Engineering scale bar must be visible and bounded.");
 }
 
-console.log("Planogram engineering 2D arbitrary-angle geometry and scale contract: PASS");
+const renderer = fs.readFileSync("src/modules/planogram/PlanogramDigitalTwin.jsx", "utf8");
+const css = fs.readFileSync("src/modules/planogram/planogram-digital-twin.css", "utf8");
+for (const [needle, label] of [
+  ["rotatedRectSvgPoints", "true rotated SVG projection"],
+  ["svgPointString", "polygon serialization"],
+  ["<polygon points={points}", "polygon architecture/fixture rendering"],
+  ["data-rotation-deg", "rotation evidence in rendered groups"],
+  ["eay-twin-engineering-dimensions", "floor dimension overlay"],
+  ["eay-twin-scale-bar", "engineering scale bar"],
+]) {
+  if (!renderer.includes(needle)) fail(`Interactive 2D renderer missing ${label}: ${needle}`);
+}
+if (renderer.includes("const width = element.footprintWidthM * scale")) {
+  fail("Interactive Architecture V2 must not regress to AABB element rendering.");
+}
+if (renderer.includes("const width = Math.max(module.footprintWidthM * scale, 10)")) {
+  fail("Interactive Architecture V2 must not regress to AABB fixture rendering.");
+}
+for (const rule of [
+  ".eay-twin-engineering-dimensions line",
+  ".eay-twin-engineering-dimensions text",
+  ".eay-twin-scale-bar",
+  ".eay-twin-scale-tick",
+]) {
+  if (!css.includes(rule)) fail(`Engineering 2D styling missing: ${rule}`);
+}
+
+console.log("Planogram engineering 2D arbitrary-angle renderer and scale contract: PASS");

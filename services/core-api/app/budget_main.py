@@ -9,6 +9,9 @@ from app.modules.planogram.optimizer_router import router as planogram_optimizer
 from app.modules.planogram.router import router as planogram_router
 from app.modules.planogram.scenario_router import router as planogram_scenario_router
 from app.modules.planogram.shelf_scan_router import router as planogram_shelf_scan_router
+from app.modules.planogram.store_scan_review_router import (
+    router as planogram_store_scan_review_router,
+)
 
 app.include_router(budget_router)
 app.include_router(budget_planning_router)
@@ -18,3 +21,4 @@ app.include_router(planogram_execution_router)
 app.include_router(planogram_shelf_scan_router)
 app.include_router(planogram_economics_router)
 app.include_router(planogram_scenario_router)
+app.include_router(planogram_store_scan_review_router)

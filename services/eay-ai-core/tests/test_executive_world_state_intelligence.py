@@ -4,6 +4,7 @@ import pytest
 
 from app.executive_world_state import (
     ExecutiveFieldRequirement,
+    FieldFreshnessObservation,
     WorldChangeKind,
     WorldRequirementStatus,
     assess_executive_world_readiness,
@@ -15,6 +16,7 @@ from app.world_model import (
     TruthClass,
     WorldAssertion,
     WorldEntity,
+    WorldRelation,
     build_world_snapshot,
 )
 
@@ -22,13 +24,24 @@ T0 = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
 TENANT = "tenant://ys-tr"
 
 
-def _entity(entity_id, kind, relationships=()):
+def _entity(entity_id, kind):
     return WorldEntity(
         entity_id=entity_id,
         tenant_id=TENANT,
         kind=kind,
         display_name=entity_id,
-        relationships=relationships,
+    )
+
+
+def _relation(relation_id, source, target):
+    return WorldRelation(
+        relation_id=relation_id,
+        tenant_id=TENANT,
+        source_entity_id=source,
+        relation_type="decision_context",
+        target_entity_id=target,
+        valid_from=T0,
+        evidence_ref=f"evidence://{relation_id}",
     )
 
 
@@ -48,22 +61,23 @@ def _assertion(assertion_id, entity_id, field_name, value, observed_at=T0, sourc
     )
 
 
-def _snapshot(as_of=T0, assertions=()):
+def _snapshot(as_of=T0, assertions=(), relations=()):
     entities = (
-        _entity("warehouse://fulya", EntityKind.WAREHOUSE, ("kpi://orders", "product://sku-a")),
-        _entity("kpi://orders", EntityKind.KPI, ()),
-        _entity("product://sku-a", EntityKind.PRODUCT, ()),
-        _entity("warehouse://other", EntityKind.WAREHOUSE, ()),
+        _entity("warehouse://fulya", EntityKind.WAREHOUSE),
+        _entity("kpi://orders", EntityKind.KPI),
+        _entity("product://sku-a", EntityKind.PRODUCT),
+        _entity("warehouse://other", EntityKind.WAREHOUSE),
     )
     return build_world_snapshot(
         tenant_id=TENANT,
         as_of=as_of,
-        entities=entities,
+        entities=list(entities),
         assertions=list(assertions),
+        relations=list(relations),
     )
 
 
-def test_decision_subgraph_follows_only_real_entity_relationships_and_field_allowlist():
+def test_decision_subgraph_follows_only_canonical_relations_and_field_allowlist():
     snapshot = _snapshot(
         assertions=(
             _assertion("a1", "warehouse://fulya", "orders", 100),
@@ -71,7 +85,11 @@ def test_decision_subgraph_follows_only_real_entity_relationships_and_field_allo
             _assertion("a3", "kpi://orders", "value", 100),
             _assertion("a4", "product://sku-a", "availability", 0.9),
             _assertion("a5", "warehouse://other", "orders", 200),
-        )
+        ),
+        relations=(
+            _relation("rel-orders", "warehouse://fulya", "kpi://orders"),
+            _relation("rel-product", "warehouse://fulya", "product://sku-a"),
+        ),
     )
     subgraph = build_decision_subgraph(
         snapshot=snapshot,
@@ -85,8 +103,15 @@ def test_decision_subgraph_follows_only_real_entity_relationships_and_field_allo
         "kpi://orders",
         "product://sku-a",
     }
-    assert {item.assertion_id for item in subgraph.assertions} == {"a1", "a3", "a4"}
+    assert {(item.entity_id, item.field_name) for item in subgraph.fields} == {
+        ("warehouse://fulya", "orders"),
+        ("kpi://orders", "value"),
+        ("product://sku-a", "availability"),
+    }
+    assert {item.relation_id for item in subgraph.relations} == {"rel-orders", "rel-product"}
     assert all(item.entity_id != "warehouse://other" for item in subgraph.entities)
+    assert subgraph.persistent_memory_authority is False
+    assert subgraph.truth_authority_granted is False
 
 
 def test_world_readiness_exposes_ready_stale_missing_and_blocked_fields():
@@ -117,7 +142,25 @@ def test_world_readiness_exposes_ready_stale_missing_and_blocked_fields():
             ),
             ExecutiveFieldRequirement(entity_id="warehouse://fulya", field_name="nsfr"),
             ExecutiveFieldRequirement(entity_id="warehouse://fulya", field_name="picking"),
-            ExecutiveFieldRequirement(entity_id="product://sku-a", field_name="availability"),
+            ExecutiveFieldRequirement(
+                entity_id="product://sku-a",
+                field_name="availability",
+                maximum_observation_age_seconds=1800,
+            ),
+        ),
+        freshness_observations=(
+            FieldFreshnessObservation(
+                entity_id="warehouse://fulya",
+                field_name="orders",
+                observed_at=T0,
+                evidence_ref="evidence://orders-freshness",
+            ),
+            FieldFreshnessObservation(
+                entity_id="product://sku-a",
+                field_name="availability",
+                observed_at=as_of,
+                evidence_ref="evidence://availability-freshness",
+            ),
         ),
     )
 
@@ -131,12 +174,27 @@ def test_world_readiness_exposes_ready_stale_missing_and_blocked_fields():
     assert readiness.execution_authority_granted is False
 
 
+def test_required_freshness_without_observation_fails_closed_as_unknown():
+    snapshot = _snapshot(assertions=(_assertion("a1", "warehouse://fulya", "orders", 100),))
+    readiness = assess_executive_world_readiness(
+        snapshot=snapshot,
+        requirements=(
+            ExecutiveFieldRequirement(
+                entity_id="warehouse://fulya",
+                field_name="orders",
+                maximum_observation_age_seconds=60,
+            ),
+        ),
+    )
+    assert readiness.ready is False
+    assert readiness.fields[0].status is WorldRequirementStatus.FRESHNESS_UNKNOWN
+    assert readiness.fields[0].blocker == "world_field_freshness_unknown:warehouse://fulya:orders"
+
+
 def test_snapshot_delta_reports_value_change_without_copying_raw_business_values():
     before = _snapshot(
         as_of=T0,
-        assertions=(
-            _assertion("orders-before", "warehouse://fulya", "orders", 100),
-        ),
+        assertions=(_assertion("orders-before", "warehouse://fulya", "orders", 100),),
     )
     after_time = T0 + timedelta(hours=1)
     after = _snapshot(

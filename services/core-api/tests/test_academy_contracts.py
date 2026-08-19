@@ -43,10 +43,12 @@ def principal() -> Principal:
 
 
 def test_ui_release_locales_stay_narrow_while_academy_content_expands() -> None:
-    assert SUPPORTED_LOCALE_SET == {
+    expected_ui_locales = {
         "tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"
     }
-    assert {"fa", "ru", "ja", "ur", "ckb", "zh-Hans", "pt-PT"} <= CONTENT_LOCALE_SET
+    expected_extended_examples = {"fa", "ru", "ja", "ur", "ckb", "zh-Hans", "pt-PT"}
+    assert set(SUPPORTED_LOCALE_SET) == expected_ui_locales
+    assert expected_extended_examples.issubset(CONTENT_LOCALE_SET)
     assert canonicalize_locale("fa-IR") is None
     assert canonicalize_content_locale("fa-IR") == "fa"
     assert canonicalize_content_locale("pt_BR") == "pt-BR"
@@ -98,7 +100,8 @@ def test_duplicate_locale_aliases_fail_closed() -> None:
 
 
 def test_content_rtl_is_not_arabic_only() -> None:
-    assert CONTENT_RTL_LOCALES == {"ar", "fa", "ur", "ckb", "he", "ps"}
+    expected_rtl_locales = {"ar", "fa", "ur", "ckb", "he", "ps"}
+    assert set(CONTENT_RTL_LOCALES) == expected_rtl_locales
     for locale in ("ar", "fa-IR", "ur-PK", "ckb-IQ", "he-IL", "ps-AF"):
         assert content_direction(locale) == "rtl"
     assert content_direction("tr-TR") == "ltr"

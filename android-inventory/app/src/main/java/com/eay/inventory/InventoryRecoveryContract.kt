@@ -97,19 +97,16 @@ object InventoryRecoveryContract {
             -> InventoryRecoverySeverity.SECURITY to
                 InventoryRecoveryIntent.REQUEST_INTEGRITY_REVIEW
 
-            SyncQuarantineReason.TENANT_BINDING_CHANGED ->
-                InventoryRecoverySeverity.SECURITY to
-                    InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW
+            SyncQuarantineReason.TENANT_BINDING_CHANGED,
+            SyncQuarantineReason.AUTH_BINDING_CHANGED,
+            -> InventoryRecoverySeverity.SECURITY to
+                InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW
 
             SyncQuarantineReason.DEVICE_BINDING_CHANGED,
             SyncQuarantineReason.INSTALLATION_BINDING_CHANGED,
             SyncQuarantineReason.DEVICE_REVOKED,
             -> InventoryRecoverySeverity.BLOCKING to
                 InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE
-
-            SyncQuarantineReason.AUTH_BINDING_CHANGED ->
-                InventoryRecoverySeverity.BLOCKING to
-                    InventoryRecoveryIntent.SIGN_IN_AGAIN
 
             SyncQuarantineReason.POLICY_REJECTED,
             SyncQuarantineReason.BUSINESS_CONFLICT,

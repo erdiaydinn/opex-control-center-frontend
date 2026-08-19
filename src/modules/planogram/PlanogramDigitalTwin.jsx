@@ -13,6 +13,9 @@ const SVG_MAX_HEIGHT = 620;
 const SVG_MIN_HEIGHT = 360;
 const VISIBLE_ROUTE_PATHS = 3;
 const VISIBLE_ROUTE_ROWS = 5;
+const FIXTURE_POST_M = 0.035;
+const SHELF_BOARD_M = 0.025;
+const PRODUCT_GAP_M = 0.006;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -28,6 +31,27 @@ function fixtureClass(type) {
 
 function architectureClass(type) {
   return String(type || "unknown").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
+}
+
+function stableHue(value) {
+  const text = String(value || "EAY");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) % 360) / 360;
+}
+
+function productFacingCount(product) {
+  const raw = Number(product?.facing_count ?? product?.facing ?? 1);
+  return Number.isFinite(raw) ? clamp(Math.round(raw), 1, 40) : 1;
+}
+
+function moduleHeight(module) {
+  if (fixtureClass(module.fixtureType) === "pallet") return 0.18;
+  const shelfCount = Math.max(1, module.shelfCount || 1);
+  return Math.max(1.5, shelfCount * 0.32);
 }
 
 function Twin2D({ model, t, formatNumber }) {
@@ -128,50 +152,72 @@ function Twin2D({ model, t, formatNumber }) {
   );
 }
 
-function buildProductInstances(THREE, model) {
-  const matrices = [];
+function buildFacingInstances(THREE, model) {
+  const instances = [];
   const maxInstances = PLANOGRAM_DIGITAL_TWIN_LIMITS.maxProductInstances3d;
   const up = new THREE.Vector3(0, 1, 0);
+  let clippedFacingCount = 0;
 
   outer: for (const module of model.modules) {
     const rotation = (module.rotationDeg * Math.PI) / 180;
     const quaternion = new THREE.Quaternion().setFromAxisAngle(up, -rotation);
     const shelves = module.shelves || [];
     const shelfCount = Math.max(1, shelves.length);
-    const levelHeight = Math.max(0.28, 1.8 / shelfCount);
+    const height = moduleHeight(module);
+    const levelHeight = fixtureClass(module.fixtureType) === "pallet"
+      ? height
+      : height / shelfCount;
+    const leftEdge = -module.widthM / 2 + FIXTURE_POST_M * 1.6;
+    const rightEdge = module.widthM / 2 - FIXTURE_POST_M * 1.6;
+    const frontSign = module.side === "R" ? -1 : 1;
 
     for (const [shelfIndex, shelf] of shelves.entries()) {
       const products = shelf?.products || [];
       if (!products.length) continue;
-      const perRow = Math.max(1, Math.ceil(Math.sqrt(products.length)));
-      const cellW = Math.max(0.06, module.widthM / perRow);
-      const rows = Math.max(1, Math.ceil(products.length / perRow));
-      const cellD = Math.max(0.05, module.depthM / rows);
+      let cursorX = leftEdge;
 
-      for (const [productIndex, product] of products.entries()) {
-        if (matrices.length >= maxInstances) break outer;
-        const col = productIndex % perRow;
-        const row = Math.floor(productIndex / perRow);
+      for (const product of products) {
+        const facingCount = productFacingCount(product);
         const rawW = Number(product?.width_cm || 0) / 100;
         const rawH = Number(product?.height_cm || 0) / 100;
         const rawD = Number(product?.depth_cm || 0) / 100;
-        const width = clamp(rawW || cellW * 0.72, 0.04, cellW * 0.9);
-        const productHeight = clamp(rawH || levelHeight * 0.56, 0.05, levelHeight * 0.72);
-        const depth = clamp(rawD || cellD * 0.72, 0.04, cellD * 0.9);
-        const localX = -module.widthM / 2 + cellW * (col + 0.5);
-        const localZ = -module.depthM / 2 + cellD * (row + 0.5);
-        const cos = Math.cos(-rotation);
-        const sin = Math.sin(-rotation);
-        const worldX = module.centerXM + localX * cos - localZ * sin;
-        const worldZ = module.centerYM + localX * sin + localZ * cos;
-        const worldY = 0.08 + shelfIndex * levelHeight + productHeight / 2;
-        const matrix = new THREE.Matrix4();
-        matrix.compose(new THREE.Vector3(worldX, worldY, worldZ), quaternion, new THREE.Vector3(width, productHeight, depth));
-        matrices.push(matrix);
+        const width = clamp(rawW || 0.08, 0.025, Math.max(0.03, module.widthM * 0.45));
+        const productHeight = clamp(rawH || Math.min(0.22, levelHeight * 0.62), 0.035, Math.max(0.05, levelHeight * 0.8));
+        const depth = clamp(rawD || 0.07, 0.025, Math.max(0.03, module.depthM * 0.82));
+        const sku = String(product?.sku ?? product?.SKU ?? product?.product_name ?? "SKU");
+
+        for (let facingIndex = 0; facingIndex < facingCount; facingIndex += 1) {
+          if (instances.length >= maxInstances) break outer;
+          if (cursorX + width > rightEdge + 1e-9) {
+            clippedFacingCount += facingCount - facingIndex;
+            break;
+          }
+
+          const localX = cursorX + width / 2;
+          const frontInset = Math.min(module.depthM * 0.18, 0.045);
+          const localZ = frontSign * (module.depthM / 2 - depth / 2 - frontInset);
+          const cos = Math.cos(-rotation);
+          const sin = Math.sin(-rotation);
+          const worldX = module.centerXM + localX * cos - localZ * sin;
+          const worldZ = module.centerYM + localX * sin + localZ * cos;
+          const shelfBase = fixtureClass(module.fixtureType) === "pallet"
+            ? height + SHELF_BOARD_M
+            : shelfIndex * levelHeight + SHELF_BOARD_M;
+          const worldY = shelfBase + productHeight / 2;
+          const matrix = new THREE.Matrix4();
+          matrix.compose(
+            new THREE.Vector3(worldX, worldY, worldZ),
+            quaternion,
+            new THREE.Vector3(width, productHeight, depth)
+          );
+          instances.push({ matrix, hue: stableHue(sku) });
+          cursorX += width + PRODUCT_GAP_M;
+        }
       }
     }
   }
-  return matrices;
+
+  return { instances, clippedFacingCount };
 }
 
 function addRouteLines(THREE, scene, model, disposables) {
@@ -187,6 +233,94 @@ function addRouteLines(THREE, scene, model, disposables) {
     });
     disposables.push(geometry, material);
     scene.add(new THREE.Line(geometry, material));
+  }
+}
+
+function addBoxToGroup(THREE, group, disposables, material, size, position, { castShadow = true } = {}) {
+  const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
+  disposables.push(geometry);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  return mesh;
+}
+
+function addOpenShelfFixture(THREE, scene, module, materials, disposables) {
+  const kind = fixtureClass(module.fixtureType);
+  const shelfCount = Math.max(1, module.shelfCount || 1);
+  const height = moduleHeight(module);
+  const group = new THREE.Group();
+  group.position.set(module.centerXM, 0, module.centerYM);
+  group.rotation.y = (-module.rotationDeg * Math.PI) / 180;
+  scene.add(group);
+
+  if (kind === "pallet") {
+    const slab = addBoxToGroup(
+      THREE,
+      group,
+      disposables,
+      materials.pallet,
+      [module.widthM, 0.12, module.depthM],
+      [0, 0.06, 0]
+    );
+    slab.castShadow = true;
+    const slatCount = 5;
+    for (let index = 0; index < slatCount; index += 1) {
+      const ratio = slatCount === 1 ? 0 : index / (slatCount - 1);
+      const x = -module.widthM * 0.42 + module.widthM * 0.84 * ratio;
+      addBoxToGroup(
+        THREE,
+        group,
+        disposables,
+        materials.shelf,
+        [Math.max(0.035, module.widthM * 0.12), 0.025, module.depthM * 0.96],
+        [x, 0.135, 0],
+        { castShadow: false }
+      );
+    }
+    return;
+  }
+
+  const postDepth = Math.max(0.04, Math.min(module.depthM * 0.16, 0.08));
+  const postX = Math.max(0, module.widthM / 2 - FIXTURE_POST_M / 2);
+  addBoxToGroup(THREE, group, disposables, materials.frame[kind], [FIXTURE_POST_M, height, postDepth], [-postX, height / 2, 0]);
+  addBoxToGroup(THREE, group, disposables, materials.frame[kind], [FIXTURE_POST_M, height, postDepth], [postX, height / 2, 0]);
+  addBoxToGroup(THREE, group, disposables, materials.frame[kind], [module.widthM, FIXTURE_POST_M, postDepth], [0, height - FIXTURE_POST_M / 2, 0]);
+
+  for (let shelfIndex = 0; shelfIndex < shelfCount; shelfIndex += 1) {
+    const y = shelfIndex * (height / shelfCount) + SHELF_BOARD_M / 2;
+    addBoxToGroup(
+      THREE,
+      group,
+      disposables,
+      materials.shelf,
+      [Math.max(0.05, module.widthM - FIXTURE_POST_M * 2.4), SHELF_BOARD_M, module.depthM * 0.94],
+      [0, y, 0],
+      { castShadow: false }
+    );
+  }
+
+  if (kind === "chilled" || kind === "frozen") {
+    const backDepth = Math.max(0.015, Math.min(0.03, module.depthM * 0.06));
+    addBoxToGroup(
+      THREE,
+      group,
+      disposables,
+      materials.frame[kind],
+      [Math.max(0.05, module.widthM - FIXTURE_POST_M * 2), height * 0.97, backDepth],
+      [0, height * 0.49, -module.depthM / 2 + backDepth / 2],
+      { castShadow: false }
+    );
+    const glassGeometry = new THREE.PlaneGeometry(
+      Math.max(0.05, module.widthM - FIXTURE_POST_M * 2.5),
+      height * 0.92
+    );
+    disposables.push(glassGeometry);
+    const glass = new THREE.Mesh(glassGeometry, materials.glass);
+    glass.position.set(0, height * 0.5, module.depthM / 2 + 0.002);
+    group.add(glass);
   }
 }
 
@@ -217,19 +351,25 @@ function Twin3D({ model, t, onViewerReady }) {
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
         host.replaceChildren(renderer.domElement);
         renderer.domElement.setAttribute("role", "img");
         renderer.domElement.setAttribute("aria-label", t("canvasLabel"));
         renderer.domElement.tabIndex = 0;
 
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x172033, 1.25));
-        const key = new THREE.DirectionalLight(0xffffff, 2.2);
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x172033, 1.4));
+        const key = new THREE.DirectionalLight(0xffffff, 2.6);
         key.position.set(model.floor.widthM * 0.35, 12, model.floor.depthM * 0.35);
         key.castShadow = true;
         scene.add(key);
+        const fill = new THREE.DirectionalLight(0xbfd7ff, 0.85);
+        fill.position.set(model.floor.widthM, 5, model.floor.depthM);
+        scene.add(fill);
 
         const floorGeometry = new THREE.PlaneGeometry(model.floor.widthM, model.floor.depthM);
-        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x171922, roughness: 0.9, metalness: 0.05 });
+        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x171922, roughness: 0.88, metalness: 0.03 });
         disposables.push(floorGeometry, floorMaterial);
         const floor = new THREE.Mesh(floorGeometry, floorMaterial);
         floor.rotation.x = -Math.PI / 2;
@@ -243,13 +383,13 @@ function Twin3D({ model, t, onViewerReady }) {
         addRouteLines(THREE, scene, model, disposables);
 
         const architectureMaterials = {
-          wall: new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.85 }),
-          column: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.75 }),
-          no_go: new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.8 }),
-          technical: new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 }),
-          emergency_exit: new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.65 }),
-          picker_entry: new THREE.MeshStandardMaterial({ color: 0xdf1067, roughness: 0.55 }),
-          default: new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 }),
+          wall: new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.9 }),
+          column: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.78 }),
+          no_go: new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.82 }),
+          technical: new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.82 }),
+          emergency_exit: new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.67 }),
+          picker_entry: new THREE.MeshStandardMaterial({ color: 0xdf1067, roughness: 0.58 }),
+          default: new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.82 }),
         };
         disposables.push(...Object.values(architectureMaterials));
 
@@ -266,50 +406,42 @@ function Twin3D({ model, t, onViewerReady }) {
         }
 
         const fixtureMaterials = {
-          regular: new THREE.MeshStandardMaterial({ color: 0x7c8597, roughness: 0.55, metalness: 0.2 }),
-          chilled: new THREE.MeshStandardMaterial({ color: 0x0891b2, roughness: 0.4, metalness: 0.15 }),
-          frozen: new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.4, metalness: 0.15 }),
-          pallet: new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 }),
+          frame: {
+            regular: new THREE.MeshStandardMaterial({ color: 0x7c8597, roughness: 0.48, metalness: 0.28 }),
+            chilled: new THREE.MeshStandardMaterial({ color: 0x0891b2, roughness: 0.36, metalness: 0.2 }),
+            frozen: new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.36, metalness: 0.2 }),
+          },
+          pallet: new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.86 }),
+          shelf: new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.38, metalness: 0.32 }),
+          glass: new THREE.MeshPhysicalMaterial({ color: 0xdbeafe, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.16, transmission: 0.55, depthWrite: false }),
         };
-        disposables.push(...Object.values(fixtureMaterials));
-        const shelfMaterial = new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.45, metalness: 0.25 });
-        disposables.push(shelfMaterial);
+        disposables.push(
+          ...Object.values(fixtureMaterials.frame),
+          fixtureMaterials.pallet,
+          fixtureMaterials.shelf,
+          fixtureMaterials.glass
+        );
 
         for (const module of model.modules) {
-          const kind = fixtureClass(module.fixtureType);
-          const shelfCount = Math.max(1, module.shelfCount || 1);
-          const moduleHeight = kind === "pallet" ? 0.18 : Math.max(1.5, shelfCount * 0.32);
-          const frameGeometry = new THREE.BoxGeometry(module.widthM, moduleHeight, module.depthM);
-          disposables.push(frameGeometry);
-          const frame = new THREE.Mesh(frameGeometry, fixtureMaterials[kind]);
-          frame.position.set(module.centerXM, moduleHeight / 2, module.centerYM);
-          frame.rotation.y = (-module.rotationDeg * Math.PI) / 180;
-          frame.castShadow = true;
-          frame.receiveShadow = true;
-          scene.add(frame);
-
-          if (kind !== "pallet") {
-            for (let shelfIndex = 1; shelfIndex < shelfCount; shelfIndex += 1) {
-              const shelfGeometry = new THREE.BoxGeometry(module.widthM * 0.98, 0.025, module.depthM * 0.98);
-              disposables.push(shelfGeometry);
-              const shelf = new THREE.Mesh(shelfGeometry, shelfMaterial);
-              shelf.position.copy(frame.position);
-              shelf.position.y = (moduleHeight / shelfCount) * shelfIndex;
-              shelf.rotation.y = frame.rotation.y;
-              scene.add(shelf);
-            }
-          }
+          addOpenShelfFixture(THREE, scene, module, fixtureMaterials, disposables);
         }
 
-        const matrices = buildProductInstances(THREE, model);
-        if (matrices.length) {
+        const facingModel = buildFacingInstances(THREE, model);
+        if (facingModel.instances.length) {
           const productGeometry = new THREE.BoxGeometry(1, 1, 1);
-          const productMaterial = new THREE.MeshStandardMaterial({ color: 0xdf1067, roughness: 0.5, metalness: 0.04 });
+          const productMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.46, metalness: 0.02 });
           disposables.push(productGeometry, productMaterial);
-          const products = new THREE.InstancedMesh(productGeometry, productMaterial, matrices.length);
-          matrices.forEach((matrix, index) => products.setMatrixAt(index, matrix));
+          const products = new THREE.InstancedMesh(productGeometry, productMaterial, facingModel.instances.length);
+          facingModel.instances.forEach((instance, index) => {
+            products.setMatrixAt(index, instance.matrix);
+            const color = new THREE.Color().setHSL(instance.hue, 0.58, 0.56, THREE.SRGBColorSpace);
+            products.setColorAt(index, color);
+          });
           products.instanceMatrix.needsUpdate = true;
+          if (products.instanceColor) products.instanceColor.needsUpdate = true;
           products.castShadow = true;
+          products.receiveShadow = true;
+          products.userData.clippedFacingCount = facingModel.clippedFacingCount;
           scene.add(products);
         }
 
@@ -317,16 +449,22 @@ function Twin3D({ model, t, onViewerReady }) {
         controls.enableDamping = true;
         controls.dampingFactor = 0.07;
         controls.maxPolarAngle = Math.PI / 2.02;
-        controls.minDistance = 1.5;
+        controls.minDistance = 1.2;
         controls.maxDistance = Math.max(model.floor.widthM, model.floor.depthM) * 4;
 
-        const center = new THREE.Vector3(model.floor.widthM / 2, 0.6, model.floor.depthM / 2);
+        const center = new THREE.Vector3(model.floor.widthM / 2, 0.9, model.floor.depthM / 2);
         const maxDimension = Math.max(model.floor.widthM, model.floor.depthM, 4);
         const setPreset = (preset = "perspective") => {
-          if (preset === "top") camera.position.set(center.x, maxDimension * 1.35, center.z + 0.001);
-          else if (preset === "front") camera.position.set(center.x, maxDimension * 0.38, model.floor.depthM + maxDimension * 0.85);
-          else camera.position.set(model.floor.widthM + maxDimension * 0.45, maxDimension * 0.72, model.floor.depthM + maxDimension * 0.45);
-          controls.target.copy(center);
+          if (preset === "top") {
+            camera.position.set(center.x, maxDimension * 1.35, center.z + 0.001);
+            controls.target.set(center.x, 0, center.z);
+          } else if (preset === "front") {
+            camera.position.set(center.x, 1.65, model.floor.depthM + Math.max(2, maxDimension * 0.28));
+            controls.target.set(center.x, 1.15, center.z);
+          } else {
+            camera.position.set(model.floor.widthM + maxDimension * 0.38, maxDimension * 0.55, model.floor.depthM + maxDimension * 0.38);
+            controls.target.copy(center);
+          }
           controls.update();
         };
         setPreset("perspective");

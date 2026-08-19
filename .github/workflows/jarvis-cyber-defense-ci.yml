@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: jarvis-cyber-defense-${{ github.ref }}
@@ -45,6 +45,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+      - name: One-shot safe Ruff autofix on Jarvis feature branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/product/jarvis-context-intelligence-v1'
+        run: |
+          set +e
+          python -m ruff check \
+            app/cyber_*.py \
+            app/company_detection_coverage_intelligence.py \
+            tests/test_cyber_*.py \
+            tests/test_company_detection_coverage_intelligence.py \
+            --fix
+          set -e
+          if ! git diff --quiet; then
+            git diff --check
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app/cyber_*.py app/company_detection_coverage_intelligence.py tests/test_cyber_*.py tests/test_company_detection_coverage_intelligence.py
+            git commit -m "style(jarvis): apply safe cyber Ruff fixes"
+            git push origin HEAD:product/jarvis-context-intelligence-v1
+          fi
       - name: Ruff cyber defense surface
         run: |
           set +e

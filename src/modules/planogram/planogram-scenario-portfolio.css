@@ -43,9 +43,14 @@
   flex-wrap: wrap;
 }
 
-.eay-planogram-scenario-actions button {
+.eay-planogram-scenario-actions button,
+.eay-planogram-scenario-twin-button {
   padding: 10px 14px;
   border-radius: 12px;
+}
+
+.eay-planogram-scenario-twin-button {
+  width: 100%;
 }
 
 .eay-planogram-scenario-actions span,
@@ -142,6 +147,47 @@
   font-size: 0.72rem;
 }
 
+.eay-planogram-scenario-twin {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.eay-planogram-scenario-twin > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+  gap: 12px;
+  align-items: start;
+}
+
+.eay-planogram-scenario-twin > header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.eay-planogram-scenario-twin > header > div:last-child {
+  justify-items: end;
+}
+
+.eay-planogram-scenario-twin > header span,
+.eay-planogram-scenario-twin > p {
+  font-size: 0.82rem;
+  opacity: 0.76;
+}
+
+.eay-planogram-scenario-twin > header code {
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+.eay-planogram-scenario-twin > p {
+  margin: 0;
+}
+
 .eay-planogram-scenario-boundary {
   align-items: flex-start;
   padding: 12px;
@@ -173,7 +219,16 @@
   }
 
   .eay-planogram-scenario-summary,
-  .eay-planogram-scenario-grid {
+  .eay-planogram-scenario-grid,
+  .eay-planogram-scenario-twin > header {
     grid-template-columns: 1fr;
+  }
+
+  .eay-planogram-scenario-twin > header > div:last-child {
+    justify-items: start;
+  }
+
+  .eay-planogram-scenario-twin > header code {
+    text-align: start;
   }
 }

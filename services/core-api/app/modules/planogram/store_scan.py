@@ -8,6 +8,8 @@ preview so arbitrary scan angles are preserved rather than silently snapped.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from math import isfinite
 from typing import Any
 
@@ -54,6 +56,42 @@ def _source(provider: str) -> str:
     if provider == "cad_import":
         return "cad_import"
     return "manual_survey"
+
+
+def _scan_fingerprint(
+    *,
+    provider: str,
+    source_ref: str,
+    floor_width_m: float | None,
+    floor_depth_m: float | None,
+    v2_elements: list[dict[str, Any]],
+    recognized_fixtures: list[dict[str, Any]],
+) -> str:
+    """Fingerprint normalized measured evidence without persisting raw media."""
+    payload = {
+        "contract": STORE_SCAN_CONTRACT_VERSION,
+        "provider": provider,
+        "source_ref": source_ref,
+        "floor_width_m": floor_width_m,
+        "floor_depth_m": floor_depth_m,
+        "architecture_v2_elements": sorted(
+            v2_elements,
+            key=lambda row: str(row.get("element_id") or ""),
+        ),
+        "recognized_fixtures": sorted(
+            recognized_fixtures,
+            key=lambda row: str(row.get("element_id") or ""),
+        ),
+    }
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -158,8 +196,6 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
         if element_type == "opening":
-            # V2 can preserve an opening's geometry, but operational semantics
-            # still require a person to classify it as door/exit/etc.
             warnings.append(f"scan_opening_requires_classification:{element_id}")
             continue
 
@@ -190,8 +226,6 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
     if non_orthogonal_count:
         blockers.append("store_dna_v1_cannot_promote_non_orthogonal_geometry")
 
-    # Store Scan cannot infer operational authority. These anchors are explicit
-    # human/operational annotations before a draft may enter maker/checker flow.
     blockers.extend(
         [
             "picker_entry_annotation_required",
@@ -223,9 +257,19 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
             "elements": v2_elements,
         }
 
+    fingerprint = _scan_fingerprint(
+        provider=provider,
+        source_ref=source_ref,
+        floor_width_m=floor_width_m,
+        floor_depth_m=floor_depth_m,
+        v2_elements=v2_elements,
+        recognized_fixtures=recognized_fixtures,
+    )
+
     return {
         "contract": STORE_SCAN_CONTRACT_VERSION,
         "provider": provider or None,
+        "scan_fingerprint": fingerprint,
         "preview_only": True,
         "raw_media_persisted": False,
         "production_evidence": False,

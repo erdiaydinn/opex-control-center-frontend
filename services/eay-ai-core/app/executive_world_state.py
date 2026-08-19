@@ -1,13 +1,14 @@
 """Decision-relevant views over the canonical EAY Company World Model.
 
-The canonical :mod:`world_model` remains the source of company state. This
-module does not create a second world store. It derives bounded executive views:
-small relation-aware subgraphs, explicit required-field readiness, and
-fingerprint-only snapshot changes suitable for reasoning and audit.
+The canonical :mod:`world_model` remains the source of company state. A
+WorldSnapshot intentionally contains resolved fields, active relations,
+contradictions and blocked keys rather than raw assertions. This module derives
+bounded executive views from exactly that contract; it does not reconstruct or
+invent raw assertion history.
 
-Raw company values stay in the canonical WorldSnapshot/subgraph. Diff records
-carry value fingerprints rather than copying business payloads into another
-memory layer.
+Freshness is supplied separately as reference-only observation metadata because
+ResolvedField intentionally does not retain observation timestamps. Snapshot
+deltas carry value fingerprints rather than raw before/after values.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from .world_model import WorldAssertion, WorldEntity, WorldSnapshot, build_world_snapshot
+from .world_model import ResolvedField, WorldContradiction, WorldEntity, WorldRelation, WorldSnapshot
 
 EXECUTIVE_WORLD_STATE_CONTRACT = "eay-executive-world-state-v1"
 
@@ -30,6 +31,7 @@ class WorldRequirementStatus(str, Enum):
     MISSING = "missing"
     BLOCKED = "blocked"
     STALE = "stale"
+    FRESHNESS_UNKNOWN = "freshness_unknown"
 
 
 class WorldChangeKind(str, Enum):
@@ -47,14 +49,27 @@ class ExecutiveFieldRequirement(BaseModel):
     maximum_observation_age_seconds: int | None = Field(default=None, ge=0, le=31_536_000)
 
 
+class FieldFreshnessObservation(BaseModel):
+    entity_id: str = Field(min_length=1)
+    field_name: str = Field(min_length=1)
+    observed_at: datetime
+    evidence_ref: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def observation_time_is_aware(self) -> "FieldFreshnessObservation":
+        _aware(self.observed_at, "field_freshness_observed_at_requires_timezone")
+        return self
+
+
 class ExecutiveFieldReadiness(BaseModel):
     entity_id: str
     field_name: str
     status: WorldRequirementStatus
-    assertion_id: str | None = None
+    assertion_ids: tuple[str, ...] = ()
     truth_class: str | None = None
+    evidence_refs: tuple[str, ...] = ()
     observed_at: datetime | None = None
-    evidence_ref: str | None = None
+    freshness_evidence_ref: str | None = None
     blocker: str | None = None
 
 
@@ -77,15 +92,40 @@ class ExecutiveWorldReadiness(BaseModel):
         return self
 
 
+class ExecutiveWorldSubgraph(BaseModel):
+    contract: str = EXECUTIVE_WORLD_STATE_CONTRACT
+    tenant_id: str
+    parent_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    as_of: datetime
+    entities: tuple[WorldEntity, ...]
+    fields: tuple[ResolvedField, ...]
+    relations: tuple[WorldRelation, ...]
+    contradictions: tuple[WorldContradiction, ...]
+    blocked_field_keys: tuple[str, ...]
+    persistent_memory_authority: bool = False
+    truth_authority_granted: bool = False
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def subgraph_is_bounded_view(self) -> "ExecutiveWorldSubgraph":
+        _aware(self.as_of, "executive_world_subgraph_as_of_requires_timezone")
+        if self.persistent_memory_authority or self.truth_authority_granted:
+            raise ValueError("executive_world_subgraph_never_becomes_truth_store")
+        expected = _fingerprint(_payload(self))
+        if self.fingerprint != expected:
+            raise ValueError("executive_world_subgraph_fingerprint_mismatch")
+        return self
+
+
 class WorldStateChange(BaseModel):
     field_key: str
     kind: WorldChangeKind
     before_value_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     after_value_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    before_assertion_id: str | None = None
-    after_assertion_id: str | None = None
-    before_evidence_ref: str | None = None
-    after_evidence_ref: str | None = None
+    before_assertion_ids: tuple[str, ...] = ()
+    after_assertion_ids: tuple[str, ...] = ()
+    before_evidence_refs: tuple[str, ...] = ()
+    after_evidence_refs: tuple[str, ...] = ()
 
 
 class WorldSnapshotDelta(BaseModel):
@@ -125,18 +165,25 @@ def _value_fingerprint(value: Any) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _payload(model: BaseModel) -> dict[str, Any]:
+    data = model.model_dump(mode="json")
+    data.pop("fingerprint", None)
+    return data
+
+
+def _fingerprint(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def build_decision_subgraph(
     *,
     snapshot: WorldSnapshot,
     seed_entity_ids: tuple[str, ...],
     relationship_hops: int = 1,
     field_allowlist: tuple[str, ...] = (),
-) -> WorldSnapshot:
-    """Return a canonical WorldSnapshot narrowed to decision-relevant entities.
-
-    Relationships are followed only when their opaque reference exactly matches
-    another entity ID in the same snapshot. No invented graph edge is inferred.
-    """
+) -> ExecutiveWorldSubgraph:
+    """Derive a relation-aware, decision-relevant view from resolved state."""
 
     if not seed_entity_ids:
         raise ValueError("executive_world_subgraph_requires_seed_entity")
@@ -151,34 +198,57 @@ def build_decision_subgraph(
     frontier = set(seed_entity_ids)
     for _ in range(relationship_hops):
         next_frontier: set[str] = set()
-        for entity_id in frontier:
-            for relationship in entity_map[entity_id].relationships:
-                if relationship in entity_map and relationship not in selected:
-                    next_frontier.add(relationship)
+        for relation in snapshot.relations:
+            if relation.source_entity_id in frontier and relation.target_entity_id not in selected:
+                next_frontier.add(relation.target_entity_id)
+            if relation.target_entity_id in frontier and relation.source_entity_id not in selected:
+                next_frontier.add(relation.source_entity_id)
         if not next_frontier:
             break
         selected.update(next_frontier)
         frontier = next_frontier
 
     allowed_fields = set(field_allowlist)
-    entities = [item for item in snapshot.entities if item.entity_id in selected]
-    assertions = [
+    entities = tuple(item for item in snapshot.entities if item.entity_id in selected)
+    fields = tuple(
         item
-        for item in snapshot.assertions
+        for item in snapshot.fields
         if item.entity_id in selected and (not allowed_fields or item.field_name in allowed_fields)
-    ]
-    return build_world_snapshot(
-        tenant_id=snapshot.tenant_id,
-        as_of=snapshot.as_of,
-        entities=entities,
-        assertions=assertions,
     )
+    relations = tuple(
+        item
+        for item in snapshot.relations
+        if item.source_entity_id in selected and item.target_entity_id in selected
+    )
+    contradictions = tuple(
+        item for item in snapshot.contradictions if item.entity_id in selected
+    )
+    blocked = tuple(
+        item
+        for item in snapshot.blocked_field_keys
+        if item.rsplit(":", 1)[0] in selected
+    )
+    draft = {
+        "contract": EXECUTIVE_WORLD_STATE_CONTRACT,
+        "tenant_id": snapshot.tenant_id,
+        "parent_snapshot_fingerprint": snapshot.fingerprint,
+        "as_of": snapshot.as_of.isoformat().replace("+00:00", "Z"),
+        "entities": [item.model_dump(mode="json") for item in entities],
+        "fields": [item.model_dump(mode="json") for item in fields],
+        "relations": [item.model_dump(mode="json") for item in relations],
+        "contradictions": [item.model_dump(mode="json") for item in contradictions],
+        "blocked_field_keys": list(blocked),
+        "persistent_memory_authority": False,
+        "truth_authority_granted": False,
+    }
+    return ExecutiveWorldSubgraph.model_validate({**draft, "fingerprint": _fingerprint(draft)})
 
 
 def assess_executive_world_readiness(
     *,
     snapshot: WorldSnapshot,
     requirements: tuple[ExecutiveFieldRequirement, ...],
+    freshness_observations: tuple[FieldFreshnessObservation, ...] = (),
 ) -> ExecutiveWorldReadiness:
     if not requirements:
         raise ValueError("executive_world_readiness_requires_fields")
@@ -186,11 +256,10 @@ def assess_executive_world_readiness(
     if len(identities) != len(set(identities)):
         raise ValueError("executive_world_readiness_duplicate_requirement")
 
-    resolved = {
-        (item.entity_id, item.field_name): item
-        for item in snapshot.assertions
-        if f"{item.entity_id}:{item.field_name}" not in snapshot.blocked_field_keys
-    }
+    fields_by_key = {(item.entity_id, item.field_name): item for item in snapshot.fields}
+    freshness_map = {(item.entity_id, item.field_name): item for item in freshness_observations}
+    if len(freshness_map) != len(freshness_observations):
+        raise ValueError("executive_world_readiness_duplicate_freshness_observation")
     blocked = set(snapshot.blocked_field_keys)
     fields: list[ExecutiveFieldReadiness] = []
     blockers: list[str] = []
@@ -198,21 +267,20 @@ def assess_executive_world_readiness(
     for requirement in requirements:
         key = (requirement.entity_id, requirement.field_name)
         field_key = f"{requirement.entity_id}:{requirement.field_name}"
-        assertion = resolved.get(key)
+        resolved = fields_by_key.get(key)
         if field_key in blocked:
-            status = WorldRequirementStatus.BLOCKED
             blocker = f"world_field_blocked:{field_key}"
             blockers.append(blocker)
             fields.append(
                 ExecutiveFieldReadiness(
                     entity_id=requirement.entity_id,
                     field_name=requirement.field_name,
-                    status=status,
+                    status=WorldRequirementStatus.BLOCKED,
                     blocker=blocker,
                 )
             )
             continue
-        if assertion is None:
+        if resolved is None:
             blocker = f"world_field_missing:{field_key}"
             blockers.append(blocker)
             fields.append(
@@ -225,26 +293,36 @@ def assess_executive_world_readiness(
             )
             continue
 
-        stale = False
-        if requirement.maximum_observation_age_seconds is not None:
-            age_seconds = (snapshot.as_of - assertion.observed_at).total_seconds()
-            stale = age_seconds > requirement.maximum_observation_age_seconds
-        if stale:
-            blocker = f"world_field_stale:{field_key}"
-            blockers.append(blocker)
-            status = WorldRequirementStatus.STALE
-        else:
-            blocker = None
+        freshness = freshness_map.get(key)
+        if requirement.maximum_observation_age_seconds is None:
             status = WorldRequirementStatus.READY
+            blocker = None
+        elif freshness is None:
+            status = WorldRequirementStatus.FRESHNESS_UNKNOWN
+            blocker = f"world_field_freshness_unknown:{field_key}"
+            blockers.append(blocker)
+        else:
+            age_seconds = (snapshot.as_of - freshness.observed_at).total_seconds()
+            if age_seconds < 0:
+                raise ValueError("world_field_freshness_observation_from_future")
+            if age_seconds > requirement.maximum_observation_age_seconds:
+                status = WorldRequirementStatus.STALE
+                blocker = f"world_field_stale:{field_key}"
+                blockers.append(blocker)
+            else:
+                status = WorldRequirementStatus.READY
+                blocker = None
+
         fields.append(
             ExecutiveFieldReadiness(
                 entity_id=requirement.entity_id,
                 field_name=requirement.field_name,
                 status=status,
-                assertion_id=assertion.assertion_id,
-                truth_class=assertion.truth_class.value,
-                observed_at=assertion.observed_at,
-                evidence_ref=assertion.evidence_ref,
+                assertion_ids=resolved.assertion_ids,
+                truth_class=resolved.truth_class.value,
+                evidence_refs=resolved.evidence_refs,
+                observed_at=freshness.observed_at if freshness is not None else None,
+                freshness_evidence_ref=freshness.evidence_ref if freshness is not None else None,
                 blocker=blocker,
             )
         )
@@ -269,8 +347,8 @@ def diff_world_snapshots(
     if after.as_of < before.as_of:
         raise ValueError("world_delta_after_predates_before")
 
-    before_map = {(item.entity_id, item.field_name): item for item in before.assertions}
-    after_map = {(item.entity_id, item.field_name): item for item in after.assertions}
+    before_map = {(item.entity_id, item.field_name): item for item in before.fields}
+    after_map = {(item.entity_id, item.field_name): item for item in after.fields}
     before_blocked = set(before.blocked_field_keys)
     after_blocked = set(after.blocked_field_keys)
     all_keys = set(before_map) | set(after_map) | {
@@ -300,7 +378,7 @@ def diff_world_snapshots(
             new_fp = _value_fingerprint(new.value)
             if old_fp != new_fp:
                 kind = WorldChangeKind.CHANGED
-            elif old.evidence_ref != new.evidence_ref or old.assertion_id != new.assertion_id:
+            elif old.evidence_refs != new.evidence_refs or old.assertion_ids != new.assertion_ids:
                 kind = WorldChangeKind.EVIDENCE_REFRESHED
             else:
                 continue
@@ -309,12 +387,20 @@ def diff_world_snapshots(
             WorldStateChange(
                 field_key=field_key,
                 kind=kind,
-                before_value_fingerprint=_value_fingerprint(old.value) if old is not None else None,
-                after_value_fingerprint=_value_fingerprint(new.value) if new is not None else None,
-                before_assertion_id=old.assertion_id if old is not None else None,
-                after_assertion_id=new.assertion_id if new is not None else None,
-                before_evidence_ref=old.evidence_ref if old is not None else None,
-                after_evidence_ref=new.evidence_ref if new is not None else None,
+                before_value_fingerprint=(
+                    _value_fingerprint(old.value)
+                    if old is not None and not was_blocked
+                    else None
+                ),
+                after_value_fingerprint=(
+                    _value_fingerprint(new.value)
+                    if new is not None and not is_blocked
+                    else None
+                ),
+                before_assertion_ids=old.assertion_ids if old is not None else (),
+                after_assertion_ids=new.assertion_ids if new is not None else (),
+                before_evidence_refs=old.evidence_refs if old is not None else (),
+                after_evidence_refs=new.evidence_refs if new is not None else (),
             )
         )
 

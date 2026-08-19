@@ -15,32 +15,100 @@ from pydantic import BaseModel, Field
 from .tool_router import ToolCallRequest, bounded_sql, validate_read_only_sql
 
 DB_PATH = Path(os.getenv("EAY_AI_DB_PATH", "./data/eay_ai.db"))
-DEFAULT_MAX_BYTES = int(os.getenv("EAY_BQ_MAX_BYTES", str(250 * 1024 * 1024)))
+DEFAULT_MAX_BYTES = int(
+    os.getenv("EAY_BQ_MAX_BYTES", str(250 * 1024 * 1024))
+)
 DEFAULT_TIMEOUT_MS = int(os.getenv("EAY_BQ_TIMEOUT_MS", "20000"))
-EXECUTION_ENABLED = os.getenv("EAY_BQ_EXECUTION_ENABLED", "false").lower() == "true"
+EXECUTION_ENABLED = (
+    os.getenv("EAY_BQ_EXECUTION_ENABLED", "false").lower() == "true"
+)
 BQ_PROJECT = os.getenv("EAY_BQ_PROJECT", "").strip() or None
 BQ_LOCATION = os.getenv("EAY_BQ_LOCATION", "").strip() or None
 
 
 class BigQueryAdapter(Protocol):
-    def dry_run(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int) -> int: ...
-    def execute(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int, maximum_bytes_billed: int) -> list[dict[str, Any]]: ...
+    def dry_run(
+        self,
+        sql: str,
+        parameters: dict[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> int: ...
+
+    def execute(
+        self,
+        sql: str,
+        parameters: dict[str, Any],
+        *,
+        timeout_ms: int,
+        maximum_bytes_billed: int,
+    ) -> list[dict[str, Any]]: ...
 
 
 class ExecuteRequest(ToolCallRequest):
-    maximum_bytes_billed: int = Field(default=DEFAULT_MAX_BYTES, ge=1, le=10 * 1024 * 1024 * 1024)
-    timeout_ms: int = Field(default=DEFAULT_TIMEOUT_MS, ge=1000, le=120000)
-    semantic_contract_id: str | None = Field(default=None, max_length=180)
-    semantic_fingerprint: str | None = Field(default=None, max_length=64)
-    schema_contract_id: str | None = Field(default=None, max_length=180)
-    schema_fingerprint: str | None = Field(default=None, max_length=64)
-    schema_evidence_fingerprint: str | None = Field(default=None, max_length=64)
-    unit_contract_fingerprint: str | None = Field(default=None, max_length=64)
-    aggregation_contract_fingerprint: str | None = Field(default=None, max_length=64)
-    policy_contract_fingerprint: str | None = Field(default=None, max_length=64)
-    formula_contract_fingerprint: str | None = Field(default=None, max_length=64)
-    result_contract_fingerprint: str | None = Field(default=None, max_length=64)
-    activation_provenance_fingerprint: str | None = Field(default=None, max_length=64)
+    maximum_bytes_billed: int = Field(
+        default=DEFAULT_MAX_BYTES,
+        ge=1,
+        le=10 * 1024 * 1024 * 1024,
+    )
+    timeout_ms: int = Field(
+        default=DEFAULT_TIMEOUT_MS,
+        ge=1000,
+        le=120000,
+    )
+    authorization_request_id: str | None = Field(
+        default=None,
+        max_length=128,
+    )
+    tenant_id: str | None = Field(default=None, max_length=36)
+    authorization_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    semantic_contract_id: str | None = Field(
+        default=None,
+        max_length=180,
+    )
+    semantic_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    schema_contract_id: str | None = Field(
+        default=None,
+        max_length=180,
+    )
+    schema_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    schema_evidence_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    unit_contract_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    aggregation_contract_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    policy_contract_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    formula_contract_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    result_contract_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
+    activation_provenance_fingerprint: str | None = Field(
+        default=None,
+        max_length=64,
+    )
 
 
 class ExecutionResult(BaseModel):
@@ -54,8 +122,17 @@ class ExecutionResult(BaseModel):
 
 
 SENSITIVE_KEYS = {
-    "tc", "tc_kimlik", "tckn", "national_id", "identity_number",
-    "phone", "telefon", "email", "mail", "address", "adres",
+    "tc",
+    "tc_kimlik",
+    "tckn",
+    "national_id",
+    "identity_number",
+    "phone",
+    "telefon",
+    "email",
+    "mail",
+    "address",
+    "adres",
 }
 
 
@@ -68,13 +145,19 @@ def _mask_scalar(value: Any) -> Any:
     return text[:2] + "***" + text[-2:]
 
 
-def mask_sensitive_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def mask_sensitive_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     for row in rows:
         clean: dict[str, Any] = {}
         for key, value in row.items():
             normalized = key.lower().replace(" ", "_")
-            clean[key] = _mask_scalar(value) if normalized in SENSITIVE_KEYS else value
+            clean[key] = (
+                _mask_scalar(value)
+                if normalized in SENSITIVE_KEYS
+                else value
+            )
         output.append(clean)
     return output
 
@@ -104,6 +187,9 @@ class ExecutionAuditStore:
                     status TEXT NOT NULL,
                     requested_by TEXT,
                     reason TEXT NOT NULL,
+                    authorization_request_id TEXT,
+                    tenant_id TEXT,
+                    authorization_fingerprint TEXT,
                     semantic_contract_id TEXT,
                     semantic_fingerprint TEXT,
                     schema_contract_id TEXT,
@@ -119,8 +205,16 @@ class ExecutionAuditStore:
                 )
                 """
             )
-            existing = {row[1] for row in conn.execute("PRAGMA table_info(bigquery_execution_audit)")}
+            existing = {
+                row[1]
+                for row in conn.execute(
+                    "PRAGMA table_info(bigquery_execution_audit)"
+                )
+            }
             for name in (
+                "authorization_request_id",
+                "tenant_id",
+                "authorization_fingerprint",
                 "semantic_contract_id",
                 "semantic_fingerprint",
                 "schema_contract_id",
@@ -134,30 +228,57 @@ class ExecutionAuditStore:
                 "activation_provenance_fingerprint",
             ):
                 if name not in existing:
-                    conn.execute(f"ALTER TABLE bigquery_execution_audit ADD COLUMN {name} TEXT")
+                    conn.execute(
+                        "ALTER TABLE bigquery_execution_audit "
+                        f"ADD COLUMN {name} TEXT"
+                    )
 
-    def save(self, *, payload: ExecuteRequest, dry_run_bytes: int | None, status: str) -> str:
+    def save(
+        self,
+        *,
+        payload: ExecuteRequest,
+        dry_run_bytes: int | None,
+        status: str,
+    ) -> str:
         execution_id = str(uuid.uuid4())
         digest = hashlib.sha256(payload.sql.encode("utf-8")).hexdigest()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO bigquery_execution_audit(
-                    id, tool, sql_sha256, dry_run_bytes, maximum_bytes_billed,
-                    timeout_ms, max_rows, status, requested_by, reason,
-                    semantic_contract_id, semantic_fingerprint,
-                    schema_contract_id, schema_fingerprint, schema_evidence_fingerprint,
+                    id, tool, sql_sha256, dry_run_bytes,
+                    maximum_bytes_billed, timeout_ms, max_rows, status,
+                    requested_by, reason, authorization_request_id, tenant_id,
+                    authorization_fingerprint, semantic_contract_id,
+                    semantic_fingerprint, schema_contract_id,
+                    schema_fingerprint, schema_evidence_fingerprint,
                     unit_contract_fingerprint, aggregation_contract_fingerprint,
                     policy_contract_fingerprint, formula_contract_fingerprint,
-                    result_contract_fingerprint, activation_provenance_fingerprint, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    result_contract_fingerprint,
+                    activation_provenance_fingerprint, created_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?
+                )
                 """,
                 (
-                    execution_id, payload.tool, digest, dry_run_bytes,
-                    payload.maximum_bytes_billed, payload.timeout_ms, payload.max_rows,
-                    status, payload.requested_by, payload.reason,
-                    payload.semantic_contract_id, payload.semantic_fingerprint,
-                    payload.schema_contract_id, payload.schema_fingerprint,
+                    execution_id,
+                    payload.tool,
+                    digest,
+                    dry_run_bytes,
+                    payload.maximum_bytes_billed,
+                    payload.timeout_ms,
+                    payload.max_rows,
+                    status,
+                    payload.requested_by,
+                    payload.reason,
+                    payload.authorization_request_id,
+                    payload.tenant_id,
+                    payload.authorization_fingerprint,
+                    payload.semantic_contract_id,
+                    payload.semantic_fingerprint,
+                    payload.schema_contract_id,
+                    payload.schema_fingerprint,
                     payload.schema_evidence_fingerprint,
                     payload.unit_contract_fingerprint,
                     payload.aggregation_contract_fingerprint,
@@ -172,17 +293,34 @@ class ExecutionAuditStore:
 
 
 class SafeBigQueryExecutor:
-    def __init__(self, adapter: BigQueryAdapter, audit_store: ExecutionAuditStore):
+    def __init__(
+        self,
+        adapter: BigQueryAdapter,
+        audit_store: ExecutionAuditStore,
+    ):
         self.adapter = adapter
         self.audit_store = audit_store
 
-    def run(self, payload: ExecuteRequest, *, execute: bool) -> ExecutionResult:
+    def run(
+        self,
+        payload: ExecuteRequest,
+        *,
+        execute: bool,
+    ) -> ExecutionResult:
         validate_read_only_sql(payload.sql)
         sql = bounded_sql(payload.sql, payload.max_rows)
-        dry_run_bytes = self.adapter.dry_run(sql, payload.parameters, timeout_ms=payload.timeout_ms)
+        dry_run_bytes = self.adapter.dry_run(
+            sql,
+            payload.parameters,
+            timeout_ms=payload.timeout_ms,
+        )
         digest = hashlib.sha256(payload.sql.encode("utf-8")).hexdigest()
         if dry_run_bytes > payload.maximum_bytes_billed:
-            execution_id = self.audit_store.save(payload=payload, dry_run_bytes=dry_run_bytes, status="rejected_cost")
+            execution_id = self.audit_store.save(
+                payload=payload,
+                dry_run_bytes=dry_run_bytes,
+                status="rejected_cost",
+            )
             return ExecutionResult(
                 execution_id=execution_id,
                 status="rejected_cost",
@@ -191,7 +329,11 @@ class SafeBigQueryExecutor:
                 sql_sha256=digest,
             )
         if not execute:
-            execution_id = self.audit_store.save(payload=payload, dry_run_bytes=dry_run_bytes, status="dry_run_ok")
+            execution_id = self.audit_store.save(
+                payload=payload,
+                dry_run_bytes=dry_run_bytes,
+                status="dry_run_ok",
+            )
             return ExecutionResult(
                 execution_id=execution_id,
                 status="dry_run_ok",
@@ -206,7 +348,11 @@ class SafeBigQueryExecutor:
             maximum_bytes_billed=payload.maximum_bytes_billed,
         )[: payload.max_rows]
         masked = mask_sensitive_rows(rows)
-        execution_id = self.audit_store.save(payload=payload, dry_run_bytes=dry_run_bytes, status="executed")
+        execution_id = self.audit_store.save(
+            payload=payload,
+            dry_run_bytes=dry_run_bytes,
+            status="executed",
+        )
         return ExecutionResult(
             execution_id=execution_id,
             status="executed",
@@ -219,17 +365,26 @@ class SafeBigQueryExecutor:
 
 
 class GoogleBigQueryAdapter:
-    """Optional adapter; import google-cloud-bigquery only in deployments that enable it."""
+    """Optional adapter imported only in deployments that enable it."""
 
-    def __init__(self, *, project: str | None = BQ_PROJECT, location: str | None = BQ_LOCATION):
+    def __init__(
+        self,
+        *,
+        project: str | None = BQ_PROJECT,
+        location: str | None = BQ_LOCATION,
+    ):
         try:
             from google.cloud import bigquery  # type: ignore
         except ImportError as exc:
             raise RuntimeError(
-                "google-cloud-bigquery is required only when EAY_BQ_EXECUTION_ENABLED=true"
+                "google-cloud-bigquery is required only when "
+                "EAY_BQ_EXECUTION_ENABLED=true"
             ) from exc
         self.bigquery = bigquery
-        self.client = bigquery.Client(project=project, location=location)
+        self.client = bigquery.Client(
+            project=project,
+            location=location,
+        )
 
     def _parameters(self, values: dict[str, Any]):
         params = []
@@ -247,11 +402,26 @@ class GoogleBigQueryAdapter:
             elif isinstance(value, str) or value is None:
                 type_name = "STRING"
             else:
-                raise ValueError(f"unsupported_query_parameter_type:{name}")
-            params.append(self.bigquery.ScalarQueryParameter(name, type_name, value))
+                raise ValueError(
+                    f"unsupported_query_parameter_type:{name}"
+                )
+            params.append(
+                self.bigquery.ScalarQueryParameter(
+                    name,
+                    type_name,
+                    value,
+                )
+            )
         return params
 
-    def _job_config(self, parameters: dict[str, Any], *, dry_run: bool, timeout_ms: int, maximum_bytes_billed: int | None = None):
+    def _job_config(
+        self,
+        parameters: dict[str, Any],
+        *,
+        dry_run: bool,
+        timeout_ms: int,
+        maximum_bytes_billed: int | None = None,
+    ):
         config = self.bigquery.QueryJobConfig(
             dry_run=dry_run,
             use_query_cache=False if dry_run else True,
@@ -262,14 +432,31 @@ class GoogleBigQueryAdapter:
             config.maximum_bytes_billed = maximum_bytes_billed
         return config
 
-    def dry_run(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int) -> int:
+    def dry_run(
+        self,
+        sql: str,
+        parameters: dict[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> int:
         job = self.client.query(
             sql,
-            job_config=self._job_config(parameters, dry_run=True, timeout_ms=timeout_ms),
+            job_config=self._job_config(
+                parameters,
+                dry_run=True,
+                timeout_ms=timeout_ms,
+            ),
         )
         return int(job.total_bytes_processed or 0)
 
-    def execute(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int, maximum_bytes_billed: int) -> list[dict[str, Any]]:
+    def execute(
+        self,
+        sql: str,
+        parameters: dict[str, Any],
+        *,
+        timeout_ms: int,
+        maximum_bytes_billed: int,
+    ) -> list[dict[str, Any]]:
         job = self.client.query(
             sql,
             job_config=self._job_config(
@@ -284,20 +471,39 @@ class GoogleBigQueryAdapter:
 
 
 class DisabledAdapter:
-    def dry_run(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int) -> int:
+    def dry_run(
+        self,
+        sql: str,
+        parameters: dict[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> int:
         raise RuntimeError("BigQuery adapter is not configured")
 
-    def execute(self, sql: str, parameters: dict[str, Any], *, timeout_ms: int, maximum_bytes_billed: int) -> list[dict[str, Any]]:
+    def execute(
+        self,
+        sql: str,
+        parameters: dict[str, Any],
+        *,
+        timeout_ms: int,
+        maximum_bytes_billed: int,
+    ) -> list[dict[str, Any]]:
         raise RuntimeError("BigQuery adapter is not configured")
 
 
 audit_store = ExecutionAuditStore(DB_PATH)
-router = APIRouter(prefix="/v1/bigquery", tags=["bigquery-safe-executor"])
+router = APIRouter(
+    prefix="/v1/bigquery",
+    tags=["bigquery-safe-executor"],
+)
 
 
 def _runtime_executor() -> SafeBigQueryExecutor:
     if not EXECUTION_ENABLED:
-        raise HTTPException(status_code=409, detail="BigQuery execution is disabled by default")
+        raise HTTPException(
+            status_code=409,
+            detail="BigQuery execution is disabled by default",
+        )
     try:
         adapter = GoogleBigQueryAdapter()
     except RuntimeError as exc:
@@ -312,7 +518,10 @@ def dry_run(payload: ExecuteRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"BigQuery dry-run failed: {exc}") from exc
+        raise HTTPException(
+            status_code=503,
+            detail=f"BigQuery dry-run failed: {exc}",
+        ) from exc
 
 
 @router.post("/execute", response_model=ExecutionResult)
@@ -322,4 +531,7 @@ def execute(payload: ExecuteRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"BigQuery execution failed: {exc}") from exc
+        raise HTTPException(
+            status_code=503,
+            detail=f"BigQuery execution failed: {exc}",
+        ) from exc

@@ -10,6 +10,7 @@ on:
       - "services/core-api/tests/test_audit_field_truth_contracts.py"
       - "services/core-api/tests/test_audit_visit_contracts.py"
       - "services/core-api/tests/test_audit_visit_migration_contract.py"
+      - "services/core-api/tests/test_audit_intelligence_score_authority.py"
       - "services/core-api/alembic/versions/0056_audit_visit_manifests.py"
       - "services/core-api/app/budget_main.py"
       - ".github/workflows/eay-audit-field-truth-ci.yml"
@@ -48,6 +49,7 @@ jobs:
           tests/test_audit_field_truth_contracts.py
           tests/test_audit_visit_contracts.py
           tests/test_audit_visit_migration_contract.py
+          tests/test_audit_intelligence_score_authority.py
       - name: Compile field truth authority
         run: >-
           python -m compileall -q
@@ -57,6 +59,7 @@ jobs:
           app/modules/audit/visit_planning.py
           app/modules/audit/visit_repository.py
           app/modules/audit/visit_routes.py
+          app/modules/audit/intelligence.py
           app/budget_main.py
           alembic/versions/0056_audit_visit_manifests.py
       - name: Ruff field truth authority
@@ -68,11 +71,13 @@ jobs:
           app/modules/audit/visit_planning.py
           app/modules/audit/visit_repository.py
           app/modules/audit/visit_routes.py
+          app/modules/audit/intelligence.py
           app/budget_main.py
           alembic/versions/0056_audit_visit_manifests.py
           tests/test_audit_field_truth_contracts.py
           tests/test_audit_visit_contracts.py
           tests/test_audit_visit_migration_contract.py
+          tests/test_audit_intelligence_score_authority.py
       - name: Single Alembic head
         run: |
           set -euo pipefail

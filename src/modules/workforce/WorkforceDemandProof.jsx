@@ -3,8 +3,12 @@ import { Calculator, Fingerprint, ShieldCheck } from "lucide-react";
 
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { workforceActivityStudioMessage } from "../../platform/i18n/workforceActivityStudioMessages.js";
+import { workforceCapacityMessage } from "../../platform/i18n/workforceCapacityMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
-import { previewWorkforceActivityDemand } from "./workforceFlexibilityApi.js";
+import {
+  previewWorkforceActivityCapacity,
+  previewWorkforceActivityDemand,
+} from "./workforceFlexibilityApi.js";
 import "./workforceDemandProof.css";
 
 
@@ -27,10 +31,17 @@ function istanbulIso(value) {
   return value ? `${value}:00+03:00` : "";
 }
 
+function rootCauseKey(value) {
+  if (value === "skill_mix_constraint") return "skillMix";
+  if (value === "manpower_capacity_shortage") return "manpowerShortage";
+  return "noPressure";
+}
+
 export default function WorkforceDemandProof({ activities = [], locations = [], standards = [] }) {
   const { canAction } = useAuth();
   const { locale } = usePlatformPreferences();
   const m = (key, params) => workforceActivityStudioMessage(locale, key, params);
+  const c = (key) => workforceCapacityMessage(locale, key);
   const allowed = canAction("workforce", "manageStaffingNorms");
   const [worksiteId, setWorksiteId] = useState("");
   const [activityKey, setActivityKey] = useState("");
@@ -74,7 +85,7 @@ export default function WorkforceDemandProof({ activities = [], locations = [], 
     setError("");
     setResult(null);
     try {
-      const preview = await previewWorkforceActivityDemand({
+      const values = {
         worksiteId,
         intervalStart: istanbulIso(intervalStart),
         intervalMinutes,
@@ -86,8 +97,12 @@ export default function WorkforceDemandProof({ activities = [], locations = [], 
           quantity,
           sourceRef: sourceRef.trim(),
         }],
-      });
-      setResult(preview);
+      };
+      const [demand, capacity] = await Promise.all([
+        previewWorkforceActivityDemand(values),
+        previewWorkforceActivityCapacity(values),
+      ]);
+      setResult({ demand, capacity });
     } catch (requestError) {
       setError(requestError.message || m("loadError"));
     } finally {
@@ -113,9 +128,14 @@ export default function WorkforceDemandProof({ activities = [], locations = [], 
       {!standard && activity ? <p className="wfx-demand-proof-note"><ShieldCheck size={15} />{m("standardMissing")}</p> : null}
       {error ? <div className="wfx-demand-proof-error">{error}</div> : null}
       {result ? <div className="wfx-demand-proof-result">
-        <article><small>{m("requiredHours")}</small><strong>{result.requiredManHours}</strong></article>
-        <article><small>{m("requiredPeople")}</small><strong>{result.requiredPeople}</strong></article>
-        <article className="wide"><small>{m("fingerprint")}</small><span><Fingerprint size={14} />{result.snapshotFingerprint}</span></article>
+        <article><small>{m("requiredHours")}</small><strong>{result.demand.requiredManHours}</strong></article>
+        <article><small>{m("requiredPeople")}</small><strong>{result.demand.requiredPeople}</strong></article>
+        <article><small>{c("scheduledCapacity")}</small><strong>{result.capacity.availableManHours}</strong></article>
+        <article><small>{c("allocatedCapacity")}</small><strong>{result.capacity.allocatedManHours}</strong></article>
+        <article><small>{c("deficit")}</small><strong>{result.capacity.deficitManHours}</strong></article>
+        <article><small>{c("recommendedPeople")}</small><strong>{result.capacity.recommendedPeople}</strong></article>
+        <article className="wide"><small>{c("rootCause")}</small><strong>{c(rootCauseKey(result.capacity.rootCause))}</strong></article>
+        <article className="wide"><small>{m("fingerprint")}</small><span><Fingerprint size={14} />{result.demand.snapshotFingerprint}</span></article>
       </div> : null}
     </>}
   </section>;

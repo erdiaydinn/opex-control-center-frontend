@@ -113,5 +113,5 @@ def parse_time_off(
         "sensitive_only_unmatched_count": sensitive_only_unmatched,
         "scope_blocked_count": scope_blocked,
         "parser": parsed["parser"],
-        "raw_national_id_returned": False,
+        "sensitive_data_exposed": False,
     }

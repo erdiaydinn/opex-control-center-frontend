@@ -184,4 +184,5 @@ if (!workspace.includes("reviewedResult?.reviewed_draft_ready")) {
 console.log("PLANOGRAM_SCANNED_FIXTURE_CATALOG_ASSIST=PASS");
 console.log("PLANOGRAM_SCANNED_FIXTURE_AMBIGUOUS_AUTO_BIND=FALSE");
 console.log("PLANOGRAM_SCANNED_FIXTURE_TOPOLOGY_FABRICATION=FALSE");
+console.log("PLANOGRAM_SCANNED_FIXTURE_TOPOLOGY_HUMAN_REVIEW=REQUIRED");
 console.log("Planogram scanned fixture catalog binding boundary: PASS");

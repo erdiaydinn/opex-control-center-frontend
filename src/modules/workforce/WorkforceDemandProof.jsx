@@ -105,7 +105,7 @@ export default function WorkforceDemandProof({ activities = [], locations = [], 
         <label>{m("worksite")}<select value={worksiteId} onChange={(event) => setWorksiteId(event.target.value)}>{locations.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
         <label>{m("selectActivity")}<select value={activityKey} onChange={(event) => { setActivityKey(event.target.value); setResult(null); }}>{activities.map((row) => <option key={row.activityKey} value={row.activityKey}>{row.displayName}</option>)}</select></label>
         <label>{m("intervalStart")}<input type="datetime-local" value={intervalStart} onChange={(event) => setIntervalStart(event.target.value)} /></label>
-        <label>{m("interval")}<select value={intervalMinutes} onChange={(event) => setIntervalMinutes(event.target.value)}>{[15, 30, 60].map((value) => <option key={value} value={value}>{value} min</option>)}</select></label>
+        <label>{m("interval")}<select value={intervalMinutes} onChange={(event) => setIntervalMinutes(event.target.value)}>{[15, 30, 60].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>{m("quantity")}<input type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
         <label className="wide">{m("demandSource")}<input maxLength={300} value={sourceRef} onChange={(event) => setSourceRef(event.target.value)} placeholder={m("demandSource")} /></label>
         <button disabled={!ready || busy}><Calculator size={16} />{busy ? m("calculating") : m("runDemand")}</button>

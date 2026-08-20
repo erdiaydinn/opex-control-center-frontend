@@ -71,6 +71,18 @@ def record_event(
                 "SELECT pg_advisory_xact_lock(%s)",
                 (_advisory_key(f"event:{principal.tenant_id}:{event_id}"),),
             )
+            # Idempotency is not an authentication shortcut. Every delivery,
+            # including an exact replay, must prove that the device is still
+            # ACTIVE and present a fresh signed nonce before any stored
+            # response can be disclosed.
+            _verify_device_proof(
+                db,
+                principal,
+                actual_hash,
+                request_timestamp,
+                request_nonce,
+                request_signature,
+            )
             existing = db.execute(
                 """SELECT e.payload_hash,r.response FROM inventory_events e
                    JOIN inventory_event_responses r USING(tenant_id,event_id)
@@ -84,14 +96,6 @@ def record_event(
                 response["idempotent_replay"] = True
                 return response
 
-            _verify_device_proof(
-                db,
-                principal,
-                actual_hash,
-                request_timestamp,
-                request_nonce,
-                request_signature,
-            )
             document = db.execute(
                 """SELECT warehouse_id,state,revision FROM inventory_documents
                    WHERE tenant_id=%s AND id=%s FOR UPDATE""",

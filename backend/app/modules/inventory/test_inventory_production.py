@@ -353,13 +353,15 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
         claim = self.claim()
         event_id = uuid4()
         signed = self.signed_event(claim, event_id=event_id)
+        payload = signed[0]
+        replay_proof = self.sign_hash(self.principal_one, payload["payload_hash"])
         with patch.object(
             mission_event_module,
             "attest_shift_at_event",
             return_value=self.attestation(self.principal_one, self.shift_one),
         ):
             first = record_event(self.principal_one, *signed)
-            replay = record_event(self.principal_one, *signed)
+            replay = record_event(self.principal_one, payload, *replay_proof)
         self.assertFalse(first["idempotent_replay"])
         self.assertTrue(replay["idempotent_replay"])
         self.assertEqual(first["active_shift_id"], self.shift_one)
@@ -375,19 +377,61 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
         unexpected = self.record_signed_event(claim, barcode="9999999999999")
         self.assertEqual(unexpected["event_type"], "UNEXPECTED_SKU")
 
-    def test_concurrent_duplicate_event_is_exactly_once(self):
+    def test_exact_replay_requires_fresh_device_proof(self):
         claim = self.claim()
         signed = self.signed_event(claim)
+        with patch.object(
+            mission_event_module,
+            "attest_shift_at_event",
+            return_value=self.attestation(self.principal_one, self.shift_one),
+        ):
+            first = record_event(self.principal_one, *signed)
+            self.assertFalse(first["idempotent_replay"])
+            with self.assertRaises(InventoryRuleError):
+                record_event(self.principal_one, *signed)
+
+    def test_exact_replay_is_rejected_after_device_replacement(self):
+        claim = self.claim()
+        signed = self.signed_event(claim)
+        with patch.object(
+            mission_event_module,
+            "attest_shift_at_event",
+            return_value=self.attestation(self.principal_one, self.shift_one),
+        ):
+            first = record_event(self.principal_one, *signed)
+            self.assertFalse(first["idempotent_replay"])
+
+            with connect() as db:
+                db.execute(
+                    """UPDATE inventory_devices SET status='REPLACED'
+                       WHERE tenant_id=%s AND device_id=%s""",
+                    (self.principal_one.tenant_id, self.principal_one.device_id),
+                )
+                db.commit()
+
+            payload = signed[0]
+            replay_proof = self.sign_hash(
+                self.principal_one,
+                payload["payload_hash"],
+            )
+            with self.assertRaises(InventoryRuleError):
+                record_event(self.principal_one, payload, *replay_proof)
+
+    def test_concurrent_duplicate_event_is_exactly_once(self):
+        claim = self.claim()
+        first_signed = self.signed_event(claim)
+        payload = first_signed[0]
+        second_proof = self.sign_hash(self.principal_one, payload["payload_hash"])
+        deliveries = [first_signed, (payload, *second_proof)]
         attestation = self.attestation(self.principal_one, self.shift_one)
         with patch.object(mission_event_module, "attest_shift_at_event", return_value=attestation):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 results = list(
                     executor.map(
-                        lambda _: record_event(self.principal_one, *signed),
-                        range(2),
+                        lambda args: record_event(self.principal_one, *args),
+                        deliveries,
                     )
                 )
-        payload = signed[0]
         self.assertEqual({row["event_id"] for row in results}, {payload["event_id"]})
         self.assertEqual(sorted(row["idempotent_replay"] for row in results), [False, True])
         with connect() as db:

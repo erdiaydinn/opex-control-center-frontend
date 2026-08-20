@@ -22,8 +22,12 @@ authority_migrations = tuple(
         "014_workforce_v37_replan_authority.sql",
         "015_workforce_v38_override_learning.sql",
         "023_recruitment_candidate_upload_authority.sql",
+        "024_recruitment_production_authority.sql",
+        "025_recruitment_request_evidence_scan_authority.sql",
+        "026_recruitment_evidence_release_authority.sql",
     )
 )
+recruitment_security_migrations = authority_migrations[-4:]
 
 with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", (tenant_id,))
@@ -134,4 +138,14 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("GRANT SELECT ON workforce_schema_migrations TO workforce_runtime")
     cursor.execute("GRANT EXECUTE ON FUNCTION workforce_current_tenant() TO workforce_runtime")
     cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO workforce_runtime")
+
+    # The security migrations intentionally grant sensitive function EXECUTE
+    # conditionally when the runtime role exists. Replay after role provisioning
+    # so CI exercises the same least-privilege shape expected in production.
+    for migration in recruitment_security_migrations:
+        cursor.execute(migration.read_text(encoding="utf-8"))
+
+    cursor.execute("SELECT max(version) FROM workforce_schema_migrations")
+    if int(cursor.fetchone()[0] or 0) < 42:
+        raise RuntimeError("Canonical Workforce/Hiring schema did not reach V42")
     database.commit()

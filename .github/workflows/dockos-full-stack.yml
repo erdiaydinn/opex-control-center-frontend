@@ -76,6 +76,7 @@ jobs:
           app.modules.workforce.test_workforce_api
           app.modules.workforce.test_flexibility
           app.modules.workforce.test_flexibility_router
+          app.modules.workforce.test_shift_trading
           app.modules.workforce.test_scope_hardening
           app.modules.workforce.test_timeoff_parser
           app.modules.workforce.test_identity_leave_hardening

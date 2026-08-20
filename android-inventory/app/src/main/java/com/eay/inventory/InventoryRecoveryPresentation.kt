@@ -25,7 +25,7 @@ data class InventoryRecoveryPresentationPolicy(
  *
  * This layer cannot retry, delete, rebind, reassign or mutate evidence. Security,
  * integrity and managed-device failures block new local mission starts early; a
- * single business/supervisor review remains local to the affected evidence/mission.
+ * business quarantine may only open a signed server-side supervisor review case.
  */
 object InventoryRecoveryPresentation {
     fun policy(summary: InventoryRecoverySummary): InventoryRecoveryPresentationPolicy =
@@ -36,6 +36,14 @@ object InventoryRecoveryPresentation {
                 messageRes = R.string.terminal_recovery_wait_auto,
                 blocksNewMissionStarts = false,
             )
+
+            InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW ->
+                InventoryRecoveryPresentationPolicy(
+                    severity = FieldRecoveryVisualSeverity.ATTENTION,
+                    titleRes = R.string.terminal_recovery_title_info,
+                    messageRes = R.string.terminal_recovery_wait_supervisor,
+                    blocksNewMissionStarts = false,
+                )
 
             InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE -> InventoryRecoveryPresentationPolicy(
                 severity = FieldRecoveryVisualSeverity.BLOCKING,
@@ -48,6 +56,8 @@ object InventoryRecoveryPresentation {
                 severity = FieldRecoveryVisualSeverity.BLOCKING,
                 titleRes = R.string.terminal_recovery_title_blocking,
                 messageRes = R.string.terminal_recovery_supervisor,
+                actionKind = FieldRecoveryActionKind.REQUEST_SUPERVISOR_REVIEW,
+                actionLabelRes = R.string.terminal_recovery_request_supervisor,
                 blocksNewMissionStarts = false,
             )
 

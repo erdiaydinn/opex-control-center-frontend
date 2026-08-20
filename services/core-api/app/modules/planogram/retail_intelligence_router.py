@@ -112,7 +112,7 @@ class PlanogramRetailIntelligenceRequest(BaseModel):
     require_images: bool = True
 
     @model_validator(mode="after")
-    def validate_evidence_contract(self) -> "PlanogramRetailIntelligenceRequest":
+    def validate_evidence_contract(self) -> PlanogramRetailIntelligenceRequest:
         if not self.category_capacity_cm and self.total_shelf_width_cm is None:
             raise ValueError("category_capacity_cm or total_shelf_width_cm is required")
 

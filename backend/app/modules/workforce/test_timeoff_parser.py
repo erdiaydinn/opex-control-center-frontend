@@ -152,6 +152,35 @@ class TimeOffParserTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_production_warehouse_scope_blocks_cross_warehouse_identity_discovery(self):
+        service._PEOPLE[:] = [
+            {"id": "EMP-FULYA", "employee_id": "EMP-FULYA", "full_name": "Fulya Person", "warehouse_id": "fulya", "active": True},
+            {"id": "EMP-USK", "employee_id": "EMP-USK", "full_name": "Uskudar Person", "warehouse_id": "uskudar", "active": True},
+        ]
+        claims = {
+            "sub": "fulya-manager", "name": "Fulya Manager", "roles": ["warehouse_manager"],
+            "permissions": ["importTimeOff"], "warehouse_scope": ["fulya"],
+        }
+        csv_bytes = (
+            "Employee ID;Worker;Time off Type;Time Off Date\n"
+            "EMP-FULYA;Fulya Person;Yıllık İzin;01.06.2026\n"
+            "EMP-USK;Uskudar Person;Yıllık İzin;01.06.2026\n"
+        ).encode("utf-8")
+        with (
+            patch.dict(os.environ, {"DOCKOS_ENV": "production", "OPEX_ALLOW_LEGACY_HEADERS": "false"}, clear=False),
+            patch("app.security._decode_bearer", return_value=claims),
+        ):
+            response = self.client.post(
+                "/api/workforce/time-off/parse",
+                json={"file_name": "dm.csv", "content_base64": base64.b64encode(csv_bytes).decode()},
+                headers={"Authorization": "Bearer signed.manager.jwt"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual([row["person_id"] for row in body["rows"]], ["EMP-FULYA"])
+        self.assertEqual(body["scope_blocked_count"], 1)
+        self.assertNotIn("EMP-USK", str(body))
+
 
 if __name__ == "__main__":
     unittest.main()

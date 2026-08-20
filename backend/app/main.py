@@ -39,6 +39,7 @@ from app.modules.identity.service import bootstrap_admin, initialize as initiali
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.production_evidence_router import router as recruitment_production_evidence_router
+from app.modules.recruitment.production_startup_guard import assert_recruitment_production_ready
 from app.modules.recruitment.router import router as recruitment_router
 from app.modules.recruitment.service import initialize as initialize_recruitment
 from app.modules.workforce.capacity_router import router as workforce_capacity_router
@@ -103,6 +104,7 @@ if DOCKOS_PRODUCTION:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     initialize_workforce()
+    assert_recruitment_production_ready()
     initialize_recruitment()
     initialize_inventory()
     initialize_identity()

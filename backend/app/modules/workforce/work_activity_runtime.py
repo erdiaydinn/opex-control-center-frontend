@@ -64,6 +64,38 @@ def _labor(row: dict) -> ActivityLaborStandardVersion:
     )
 
 
+def _validate_worksite_compatibility(worksite_id: str, activity_rows: dict[str, dict]) -> None:
+    constrained = [row for row in activity_rows.values() if row.get("location_types")]
+    if not constrained:
+        return
+
+    # Lazy import avoids creating a module initialization cycle with the
+    # canonical Employee Master / worksite service.
+    from . import service
+
+    worksite = next(
+        (row for row in service.list_warehouses() if str(row.get("id")) == str(worksite_id)),
+        None,
+    )
+    if worksite is None:
+        raise WorkActivityRuntimeError("Governed worksite was not found for activity demand.")
+    location_type = str(worksite.get("location_type") or "").strip()
+    if not location_type:
+        raise WorkActivityRuntimeError(
+            "Worksite classification is required before constrained activity demand can run."
+        )
+
+    incompatible = [
+        str(row["activity_key"])
+        for row in constrained
+        if location_type not in {str(value) for value in row.get("location_types") or []}
+    ]
+    if incompatible:
+        raise WorkActivityRuntimeError(
+            "Worksite type is not eligible for activities: " + ", ".join(sorted(incompatible))
+        )
+
+
 def build_catalog_demand_snapshot(
     *,
     worksite_id: str,
@@ -97,6 +129,8 @@ def build_catalog_demand_snapshot(
                 source_ref=str(payload["source_ref"]),
             )
         )
+
+    _validate_worksite_compatibility(str(worksite_id), activity_rows)
 
     request = WorkActivityDemandRequest(
         tenant_id=tenant_id,

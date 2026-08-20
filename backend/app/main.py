@@ -23,9 +23,11 @@ from app.modules.identity.service import bootstrap_admin, initialize as initiali
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.interview_router import public_router as recruitment_public_interview_router, router as recruitment_interview_router
+from app.modules.recruitment.onboarding_router import router as recruitment_onboarding_router
 from app.modules.recruitment.orchestration_router import public_router as recruitment_public_orchestration_router, router as recruitment_orchestration_router
 from app.modules.recruitment.production_evidence_router import router as recruitment_production_evidence_router
 from app.modules.recruitment.production_startup_guard import assert_recruitment_production_ready
+from app.modules.recruitment.public_capability_guard import enforce as enforce_public_capability_guard
 from app.modules.recruitment.router import router as recruitment_router
 from app.modules.recruitment.scanner_callback_router import router as recruitment_scanner_callback_router
 from app.modules.recruitment.service import initialize as initialize_recruitment
@@ -92,6 +94,17 @@ def _replace_verified_dockos_headers(request: Request, email: str, role: str) ->
     request.scope["headers"] = headers
 
 
+def _production_permissions_policy(path: str) -> str:
+    # API responses normally do not govern the SPA document, but keep the
+    # contract route-aware so a reverse proxy that forwards these headers does
+    # not break camera/GPS product flows.
+    if path.startswith("/api/field-intelligence"):
+        return "camera=(self), microphone=(), geolocation=(self)"
+    if path.startswith("/api/workforce"):
+        return "camera=(), microphone=(), geolocation=(self)"
+    return "camera=(), microphone=(), geolocation=()"
+
+
 app = FastAPI(title="EAY Platform API", version="26.6.0-converged", docs_url="/api/docs" if not DOCKOS_PRODUCTION else None, redoc_url=None, openapi_url="/api/openapi.json" if not DOCKOS_PRODUCTION else None, lifespan=lifespan)
 app.add_middleware(WorkforceIdentityMiddleware)
 
@@ -110,6 +123,11 @@ async def dockos_production_boundary(request: Request, call_next):
     started = time.perf_counter()
     status_code = 500
     identity_token = None
+
+    guard_response = await enforce_public_capability_guard(request)
+    if guard_response is not None:
+        return guard_response
+
     if DOCKOS_PRODUCTION and path == "/api/dockos/readiness":
         try:
             if dockos_persistence_mode() == "postgres":
@@ -135,7 +153,10 @@ async def dockos_production_boundary(request: Request, call_next):
         if DOCKOS_PRODUCTION:
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["Referrer-Policy"] = "no-referrer"
-            response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+            response.headers["Permissions-Policy"] = _production_permissions_policy(path)
+            response.headers["X-Frame-Options"] = "DENY"
+            if path.startswith("/api/recruitment") or path.startswith("/api/public/recruitment"):
+                response.headers["Cache-Control"] = "no-store, private"
         return response
     except HTTPException as error:
         status_code = error.status_code
@@ -158,7 +179,8 @@ async def dockos_production_boundary(request: Request, call_next):
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    request_id = request.headers.get("x-request-id") or str(uuid4())
+    supplied_request_id = request.headers.get("x-request-id", "").strip()
+    request_id = supplied_request_id if supplied_request_id and len(supplied_request_id) <= 96 and supplied_request_id.replace("-", "").replace("_", "").isalnum() else str(uuid4())
     started = perf_counter()
     response = await call_next(request)
     route = request.scope.get("route")
@@ -185,6 +207,7 @@ app.include_router(recruitment_public_interview_router, prefix="/api")
 app.include_router(recruitment_scanner_callback_router, prefix="/api")
 app.include_router(recruitment_production_evidence_router, prefix="/api")
 app.include_router(recruitment_interview_router, prefix="/api")
+app.include_router(recruitment_onboarding_router, prefix="/api")
 # Orchestration precedes legacy recruitment so hire activation is fail-closed on readiness.
 app.include_router(recruitment_orchestration_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")

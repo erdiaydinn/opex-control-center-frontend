@@ -26,16 +26,16 @@ def run_live_preflight() -> dict:
     checks: list[dict] = []
 
     schema = persistence.schema_version() if persistence.ENABLED else None
-    database_ok = bool(persistence.ENABLED and (schema or 0) >= 41)
+    database_ok = bool(persistence.ENABLED and (schema or 0) >= 42)
     checks.append(
         {
-            "key": "postgres_v41",
+            "key": "postgres_v42",
             "ok": database_ok,
             "detail": f"schema={schema or 0}",
         }
     )
     if not database_ok:
-        raise ProductionAuthorityPreflightError("PostgreSQL V41 authority hazır değil.")
+        raise ProductionAuthorityPreflightError("PostgreSQL V42 authority hazır değil.")
 
     try:
         storage = S3KmsEnvelopeEvidenceStore.from_environment()

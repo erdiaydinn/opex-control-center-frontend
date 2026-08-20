@@ -16,7 +16,9 @@ data class AuditEvidenceUploadRequest(
         require(fieldKey.isNotBlank()) { "fieldKey must not be blank" }
         require(sha256.matches(Regex("^[0-9a-f]{64}$"))) { "sha256 must be lowercase SHA-256" }
         require(byteCount > 0L) { "byteCount must be positive" }
-        require(mimeType == "image/jpeg") { "Audit redacted evidence upload currently requires image/jpeg" }
+        require(mimeType == "image/jpeg") {
+            "Audit redacted evidence upload currently requires image/jpeg"
+        }
     }
 }
 
@@ -40,17 +42,32 @@ interface AuditEvidenceUploadTransport {
     ): AuditEvidenceServerReceipt
 }
 
+/**
+ * Host-owned durable storage boundary for the server-issued evidence receipt.
+ *
+ * The Field UI module deliberately does not implement its own database/auth stack. Production host
+ * code must atomically persist enough receipt/request state to retry Audit binding after process or
+ * network failure. If this commit fails, sanitized evidence stays device-private for retry.
+ */
+interface AuditEvidenceReceiptCommitter {
+    fun commit(
+        request: AuditEvidenceUploadRequest,
+        receipt: AuditEvidenceServerReceipt,
+    )
+}
+
 class AuditEvidenceUploadReceiptException(message: String) : IllegalStateException(message)
 
 /**
- * Uploads only sanitized evidence objects and deletes them only after a strict server ACK.
+ * Uploads only sanitized evidence objects and deletes them only after strict server + durable ACK.
  *
  * The coordinator cannot accept AuditRawVideoCapture, so raw video cannot accidentally be routed
- * through the evidence transport. Authentication and HTTP implementation remain owned by the host
- * mobile platform; this module deliberately does not create a second token/session stack.
+ * through the evidence transport. Authentication, HTTP and durable queue implementations remain
+ * owned by the host mobile platform; this module deliberately does not create parallel stacks.
  */
 class AuditEvidenceUploadCoordinator(
     private val transport: AuditEvidenceUploadTransport,
+    private val receiptCommitter: AuditEvidenceReceiptCommitter,
 ) {
     fun uploadAndAcknowledge(
         auditRunId: UUID,
@@ -71,6 +88,7 @@ class AuditEvidenceUploadCoordinator(
             transport.upload(request, input)
         }
         validateServerAck(local, server)
+        receiptCommitter.commit(request, server)
         evidence.acknowledgeAndDelete()
         return server
     }
@@ -80,13 +98,19 @@ class AuditEvidenceUploadCoordinator(
         server: AuditEvidenceServerReceipt,
     ) {
         if (server.sha256 != local.sha256) {
-            throw AuditEvidenceUploadReceiptException("Server evidence SHA-256 does not match local evidence")
+            throw AuditEvidenceUploadReceiptException(
+                "Server evidence SHA-256 does not match local evidence",
+            )
         }
         if (server.byteSize != local.byteCount) {
-            throw AuditEvidenceUploadReceiptException("Server evidence byte size does not match local evidence")
+            throw AuditEvidenceUploadReceiptException(
+                "Server evidence byte size does not match local evidence",
+            )
         }
         if (server.mediaType != local.mimeType) {
-            throw AuditEvidenceUploadReceiptException("Server evidence media type does not match local evidence")
+            throw AuditEvidenceUploadReceiptException(
+                "Server evidence media type does not match local evidence",
+            )
         }
         if (server.redactedEvidenceRef.isBlank()) {
             throw AuditEvidenceUploadReceiptException("Server evidence reference is missing")
@@ -95,7 +119,9 @@ class AuditEvidenceUploadCoordinator(
             throw AuditEvidenceUploadReceiptException("Server evidence authority is invalid")
         }
         if (!server.clientRedactionClaimOnly) {
-            throw AuditEvidenceUploadReceiptException("Server must preserve client-redaction-claim boundary")
+            throw AuditEvidenceUploadReceiptException(
+                "Server must preserve client-redaction-claim boundary",
+            )
         }
         if (server.serverPrivacyVerified || server.visionInferenceAuthorized) {
             throw AuditEvidenceUploadReceiptException(
@@ -103,7 +129,9 @@ class AuditEvidenceUploadCoordinator(
             )
         }
         if (server.publicUrl != null) {
-            throw AuditEvidenceUploadReceiptException("Private evidence receipt must not expose a public URL")
+            throw AuditEvidenceUploadReceiptException(
+                "Private evidence receipt must not expose a public URL",
+            )
         }
     }
 }

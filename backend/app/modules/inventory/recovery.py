@@ -30,13 +30,13 @@ from .production import (
 )
 from .service import InventoryRuleError
 
+# This set must remain identical to RecoveryCaseCreate and the Android recovery
+# client. Policy/identity/device/contract-integrity failures never enter the
+# operational supervisor recovery lane.
 RECOVERABLE_REASONS = frozenset(
     {
         "BUSINESS_CONFLICT",
-        "POLICY_REJECTED",
-        "SERVER_CONTRACT_MISMATCH",
         "DEPENDENCY_BLOCKED",
-        "PERMANENT_REJECTED",
         "RETRY_EXHAUSTED",
     }
 )

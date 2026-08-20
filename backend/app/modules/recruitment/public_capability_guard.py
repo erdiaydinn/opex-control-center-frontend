@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import hmac
+import ipaddress
 import os
 from urllib.parse import urlparse
 
@@ -64,11 +66,26 @@ def preflight() -> dict:
     }
 
 
+def _trusted_proxy_client(request: Request) -> str | None:
+    """Use proxy client IP only when the server-injected gateway secret proves origin."""
+    configured = os.getenv("DOCKOS_GATEWAY_SECRET", "").strip()
+    presented = request.headers.get("x-dockos-gateway", "").strip()
+    if not configured or not presented or not hmac.compare_digest(configured, presented):
+        return None
+    forwarded = request.headers.get("x-real-ip", "").strip()
+    if not forwarded:
+        return None
+    try:
+        return str(ipaddress.ip_address(forwarded))
+    except ValueError:
+        return None
+
+
 def _source_key(request: Request) -> str:
-    # We deliberately do not trust X-Forwarded-For here. The reverse proxy must
-    # normalize request.client before traffic reaches the app if original-client
-    # attribution is required.
-    host = getattr(request.client, "host", None) or "unknown"
+    # nginx overwrites X-Real-IP and injects a server-side gateway secret. We only
+    # trust that address when the secret matches; a directly exposed backend
+    # therefore cannot be tricked with attacker-controlled forwarding headers.
+    host = _trusted_proxy_client(request) or getattr(request.client, "host", None) or "unknown"
     return sha256(str(host).encode("utf-8")).hexdigest()[:24]
 
 

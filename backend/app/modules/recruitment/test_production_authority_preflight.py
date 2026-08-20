@@ -38,7 +38,7 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
             adapter._access_token.return_value = "opaque-oauth-token"
 
             with patch.object(preflight.persistence, "ENABLED", True), patch.object(
-                preflight.persistence, "schema_version", return_value=40
+                preflight.persistence, "schema_version", return_value=41
             ), patch.object(
                 preflight.S3KmsEnvelopeEvidenceStore,
                 "from_environment",
@@ -59,6 +59,7 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
             result["truth_boundary"],
             "LIVE_INFRASTRUCTURE_AUTHORITY_PROOF_NO_DOCUMENT_VERIFICATION",
         )
+        self.assertEqual(result["checks"][0]["key"], "postgres_v41")
         transport = next(
             check for check in result["checks"] if check["key"] == "official_m2m_transport"
         )
@@ -69,9 +70,9 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
         scanner.preflight.assert_called_once_with()
         adapter._access_token.assert_called_once_with()
 
-    def test_v39_fails_before_external_authorities_are_touched(self):
+    def test_v40_fails_before_external_authorities_are_touched(self):
         with patch.object(preflight.persistence, "ENABLED", True), patch.object(
-            preflight.persistence, "schema_version", return_value=39
+            preflight.persistence, "schema_version", return_value=40
         ), patch.object(
             preflight.S3KmsEnvelopeEvidenceStore, "from_environment"
         ) as storage, patch.object(
@@ -79,7 +80,7 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
         ) as scanner, patch.object(
             preflight.AuthorizedOfficialM2MAdapter, "from_environment"
         ) as official:
-            with self.assertRaisesRegex(ProductionAuthorityPreflightError, "PostgreSQL V40"):
+            with self.assertRaisesRegex(ProductionAuthorityPreflightError, "PostgreSQL V41"):
                 preflight.run_live_preflight()
         storage.assert_not_called()
         scanner.assert_not_called()
@@ -87,7 +88,7 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
 
     def test_aws_storage_failure_is_fail_closed_before_scanner_or_official_transport(self):
         with patch.object(preflight.persistence, "ENABLED", True), patch.object(
-            preflight.persistence, "schema_version", return_value=40
+            preflight.persistence, "schema_version", return_value=41
         ), patch.object(
             preflight.S3KmsEnvelopeEvidenceStore,
             "from_environment",

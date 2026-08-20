@@ -2,7 +2,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from .operational_mission import claim_operational_mission, record_operational_event
+from .operational_claim import claim_operational_mission_signed
+from .operational_mission import record_operational_event
 from .operational_mobile import list_operational_mobile_missions
 from .router import (
     active_shift_principal,
@@ -58,6 +59,9 @@ def mobile_operational_claim(
     mission_id: str,
     request: Request,
     x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+    x_eay_request_timestamp: str = Header(..., alias="X-EAY-Request-Timestamp"),
+    x_eay_request_nonce: str = Header(..., alias="X-EAY-Request-Nonce"),
+    x_eay_device_signature: str = Header(..., alias="X-EAY-Device-Signature"),
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production operational mobile endpoint etkin değil.")
@@ -71,7 +75,15 @@ def mobile_operational_claim(
         parsed = UUID(mission_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail="Geçerli mission UUID zorunludur.") from error
-    result = run(claim_operational_mission, narrowed, parsed, active_shift_id)
+    result = run(
+        claim_operational_mission_signed,
+        narrowed,
+        parsed,
+        active_shift_id,
+        x_eay_request_timestamp,
+        x_eay_request_nonce,
+        x_eay_device_signature,
+    )
     return {**result, "active_shift_id": active_shift_id}
 
 

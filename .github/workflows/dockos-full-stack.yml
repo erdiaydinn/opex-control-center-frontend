@@ -75,6 +75,7 @@ jobs:
           app.modules.workforce.test_flexibility
           app.modules.workforce.test_flexibility_router
           app.modules.workforce.test_work_activity_authority
+          app.modules.workforce.test_work_activity_catalog
           app.modules.recruitment.test_recruitment
           app.modules.recruitment.test_hr_actual
           app.test_security

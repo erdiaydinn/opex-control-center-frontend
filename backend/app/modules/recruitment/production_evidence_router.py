@@ -57,6 +57,7 @@ from .service import (
 
 
 router = APIRouter(prefix="/recruitment", tags=["Recruitment"])
+_OFFICIAL_DOCUMENT_PORTAL = "https://www.turkiye.gov.tr/belge-dogrulama"
 
 
 class ScannerReceiptEnvelope(BaseModel):
@@ -274,6 +275,74 @@ def secure_candidate_evidence_download(
         )
     except (CandidateEvidenceRuntimeError, EvidenceReleaseAuthorityError) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.get("/requests/{request_id}/candidates/{candidate_id}/document-verifications/assist")
+def official_document_human_assist(
+    request_id: str,
+    candidate_id: str,
+    evidence_sha256: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Return a credential-free launch contract for the official human portal.
+
+    EAY never receives an e-Devlet password, OTP, browser cookie, session token,
+    CAPTCHA answer, or authenticated browser state. The resulting human witness
+    record still requires the existing exact-SHA verification route and a second
+    authorized attestation before candidate approval.
+    """
+    _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
+    try:
+        _, _, evidence = locate_candidate_evidence(
+            request_id, candidate_id, evidence_sha256
+        )
+        if not evidence.get("requires_official_verification"):
+            raise RecruitmentRuleError("Bu belge için resmî doğrulama gerekmiyor.")
+        if _encrypted_mode():
+            require_candidate_evidence_released(
+                request_id, candidate_id, evidence
+            )
+        actor, _ = _identity(request)
+        persistence.append_audit(
+            "RECRUITMENT_OFFICIAL_DOCUMENT_HUMAN_ASSIST_LAUNCHED",
+            actor,
+            record_id=request_id,
+            candidate_id=candidate_id,
+            evidence_sha256=evidence.get("sha256"),
+            document_type=evidence.get("document_type"),
+            credential_capture=False,
+            browser_automation=False,
+        )
+        return {
+            "mode": "HR_ASSISTED_OFFICIAL_PORTAL",
+            "launch_url": _OFFICIAL_DOCUMENT_PORTAL,
+            "document_type": evidence.get("document_type"),
+            "evidence_sha256": evidence.get("sha256"),
+            "credential_capture": False,
+            "browser_automation": False,
+            "captcha_automation": False,
+            "session_import": False,
+            "truth_boundary": "HUMAN_WITNESSED_OFFICIAL_PORTAL_PENDING_ATTESTATION",
+            "record_result_via": (
+                f"/api/recruitment/requests/{request_id}/candidates/"
+                f"{candidate_id}/document-verifications"
+            ),
+            "attest_via": (
+                f"/api/recruitment/requests/{request_id}/candidates/"
+                f"{candidate_id}/document-verifications/attest"
+            ),
+        }
+    except (
+        CandidateEvidenceRuntimeError,
+        EvidenceReleaseAuthorityError,
+        RecruitmentRuleError,
+    ) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.post("/candidate-evidence/scanner-receipts", include_in_schema=False)

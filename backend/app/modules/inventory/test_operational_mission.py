@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+import json
 import os
 import unittest
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from .operational_mission import (
     event_hash_input,
     normalize_operational_value,
     operational_value_hash,
+    record_operational_event,
 )
 from .operational_mobile import _project_operational_mobile_row
 from .operational_mobile_router import _operational_event_response
@@ -83,6 +85,19 @@ class OperationalMissionContractTests(unittest.TestCase):
         )
         self.assertNotEqual(transfer["source_location_id"], transfer["destination_location_id"])
         self.assertEqual(transfer["allowed_conditions"], [])
+
+    def test_receiving_intent_requires_explicit_condition_authority(self):
+        with self.assertRaises(InventoryRuleError):
+            build_operational_intent(
+                "RECEIVING",
+                {
+                    "sku_id": "SKU-1",
+                    "item_barcode": "8690000000001",
+                    "planned_quantity": 1,
+                    "container_id": "PALLET-1",
+                    "allowed_conditions": [],
+                },
+            )
 
     def test_transfer_same_source_and_destination_fails_closed(self):
         with self.assertRaises(InventoryRuleError):
@@ -275,3 +290,83 @@ class OperationalMissionPostgresTests(unittest.TestCase):
                      AND column_name='allowed_conditions'"""
             ).fetchone()["column_default"]
             self.assertIn("[]", default)
+
+    @patch("backend.app.modules.inventory.operational_mission._verify_device_proof")
+    def test_exact_replay_is_bound_to_original_actor_device_shift_and_scope(self, proof):
+        tenant = os.getenv("INVENTORY_TEST_TENANT", "eay-inventory-ci")
+        mission_id = uuid4()
+        claim_id = uuid4()
+        event_id = uuid4()
+        device_a = uuid4()
+        device_b = uuid4()
+        principal_a = InventoryPrincipal(tenant, "sub-a", "EMP-REPLAY-A", frozenset({"WH-1"}), device_a)
+        principal_b = InventoryPrincipal(tenant, "sub-b", "EMP-REPLAY-B", frozenset({"WH-1"}), device_b)
+        occurred_at = datetime.now(UTC).isoformat()
+        value_hash = operational_value_hash("SOURCE_LOCATION", "A01")
+        payload = {
+            "event_id": str(event_id),
+            "mission_id": str(mission_id),
+            "claim_id": str(claim_id),
+            "active_shift_id": "SHIFT-A",
+            "device_sequence": 1,
+            "step_kind": "SOURCE_LOCATION",
+            "value": "A01",
+            "value_hash": value_hash,
+            "occurred_at": occurred_at,
+        }
+        payload["payload_hash"] = canonical_payload_hash(event_hash_input(payload))
+        stored = {
+            "event_id": str(event_id),
+            "code": "ACCEPTED",
+            "mission_id": str(mission_id),
+            "completed": False,
+            "next_step": "ITEM",
+            "idempotent_replay": False,
+        }
+        with connect() as db:
+            db.execute(
+                """INSERT INTO inventory_devices(
+                     tenant_id,device_id,employee_id,public_key_pem,mdm_enrollment_hash,status
+                   ) VALUES(%s,%s,'EMP-REPLAY-A','TEST-KEY',%s,'ACTIVE')""",
+                (tenant, device_a, f"test-mdm-{device_a}"),
+            )
+            db.execute(
+                """INSERT INTO inventory_operational_missions(
+                   tenant_id,mission_id,warehouse_id,mission_type,operation,external_reference,steps,created_by,
+                   state,intent_version,sku_id,item_value_hash,planned_quantity,source_location_id,container_id,allowed_conditions
+                   ) VALUES(%s,%s,'WH-1','PICKING','inventory.pick.capture',%s,%s::jsonb,'sub-a',
+                            'CLAIMED',1,'SKU-1',%s,1,'A01','TOTE-1','[]'::jsonb)""",
+                (
+                    tenant,
+                    mission_id,
+                    f"ORDER-{mission_id}",
+                    '["SOURCE_LOCATION","ITEM","QUANTITY","CONTAINER","COMPLETE"]',
+                    operational_value_hash("ITEM", "8690000000001"),
+                ),
+            )
+            db.execute(
+                """INSERT INTO inventory_operational_claims(
+                   tenant_id,claim_id,mission_id,employee_id,device_id,shift_id
+                   ) VALUES(%s,%s,%s,'EMP-REPLAY-A',%s,'SHIFT-A')""",
+                (tenant, claim_id, mission_id, device_a),
+            )
+            db.execute(
+                """INSERT INTO inventory_operational_events(
+                   tenant_id,event_id,mission_id,claim_id,employee_id,device_id,shift_id,
+                   device_sequence,step_index,step_kind,value_hash,payload_hash,occurred_at,
+                   contract_version,safe_value,numeric_value
+                   ) VALUES(%s,%s,%s,%s,'EMP-REPLAY-A',%s,'SHIFT-A',1,0,'SOURCE_LOCATION',%s,%s,%s,1,'A01',NULL)""",
+                (tenant, event_id, mission_id, claim_id, device_a, value_hash, payload["payload_hash"], occurred_at),
+            )
+            db.execute(
+                """INSERT INTO inventory_operational_event_responses(tenant_id,event_id,response)
+                   VALUES(%s,%s,%s::jsonb)""",
+                (tenant, event_id, json.dumps(stored, sort_keys=True)),
+            )
+            db.commit()
+
+        replay = record_operational_event(principal_a, payload, occurred_at, "nonce-a", "signature-a")
+        self.assertTrue(replay["idempotent_replay"])
+        self.assertEqual(replay["event_id"], str(event_id))
+        with self.assertRaises(PermissionError):
+            record_operational_event(principal_b, payload, occurred_at, "nonce-b", "signature-b")

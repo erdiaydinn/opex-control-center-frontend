@@ -36,6 +36,12 @@ from .service import (
 
 router = APIRouter(prefix="/recruitment", tags=["Recruitment"])
 
+_HR_ACTIONS = {
+    "viewRecruitment", "createRecruitmentRequest", "approveRecruitmentRequest",
+    "viewRecruitmentEvidence", "manageRecruitmentNorms", "manageRecruitmentActuals",
+    "manageRecruitmentSettings", "manageRecruitmentNotifications",
+}
+
 
 def _require(role: str, permissions: str, action: str) -> None:
     normalized = role.strip().lower().replace("-", "_").replace(" ", "_")
@@ -45,11 +51,8 @@ def _require(role: str, permissions: str, action: str) -> None:
         "regional_executive": {"viewRecruitment", "createRecruitmentRequest"},
         "regional_manager": {"viewRecruitment", "createRecruitmentRequest"},
         "by": {"viewRecruitment", "createRecruitmentRequest"},
-        "hr": {
-            "viewRecruitment", "createRecruitmentRequest", "approveRecruitmentRequest",
-            "viewRecruitmentEvidence", "manageRecruitmentNorms", "manageRecruitmentActuals",
-            "manageRecruitmentSettings", "manageRecruitmentNotifications",
-        },
+        "hr": _HR_ACTIONS,
+        "recruitment_hr": _HR_ACTIONS,
     }
     if action in role_actions.get(normalized, set()):
         return
@@ -62,10 +65,19 @@ def _identity(request: Request) -> tuple[str, str]:
     return (getattr(identity, "subject", "unknown"), getattr(identity, "name", "Unknown User"))
 
 
-def _is_recruitment_admin(role: str) -> bool:
-    return role.strip().lower().replace("-", "_").replace(" ", "_") in {
-        "super_admin", "superadmin", "admin", "administrator", "hr",
-    }
+def _is_recruitment_admin(role: str, permissions: str) -> bool:
+    normalized = role.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {
+        "super_admin", "superadmin", "admin", "administrator", "hr", "recruitment_hr",
+    }:
+        return True
+    return any(
+        is_action_allowed(role, permissions, action)
+        for action in {
+            "manageRecruitmentActuals", "manageRecruitmentSettings",
+            "manageRecruitmentNotifications", "viewRecruitmentEvidence",
+        }
+    )
 
 
 def _request_row(request_id: str) -> dict:
@@ -125,9 +137,10 @@ def bootstrap(
     _require(x_opex_role, x_opex_permissions, "viewRecruitment")
     from app.modules.workforce.service import list_warehouses, list_people
 
+    is_admin = _is_recruitment_admin(x_opex_role, x_opex_permissions)
     requests = _scoped_rows(request, x_opex_role, list_requests())
     requests = [{**row, "current_staffing": _current_staffing(row)} for row in requests]
-    if not _is_recruitment_admin(x_opex_role):
+    if not is_admin:
         requests = [_without_evidence_metadata(row) for row in requests]
     norms = _scoped_rows(
         request, x_opex_role,
@@ -138,9 +151,9 @@ def bootstrap(
     summary = build_dashboard(norms, requests)
     return {
         "dashboard": summary, "requests": requests, "norms": norms,
-        "settings": get_settings() if _is_recruitment_admin(x_opex_role) else None,
-        "actual_snapshot": snapshot_summary() if _is_recruitment_admin(x_opex_role) else None,
-        "email_outbox": list_outbox() if _is_recruitment_admin(x_opex_role) else [],
+        "settings": get_settings() if is_admin else None,
+        "actual_snapshot": snapshot_summary() if is_admin else None,
+        "email_outbox": list_outbox() if is_admin else [],
         "warehouses": warehouses, "people": people,
     }
 

@@ -102,6 +102,17 @@ class OperationalMissionContractTests(unittest.TestCase):
         principal_a = InventoryPrincipal(tenant, "sub-a", "EMP-A", frozenset({"WH-1"}), device_a)
         principal_b = InventoryPrincipal(tenant, "sub-b", "EMP-B", frozenset({"WH-1"}), device_b)
         with connect() as db:
+            # Preserve the production FK boundary in this contract test. The
+            # runtime device preflight is mocked so the test isolates claim
+            # ownership, but both principals still need real managed-device rows
+            # before a claim can satisfy PostgreSQL referential integrity.
+            db.execute(
+                """INSERT INTO inventory_devices(
+                     tenant_id,device_id,employee_id,public_key_pem,mdm_enrollment_hash,status
+                   ) VALUES(%s,%s,'EMP-A','TEST-KEY',%s,'ACTIVE'),
+                           (%s,%s,'EMP-B','TEST-KEY',%s,'ACTIVE')""",
+                (tenant, device_a, f"test-mdm-{device_a}", tenant, device_b, f"test-mdm-{device_b}"),
+            )
             db.execute(
                 """INSERT INTO inventory_operational_missions(
                    tenant_id,mission_id,warehouse_id,mission_type,operation,external_reference,steps,created_by,

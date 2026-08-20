@@ -159,8 +159,13 @@ class WorkforcePostgresAcceptanceTests(unittest.TestCase):
             candidate = recruitment.register_candidate(
                 request["id"], {"full_name": "CI Candidate", "source_ref": f"ATS-{suffix}", "note": None}, "ci-hr"
             )
-            recruitment.add_candidate_evidence(
+            uploaded = recruitment.add_candidate_evidence(
                 request["id"], candidate["id"], "candidate.pdf", "application/pdf", b"%PDF-ci", "ci-hr"
+            )
+            recruitment.record_candidate_content_safety_scan(
+                request["id"], candidate["id"], uploaded["evidence"][0]["sha256"],
+                "CLEAN", f"AV-RECEIPT-CI-{suffix}", "scanner-ci", "scanner-service",
+                provider_signature_verified=True,
             )
             recruitment.decide_candidate(request["id"], candidate["id"], "APPROVED", "Evidence accepted", "ci-hr")
             hired = recruitment.activate_hire(

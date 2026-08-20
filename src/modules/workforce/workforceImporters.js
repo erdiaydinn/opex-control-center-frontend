@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { apiPost } from "../../api/client.js";
 import { normalizeWarehouseName, resolveHrWarehouse } from "./staffingNorms.js";
 
 function safeNumber(value) {
@@ -230,7 +231,7 @@ function resolveTimeOffType(category = "") {
   return custom ? `custom_${custom}` : "custom_unknown";
 }
 
-export async function parseTimeOffFile(file) {
+async function parseTimeOffFileLocal(file) {
   const sourceRows = await readTabularFile(file, "Time Off Used");
   const rows = [];
   let invalidCount = 0;
@@ -271,7 +272,54 @@ export async function parseTimeOffFile(file) {
       });
     });
   });
-  return { rows, sourceCount: sourceRows.length, invalidCount };
+  return { rows, sourceCount: sourceRows.length, invalidCount, parser: "node-test-local" };
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+export async function parseTimeOffFile(file) {
+  // Node-based unit tests keep the deterministic local parser. Browser runtime
+  // always delegates untrusted XLSX/CSV parsing to the authenticated backend.
+  if (typeof window === "undefined" || typeof btoa === "undefined") return parseTimeOffFileLocal(file);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const parsed = await apiPost("/workforce/time-off/parse", {
+    file_name: file.name,
+    content_base64: bytesToBase64(bytes),
+  });
+  return {
+    rows: (parsed.rows || []).map((row) => ({
+      id: row.id,
+      personId: String(row.person_id || ""),
+      sourcePersonId: String(row.source_person_id || ""),
+      personName: row.person_name || "",
+      category: row.category || "",
+      typeId: row.type_id || "custom_unknown",
+      date: row.date,
+      minutes: Number(row.minutes || 0),
+      approval: row.approval || "Onaylandı",
+      note: row.note || "",
+      requestedAt: row.requested_at || "",
+      approvedAt: row.approved_at || "",
+      source: row.source || "Time Off Used",
+      sourceKey: row.source_key || `${row.person_id || ""}|${row.date || ""}`,
+      identityMethod: row.identity_method || "",
+      identityResolution: row.identity_resolution || "",
+    })),
+    sourceCount: Number(parsed.source_count || 0),
+    invalidCount: Number(parsed.invalid_count || 0),
+    identityResolvedCount: Number(parsed.identity_resolved_count || 0),
+    identityUnmatchedCount: Number(parsed.identity_unmatched_count || 0),
+    sensitiveOnlyUnmatchedCount: Number(parsed.sensitive_only_unmatched_count || 0),
+    parser: parsed.parser || "secure-server-timeoff-v1",
+    rawNationalIdReturned: parsed.raw_national_id_returned === true,
+  };
 }
 
 export async function parseEmployeeFile(file) {

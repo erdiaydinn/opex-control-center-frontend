@@ -3,6 +3,7 @@ import { AlertTriangle, BadgeCheck, FileSpreadsheet, RefreshCw, ShieldCheck, Upl
 
 import { importRecruitmentHrActual } from "./recruitmentApi.js";
 import { parseRecruitmentHrActualFile } from "./recruitmentImporters.js";
+import "./recruitmentLifecycle.css";
 
 
 function today() { return new Date().toISOString().slice(0, 10); }

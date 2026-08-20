@@ -3,9 +3,13 @@ import process from "node:process";
 
 import { SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
 import { PLANOGRAM_FIXTURE_BINDING_MESSAGES } from "../src/platform/i18n/planogramFixtureBindingMessages.js";
+import { PLANOGRAM_FIXTURE_CATALOG_MESSAGES } from "../src/platform/i18n/planogramFixtureCatalogMessages.js";
 import {
+  buildPlanogramFixtureBindingsFromSelections,
   normalizePlanogramFixtureBindings,
+  normalizePlanogramFixtureCatalog,
   safePlanogramFixtureLayoutPreview,
+  suggestPlanogramFixtureCatalogMatches,
 } from "../src/modules/planogram/planogramFixtureBindings.js";
 
 function fail(message) {
@@ -13,12 +17,18 @@ function fail(message) {
   process.exit(1);
 }
 
-const englishKeys = Object.keys(PLANOGRAM_FIXTURE_BINDING_MESSAGES.en).sort();
-for (const { code } of SUPPORTED_LOCALES) {
-  const table = PLANOGRAM_FIXTURE_BINDING_MESSAGES[code];
-  if (!table) fail(`Missing fixture binding locale: ${code}`);
-  if (JSON.stringify(Object.keys(table).sort()) !== JSON.stringify(englishKeys)) {
-    fail(`Fixture binding locale coverage drifted: ${code}`);
+for (const dictionary of [
+  ["binding", PLANOGRAM_FIXTURE_BINDING_MESSAGES],
+  ["catalog", PLANOGRAM_FIXTURE_CATALOG_MESSAGES],
+]) {
+  const [name, messages] = dictionary;
+  const englishKeys = Object.keys(messages.en).sort();
+  for (const { code } of SUPPORTED_LOCALES) {
+    const table = messages[code];
+    if (!table) fail(`Missing fixture ${name} locale: ${code}`);
+    if (JSON.stringify(Object.keys(table).sort()) !== JSON.stringify(englishKeys)) {
+      fail(`Fixture ${name} locale coverage drifted: ${code}`);
+    }
   }
 }
 
@@ -58,6 +68,59 @@ for (const forged of [
   if (normalizePlanogramFixtureBindings(forged, ["fixture-1"]) !== null) {
     fail("Unsafe/ambiguous scanned fixture binding was accepted.");
   }
+}
+
+const catalogPayload = {
+  fixtures: [
+    Object.fromEntries(Object.entries(valid.bindings[0]).filter(([key]) => ![
+      "scan_fixture_element_id",
+      "aisle_id",
+      "side",
+      "position",
+    ].includes(key))),
+    {
+      ...Object.fromEntries(Object.entries(valid.bindings[0]).filter(([key]) => ![
+        "scan_fixture_element_id",
+        "aisle_id",
+        "side",
+        "position",
+      ].includes(key))),
+      fixture_id: "GONDOLA-002",
+      fixture_width_cm: 180,
+      source_ref: "fixture-master://GONDOLA-002/v1",
+    },
+  ],
+};
+const catalog = normalizePlanogramFixtureCatalog(catalogPayload);
+if (!catalog || catalog.length !== 2) fail("Valid attested fixture catalog was rejected.");
+if (normalizePlanogramFixtureCatalog({ fixtures: [{ ...catalogPayload.fixtures[0], attested: false }] }) !== null) {
+  fail("Unattested fixture catalog entry was accepted.");
+}
+const recognized = [{
+  element_id: "fixture-1",
+  width_m: 1.19,
+  depth_m: 0.61,
+  label: "steel rack",
+  confidence: 0.95,
+}];
+const suggestions = suggestPlanogramFixtureCatalogMatches(recognized, catalog);
+if (
+  suggestions.length !== 1 ||
+  suggestions[0].recommended_fixture_id !== "GONDOLA-001" ||
+  suggestions[0].recommendation_safe !== true
+) {
+  fail("Unique dimension-consistent fixture suggestion was not produced deterministically.");
+}
+const assisted = buildPlanogramFixtureBindingsFromSelections(recognized, catalog, {
+  "fixture-1": { fixture_id: "GONDOLA-001", aisle_id: "A01", side: "L", position: 1 },
+});
+if (!assisted || assisted[0].fixture_id !== "GONDOLA-001") {
+  fail("Catalog-assisted human topology selection did not produce a valid binding.");
+}
+if (buildPlanogramFixtureBindingsFromSelections(recognized, catalog, {
+  "fixture-1": { fixture_id: "GONDOLA-001", aisle_id: "", side: "", position: "" },
+}) !== null) {
+  fail("Catalog assistance fabricated aisle/side/position truth.");
 }
 
 const fingerprint = "a".repeat(64);
@@ -101,6 +164,9 @@ for (const needle of [
   "/v1/planogram/store-scan/fixture-layout-preview",
   "safePlanogramFixtureLayoutPreview",
   "normalizePlanogramFixtureBindings",
+  "normalizePlanogramFixtureCatalog",
+  "suggestPlanogramFixtureCatalogMatches",
+  "buildPlanogramFixtureBindingsFromSelections",
   "recognized_fixtures",
   "fixture_binding_coverage_pct",
   "rotatedRectSvgPoints",
@@ -115,4 +181,7 @@ if (!workspace.includes("reviewedResult?.reviewed_draft_ready")) {
   fail("Fixture binding is not gated by reviewed scan readiness.");
 }
 
+console.log("PLANOGRAM_SCANNED_FIXTURE_CATALOG_ASSIST=PASS");
+console.log("PLANOGRAM_SCANNED_FIXTURE_AMBIGUOUS_AUTO_BIND=FALSE");
+console.log("PLANOGRAM_SCANNED_FIXTURE_TOPOLOGY_FABRICATION=FALSE");
 console.log("Planogram scanned fixture catalog binding boundary: PASS");

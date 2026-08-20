@@ -65,7 +65,9 @@ object InventoryRecoveryCaseContract {
             SyncQuarantineReason.valueOf(event.quarantineReason.orEmpty())
         }.getOrNull() ?: return null
         if (reason !in eligibleReasons) return null
-        if (!event.payloadHash.matches(Regex("^[0-9a-fA-F]{64}$"))) return null
+        val normalizedPayloadHash = event.payloadHash.trim().lowercase(Locale.ROOT)
+        if (!normalizedPayloadHash.matches(Regex("^[0-9a-f]{64}$"))) return null
+        if (TerminalEventCanonical.hash(event.canonicalPayload) != normalizedPayloadHash) return null
         val canonical = runCatching { JSONObject(event.canonicalPayload) }.getOrNull() ?: return null
         val eventId = runCatching {
             UUID.fromString(canonical.getString("event_id").trim()).toString()
@@ -82,7 +84,7 @@ object InventoryRecoveryCaseContract {
             eventId = eventId,
             documentId = documentId,
             locationId = locationId,
-            payloadHash = event.payloadHash.lowercase(Locale.ROOT),
+            payloadHash = normalizedPayloadHash,
             quarantineReason = reason.name,
             serverCode = event.lastServerCode?.trim()?.takeIf { it.isNotBlank() },
         )
@@ -90,11 +92,21 @@ object InventoryRecoveryCaseContract {
 
     fun canonicalCommand(request: InventoryRecoveryCaseRequest): String = buildString {
         append('{')
-        append("\"document_id\":").append(JSONObject.quote(normalizeUuid(request.documentId))).append(',')
-        append("\"event_id\":").append(JSONObject.quote(normalizeUuid(request.eventId))).append(',')
-        append("\"location_id\":").append(JSONObject.quote(request.locationId.trim().uppercase(Locale.ROOT))).append(',')
-        append("\"payload_hash\":").append(JSONObject.quote(request.payloadHash.trim().lowercase(Locale.ROOT))).append(',')
-        append("\"quarantine_reason\":").append(JSONObject.quote(request.quarantineReason.trim().uppercase(Locale.ROOT))).append(',')
+        append("\"document_id\":")
+            .append(JSONObject.quote(normalizeUuid(request.documentId)))
+            .append(',')
+        append("\"event_id\":")
+            .append(JSONObject.quote(normalizeUuid(request.eventId)))
+            .append(',')
+        append("\"location_id\":")
+            .append(JSONObject.quote(request.locationId.trim().uppercase(Locale.ROOT)))
+            .append(',')
+        append("\"payload_hash\":")
+            .append(JSONObject.quote(request.payloadHash.trim().lowercase(Locale.ROOT)))
+            .append(',')
+        append("\"quarantine_reason\":")
+            .append(JSONObject.quote(request.quarantineReason.trim().uppercase(Locale.ROOT)))
+            .append(',')
         append("\"server_code\":")
         val serverCode = request.serverCode?.trim()?.takeIf { it.isNotBlank() }
         if (serverCode == null) append("null") else append(JSONObject.quote(serverCode))
@@ -111,7 +123,10 @@ object InventoryRecoveryCaseContract {
         .put("location_id", request.locationId.trim().uppercase(Locale.ROOT))
         .put("payload_hash", request.payloadHash.trim().lowercase(Locale.ROOT))
         .put("quarantine_reason", request.quarantineReason.trim().uppercase(Locale.ROOT))
-        .put("server_code", request.serverCode?.trim()?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+        .put(
+            "server_code",
+            request.serverCode?.trim()?.takeIf { it.isNotBlank() } ?: JSONObject.NULL,
+        )
         .toString()
 
     fun classifyHttp(httpCode: Int): InventoryRecoveryCaseCode = when {

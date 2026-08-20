@@ -11,11 +11,15 @@ SESSION_ADAPTER="$ROOT/android-inventory/field-presentation-adapter/src/main/jav
 RES="$ROOT/android-inventory/app/src/main/res"
 RECOVERY="$APP/InventoryRecoveryContract.kt"
 RECOVERY_PRESENTATION="$APP/InventoryRecoveryPresentation.kt"
+RECOVERY_CASE_CLIENT="$APP/InventoryRecoveryCaseClient.kt"
+SYNC_WORKER="$APP/InventorySyncWorker.kt"
+DATABASE="$APP/InventoryDatabase.kt"
 TASK_RECOVERY_PRESENTATION="$APP/InventoryTaskFetchRecoveryPresentation.kt"
 MISSION_RECOVERY_PRESENTATION="$APP/InventoryMissionExecutionRecoveryPresentation.kt"
 MAIN="$APP/MainActivity.kt"
 RECOVERY_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryContractTest.kt"
 RECOVERY_PRESENTATION_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryPresentationTest.kt"
+RECOVERY_CASE_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryRecoveryCaseContractTest.kt"
 MISSION_RECOVERY_TEST="$ROOT/android-inventory/app/src/test/java/com/eay/inventory/InventoryMissionExecutionRecoveryPresentationTest.kt"
 SESSION_ADAPTER_TEST="$ROOT/android-inventory/field-presentation-adapter/src/test/java/com/eay/mobile/presentation/adapter/SessionRecoveryPresentationAdapterTest.kt"
 
@@ -27,11 +31,15 @@ for file in \
   "$SESSION_ADAPTER" \
   "$RECOVERY" \
   "$RECOVERY_PRESENTATION" \
+  "$RECOVERY_CASE_CLIENT" \
+  "$SYNC_WORKER" \
+  "$DATABASE" \
   "$TASK_RECOVERY_PRESENTATION" \
   "$MISSION_RECOVERY_PRESENTATION" \
   "$MAIN" \
   "$RECOVERY_TEST" \
   "$RECOVERY_PRESENTATION_TEST" \
+  "$RECOVERY_CASE_TEST" \
   "$MISSION_RECOVERY_TEST" \
   "$SESSION_ADAPTER_TEST"; do
   test -f "$file" || { echo "missing terminal recovery contract: $file" >&2; exit 1; }
@@ -48,10 +56,32 @@ grep -q 'fun recoveryBanner' "$ADAPTER"
 grep -q 'SessionRecoveryPresentationAdapter' "$SESSION_ADAPTER"
 grep -q 'AUTH_BINDING_CHANGED' "$RECOVERY"
 grep -q 'REQUEST_SECURITY_REVIEW' "$RECOVERY"
+grep -q 'SERVER_CONTRACT_MISMATCH' "$RECOVERY"
+grep -q 'WAIT_FOR_SUPERVISOR_REVIEW' "$RECOVERY"
 grep -q 'authBindingMismatchCannotBeFixedBySigningInAgain' "$RECOVERY_TEST"
+grep -q 'policyRejectionRoutesToSecurityNotSupervisor' "$RECOVERY_TEST"
+grep -q 'serverContractAndPermanentRejectionRouteToIntegrityNotSupervisor' "$RECOVERY_TEST"
+grep -q 'operationalConflictRoutesToSupervisorThenBecomesWaitOnlyAfterCaseBinding' "$RECOVERY_TEST"
 grep -q 'quarantinedEvidenceNeverBecomesClientRetry' "$RECOVERY_TEST"
 grep -q 'blocksNewMissionStarts' "$RECOVERY_PRESENTATION"
+grep -q 'supervisorRoutingDoesNotExposeMutationActionOrGloballyStopUnrelatedMissions' "$RECOVERY_PRESENTATION_TEST"
 grep -q 'unsupportedDurableUiIntentsBecomeIntegrityBlockWithoutAction' "$RECOVERY_PRESENTATION_TEST"
+
+grep -q 'InventoryRecoveryCaseContract.from' "$RECOVERY_CASE_CLIENT"
+grep -q 'TerminalEventCanonical.hash(event.canonicalPayload)' "$RECOVERY_CASE_CLIENT"
+grep -q 'X-EAY-Request-Timestamp' "$RECOVERY_CASE_CLIENT"
+grep -q 'X-EAY-Request-Nonce' "$RECOVERY_CASE_CLIENT"
+grep -q 'X-EAY-Device-Signature' "$RECOVERY_CASE_CLIENT"
+grep -q 'PRESERVE_NO_CLIENT_PROMOTION' "$RECOVERY_CASE_CLIENT"
+grep -q 'routeSupervisorRecovery' "$SYNC_WORKER"
+grep -q 'InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW' "$SYNC_WORKER"
+grep -q 'recoveryCandidates' "$SYNC_WORKER"
+grep -q 'markRecoveryRequested' "$SYNC_WORKER"
+grep -q 'recoveryCaseId' "$DATABASE"
+grep -q 'MIGRATION_4_5' "$DATABASE"
+grep -q 'canonical payload hash substitution is rejected before supervisor request' "$RECOVERY_CASE_TEST"
+grep -q 'security and device quarantine cannot enter supervisor business recovery' "$RECOVERY_CASE_TEST"
+
 grep -q 'InventoryTaskFetchCode.AUTH_REQUIRED' "$TASK_RECOVERY_PRESENTATION"
 grep -q 'FieldRecoveryActionKind.SIGN_IN_AGAIN' "$TASK_RECOVERY_PRESENTATION"
 grep -q 'FieldRecoveryActionKind.RELOAD_MISSIONS' "$TASK_RECOVERY_PRESENTATION"
@@ -93,6 +123,18 @@ if grep -R -n -E 'extendLease|renewLease|reviveLease|rebindLease|reassignMission
   exit 1
 fi
 
+# Supervisor recovery is routed by the signed worker/client boundary, never by
+# presentation models or MainActivity UI actions.
+if grep -R -n 'REQUEST_SUPERVISOR_REVIEW' \
+  "$ROOT/mobile-presentation-contracts/src/main" \
+  "$ROOT/android-field-ui/field-ui/src/main" \
+  "$ROOT/android-inventory/field-ui-runtime/src/main" \
+  "$ROOT/android-inventory/field-presentation-adapter/src/main" \
+  "$MAIN"; then
+  echo "supervisor recovery leaked into presentation/UI authority" >&2
+  exit 1
+fi
+
 python3 - "$PRESENTATION" "$RES" <<'PY'
 from pathlib import Path
 import re
@@ -117,6 +159,8 @@ required_keys = {
     "terminal_recovery_wait_auto",
     "terminal_recovery_device",
     "terminal_recovery_supervisor",
+    "terminal_recovery_wait_supervisor",
+    "terminal_recovery_request_supervisor",
     "terminal_recovery_security",
     "terminal_recovery_integrity",
     "terminal_recovery_reload",

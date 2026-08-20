@@ -3,6 +3,7 @@ import { AlertTriangle, BadgeCheck, FileSpreadsheet, RefreshCw, ShieldCheck, Upl
 
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import { recruitmentMessage } from "../../platform/i18n/recruitmentMessages.js";
+import { recruitmentProjectionMessage } from "../../platform/i18n/recruitmentProjectionMessages.js";
 import { importRecruitmentHrActual } from "./recruitmentApi.js";
 import { parseRecruitmentHrActualFile } from "./recruitmentImporters.js";
 import "./recruitmentLifecycle.css";
@@ -10,15 +11,17 @@ import "./recruitmentLifecycle.css";
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function valueOrDash(value) { return value == null ? "—" : value; }
-function QualityStatus({ row, hasSnapshot, m }) {
+function QualityStatus({ row, snapshot, m, pm }) {
   if (row.hrActualUnmatched) return <span className="rec-status warning">{row.hrActualUnmatched} {m("actualUnmatched")}</span>;
-  if (hasSnapshot) return <span className="rec-status success">{m("reconciled")}</span>;
+  if (snapshot?.freshness === "STALE") return <span className="rec-status warning">{snapshot.ageDays == null ? pm("stale") : pm("daysOld", { days: snapshot.ageDays })}</span>;
+  if (snapshot) return <span className="rec-status success">{pm("fresh")} · {m("reconciled")}</span>;
   return <span className="rec-status neutral">{m("snapshotWaiting")}</span>;
 }
 
 export default function RecruitmentActualPanel({ data, refresh, flash, setError, canManage = false }) {
   const { locale } = usePlatformPreferences();
   const m = (key, params) => recruitmentMessage(locale, key, params);
+  const pm = (key, params) => recruitmentProjectionMessage(locale, key, params);
   const fileRef = useRef(null);
   const [asOf, setAsOf] = useState(data?.actualSnapshot?.asOf || today());
   const [busy, setBusy] = useState(false);
@@ -65,17 +68,17 @@ export default function RecruitmentActualPanel({ data, refresh, flash, setError,
 
     <div className="rec-panel">
       <div className="rec-panel-head"><div><span className="rec-kicker">{m("staffingReconciliation")}</span><h2>{m("staffingReconciliationHeading")}</h2></div><button className="rec-secondary" onClick={refresh}><RefreshCw size={16} /> {m("refresh")}</button></div>
-      <div className="rec-table-wrap"><table className="rec-actual-table"><thead><tr><th>{m("depot")}</th><th>{m("capacity")}</th><th>{m("hrActual")}</th><th>{m("fte")}</th><th>{m("emActual")}</th><th>{m("hrEmDelta")}</th><th>{m("openReq")}</th><th>{m("netGap")}</th><th>{m("dataQuality")}</th></tr></thead><tbody>
+      <div className="rec-table-wrap"><table className="rec-actual-table"><thead><tr><th>{m("depot")}</th><th>{m("capacity")}</th><th>{m("hrActual")}</th><th>{m("emActual")}</th><th>{pm("committed")}</th><th>{m("openReq")}</th><th>{pm("uncovered")}</th><th>{pm("forecast")}</th><th>{m("dataQuality")}</th></tr></thead><tbody>
         {rows.map((row) => <tr key={row.warehouseName}>
           <td><strong>{row.warehouseName}</strong><small>{row.normRecord?.regionalExecutive || m("byPending")}</small></td>
           <td><strong>{row.capacity}</strong><small>{row.normStatus === "TEMPORARY_ACTIVE" ? m("temporaryNorm") : m("capacityLabel")}</small></td>
-          <td><strong>{valueOrDash(row.hrActual)}</strong><small>{row.hrActualAsOf || m("snapshotWaiting")}</small></td>
-          <td>{valueOrDash(row.hrActualFte)}</td>
-          <td><strong>{row.active}</strong><small>{m("opActual")}</small></td>
-          <td><span className={`rec-status ${row.hrActualDelta == null ? "neutral" : row.hrActualDelta === 0 ? "success" : "warning"}`}>{valueOrDash(row.hrActualDelta)}</span></td>
+          <td><strong>{valueOrDash(row.hrActual)}</strong><small>{valueOrDash(row.hrActualFte)} {m("fte")} · {row.hrActualAsOf || m("snapshotWaiting")}</small></td>
+          <td><strong>{row.active}</strong><small>{row.hrActualDelta == null ? m("opActual") : `${m("hrEmDelta")} ${row.hrActualDelta}`}</small></td>
+          <td><strong>{valueOrDash(row.committedHeadcount)}</strong><small>+{row.incomingCommitted || 0} {pm("incoming")} · -{row.confirmedExits || 0} {pm("exits")}</small></td>
           <td>{row.openPositions}</td>
-          <td><strong>{row.available}</strong></td>
-          <td><QualityStatus row={row} hasSnapshot={Boolean(snapshot)} m={m} /></td>
+          <td><strong>{valueOrDash(row.uncoveredGap)}</strong></td>
+          <td><span className="rec-projection-cell"><b>30</b> {row.forecast30?.uncoveredGap ?? "—"}<b>60</b> {row.forecast60?.uncoveredGap ?? "—"}<b>90</b> {row.forecast90?.uncoveredGap ?? "—"}</span></td>
+          <td><QualityStatus row={row} snapshot={snapshot} m={m} pm={pm} /></td>
         </tr>)}
       </tbody></table>{!rows.length && <div className="rec-empty">{m("noStaffingRows")}</div>}</div>
       <p className="rec-config-note"><ShieldCheck size={15} />{m("authorityNote")}</p>

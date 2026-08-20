@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut, apiUpload, apiDownload, publicApiPost } from "../../api/client.js";
+import { apiGet, apiPost, apiPut, apiUpload, apiDownload, publicApiPost, publicApiUpload } from "../../api/client.js";
 
 const SAFE_RECRUITMENT_BACKEND_ERROR = "İşe alım işlemi tamamlanamadı. Lütfen tekrar deneyin.";
 const SAFE_CLIENT_STATUSES = new Set([400, 404, 409, 422]);
@@ -57,16 +57,19 @@ export async function uploadRecruitmentEvidence(id, file) {
   const form = new FormData(); form.append("file", file);
   return safeBackendRequest(apiUpload(`/recruitment/requests/${encodeURIComponent(id)}/evidence`, form));
 }
-export async function decideRecruitmentRequest(id, decision, note) {
-  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(id)}/decision`, { decision, note }));
-}
-export async function importRecruitmentHrActual(rows, sourceName, asOf) {
-  return safeBackendRequest(apiPost("/recruitment/hr-actual/import", { source_name: sourceName, as_of: asOf, rows }), "HR Actual verisi yüklenemedi. Dosya ve yetkileri kontrol edin.");
-}
+export async function decideRecruitmentRequest(id, decision, note) { return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(id)}/decision`, { decision, note })); }
+export async function importRecruitmentHrActual(rows, sourceName, asOf) { return safeBackendRequest(apiPost("/recruitment/hr-actual/import", { source_name: sourceName, as_of: asOf, rows }), "HR Actual verisi yüklenemedi. Dosya ve yetkileri kontrol edin."); }
 export async function registerRecruitmentCandidate(requestId, values) { return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates`, values)); }
 export async function uploadRecruitmentCandidateEvidence(requestId, candidateId, file, documentType = "OTHER") {
   const form = new FormData(); form.append("file", file); form.append("document_type", documentType);
   return safeBackendRequest(apiUpload(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/evidence`, form));
+}
+export async function issueRecruitmentCandidateUploadCapability(requestId, candidateId, documentType, expiresInMinutes = 1440) {
+  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/upload-capabilities`, { document_type: documentType, expires_in_minutes: expiresInMinutes }));
+}
+export async function uploadCandidateEvidenceWithCapability(capability, documentType, file) {
+  const form = new FormData(); form.append("file", file); form.append("document_type", documentType);
+  return safeBackendRequest(publicApiUpload("/recruitment/candidate-upload/evidence", form, { "X-EAY-Upload-Capability": capability }), "Belge yüklenemedi. Bağlantı kullanılmış veya süresi dolmuş olabilir.");
 }
 export async function verifyRecruitmentCandidateDocument(requestId, candidateId, values) { return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/document-verifications`, values)); }
 export async function attestRecruitmentCandidateDocument(requestId, candidateId, evidenceSha256, note) { return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/document-verifications/attest`, { evidence_sha256: evidenceSha256, note })); }

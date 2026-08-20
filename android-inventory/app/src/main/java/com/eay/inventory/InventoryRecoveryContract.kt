@@ -95,11 +95,14 @@ object InventoryRecoveryContract {
         val (severity, intent) = when (reason) {
             SyncQuarantineReason.CORRUPT_EVENT,
             SyncQuarantineReason.LEDGER_CHAIN_MISMATCH,
+            SyncQuarantineReason.SERVER_CONTRACT_MISMATCH,
+            SyncQuarantineReason.PERMANENT_REJECTED,
             -> InventoryRecoverySeverity.SECURITY to
                 InventoryRecoveryIntent.REQUEST_INTEGRITY_REVIEW
 
             SyncQuarantineReason.TENANT_BINDING_CHANGED,
             SyncQuarantineReason.AUTH_BINDING_CHANGED,
+            SyncQuarantineReason.POLICY_REJECTED,
             -> InventoryRecoverySeverity.SECURITY to
                 InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW
 
@@ -109,11 +112,8 @@ object InventoryRecoveryContract {
             -> InventoryRecoverySeverity.BLOCKING to
                 InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE
 
-            SyncQuarantineReason.POLICY_REJECTED,
             SyncQuarantineReason.BUSINESS_CONFLICT,
-            SyncQuarantineReason.SERVER_CONTRACT_MISMATCH,
             SyncQuarantineReason.DEPENDENCY_BLOCKED,
-            SyncQuarantineReason.PERMANENT_REJECTED,
             SyncQuarantineReason.RETRY_EXHAUSTED,
             -> if (
                 event.recoveryState == "REQUESTED" &&

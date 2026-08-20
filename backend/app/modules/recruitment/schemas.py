@@ -83,6 +83,27 @@ class RecruitmentCandidateDecision(BaseModel):
     note: str = Field(min_length=1, max_length=2000)
 
 
+class RecruitmentHrActualRow(BaseModel):
+    employee_id: str | None = Field(default=None, max_length=80)
+    tckn: str | None = Field(default=None, pattern=r"^\d{11}$")
+    warehouse: str = Field(min_length=1, max_length=180)
+    position: str = Field(default="", max_length=180)
+    fte: float = Field(default=1.0, ge=0, le=2)
+    active: bool = True
+
+    @model_validator(mode="after")
+    def require_identity(self):
+        if not (str(self.employee_id or "").strip() or str(self.tckn or "").strip()):
+            raise ValueError("HR Actual satırında employee_id veya TCKN zorunludur.")
+        return self
+
+
+class RecruitmentHrActualImport(BaseModel):
+    source_name: str = Field(min_length=1, max_length=240)
+    as_of: date
+    rows: list[RecruitmentHrActualRow] = Field(min_length=1, max_length=20000)
+
+
 class RecruitmentSettingsUpdate(BaseModel):
     hr_recipients: list[str] = Field(default_factory=list, max_length=50)
     partner_recipients: list[str] = Field(default_factory=list, max_length=50)

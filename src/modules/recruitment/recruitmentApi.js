@@ -46,6 +46,32 @@ export async function uploadRecruitmentEvidence(id, file) {
 export async function decideRecruitmentRequest(id, decision, note) {
   return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(id)}/decision`, { decision, note }));
 }
+export async function importRecruitmentHrActual(rows, sourceName, asOf) {
+  return safeBackendRequest(apiPost("/recruitment/hr-actual/import", {
+    source_name: sourceName,
+    as_of: asOf,
+    rows,
+  }), "HR Actual verisi yüklenemedi. Dosya ve yetkileri kontrol edin.");
+}
+export async function registerRecruitmentCandidate(requestId, values) {
+  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates`, values));
+}
+export async function uploadRecruitmentCandidateEvidence(requestId, candidateId, file) {
+  const form = new FormData(); form.append("file", file);
+  return safeBackendRequest(apiUpload(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/evidence`, form));
+}
+export async function decideRecruitmentCandidate(requestId, candidateId, decision, note) {
+  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/decision`, { decision, note }));
+}
+export async function activateRecruitmentHire(requestId, values) {
+  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/hires`, values));
+}
+export async function downloadRecruitmentCandidateEvidence(requestId, candidateId, digest, filename) {
+  const blob = await safeBackendRequest(apiDownload(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/evidence/${encodeURIComponent(digest)}`));
+  const url = URL.createObjectURL(blob); const anchor = document.createElement("a");
+  anchor.href = url; anchor.download = filename || `${candidateId}-kanit`; anchor.click();
+  URL.revokeObjectURL(url);
+}
 export async function saveRecruitmentSettings(values) { return safeBackendRequest(apiPut("/recruitment/settings", values)); }
 export async function saveRecruitmentNorm(values) { return safeBackendRequest(apiPut("/recruitment/norms", values)); }
 export async function retryRecruitmentEmail(id) { return safeBackendRequest(apiPost(`/recruitment/email-outbox/${encodeURIComponent(id)}/retry`, {})); }

@@ -127,6 +127,15 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_quiz.py", "save_quiz_attempt"),
     ("modules/academy/repository_quiz.py", "get_quiz_attempt_by_id"),
     ("modules/academy/repository_quiz_authoring.py", "create_quiz"),
+    # Academy credential authority security review: all six execution points use
+    # static SQLAlchemy text() with bound parameters, canonical tenant context,
+    # FORCE RLS from 0050, and append-only credential lifecycle controls.
+    ("modules/academy/repository_credentials.py", "create_badge_definition"),
+    ("modules/academy/repository_credentials.py", "retire_badge_definition"),
+    ("modules/academy/repository_credentials.py", "issue_badge_award"),
+    ("modules/academy/repository_credentials.py", "revoke_badge_award"),
+    ("modules/academy/repository_credentials.py", "list_my_badge_credentials"),
+    ("modules/academy/repository_credentials.py", "get_my_badge_credential"),
 }
 
 FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {

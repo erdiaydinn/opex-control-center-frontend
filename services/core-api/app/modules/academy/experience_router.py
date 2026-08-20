@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import require_permission
 from app.core.security import Principal
 from app.db.session import get_tenant_session
+from app.modules.academy.credentials_router import router as credentials_router
 from app.modules.academy.experience_service import (
     author_interaction_set,
     author_scenario,
@@ -29,6 +30,8 @@ from app.modules.academy.schemas import (
 from app.modules.academy.service import require_module
 
 router = APIRouter(tags=["academy-experience"])
+router.include_router(credentials_router)
+
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 Player = Annotated[
     Principal,

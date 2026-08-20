@@ -71,10 +71,9 @@ async def test_localization_governance_maker_checker_and_staleness() -> None:
     admin_engine = create_async_engine(settings.migration_database_url, pool_pre_ping=True)
     try:
         async with admin_engine.begin() as connection:
-            await connection.execute(
-                text("DELETE FROM tenants WHERE id = :tenant_id"),
-                {"tenant_id": TENANT},
-            )
+            # CI provisions a fresh PostgreSQL database for this acceptance test.
+            # Do not delete the tenant during setup/teardown: localization writes
+            # durable audit evidence whose tenant FK is intentionally restrictive.
             await connection.execute(
                 text("SELECT set_config('app.actor_subject', 'academy-localization-ci', true)")
             )
@@ -255,9 +254,4 @@ async def test_localization_governance_maker_checker_and_staleness() -> None:
         finally:
             await _close_session(stale_session, commit=False)
     finally:
-        async with admin_engine.begin() as connection:
-            await connection.execute(
-                text("DELETE FROM tenants WHERE id = :tenant_id"),
-                {"tenant_id": TENANT},
-            )
         await admin_engine.dispose()

@@ -6,6 +6,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from . import router
+from .schemas import AnnouncementCreateRequest
 
 
 WAREHOUSES = [
@@ -93,6 +94,38 @@ class WorkforceScopeHardeningTests(unittest.TestCase):
         with warehouse_patch, people_patch, patch.dict(os.environ, {"DOCKOS_ENV": "production"}, clear=False):
             visible = router._scoped_announcements(request(warehouse_scope=("fulya",)), "warehouse_manager", rows)
         self.assertEqual([row["id"] for row in visible], ["ALL", "FULYA", "FULYA-PERSON"])
+
+    def test_warehouse_scope_cannot_mutate_tenant_global_configuration(self):
+        warehouse_patch, people_patch = self.patches()
+        with warehouse_patch, people_patch, patch.dict(os.environ, {"DOCKOS_ENV": "production"}, clear=False):
+            with self.assertRaises(HTTPException) as raised:
+                router._require_global_scope(
+                    request(warehouse_scope=("fulya",)),
+                    "warehouse_manager",
+                    "Feature flag yönetimi",
+                )
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_global_admin_retains_tenant_configuration_authority(self):
+        warehouse_patch, people_patch = self.patches()
+        with warehouse_patch, people_patch:
+            router._require_global_scope(request(), "super_admin", "Feature flag yönetimi")
+
+    def test_scoped_announcement_authority_can_only_target_own_scope(self):
+        own_warehouse = AnnouncementCreateRequest(title="Fulya", message="Plan", target_type="warehouse", target_value="fulya")
+        own_person = AnnouncementCreateRequest(title="Fulya", message="Plan", target_type="person", target_value="EMP-3")
+        tenant_all = AnnouncementCreateRequest(title="All", message="Plan", target_type="all", target_value="")
+        other_warehouse = AnnouncementCreateRequest(title="Üsküdar", message="Plan", target_type="warehouse", target_value="uskudar")
+        other_person = AnnouncementCreateRequest(title="Üsküdar", message="Plan", target_type="person", target_value="EMP-2")
+        warehouse_patch, people_patch = self.patches()
+        with warehouse_patch, people_patch, patch.dict(os.environ, {"DOCKOS_ENV": "production"}, clear=False):
+            manager = request(warehouse_scope=("fulya",))
+            router._require_announcement_target_scope(manager, "warehouse_manager", own_warehouse)
+            router._require_announcement_target_scope(manager, "warehouse_manager", own_person)
+            for payload in (tenant_all, other_warehouse, other_person):
+                with self.assertRaises(HTTPException) as raised:
+                    router._require_announcement_target_scope(manager, "warehouse_manager", payload)
+                self.assertEqual(raised.exception.status_code, 403)
 
 
 if __name__ == "__main__":

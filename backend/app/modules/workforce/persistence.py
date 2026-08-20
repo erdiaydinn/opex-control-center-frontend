@@ -24,7 +24,7 @@ MIGRATION_DATABASE_URL = os.getenv("WORKFORCE_MIGRATION_DATABASE_URL", "").strip
 ENVIRONMENT = os.getenv("DOCKOS_ENV", "development").strip().lower()
 TENANT_ID = os.getenv("WORKFORCE_TENANT_ID", "eay" if ENVIRONMENT != "production" else "").strip()
 ENABLED = bool(DATABASE_URL)
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 _MIGRATION_PATHS = (
     Path(__file__).resolve().parents[3] / "migrations" / "002_workforce_v29.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "003_workforce_v30_acceptance.sql",
@@ -39,6 +39,7 @@ _MIGRATION_PATHS = (
     Path(__file__).resolve().parents[3] / "migrations" / "023_recruitment_candidate_upload_authority.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "024_recruitment_production_authority.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "025_recruitment_request_evidence_scan_authority.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "026_recruitment_evidence_release_authority.sql",
 )
 _LOCK = Lock()
 _MEMORY: dict[str, list[dict]] = {}

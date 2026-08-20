@@ -51,10 +51,7 @@ data class InventoryRecoveryCaseRequest(
 object InventoryRecoveryCaseContract {
     private val eligibleReasons = setOf(
         SyncQuarantineReason.BUSINESS_CONFLICT,
-        SyncQuarantineReason.POLICY_REJECTED,
-        SyncQuarantineReason.SERVER_CONTRACT_MISMATCH,
         SyncQuarantineReason.DEPENDENCY_BLOCKED,
-        SyncQuarantineReason.PERMANENT_REJECTED,
         SyncQuarantineReason.RETRY_EXHAUSTED,
     )
 

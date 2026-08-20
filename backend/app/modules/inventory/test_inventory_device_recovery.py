@@ -182,13 +182,25 @@ class InventoryDeviceRecoveryPostgresTests(unittest.TestCase):
             ).fetchone()["n"]
             audit_count = db.execute(
                 """SELECT count(*)::integer AS n FROM inventory_audit
-                   WHERE tenant_id=%s AND action='INVENTORY_DEVICE_REPLACED'""",
-                (case["tenant"],),
+                   WHERE tenant_id=%s AND action='INVENTORY_DEVICE_REPLACED'
+                     AND record->>'replaced_device_id'=%s
+                     AND record->>'device_id'=%s""",
+                (
+                    case["tenant"],
+                    str(case["old_device_id"]),
+                    str(case["new_device_id"]),
+                ),
             ).fetchone()["n"]
             outbox_count = db.execute(
                 """SELECT count(*)::integer AS n FROM inventory_outbox
-                   WHERE tenant_id=%s AND event_type='INVENTORY_DEVICE_REPLACED'""",
-                (case["tenant"],),
+                   WHERE tenant_id=%s AND event_type='INVENTORY_DEVICE_REPLACED'
+                     AND payload->>'replaced_device_id'=%s
+                     AND payload->>'device_id'=%s""",
+                (
+                    case["tenant"],
+                    str(case["old_device_id"]),
+                    str(case["new_device_id"]),
+                ),
             ).fetchone()["n"]
 
         self.assertEqual(old_device["status"], "REPLACED")

@@ -22,6 +22,7 @@ from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import bootstrap_admin, initialize as initialize_identity
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
+from app.modules.recruitment.interview_router import public_router as recruitment_public_interview_router, router as recruitment_interview_router
 from app.modules.recruitment.orchestration_router import public_router as recruitment_public_orchestration_router, router as recruitment_orchestration_router
 from app.modules.recruitment.production_evidence_router import router as recruitment_production_evidence_router
 from app.modules.recruitment.production_startup_guard import assert_recruitment_production_ready
@@ -178,9 +179,12 @@ app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(workforce_flexibility_router, prefix="/api")
+# Capability-only candidate routes sit outside employee SSO and never receive bearer identity.
 app.include_router(recruitment_public_orchestration_router, prefix="/api")
+app.include_router(recruitment_public_interview_router, prefix="/api")
 app.include_router(recruitment_scanner_callback_router, prefix="/api")
 app.include_router(recruitment_production_evidence_router, prefix="/api")
+app.include_router(recruitment_interview_router, prefix="/api")
 # Orchestration precedes legacy recruitment so hire activation is fail-closed on readiness.
 app.include_router(recruitment_orchestration_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")

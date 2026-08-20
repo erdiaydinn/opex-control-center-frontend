@@ -2,6 +2,25 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function safeV6RouteEvidence(value) {
+  if (value == null) return true;
+  if (!isPlainObject(value)) return false;
+  if (value.preview_only !== true || value.production_evidence !== false) return false;
+  const explained = value.explained_orders;
+  if (!Array.isArray(explained) || explained.length > 3) return false;
+  const serialized = JSON.stringify(explained);
+  if (/"order_id"\s*:/.test(serialized)) return false;
+  for (const row of explained) {
+    if (!isPlainObject(row) || !String(row.basket_ref || "").startsWith("basket:")) return false;
+    if (!Array.isArray(row.segments)) return false;
+    for (const segment of row.segments) {
+      if (!isPlainObject(segment) || !Array.isArray(segment.path_m)) return false;
+      if (segment.path_m.length > 64) return false;
+    }
+  }
+  return true;
+}
+
 export function safePlanogramScannedOptimizerPreview(response, expectedScanFingerprint) {
   const result = response?.result;
   const optimizer = result?.optimizer;
@@ -46,6 +65,12 @@ export function safePlanogramScannedOptimizerPreview(response, expectedScanFinge
     ]) {
       if (optimizer[key] !== false) return null;
     }
+    const candidateCount = Number(optimizer.candidate_count || 0);
+    if (!Number.isFinite(candidateCount) || candidateCount < 0 || candidateCount > 24) return null;
+    if (optimizer.candidates != null) {
+      if (!Array.isArray(optimizer.candidates) || optimizer.candidates.length > 24) return null;
+    }
+    if (!safeV6RouteEvidence(optimizer.picker_tour_evidence_v2)) return null;
   }
   return response;
 }

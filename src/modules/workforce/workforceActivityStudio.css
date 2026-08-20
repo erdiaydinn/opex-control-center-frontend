@@ -8,11 +8,11 @@
 .wfx-activity-message.success { color: #067647; background: rgba(18,183,106,.08); border: 1px solid rgba(18,183,106,.16); }
 .wfx-activity-message.error { color: #b42318; background: rgba(240,68,56,.08); border: 1px solid rgba(240,68,56,.16); }
 .wfx-activity-template-toolbar { display: grid; grid-template-columns: 1.1fr .8fr 2fr auto; gap: 10px; align-items: end; }
-.wfx-activity-template-toolbar label, .wfx-activity-labor label { display: grid; gap: 5px; color: #475467; font-size: 11px; font-weight: 800; }
-.wfx-activity-template-toolbar input, .wfx-activity-template-toolbar select, .wfx-activity-labor input, .wfx-activity-labor select { width: 100%; min-height: 40px; box-sizing: border-box; border: 1px solid rgba(16,24,40,.12); border-radius: 11px; padding: 7px 9px; color: var(--wfx-text,#101828); background: var(--wfx-card,#fff); }
-.wfx-activity-template-toolbar button, .wfx-activity-labor > button { min-height: 40px; border: 0; border-radius: 11px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: #d80b69; color: #fff; font-weight: 850; cursor: pointer; }
-.wfx-activity-template-toolbar button:disabled, .wfx-activity-labor > button:disabled, .wfx-activity-candidate-grid article > button:disabled { opacity: .5; cursor: not-allowed; }
-.wfx-activity-hint, .wfx-activity-labor > p { display: flex; gap: 7px; align-items: center; margin: 0; color: #667085; font-size: 11px; }
+.wfx-activity-template-toolbar label, .wfx-activity-labor label, .wfx-activity-authority-card label { display: grid; gap: 5px; color: #475467; font-size: 11px; font-weight: 800; }
+.wfx-activity-template-toolbar input, .wfx-activity-template-toolbar select, .wfx-activity-labor input, .wfx-activity-labor select, .wfx-activity-authority-card input, .wfx-activity-authority-card select { width: 100%; min-height: 40px; box-sizing: border-box; border: 1px solid rgba(16,24,40,.12); border-radius: 11px; padding: 7px 9px; color: var(--wfx-text,#101828); background: var(--wfx-card,#fff); }
+.wfx-activity-template-toolbar button, .wfx-activity-labor > button, .wfx-activity-authority-card > button { min-height: 40px; border: 0; border-radius: 11px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: #d80b69; color: #fff; font-weight: 850; cursor: pointer; }
+.wfx-activity-template-toolbar button:disabled, .wfx-activity-labor > button:disabled, .wfx-activity-candidate-grid article > button:disabled, .wfx-activity-authority-card > button:disabled { opacity: .5; cursor: not-allowed; }
+.wfx-activity-hint, .wfx-activity-labor > p, .wfx-activity-authority-card > p { display: flex; gap: 7px; align-items: center; margin: 0; color: #667085; font-size: 11px; }
 .wfx-activity-candidate-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .wfx-activity-candidate-grid article { border: 1px solid rgba(16,24,40,.09); border-radius: 15px; padding: 12px; display: grid; gap: 10px; background: rgba(248,250,252,.72); }
 .wfx-activity-candidate-grid article.active { border-color: rgba(18,183,106,.22); background: rgba(18,183,106,.035); }
@@ -45,8 +45,14 @@
 .wfx-activity-labor > header strong { color: var(--wfx-text,#101828); }
 .wfx-activity-labor > div { display: grid; grid-template-columns: 1.3fr .8fr .8fr .9fr; gap: 9px; }
 .wfx-activity-labor label.wide { grid-column: 1 / -1; }
+.wfx-activity-authority-grid { display: grid; grid-template-columns: 1.35fr .9fr; gap: 12px; }
+.wfx-activity-authority-card { border: 1px solid rgba(16,24,40,.09); border-radius: 15px; padding: 13px; display: grid; gap: 10px; background: rgba(248,250,252,.48); }
+.wfx-activity-authority-card > header { display: flex; gap: 9px; align-items: flex-start; }
+.wfx-activity-authority-card > header div { display: grid; gap: 3px; }
+.wfx-activity-authority-card > header strong { color: var(--wfx-text,#101828); font-size: 13px; }
+.wfx-activity-authority-card > header small { color: #667085; line-height: 1.35; font-size: 10px; }
 .wfx-activity-studio-denied { display: flex; align-items: center; gap: 8px; color: #667085; padding: 15px; }
-.wfx-theme-dark .wfx-activity-candidate-grid article { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.08); }
-.wfx-theme-dark .wfx-activity-template-toolbar input, .wfx-theme-dark .wfx-activity-template-toolbar select, .wfx-theme-dark .wfx-activity-labor input, .wfx-theme-dark .wfx-activity-labor select, .wfx-theme-dark .wfx-activity-governed > div > button { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.1); color: #f9fafb; }
-@media (max-width: 1100px) { .wfx-activity-template-toolbar { grid-template-columns: repeat(2,minmax(0,1fr)); } .wfx-activity-template-toolbar .wide { grid-column: 1 / -1; } .wfx-activity-candidate-grid, .wfx-activity-governed > div { grid-template-columns: repeat(2,minmax(0,1fr)); } .wfx-activity-labor > div { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.wfx-theme-dark .wfx-activity-candidate-grid article, .wfx-theme-dark .wfx-activity-authority-card { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.08); }
+.wfx-theme-dark .wfx-activity-template-toolbar input, .wfx-theme-dark .wfx-activity-template-toolbar select, .wfx-theme-dark .wfx-activity-labor input, .wfx-theme-dark .wfx-activity-labor select, .wfx-theme-dark .wfx-activity-governed > div > button, .wfx-theme-dark .wfx-activity-authority-card input, .wfx-theme-dark .wfx-activity-authority-card select { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.1); color: #f9fafb; }
+@media (max-width: 1100px) { .wfx-activity-template-toolbar { grid-template-columns: repeat(2,minmax(0,1fr)); } .wfx-activity-template-toolbar .wide { grid-column: 1 / -1; } .wfx-activity-candidate-grid, .wfx-activity-governed > div { grid-template-columns: repeat(2,minmax(0,1fr)); } .wfx-activity-labor > div { grid-template-columns: repeat(2,minmax(0,1fr)); } .wfx-activity-authority-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .wfx-activity-template-toolbar, .wfx-activity-candidate-grid, .wfx-activity-governed > div, .wfx-activity-labor > div { grid-template-columns: 1fr; } .wfx-activity-template-toolbar .wide, .wfx-activity-labor label.wide { grid-column: auto; } }

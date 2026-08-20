@@ -49,7 +49,7 @@ class AuditCheckpointSettings:
     signing_kid: str
 
     @classmethod
-    def from_environment(cls) -> "AuditCheckpointSettings":
+    def from_environment(cls) -> AuditCheckpointSettings:
         environment = os.getenv("OPEX_ENVIRONMENT", "development").strip()
         issuer = os.getenv(
             "OPEX_AUDIT_CHECKPOINT_ISSUER",

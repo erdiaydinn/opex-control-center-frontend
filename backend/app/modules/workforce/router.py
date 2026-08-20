@@ -169,6 +169,14 @@ def _warehouse_scope(request: Request, role: str) -> set[str] | None:
     return None
 
 
+def _require_global_scope(request: Request, role: str, action: str) -> None:
+    if _warehouse_scope(request, role) is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{action} tenant-geneli authority gerektirir; depo kapsamlı rol bu işlemi yapamaz.",
+        )
+
+
 def _row_warehouse_id(row: dict) -> str | None:
     direct = row.get("warehouse_id")
     if direct:
@@ -284,6 +292,27 @@ def _scoped_announcements(request: Request, role: str, rows: list[dict], person_
         if str(row.get("target_type") or "all").strip().lower() == "all"
         or _announcement_target_warehouse(row) in scope
     ]
+
+
+def _require_announcement_target_scope(request: Request, role: str, payload: AnnouncementCreateRequest) -> None:
+    scope = _warehouse_scope(request, role)
+    if scope is None:
+        return
+    target_type = payload.target_type.strip().lower()
+    target_value = payload.target_value.strip()
+    if target_type == "all":
+        raise HTTPException(status_code=403, detail="Depo kapsamlı rol tenant geneli duyuru yayınlayamaz.")
+    if target_type == "warehouse":
+        target = _canonical_warehouse_id(target_value)
+        if target is None or target not in scope:
+            raise HTTPException(status_code=403, detail="Duyuru hedefi yetkili depo kapsamınızın dışında.")
+        return
+    if target_type == "person":
+        target = _employee_warehouse_id(target_value)
+        if target is None or target not in scope:
+            raise HTTPException(status_code=403, detail="Duyuru hedef personeli yetkili depo kapsamınızın dışında.")
+        return
+    raise HTTPException(status_code=400, detail="Duyuru hedef tipi geçersiz.")
 
 
 @router.get("/health")
@@ -458,11 +487,13 @@ def rules() -> dict:
 @router.post("/rules", status_code=status.HTTP_201_CREATED)
 def add_rule_version(
     payload: RuleVersionCreateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageRules")
+    _require_global_scope(request, x_opex_role, "Çalışma kuralı yönetimi")
     return create_rule_version(payload.model_dump(), x_opex_user)
 
 
@@ -740,11 +771,13 @@ def announcements(request: Request, person_id: str | None = None, x_opex_role: s
 @router.post("/announcements", status_code=status.HTTP_201_CREATED)
 def add_announcement(
     payload: AnnouncementCreateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageAnnouncements")
+    _require_announcement_target_scope(request, x_opex_role, payload)
     return create_announcement(payload.model_dump(), x_opex_user)
 
 
@@ -832,17 +865,26 @@ def feature_flags() -> dict:
 
 
 @router.put("/feature-flags")
-def put_feature_flags(payload: FeatureFlagsUpdateRequest, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
+def put_feature_flags(
+    payload: FeatureFlagsUpdateRequest,
+    request: Request,
+    x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    _require_global_scope(request, x_opex_role, "Feature flag yönetimi")
     return update_feature_flags(payload.model_dump(), x_opex_user)
 
 
 @router.put("/notification-policy")
 def put_notification_policy(
     payload: NotificationPolicyUpdateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageNotifications")
+    _require_global_scope(request, x_opex_role, "Bildirim politikası yönetimi")
     return update_notification_policy(payload.model_dump(), x_opex_user)

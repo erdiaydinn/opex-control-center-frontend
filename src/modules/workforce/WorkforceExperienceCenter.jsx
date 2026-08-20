@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   BookOpenCheck,
   Boxes,
+  CalendarClock,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -15,6 +16,10 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { workforceFlexibilityMessage } from "../../platform/i18n/workforceFlexibilityMessages.js";
+import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import WorkforceFlexibilityCenter from "./WorkforceFlexibilityCenter.jsx";
+
 const EXPERIENCE_ITEMS = [
   { id: "documents", title: "Bordro ve Belgeler", detail: "1 belge imza bekliyor", icon: FileSignature, tone: "pink" },
   { id: "learning", title: "Eğitimlerim", detail: "İSG eğitimi · %72", icon: GraduationCap, tone: "purple" },
@@ -22,7 +27,7 @@ const EXPERIENCE_ITEMS = [
   { id: "assets", title: "Zimmetlerim", detail: "2 aktif zimmet", icon: Boxes, tone: "green" },
 ];
 
-function ExperienceOverview({ onSelect }) {
+function ExperienceOverview({ onSelect, items }) {
   return <>
     <section className="wfx-experience-hero">
       <div><span>Çalışan merkezi</span><h1>İş hayatın, tek ekranda.</h1><p>Belgelerini imzala, eğitimlerini tamamla ve taleplerini İK beklemeden yönet.</p></div>
@@ -30,7 +35,7 @@ function ExperienceOverview({ onSelect }) {
     </section>
     <section className="wfx-experience-trust"><ShieldCheck size={18} /><div><strong>Gizlilik varsayılan ayar</strong><small>Yalnız sana ait kayıtlar ve rolün için gerekli bilgiler gösterilir.</small></div></section>
     <div className="wfx-experience-grid">
-      {EXPERIENCE_ITEMS.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} onClick={() => onSelect(item.id)}><div className={item.tone}><Icon size={23} /></div><span><strong>{item.title}</strong><small>{item.detail}</small></span><ChevronRight size={18} /></button>; })}
+      {items.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} onClick={() => onSelect(item.id)}><div className={item.tone}><Icon size={23} /></div><span><strong>{item.title}</strong><small>{item.detail}</small></span><ChevronRight size={18} /></button>; })}
     </div>
     <section className="wfx-experience-calendar"><header><CalendarDays size={19} /><div><strong>Yaklaşan</strong><small>Şirket takvimi</small></div></header><article><span>18</span><div><strong>Ağustos · İSG eğitimi</strong><small>14:00 · Fulya eğitim alanı</small></div><BadgeCheck size={18} /></article><article><span>30</span><div><strong>Ağustos · Dönem kapanışı</strong><small>Puantaj onay son günü</small></div><Megaphone size={18} /></article></section>
   </>;
@@ -54,12 +59,23 @@ function AssetCenter() {
 }
 
 export function WorkforceExperienceCenter({ onBack }) {
+  const { locale } = usePlatformPreferences();
   const [section, setSection] = useState("overview");
   const [signed, setSigned] = useState(false);
   const [courseCompleted, setCourseCompleted] = useState(false);
   const [surveyAnswer, setSurveyAnswer] = useState(null);
-  const title = useMemo(() => EXPERIENCE_ITEMS.find((item) => item.id === section)?.title || "Çalışan Merkezi", [section]);
-  return <section className="wfx-mobile-screen wfx-experience-screen"><header className="wfx-mobile-header"><button type="button" onClick={section === "overview" ? onBack : () => setSection("overview")}><ArrowLeft size={22} /></button><strong>{title}</strong><span /></header><div className="wfx-mobile-info-content">{section === "overview" ? <ExperienceOverview onSelect={setSection} /> : null}{section === "documents" ? <DocumentCenter signed={signed} onSign={() => setSigned(true)} /> : null}{section === "learning" ? <LearningCenter completed={courseCompleted} onComplete={() => setCourseCompleted(true)} /> : null}{section === "survey" ? <SurveyCenter answer={surveyAnswer} onAnswer={setSurveyAnswer} /> : null}{section === "assets" ? <AssetCenter /> : null}</div></section>;
+  const items = useMemo(() => [
+    {
+      id: "flexibility",
+      title: workforceFlexibilityMessage(locale, "title"),
+      detail: workforceFlexibilityMessage(locale, "detail"),
+      icon: CalendarClock,
+      tone: "pink",
+    },
+    ...EXPERIENCE_ITEMS,
+  ], [locale]);
+  const title = useMemo(() => items.find((item) => item.id === section)?.title || "Çalışan Merkezi", [items, section]);
+  return <section className="wfx-mobile-screen wfx-experience-screen"><header className="wfx-mobile-header"><button type="button" onClick={section === "overview" ? onBack : () => setSection("overview")}><ArrowLeft size={22} /></button><strong>{title}</strong><span /></header><div className="wfx-mobile-info-content">{section === "overview" ? <ExperienceOverview onSelect={setSection} items={items} /> : null}{section === "flexibility" ? <WorkforceFlexibilityCenter /> : null}{section === "documents" ? <DocumentCenter signed={signed} onSign={() => setSigned(true)} /> : null}{section === "learning" ? <LearningCenter completed={courseCompleted} onComplete={() => setCourseCompleted(true)} /> : null}{section === "survey" ? <SurveyCenter answer={surveyAnswer} onAnswer={setSurveyAnswer} /> : null}{section === "assets" ? <AssetCenter /> : null}</div></section>;
 }
 
 export function WorkforceExperienceAdmin() {

@@ -42,7 +42,6 @@ from app.modules.planogram.store_dna import (
     build_store_dna_configuration,
     configuration_fingerprint,
     geometry_attested,
-    normalize_store_code,
     summarize_store_dna,
 )
 from app.modules.planogram.store_scan import normalize_store_scan

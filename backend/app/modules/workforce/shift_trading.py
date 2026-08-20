@@ -20,7 +20,6 @@ from .flexibility import (
     _availability_for,
     _capability_keys,
     _load_availability,
-    _normal,
     _warehouse_matches,
     _window_contains,
 )

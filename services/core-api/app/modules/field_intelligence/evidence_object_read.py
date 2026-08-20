@@ -66,7 +66,7 @@ async def read_private_evidence_object(
     normalized_media_type = expected_media_type.split(";", 1)[0].strip().lower()
     if normalized_media_type not in ALLOWED_MEDIA_TYPES:
         raise FieldEvidenceStoreUnavailable(
-            "private Field evidence reader received an unauthorized media type"
+            "private Field evidence reader is authorized for image/jpeg only"
         )
 
     if base_url is None:

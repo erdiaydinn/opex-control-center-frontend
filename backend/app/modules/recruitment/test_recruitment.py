@@ -140,8 +140,15 @@ class RecruitmentRuleTests(unittest.TestCase):
             self.assertEqual(candidate["status"], "EVIDENCE_PENDING")
             with self.assertRaisesRegex(service.RecruitmentRuleError, "kanıt incelemesi"):
                 service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
-            service.add_candidate_evidence(
+            uploaded = service.add_candidate_evidence(
                 request["id"], candidate["id"], "cv.pdf", "application/pdf", b"%PDF-candidate", "hr"
+            )
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "İçerik güvenliği"):
+                service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
+            service.record_candidate_content_safety_scan(
+                request["id"], candidate["id"], uploaded["evidence"][0]["sha256"],
+                "CLEAN", "AV-RECEIPT-CV-1", "scanner-v1", "scanner-service",
+                provider_signature_verified=True,
             )
             approved = service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
             self.assertEqual(approved["status"], "APPROVED")
@@ -194,6 +201,11 @@ class RecruitmentRuleTests(unittest.TestCase):
                 )
             service.attest_candidate_document_verification(
                 request["id"], candidate["id"], evidence["sha256"], "İkinci kontrol tamamlandı", "hr-supervisor"
+            )
+            service.record_candidate_content_safety_scan(
+                request["id"], candidate["id"], evidence["sha256"], "CLEAN",
+                "AV-RECEIPT-OFFICIAL-1", "scanner-v1", "scanner-service",
+                provider_signature_verified=True,
             )
             approved = service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
             self.assertEqual(approved["status"], "APPROVED")

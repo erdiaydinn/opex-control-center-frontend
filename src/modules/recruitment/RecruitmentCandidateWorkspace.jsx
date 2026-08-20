@@ -12,6 +12,7 @@ import {
   uploadRecruitmentCandidateEvidence,
   verifyRecruitmentCandidateDocument,
 } from "./recruitmentApi.js";
+import { candidateEvidenceGate, isEvidenceMalwareCleared } from "./recruitmentEvidenceTrust.js";
 
 
 function addDays(days) { const date = new Date(); date.setDate(date.getDate() + days); return date.toISOString().slice(0, 10); }
@@ -43,18 +44,20 @@ function VerificationPill({ value, m }) {
 
 function CandidateEvidence({ item, candidateId, requestId, canApprove, onVerify, onAttest, m }) {
   const verification = item.officialVerification;
+  const malwareCleared = isEvidenceMalwareCleared(item);
   return <article className="rec-document-card">
     <div className="rec-document-icon"><FileCheck2 size={19} /></div>
     <div className="rec-document-main"><div className="rec-document-title"><strong>{m(`document${item.documentType || "OTHER"}`)}</strong><VerificationPill value={item.verificationState} m={m} /></div><span>{item.originalName}</span><small>SHA-256 · {shortDigest(item.sha256)}</small></div>
-    <button type="button" className="rec-icon-action" title={m("downloadDocument")} onClick={() => downloadRecruitmentCandidateEvidence(requestId, candidateId, item.sha256, item.originalName)}><Download size={16} /></button>
+    {malwareCleared ? <button type="button" className="rec-icon-action" title={m("downloadDocument")} onClick={() => downloadRecruitmentCandidateEvidence(requestId, candidateId, item.sha256, item.originalName)}><Download size={16} /></button> : null}
     <div className="rec-document-checks">
+      <span className={malwareCleared ? "pass" : item.contentSafetyState === "MALWARE_DETECTED" ? "fail" : "pending"}><ShieldCheck size={15} />{malwareCleared ? m("malwareCleared") : item.contentSafetyState === "MALWARE_DETECTED" ? m("malwareDetected") : item.contentSafetyState === "SCAN_FAILED" ? m("malwareScanFailed") : m("malwareScanPending")}</span>
       <span className={["OFFICIAL_VERIFIED", "HUMAN_WITNESSED_ATTESTED"].includes(item.verificationState) ? "pass" : "pending"}><ShieldCheck size={15} />{item.verificationState === "OFFICIAL_VERIFIED" ? m("officialSourceConfirmed") : item.verificationState === "HUMAN_WITNESSED_ATTESTED" ? m("fourEyesConfirmed") : m("officialSourcePending")}</span>
       <span className={verification?.subjectMatch === "MATCH" ? "pass" : verification?.subjectMatch === "MISMATCH" ? "fail" : "pending"}><UserCheck size={15} />{verification?.subjectMatch === "MATCH" ? m("personMatchConfirmed") : verification?.subjectMatch === "MISMATCH" ? m("personMismatch") : m("personMatchPending")}</span>
       <span><Fingerprint size={15} />{verification?.truthBoundary === "AUTHORIZED_MACHINE_TO_MACHINE" ? m("authorizedApiTruth") : verification ? m("humanWitnessedTruth") : m("noOfficialTruth")}</span>
     </div>
     {verification ? <div className="rec-truth-boundary"><strong>{m("truthBoundary")}</strong><span>{m("truthBoundaryDetail", { receipt: verification.officialReceiptId || "—" })}</span></div> : null}
-    {canApprove && item.requiresOfficialVerification && ["BARCODE_EXTRACTION_PENDING", "OFFICIAL_REVIEW_FAILED"].includes(item.verificationState) ? <button type="button" className="rec-verify-action" onClick={() => onVerify(item)}><ShieldCheck size={16} />{m("recordOfficialVerification")}</button> : null}
-    {canApprove && item.verificationState === "HUMAN_WITNESSED_PENDING_ATTESTATION" ? <button type="button" className="rec-verify-action" onClick={() => onAttest(item)}><UserCheck size={16} />{m("attestSecondReviewer")}</button> : null}
+    {canApprove && malwareCleared && item.requiresOfficialVerification && ["BARCODE_EXTRACTION_PENDING", "OFFICIAL_REVIEW_FAILED"].includes(item.verificationState) ? <button type="button" className="rec-verify-action" onClick={() => onVerify(item)}><ShieldCheck size={16} />{m("recordOfficialVerification")}</button> : null}
+    {canApprove && malwareCleared && item.verificationState === "HUMAN_WITNESSED_PENDING_ATTESTATION" ? <button type="button" className="rec-verify-action" onClick={() => onAttest(item)}><UserCheck size={16} />{m("attestSecondReviewer")}</button> : null}
   </article>;
 }
 
@@ -180,12 +183,14 @@ export default function RecruitmentCandidateWorkspace({ request, canApprove, onC
 
     <div className="rec-candidate-list">
       {candidates.map((row) => {
-        const evidenceCount = row.evidenceCount ?? row.evidence?.length ?? 0;
-        const officialDocuments = (row.evidence || []).filter((item) => item.requiresOfficialVerification);
-        const unresolved = officialDocuments.filter((item) => !["OFFICIAL_VERIFIED", "HUMAN_WITNESSED_ATTESTED"].includes(item.verificationState)).length;
-        return <article key={row.id} className="rec-candidate-card"><div className="rec-candidate-head"><div><strong>{row.fullName}</strong><small>{row.sourceRef} · {row.id}</small></div><CandidateStatus value={row.status} m={m} /></div><div className="rec-candidate-trust"><div><ShieldCheck size={17} /><span><strong>{unresolved ? m("exceptionReview", { count: unresolved }) : m("documentGateClear")}</strong><small>{unresolved ? m("exceptionReviewDetail") : m("documentGateClearDetail")}</small></span></div><span className={`rec-trust-score ${unresolved ? "blocked" : "clear"}`}>{unresolved ? m("approvalBlocked") : m("approvalReady")}</span></div><div className="rec-candidate-evidence"><FileCheck2 size={16} /><span>{m("evidenceCount", { count: evidenceCount })}</span>{canApprove && row.status !== "HIRED" && row.status !== "REJECTED" ? <div className="rec-upload-cluster"><select aria-label={m("documentType")} value={documentTypes[row.id] || "OTHER"} onChange={(e) => setDocumentTypes({ ...documentTypes, [row.id]: e.target.value })}>{DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{m(`document${type}`)}</option>)}</select><label className="rec-mini-upload"><Upload size={15} />{busy === `evidence-${row.id}` ? m("uploading") : m("uploadEvidence")}<input type="file" accept=".pdf,.jpg,.jpeg,.png" hidden onChange={(e) => uploadEvidence(row.id, e.target.files?.[0])} /></label></div> : null}</div>
+        const evidence = row.evidence || [];
+        const evidenceCount = row.evidenceCount ?? evidence.length;
+        const gate = candidateEvidenceGate(evidence);
+        const trustTitle = !gate.evidenceCount ? m("evidenceRequiredForApproval") : gate.unsafeCount ? m("contentSafetyBlocked", { count: gate.unsafeCount }) : gate.officialUnresolvedCount ? m("exceptionReview", { count: gate.officialUnresolvedCount }) : m("documentGateClear");
+        const trustDetail = !gate.evidenceCount ? m("evidenceRequiredForApprovalDetail") : gate.unsafeCount ? m("contentSafetyBlockedDetail") : gate.officialUnresolvedCount ? m("exceptionReviewDetail") : m("documentGateClearDetail");
+        return <article key={row.id} className="rec-candidate-card"><div className="rec-candidate-head"><div><strong>{row.fullName}</strong><small>{row.sourceRef} · {row.id}</small></div><CandidateStatus value={row.status} m={m} /></div><div className="rec-candidate-trust"><div><ShieldCheck size={17} /><span><strong>{trustTitle}</strong><small>{trustDetail}</small></span></div><span className={`rec-trust-score ${gate.canApprove ? "clear" : "blocked"}`}>{gate.canApprove ? m("approvalReady") : m("approvalBlocked")}</span></div><div className="rec-candidate-evidence"><FileCheck2 size={16} /><span>{m("evidenceCount", { count: evidenceCount })}</span>{canApprove && row.status !== "HIRED" && row.status !== "REJECTED" ? <div className="rec-upload-cluster"><select aria-label={m("documentType")} value={documentTypes[row.id] || "OTHER"} onChange={(e) => setDocumentTypes({ ...documentTypes, [row.id]: e.target.value })}>{DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{m(`document${type}`)}</option>)}</select><label className="rec-mini-upload"><Upload size={15} />{busy === `evidence-${row.id}` ? m("uploading") : m("uploadEvidence")}<input type="file" accept=".pdf,.jpg,.jpeg,.png" hidden onChange={(e) => uploadEvidence(row.id, e.target.files?.[0])} /></label></div> : null}</div>
           {row.evidence?.length ? <div className="rec-document-list">{row.evidence.map((item) => <CandidateEvidence key={item.sha256} item={item} candidateId={row.id} requestId={request.id} canApprove={canApprove} m={m} onVerify={(target) => setVerifyTarget({ candidateId: row.id, item: target })} onAttest={(target) => setAttestTarget({ candidateId: row.id, item: target })} />)}</div> : null}
-          {canApprove && row.status === "REVIEW_PENDING" ? <div className="rec-candidate-review"><input value={reviewNotes[row.id] || ""} onChange={(e) => setReviewNotes({ ...reviewNotes, [row.id]: e.target.value })} placeholder={m("decisionReason")} /><button className="reject" onClick={() => decide(row.id, "REJECTED")} disabled={busy === `decision-${row.id}`}><X size={15} /> {m("reject")}</button><button className="approve" onClick={() => decide(row.id, "APPROVED")} disabled={busy === `decision-${row.id}`}><Check size={15} /> {m("approve")}</button></div> : null}
+          {canApprove && row.status === "REVIEW_PENDING" ? <div className="rec-candidate-review"><input value={reviewNotes[row.id] || ""} onChange={(e) => setReviewNotes({ ...reviewNotes, [row.id]: e.target.value })} placeholder={m("decisionReason")} /><button className="reject" onClick={() => decide(row.id, "REJECTED")} disabled={busy === `decision-${row.id}`}><X size={15} /> {m("reject")}</button><button className="approve" title={!gate.canApprove ? trustDetail : undefined} onClick={() => decide(row.id, "APPROVED")} disabled={busy === `decision-${row.id}` || !gate.canApprove}><Check size={15} /> {m("approve")}</button>{!gate.canApprove ? <small className="rec-approval-block-reason">{trustDetail}</small> : null}</div> : null}
           {canApprove && row.status === "APPROVED" ? <button className="rec-primary rec-hire-open" onClick={() => setHireCandidate(row)}><Rocket size={16} /> {m("employeeMasterShift")}</button> : null}
           {row.status === "HIRED" ? <div className="rec-candidate-hired"><BadgeCheck size={16} /> {m("hiredMaster", { employee: row.employeeId || m("statusHired") })}</div> : null}
         </article>;

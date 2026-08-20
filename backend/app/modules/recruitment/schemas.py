@@ -78,6 +78,13 @@ class RecruitmentCandidateCreate(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class RecruitmentCandidateUploadCapabilityCreate(BaseModel):
+    document_type: str = Field(
+        pattern=r"^(CRIMINAL_RECORD|RESIDENCE|SGK_SERVICE|MILITARY_STATUS|EDUCATION|CIVIL_REGISTRY|OTHER)$"
+    )
+    expires_in_minutes: int = Field(default=60, ge=5, le=1440)
+
+
 class RecruitmentCandidateDecision(BaseModel):
     decision: str = Field(pattern=r"^(APPROVED|REJECTED)$")
     note: str = Field(min_length=1, max_length=2000)

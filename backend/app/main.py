@@ -178,6 +178,7 @@ app.add_middleware(
         "Authorization",
         "Content-Type",
         "X-Request-ID",
+        "X-EAY-Upload-Capability",
         "X-DockOS-Gateway-Timestamp",
         "X-DockOS-Gateway-Nonce",
         "X-DockOS-Gateway-Signature",

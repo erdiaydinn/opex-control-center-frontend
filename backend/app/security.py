@@ -123,12 +123,16 @@ PUBLIC_PATHS = {
 }
 
 
+def _is_public_path(path: str) -> bool:
+    return path in PUBLIC_PATHS or path == "/api/recruitment/candidate-upload/evidence"
+
+
 class WorkforceIdentityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         protected_prefix = any(request.url.path.startswith(prefix) for prefix in (
             "/api/workforce", "/api/recruitment", "/api/inventory", "/api/identity",
         ))
-        if protected_prefix and request.url.path not in PUBLIC_PATHS:
+        if protected_prefix and not _is_public_path(request.url.path):
             try:
                 identity = identity_from_request(request)
             except HTTPException as error:

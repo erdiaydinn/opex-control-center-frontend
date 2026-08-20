@@ -4,12 +4,14 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from hashlib import sha256
+import hmac
 import json
 import os
 from pathlib import Path
 import re
 import smtplib
 import ssl
+import secrets
 from threading import Lock
 from uuid import uuid4
 
@@ -459,6 +461,89 @@ def register_candidate(request_id: str, payload: dict, actor: str) -> dict:
         return candidate
 
 
+def issue_candidate_upload_capability(
+    request_id: str, candidate_id: str, document_type: str, expires_in_minutes: int, actor: str,
+) -> dict:
+    """Issue a one-time opaque upload secret; only its SHA-256 digest is persisted."""
+    normalized_type = str(document_type or "").strip().upper()
+    if normalized_type not in _OFFICIAL_DOCUMENT_TYPES | {"OTHER"}:
+        raise RecruitmentRuleError("Desteklenmeyen aday belge türü.")
+    raw_token = secrets.token_urlsafe(32)
+    token_digest = sha256(raw_token.encode("utf-8")).hexdigest()
+    with _LOCK:
+        record = next((row for row in list_requests() if row["id"] == request_id), None)
+        candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+        if candidate is None or candidate.get("status") not in {"EVIDENCE_PENDING", "REVIEW_PENDING"}:
+            raise RecruitmentRuleError("Aday bulunamadı veya belge kabul eden aşamada değil.")
+        expected_revision = int(record.get("revision", 1))
+        issued_at = _now()
+        capability = {
+            "id": f"CAP-{uuid4().hex[:12]}", "token_sha256": token_digest,
+            "document_type": normalized_type, "issued_at": issued_at.isoformat(), "issued_by": actor,
+            "expires_at": (issued_at + timedelta(minutes=expires_in_minutes)).isoformat(),
+            "consumed_at": None,
+        }
+        candidate.setdefault("upload_capabilities", []).append(capability)
+        record["history"].append({
+            "at": issued_at.isoformat(), "action": "CANDIDATE_UPLOAD_CAPABILITY_ISSUED",
+            "actor": actor, "candidate_id": candidate_id, "capability_id": capability["id"],
+            "document_type": normalized_type,
+        })
+        _save_request(
+            record, expected_revision, audit_event="RECRUITMENT_CANDIDATE_UPLOAD_CAPABILITY_ISSUED", actor=actor,
+            audit_details={"record_id": request_id, "candidate_id": candidate_id,
+                           "capability_id": capability["id"], "document_type": normalized_type},
+        )
+    return {
+        "capability": raw_token, "expires_at": capability["expires_at"],
+        "document_type": normalized_type, "max_uploads": 1,
+    }
+
+
+def consume_candidate_upload_capability(raw_token: str, document_type: str) -> tuple[str, str, str]:
+    """Atomically consume a tenant-contained, single-use upload capability."""
+    token = str(raw_token or "").strip()
+    if len(token) < 32 or len(token) > 256:
+        raise RecruitmentRuleError("Aday yükleme yetkisi geçersiz veya süresi dolmuş.")
+    presented_digest = sha256(token.encode("utf-8")).hexdigest()
+    normalized_type = str(document_type or "").strip().upper()
+    with _LOCK:
+        match = None
+        for record in list_requests():
+            for candidate in record.get("candidates", []):
+                for capability in candidate.get("upload_capabilities", []):
+                    if hmac.compare_digest(str(capability.get("token_sha256", "")), presented_digest):
+                        if match is not None:
+                            raise RecruitmentRuleError("Aday yükleme yetkisi bütünlük kontrolünü geçemedi.")
+                        match = (record, candidate, capability)
+        if match is None:
+            raise RecruitmentRuleError("Aday yükleme yetkisi geçersiz veya süresi dolmuş.")
+        record, candidate, capability = match
+        if capability.get("consumed_at") or datetime.fromisoformat(capability["expires_at"]) <= _now():
+            raise RecruitmentRuleError("Aday yükleme yetkisi geçersiz veya süresi dolmuş.")
+        if candidate.get("status") not in {"EVIDENCE_PENDING", "REVIEW_PENDING"}:
+            raise RecruitmentRuleError("Aday artık belge kabul eden aşamada değil.")
+        if normalized_type != capability.get("document_type"):
+            raise RecruitmentRuleError("Belge türü verilen aday yükleme yetkisiyle eşleşmiyor.")
+        expected_revision = int(record.get("revision", 1))
+        consumed_at = _now().isoformat()
+        capability["consumed_at"] = consumed_at
+        capability["consumed_by"] = "candidate-capability"
+        record["history"].append({
+            "at": consumed_at, "action": "CANDIDATE_UPLOAD_CAPABILITY_CONSUMED",
+            "actor": "candidate-capability", "candidate_id": candidate["id"],
+            "capability_id": capability["id"], "document_type": normalized_type,
+        })
+        _save_request(
+            record, expected_revision, audit_event="RECRUITMENT_CANDIDATE_UPLOAD_CAPABILITY_CONSUMED",
+            actor="candidate-capability", audit_details={
+                "record_id": record["id"], "candidate_id": candidate["id"],
+                "capability_id": capability["id"], "document_type": normalized_type,
+            },
+        )
+        return record["id"], candidate["id"], capability["id"]
+
+
 def add_candidate_evidence(
     request_id: str, candidate_id: str, filename: str, content_type: str, content: bytes, actor: str,
     *, document_type: str = "OTHER",
@@ -639,6 +724,60 @@ def attest_candidate_document_verification(
         return candidate
 
 
+def record_candidate_content_safety_scan(
+    request_id: str, candidate_id: str, evidence_sha256: str, result: str,
+    scanner_receipt_id: str, scanner_engine: str, actor: str, *, provider_signature_verified: bool = False,
+) -> dict:
+    """Seal a signed malware-scanner result to the exact immutable evidence bytes."""
+    if not provider_signature_verified:
+        raise RecruitmentRuleError("İçerik güvenliği sağlayıcı imzası doğrulanmadı.")
+    normalized_result = str(result).strip().upper()
+    if normalized_result not in {"CLEAN", "INFECTED", "ERROR"}:
+        raise RecruitmentRuleError("İçerik güvenliği sonucu desteklenmiyor.")
+    with _LOCK:
+        all_records = list_requests()
+        record = next((row for row in all_records if row["id"] == request_id), None)
+        candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+        evidence = next(
+            (item for item in (candidate or {}).get("evidence", []) if item.get("sha256") == evidence_sha256), None,
+        )
+        if evidence is None:
+            raise RecruitmentRuleError("İçerik güvenliği sonucu yüklenen belge baytlarıyla eşleşmiyor.")
+        if evidence.get("content_safety_receipt") is not None:
+            raise RecruitmentRuleError("İçerik güvenliği makbuzu değiştirilemez; yeni belge yüklenmelidir.")
+        if any(
+            other.get("content_safety_receipt", {}).get("scanner_receipt_id") == scanner_receipt_id
+            for other_record in all_records
+            for other_candidate in other_record.get("candidates", [])
+            for other in other_candidate.get("evidence", [])
+            if other is not evidence
+        ):
+            raise RecruitmentRuleError("İçerik güvenliği makbuzu daha önce kullanılmış; replay engellendi.")
+        expected_revision = int(record.get("revision", 1))
+        scanned_at = _now().isoformat()
+        evidence["content_safety_state"] = {
+            "CLEAN": "MALWARE_CLEARED", "INFECTED": "MALWARE_DETECTED", "ERROR": "SCAN_FAILED",
+        }[normalized_result]
+        evidence["content_safety_truth_boundary"] = "SIGNED_SCANNER_RECEIPT"
+        evidence["content_safety_receipt"] = {
+            "scanner_receipt_id": str(scanner_receipt_id).strip(),
+            "scanner_engine": str(scanner_engine).strip(), "result": normalized_result,
+            "evidence_sha256": evidence_sha256, "scanned_at": scanned_at, "recorded_by": actor,
+        }
+        record["history"].append({
+            "at": scanned_at, "action": "CANDIDATE_EVIDENCE_CONTENT_SAFETY_SCANNED",
+            "actor": actor, "candidate_id": candidate_id, "evidence_sha256": evidence_sha256,
+            "result": normalized_result,
+        })
+        _save_request(
+            record, expected_revision, audit_event="RECRUITMENT_CANDIDATE_EVIDENCE_CONTENT_SAFETY_SCANNED",
+            actor=actor, audit_details={"record_id": request_id, "candidate_id": candidate_id,
+                                        "evidence_sha256": evidence_sha256, "result": normalized_result,
+                                        "scanner_engine": str(scanner_engine).strip()},
+        )
+        return evidence
+
+
 def decide_candidate(request_id: str, candidate_id: str, decision: str, note: str, actor: str) -> dict:
     with _LOCK:
         record = next((row for row in list_requests() if row["id"] == request_id), None)
@@ -655,6 +794,14 @@ def decide_candidate(request_id: str, candidate_id: str, decision: str, note: st
         if decision == "APPROVED" and unresolved_official:
             raise RecruitmentRuleError(
                 "Resmî doğrulama gereken tüm aday belgeleri geçerli ve kişiyle eşleşmiş olmadan aday onaylanamaz."
+            )
+        unsafe_or_unscanned = [
+            evidence for evidence in candidate.get("evidence", [])
+            if evidence.get("content_safety_state") != "MALWARE_CLEARED"
+        ]
+        if decision == "APPROVED" and unsafe_or_unscanned:
+            raise RecruitmentRuleError(
+                "İçerik güvenliği taraması temiz sonuçlanmadan aday onaylanamaz."
             )
         expected_revision = int(record.get("revision", 1))
         now = _now().isoformat()
@@ -673,6 +820,8 @@ def candidate_evidence_path(request_id: str, candidate_id: str, digest: str) -> 
     evidence = next((item for item in (candidate or {}).get("evidence", []) if item["sha256"] == digest), None)
     if evidence is None:
         raise RecruitmentRuleError("Aday kanıtı bulunamadı.")
+    if evidence.get("content_safety_state") != "MALWARE_CLEARED":
+        raise RecruitmentRuleError("Aday kanıtı içerik güvenliği karantinasından çıkmadı.")
     path = _EVIDENCE_DIR / evidence["stored_name"]
     if not path.exists():
         raise RecruitmentRuleError("Aday kanıt dosyası arşivde bulunamadı.")

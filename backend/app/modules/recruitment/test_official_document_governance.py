@@ -123,9 +123,11 @@ class OfficialDocumentGovernanceTests(unittest.TestCase):
                     verification_method="AUTHORIZED_OFFICIAL_API",
                 )
 
-    def test_legacy_non_official_evidence_remains_approvable(self) -> None:
+    def test_non_official_evidence_still_requires_clean_scan(self) -> None:
         request = deepcopy(self.request)
-        request["candidates"][0]["evidence"] = [{"sha256": "d" * 64}]
+        request["candidates"][0]["evidence"] = [{
+            "sha256": "d" * 64, "content_safety_state": "MALWARE_CLEARED",
+        }]
         with (
             patch.object(service, "list_requests", return_value=[request]),
             patch.object(service, "_save_request") as save,
@@ -135,6 +137,91 @@ class OfficialDocumentGovernanceTests(unittest.TestCase):
             )
         self.assertEqual(result["status"], "APPROVED")
         self.assertEqual(save.call_args.args[1], 7)
+
+
+class CandidateUploadCapabilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.request = {
+            "id": "REC-CAP-QA", "status": "SOURCING", "warehouse_id": "fulya",
+            "revision": 3, "history": [], "candidates": [{
+                "id": "CAND-CAP-QA", "status": "EVIDENCE_PENDING", "evidence": [],
+            }],
+        }
+
+    def test_capability_is_opaque_hashed_and_single_use(self) -> None:
+        with (
+            patch.object(service, "list_requests", return_value=[self.request]),
+            patch.object(service, "_save_request") as save,
+        ):
+            issued = service.issue_candidate_upload_capability(
+                self.request["id"], "CAND-CAP-QA", "RESIDENCE", 30, "hr-issuer",
+            )
+            stored = self.request["candidates"][0]["upload_capabilities"][0]
+            self.assertNotEqual(issued["capability"], stored["token_sha256"])
+            self.assertNotIn(issued["capability"], repr(self.request))
+            resolved = service.consume_candidate_upload_capability(issued["capability"], "RESIDENCE")
+            self.assertEqual(resolved[:2], (self.request["id"], "CAND-CAP-QA"))
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "geçersiz veya süresi dolmuş"):
+                service.consume_candidate_upload_capability(issued["capability"], "RESIDENCE")
+        self.assertEqual(save.call_count, 2)
+
+    def test_capability_is_bound_to_exact_document_type(self) -> None:
+        with (
+            patch.object(service, "list_requests", return_value=[self.request]),
+            patch.object(service, "_save_request"),
+        ):
+            issued = service.issue_candidate_upload_capability(
+                self.request["id"], "CAND-CAP-QA", "CRIMINAL_RECORD", 30, "hr-issuer",
+            )
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "Belge türü"):
+                service.consume_candidate_upload_capability(issued["capability"], "OTHER")
+            self.assertIsNone(self.request["candidates"][0]["upload_capabilities"][0]["consumed_at"])
+
+    def test_unknown_capability_does_not_reveal_candidate(self) -> None:
+        with patch.object(service, "list_requests", return_value=[self.request]):
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "geçersiz veya süresi dolmuş"):
+                service.consume_candidate_upload_capability("x" * 48, "OTHER")
+
+
+class ContentSafetyReceiptTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.request = {
+            "id": "REC-AV-QA", "status": "SOURCING", "warehouse_id": "fulya",
+            "revision": 4, "history": [], "candidates": [{
+                "id": "CAND-AV-QA", "status": "REVIEW_PENDING", "evidence": [{
+                    "sha256": "9" * 64, "content_safety_state": "STATIC_FORMAT_ACCEPTED_AV_PENDING",
+                    "content_safety_receipt": None,
+                }],
+            }],
+        }
+
+    def test_unsigned_scanner_claim_is_rejected(self) -> None:
+        with self.assertRaisesRegex(service.RecruitmentRuleError, "sağlayıcı imzası"):
+            service.record_candidate_content_safety_scan(
+                self.request["id"], "CAND-AV-QA", "9" * 64, "CLEAN",
+                "AV-QA-1", "scanner-v1", "untrusted",
+            )
+
+    def test_signed_clean_receipt_releases_exact_bytes(self) -> None:
+        with (
+            patch.object(service, "list_requests", return_value=[self.request]),
+            patch.object(service, "_save_request"),
+        ):
+            evidence = service.record_candidate_content_safety_scan(
+                self.request["id"], "CAND-AV-QA", "9" * 64, "CLEAN",
+                "AV-QA-1", "scanner-v1", "scanner-service", provider_signature_verified=True,
+            )
+        self.assertEqual(evidence["content_safety_state"], "MALWARE_CLEARED")
+        self.assertEqual(evidence["content_safety_receipt"]["evidence_sha256"], "9" * 64)
+
+    def test_missing_safety_state_is_never_legacy_safe(self) -> None:
+        candidate = self.request["candidates"][0]
+        candidate["evidence"][0].pop("content_safety_state")
+        with patch.object(service, "list_requests", return_value=[self.request]):
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "İçerik güvenliği"):
+                service.decide_candidate(
+                    self.request["id"], candidate["id"], "APPROVED", "reviewed", "hr",
+                )
 
 
 if __name__ == "__main__":

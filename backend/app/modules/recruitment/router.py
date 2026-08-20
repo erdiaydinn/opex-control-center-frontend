@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
@@ -8,6 +10,7 @@ from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
 from .hr_actual import build_dashboard, enrich_evaluation, import_snapshot, snapshot_summary
 from .schemas import (
     RecruitmentCandidateCreate, RecruitmentCandidateDecision, RecruitmentCandidateDocumentAttestation,
+    RecruitmentCandidateUploadCapabilityCreate,
     RecruitmentCandidateDocumentVerification, RecruitmentDecision,
     RecruitmentHireActivate, RecruitmentHrActualImport, RecruitmentRequestCreate,
     RecruitmentSettingsUpdate, StaffingNormPatch,
@@ -30,14 +33,43 @@ from .service import (
     list_requests,
     purge_expired_recruitment_data,
     register_candidate,
+    issue_candidate_upload_capability,
+    consume_candidate_upload_capability,
     attest_candidate_document_verification,
     record_candidate_document_verification,
+    _validate_candidate_document_bytes,
     update_settings,
     upsert_norm,
 )
 
 
 router = APIRouter(prefix="/recruitment", tags=["Recruitment"])
+
+
+async def _read_upload_limited(file: UploadFile, limit: int = 10 * 1024 * 1024) -> bytes:
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await file.read(min(1024 * 1024, limit + 1 - size))
+        if not chunk:
+            return b"".join(chunks)
+        size += len(chunk)
+        if size > limit:
+            raise RecruitmentRuleError("Aday kanıtı 10 MB sınırını aşıyor.")
+        chunks.append(chunk)
+
+
+def _require_candidate_upload_authority_runtime() -> None:
+    environment = os.getenv("DOCKOS_ENV", "development").strip().lower()
+    mode = os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "disabled").strip().lower()
+    if environment == "production" or mode != "legacy-development":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "CANDIDATE_UPLOAD_AUTHORITY_NOT_READY",
+                "message": "Aday yükleme otoritesi atomik PostgreSQL finalize olmadan etkinleştirilemez.",
+            },
+        )
 
 _HR_ACTIONS = {
     "viewRecruitment", "createRecruitmentRequest", "approveRecruitmentRequest",
@@ -315,9 +347,59 @@ async def upload_candidate_evidence(
     try:
         return add_candidate_evidence(
             request_id, candidate_id, file.filename or "document",
-            file.content_type or "application/octet-stream", await file.read(), actor,
+            file.content_type or "application/octet-stream", await _read_upload_limited(file), actor,
             document_type=document_type,
         )
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/upload-capabilities", status_code=status.HTTP_201_CREATED)
+def create_candidate_upload_capability(
+    request_id: str, candidate_id: str, payload: RecruitmentCandidateUploadCapabilityCreate,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require_candidate_upload_authority_runtime()
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return issue_candidate_upload_capability(
+            request_id, candidate_id, payload.document_type, payload.expires_in_minutes, actor,
+        )
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/candidate-upload/evidence", status_code=status.HTTP_201_CREATED)
+async def upload_candidate_evidence_with_capability(
+    file: UploadFile = File(...), document_type: str = Form(...),
+    x_eay_upload_capability: str = Header(default="", alias="X-EAY-Upload-Capability"),
+) -> dict:
+    """Candidate-only upload boundary; grants no read, listing, or internal API access."""
+    _require_candidate_upload_authority_runtime()
+    try:
+        content = await _read_upload_limited(file)
+        content_type = file.content_type or "application/octet-stream"
+        if content_type not in {"application/pdf", "image/jpeg", "image/png"}:
+            raise RecruitmentRuleError("Aday kanıtı PDF/JPG/PNG olmalıdır.")
+        _validate_candidate_document_bytes(content_type, content)
+        request_id, candidate_id, capability_id = consume_candidate_upload_capability(
+            x_eay_upload_capability, document_type,
+        )
+        candidate = add_candidate_evidence(
+            request_id, candidate_id, file.filename or "document",
+            content_type, content,
+            f"candidate-capability:{capability_id}", document_type=document_type,
+        )
+        evidence = candidate["evidence"][-1]
+        return {
+            "accepted": True, "receipt": evidence["sha256"],
+            "document_type": evidence["document_type"],
+            "content_safety_state": evidence["content_safety_state"],
+        }
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

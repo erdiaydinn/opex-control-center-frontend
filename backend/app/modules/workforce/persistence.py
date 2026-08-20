@@ -24,12 +24,19 @@ MIGRATION_DATABASE_URL = os.getenv("WORKFORCE_MIGRATION_DATABASE_URL", "").strip
 ENVIRONMENT = os.getenv("DOCKOS_ENV", "development").strip().lower()
 TENANT_ID = os.getenv("WORKFORCE_TENANT_ID", "eay" if ENVIRONMENT != "production" else "").strip()
 ENABLED = bool(DATABASE_URL)
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 39
 _MIGRATION_PATHS = (
     Path(__file__).resolve().parents[3] / "migrations" / "002_workforce_v29.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "003_workforce_v30_acceptance.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql",
     Path(__file__).resolve().parents[3] / "migrations" / "005_workforce_v32_identity_revocation.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "010_workforce_v33_demand_authority.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "011_workforce_v34_capacity_authority.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "012_workforce_v35_dpi_authority.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "013_workforce_v36_optimizer_authority.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "014_workforce_v37_replan_authority.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "015_workforce_v38_override_learning.sql",
+    Path(__file__).resolve().parents[3] / "migrations" / "023_recruitment_candidate_upload_authority.sql",
 )
 _LOCK = Lock()
 _MEMORY: dict[str, list[dict]] = {}

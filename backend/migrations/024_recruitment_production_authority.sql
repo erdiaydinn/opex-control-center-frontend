@@ -222,7 +222,10 @@ BEGIN
   END IF;
 
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'workforce_runtime') THEN
-    REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM workforce_runtime;
+    REVOKE ALL ON recruitment.candidate_upload_capabilities,
+                  recruitment.candidate_evidence_objects,
+                  recruitment.candidate_evidence_scan_receipts
+      FROM workforce_runtime;
     REVOKE EXECUTE ON FUNCTION recruitment.finalize_candidate_evidence_upload(
       text, bytea, text, uuid, text, text, bigint, bytea, timestamptz
     ) FROM workforce_runtime;

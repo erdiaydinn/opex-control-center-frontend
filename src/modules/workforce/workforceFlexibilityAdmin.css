@@ -1,0 +1,21 @@
+.wfx-flex-admin { display: grid; gap: 16px; }
+.wfx-flex-admin > header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.wfx-flex-admin > header div { display: grid; gap: 4px; }
+.wfx-flex-admin > header span { color: #d80b69; font-size: 11px; font-weight: 900; letter-spacing: .09em; }
+.wfx-flex-admin > header h3 { margin: 0; font-size: 20px; }
+.wfx-flex-admin > header p { margin: 0; color: #667085; max-width: 760px; }
+.wfx-flex-admin form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.wfx-flex-admin form label { display: grid; gap: 6px; color: #475467; font-size: 12px; font-weight: 800; }
+.wfx-flex-admin form label.wide { grid-column: span 2; }
+.wfx-flex-admin form input, .wfx-flex-admin form select { min-height: 42px; border: 1px solid rgba(16,24,40,.12); border-radius: 12px; padding: 8px 10px; background: var(--wfx-card, #fff); color: var(--wfx-text, #101828); box-sizing: border-box; width: 100%; }
+.wfx-flex-admin form button { grid-column: span 2; min-height: 44px; border: 0; border-radius: 12px; background: #d80b69; color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 850; cursor: pointer; align-self: end; }
+.wfx-flex-admin form button:disabled { opacity: .55; cursor: not-allowed; }
+.wfx-flex-admin-message { display: flex; align-items: center; gap: 9px; border-radius: 13px; padding: 11px 13px; }
+.wfx-flex-admin-message div { display: grid; gap: 2px; }
+.wfx-flex-admin-message small { opacity: .78; }
+.wfx-flex-admin-message.success { background: rgba(18,183,106,.1); border: 1px solid rgba(18,183,106,.18); color: #067647; }
+.wfx-flex-admin-message.error { background: rgba(240,68,56,.09); border: 1px solid rgba(240,68,56,.18); color: #b42318; }
+.wfx-flex-admin-rule, .wfx-flex-admin-denied { display: flex; align-items: center; gap: 8px; color: #667085; font-size: 12px; }
+.wfx-flex-admin-denied { padding: 16px; }
+@media (max-width: 1100px) { .wfx-flex-admin form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .wfx-flex-admin form { grid-template-columns: 1fr; } .wfx-flex-admin form label.wide, .wfx-flex-admin form button { grid-column: auto; } }

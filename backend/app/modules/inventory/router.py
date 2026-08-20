@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.modules.workforce.active_shift import ActiveShiftAuthorityError, resolve_active_shift
 from app.modules.workforce.authorization import is_action_allowed
+from .device_recovery import replace_managed_device
 from .explanation import explanation_context
 from .location_completion import (
     completion_readiness,
@@ -30,6 +31,7 @@ from .reconciliation import reconciliation as read_reconciliation
 from .schemas import (
     DecisionCreate,
     DeviceEnrollCreate,
+    DeviceReplaceCreate,
     DocumentCreate,
     DocumentTransitionCreate,
     LocationCompletionCreate,
@@ -312,6 +314,24 @@ def device_enroll(
     return run(
         enroll_device,
         production_principal(request, x_eay_device_id),
+        payload.activation_code,
+        payload.public_key_pem,
+    )
+
+
+@router.post("/v1/devices/replace", status_code=201)
+def device_replace(
+    payload: DeviceReplaceCreate,
+    request: Request,
+    x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+):
+    if not production_mode():
+        raise HTTPException(status_code=404, detail="Production device replacement endpoint etkin değil.")
+    require_verified_identity(request, "countInventory")
+    return run(
+        replace_managed_device,
+        production_principal(request, x_eay_device_id),
+        payload.replaced_device_id,
         payload.activation_code,
         payload.public_key_pem,
     )

@@ -60,6 +60,8 @@ jobs:
         run: python -m unittest app.modules.recruitment.test_production_startup_guard -v
       - name: Dedicated scanner database authority
         run: python -m unittest app.modules.recruitment.test_scanner_database_authority -v
+      - name: Scanner service ingress permission
+        run: python -m unittest app.modules.recruitment.test_scanner_callback_router -v
       - name: Live production authority preflight contract
         run: python -m unittest app.modules.recruitment.test_production_authority_preflight -v
       - name: KMS envelope storage

@@ -2,6 +2,7 @@ import asyncio
 import json
 
 import pytest
+from pydantic import SecretStr
 
 from app.bigquery_safe_executor import ExecutionAuditStore
 from app.platform_tool_authorizer import (
@@ -44,6 +45,7 @@ class FakeBigQueryAdapter:
 class FakePlatformAuthorizer:
     def __init__(self):
         self.calls = 0
+        self.release_calls = 0
         self.last_grant = None
 
     async def authorize(self, *, grant_token, plan, reason):
@@ -55,10 +57,24 @@ class FakePlatformAuthorizer:
             actor_subject="platform:voice-user-1",
             tool=plan.tool,
             granted_scopes=tuple(plan.required_scope),
+            data_scope={"store_names": []},
+            data_scope_fingerprint="d" * 64,
+            tenant_entity_ids=("YS_TR",),
+            tenant_query_context_fingerprint="b" * 64,
+            query_contract_id="catalog.lookup.v1",
+            query_contract_revision=1,
+            query_contract_fingerprint="c" * 64,
+            execution_scope_fingerprint="e" * 64,
             authorization_fingerprint="a" * 64,
             arguments_sha256=tool_arguments_sha256(plan.arguments),
             reason_sha256=tool_reason_sha256(reason),
+            admission_lease_token=SecretStr("l" * 43),
+            admission_lease_ttl_seconds=135,
         )
+
+    async def release_admission(self, context):
+        assert context.admission_lease_token.get_secret_value() == "l" * 43
+        self.release_calls += 1
 
 
 class DenyingPlatformAuthorizer:
@@ -183,6 +199,7 @@ def test_governed_adapter_authorizes_then_executes_and_builds_proof(
     )
 
     assert authorizer.calls == 1
+    assert authorizer.release_calls == 1
     assert authorizer.last_grant == "g" * 43
     assert bq.dry_run_calls == 1
     assert bq.execute_calls == 1
@@ -258,6 +275,7 @@ def test_registered_request_is_single_use(tmp_path):
         )
 
     assert authorizer.calls == 1
+    assert authorizer.release_calls == 1
 
 
 def test_template_voice_bridge_rejects_write_risk_even_with_same_payload(

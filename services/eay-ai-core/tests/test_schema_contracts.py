@@ -1,4 +1,5 @@
 import pytest
+from pydantic import SecretStr
 
 from app.bigquery_safe_executor import ExecutionAuditStore
 from app.platform_tool_authorizer import (
@@ -60,9 +61,19 @@ def _trusted_context(payload):
         actor_subject="platform:user-1",
         tool=plan.tool,
         granted_scopes=tuple(plan.required_scope),
+        data_scope={"store_names": ["Fulya"]},
+        data_scope_fingerprint="d" * 64,
+        tenant_entity_ids=("YS_TR",),
+        tenant_query_context_fingerprint="b" * 64,
+        query_contract_id="ops.kpi.orders.v2",
+        query_contract_revision=2,
+        query_contract_fingerprint="c" * 64,
+        execution_scope_fingerprint="e" * 64,
         authorization_fingerprint="a" * 64,
         arguments_sha256=tool_arguments_sha256(plan.arguments),
         reason_sha256=tool_reason_sha256(payload.reason),
+        admission_lease_token=SecretStr("l" * 43),
+        admission_lease_ttl_seconds=135,
     )
 
 

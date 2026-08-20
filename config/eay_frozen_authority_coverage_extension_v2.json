@@ -1,0 +1,243 @@
+{
+  "schema_version": 1,
+  "extends": "config/eay_frozen_authority_coverage_matrix_v1.json",
+  "historical_source_prs": [15],
+  "proof_boundary": "This extension adds explicit current-head repository evidence for frozen PR #15 authority families that were previously exercised only indirectly by the full AI Core regression. It does not create production evidence or thaw PR #15.",
+  "capabilities": [
+    {
+      "id": "ai_core.employment.temporal_policy",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/employment_intelligence.py",
+        "services/eay-ai-core/app/employment_temporal_grounding.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_employment_intelligence.py",
+        "services/eay-ai-core/tests/test_employment_temporal_grounding.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Employment policy and temporal grounding are repository-tested; authoritative HR policy feeds and production employee data remain external."
+    },
+    {
+      "id": "ai_core.payroll.period_policy",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/payroll_engine.py",
+        "services/eay-ai-core/app/payroll_period_engine.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_payroll_engine.py",
+        "services/eay-ai-core/tests/test_payroll_period_engine.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Payroll calculation and period logic are software evidence only; payroll-owner validation and authoritative payroll inputs remain external."
+    },
+    {
+      "id": "ai_core.company.dataset_domain_governance",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/company_knowledge.py",
+        "services/eay-ai-core/app/dataset_governance.py",
+        "services/eay-ai-core/app/enterprise_domain_registry.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_company_knowledge.py",
+        "services/eay-ai-core/tests/test_dataset_governance.py",
+        "services/eay-ai-core/tests/test_enterprise_domain_registry.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Company/dataset/domain governance contracts are covered; live source ownership and production dataset attestations remain external."
+    },
+    {
+      "id": "ai_core.tool_intent_contract_router",
+      "source_prs": [15],
+      "disposition": "ported_and_strengthened",
+      "canonical_paths": [
+        "services/eay-ai-core/app/tool_contracts.py",
+        "services/eay-ai-core/app/tool_intent.py",
+        "services/eay-ai-core/app/tool_router.py",
+        "services/eay-ai-core/app/tool_execution.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_tool_contracts.py",
+        "services/eay-ai-core/tests/test_tool_intent_evals_metrics.py",
+        "services/eay-ai-core/tests/test_tool_router.py",
+        "services/eay-ai-core/tests/test_tool_execution.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Intent/contracts/router/execution are covered as governed software; business-side effect authority remains owned by Platform grants and production approvals."
+    },
+    {
+      "id": "ai_core.legal.review_verification_promotion",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/legal_verification.py",
+        "services/eay-ai-core/app/legal_relations.py",
+        "services/eay-ai-core/app/legal_review.py",
+        "services/eay-ai-core/app/legal_promotion_gate.py",
+        "services/eay-ai-core/app/legal_interaction_audit.py",
+        "services/eay-ai-core/app/legal_temporal_conflicts.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_legal_verification.py",
+        "services/eay-ai-core/tests/test_legal_relations.py",
+        "services/eay-ai-core/tests/test_legal_review.py",
+        "services/eay-ai-core/tests/test_legal_promotion_gate.py",
+        "services/eay-ai-core/tests/test_legal_interaction_audit.py",
+        "services/eay-ai-core/tests/test_legal_temporal_conflicts.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Legal verification/review/promotion lifecycle is covered; licensed legal review, authoritative corpus freshness and production legal acceptance remain external."
+    },
+    {
+      "id": "ai_core.release.evidence_canary_registry",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/release_evidence_registry.py",
+        "services/eay-ai-core/app/release_gate.py",
+        "services/eay-ai-core/app/canary_result_registry.py",
+        "services/eay-ai-core/app/canary_evals.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_release_gate.py",
+        "services/eay-ai-core/tests/test_canary_result_registry.py",
+        "services/eay-ai-core/tests/test_canary_evals.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Release/canary evidence handling is repository-tested; deployment approval and production canary observations remain external."
+    },
+    {
+      "id": "ai_core.multilingual.language_learning",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/multilingual_learning.py",
+        "services/eay-ai-core/app/language_capability.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_multilingual_learning.py",
+        "services/eay-ai-core/tests/test_language_capability.py",
+        "services/eay-ai-core/tests/test_training_multilingual_depth_gate.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Language learning/capability gates are covered; field linguistic QA and locale-specific production quality remain external."
+    },
+    {
+      "id": "ai_core.training.integrity_manifest_export",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/training_integrity.py",
+        "services/eay-ai-core/app/training_manifest.py",
+        "services/eay-ai-core/app/training_job_spec.py",
+        "services/eay-ai-core/app/learning_export_guard.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_training_integrity.py",
+        "services/eay-ai-core/tests/test_training_manifest.py",
+        "services/eay-ai-core/tests/test_training_job_spec.py",
+        "services/eay-ai-core/tests/test_learning_export_guard.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Training integrity/manifest/export boundaries are covered; production training infrastructure and reviewed artifact promotion remain external."
+    },
+    {
+      "id": "ai_core.model_artifact.provenance_lifecycle",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/model_artifact_provenance.py",
+        "services/eay-ai-core/app/model_artifact_registry.py",
+        "services/eay-ai-core/app/model_lifecycle_ledger.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_model_artifact_registry.py",
+        "services/eay-ai-core/tests/test_model_lifecycle_ledger.py",
+        "services/eay-ai-core/tests/test_model_artifact_promotion.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Artifact provenance and lifecycle ledger are software evidence; immutable production artifact storage and deployment receipts remain external."
+    },
+    {
+      "id": "ai_core.vision.retention_review_lineage",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/vision_retention.py",
+        "services/eay-ai-core/app/vision_review_lineage.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_vision_retention.py",
+        "services/eay-ai-core/tests/test_vision_review_lineage.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Vision retention/review lineage is repository-tested; real media lifecycle, privacy verification and field retention enforcement remain external."
+    },
+    {
+      "id": "ai_core.voice.deployment_release_attestation",
+      "source_prs": [15],
+      "disposition": "ported_and_strengthened",
+      "canonical_paths": [
+        "services/eay-ai-core/app/voice_deployment_binding.py",
+        "services/eay-ai-core/app/voice_deployment_manifest.py",
+        "services/eay-ai-core/app/voice_release_evidence.py",
+        "services/eay-ai-core/app/voice_release_gate.py",
+        "services/eay-ai-core/app/voice_runtime_attestation.py",
+        "services/eay-ai-core/app/voice_runtime_attestation_bundle.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_voice_released_deployment_binding.py",
+        "services/eay-ai-core/tests/test_voice_deployment_manifest.py",
+        "services/eay-ai-core/tests/test_voice_release_evidence.py",
+        "services/eay-ai-core/tests/test_voice_release_gate.py",
+        "services/eay-ai-core/tests/test_voice_runtime_attestation.py",
+        "services/eay-ai-core/tests/test_voice_runtime_attestation_bundle.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Voice deployment/release/attestation contracts are covered; real device, latency, microphone and production runtime attestation remain external."
+    },
+    {
+      "id": "ai_core.voice.session_streaming_protocol",
+      "source_prs": [15],
+      "disposition": "ported_and_strengthened",
+      "canonical_paths": [
+        "services/eay-ai-core/app/voice_session_ledger.py",
+        "services/eay-ai-core/app/voice_streaming.py",
+        "services/eay-ai-core/app/voice_ws_api.py",
+        "services/eay-ai-core/app/voice_ws_protocol.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_voice_session_ledger.py",
+        "services/eay-ai-core/tests/test_voice_streaming.py",
+        "services/eay-ai-core/tests/test_voice_ws_api.py",
+        "services/eay-ai-core/tests/test_voice_ws_protocol.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Voice session/streaming/WS protocol behavior is covered; production websocket edge topology and end-to-end audio QoS remain external."
+    },
+    {
+      "id": "ai_core.schema.source_contracts",
+      "source_prs": [15],
+      "disposition": "ported_to_current_canonical",
+      "canonical_paths": [
+        "services/eay-ai-core/app/schema_contracts.py",
+        "services/eay-ai-core/app/kpi_schema_manifest.py",
+        "services/eay-ai-core/app/kpi_source_semantics.py",
+        "services/eay-ai-core/app/kpi_schema_evidence.py"
+      ],
+      "evidence_tests": [
+        "services/eay-ai-core/tests/test_schema_contracts.py",
+        "services/eay-ai-core/tests/test_kpi_schema_manifest.py",
+        "services/eay-ai-core/tests/test_kpi_source_semantics.py",
+        "services/eay-ai-core/tests/test_schema_evidence_lineage.py"
+      ],
+      "evidence_lane": "ai-core-execution",
+      "truth_boundary": "Schema/source contracts and evidence lineage are covered; authoritative live source schemas still require real production observation."
+    }
+  ]
+}

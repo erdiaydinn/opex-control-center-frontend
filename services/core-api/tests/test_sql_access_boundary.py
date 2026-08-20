@@ -20,6 +20,11 @@ RUNTIME_SQL_EXECUTION_POINTS = {
     ("core/ai_tenant_query_context.py", "_write_query_context_audit_in_transaction"),
     ("core/ai_tenant_query_context.py", "put_ai_tenant_query_context"),
     ("core/audit.py", "write_transactional_audit_event"),
+    # Security review: signed audit checkpoints verify one tenant's append-only
+    # chain through static, bound SQL inside a repeatable-read, read-only
+    # transaction. The query is tenant-filtered and returned rows are rechecked
+    # for tenant, sequence and hash linkage before any checkpoint can be signed.
+    ("core/audit_checkpoint.py", "verify_tenant_audit_chain"),
     ("core/resources.py", "check_database"),
     ("core/resources.py", "ensure_audit_table"),
     ("core/resources.py", "write_audit_event"),

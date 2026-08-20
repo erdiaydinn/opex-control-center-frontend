@@ -1,7 +1,7 @@
 import sqlite3
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.bigquery_safe_executor import ExecutionAuditStore
 from app.legal_engine import (
@@ -81,21 +81,48 @@ def payload_for(
     return payload.model_copy(update=updates)
 
 
+def _trusted_context_base(
+    *,
+    tool: str,
+    scopes: tuple[str, ...],
+    arguments_sha256: str,
+    reason_sha256: str,
+    actor: str = "platform:user-1",
+) -> TrustedToolExecutionContext:
+    return TrustedToolExecutionContext(
+        request_id="platform-auth-1",
+        tenant_id="11111111-1111-4111-8111-111111111111",
+        actor_subject=actor,
+        tool=tool,
+        granted_scopes=scopes,
+        data_scope={"store_names": []},
+        data_scope_fingerprint="d" * 64,
+        tenant_entity_ids=("YS_TR",),
+        tenant_query_context_fingerprint="b" * 64,
+        query_contract_id="test.contract.v1",
+        query_contract_revision=1,
+        query_contract_fingerprint="c" * 64,
+        execution_scope_fingerprint="e" * 64,
+        authorization_fingerprint="a" * 64,
+        arguments_sha256=arguments_sha256,
+        reason_sha256=reason_sha256,
+        admission_lease_token=SecretStr("l" * 43),
+        admission_lease_ttl_seconds=135,
+    )
+
+
 def trusted_context(
     payload: TemplateToolExecutionRequest,
     *,
     actor="platform:user-1",
 ):
     plan = build_tool_plan(payload.tool, payload.arguments)
-    return TrustedToolExecutionContext(
-        request_id="platform-auth-1",
-        tenant_id="11111111-1111-4111-8111-111111111111",
-        actor_subject=actor,
+    return _trusted_context_base(
         tool=plan.tool,
-        granted_scopes=tuple(plan.required_scope),
-        authorization_fingerprint="a" * 64,
+        scopes=tuple(plan.required_scope),
         arguments_sha256=tool_arguments_sha256(plan.arguments),
         reason_sha256=tool_reason_sha256(payload.reason),
+        actor=actor,
     )
 
 
@@ -230,13 +257,9 @@ def test_tool_semantics_fail_closed_when_template_not_implemented():
         },
         reason="nsfr review",
     )
-    placeholder = TrustedToolExecutionContext(
-        request_id="platform-auth-1",
-        tenant_id="11111111-1111-4111-8111-111111111111",
-        actor_subject="platform:user-1",
+    placeholder = _trusted_context_base(
         tool="ops_kpi_query",
-        granted_scopes=("ops:read",),
-        authorization_fingerprint="a" * 64,
+        scopes=("ops:read",),
         arguments_sha256="b" * 64,
         reason_sha256="c" * 64,
     )
@@ -262,13 +285,9 @@ def test_regulatory_impact_rejects_caller_authored_topic():
         },
         reason="impact review",
     )
-    placeholder = TrustedToolExecutionContext(
-        request_id="platform-auth-1",
-        tenant_id="11111111-1111-4111-8111-111111111111",
-        actor_subject="platform:user-1",
+    placeholder = _trusted_context_base(
         tool="regulatory_impact_query",
-        granted_scopes=("catalog:read", "legal:read"),
-        authorization_fingerprint="a" * 64,
+        scopes=("catalog:read", "legal:read"),
         arguments_sha256="b" * 64,
         reason_sha256="c" * 64,
     )

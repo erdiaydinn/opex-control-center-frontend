@@ -42,11 +42,14 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS inventory_device_operational_recovery_v9
-  ON inventory_devices;
+-- Preserve the public trigger contract/name introduced by v9 while swapping its
+-- implementation forward-only. Existing static/schema acceptance therefore keeps
+-- proving one canonical device-recovery trigger rather than a parallel authority.
 DROP TRIGGER IF EXISTS inventory_device_operational_recovery_v10
   ON inventory_devices;
-CREATE TRIGGER inventory_device_operational_recovery_v10
+DROP TRIGGER IF EXISTS inventory_device_operational_recovery_v9
+  ON inventory_devices;
+CREATE TRIGGER inventory_device_operational_recovery_v9
 AFTER UPDATE OF status,replaced_by,revoked_at ON inventory_devices
 FOR EACH ROW EXECUTE FUNCTION inventory_release_operational_claims_on_device_replacement_v10();
 

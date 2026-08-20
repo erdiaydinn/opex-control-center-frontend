@@ -66,6 +66,19 @@ def _validate_session(cursor) -> dict:
     }
 
 
+def _connection_context():
+    """Use the legacy shared connector only in local/test compatibility mode.
+
+    Production and any explicitly configured scanner DSN always pass the dedicated
+    URL. Keeping the zero-argument local path also preserves lightweight unit test
+    adapters without weakening the production role boundary.
+    """
+    configured = _configured_url()
+    if _production() or configured:
+        return persistence.connection(_database_url())
+    return persistence.connection()
+
+
 @contextmanager
 def transaction() -> Iterator[tuple[object, object]]:
     if not persistence.ENABLED:
@@ -75,7 +88,7 @@ def transaction() -> Iterator[tuple[object, object]]:
             f"Recruitment scanner PostgreSQL V{REQUIRED_SCHEMA_VERSION} olmadan çalışamaz."
         )
     try:
-        with persistence.connection(_database_url()) as database, database.cursor() as cursor:
+        with _connection_context() as database, database.cursor() as cursor:
             persistence._set_tenant(cursor)
             # Existing unit/local adapters may share the main DB connection; role
             # attestation becomes mandatory as soon as production or an explicit

@@ -44,5 +44,7 @@ def generate_commercial_merchandising_preview(
     if not isinstance(result, dict):
         raise PlanogramEngineUnavailable("Commercial merchandising optimizer returned invalid data")
     if result.get("production_authority") not in (False, None):
-        raise PlanogramEngineUnavailable("Commercial merchandising preview violated authority boundary")
+        raise PlanogramEngineUnavailable(
+            "Commercial merchandising preview violated authority boundary"
+        )
     return {**result, "production_authority": False, "assortment_authority": False}

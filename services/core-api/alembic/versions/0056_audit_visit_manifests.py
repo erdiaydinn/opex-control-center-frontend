@@ -22,6 +22,19 @@ JSONB = postgresql.JSONB(astext_type=sa.Text())
 RUNTIME_ROLE = "opex_runtime"
 
 
+def _tenant_policy(table_name: str) -> None:
+    op.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
+    op.execute(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
+    op.execute(
+        f"""
+        CREATE POLICY {table_name}_tenant_isolation
+        ON {table_name}
+        USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+        """
+    )
+
+
 def upgrade() -> None:
     op.create_table(
         "audit_visit_manifests",
@@ -94,6 +107,10 @@ def upgrade() -> None:
             name="ck_audit_full_visit_official_score",
         ),
         sa.CheckConstraint(
+            "status <> 'completed' OR completed_at IS NOT NULL",
+            name="ck_audit_visit_completed_at",
+        ),
+        sa.CheckConstraint(
             "scope_fingerprint ~ '^[0-9a-f]{64}$'",
             name="ck_audit_visit_scope_fingerprint",
         ),
@@ -104,20 +121,48 @@ def upgrade() -> None:
         "audit_visit_manifests",
         ["tenant_id", "location_id", "created_at"],
     )
-
-    op.execute("ALTER TABLE audit_visit_manifests ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE audit_visit_manifests FORCE ROW LEVEL SECURITY")
-    op.execute(
-        """
-        CREATE POLICY audit_visit_manifests_tenant_isolation
-        ON audit_visit_manifests
-        USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
-        """
-    )
+    _tenant_policy("audit_visit_manifests")
     op.execute(
         f"GRANT SELECT, INSERT, UPDATE ON TABLE audit_visit_manifests TO {RUNTIME_ROLE}"
     )
+
+    op.create_table(
+        "audit_visit_notes",
+        sa.Column(
+            "tenant_id", UUID, sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+        ),
+        sa.Column("id", UUID, nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("visit_manifest_id", UUID, nullable=False),
+        sa.Column("note_type", sa.String(length=32), nullable=False),
+        sa.Column("note", sa.Text(), nullable=False),
+        sa.Column("source_refs", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+        sa.Column("created_by", sa.String(length=255), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "visit_manifest_id"],
+            ["audit_visit_manifests.tenant_id", "audit_visit_manifests.id"],
+            ondelete="RESTRICT",
+            name="fk_audit_visit_note_manifest",
+        ),
+        sa.CheckConstraint(
+            "note_type IN ('HUMAN_CONVERSATION','OPERATION_OBSERVATION','POSITIVE_PRACTICE','FOLLOW_UP','OTHER')",
+            name="ck_audit_visit_note_type",
+        ),
+        sa.CheckConstraint("length(trim(note)) > 0", name="ck_audit_visit_note_nonblank"),
+        sa.PrimaryKeyConstraint("tenant_id", "id", name="pk_audit_visit_notes"),
+    )
+    op.create_index(
+        "ix_audit_visit_notes_manifest_created",
+        "audit_visit_notes",
+        ["tenant_id", "visit_manifest_id", "created_at"],
+    )
+    _tenant_policy("audit_visit_notes")
+    op.execute(f"GRANT SELECT, INSERT ON TABLE audit_visit_notes TO {RUNTIME_ROLE}")
 
     op.add_column("audit_runs", sa.Column("visit_manifest_id", UUID, nullable=True))
     op.create_foreign_key(
@@ -141,5 +186,7 @@ def downgrade() -> None:
     op.drop_index("uq_audit_run_visit_manifest", table_name="audit_runs")
     op.drop_constraint("fk_audit_run_visit_manifest", "audit_runs", type_="foreignkey")
     op.drop_column("audit_runs", "visit_manifest_id")
+    op.drop_index("ix_audit_visit_notes_manifest_created", table_name="audit_visit_notes")
+    op.drop_table("audit_visit_notes")
     op.drop_index("ix_audit_visit_location_created", table_name="audit_visit_manifests")
     op.drop_table("audit_visit_manifests")

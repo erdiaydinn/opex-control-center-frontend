@@ -138,7 +138,7 @@ async def create_translation_lineage(
                         source.locale,
                         target.id,
                         target.locale,
-                        :translation_method,
+                        CAST(:translation_method AS varchar(30)),
                         :translator_subject,
                         source.source_sha256,
                         :translator_subject
@@ -158,7 +158,7 @@ async def create_translation_lineage(
                       AND target.status IN ('draft', 'published')
                       AND setting.enabled IS TRUE
                       AND (
-                          :translation_method <> 'machine_draft'
+                          CAST(:translation_method AS varchar(30)) <> 'machine_draft'
                           OR setting.allow_machine_draft IS TRUE
                       )
                     RETURNING id, content_id,

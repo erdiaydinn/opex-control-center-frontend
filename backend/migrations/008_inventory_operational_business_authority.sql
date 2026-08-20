@@ -1,6 +1,11 @@
 -- EAY Inventory v8: typed business authority for Picking, Putaway, Receiving and Transfer.
 -- Existing v7 missions remain readable/auditable but fail closed for new execution
 -- until recreated with intent_version=1.
+--
+-- Replay compatibility: later runtime authority permits an empty condition set for
+-- non-Receiving missions while Receiving still requires explicit condition policy.
+-- Keep this historical migration replay-safe with that stronger final contract so
+-- a full migration replay never rejects rows that are valid under v9+ authority.
 BEGIN;
 
 ALTER TABLE inventory_operational_missions
@@ -35,14 +40,18 @@ ALTER TABLE inventory_operational_missions
       AND item_value_hash ~ '^[0-9a-f]{64}$'
       AND planned_quantity IS NOT NULL AND planned_quantity>0
       AND jsonb_typeof(allowed_conditions)='array'
-      AND jsonb_array_length(allowed_conditions)>0
       AND CASE mission_type
-        WHEN 'PICKING' THEN source_location_id IS NOT NULL AND container_id IS NOT NULL
+        WHEN 'PICKING' THEN source_location_id IS NOT NULL
+          AND container_id IS NOT NULL
+          AND allowed_conditions <@ '["GOOD"]'::jsonb
         WHEN 'PUTAWAY' THEN destination_location_id IS NOT NULL
+          AND allowed_conditions <@ '["GOOD"]'::jsonb
         WHEN 'RECEIVING' THEN container_id IS NOT NULL
+          AND jsonb_array_length(allowed_conditions)>0
         WHEN 'TRANSFER' THEN source_location_id IS NOT NULL
           AND destination_location_id IS NOT NULL
           AND source_location_id<>destination_location_id
+          AND allowed_conditions <@ '["GOOD"]'::jsonb
         ELSE false
       END
     )

@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -20,8 +20,6 @@ from app.modules.audit.privacy_verification_runtime import (
 )
 from app.modules.audit.privacy_verification_service import (
     SERVER_PRIVACY_AUTHORITY_VERSION,
-)
-from app.modules.audit.privacy_verification_service import (
     _fingerprint as privacy_verification_fingerprint,
 )
 from app.modules.audit.schemas import AuditProgramCreate
@@ -42,7 +40,7 @@ PROOF_TOKEN = "audit-model-proof-test-token-32-bytes-minimum"
 
 def _proof_response(request: httpx.Request, **changes: object) -> httpx.Response:
     challenge = request.headers["X-EAY-Model-Proof-Challenge"]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     body: dict[str, object] = {
         "model_record_id": "vision-model-record",
         "artifact_sha256": "a" * 64,
@@ -149,7 +147,7 @@ async def test_ai_core_model_proof_bridge_accepts_fresh_exact_proof() -> None:
     "changes",
     [
         {"model_record_id": "fake-model-record"},
-        {"expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()},
+        {"expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()},
         {"challenge": "e" * 64},
     ],
     ids=["wrong-model", "expired-proof", "replayed-challenge"],

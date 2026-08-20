@@ -22,10 +22,10 @@ function originLabel(action, locale) {
 
 function nextTransition(action, canAction) {
   if (!action) return null;
-  if (action.status === "open" && canAction("audit", "updateAction")) return { status: "in_progress", label: "actionStart" };
-  if (action.status === "in_progress" && canAction("audit", "updateAction")) return { status: "submitted_for_verification", label: "actionSubmit", evidence: true };
-  if (action.status === "submitted_for_verification" && canAction("audit", "verifyAction")) return { status: "human_verified", label: "actionVerify", evidence: true, receipt: true };
-  if (action.status === "human_verified" && canAction("audit", "verifyAction")) return { status: "closed", label: "actionClose", evidence: true, receipt: true };
+  if (action.status === "open" && canAction("audit", "updateAction")) return { status: "in_progress", messageKey: "actionStart" };
+  if (action.status === "in_progress" && canAction("audit", "updateAction")) return { status: "submitted_for_verification", messageKey: "actionSubmit", evidence: true };
+  if (action.status === "submitted_for_verification" && canAction("audit", "verifyAction")) return { status: "human_verified", messageKey: "actionVerify", evidence: true, receipt: true };
+  if (action.status === "human_verified" && canAction("audit", "verifyAction")) return { status: "closed", messageKey: "actionClose", evidence: true, receipt: true };
   return null;
 }
 
@@ -102,7 +102,7 @@ export default function AuditActionsWorkspace({ locale, t, refreshKey = 0 }) {
             <div className="audit-actions__origin"><span>{t("originalQuestion")}</span><strong>{originLabel(selected, locale)}</strong><button type="button" onClick={goToOrigin}>{t("actionOrigin")} <ArrowUpRight size={14} /></button></div>
             {transition?.evidence ? <label>{t("actionClosureEvidence")}<input value={form.closureEvidenceRef} onChange={(event) => setForm((current) => ({ ...current, closureEvidenceRef: event.target.value }))} maxLength={500} required /></label> : null}
             {transition?.receipt ? <label>{t("actionVerificationReceipt")}<input value={form.verificationReceiptRef} onChange={(event) => setForm((current) => ({ ...current, verificationReceiptRef: event.target.value }))} maxLength={500} required /></label> : null}
-            {transition ? <button className="audit-btn audit-btn--primary" type="button" onClick={advance} disabled={saving || (transition.evidence && !form.closureEvidenceRef.trim()) || (transition.receipt && !form.verificationReceiptRef.trim())}>{transition.status === "closed" ? <CheckCircle2 size={16} /> : <ShieldCheck size={16} />}{t(transition.label)}</button> : <div className="audit-actions__readonly">{t("actionReadOnly")}</div>}
+            {transition ? <button className="audit-btn audit-btn--primary" type="button" onClick={advance} disabled={saving || (transition.evidence && !form.closureEvidenceRef.trim()) || (transition.receipt && !form.verificationReceiptRef.trim())}>{transition.status === "closed" ? <CheckCircle2 size={16} /> : <ShieldCheck size={16} />}{t(transition.messageKey)}</button> : <div className="audit-actions__readonly">{t("actionReadOnly")}</div>}
           </article>
         ) : <div className="audit-actions__empty">{t("actionSelect")}</div>}
       </div>

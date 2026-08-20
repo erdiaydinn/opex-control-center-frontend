@@ -232,6 +232,10 @@ AUDIT_SQL_EXECUTION_POINTS = {
     ("modules/audit/repository.py", "create_action"),
     ("modules/audit/repository.py", "create_program"),
     ("modules/audit/repository.py", "get_location"),
+    # Audit action reads are static, tenant-bound SQL. Route authorization first
+    # resolves location/region scope and detail reads re-check DB-resolved scope.
+    ("modules/audit/repository.py", "get_action"),
+    ("modules/audit/repository.py", "list_actions"),
     ("modules/audit/repository.py", "list_programs"),
     ("modules/audit/repository.py", "list_runs"),
     ("modules/audit/repository.py", "start_run"),

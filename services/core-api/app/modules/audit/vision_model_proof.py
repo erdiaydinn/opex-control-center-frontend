@@ -5,7 +5,7 @@ import hmac
 import json
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from ipaddress import ip_address
 from typing import Protocol
 from urllib.parse import quote, urlsplit
@@ -143,7 +143,7 @@ class AICoreProductionModelProofVerifier:
                 raise ValueError("model proof response shape mismatch")
             issued_at = datetime.fromisoformat(str(body["issued_at"]))
             expires_at = datetime.fromisoformat(str(body["expires_at"]))
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             expected_seal = hmac.new(
                 self.token.encode("utf-8"),
                 _sealed_payload(body),

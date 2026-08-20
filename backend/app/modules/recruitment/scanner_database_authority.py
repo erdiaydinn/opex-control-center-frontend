@@ -25,8 +25,12 @@ def _production() -> bool:
     return os.getenv("DOCKOS_ENV", "development").strip().lower() == "production"
 
 
+def _configured_url() -> str:
+    return os.getenv("RECRUITMENT_SCANNER_DATABASE_URL", "").strip()
+
+
 def _database_url() -> str:
-    configured = os.getenv("RECRUITMENT_SCANNER_DATABASE_URL", "").strip()
+    configured = _configured_url()
     if _production() and not configured:
         raise ScannerDatabaseAuthorityError(
             "Production recruitment scanner için dedicated PostgreSQL DSN zorunludur."
@@ -50,7 +54,7 @@ def _validate_session(cursor) -> dict:
         raise ScannerDatabaseAuthorityError(
             "Scanner PostgreSQL tenant binding production otoritesiyle eşleşmiyor."
         )
-    if _production() and session_user != expected_role:
+    if session_user != expected_role:
         raise ScannerDatabaseAuthorityError(
             "Scanner PostgreSQL bağlantısı dedicated scanner rolüyle açılmadı."
         )
@@ -73,7 +77,11 @@ def transaction() -> Iterator[tuple[object, object]]:
     try:
         with persistence.connection(_database_url()) as database, database.cursor() as cursor:
             persistence._set_tenant(cursor)
-            _validate_session(cursor)
+            # Existing unit/local adapters may share the main DB connection; role
+            # attestation becomes mandatory as soon as production or an explicit
+            # scanner DSN is selected.
+            if _production() or _configured_url():
+                _validate_session(cursor)
             yield database, cursor
     except ScannerDatabaseAuthorityError:
         raise
@@ -85,6 +93,8 @@ def transaction() -> Iterator[tuple[object, object]]:
 
 def live_preflight() -> dict:
     """Prove the production scanner role shape without recording a receipt."""
+    if not _configured_url():
+        raise ScannerDatabaseAuthorityError("Dedicated scanner PostgreSQL DSN yapılandırılmadı.")
     if not persistence.ENABLED or (persistence.schema_version() or 0) < REQUIRED_SCHEMA_VERSION:
         raise ScannerDatabaseAuthorityError(
             f"Recruitment scanner PostgreSQL V{REQUIRED_SCHEMA_VERSION} hazır değil."
@@ -132,7 +142,7 @@ def live_preflight() -> dict:
     return {
         **identity,
         "schema_required": REQUIRED_SCHEMA_VERSION,
-        "dedicated_dsn": bool(os.getenv("RECRUITMENT_SCANNER_DATABASE_URL", "").strip()),
+        "dedicated_dsn": True,
         "receipt_functions": 3,
         "request_projection_write": True,
         "hr_settings_write": False,

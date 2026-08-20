@@ -5,6 +5,7 @@ source_root="${1:-android-inventory/app/src/main}"
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 locale_contract="$repo_root/config/eay_localization.json"
 main_activity="$source_root/java/com/eay/inventory/MainActivity.kt"
+datawedge="$source_root/java/com/eay/inventory/DataWedge.kt"
 app_gradle="$repo_root/android-inventory/app/build.gradle.kts"
 
 for forbidden in 'ANDROID_ID' 'EncryptedSharedPreferences' 'HttpURLConnection' 'usesCleartextTraffic="true"' 'username.*password'; do
@@ -20,6 +21,16 @@ grep -R -q 'CertificatePinner' "$source_root"
 grep -R -q 'AuthorizationRequest' "$source_root"
 grep -R -q 'com.eay.inventory.SCAN' "$source_root"
 test -f "$locale_contract" || { echo "missing canonical localization contract" >&2; exit 1; }
+test -f "$datawedge" || { echo "missing production DataWedge contract" >&2; exit 1; }
+
+# Managed Zebra decode feedback must be explicit. This is decode acknowledgement,
+# not business acceptance; application-level accepted/rejected feedback remains a
+# separate terminal concern and physical-device timing is not claimed in CI.
+grep -q 'putString("PLUGIN_NAME", "BARCODE")' "$datawedge"
+grep -q 'putString("configure_all_scanners", "true")' "$datawedge"
+grep -q 'putString("decode_haptic_feedback", "1")' "$datawedge"
+grep -q 'putString("decoding_led_feedback", "1")' "$datawedge"
+grep -q 'putParcelableArray("PLUGIN_CONFIG", arrayOf(barcodePlugin, intentPlugin))' "$datawedge"
 
 # The production task and quantity-entry surfaces must use the shared typed Compose boundary.
 # Compose callbacks remain presentation-only and return to the existing signed claim/controller path.

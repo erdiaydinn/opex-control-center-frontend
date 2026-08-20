@@ -24,34 +24,33 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
         for left, right in zip(expected, expected[1:]):
             self.assertLess(names.index(left), names.index(right))
 
-    def test_hiring_production_requires_v44_with_v43_isolation_and_v44_orchestration(self):
-        self.assertEqual(production_startup_guard.REQUIRED_RECRUITMENT_SCHEMA_VERSION, 44)
+    def test_hiring_production_requires_v45_extension_chain(self):
+        self.assertEqual(production_startup_guard.REQUIRED_RECRUITMENT_SCHEMA_VERSION, 45)
         migration_dir = Path(__file__).resolve().parents[3] / "migrations"
-        v43 = migration_dir / "027_recruitment_scanner_role_isolation.sql"
-        v44 = migration_dir / "028_recruitment_orchestration.sql"
-        self.assertTrue(v43.is_file())
-        self.assertTrue(v44.is_file())
-        v43_source = v43.read_text(encoding="utf-8")
-        v44_source = v44.read_text(encoding="utf-8")
-        self.assertIn("VALUES (43, 'dedicated recruitment scanner database role')", v43_source)
-        self.assertIn("REVOKE EXECUTE", v43_source)
-        self.assertIn("eay_candidate_scanner_runtime", v43_source)
-        self.assertIn("VALUES (44, 'governed recruitment orchestration')", v44_source)
-        self.assertIn("pipeline_templates", v44_source)
-        self.assertIn("interview_scorecards", v44_source)
-        self.assertIn("offer_decision_capabilities", v44_source)
-        self.assertIn("onboarding_tasks", v44_source)
+        expected = {
+            43: ("027_recruitment_scanner_role_isolation.sql", "dedicated recruitment scanner database role"),
+            44: ("028_recruitment_orchestration.sql", "governed recruitment orchestration"),
+            45: ("029_workforce_audit_chain_fencing.sql", "database audit hash chain fencing"),
+        }
+        for version, (filename, label) in expected.items():
+            path = migration_dir / filename
+            self.assertTrue(path.is_file())
+            source = path.read_text(encoding="utf-8")
+            self.assertIn(f"VALUES ({version}, '{label}')", source)
+        self.assertIn("REVOKE EXECUTE", (migration_dir / expected[43][0]).read_text(encoding="utf-8"))
+        orchestration = (migration_dir / expected[44][0]).read_text(encoding="utf-8")
+        for table in ("pipeline_templates", "interview_scorecards", "offer_decision_capabilities", "onboarding_tasks"):
+            self.assertIn(table, orchestration)
+        fencing = (migration_dir / expected[45][0]).read_text(encoding="utf-8")
+        self.assertIn("pg_advisory_xact_lock", fencing)
+        self.assertIn("audit hash chain stale", fencing)
 
     def test_main_invokes_hiring_guard_and_priority_orchestration(self):
         main_source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
-        workforce_at = main_source.index("initialize_workforce()")
-        guard_at = main_source.index("assert_recruitment_production_ready()")
-        recruitment_at = main_source.index("initialize_recruitment()")
-        orchestration_at = main_source.index('app.include_router(recruitment_orchestration_router, prefix="/api")')
-        legacy_at = main_source.index('app.include_router(recruitment_router, prefix="/api")')
-        self.assertLess(workforce_at, guard_at)
-        self.assertLess(guard_at, recruitment_at)
-        self.assertLess(orchestration_at, legacy_at)
+        self.assertLess(main_source.index("initialize_workforce()"), main_source.index("assert_recruitment_production_ready()"))
+        self.assertLess(main_source.index("assert_recruitment_production_ready()"), main_source.index("initialize_recruitment()"))
+        self.assertLess(main_source.index('app.include_router(recruitment_orchestration_router, prefix="/api")'), main_source.index('app.include_router(recruitment_router, prefix="/api")'))
+        self.assertIn('app.include_router(recruitment_public_orchestration_router, prefix="/api")', main_source)
 
 
 if __name__ == "__main__":

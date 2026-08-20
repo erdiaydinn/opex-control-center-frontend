@@ -119,3 +119,39 @@ class DeviceReplaceCreate(BaseModel):
     replaced_device_id: str = Field(min_length=36, max_length=36)
     activation_code: str = Field(min_length=32, max_length=256)
     public_key_pem: str = Field(min_length=100, max_length=2000)
+
+
+class RecoveryCaseCreate(BaseModel):
+    """Request review of one immutable quarantined terminal event.
+
+    Raw barcode/quantity payload is intentionally not accepted here. The server
+    stores only identity-safe provenance and the immutable payload hash; a
+    supervisor cannot promote unverified local evidence into stock truth.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=36, max_length=36)
+    document_id: str = Field(min_length=36, max_length=36)
+    location_id: str = Field(min_length=1, max_length=120)
+    payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    quarantine_reason: str = Field(
+        pattern="^(BUSINESS_CONFLICT|POLICY_REJECTED|SERVER_CONTRACT_MISMATCH|DEPENDENCY_BLOCKED|PERMANENT_REJECTED|RETRY_EXHAUSTED)$"
+    )
+    server_code: str | None = Field(default=None, max_length=120)
+
+
+class RecoveryDispositionCreate(BaseModel):
+    """Maker-checker disposition for one recovery case.
+
+    SERVER_EVIDENCE_CONFIRMED is accepted only when the backend independently
+    finds the exact event id + payload hash in authoritative Inventory events.
+    Other decisions never mutate or rebind the quarantined local event.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: str = Field(
+        pattern="^(RECOUNT_REQUIRED|SERVER_EVIDENCE_CONFIRMED|LOCAL_EVIDENCE_INVALID|SECURITY_ESCALATED)$"
+    )
+    reason: str = Field(min_length=3, max_length=500)

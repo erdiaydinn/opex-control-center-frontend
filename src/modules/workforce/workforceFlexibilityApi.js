@@ -52,11 +52,16 @@ export async function claimWorkforceOpenShift(openShiftId, personId) {
 }
 
 export async function loadWorkforceFlexibilityAdmin() {
-  const [locations, activities] = await Promise.all([
+  const [locations, activities, people] = await Promise.all([
     safe(apiGet("/workforce/warehouses")),
     safe(apiGet("/workforce/flexibility/activities")),
+    safe(apiGet("/workforce/people")),
   ]);
-  return { locations: locations.rows || [], activities: activities.rows || [] };
+  return {
+    locations: locations.rows || [],
+    activities: activities.rows || [],
+    people: people.rows || [],
+  };
 }
 
 export async function createWorkforceOpenShift(values) {
@@ -116,6 +121,22 @@ export async function approveWorkforceLaborStandard(values) {
 
 export async function retireWorkforceLaborStandard(activityKey) {
   return safe(apiPost(`/workforce/flexibility/labor-standards/${encodeURIComponent(activityKey)}/retire`, {}));
+}
+
+export async function previewWorkforceActivityDemand(values) {
+  return safe(apiPost("/workforce/flexibility/demand-preview", {
+    worksite_id: values.worksiteId,
+    interval_start: values.intervalStart,
+    interval_minutes: Number(values.intervalMinutes || 60),
+    model_version: values.modelVersion || "generic-work-activity-v1",
+    signals: (values.signals || []).map((signal) => ({
+      driver_key: signal.driverKey,
+      activity_key: signal.activityKey,
+      demand_mode: signal.demandMode,
+      quantity: Number(signal.quantity || 0),
+      source_ref: signal.sourceRef,
+    })),
+  }));
 }
 
 export async function updateWorkforceEmployeeCapabilities(employeeId, values) {

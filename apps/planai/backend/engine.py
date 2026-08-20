@@ -7,6 +7,12 @@ import math
 import heapq
 import pandas as pd
 
+from physical_truth import (
+    normalize_mass_kg,
+    physical_constraint_reason,
+    requires_pallet_fixture,
+)
+
 try:
     from overrides import apply_overrides_to_product
 except Exception:
@@ -508,28 +514,8 @@ def is_cdc_product(p: Dict[str, Any]) -> bool:
 
 
 def requires_pallet_storage(p: Dict[str, Any]) -> bool:
-    """Apply the operational 5 L rule without confusing 500 ml products."""
-    if normalize_storage(get(p, ["storage_type", "Storage Type", "Storage"], ""), default="") == "PALLET":
-        return True
-
-    raw = norm(
-        " ".join(
-            clean_text(get(p, [field], ""))
-            for field in (
-                "product_name",
-                "Product Name",
-                "name",
-                "product_contents_value",
-                "product_contents_unit",
-                "volume",
-                "volume_unit",
-            )
-        )
-    )
-    return bool(
-        re.search(r"(?:^|[^0-9])5\s*(?:l|lt|ltr|litre|liter)(?:[^a-z0-9]|$)", raw)
-    )
-
+    """Use one governed fixture rule in preview and production allocation."""
+    return requires_pallet_fixture(p)
 
 def shelf_storage(shelf: Dict[str, Any]) -> str:
     return normalize_storage(get(shelf, [
@@ -557,7 +543,7 @@ def depth(p: Dict[str, Any]) -> float:
 
 
 def weight(p: Dict[str, Any]) -> float:
-    return max(0.01, num(get(p, ["weight_kg", "Weight", "agirlik", "product_weight_value"], 0.2), 0.2))
+    return max(0.01, num(p.get("weight_kg"), 0.2))
 
 
 def sales_7d(p: Dict[str, Any]) -> float:
@@ -674,6 +660,7 @@ def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dic
     }
 
     estimate = ai_estimate_dimensions(base)
+    mass = normalize_mass_kg(base)
 
     file_w = get(original, ["width_cm", "Width", "en", "product_width_in_cm"], "")
     file_h = get(original, ["height_cm", "Height", "boy", "product_height_in_cm"], "")
@@ -729,11 +716,14 @@ def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dic
         "width_cm": max(0, w),
         "height_cm": max(0, h),
         "depth_cm": max(0, d),
-        "weight_kg": max(0.01, num(first_non_empty(
-            get(original, ["weight_kg", "Weight", "product_weight_value"], ""),
-            get(master, ["product_weight_value"], ""),
-            estimate.get("weight_kg", 0.2),
-        ), 0.2)),
+        "weight_kg": max(
+            0.01,
+            num(mass["value_kg"], estimate.get("weight_kg", 0.2)),
+        ),
+        "mass_source": mass["source"],
+        "mass_unit": mass["unit"],
+        "mass_valid": mass["valid"],
+        "mass_ambiguous": mass["ambiguous"],
         "sales_qty_7d": sales_7d(original),
         "percent_stops": percent_stops(original),
         "on_hand_qty": on_hand(original),
@@ -1413,6 +1403,10 @@ def can_place(
     if storage_score(p, aisle, module, shelf) < -1000:
         return False, "storage_not_fit"
 
+    physical_reason = physical_constraint_reason(p, module, shelf)
+    if physical_reason:
+        return False, physical_reason
+
     if not module_rule_matches(p, module):
         return False, "module_rule_not_match"
 
@@ -1557,6 +1551,8 @@ def place_product_fast(
 
     def physically_viable(item):
         shelf = item["shelf"]
+        if physical_constraint_reason(p, item["module"], shelf):
+            return False
         if product_height > num(shelf.get("shelf_height_cm"), 35):
             return False
         if product_depth > num(shelf.get("shelf_depth_cm"), 50):

@@ -40,6 +40,41 @@ def _first(row: Dict[str, Any], *fields: str) -> Any:
     return ""
 
 
+MASS_UNIT_TO_KG = {
+    "kg": 1.0, "kilogram": 1.0, "kilograms": 1.0,
+    "g": 0.001, "gr": 0.001, "gram": 0.001, "grams": 0.001,
+    "mg": 0.000001,
+}
+
+
+def normalize_mass_kg(product: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize mass without interpreting an unqualified catalog value as kg."""
+    if product.get("mass_ambiguous") is True:
+        return {
+            "value_kg": None,
+            "source": product.get("mass_source") or "unqualified_weight",
+            "unit": product.get("mass_unit"),
+            "valid": False,
+            "ambiguous": True,
+        }
+    for field in ("weight_kg", "product_weight_kg"):
+        value = _num(product.get(field), -1.0)
+        if value > 0:
+            return {"value_kg": round(value, 6), "source": field, "unit": "kg", "valid": True, "ambiguous": False}
+    weight_g = _num(product.get("weight_g"), -1.0)
+    if weight_g > 0:
+        return {"value_kg": round(weight_g / 1000.0, 6), "source": "weight_g", "unit": "g", "valid": True, "ambiguous": False}
+    raw_value = _first(product, "product_weight_value", "Weight", "agirlik")
+    value = _num(raw_value, -1.0)
+    if value > 0:
+        unit = _norm(_first(product, "product_weight_unit", "weight_unit", "Weight Unit", "agirlik_birimi"))
+        factor = MASS_UNIT_TO_KG.get(unit)
+        if factor is None:
+            return {"value_kg": None, "source": "unqualified_weight", "unit": unit or None, "valid": False, "ambiguous": True}
+        return {"value_kg": round(value * factor, 6), "source": "structured_weight", "unit": unit, "valid": True, "ambiguous": False}
+    return {"value_kg": None, "source": "missing", "unit": None, "valid": False, "ambiguous": False}
+
+
 def _product_text(product: Dict[str, Any]) -> str:
     fields = ("product_name", "name", "Product Name", "brand", "brand_name", "category_l1", "category_l2", "frontend_category_local", "frontend_subcategory_local", "product_contents_value", "product_contents_unit", "volume", "volume_unit", "pack_type")
     return _norm(" ".join(_text(_first(product, field)) for field in fields))
@@ -112,7 +147,8 @@ def is_explicit_bulky_pallet_product(product: Dict[str, Any]) -> bool:
 
 
 def product_weight_kg(product: Dict[str, Any]) -> float:
-    return max(0.0, _num(_first(product, "weight_kg", "product_weight_kg", "Weight", "product_weight_value")))
+    normalized = normalize_mass_kg(product)
+    return float(normalized["value_kg"] or 0.0)
 
 
 def requires_pallet_fixture(product: Dict[str, Any]) -> bool:
@@ -155,17 +191,46 @@ def physical_scale_eligible(product: Dict[str, Any]) -> bool:
 
 
 def product_truth_report(products: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
-    rows, total = list(products or []), 0
-    rows = list(rows); total = len(rows)
+    rows = list(products or [])
+    total = len(rows)
     approved = sum(is_approved_dimension_product(p) for p in rows)
     estimated = sum(_norm(p.get("dimension_source")) in ESTIMATED_DIMENSION_SOURCES for p in rows)
-    missing = sum(_norm(p.get("dimension_source")) == "missing" or any(_num(p.get(f)) <= 0 for f in ("width_cm", "height_cm", "depth_cm")) for p in rows)
+    missing = sum(
+        _norm(p.get("dimension_source")) == "missing"
+        or any(_num(p.get(f)) <= 0 for f in ("width_cm", "height_cm", "depth_cm"))
+        for p in rows
+    )
     images = sum(bool(_text(_first(p, "image_url", "catalog_image_url", "pim_image_url", "Product Image URL"))) for p in rows)
-    master = sum(bool(_text(_first(p, "catalog_global_product_id", "pim_product_id"))) or _norm(p.get("dimension_source")) in {"master", "approved_master"} for p in rows)
+    master = sum(
+        bool(_text(_first(p, "catalog_global_product_id", "pim_product_id")))
+        or _norm(p.get("dimension_source")) in {"master", "approved_master"}
+        for p in rows
+    )
     storage = sum(bool(explicit_storage_value(p)) for p in rows)
+    masses = [normalize_mass_kg(p) for p in rows]
+    ambiguous_mass = sum(item["ambiguous"] for item in masses)
     pct = lambda n: round(n * 100 / total, 2) if total else 0.0
-    return {"dataset_rows": total, "approved_dimension_count": approved, "approved_dimension_coverage_pct": pct(approved), "estimated_dimension_count": estimated, "estimated_dimension_pct": pct(estimated), "missing_dimension_count": missing, "missing_dimension_pct": pct(missing), "image_link_count": images, "image_link_coverage_pct": pct(images), "master_link_count": master, "master_link_coverage_pct": pct(master), "storage_truth_count": storage, "storage_truth_coverage_pct": pct(storage), "dimension_source_counts": dict(Counter(_norm(p.get("dimension_source")) or "unknown" for p in rows)), "required_fixture_counts": dict(Counter(required_fixture_class(p) for p in rows)), "physical_scale_eligible_count": approved, "physical_scale_eligible_pct": pct(approved)}
-
+    return {
+        "dataset_rows": total,
+        "approved_dimension_count": approved,
+        "approved_dimension_coverage_pct": pct(approved),
+        "estimated_dimension_count": estimated,
+        "estimated_dimension_pct": pct(estimated),
+        "missing_dimension_count": missing,
+        "missing_dimension_pct": pct(missing),
+        "image_link_count": images,
+        "image_link_coverage_pct": pct(images),
+        "master_link_count": master,
+        "master_link_coverage_pct": pct(master),
+        "storage_truth_count": storage,
+        "storage_truth_coverage_pct": pct(storage),
+        "ambiguous_mass_count": ambiguous_mass,
+        "mass_source_counts": dict(Counter(item["source"] for item in masses)),
+        "dimension_source_counts": dict(Counter(_norm(p.get("dimension_source")) or "unknown" for p in rows)),
+        "required_fixture_counts": dict(Counter(required_fixture_class(p) for p in rows)),
+        "physical_scale_eligible_count": approved,
+        "physical_scale_eligible_pct": pct(approved),
+    }
 
 def iter_product_bearing_shelves(layout: Optional[Dict[str, Any]]):
     for aisle in (layout or {}).get("aisles", []) or []:
@@ -246,21 +311,66 @@ def physical_constraint_reason(product: Dict[str, Any], module: Dict[str, Any], 
     return None
 
 
-def production_acceptance_report(products: Iterable[Dict[str, Any]], layout: Optional[Dict[str, Any]], store_dna: Optional[Dict[str, Any]], *, require_images: bool = True) -> Dict[str, Any]:
-    rows = list(products or []); dataset = product_truth_report(rows); layout_report = layout_truth_report(layout); dna = store_dna_truth_report(store_dna); fixtures = required_fixture_gap_report(rows, layout)
+def production_acceptance_report(
+    products: Iterable[Dict[str, Any]],
+    layout: Optional[Dict[str, Any]],
+    store_dna: Optional[Dict[str, Any]],
+    *,
+    require_images: bool = True,
+) -> Dict[str, Any]:
+    rows = list(products or [])
+    dataset = product_truth_report(rows)
+    layout_report = layout_truth_report(layout)
+    dna = store_dna_truth_report(store_dna)
+    fixtures = required_fixture_gap_report(rows, layout)
     blockers: List[str] = []
-    if not dataset["dataset_rows"]: blockers.append("product_dataset_empty")
-    if dataset["approved_dimension_coverage_pct"] < 100: blockers.append("approved_dimension_coverage_below_100_pct")
-    if require_images and dataset["image_link_coverage_pct"] < 100: blockers.append("image_link_coverage_below_100_pct")
+    if not dataset["dataset_rows"]:
+        blockers.append("product_dataset_empty")
+    if dataset["approved_dimension_coverage_pct"] < 100:
+        blockers.append("approved_dimension_coverage_below_100_pct")
+    if dataset["ambiguous_mass_count"]:
+        blockers.append("ambiguous_mass_unit_present")
+    if require_images and dataset["image_link_coverage_pct"] < 100:
+        blockers.append("image_link_coverage_below_100_pct")
     blockers += layout_report.get("blockers", []) + dna.get("blockers", [])
-    if fixtures["missing_fixture_classes"]: blockers.append("required_fixture_class_missing")
+    if fixtures["missing_fixture_classes"]:
+        blockers.append("required_fixture_class_missing")
     blockers = list(dict.fromkeys(blockers))
-    return {"production_ready": not blockers, "solver_optimizer_allowed": not blockers, "dataset": dataset, "layout": layout_report, "store_dna": dna, "fixture_requirements": fixtures, "blockers": blockers}
-
+    return {
+        "production_ready": not blockers,
+        "solver_optimizer_allowed": not blockers,
+        "dataset": dataset,
+        "layout": layout_report,
+        "store_dna": dna,
+        "fixture_requirements": fixtures,
+        "blockers": blockers,
+    }
 
 def clone_with_physical_truth(product: Dict[str, Any]) -> Dict[str, Any]:
-    result = deepcopy(product); pack = parse_pack_metrics(product); temperature = product_temperature_zone(product); fixture = required_fixture_class(product)
-    result.update({"temperature_zone": temperature, "required_fixture_class": fixture, "requires_bottom_shelf": requires_bottom_shelf(product), "physical_scale_eligible": physical_scale_eligible(product), "pack_count": pack["pack_count"], "unit_liters": pack["unit_liters"], "total_pack_liters": pack["total_pack_liters"], "pack_metric_source": pack["source"]})
+    result = deepcopy(product)
+    pack = parse_pack_metrics(product)
+    mass = normalize_mass_kg(product)
+    temperature = product_temperature_zone(product)
+    fixture = required_fixture_class(product)
+    if mass["valid"]:
+        result["weight_kg"] = mass["value_kg"]
+    result.update(
+        {
+            "temperature_zone": temperature,
+            "required_fixture_class": fixture,
+            "requires_bottom_shelf": requires_bottom_shelf({**product, **result}),
+            "physical_scale_eligible": physical_scale_eligible(product),
+            "pack_count": pack["pack_count"],
+            "unit_liters": pack["unit_liters"],
+            "total_pack_liters": pack["total_pack_liters"],
+            "pack_metric_source": pack["source"],
+            "mass_source": mass["source"],
+            "mass_unit": mass["unit"],
+            "mass_valid": mass["valid"],
+            "mass_ambiguous": mass["ambiguous"],
+        }
+    )
     allocator_storage = "PALLET" if fixture == "PALLET" else temperature
-    result["storage_type"] = allocator_storage; result["_storage"] = allocator_storage
+    result["storage_type"] = allocator_storage
+    result["_storage"] = allocator_storage
     return result

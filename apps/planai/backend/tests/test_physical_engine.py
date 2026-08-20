@@ -192,7 +192,7 @@ class PhysicalEngineTests(unittest.TestCase):
         self.assertEqual(water[0]["aisle_id"], "PALLET")
         self.assertEqual(water[3]["storage_type"], "PALLET")
 
-    def test_heavy_product_violation_blocks_publish_even_after_truth_gate(self):
+    def test_heavy_product_is_placed_on_bottom_before_scoring(self):
         result = generate_production_plan(
             [
                 product(
@@ -205,15 +205,37 @@ class PhysicalEngineTests(unittest.TestCase):
             layout(),
             dna(),
         )
-        # The foundation allocator may choose bottom or another compatible
-        # shelf.  Whichever it chooses, production publishability is bound to
-        # the independent operational validator.
-        self.assertTrue(result["solver_optimizer_allowed"])
-        self.assertIn("operational_physical_validation", result)
-        if result["operational_physical_validation"]["violation_count"]:
-            self.assertFalse(result["publishable"])
-        else:
-            self.assertTrue(result["publishable"])
+        self.assertTrue(
+            result["publishable"],
+            result["operational_physical_validation"],
+        )
+        placed = [
+            (shelf, row)
+            for aisle in result["planogram"]["aisles"]
+            for module in aisle.get("modules", [])
+            for shelf in module.get("shelves", [])
+            for row in shelf.get("products", [])
+            if row.get("sku") == "HEAVY"
+        ]
+        self.assertEqual(len(placed), 1)
+        self.assertEqual(placed[0][0]["zone_type"], "bottom")
+        self.assertEqual(
+            result["operational_physical_validation"]["violation_count"],
+            0,
+        )
+
+    def test_500g_product_does_not_become_500kg(self):
+        row = product("GRAM", "Snack", category="Snacks")
+        row.pop("weight_kg")
+        row.update(
+            {
+                "product_weight_value": 500,
+                "product_weight_unit": "g",
+            }
+        )
+        prepared = prepare_production_products([row])[0]
+        self.assertEqual(prepared["weight_kg"], 0.5)
+        self.assertFalse(prepared["requires_bottom_shelf"])
 
 
 if __name__ == "__main__":

@@ -199,9 +199,11 @@ class AuditReportRecipient(StrictModel):
     def validate_email(self) -> AuditReportRecipient:
         if self.email is not None and not _EMAIL_PATTERN.fullmatch(self.email):
             raise ValueError("invalid report recipient email")
-        if self.source == "MANUAL_EMAIL":
-            if self.email is None or self.recipient_key != self.email:
-                raise ValueError("manual email recipient must bind key to exact email")
+        if (
+            self.source == "MANUAL_EMAIL"
+            and (self.email is None or self.recipient_key != self.email)
+        ):
+            raise ValueError("manual email recipient must bind key to exact email")
         return self
 
 

@@ -100,7 +100,7 @@ class CandidateEvidenceStorageTests(unittest.TestCase):
                 retention_until=datetime.now(UTC) + timedelta(days=1),
             )
 
-    def test_retention_delete_is_blocked_early_then_exactly_deletes(self):
+    def test_retention_delete_is_blocked_early_then_exactly_deletes_and_retries(self):
         retention_until = datetime.now(UTC) + timedelta(hours=1)
         self.put(retention_until)
         with self.assertRaises(EvidenceStorageError):
@@ -121,6 +121,14 @@ class CandidateEvidenceStorageTests(unittest.TestCase):
             now=retention_until + timedelta(seconds=1),
         )
         self.assertNotIn(("bucket", self.key), self.s3.objects)
+        # A DB metadata cleanup failure after deletion must be recoverable.
+        self.store.delete_after_retention(
+            tenant_id="eay-ci",
+            object_key=self.key,
+            expected_sha256=self.digest,
+            retention_until=retention_until,
+            now=retention_until + timedelta(seconds=2),
+        )
 
     def test_tampered_object_is_not_silently_deleted(self):
         retention_until = datetime.now(UTC) + timedelta(hours=1)

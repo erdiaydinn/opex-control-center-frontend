@@ -19,6 +19,7 @@ from .flexibility_schemas import (
     WorkActivityApproveRequest,
 )
 from .router import _enforce_self, _require, _require_any, _require_rows_in_scope
+from .shift_trade_views import list_manager_shift_trades, list_swap_candidates
 from .shift_trading import (
     ShiftTradeAcceptRequest,
     ShiftTradeCreateRequest,
@@ -144,6 +145,30 @@ def get_shift_trades(
 ) -> dict:
     _strict_employee_self(request, person_id, x_opex_role)
     return {"rows": list_shift_trades_for_person(person_id)}
+
+
+@router.get("/shift-trades/candidates")
+def get_shift_trade_candidates(
+    person_id: str,
+    shift_id: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+) -> dict:
+    _strict_employee_self(request, person_id, x_opex_role)
+    return {"rows": list_swap_candidates(person_id, shift_id)}
+
+
+@router.get("/shift-trades/admin")
+def get_shift_trades_admin(
+    warehouse_id: str,
+    request: Request,
+    active_only: bool = True,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "createShift")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": warehouse_id}])
+    return {"rows": list_manager_shift_trades(warehouse_id, active_only=active_only)}
 
 
 @router.post("/shift-trades", status_code=status.HTTP_201_CREATED)

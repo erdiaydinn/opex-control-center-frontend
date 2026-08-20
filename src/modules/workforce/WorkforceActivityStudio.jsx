@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Factory, RefreshCw, ShieldCheck, TimerReset, WandSparkles } from "lucide-react";
+import { BadgeCheck, Factory, RefreshCw, ShieldCheck, TimerReset, UserRoundCog, WandSparkles } from "lucide-react";
 
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { workforceActivityStudioMessage } from "../../platform/i18n/workforceActivityStudioMessages.js";
@@ -8,16 +8,24 @@ import {
   approveWorkforceActivity,
   approveWorkforceLaborStandard,
   loadWorkforceActivityTemplate,
+  loadWorkforceCapabilityPeople,
   loadWorkforceFlexibilityAdmin,
   loadWorkforceLaborStandards,
+  updateWorkforceEmployeeCapabilities,
+  updateWorkforceWorksiteType,
 } from "./workforceFlexibilityApi.js";
 import "./workforceActivityStudio.css";
 
 
 const TEMPLATE_KEYS = ["qsr", "supermarket", "manufacturing", "convenience_kiosk", "darkstore"];
+const WORKSITE_TYPES = ["restaurant", "store", "factory", "kiosk", "darkstore", "warehouse", "office", "other"];
 
 function todayIstanbul() {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
+}
+
+function parseKeys(value) {
+  return [...new Set(String(value || "").split(",").map((item) => item.trim()).filter(Boolean))].sort();
 }
 
 export default function WorkforceActivityStudio() {
@@ -25,11 +33,21 @@ export default function WorkforceActivityStudio() {
   const { locale } = usePlatformPreferences();
   const m = useCallback((key, params) => workforceActivityStudioMessage(locale, key, params), [locale]);
   const allowed = canAction("workforce", "manageSystemConfig");
+  const canManageEmployees = canAction("workforce", "manageEmployees");
+  const canManageWorksites = canAction("workforce", "manageWarehouses");
   const [templateKey, setTemplateKey] = useState("qsr");
   const [candidates, setCandidates] = useState([]);
   const [activities, setActivities] = useState([]);
   const [standards, setStandards] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [selectedActivity, setSelectedActivity] = useState("");
+  const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [selectedWorksite, setSelectedWorksite] = useState("");
+  const [worksiteType, setWorksiteType] = useState("warehouse");
+  const [skillKeys, setSkillKeys] = useState("");
+  const [certificationKeys, setCertificationKeys] = useState("");
+  const [equipmentKeys, setEquipmentKeys] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(todayIstanbul());
   const [sourceRef, setSourceRef] = useState("");
   const [laborSourceRef, setLaborSourceRef] = useState("");
@@ -49,14 +67,21 @@ export default function WorkforceActivityStudio() {
         loadWorkforceLaborStandards(),
       ]);
       setActivities(admin.activities || []);
+      setLocations(admin.locations || []);
       setStandards(laborRows || []);
       setSelectedActivity((current) => current || admin.activities?.[0]?.activityKey || "");
+      setSelectedWorksite((current) => current || admin.locations?.[0]?.id || "");
+      if (canManageEmployees) {
+        const rows = await loadWorkforceCapabilityPeople().catch(() => []);
+        setEmployees(rows);
+        setSelectedEmployee((current) => current || rows[0]?.employeeId || rows[0]?.id || "");
+      }
     } catch (requestError) {
       setError(requestError.message || m("loadError"));
     } finally {
       setBusy((value) => value === "load" ? "" : value);
     }
-  }, [allowed, m]);
+  }, [allowed, canManageEmployees, m]);
 
   const preview = useCallback(async (key = templateKey) => {
     if (!allowed) return;
@@ -75,16 +100,24 @@ export default function WorkforceActivityStudio() {
   const activeKeys = useMemo(() => new Set(activities.map((row) => row.activityKey)), [activities]);
   const standardByKey = useMemo(() => new Map(standards.map((row) => [row.activityKey, row])), [standards]);
   const selected = activities.find((row) => row.activityKey === selectedActivity);
+  const employee = employees.find((row) => String(row.employeeId || row.id) === String(selectedEmployee));
+  const worksite = locations.find((row) => String(row.id) === String(selectedWorksite));
+
+  useEffect(() => {
+    if (!employee) return;
+    setSkillKeys((employee.skillKeys || []).join(", "));
+    setCertificationKeys((employee.certificationKeys || []).join(", "));
+    setEquipmentKeys((employee.equipmentKeys || []).join(", "));
+  }, [employee]);
+  useEffect(() => {
+    if (worksite?.locationType) setWorksiteType(worksite.locationType);
+  }, [worksite]);
 
   async function approveCandidate(candidate) {
     if (!sourceRef.trim()) { setError(m("source")); return; }
     setBusy(`activity-${candidate.activityKey}`); setMessage(""); setError("");
     try {
-      await approveWorkforceActivity({
-        ...candidate,
-        effectiveFrom,
-        sourceRef: sourceRef.trim(),
-      });
+      await approveWorkforceActivity({ ...candidate, effectiveFrom, sourceRef: sourceRef.trim() });
       setMessage(m("saved"));
       await reload();
     } catch (requestError) {
@@ -97,15 +130,37 @@ export default function WorkforceActivityStudio() {
     if (!selectedActivity || !laborSourceRef.trim() || !secondsPerUnit) return;
     setBusy("labor"); setMessage(""); setError("");
     try {
-      await approveWorkforceLaborStandard({
-        activityKey: selectedActivity,
-        secondsPerUnit,
-        people,
-        effectiveFrom,
-        sourceRef: laborSourceRef.trim(),
-      });
+      await approveWorkforceLaborStandard({ activityKey: selectedActivity, secondsPerUnit, people, effectiveFrom, sourceRef: laborSourceRef.trim() });
       setMessage(m("saved"));
       setSecondsPerUnit(""); setLaborSourceRef("");
+      await reload();
+    } catch (requestError) {
+      setError(requestError.message || m("loadError"));
+    } finally { setBusy(""); }
+  }
+
+  async function saveCapabilities(event) {
+    event.preventDefault();
+    if (!canManageEmployees || !selectedEmployee) return;
+    setBusy("capability"); setMessage(""); setError("");
+    try {
+      await updateWorkforceEmployeeCapabilities(selectedEmployee, {
+        skillKeys: parseKeys(skillKeys), certificationKeys: parseKeys(certificationKeys), equipmentKeys: parseKeys(equipmentKeys),
+      });
+      setMessage(m("saved"));
+      await reload();
+    } catch (requestError) {
+      setError(requestError.message || m("loadError"));
+    } finally { setBusy(""); }
+  }
+
+  async function saveWorksite(event) {
+    event.preventDefault();
+    if (!canManageWorksites || !selectedWorksite) return;
+    setBusy("worksite"); setMessage(""); setError("");
+    try {
+      await updateWorkforceWorksiteType(selectedWorksite, worksiteType);
+      setMessage(m("saved"));
       await reload();
     } catch (requestError) {
       setError(requestError.message || m("loadError"));
@@ -117,10 +172,7 @@ export default function WorkforceActivityStudio() {
   }
 
   return <section className="wfx-panel wfx-activity-studio">
-    <header>
-      <div><span>{m("eyebrow")}</span><h3>{m("title")}</h3><p>{m("detail")}</p></div>
-      <Factory size={26} />
-    </header>
+    <header><div><span>{m("eyebrow")}</span><h3>{m("title")}</h3><p>{m("detail")}</p></div><Factory size={26} /></header>
     {error ? <div className="wfx-activity-message error">{error}</div> : null}
     {message ? <div className="wfx-activity-message success"><BadgeCheck size={16} />{message}</div> : null}
 
@@ -169,5 +221,27 @@ export default function WorkforceActivityStudio() {
       <p><ShieldCheck size={15} />{m("laborHint")}</p>
       <button disabled={!selectedActivity || !secondsPerUnit || !laborSourceRef.trim() || busy === "labor"}><TimerReset size={16} />{busy === "labor" ? m("approvingLabor") : m("approveLabor")}</button>
     </form>
+
+    <div className="wfx-activity-authority-grid">
+      <form className="wfx-activity-authority-card" onSubmit={saveCapabilities}>
+        <header><UserRoundCog size={20} /><div><strong>{m("capabilityTitle")}</strong><small>{m("capabilityDetail")}</small></div></header>
+        {canManageEmployees ? <>
+          <label>{m("employee")}<select value={selectedEmployee} onChange={(event) => setSelectedEmployee(event.target.value)}>{employees.map((row) => <option key={row.employeeId || row.id} value={row.employeeId || row.id}>{row.fullName || row.name || row.employeeId || row.id}</option>)}</select></label>
+          <label>{m("skills")}<input value={skillKeys} onChange={(event) => setSkillKeys(event.target.value)} placeholder={m("commaHint")} /></label>
+          <label>{m("certifications")}<input value={certificationKeys} onChange={(event) => setCertificationKeys(event.target.value)} placeholder={m("commaHint")} /></label>
+          <label>{m("equipment")}<input value={equipmentKeys} onChange={(event) => setEquipmentKeys(event.target.value)} placeholder={m("commaHint")} /></label>
+          <button disabled={!selectedEmployee || busy === "capability"}><BadgeCheck size={15} />{busy === "capability" ? m("savingCapabilities") : m("saveCapabilities")}</button>
+        </> : <p><ShieldCheck size={15} />{m("capabilityPermission")}</p>}
+      </form>
+
+      <form className="wfx-activity-authority-card" onSubmit={saveWorksite}>
+        <header><Factory size={20} /><div><strong>{m("worksiteTitle")}</strong><small>{m("worksiteDetail")}</small></div></header>
+        {canManageWorksites ? <>
+          <label>{m("worksite")}<select value={selectedWorksite} onChange={(event) => setSelectedWorksite(event.target.value)}>{locations.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
+          <label>{m("worksiteType")}<select value={worksiteType} onChange={(event) => setWorksiteType(event.target.value)}>{WORKSITE_TYPES.map((key) => <option key={key} value={key}>{key}</option>)}</select></label>
+          <button disabled={!selectedWorksite || busy === "worksite"}><BadgeCheck size={15} />{busy === "worksite" ? m("savingWorksite") : m("saveWorksite")}</button>
+        </> : <p><ShieldCheck size={15} />{m("worksitePermission")}</p>}
+      </form>
+    </div>
   </section>;
 }

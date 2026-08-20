@@ -16,6 +16,9 @@ def create_recovery_case(
     payload: RecoveryCaseCreate,
     request: Request,
     x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+    x_eay_request_timestamp: str = Header(..., alias="X-EAY-Request-Timestamp"),
+    x_eay_request_nonce: str = Header(..., alias="X-EAY-Request-Nonce"),
+    x_eay_device_signature: str = Header(..., alias="X-EAY-Device-Signature"),
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production recovery endpoint etkin değil.")
@@ -24,6 +27,9 @@ def create_recovery_case(
         request_recovery_case,
         production_principal(request, x_eay_device_id),
         payload.model_dump(),
+        x_eay_request_timestamp,
+        x_eay_request_nonce,
+        x_eay_device_signature,
     )
 
 
@@ -49,6 +55,9 @@ def disposition_recovery(
     payload: RecoveryDispositionCreate,
     request: Request,
     x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID"),
+    x_eay_request_timestamp: str = Header(..., alias="X-EAY-Request-Timestamp"),
+    x_eay_request_nonce: str = Header(..., alias="X-EAY-Request-Nonce"),
+    x_eay_device_signature: str = Header(..., alias="X-EAY-Device-Signature"),
 ):
     if not production_mode():
         raise HTTPException(status_code=404, detail="Production recovery endpoint etkin değil.")
@@ -59,4 +68,7 @@ def disposition_recovery(
         case_id,
         payload.decision,
         payload.reason,
+        x_eay_request_timestamp,
+        x_eay_request_nonce,
+        x_eay_device_signature,
     )

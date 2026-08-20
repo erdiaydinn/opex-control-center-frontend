@@ -4,6 +4,8 @@ import com.eay.mobile.presentation.FieldMissionCardModel
 import com.eay.mobile.presentation.FieldMissionVisualKind
 import com.eay.mobile.presentation.FieldMissionVisualPriority
 import com.eay.mobile.presentation.FieldRuntimeSurface
+import com.eay.mobile.presentation.EayOneDestination
+import com.eay.mobile.presentation.EayOneNavigationModel
 import com.eay.mobile.presentation.FieldShellHeader
 import com.eay.mobile.presentation.FieldSyncVisualState
 import org.junit.Assert.assertEquals
@@ -13,6 +15,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FieldUiRuntimeMapperTest {
+    @Test
+    fun `eay one mapper enforces surface and one sync truth`() {
+        val header = terminalHeader(pendingCount = 2).copy(runtimeSurface = FieldRuntimeSurface.EAY_ONE)
+        val result = FieldUiRuntimeMapper.eayOne(
+            EayOneNavigationModel(EayOneDestination.TODAY, 2, quarantined = false),
+            header,
+            emptyList(),
+        )
+        assertEquals(EayOneDestination.TODAY, result.navigation.selected)
+        assertThrows(IllegalArgumentException::class.java) {
+            FieldUiRuntimeMapper.eayOne(
+                EayOneNavigationModel(EayOneDestination.TODAY, 1, quarantined = false),
+                header,
+                emptyList(),
+            )
+        }
+    }
     @Test
     fun `terminal mapper preserves canonical presentation-safe models`() {
         val header = terminalHeader()

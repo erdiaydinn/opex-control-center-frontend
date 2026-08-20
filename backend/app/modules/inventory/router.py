@@ -28,6 +28,7 @@ from .production import (
     transition as production_transition,
 )
 from .reconciliation import reconciliation as read_reconciliation
+from .operational_mission import create_operational_mission, claim_operational_mission, record_operational_event
 from .schemas import (
     DecisionCreate,
     DeviceEnrollCreate,
@@ -40,6 +41,8 @@ from .schemas import (
     TerminalEventCreate,
     TerminalMissionClaimCreate,
     TerminalMissionReassignCreate,
+    OperationalMissionCreate,
+    OperationalEventCreate,
 )
 from .service import (
     InventoryRuleError,
@@ -190,6 +193,15 @@ def production_health() -> dict:
     checks = dict(result.get("checks", {}))
     checks["migration_v4_location_completion"] = completion_readiness()
     checks["migration_v5_mission_lease"] = lease_readiness()
+    if checks.get("postgres_configured"):
+        try:
+            from .production import connect
+            with connect() as db:
+                checks["migration_v7_operational_missions"] = bool(db.execute("SELECT 1 FROM inventory_schema_migrations WHERE version=7").fetchone())
+        except Exception:
+            checks["migration_v7_operational_missions"] = False
+    else:
+        checks["migration_v7_operational_missions"] = False
     return {
         "status": "ready" if result.get("status") == "ready" and all(checks.values()) else "blocked",
         "checks": checks,
@@ -491,3 +503,26 @@ def transition_document(
         payload.target_state,
         payload.reason,
     )
+
+@router.post("/v1/operational-missions", status_code=201)
+def create_operation(payload: OperationalMissionCreate, request: Request, x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID")):
+    if not production_mode(): raise HTTPException(status_code=404, detail="Production operational endpoint etkin değil.")
+    require_verified_identity(request, "createInventory")
+    return run(create_operational_mission, production_principal(request, x_eay_device_id), payload.model_dump())
+
+@router.post("/v1/operational-missions/{mission_id}/claim")
+def claim_operation(mission_id: str, request: Request, x_eay_device_id: str = Header(..., alias="X-EAY-Device-ID")):
+    if not production_mode(): raise HTTPException(status_code=404, detail="Production operational endpoint etkin değil.")
+    require_verified_identity(request, "countInventory")
+    principal=production_principal(request,x_eay_device_id); active=active_shift_principal(principal)
+    if active is None: raise HTTPException(status_code=409,detail="Aktif vardiya olmadan mission claim edilemez.")
+    narrowed,shift_id=active
+    try: parsed=UUID(mission_id)
+    except ValueError as error: raise HTTPException(status_code=400,detail="Geçerli mission UUID zorunludur.") from error
+    return run(claim_operational_mission,narrowed,parsed,shift_id)
+
+@router.post("/v1/operational-events")
+def operational_event(payload: OperationalEventCreate, request: Request, x_eay_device_id: str = Header(...,alias="X-EAY-Device-ID"), x_eay_request_timestamp: str = Header(...,alias="X-EAY-Request-Timestamp"), x_eay_request_nonce: str = Header(...,alias="X-EAY-Request-Nonce"), x_eay_device_signature: str = Header(...,alias="X-EAY-Device-Signature")):
+    if not production_mode(): raise HTTPException(status_code=404, detail="Production operational endpoint etkin değil.")
+    require_verified_identity(request,"countInventory")
+    return run(record_operational_event,production_principal(request,x_eay_device_id),payload.model_dump(),x_eay_request_timestamp,x_eay_request_nonce,x_eay_device_signature)

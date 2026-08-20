@@ -1,4 +1,9 @@
 <resources>
+    <string name="eay_one_today">اليوم</string>
+    <string name="eay_one_missions">المهام</string>
+    <string name="eay_one_scan">مسح</string>
+    <string name="eay_one_jarvis">جارفيس</string>
+    <string name="eay_one_me">أنا</string>
     <string name="field_next_missions">المهام التالية</string>
     <string name="field_sync_synced">تمت المزامنة</string>
     <string name="field_sync_offline">دون اتصال</string>

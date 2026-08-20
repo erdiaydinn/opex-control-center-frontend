@@ -68,6 +68,11 @@ class TerminalEventCreate(BaseModel):
     quantity: float = Field(ge=0, le=1_000_000)
     symbology: str = Field(min_length=1, max_length=80)
     occurred_at: str = Field(min_length=20, max_length=50)
+    # A second count is never an accidental additive scan. It explicitly links
+    # to the evidence version it supersedes; the server validates latest-version
+    # authority and preserves both rows.
+    recount_of_event_id: str | None = None
+    recount_reason_code: str | None = Field(default=None, min_length=1, max_length=40)
     payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
 
 
@@ -155,3 +160,21 @@ class RecoveryDispositionCreate(BaseModel):
         pattern="^(RECOUNT_REQUIRED|SERVER_EVIDENCE_CONFIRMED|LOCAL_EVIDENCE_INVALID|SECURITY_ESCALATED)$"
     )
     reason: str = Field(min_length=3, max_length=500)
+
+class OperationalMissionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    warehouse_id: str = Field(min_length=1,max_length=120)
+    mission_type: str = Field(pattern="^(PICKING|PUTAWAY|RECEIVING|TRANSFER)$")
+    external_reference: str = Field(min_length=1,max_length=160)
+
+class OperationalEventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str
+    mission_id: str
+    claim_id: str
+    active_shift_id: str = Field(min_length=1,max_length=128)
+    device_sequence: int = Field(gt=0)
+    step_kind: str = Field(pattern="^(SOURCE_LOCATION|DESTINATION_LOCATION|ITEM|QUANTITY|CONDITION|CONTAINER|COMPLETE)$")
+    value_hash: str = Field(pattern="^[0-9a-f]{64}$")
+    occurred_at: str = Field(min_length=20,max_length=50)
+    payload_hash: str = Field(pattern="^[0-9a-f]{64}$")

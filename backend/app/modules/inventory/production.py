@@ -390,12 +390,18 @@ def reconciliation(principal: InventoryPrincipal, document_id: UUID) -> dict[str
         if not document or document["warehouse_id"] not in principal.warehouse_scope:
             raise PermissionError("Sayım bulunamadı veya depo kapsamı dışında.")
         rows = db.execute(
-            """WITH counted AS (
-                 SELECT barcode,sum(quantity) AS counted_quantity
+            """WITH versioned AS (
+                 SELECT *,row_number() OVER (
+                   PARTITION BY attempt_id,location_id,barcode
+                   ORDER BY count_version DESC
+                 ) AS count_version_rank
                  FROM inventory_events
                  WHERE tenant_id=%s AND document_id=%s
-                   AND event_type IN ('SCAN','UNEXPECTED_SKU')
+                   AND event_type IN ('SCAN','UNEXPECTED_SKU','RECOUNT')
                    AND barcode IS NOT NULL
+               ), counted AS (
+                 SELECT barcode,sum(quantity) AS counted_quantity
+                 FROM versioned WHERE count_version_rank=1
                  GROUP BY barcode
                )
                SELECT COALESCE(s.sku,'UNEXPECTED') AS sku,COALESCE(s.barcode,c.barcode) AS barcode,

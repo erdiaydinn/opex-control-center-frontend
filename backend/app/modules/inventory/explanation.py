@@ -120,13 +120,16 @@ def explanation_context(
                  SELECT barcode,expected_quantity,unit_cost
                  FROM inventory_expected_stock
                  WHERE tenant_id=%s AND document_id=%s
-               ), counted AS (
-                 SELECT e.barcode,sum(e.quantity) AS counted_quantity
+               ), versioned AS (
+                 SELECT e.*,row_number() OVER (
+                   PARTITION BY e.attempt_id,e.location_id,e.barcode
+                   ORDER BY e.count_version DESC
+                 ) AS count_version_rank
                  FROM inventory_events e
                  LEFT JOIN inventory_mission_attempts a
                    ON a.tenant_id=e.tenant_id AND a.attempt_id=e.attempt_id
                  WHERE e.tenant_id=%s AND e.document_id=%s
-                   AND e.event_type IN ('SCAN','UNEXPECTED_SKU')
+                   AND e.event_type IN ('SCAN','UNEXPECTED_SKU','RECOUNT')
                    AND e.barcode IS NOT NULL
                    AND (
                      a.state='COMPLETED'
@@ -139,7 +142,10 @@ def explanation_context(
                        )
                      )
                    )
-                 GROUP BY e.barcode
+               ), counted AS (
+                 SELECT barcode,sum(quantity) AS counted_quantity
+                 FROM versioned WHERE count_version_rank=1
+                 GROUP BY barcode
                ), joined AS (
                  SELECT COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0) AS variance,
                         (COALESCE(c.counted_quantity,0)-COALESCE(s.expected_quantity,0))*

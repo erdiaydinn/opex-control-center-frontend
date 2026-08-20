@@ -40,6 +40,31 @@ class InventoryProductionContractTests(unittest.TestCase):
         with self.assertRaises(InventoryRuleError):
             principal.validate()
 
+    def test_recount_link_and_reason_are_device_signature_bound(self):
+        base = {
+            "active_shift_id": "SHIFT-1",
+            "attempt_id": str(uuid4()),
+            "barcode": "8690000000001",
+            "device_sequence": 2,
+            "document_id": str(uuid4()),
+            "event_id": str(uuid4()),
+            "lease_id": str(uuid4()),
+            "location_id": "a01",
+            "occurred_at": datetime.now(UTC).isoformat(),
+            "quantity": 4,
+            "symbology": "EAN13",
+            "recount_of_event_id": str(uuid4()),
+            "recount_reason_code": "operator_correction",
+        }
+        canonical = terminal_event_hash_input(base)
+        self.assertEqual(canonical["location_id"], "A01")
+        self.assertEqual(canonical["recount_reason_code"], "OPERATOR_CORRECTION")
+        changed = dict(base, recount_reason_code="SUPERVISOR_REQUEST")
+        self.assertNotEqual(
+            canonical_payload_hash(canonical),
+            canonical_payload_hash(terminal_event_hash_input(changed)),
+        )
+
 
 @unittest.skipUnless(os.getenv("INVENTORY_DATABASE_URL"), "requires PostgreSQL")
 class InventoryPostgresAdversarialTests(unittest.TestCase):
@@ -173,6 +198,8 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
         barcode="8690000000001",
         quantity=2,
         occurred_at=None,
+        recount_of_event_id=None,
+        recount_reason_code=None,
     ):
         principal = principal or self.principal_one
         shift_id = shift_id or self.shift_one
@@ -189,6 +216,9 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             "symbology": "EAN13",
             "occurred_at": (occurred_at or datetime.now(UTC)).isoformat(),
         }
+        if recount_of_event_id is not None:
+            payload["recount_of_event_id"] = str(recount_of_event_id)
+            payload["recount_reason_code"] = recount_reason_code
         payload["payload_hash"] = canonical_payload_hash(terminal_event_hash_input(payload))
         timestamp, nonce, signature = self.sign_hash(principal, payload["payload_hash"])
         return payload, timestamp, nonce, signature
@@ -390,6 +420,59 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             with self.assertRaises(InventoryRuleError):
                 record_event(self.principal_one, *signed)
 
+    def test_duplicate_sku_requires_explicit_versioned_recount(self):
+        claim = self.claim()
+        first = self.record_signed_event(claim, quantity=2)
+
+        with self.assertRaises(InventoryRuleError):
+            self.record_signed_event(claim, quantity=7)
+
+        recount = self.record_signed_event(
+            claim,
+            quantity=7,
+            recount_of_event_id=first["event_id"],
+            recount_reason_code="OPERATOR_CORRECTION",
+        )
+        self.assertEqual(recount["event_type"], "RECOUNT")
+        self.assertEqual(recount["count_version"], 2)
+        self.assertEqual(recount["supersedes_event_id"], first["event_id"])
+
+        with connect() as db:
+            evidence = db.execute(
+                """SELECT event_id,event_type,quantity FROM inventory_events
+                   WHERE tenant_id=%s AND document_id=%s AND attempt_id=%s
+                     AND location_id=%s AND barcode='8690000000001'
+                   ORDER BY device_sequence""",
+                (self.tenant, self.document_id, UUID(claim["attempt_id"]), self.location_id),
+            ).fetchall()
+        self.assertEqual(len(evidence), 2)
+        self.assertEqual([row["event_type"] for row in evidence], ["SCAN", "RECOUNT"])
+        self.assertEqual([float(row["quantity"]) for row in evidence], [2.0, 7.0])
+
+    def test_recount_must_supersede_latest_version(self):
+        claim = self.claim()
+        first = self.record_signed_event(claim, quantity=2)
+        second = self.record_signed_event(
+            claim,
+            quantity=4,
+            recount_of_event_id=first["event_id"],
+            recount_reason_code="VARIANCE_REVIEW",
+        )
+        with self.assertRaises(InventoryRuleError):
+            self.record_signed_event(
+                claim,
+                quantity=9,
+                recount_of_event_id=first["event_id"],
+                recount_reason_code="VARIANCE_REVIEW",
+            )
+        third = self.record_signed_event(
+            claim,
+            quantity=6,
+            recount_of_event_id=second["event_id"],
+            recount_reason_code="SUPERVISOR_REQUEST",
+        )
+        self.assertEqual(third["count_version"], 3)
+
     def test_exact_replay_is_rejected_after_device_replacement(self):
         claim = self.claim()
         signed = self.signed_event(claim)
@@ -414,8 +497,20 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
                 self.principal_one,
                 payload["payload_hash"],
             )
-            with self.assertRaises(InventoryRuleError):
-                record_event(self.principal_one, payload, *replay_proof)
+            try:
+                with self.assertRaises(InventoryRuleError):
+                    record_event(self.principal_one, payload, *replay_proof)
+            finally:
+                # This suite intentionally shares its PostgreSQL fixture across
+                # methods. Restore the active device so the revocation case
+                # cannot make later adversarial tests order-dependent.
+                with connect() as db:
+                    db.execute(
+                        """UPDATE inventory_devices SET status='ACTIVE'
+                           WHERE tenant_id=%s AND device_id=%s""",
+                        (self.principal_one.tenant_id, self.principal_one.device_id),
+                    )
+                    db.commit()
 
     def test_concurrent_duplicate_event_is_exactly_once(self):
         claim = self.claim()
@@ -547,7 +642,12 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
 
     def test_load_smoke_preserves_distinct_lease_bound_events(self):
         claim = self.claim()
-        signed = [self.signed_event(claim) for _ in range(20)]
+        # Distinct logical lines exercise event throughput without pretending
+        # repeated scans of one SKU are additive stock truth.
+        signed = [
+            self.signed_event(claim, barcode=f"UNEXPECTED-{index:04d}")
+            for index in range(20)
+        ]
         attestation = self.attestation(self.principal_one, self.shift_one)
         started = perf_counter()
         with patch.object(mission_event_module, "attest_shift_at_event", return_value=attestation):

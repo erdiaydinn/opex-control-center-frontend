@@ -11,8 +11,11 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.eay.mobile.fieldui.BlindCountScreen
 import com.eay.mobile.fieldui.BlindCountUiState
 import com.eay.mobile.fieldui.EayFieldTheme
+import com.eay.mobile.fieldui.EayOneShell
 import com.eay.mobile.fieldui.EayTerminalShell
 import com.eay.mobile.presentation.FieldMissionCardModel
+import com.eay.mobile.presentation.EayOneDestination
+import com.eay.mobile.presentation.EayOneNavigationModel
 import com.eay.mobile.presentation.FieldRecoveryActionKind
 import com.eay.mobile.presentation.FieldRecoveryBannerModel
 import com.eay.mobile.presentation.FieldRuntimeSurface
@@ -33,6 +36,7 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
 ) : AbstractComposeView(context, attrs) {
     private var surface by mutableStateOf<RuntimeSurface>(RuntimeSurface.Empty)
     private var onMissionOpenCallback: (String) -> Unit = {}
+    private var onDestinationSelectedCallback: (EayOneDestination) -> Unit = {}
     private var onRecoveryActionCallback: (FieldRecoveryActionKind) -> Unit = {}
     private var onQuantityChangedCallback: (String) -> Unit = {}
     private var onConfirmQuantityCallback: () -> Unit = {}
@@ -71,6 +75,20 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
         surface = RuntimeSurface.BlindCount(state)
     }
 
+    fun renderEayOne(
+        navigation: EayOneNavigationModel,
+        header: FieldShellHeader,
+        missions: List<FieldMissionCardModel>,
+        onDestinationSelected: (EayOneDestination) -> Unit,
+        onMissionOpen: (String) -> Unit,
+    ) {
+        onDestinationSelectedCallback = onDestinationSelected
+        onMissionOpenCallback = onMissionOpen
+        surface = RuntimeSurface.EayOne(
+            FieldUiRuntimeMapper.eayOne(navigation, header, missions),
+        )
+    }
+
     fun clear() {
         surface = RuntimeSurface.Empty
     }
@@ -93,6 +111,13 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                     onQuantityChange = { value -> onQuantityChangedCallback(value) },
                     onConfirm = { onConfirmQuantityCallback() },
                 )
+                is RuntimeSurface.EayOne -> EayOneShell(
+                    navigation = current.model.navigation,
+                    header = current.model.header,
+                    missions = current.model.missions,
+                    onDestinationSelected = { onDestinationSelectedCallback(it) },
+                    onMissionOpen = { onMissionOpenCallback(it) },
+                )
             }
         }
     }
@@ -105,10 +130,17 @@ internal data class RuntimeTerminalModel(
     val sessionRecovery: FieldSessionRecoveryBannerModel?,
 )
 
+internal data class RuntimeEayOneModel(
+    val navigation: EayOneNavigationModel,
+    val header: FieldShellHeader,
+    val missions: List<FieldMissionCardModel>,
+)
+
 internal sealed interface RuntimeSurface {
     data object Empty : RuntimeSurface
     data class Terminal(val model: RuntimeTerminalModel) : RuntimeSurface
     data class BlindCount(val state: BlindCountUiState) : RuntimeSurface
+    data class EayOne(val model: RuntimeEayOneModel) : RuntimeSurface
 }
 
 /**
@@ -119,6 +151,20 @@ internal sealed interface RuntimeSurface {
  * rugged-terminal view and snapshots the presentation list for Compose rendering.
  */
 internal object FieldUiRuntimeMapper {
+    fun eayOne(
+        navigation: EayOneNavigationModel,
+        header: FieldShellHeader,
+        missions: List<FieldMissionCardModel>,
+    ): RuntimeEayOneModel {
+        require(header.runtimeSurface == FieldRuntimeSurface.EAY_ONE) {
+            "EAY One runtime requires an EAY_ONE presentation surface"
+        }
+        require(navigation.pendingSyncCount == header.pendingCount) {
+            "EAY One navigation and canonical sync header disagree"
+        }
+        return RuntimeEayOneModel(navigation, header, missions.toList())
+    }
+
     fun terminal(
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,

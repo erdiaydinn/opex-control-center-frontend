@@ -2,6 +2,16 @@ package com.eay.mobile.presentation
 
 enum class FieldRuntimeSurface { EAY_ONE, EAY_TERMINAL }
 
+enum class EayOneDestination { TODAY, MISSIONS, SCAN, JARVIS, ME }
+
+data class EayOneNavigationModel(
+    val selected: EayOneDestination,
+    val pendingSyncCount: Int,
+    val quarantined: Boolean,
+) {
+    init { require(pendingSyncCount >= 0) }
+}
+
 enum class FieldMissionVisualKind {
     SHIFT,
     PICK,

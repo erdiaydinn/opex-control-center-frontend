@@ -16,3 +16,5 @@ typealias FieldSessionRecoveryBannerModel = com.eay.mobile.presentation.FieldSes
 typealias FieldShellHeader = com.eay.mobile.presentation.FieldShellHeader
 typealias FieldMissionCardModel = com.eay.mobile.presentation.FieldMissionCardModel
 typealias BlindCountUiState = com.eay.mobile.presentation.BlindCountUiState
+typealias EayOneDestination = com.eay.mobile.presentation.EayOneDestination
+typealias EayOneNavigationModel = com.eay.mobile.presentation.EayOneNavigationModel

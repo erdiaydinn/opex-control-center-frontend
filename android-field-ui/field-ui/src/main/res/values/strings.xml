@@ -1,4 +1,9 @@
 <resources>
+    <string name="eay_one_today">Today</string>
+    <string name="eay_one_missions">Missions</string>
+    <string name="eay_one_scan">Scan</string>
+    <string name="eay_one_jarvis">Jarvis</string>
+    <string name="eay_one_me">Me</string>
     <string name="eay_terminal_brand" translatable="false">EAY Terminal</string>
     <string name="field_next_missions">Next missions</string>
     <string name="field_sync_synced">Synced</string>

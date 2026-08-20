@@ -7,6 +7,15 @@ import org.junit.Test
 
 class FieldUiContractTest {
     @Test
+    fun `eay one navigation exposes all five canonical destinations`() {
+        assertEquals(
+            listOf("TODAY", "MISSIONS", "SCAN", "JARVIS", "ME"),
+            EayOneDestination.entries.map { it.name },
+        )
+        val model = EayOneNavigationModel(EayOneDestination.MISSIONS, 3, quarantined = false)
+        assertEquals(3, model.pendingSyncCount)
+    }
+    @Test
     fun `blind count ui exposes observation not system stock`() {
         val fields = BlindCountUiState::class.java.declaredFields.map { it.name.lowercase() }
         assertTrue(fields.any { it.contains("observedquantity") })

@@ -129,6 +129,14 @@ jobs:
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_mission_attempt_one_active_idx'")" = "1"
             test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('inventory_mission_attempts','inventory_mission_leases','inventory_mission_lease_closures') AND c.relrowsecurity AND c.relforcerowsecurity")" = "3"
           fi
+          if test -f backend/migrations/006_inventory_recount_chain.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_recount_v6_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname IN ('inventory_recount_one_successor_v6_idx','inventory_count_line_version_v6_idx')")" = "2"
+          fi
+          if test -f backend/migrations/007_inventory_operational_missions.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_operational_events_immutable' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('inventory_operational_missions','inventory_operational_claims','inventory_operational_events','inventory_operational_event_responses') AND c.relrowsecurity AND c.relforcerowsecurity")" = "4"
+          fi
       - name: Create least-privilege tenant-bound runtime role
         env:
           PGPASSWORD: postgres
@@ -142,6 +150,8 @@ jobs:
           GRANT SELECT,INSERT,UPDATE ON inventory_mission_attempts TO inventory_runtime;
           GRANT SELECT,INSERT ON inventory_mission_leases,inventory_mission_lease_closures TO inventory_runtime;
           GRANT UPDATE (lease_id) ON inventory_mission_leases TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_operational_missions,inventory_operational_claims TO inventory_runtime;
+          GRANT SELECT,INSERT ON inventory_operational_events,inventory_operational_event_responses TO inventory_runtime;
           GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO inventory_runtime;
           GRANT EXECUTE ON FUNCTION inventory_current_tenant() TO inventory_runtime;
           INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');
@@ -162,6 +172,8 @@ jobs:
           python -m unittest -v \
             backend.app.modules.inventory.test_inventory \
             backend.app.modules.inventory.test_inventory_scope \
+            backend.app.modules.inventory.test_inventory_sku_identity \
+            backend.app.modules.inventory.test_operational_mission \
             backend.app.modules.inventory.test_inventory_production
       - name: Database restart durability
         shell: bash

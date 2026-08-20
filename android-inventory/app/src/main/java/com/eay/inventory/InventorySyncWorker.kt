@@ -239,6 +239,19 @@ class InventorySyncWorker(
                     )
                     return@use
                 }
+                if (
+                    it.code in 200..299 &&
+                    accepted == true &&
+                    endpointPath == "/api/inventory/v1/terminal/events" &&
+                    ServerFrozenSkuIdentity.verify(json ?: JSONObject(), event.canonicalPayload) == null
+                ) {
+                    dao.quarantine(
+                        event.eventId,
+                        SyncQuarantineReason.SERVER_CONTRACT_MISMATCH.name,
+                        "SKU_IDENTITY_SNAPSHOT_MISMATCH",
+                    )
+                    return@use
+                }
                 val verdict = InventorySyncClassifier.classify(
                     it.code,
                     accepted,

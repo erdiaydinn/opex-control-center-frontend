@@ -21,11 +21,12 @@ from .production import (
     connect,
 )
 from .service import InventoryRuleError
+from .sku_identity import frozen_sku_identity
 
 
 def terminal_event_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     quantity = Decimal(str(payload["quantity"])).normalize()
-    return {
+    hashed = {
         "active_shift_id": str(payload["active_shift_id"]).strip(),
         "attempt_id": str(UUID(str(payload["attempt_id"]))),
         "barcode": str(payload["barcode"]).strip(),
@@ -38,6 +39,10 @@ def terminal_event_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
         "quantity": format(quantity, "f"),
         "symbology": str(payload["symbology"]).strip(),
     }
+    if payload.get("recount_of_event_id") is not None:
+        hashed["recount_of_event_id"] = str(UUID(str(payload["recount_of_event_id"])))
+        hashed["recount_reason_code"] = str(payload.get("recount_reason_code", "")).strip().upper()
+    return hashed
 
 
 def record_event(
@@ -145,18 +150,65 @@ def record_event(
             )
 
             barcode = str(payload["barcode"]).strip()
+            # Serialize the logical count line, not merely the delivery event. This
+            # prevents two offline queues from both creating a "first" count.
+            db.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_advisory_key(
+                    f"count-line:{principal.tenant_id}:{attempt_id}:{location}:{barcode}"
+                ),),
+            )
+            prior = db.execute(
+                """SELECT event_id,event_type,count_version
+                   FROM inventory_events
+                   WHERE tenant_id=%s AND document_id=%s AND attempt_id=%s
+                     AND location_id=%s AND barcode=%s
+                     AND event_type IN ('SCAN','UNEXPECTED_SKU','RECOUNT')
+                   ORDER BY count_version DESC
+                   LIMIT 1""",
+                (principal.tenant_id, document_id, attempt_id, location, barcode),
+            ).fetchone()
+            recount_of = payload.get("recount_of_event_id")
+            if prior and recount_of is None:
+                raise InventoryRuleError(
+                    "SKU bu lokasyonda zaten sayıldı; sessiz tekrar yerine açık yeniden sayım başlatılmalıdır."
+                )
+            if not prior and recount_of is not None:
+                raise InventoryRuleError("Yeniden sayım için önceki sayım kanıtı bulunamadı.")
+            if prior:
+                try:
+                    superseded_event_id = UUID(str(recount_of))
+                except (TypeError, ValueError):
+                    raise InventoryRuleError("Yeniden sayım önceki event kimliğine bağlanmalıdır.")
+                if superseded_event_id != prior["event_id"]:
+                    raise InventoryRuleError(
+                        "Yeniden sayım güncel sayım sürümüne bağlı değil; ekran yenilenmelidir."
+                    )
+                reason_code = str(payload.get("recount_reason_code", "")).strip().upper()
+                if reason_code not in {
+                    "OPERATOR_CORRECTION",
+                    "SUPERVISOR_REQUEST",
+                    "DEVICE_RECOVERY",
+                    "VARIANCE_REVIEW",
+                }:
+                    raise InventoryRuleError("Geçerli bir yeniden sayım neden kodu zorunludur.")
+            else:
+                superseded_event_id = None
+                reason_code = None
             expected = db.execute(
                 """SELECT sku FROM inventory_expected_stock
                    WHERE tenant_id=%s AND document_id=%s AND barcode=%s""",
                 (principal.tenant_id, document_id, barcode),
             ).fetchone()
-            event_type = "SCAN" if expected else "UNEXPECTED_SKU"
+            event_type = "RECOUNT" if prior else ("SCAN" if expected else "UNEXPECTED_SKU")
+            sku_identity = frozen_sku_identity(document_id, barcode, expected)
             db.execute(
                 """INSERT INTO inventory_events(
                      tenant_id,event_id,device_id,device_sequence,document_id,warehouse_id,
                      employee_id,event_type,location_id,barcode,quantity,symbology,
-                     payload_hash,occurred_at,attempt_id,lease_id,active_shift_id
-                   ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                     payload_hash,occurred_at,attempt_id,lease_id,active_shift_id,
+                     count_version,supersedes_event_id,recount_reason_code
+                   ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     principal.tenant_id,
                     event_id,
@@ -175,6 +227,9 @@ def record_event(
                     attempt_id,
                     lease_id,
                     active_shift_id,
+                    int(prior["count_version"]) + 1 if prior else 1,
+                    superseded_event_id,
+                    reason_code,
                 ),
             )
             response = {
@@ -186,6 +241,13 @@ def record_event(
                 "attempt_id": str(attempt_id),
                 "lease_id": str(lease_id),
                 "idempotent_replay": False,
+                "count_version": int(prior["count_version"]) + 1 if prior else 1,
+                "supersedes_event_id": str(superseded_event_id) if superseded_event_id else None,
+                "recount_reason_code": reason_code,
+                # Only the barcode actually presented is projected. Expected
+                # quantity, cost, variance and the document SKU universe stay
+                # behind the reconciliation authority boundary.
+                "sku_identity": sku_identity,
             }
             db.execute(
                 "INSERT INTO inventory_event_responses(tenant_id,event_id,response) VALUES(%s,%s,%s::jsonb)",

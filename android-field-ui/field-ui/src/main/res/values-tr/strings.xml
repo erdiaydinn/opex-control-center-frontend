@@ -1,4 +1,9 @@
 <resources>
+    <string name="eay_one_today">Bugün</string>
+    <string name="eay_one_missions">Görevler</string>
+    <string name="eay_one_scan">Tara</string>
+    <string name="eay_one_jarvis">Jarvis</string>
+    <string name="eay_one_me">Ben</string>
     <string name="field_next_missions">Sıradaki görevler</string>
     <string name="field_sync_synced">Senkron</string>
     <string name="field_sync_offline">Çevrimdışı</string>

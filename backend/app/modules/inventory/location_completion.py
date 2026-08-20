@@ -217,7 +217,7 @@ def record_location_completion(
                    FROM inventory_events
                    WHERE tenant_id=%s AND document_id=%s AND location_id=%s
                      AND attempt_id=%s
-                     AND event_type IN ('SCAN','UNEXPECTED_SKU')
+                     AND event_type IN ('SCAN','UNEXPECTED_SKU','RECOUNT')
                      AND occurred_at<=%s""",
                 (
                     principal.tenant_id,

@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -122,6 +124,63 @@ fun EayTerminalShell(
         }
     }
 }
+
+/** Real EAY One navigation surface; callbacks remain intents, never authority. */
+@Composable
+fun EayOneShell(
+    navigation: EayOneNavigationModel,
+    header: FieldShellHeader,
+    missions: List<FieldMissionCardModel>,
+    onDestinationSelected: (EayOneDestination) -> Unit,
+    onMissionOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    require(header.runtimeSurface == FieldRuntimeSurface.EAY_ONE)
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        bottomBar = {
+            NavigationBar {
+                EayOneDestination.entries.forEach { destination ->
+                    NavigationBarItem(
+                        selected = destination == navigation.selected,
+                        onClick = { onDestinationSelected(destination) },
+                        icon = {},
+                        label = { Text(destination.label()) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        when (navigation.selected) {
+            EayOneDestination.MISSIONS -> EayTerminalShell(
+                header = header,
+                missions = missions,
+                onMissionOpen = onMissionOpen,
+                modifier = Modifier.padding(padding),
+            )
+            else -> Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(destinationTitle(navigation.selected), style = MaterialTheme.typography.headlineMedium)
+                Text(header.locationLabel, style = MaterialTheme.typography.bodyLarge)
+                SyncStatus(header.syncState, navigation.pendingSyncCount)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EayOneDestination.label(): String = when (this) {
+    EayOneDestination.TODAY -> stringResource(R.string.eay_one_today)
+    EayOneDestination.MISSIONS -> stringResource(R.string.eay_one_missions)
+    EayOneDestination.SCAN -> stringResource(R.string.eay_one_scan)
+    EayOneDestination.JARVIS -> stringResource(R.string.eay_one_jarvis)
+    EayOneDestination.ME -> stringResource(R.string.eay_one_me)
+}
+
+@Composable
+private fun destinationTitle(destination: EayOneDestination) = destination.label()
 
 @Composable
 private fun RecoveryBanner(

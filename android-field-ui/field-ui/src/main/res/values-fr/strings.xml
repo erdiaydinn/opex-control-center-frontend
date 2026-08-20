@@ -1,4 +1,9 @@
 <resources>
+    <string name="eay_one_today">Aujourd’hui</string>
+    <string name="eay_one_missions">Missions</string>
+    <string name="eay_one_scan">Scanner</string>
+    <string name="eay_one_jarvis">Jarvis</string>
+    <string name="eay_one_me">Moi</string>
     <string name="field_next_missions">Prochaines missions</string>
     <string name="field_sync_synced">Synchronisé</string>
     <string name="field_sync_offline">Hors ligne</string>

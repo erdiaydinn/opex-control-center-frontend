@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field, model_validator
 
@@ -18,6 +19,14 @@ AuditVisitType = Literal[
 ]
 AuditVisitScoreMode = Literal["OFFICIAL_COMPLIANCE", "FOCUS_SCORE", "NO_SCORE"]
 AuditVisitScopeState = Literal["IN_SCOPE", "OUT_OF_SCOPE"]
+AuditVisitNoteType = Literal[
+    "HUMAN_CONVERSATION",
+    "OPERATION_OBSERVATION",
+    "POSITIVE_PRACTICE",
+    "FOLLOW_UP",
+    "OTHER",
+]
+AuditSourceMode = Literal["checklist", "photo", "video", "guided_video", "mixed"]
 
 
 class AuditVisitScopeEntry(StrictModel):
@@ -88,6 +97,25 @@ class AuditVisitPlan(StrictModel):
     out_of_scope_count: int = Field(ge=0)
     section_count: int = Field(ge=0)
     people_topic_count: int = Field(ge=0)
+
+
+class AuditVisitRunStart(StrictModel):
+    source_mode: AuditSourceMode = "checklist"
+    field_mission_id: UUID | None = None
+
+
+class AuditVisitNoteCreate(StrictModel):
+    note_type: AuditVisitNoteType
+    note: str = Field(min_length=1, max_length=8000)
+    source_refs: tuple[str, ...] = Field(default=(), max_length=50)
+
+    @model_validator(mode="after")
+    def validate_note_refs(self) -> AuditVisitNoteCreate:
+        if any(not ref.strip() or len(ref) > 500 for ref in self.source_refs):
+            raise ValueError("visit note source refs must be non-blank and <= 500 characters")
+        if len(set(self.source_refs)) != len(self.source_refs):
+            raise ValueError("visit note source refs must be unique")
+        return self
 
 
 def _scope_fingerprint(payload: AuditVisitCreate) -> str:

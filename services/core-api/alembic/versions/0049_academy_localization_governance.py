@@ -109,6 +109,40 @@ def upgrade() -> None:
 
     op.execute(
         """
+        CREATE FUNCTION academy_provision_locale_policy_for_new_tenant()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $body$
+        DECLARE
+            actor varchar(255);
+        BEGIN
+            actor := COALESCE(
+                NULLIF(current_setting('app.actor_subject', true), ''),
+                'tenant-provisioning'
+            );
+            INSERT INTO academy_locale_settings (
+                tenant_id, locale, enabled, required, is_default,
+                allow_machine_draft, created_by, updated_by
+            ) VALUES (
+                NEW.id, 'en', true, false, true, false, actor, actor
+            )
+            ON CONFLICT (tenant_id, locale) DO NOTHING;
+            RETURN NEW;
+        END;
+        $body$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER tenants_provision_academy_locale_policy
+        AFTER INSERT ON tenants
+        FOR EACH ROW
+        EXECUTE FUNCTION academy_provision_locale_policy_for_new_tenant()
+        """
+    )
+
+    op.execute(
+        """
         CREATE TABLE academy_translation_lineage (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id uuid NOT NULL,
@@ -355,6 +389,8 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS academy_validate_translation_review_event()")
     for table_name in reversed(LOCALIZATION_TABLES):
         op.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    op.execute("DROP TRIGGER IF EXISTS tenants_provision_academy_locale_policy ON tenants")
+    op.execute("DROP FUNCTION IF EXISTS academy_provision_locale_policy_for_new_tenant()")
     op.execute(
         """
         ALTER TABLE academy_content_versions

@@ -3,6 +3,7 @@ import { getAccessToken } from "../auth/tokenStore.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 const PUBLIC_PREFIXES = ["/public/recruitment/"];
+const PUBLIC_EXACT_PATHS = new Set(["/recruitment/candidate-upload/evidence"]);
 
 
 export class ApiError extends Error {
@@ -45,13 +46,15 @@ function buildPublicHeaders(options = {}) {
   headers.delete("X-User-Email");
   headers.delete("X-OPEX-User");
   headers.delete("X-OPEX-Role");
-  if (options.body != null && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body != null && !isFormData && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   return headers;
 }
 
 
 function assertPublicPath(path) {
-  if (!PUBLIC_PREFIXES.some((prefix) => String(path).startsWith(prefix))) {
+  const value = String(path);
+  if (!PUBLIC_EXACT_PATHS.has(value) && !PUBLIC_PREFIXES.some((prefix) => value.startsWith(prefix))) {
     throw new ApiError("Public API path is not allow-listed.", { status: 0, code: "PUBLIC_PATH_REJECTED" });
   }
 }
@@ -131,6 +134,27 @@ export async function publicApiPost(path, data = {}) {
     data: await readPayload(response),
   };
   if (!result.ok) throw errorFromResult(result, "Candidate portal error");
+  return result.data;
+}
+
+
+export async function publicApiUpload(path, formData, headers = {}) {
+  assertPublicPath(path);
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: buildPublicHeaders({ body: formData, headers }),
+    body: formData,
+    credentials: "omit",
+    cache: "no-store",
+    referrerPolicy: "no-referrer",
+  });
+  const result = {
+    ok: response.ok,
+    status: response.status,
+    requestId: response.headers.get("x-request-id"),
+    data: await readPayload(response),
+  };
+  if (!result.ok) throw errorFromResult(result, "Candidate upload error");
   return result.data;
 }
 

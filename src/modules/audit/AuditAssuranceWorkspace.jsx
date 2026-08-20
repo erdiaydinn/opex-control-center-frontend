@@ -142,10 +142,11 @@ function DecisionComposer({ selectedCase, onSaved, t }) {
       <div className="audit-assurance-compare">
         <article>
           <Bot size={18} />
+          {/* i18n-data-literal: canonical decision-source identifier emitted by the Audit API. */}
           <span>AI</span>
           <strong>{selectedCase.ai_decision || "—"}</strong>
         </article>
-        <span className="audit-assurance-compare__vs">VS</span>
+        <Scale className="audit-assurance-compare__vs" size={18} aria-hidden="true" />
         <article>
           <ClipboardCheck size={18} />
           <span>{t("assuranceAuditor")}</span>
@@ -313,6 +314,7 @@ export default function AuditAssuranceWorkspace({ locale, t }) {
                   </div>
                   <span className="audit-assurance-case__item">{item.item_key}</span>
                   <div className="audit-assurance-case__decisions">
+                    {/* i18n-data-literal: canonical decision-source identifier emitted by the Audit API. */}
                     <span>AI <strong>{item.ai_decision || "—"}</strong></span>
                     <span>{t("assuranceAuditor")} <strong>{item.auditor_decision || "—"}</strong></span>
                   </div>

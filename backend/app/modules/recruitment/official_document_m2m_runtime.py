@@ -1,10 +1,12 @@
 """Hiring state-machine bridge for authorized official-document M2M verification."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.modules.workforce import persistence
 from .candidate_evidence_runtime import (
     CandidateEvidenceRuntimeError,
     locate_candidate_evidence,
@@ -51,6 +53,20 @@ def verify_authorized_candidate_document(
         )
     except CandidateEvidenceRuntimeError as error:
         raise OfficialM2MRuntimeError(str(error)) from error
+
+    if os.getenv("DOCKOS_ENV", "development").strip().lower() == "production":
+        if not persistence.ENABLED or (persistence.schema_version() or 0) < 40:
+            raise OfficialM2MRuntimeError(
+                "Production resmî M2M doğrulaması PostgreSQL V40 olmadan kullanılamaz."
+            )
+        if str(evidence.get("storage_backend") or "").upper() != "S3_KMS_ENVELOPE":
+            raise OfficialM2MRuntimeError(
+                "Production resmî M2M doğrulaması plaintext/legacy evidence üzerinde çalışamaz."
+            )
+        if evidence.get("encryption_scheme") != "AES-256-GCM+AWS-KMS-DATA-KEY":
+            raise OfficialM2MRuntimeError(
+                "Production resmî M2M evidence encryption contract geçersiz."
+            )
 
     if evidence.get("document_type") != payload.document_type:
         raise OfficialM2MRuntimeError(

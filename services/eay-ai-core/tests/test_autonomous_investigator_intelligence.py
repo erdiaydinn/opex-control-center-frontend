@@ -328,8 +328,9 @@ def test_missing_falsification_prevents_favorite_hypothesis_from_becoming_decisi
         falsification_results=falsifications()[1:],
     )
 
-    assert report.disposition is InvestigatorDisposition.RESEARCH_MORE
+    assert report.disposition is InvestigatorDisposition.HOLD
     assert "investigator_falsification_incomplete" in report.blockers
+    assert "research_material_contradiction_unresolved" in report.blockers
     assert "h-demand:run_falsification:f-demand" in report.next_research_tasks
 
 

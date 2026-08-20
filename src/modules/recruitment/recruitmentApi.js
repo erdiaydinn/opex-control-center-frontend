@@ -98,6 +98,7 @@ export async function addRecruitmentCandidateNote(requestId, candidateId, noteTy
 export async function createRecruitmentOffer(requestId, candidateId, packageValues, expiresInHours = 168) { return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/offers`, { package: packageValues, expires_in_hours: expiresInHours })); }
 export async function issueRecruitmentOfferCapability(offerId, expiresInHours = 168) { return safeBackendRequest(apiPost(`/recruitment/offers/${encodeURIComponent(offerId)}/decision-capabilities`, { expires_in_hours: expiresInHours })); }
 export async function updateRecruitmentOnboardingTask(taskId, status, note = "") { return safeBackendRequest(apiPost(`/recruitment/onboarding/tasks/${encodeURIComponent(taskId)}`, { status, note })); }
+export async function loadMyRecruitmentOnboardingTasks(includeTerminal = false) { return safeBackendRequest(apiGet(`/recruitment/onboarding/tasks?include_terminal=${includeTerminal ? "true" : "false"}`), "Onboarding görevleri alınamadı. Lütfen tekrar deneyin."); }
 export async function loadRecruitmentOrchestrationAnalytics() { return safeBackendRequest(apiGet("/recruitment/orchestration/analytics")); }
 
 // Interview scheduling

@@ -35,7 +35,11 @@ def _request_id(request: Request) -> str:
 
 def _domain_error(exc: ValueError) -> HTTPException:
     detail = str(exc)
-    code = status.HTTP_400_BAD_REQUEST if detail.startswith("unsupported") else status.HTTP_409_CONFLICT
+    code = (
+        status.HTTP_400_BAD_REQUEST
+        if detail.startswith("unsupported")
+        else status.HTTP_409_CONFLICT
+    )
     return HTTPException(status_code=code, detail=detail)
 
 

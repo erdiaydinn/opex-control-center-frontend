@@ -13,6 +13,7 @@ from app.autonomous_investigator import (
     ProblemNovelty,
     SourceIndependenceBinding,
     build_investigator_lesson,
+    calibrate_investigator_lessons,
     evaluate_autonomous_investigation,
     plan_autonomous_research,
 )
@@ -23,7 +24,7 @@ from app.outcome_learning import (
     assess_decision_outcome,
 )
 from app.research_engine import ResearchEvidence, ResearchRisk, ResearchRole, SourceTier
-from app.world_model import WorldEntity, EntityKind, build_world_snapshot
+from app.world_model import EntityKind, WorldEntity, build_world_snapshot
 
 NOW = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
 
@@ -197,6 +198,52 @@ def falsifications() -> tuple[FalsificationResult, ...]:
     )
 
 
+def grounded_outcome(*, tenant_id: str = "tenant-a"):
+    decision = DecisionLearningRecord(
+        decision_id=f"decision:orders-down:{tenant_id}",
+        tenant_id=tenant_id,
+        decided_at=NOW,
+        decision_type="root-cause-investigation",
+        recommendation_ref="artifact://decision/root-cause",
+        expected_outcomes=(
+            ExpectedMetricOutcome(
+                metric_key="orders",
+                baseline_value=100.0,
+                expected_value=110.0,
+                unit="orders",
+                confidence=0.8,
+                evidence_refs=("evidence://forecast",),
+            ),
+        ),
+        decision_evidence_refs=("evidence://decision",),
+    )
+    return assess_decision_outcome(
+        decision=decision,
+        outcomes=[
+            ObservedMetricOutcome(
+                metric_key="orders",
+                observed_value=90.0,
+                unit="orders",
+                observed_at=NOW + timedelta(hours=2),
+                governed_truth_ref="truth://orders/observed",
+                evidence_refs=("evidence://orders/observed",),
+            )
+        ],
+    )
+
+
+def decision_ready_report():
+    evidence = evidence_set()
+    return evaluate_autonomous_investigation(
+        problem=problem(),
+        world=world(),
+        hypotheses=hypotheses(),
+        evidence=evidence,
+        source_bindings=bindings(evidence),
+        falsification_results=falsifications(),
+    )
+
+
 def test_novel_problem_requires_three_competing_hypotheses_and_contradiction_search() -> None:
     with pytest.raises(ValueError, match="competing_hypotheses_insufficient"):
         plan_autonomous_research(problem=problem(), hypotheses=hypotheses()[:2])
@@ -254,22 +301,18 @@ def test_correlated_publishers_cannot_fake_independent_source_quorum() -> None:
     assert report.disposition is not InvestigatorDisposition.DECISION_READY
 
 
-def test_active_falsification_allows_strong_hypothesis_to_survive_weak_counterevidence() -> None:
-    evidence = evidence_set()
-    report = evaluate_autonomous_investigation(
-        problem=problem(),
-        world=world(),
-        hypotheses=hypotheses(),
-        evidence=evidence,
-        source_bindings=bindings(evidence),
-        falsification_results=falsifications(),
-    )
+def test_active_falsification_resolves_weak_contestation_without_hiding_raw_assessment() -> None:
+    report = decision_ready_report()
 
     assert report.ranking is not None
     assert report.ranking.leading_hypothesis_id == "h-demand"
     assert report.ranking.decisive is True
+    leader = next(item for item in report.research_states if item.hypothesis_id == "h-demand")
+    assert leader.assessment.verdict.value == "contested"
+    assert leader.material_contestation_resolved is True
     assert report.disposition is InvestigatorDisposition.DECISION_READY
     assert report.blockers == ()
+    assert report.calibrated_confidence_cap <= 0.60
     assert report.firm_company_claim_authorized is False
     assert report.execution_authority_granted is False
 
@@ -357,51 +400,11 @@ def test_stronger_refuting_evidence_can_overturn_the_initial_favorite() -> None:
 
 
 def test_wrong_prediction_becomes_grounded_recallable_lesson_not_self_modified_truth() -> None:
-    evidence = evidence_set()
-    report = evaluate_autonomous_investigation(
-        problem=problem(),
-        world=world(),
-        hypotheses=hypotheses(),
-        evidence=evidence,
-        source_bindings=bindings(evidence),
-        falsification_results=falsifications(),
-    )
-    decision = DecisionLearningRecord(
-        decision_id="decision:orders-down",
-        tenant_id="tenant-a",
-        decided_at=NOW,
-        decision_type="root-cause-investigation",
-        recommendation_ref="artifact://decision/root-cause",
-        expected_outcomes=(
-            ExpectedMetricOutcome(
-                metric_key="orders",
-                baseline_value=100.0,
-                expected_value=110.0,
-                unit="orders",
-                confidence=0.8,
-                evidence_refs=("evidence://forecast",),
-            ),
-        ),
-        decision_evidence_refs=("evidence://decision",),
-    )
-    assessment = assess_decision_outcome(
-        decision=decision,
-        outcomes=[
-            ObservedMetricOutcome(
-                metric_key="orders",
-                observed_value=90.0,
-                unit="orders",
-                observed_at=NOW + timedelta(hours=2),
-                governed_truth_ref="truth://orders/observed",
-                evidence_refs=("evidence://orders/observed",),
-            )
-        ],
-    )
-
+    report = decision_ready_report()
     lesson, episode = build_investigator_lesson(
         report=report,
         resolved_hypothesis_id="h-stock",
-        outcome=assessment,
+        outcome=grounded_outcome(),
         recorded_at=NOW + timedelta(hours=3),
     )
 
@@ -411,60 +414,60 @@ def test_wrong_prediction_becomes_grounded_recallable_lesson_not_self_modified_t
     assert "investigator_leading_hypothesis_was_wrong" in lesson.failure_codes
     assert lesson.model_weights_mutated is False
     assert lesson.business_policy_mutated is False
-    assert episode.kind is EpisodeKind.LESSON
+    assert episode.kind.value == "lesson"
     assert episode.model_summary_is_truth is False
     assert "failure:investigator_leading_hypothesis_was_wrong" in episode.tags
 
 
-def test_learning_rejects_cross_tenant_outcome() -> None:
-    evidence = evidence_set()
-    report = evaluate_autonomous_investigation(
-        problem=problem(),
-        world=world(),
-        hypotheses=hypotheses(),
-        evidence=evidence,
-        source_bindings=bindings(evidence),
-        falsification_results=falsifications(),
+def test_multiple_grounded_errors_produce_bounded_company_scoped_calibration() -> None:
+    report = decision_ready_report()
+    lesson_one, _ = build_investigator_lesson(
+        report=report,
+        resolved_hypothesis_id="h-stock",
+        outcome=grounded_outcome(),
+        recorded_at=NOW + timedelta(hours=3),
     )
-    decision = DecisionLearningRecord(
-        decision_id="decision:other",
-        tenant_id="tenant-b",
-        decided_at=NOW,
-        decision_type="root-cause-investigation",
-        recommendation_ref="artifact://decision/other",
-        expected_outcomes=(
-            ExpectedMetricOutcome(
-                metric_key="orders",
-                baseline_value=100.0,
-                expected_value=101.0,
-                unit="orders",
-                confidence=0.5,
-                evidence_refs=("evidence://forecast",),
-            ),
-        ),
-        decision_evidence_refs=("evidence://decision",),
-    )
-    assessment = assess_decision_outcome(
-        decision=decision,
-        outcomes=[
-            ObservedMetricOutcome(
-                metric_key="orders",
-                observed_value=101.0,
-                unit="orders",
-                observed_at=NOW + timedelta(hours=1),
-                governed_truth_ref="truth://orders/other",
-                evidence_refs=("evidence://other",),
-            )
-        ],
+    second_outcome = grounded_outcome()
+    second_outcome = second_outcome.model_copy(update={"decision_id": "decision:orders-down:second"})
+    lesson_two, _ = build_investigator_lesson(
+        report=report,
+        resolved_hypothesis_id="h-demand",
+        outcome=second_outcome,
+        recorded_at=NOW + timedelta(hours=4),
     )
 
+    profile = calibrate_investigator_lessons((lesson_one, lesson_two))
+
+    assert profile.tenant_id == "tenant-a"
+    assert profile.company_id == "company-a"
+    assert profile.sample_count == 2
+    assert profile.mean_brier_score > 0.0
+    assert profile.prediction_error_rate == 0.5
+    assert profile.suggested_confidence_multiplier < 1.0
+    assert profile.automatic_activation_allowed is False
+    assert profile.model_weights_mutated is False
+    assert profile.business_policy_mutated is False
+
+
+def test_learning_rejects_cross_tenant_outcome_and_cross_company_calibration() -> None:
+    report = decision_ready_report()
     with pytest.raises(ValueError, match="investigator_lesson_tenant_mismatch"):
         build_investigator_lesson(
             report=report,
             resolved_hypothesis_id="h-demand",
-            outcome=assessment,
+            outcome=grounded_outcome(tenant_id="tenant-b"),
             recorded_at=NOW + timedelta(hours=2),
         )
+
+    lesson, _ = build_investigator_lesson(
+        report=report,
+        resolved_hypothesis_id="h-stock",
+        outcome=grounded_outcome(),
+        recorded_at=NOW + timedelta(hours=3),
+    )
+    other = lesson.model_copy(update={"company_id": "company-b"})
+    with pytest.raises(ValueError, match="investigator_calibration_scope_mismatch"):
+        calibrate_investigator_lessons((lesson, other))
 
 
 def test_future_world_snapshot_is_rejected_and_no_evidence_never_guesses() -> None:

@@ -115,7 +115,8 @@ requireCondition(schemas.includes("manager_subject: None = None"), "Legacy manag
 requireCondition(intelligenceRoutes.includes('prefix="/v1/audit/intelligence"'), "Audit deterministic intelligence route is missing");
 requireCondition(intelligenceRoutes.includes('require_audit_scope(principal, "feature:audit:analytics")'), "Audit intelligence must use analytics scope");
 requireCondition(intelligenceAuthority.includes('"llm_computed_metrics": False'), "Audit metrics must not be computed by an LLM");
-requireCondition(intelligenceAuthority.includes('"calculation_version": "audit.intelligence.summary.v1"'), "Audit metric calculation version is missing");
+requireCondition(intelligenceAuthority.includes('"calculation_version": "audit.intelligence.summary.v2"'), "Audit metric calculation version is missing");
+requireCondition(intelligenceAuthority.includes("official_compliance_eligible IS TRUE") && intelligenceAuthority.includes('"official_compliance_only": True') && intelligenceAuthority.includes('"non_official_score_modes": ["FOCUS_SCORE"]'), "Audit intelligence must fence official compliance from focus visit scores");
 requireCondition(intelligenceAuthority.includes("COUNT(DISTINCT aa.audit_run_id) >= 2"), "Repeat finding calculation must require multiple runs");
 requireCondition(intelligenceAuthority.includes("verification_status = 'verified'"), "Evidence coverage must require server privacy verification");
 requireCondition(intelligenceAuthority.includes("receipt_fingerprint"), "Audit intelligence must produce a fingerprinted receipt");

@@ -170,6 +170,7 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
 
   return (
     <section className="eay-academy-expansion-card" data-eay-product-state="ready">
+      {/* i18n-brand-literal: canonical EAY Academy product brand */}
       <header className="eay-academy-expansion-head">
         <div><span><Sparkles size={16} aria-hidden="true" /> EAY Academy</span><h2>{tx("scenarioStudio")}</h2><p>{tx("scenarioHint")}</p></div>
       </header>

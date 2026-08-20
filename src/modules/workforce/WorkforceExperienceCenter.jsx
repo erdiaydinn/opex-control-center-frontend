@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { workforceExperienceMessage } from "../../platform/i18n/workforceExperienceMessages.js";
 import { workforceFlexibilityMessage } from "../../platform/i18n/workforceFlexibilityMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import WorkforceFlexibilityAdmin from "./WorkforceFlexibilityAdmin.jsx";
@@ -80,11 +81,13 @@ export function WorkforceExperienceCenter({ onBack }) {
 }
 
 export function WorkforceExperienceAdmin() {
+  const { locale } = usePlatformPreferences();
+  const m = (key, params) => workforceExperienceMessage(locale, key, params);
   const capabilities = [
-    { icon: FileSignature, title: "Belge ve e-imza", value: "1", detail: "İmza bekleyen belge", tone: "pink" },
-    { icon: GraduationCap, title: "Öğrenme", value: "%84", detail: "Zorunlu eğitim tamamlama", tone: "purple" },
-    { icon: ClipboardList, title: "Nabız", value: "4,3/5", detail: "Son anonim anket", tone: "blue" },
-    { icon: Boxes, title: "Zimmet", value: "%99,2", detail: "Mutabakat oranı", tone: "green" },
+    { icon: FileSignature, title: m("documentTitle"), value: m("documentValue"), detail: m("documentDetail"), tone: "pink" },
+    { icon: GraduationCap, title: m("learningTitle"), value: m("learningValue"), detail: m("learningDetail"), tone: "purple" },
+    { icon: ClipboardList, title: m("pulseTitle"), value: m("pulseValue"), detail: m("pulseDetail"), tone: "blue" },
+    { icon: Boxes, title: m("assetTitle"), value: m("assetValue"), detail: m("assetDetail"), tone: "green" },
   ];
-  return <div className="wfx-experience-admin"><section className="wfx-panel wfx-experience-admin-hero"><div><span>WORKFORCE EXPERIENCE</span><h2>Çalışanı bekletmeyen self-servis.</h2><p>Vardiya, izin, puantaj, belge, eğitim, anket ve zimmet akışlarını tek kimlik ve tek mobil deneyimde birleştirir.</p></div><div className="wfx-experience-score"><small>Deneyim skoru</small><strong>92</strong><span>+7 puan · son 30 gün</span></div></section><section className="wfx-experience-admin-grid">{capabilities.map((item) => { const Icon = item.icon; return <article className="wfx-panel" key={item.title}><div className={item.tone}><Icon size={22} /></div><span>{item.title}</span><strong>{item.value}</strong><small>{item.detail}</small></article>; })}</section><WorkforceFlexibilityAdmin /><section className="wfx-panel wfx-market-difference"><header><div><span>Ürün standardı</span><h3>Rakip özellik listesi değil, operasyon sonucu</h3></div><Sparkles size={24} /></header><div><article><BadgeCheck size={20} /><span><strong>Tek dokunuşlu akış</strong><small>Çalışan işlemleri üç adımdan kısa tasarlanır.</small></span></article><article><ShieldCheck size={20} /><span><strong>Mahremiyet odaklı kanıt</strong><small>Face ID cihazda kalır; sunucu yalnız imzalı kullanıcı-varlığı sonucunu alır.</small></span></article><article><CalendarDays size={20} /><span><strong>Operasyon bağlamı</strong><small>Vardiya, depo ve puantaj aynı karar izinde birleşir.</small></span></article></div></section></div>;
+  return <div className="wfx-experience-admin"><section className="wfx-panel wfx-experience-admin-hero"><div><span>{m("adminEyebrow")}</span><h2>{m("adminHeading")}</h2><p>{m("adminIntro")}</p></div><div className="wfx-experience-score"><small>{m("experienceScore")}</small><strong>92</strong><span>{m("scoreTrend")}</span></div></section><section className="wfx-experience-admin-grid">{capabilities.map((item) => { const Icon = item.icon; return <article className="wfx-panel" key={item.title}><div className={item.tone}><Icon size={22} /></div><span>{item.title}</span><strong>{item.value}</strong><small>{item.detail}</small></article>; })}</section><WorkforceFlexibilityAdmin /><section className="wfx-panel wfx-market-difference"><header><div><span>{m("productStandard")}</span><h3>{m("outcomeHeading")}</h3></div><Sparkles size={24} /></header><div><article><BadgeCheck size={20} /><span><strong>{m("oneTapTitle")}</strong><small>{m("oneTapDetail")}</small></span></article><article><ShieldCheck size={20} /><span><strong>{m("privacyTitle")}</strong><small>{m("privacyDetail")}</small></span></article><article><CalendarDays size={20} /><span><strong>{m("contextTitle")}</strong><small>{m("contextDetail")}</small></span></article></div></section></div>;
 }

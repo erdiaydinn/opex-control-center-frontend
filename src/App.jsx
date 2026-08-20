@@ -26,6 +26,7 @@ const InventoryProductionBoundary = lazy(() => import("./modules/inventory/Inven
 const WorkforceBootstrapBoundary = lazy(() => import("./modules/workforce/WorkforceBootstrapBoundary.jsx"));
 const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
 const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
+const CandidateOfferPortal = lazy(() => import("./modules/recruitment/CandidateOfferPortal.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
 const AcademyPlayer = lazy(() => import("./modules/academy/AcademyPlayer.jsx"));
 const JarvisWorkspace = lazy(() => import("./modules/intelligence/JarvisWorkspace.jsx"));
@@ -60,6 +61,9 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          {/* Candidate capability portal is intentionally outside employee SSO. The capability is
+              carried in the URL fragment and the public API client never attaches employee auth. */}
+          <Route path="/candidate/offer" element={<CandidateOfferPortal />} />
           <Route path="/" element={<ProtectedRoute><ControlCenterHome /></ProtectedRoute>} />
           <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
           <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />

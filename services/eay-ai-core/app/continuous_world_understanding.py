@@ -58,14 +58,18 @@ class SourceFreshnessExpectation(BaseModel):
     maximum_silence_seconds: int = Field(ge=1, le=31_536_000)
     required_for_live_truth: bool = True
     accepted_authority_classes: tuple[TimelineAuthorityClass, ...] = Field(
-        default_factory=lambda: tuple(sorted(_STRONG_LIVE_AUTHORITIES, key=lambda item: item.value))
+        default_factory=lambda: tuple(
+            sorted(_STRONG_LIVE_AUTHORITIES, key=lambda item: item.value)
+        )
     )
 
     @model_validator(mode="after")
     def accepted_authorities_are_unique(self) -> "SourceFreshnessExpectation":
         if not self.accepted_authority_classes:
             raise ValueError("world_watch_source_authorities_required")
-        if len(self.accepted_authority_classes) != len(set(self.accepted_authority_classes)):
+        if len(self.accepted_authority_classes) != len(
+            set(self.accepted_authority_classes)
+        ):
             raise ValueError("world_watch_source_authorities_must_be_unique")
         return self
 
@@ -101,7 +105,10 @@ class WorldFieldDelta(BaseModel):
 
 
 class WorldChangeSet(BaseModel):
-    previous_world_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    previous_world_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     current_world_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     field_deltas: tuple[WorldFieldDelta, ...]
     introduced_contradiction_keys: tuple[str, ...]
@@ -114,8 +121,12 @@ class WorldChangeSet(BaseModel):
 class ContinuousWorldPolicy(BaseModel):
     maximum_world_snapshot_age_seconds: int = Field(default=900, ge=1, le=86_400)
     material_change_ratio_threshold: float = Field(default=0.15, ge=0.0, le=1.0)
-    rapid_change_per_hour_threshold: float = Field(default=6.0, ge=0.0, le=10_000.0)
-    prior_decision_reopen_on_any_world_fingerprint_change: bool = True
+    rapid_change_per_hour_threshold: float = Field(
+        default=6.0,
+        ge=0.0,
+        le=10_000.0,
+    )
+    reopen_when_prior_world_lineage_is_unknown: bool = True
 
 
 class ReinvestigationDirective(BaseModel):
@@ -169,7 +180,9 @@ class ContinuousWorldAssessment(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def assessment_is_integral_and_non_authoritative(self) -> "ContinuousWorldAssessment":
+    def assessment_is_integral_and_non_authoritative(
+        self,
+    ) -> "ContinuousWorldAssessment":
         _require_aware(self.as_of, "world_watch_assessment_requires_timezone")
         if (
             self.authoritative_truth_surface
@@ -181,7 +194,10 @@ class ContinuousWorldAssessment(BaseModel):
             self.blockers or self.directive is not None
         ):
             raise ValueError("world_watch_stable_cannot_have_blockers_or_directive")
-        if self.disposition is WorldWatchDisposition.REINVESTIGATE and self.directive is None:
+        if (
+            self.disposition is WorldWatchDisposition.REINVESTIGATE
+            and self.directive is None
+        ):
             raise ValueError("world_watch_reinvestigation_requires_directive")
         expected = _fingerprint(_payload(self))
         if self.fingerprint != expected:
@@ -245,7 +261,11 @@ def assess_continuous_world(
     for source_key, expectation in sorted(expectations.items()):
         pulse = pulses.get(source_key)
         if pulse is None:
-            blocker = "world_watch_required_source_missing" if expectation.required_for_live_truth else "world_watch_optional_source_missing"
+            blocker = (
+                "world_watch_required_source_missing"
+                if expectation.required_for_live_truth
+                else "world_watch_optional_source_missing"
+            )
             if expectation.required_for_live_truth:
                 stale_required_sources.append(source_key)
                 blockers.append(f"{blocker}:{source_key}")
@@ -262,7 +282,9 @@ def assess_continuous_world(
         if pulse.observed_at > now:
             raise ValueError("world_watch_source_pulse_from_future")
         age_seconds = max(0.0, (now - pulse.observed_at).total_seconds())
-        authority_accepted = pulse.authority_class in set(expectation.accepted_authority_classes)
+        authority_accepted = pulse.authority_class in set(
+            expectation.accepted_authority_classes
+        )
         fresh_by_time = age_seconds <= expectation.maximum_silence_seconds
         fresh = fresh_by_time and authority_accepted
         blocker: str | None = None
@@ -303,16 +325,30 @@ def assess_continuous_world(
         blockers.append("world_watch_company_world_stale")
     if current.blocked_field_keys:
         blockers.append("world_watch_company_world_contradicted")
-    if world_change.change_ratio >= rules.material_change_ratio_threshold and world_change.material_change_count:
+    if (
+        world_change.material_change_count
+        and world_change.change_ratio >= rules.material_change_ratio_threshold
+    ):
         blockers.append("world_watch_material_world_change")
-    if world_change.changes_per_hour >= rules.rapid_change_per_hour_threshold and world_change.material_change_count:
+    if (
+        world_change.material_change_count
+        and world_change.changes_per_hour >= rules.rapid_change_per_hour_threshold
+    ):
         blockers.append("world_watch_rapid_world_change")
 
     prior_invalidated = False
     if prior is not None and prior.world_snapshot_fingerprint != current.fingerprint:
-        if rules.prior_decision_reopen_on_any_world_fingerprint_change:
+        lineage_matches = (
+            previous is not None
+            and previous.fingerprint == prior.world_snapshot_fingerprint
+        )
+        semantic_change = world_change.material_change_count > 0
+        if lineage_matches and semantic_change:
             prior_invalidated = True
-            blockers.append("world_watch_prior_investigation_world_changed")
+            blockers.append("world_watch_prior_investigation_semantic_world_changed")
+        elif not lineage_matches and rules.reopen_when_prior_world_lineage_is_unknown:
+            prior_invalidated = True
+            blockers.append("world_watch_prior_world_lineage_unknown")
     if prior is not None and current.blocked_field_keys:
         prior_invalidated = True
     if prior is not None and stale_required_sources:
@@ -324,8 +360,7 @@ def assess_continuous_world(
         and prior.disposition is InvestigatorDisposition.DECISION_READY
     )
     requires_reinvestigation = (
-        prior_invalidated
-        and prior_was_decision_ready
+        prior_invalidated and prior_was_decision_ready
     ) or bool(current.blocked_field_keys)
 
     if requires_reinvestigation:
@@ -354,9 +389,13 @@ def assess_continuous_world(
         directive = ReinvestigationDirective(
             tenant_id=tenant_id,
             company_id=company_id,
-            previous_investigation_fingerprint=(prior.fingerprint if prior is not None else None),
+            previous_investigation_fingerprint=(
+                prior.fingerprint if prior is not None else None
+            ),
             current_world_fingerprint=current.fingerprint,
-            reason_codes=tuple(blockers or ("world_watch_company_world_contradicted",)),
+            reason_codes=tuple(
+                blockers or ("world_watch_company_world_contradicted",)
+            ),
             required_source_keys=tuple(sorted(set(stale_required_sources))),
         )
 
@@ -375,7 +414,9 @@ def assess_continuous_world(
         "prior_belief_invalidated": prior_invalidated,
         "confidence_decay_multiplier": round(confidence_multiplier, 6),
         "blockers": blockers,
-        "directive": directive.model_dump(mode="json") if directive is not None else None,
+        "directive": (
+            directive.model_dump(mode="json") if directive is not None else None
+        ),
         "authoritative_truth_surface": False,
         "automatic_research_execution_allowed": False,
         "execution_authority_granted": False,
@@ -469,7 +510,10 @@ def _world_change(
     material_count = len(deltas) + len(introduced) + len(resolved)
     denominator = max(len(previous_fields), len(current_fields), 1)
     ratio = min(material_count / denominator, 1.0)
-    elapsed_hours = max((current.as_of - previous.as_of).total_seconds() / 3600.0, 0.0)
+    elapsed_hours = max(
+        (current.as_of - previous.as_of).total_seconds() / 3600.0,
+        0.0,
+    )
     velocity = material_count / elapsed_hours if elapsed_hours > 0 else 0.0
     return WorldChangeSet(
         previous_world_fingerprint=previous.fingerprint,
@@ -495,8 +539,6 @@ def _field_digest(field: ResolvedField) -> str:
             "value": field.value,
             "truth_class": field.truth_class.value,
             "confidence": field.confidence,
-            "assertion_ids": list(field.assertion_ids),
-            "evidence_refs": list(field.evidence_refs),
         }
     )
 

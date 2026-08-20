@@ -18,6 +18,10 @@ from .candidate_evidence_runtime import (
     CandidateEvidenceRuntimeError,
     purge_expired_encrypted_candidate_evidence,
 )
+from .production_authority_preflight import (
+    ProductionAuthorityPreflightError,
+    run_live_preflight,
+)
 from .recruitment_evidence_runtime import (
     RecruitmentEvidenceRuntimeError,
     purge_expired_encrypted_request_evidence,
@@ -104,6 +108,35 @@ def download_request_evidence(
         )
     except RecruitmentEvidenceRuntimeError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/production-authorities/preflight")
+def production_authority_preflight(
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Perform live infrastructure authority checks without submitting a document."""
+    _require(x_opex_role, x_opex_permissions, "manageRecruitmentSettings")
+    actor, _ = _identity(request)
+    try:
+        result = run_live_preflight()
+    except ProductionAuthorityPreflightError as error:
+        persistence.append_audit(
+            "RECRUITMENT_PRODUCTION_AUTHORITY_PREFLIGHT_FAILED",
+            actor,
+            reason=str(error),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "PRODUCTION_AUTHORITY_PREFLIGHT_FAILED", "message": str(error)},
+        ) from error
+    persistence.append_audit(
+        "RECRUITMENT_PRODUCTION_AUTHORITY_PREFLIGHT_PASSED",
+        actor,
+        truth_boundary=result["truth_boundary"],
+    )
+    return result
 
 
 @router.post("/retention/purge")

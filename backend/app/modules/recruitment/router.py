@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Request, Uploa
 from fastapi.responses import FileResponse
 
 from app.modules.workforce.authorization import is_action_allowed
+from app.modules.workforce import persistence
 from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
 from .hr_actual import build_dashboard, enrich_evaluation, import_snapshot, snapshot_summary
 from .schemas import (
@@ -17,6 +18,7 @@ from .schemas import (
 )
 from .service import (
     RecruitmentRuleError,
+    _EVIDENCE_DIR,
     add_candidate_evidence,
     add_evidence,
     activate_hire,
@@ -62,7 +64,9 @@ async def _read_upload_limited(file: UploadFile, limit: int = 10 * 1024 * 1024) 
 def _require_candidate_upload_authority_runtime() -> None:
     environment = os.getenv("DOCKOS_ENV", "development").strip().lower()
     mode = os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "disabled").strip().lower()
-    if environment == "production" or mode != "legacy-development":
+    postgres_ready = mode == "postgres" and persistence.ENABLED and persistence.schema_version() >= 39
+    legacy_ready = environment != "production" and mode == "legacy-development"
+    if not (postgres_ready or legacy_ready):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -386,6 +390,22 @@ async def upload_candidate_evidence_with_capability(
         if content_type not in {"application/pdf", "image/jpeg", "image/png"}:
             raise RecruitmentRuleError("Aday kanıtı PDF/JPG/PNG olmalıdır.")
         _validate_candidate_document_bytes(content_type, content)
+        if os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "disabled").strip().lower() == "postgres":
+            from app.modules.recruitment import candidate_upload_authority
+
+            try:
+                evidence = candidate_upload_authority.finalize(
+                    x_eay_upload_capability, document_type.strip().upper(),
+                    file.filename or "document", content_type, content, _EVIDENCE_DIR,
+                    retention_days=max(1, int(os.getenv("RECRUITMENT_EVIDENCE_RETENTION_DAYS", "365"))),
+                )
+            except candidate_upload_authority.CandidateUploadAuthorityError as error:
+                raise RecruitmentRuleError(str(error)) from error
+            return {
+                "accepted": True, "receipt": evidence["sha256"],
+                "document_type": evidence["document_type"],
+                "content_safety_state": evidence["content_safety_state"],
+            }
         request_id, candidate_id, capability_id = consume_candidate_upload_capability(
             x_eay_upload_capability, document_type,
         )

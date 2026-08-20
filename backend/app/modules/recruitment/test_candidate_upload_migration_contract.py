@@ -38,11 +38,49 @@ class CandidateUploadMigrationContractTests(unittest.TestCase):
         self.assertIn("UNIQUE (tenant_id, provider, receipt_id)", self.sql)
         self.assertIn("FOREIGN KEY (tenant_id, evidence_id, evidence_sha256)", self.sql)
         self.assertIn("scan_receipt_id uuid NOT NULL", self.sql)
+        self.assertIn("signed_payload_sha256 bytea NOT NULL", self.sql)
+        self.assertIn("signature_sha256 bytea NOT NULL", self.sql)
+        self.assertIn("FUNCTION recruitment.record_candidate_evidence_scan_receipt", self.sql)
+        self.assertIn("TO eay_candidate_scanner_runtime", self.sql)
+
+    def test_finalize_is_atomic_locked_and_exactly_bound(self) -> None:
+        self.assertIn("FUNCTION recruitment.finalize_candidate_evidence_upload", self.sql)
+        self.assertIn("SECURITY DEFINER", self.sql)
+        self.assertIn("SET search_path = pg_catalog, pg_temp", self.sql)
+        self.assertIn("AND token_sha256 = p_token_sha256", self.sql)
+        self.assertIn("FOR UPDATE", self.sql)
+        self.assertIn("v_capability.document_type IS DISTINCT FROM p_document_type", self.sql)
+        self.assertIn("p_byte_size > v_capability.max_bytes", self.sql)
+        self.assertIn("INSERT INTO recruitment.candidate_evidence_objects", self.sql)
+        self.assertIn("SET consumed_at = v_now, consumed_evidence_id = p_evidence_id", self.sql)
+        self.assertIn("v_capability.request_id, v_capability.candidate_id", self.sql)
+        self.assertIn("v_capability.document_type, v_capability.staging_object_key", self.sql)
+        self.assertIn("RETURN QUERY SELECT", self.sql)
+        self.assertIn("MESSAGE = 'candidate upload rejected'", self.sql)
+
+    def test_runtime_has_only_narrow_function_grants(self) -> None:
+        self.assertIn("TO eay_candidate_upload_runtime", self.sql)
+        self.assertIn("TO eay_recruitment_runtime", self.sql)
+        self.assertNotIn("GRANT SELECT", self.sql)
+        self.assertNotIn("GRANT INSERT", self.sql)
+        self.assertNotIn("GRANT UPDATE", self.sql)
+        self.assertIn(
+            "REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM eay_candidate_upload_runtime",
+            self.sql,
+        )
+        self.assertIn(
+            "REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM eay_recruitment_runtime",
+            self.sql,
+        )
+        self.assertIn("FUNCTION recruitment.revoke_candidate_upload_capability", self.sql)
+        self.assertIn("FUNCTION recruitment.issue_candidate_upload_capability", self.sql)
+        self.assertIn("MESSAGE = 'candidate capability rejected'", self.sql)
 
     def test_legacy_public_runtime_is_fail_closed_in_production(self) -> None:
         router_source = (Path(__file__).resolve().parent / "router.py").read_text(encoding="utf-8")
-        self.assertIn('environment == "production"', router_source)
-        self.assertIn('mode != "legacy-development"', router_source)
+        self.assertIn('environment != "production"', router_source)
+        self.assertIn('mode == "legacy-development"', router_source)
+        self.assertIn('mode == "postgres"', router_source)
         self.assertIn("CANDIDATE_UPLOAD_AUTHORITY_NOT_READY", router_source)
 
 

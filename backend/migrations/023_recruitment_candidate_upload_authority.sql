@@ -107,6 +107,9 @@ CREATE TABLE IF NOT EXISTS recruitment.candidate_evidence_scan_receipts (
   receipt_id text NOT NULL CHECK (btrim(receipt_id) <> ''),
   evidence_sha256 bytea NOT NULL CHECK (octet_length(evidence_sha256) = 32),
   result text NOT NULL CHECK (result IN ('CLEAN','INFECTED','ERROR')),
+  algorithm text NOT NULL CHECK (algorithm IN ('HMAC-SHA256')),
+  signed_payload_sha256 bytea NOT NULL CHECK (octet_length(signed_payload_sha256) = 32),
+  signature_sha256 bytea NOT NULL CHECK (octet_length(signature_sha256) = 32),
   scanned_at timestamptz NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   signature_verified boolean NOT NULL CHECK (signature_verified),
@@ -191,6 +194,256 @@ CREATE TRIGGER candidate_scan_receipt_no_update
 BEFORE UPDATE OR DELETE ON recruitment.candidate_evidence_scan_receipts
 FOR EACH ROW EXECUTE FUNCTION recruitment.reject_candidate_authority_mutation();
 
+-- The upload runtime receives EXECUTE only.  It cannot insert evidence or mark a
+-- capability consumed in two independent statements.  The row lock makes a
+-- concurrent replay serialize behind the first successful finalization.
+CREATE OR REPLACE FUNCTION recruitment.finalize_candidate_evidence_upload(
+  p_tenant_id text,
+  p_token_sha256 bytea,
+  p_document_type text,
+  p_evidence_id uuid,
+  p_original_name text,
+  p_media_type text,
+  p_byte_size bigint,
+  p_evidence_sha256 bytea,
+  p_retention_until timestamptz
+)
+RETURNS TABLE (
+  evidence_id uuid,
+  capability_id uuid,
+  request_id text,
+  candidate_id text,
+  document_type text,
+  object_key text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_capability recruitment.candidate_upload_capabilities%ROWTYPE;
+  v_now timestamptz := clock_timestamp();
+BEGIN
+  -- Tenant context is an independent authority; a caller-controlled argument
+  -- can never select a different tenant.
+  IF p_tenant_id IS DISTINCT FROM public.workforce_current_tenant()
+     OR p_token_sha256 IS NULL
+     OR octet_length(p_token_sha256) <> 32
+     OR p_evidence_sha256 IS NULL
+     OR octet_length(p_evidence_sha256) <> 32 THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate upload rejected';
+  END IF;
+
+  SELECT * INTO v_capability
+    FROM recruitment.candidate_upload_capabilities
+   WHERE tenant_id = p_tenant_id
+     AND token_sha256 = p_token_sha256
+   FOR UPDATE;
+
+  IF NOT FOUND
+     OR v_capability.document_type IS DISTINCT FROM p_document_type
+     OR v_capability.revoked_at IS NOT NULL
+     OR v_capability.consumed_at IS NOT NULL
+     OR v_capability.expires_at <= v_now
+     OR p_byte_size IS NULL
+     OR p_byte_size < 1
+     OR p_byte_size > v_capability.max_bytes
+     OR p_retention_until IS NULL
+     OR p_retention_until <= v_now THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate upload rejected';
+  END IF;
+
+  INSERT INTO recruitment.candidate_evidence_objects (
+    tenant_id, evidence_id, capability_id, request_id, candidate_id,
+    document_type, object_key, original_name, media_type, byte_size, sha256,
+    uploaded_at, retention_until
+  ) VALUES (
+    p_tenant_id, p_evidence_id, v_capability.capability_id,
+    v_capability.request_id, v_capability.candidate_id,
+    v_capability.document_type, v_capability.staging_object_key,
+    p_original_name, p_media_type, p_byte_size,
+    p_evidence_sha256, v_now, p_retention_until
+  );
+
+  UPDATE recruitment.candidate_upload_capabilities AS capability
+     SET consumed_at = v_now, consumed_evidence_id = p_evidence_id
+   WHERE capability.tenant_id = p_tenant_id
+     AND capability.capability_id = v_capability.capability_id;
+
+  RETURN QUERY SELECT
+    p_evidence_id,
+    v_capability.capability_id,
+    v_capability.request_id,
+    v_capability.candidate_id,
+    v_capability.document_type,
+    v_capability.staging_object_key;
+EXCEPTION
+  WHEN SQLSTATE '28000' THEN
+    RAISE;
+  WHEN OTHERS THEN
+    -- Do not expose constraint names, object existence, or conflicting IDs.
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate upload rejected';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION recruitment.issue_candidate_upload_capability(
+  p_tenant_id text,
+  p_capability_id uuid,
+  p_request_id text,
+  p_candidate_id text,
+  p_token_sha256 bytea,
+  p_document_type text,
+  p_staging_object_key text,
+  p_max_bytes bigint,
+  p_expires_at timestamptz,
+  p_issued_by text
+)
+RETURNS TABLE (
+  capability_id uuid,
+  request_id text,
+  candidate_id text,
+  document_type text,
+  staging_object_key text,
+  expires_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := clock_timestamp();
+BEGIN
+  IF p_tenant_id IS DISTINCT FROM public.workforce_current_tenant()
+     OR p_token_sha256 IS NULL
+     OR octet_length(p_token_sha256) <> 32
+     OR p_expires_at IS NULL
+     OR p_expires_at <= v_now THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate capability rejected';
+  END IF;
+
+  INSERT INTO recruitment.candidate_upload_capabilities (
+    tenant_id, capability_id, request_id, candidate_id, token_sha256,
+    document_type, staging_object_key, max_bytes, issued_at, expires_at, issued_by
+  ) VALUES (
+    p_tenant_id, p_capability_id, p_request_id, p_candidate_id, p_token_sha256,
+    p_document_type, p_staging_object_key, p_max_bytes, v_now, p_expires_at, p_issued_by
+  );
+
+  RETURN QUERY SELECT p_capability_id, p_request_id, p_candidate_id,
+    p_document_type, p_staging_object_key, p_expires_at;
+EXCEPTION
+  WHEN SQLSTATE '28000' THEN
+    RAISE;
+  WHEN OTHERS THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate capability rejected';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION recruitment.get_candidate_evidence_scan_binding(
+  p_tenant_id text,
+  p_evidence_id uuid
+)
+RETURNS TABLE (request_id text, candidate_id text, evidence_sha256 bytea)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF p_tenant_id IS DISTINCT FROM public.workforce_current_tenant() THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'scanner receipt rejected';
+  END IF;
+  RETURN QUERY
+    SELECT evidence.request_id, evidence.candidate_id, evidence.sha256
+      FROM recruitment.candidate_evidence_objects AS evidence
+     WHERE evidence.tenant_id = p_tenant_id AND evidence.evidence_id = p_evidence_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'scanner receipt rejected';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION recruitment.record_candidate_evidence_scan_receipt(
+  p_tenant_id text,
+  p_scan_receipt_id uuid,
+  p_evidence_id uuid,
+  p_provider text,
+  p_provider_key_id text,
+  p_receipt_id text,
+  p_evidence_sha256 bytea,
+  p_result text,
+  p_algorithm text,
+  p_signed_payload_sha256 bytea,
+  p_signature_sha256 bytea,
+  p_scanned_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF p_tenant_id IS DISTINCT FROM public.workforce_current_tenant()
+     OR p_result NOT IN ('CLEAN','INFECTED','ERROR')
+     OR p_scanned_at IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'scanner receipt rejected';
+  END IF;
+  INSERT INTO recruitment.candidate_evidence_scan_receipts (
+    tenant_id, scan_receipt_id, evidence_id, provider, provider_key_id,
+    receipt_id, evidence_sha256, result, algorithm, signed_payload_sha256,
+    signature_sha256, scanned_at, signature_verified
+  ) VALUES (
+    p_tenant_id, p_scan_receipt_id, p_evidence_id, p_provider, p_provider_key_id,
+    p_receipt_id, p_evidence_sha256, p_result, p_algorithm,
+    p_signed_payload_sha256, p_signature_sha256, p_scanned_at, true
+  );
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'scanner receipt rejected';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION recruitment.revoke_candidate_upload_capability(
+  p_tenant_id text,
+  p_capability_id uuid,
+  p_revoked_by text,
+  p_revoke_reason text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_capability recruitment.candidate_upload_capabilities%ROWTYPE;
+BEGIN
+  IF p_tenant_id IS DISTINCT FROM public.workforce_current_tenant()
+     OR NULLIF(btrim(p_revoked_by), '') IS NULL
+     OR NULLIF(btrim(p_revoke_reason), '') IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate capability rejected';
+  END IF;
+
+  SELECT * INTO v_capability
+    FROM recruitment.candidate_upload_capabilities
+   WHERE tenant_id = p_tenant_id AND capability_id = p_capability_id
+   FOR UPDATE;
+
+  IF NOT FOUND OR v_capability.revoked_at IS NOT NULL OR v_capability.consumed_at IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate capability rejected';
+  END IF;
+
+  UPDATE recruitment.candidate_upload_capabilities
+     SET revoked_at = clock_timestamp(),
+         revoked_by = p_revoked_by,
+         revoke_reason = p_revoke_reason
+   WHERE tenant_id = p_tenant_id AND capability_id = p_capability_id;
+EXCEPTION
+  WHEN SQLSTATE '28000' THEN
+    RAISE;
+  WHEN OTHERS THEN
+    RAISE EXCEPTION USING ERRCODE = '28000', MESSAGE = 'candidate capability rejected';
+END;
+$$;
+
 ALTER TABLE recruitment.candidate_upload_capabilities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recruitment.candidate_upload_capabilities FORCE ROW LEVEL SECURITY;
 ALTER TABLE recruitment.candidate_evidence_objects ENABLE ROW LEVEL SECURITY;
@@ -213,6 +466,43 @@ CREATE POLICY candidate_scan_receipt_tenant ON recruitment.candidate_evidence_sc
 
 REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM PUBLIC;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA recruitment FROM PUBLIC;
+
+-- Role creation and membership remain deployment authority.  If the dedicated
+-- roles exist, grant only the narrow routines and never direct table access.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eay_candidate_upload_runtime') THEN
+    REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM eay_candidate_upload_runtime;
+    REVOKE ALL ON ALL FUNCTIONS IN SCHEMA recruitment FROM eay_candidate_upload_runtime;
+    GRANT USAGE ON SCHEMA recruitment TO eay_candidate_upload_runtime;
+    GRANT EXECUTE ON FUNCTION recruitment.finalize_candidate_evidence_upload(
+      text, bytea, text, uuid, text, text, bigint, bytea, timestamptz
+    ) TO eay_candidate_upload_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eay_recruitment_runtime') THEN
+    REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM eay_recruitment_runtime;
+    REVOKE ALL ON ALL FUNCTIONS IN SCHEMA recruitment FROM eay_recruitment_runtime;
+    GRANT USAGE ON SCHEMA recruitment TO eay_recruitment_runtime;
+    GRANT EXECUTE ON FUNCTION recruitment.issue_candidate_upload_capability(
+      text, uuid, text, text, bytea, text, text, bigint, timestamptz, text
+    ) TO eay_recruitment_runtime;
+    GRANT EXECUTE ON FUNCTION recruitment.revoke_candidate_upload_capability(
+      text, uuid, text, text
+    ) TO eay_recruitment_runtime;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eay_candidate_scanner_runtime') THEN
+    REVOKE ALL ON ALL TABLES IN SCHEMA recruitment FROM eay_candidate_scanner_runtime;
+    REVOKE ALL ON ALL FUNCTIONS IN SCHEMA recruitment FROM eay_candidate_scanner_runtime;
+    GRANT USAGE ON SCHEMA recruitment TO eay_candidate_scanner_runtime;
+    GRANT EXECUTE ON FUNCTION recruitment.get_candidate_evidence_scan_binding(
+      text, uuid
+    ) TO eay_candidate_scanner_runtime;
+    GRANT EXECUTE ON FUNCTION recruitment.record_candidate_evidence_scan_receipt(
+      text, uuid, uuid, text, text, text, bytea, text, text, bytea, bytea, timestamptz
+    ) TO eay_candidate_scanner_runtime;
+  END IF;
+END;
+$$;
 
 INSERT INTO workforce_schema_migrations(version, name)
 VALUES (39, 'tenant scoped recruitment candidate upload authority')

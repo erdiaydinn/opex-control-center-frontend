@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from app.modules.workforce import persistence
 from app.modules.workforce.service import list_people, list_warehouses, resolve_person_identity, upsert_people
+from app.modules.recruitment import candidate_upload_authority
 
 
 _LOCK = Lock()
@@ -468,6 +469,13 @@ def issue_candidate_upload_capability(
     normalized_type = str(document_type or "").strip().upper()
     if normalized_type not in _OFFICIAL_DOCUMENT_TYPES | {"OTHER"}:
         raise RecruitmentRuleError("Desteklenmeyen aday belge türü.")
+    if os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "disabled").strip().lower() == "postgres":
+        try:
+            return candidate_upload_authority.issue(
+                request_id, candidate_id, normalized_type, expires_in_minutes, actor,
+            )
+        except candidate_upload_authority.CandidateUploadAuthorityError as error:
+            raise RecruitmentRuleError(str(error)) from error
     raw_token = secrets.token_urlsafe(32)
     token_digest = sha256(raw_token.encode("utf-8")).hexdigest()
     with _LOCK:
@@ -729,6 +737,10 @@ def record_candidate_content_safety_scan(
     scanner_receipt_id: str, scanner_engine: str, actor: str, *, provider_signature_verified: bool = False,
 ) -> dict:
     """Seal a signed malware-scanner result to the exact immutable evidence bytes."""
+    if os.getenv("DOCKOS_ENV", "development").strip().lower() == "production":
+        raise RecruitmentRuleError(
+            "Production scanner sonucu kriptografik receipt otoritesi üzerinden kaydedilmelidir."
+        )
     if not provider_signature_verified:
         raise RecruitmentRuleError("İçerik güvenliği sağlayıcı imzası doğrulanmadı.")
     normalized_result = str(result).strip().upper()
@@ -822,7 +834,10 @@ def candidate_evidence_path(request_id: str, candidate_id: str, digest: str) -> 
         raise RecruitmentRuleError("Aday kanıtı bulunamadı.")
     if evidence.get("content_safety_state") != "MALWARE_CLEARED":
         raise RecruitmentRuleError("Aday kanıtı içerik güvenliği karantinasından çıkmadı.")
-    path = _EVIDENCE_DIR / evidence["stored_name"]
+    stored = Path(str(evidence["stored_name"]))
+    if stored.is_absolute() or ".." in stored.parts:
+        raise RecruitmentRuleError("Aday kanıt arşiv anahtarı geçersiz.")
+    path = _EVIDENCE_DIR / stored
     if not path.exists():
         raise RecruitmentRuleError("Aday kanıt dosyası arşivde bulunamadı.")
     return path, evidence
@@ -854,7 +869,9 @@ def purge_expired_recruitment_data(actor: str, now: datetime | None = None) -> d
             for evidence in items:
                 retention_until = evidence.get("retention_until")
                 if retention_until and datetime.fromisoformat(retention_until) <= cutoff:
-                    (_EVIDENCE_DIR / Path(evidence["stored_name"]).name).unlink(missing_ok=True)
+                    stored = Path(str(evidence["stored_name"]))
+                    if not stored.is_absolute() and ".." not in stored.parts:
+                        (_EVIDENCE_DIR / stored).unlink(missing_ok=True)
                     deleted_evidence += 1
                     changed = True
                 else:

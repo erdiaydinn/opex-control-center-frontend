@@ -51,7 +51,7 @@ def _product_capacity(product: dict[str, Any], shelf: dict[str, Any]) -> dict[st
     shelf_depth_cm = max(0.0, _num(shelf.get("shelf_depth_cm")))
     evidence_complete = all(value > 0 for value in (width_cm, height_cm, depth_cm, weight_kg))
     depth_units = (
-        max(1, int(math.floor(shelf_depth_cm / depth_cm)))
+        max(1, math.floor(shelf_depth_cm / depth_cm))
         if depth_cm > 0 and shelf_depth_cm > 0
         else 0
     )

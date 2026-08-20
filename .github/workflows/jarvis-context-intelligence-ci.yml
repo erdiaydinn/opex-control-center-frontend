@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - product/jarvis-context-intelligence-v1
+      - product/jarvis-general-intelligence-v1
     paths:
       - "services/eay-ai-core/app/**"
       - "services/eay-ai-core/tests/**"

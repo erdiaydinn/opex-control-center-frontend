@@ -29,7 +29,7 @@
   "internal_migrations": {
     "native_allocator_full_depth_weight_accounting": "mitigated_by_capacity_v2_veto",
     "commercial_facing_above_5": "bounded_by_conservative_convergence",
-    "github_actions_current_sha": "not_observed"
+    "github_actions_exact_sha_evidence": "runtime_observation_required"
   },
   "remaining_external_product_gaps": [
     "real_wms_iot_scanner_connector_provenance",

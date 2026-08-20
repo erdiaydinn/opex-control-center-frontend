@@ -38,6 +38,13 @@ function elementColor(type) {
   return colors[type] ?? 0x94a3b8;
 }
 
+function fixtureColor(fixture) {
+  const storage = String(fixture?.hinted_storage_type || "").toUpperCase();
+  if (storage === "CHILLED") return 0x0891b2;
+  if (storage === "FROZEN") return 0x2563eb;
+  return 0xdf1067;
+}
+
 function ScannedTwinScene({ architecture, fixtures, preset, t }) {
   const mountRef = useRef(null);
   const [state, setState] = useState("loading");
@@ -87,8 +94,12 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
         floor.receiveShadow = true;
         scene.add(floor);
 
+        const architectureEquipmentIds = new Set();
         for (const element of architecture.elements || []) {
           const type = String(element.element_type || "");
+          if (type === "chiller" || type === "freezer") {
+            architectureEquipmentIds.add(String(element.element_id || ""));
+          }
           const height = elementHeight(type);
           if (type === "picker_entry" || type === "picker_exit") {
             const geometry = new THREE.CylinderGeometry(0.16, 0.16, 0.05, 24);
@@ -122,9 +133,10 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
         }
 
         for (const fixture of fixtures || []) {
+          if (architectureEquipmentIds.has(String(fixture.element_id || ""))) continue;
           const geometry = new THREE.BoxGeometry(fixture.width_m, 1.6, fixture.depth_m);
           const material = new THREE.MeshStandardMaterial({
-            color: 0xdf1067,
+            color: fixtureColor(fixture),
             roughness: 0.5,
             metalness: 0.08,
             transparent: true,
@@ -211,23 +223,14 @@ function ScannedTwinScene({ architecture, fixtures, preset, t }) {
 
   return (
     <div className="eay-scanned-twin-scene">
-      {state === "loading" ? (
-        <div className="eay-scanned-twin-state" role="status">{t("loading")}</div>
-      ) : null}
-      {state === "error" ? (
-        <div className="eay-scanned-twin-state is-error" role="alert">{t("error")}</div>
-      ) : null}
+      {state === "loading" ? <div className="eay-scanned-twin-state" role="status">{t("loading")}</div> : null}
+      {state === "error" ? <div className="eay-scanned-twin-state is-error" role="alert">{t("error")}</div> : null}
       <div ref={mountRef} className="eay-scanned-twin-canvas" data-state={state} />
     </div>
   );
 }
 
-export default function PlanogramScannedDigitalTwin({
-  reviewedResult,
-  scan,
-  locale,
-  formatNumber,
-}) {
+export default function PlanogramScannedDigitalTwin({ reviewedResult, scan, locale, formatNumber }) {
   const t = useMemo(() => (key) => translatePlanogramScannedTwin(locale, key), [locale]);
   const numberFormat = useMemo(() => {
     if (typeof formatNumber === "function") return formatNumber;
@@ -237,19 +240,14 @@ export default function PlanogramScannedDigitalTwin({
   const [preset, setPreset] = useState("overview");
   const architecture = reviewedResult?.reviewed_store_dna_v2_preview?.architecture || null;
   if (!architecture?.elements?.length) return null;
-  const operationalCount = architecture.elements.filter(
-    (row) => OPERATIONAL_TYPES.has(row.element_type)
-  ).length;
+  const operationalCount = architecture.elements.filter((row) => OPERATIONAL_TYPES.has(row.element_type)).length;
   const measuredCount = architecture.elements.length - operationalCount;
   const fixtureCount = scan?.recognized_fixtures?.length || 0;
 
   return (
     <section className="eay-scanned-twin">
       <header>
-        <div>
-          <ScanSearch size={21} aria-hidden="true" />
-          <div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div>
-        </div>
+        <div><ScanSearch size={21} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>
         <span>{t("previewOnly")}</span>
       </header>
       <div className="eay-scanned-twin-metrics">
@@ -261,12 +259,7 @@ export default function PlanogramScannedDigitalTwin({
         <button type="button" aria-pressed={preset === "overview"} onClick={() => setPreset("overview")}>{t("overview")}</button>
         <button type="button" aria-pressed={preset === "picker"} onClick={() => setPreset("picker")}>{t("pickerView")}</button>
       </div>
-      <ScannedTwinScene
-        architecture={architecture}
-        fixtures={scan?.recognized_fixtures || []}
-        preset={preset}
-        t={t}
-      />
+      <ScannedTwinScene architecture={architecture} fixtures={scan?.recognized_fixtures || []} preset={preset} t={t} />
       <p className="eay-scanned-twin-boundary">{t("boundary")}</p>
     </section>
   );

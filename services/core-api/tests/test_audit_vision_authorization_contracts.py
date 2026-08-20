@@ -36,7 +36,6 @@ from app.modules.audit.vision_model_proof import (
     UnavailableProductionModelProofVerifier,
 )
 
-
 PROOF_TOKEN = "audit-model-proof-test-token-32-bytes-minimum"
 
 

@@ -6,9 +6,14 @@ import { createServer } from "vite";
 const vite = await createServer({ server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
 try {
   const module = await vite.ssrLoadModule("/src/modules/workforce/WorkforceExperienceCenter.jsx");
+  const auth = await vite.ssrLoadModule("/src/auth/AuthContext.jsx");
   const preferences = await vite.ssrLoadModule("/src/platform/preferences/PlatformPreferencesContext.jsx");
   const renderWithPreferences = (component) => renderToStaticMarkup(
-    React.createElement(preferences.PlatformPreferencesProvider, null, component),
+    React.createElement(
+      auth.AuthProvider,
+      null,
+      React.createElement(preferences.PlatformPreferencesProvider, null, component),
+    ),
   );
   const mobile = renderWithPreferences(React.createElement(module.WorkforceExperienceCenter, { onBack() {} }));
   const admin = renderWithPreferences(React.createElement(module.WorkforceExperienceAdmin));

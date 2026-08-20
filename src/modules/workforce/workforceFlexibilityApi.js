@@ -23,6 +23,22 @@ async function safe(request, fallback = SAFE_ERROR) {
   }
 }
 
+function demandPayload(values) {
+  return {
+    worksite_id: values.worksiteId,
+    interval_start: values.intervalStart,
+    interval_minutes: Number(values.intervalMinutes || 60),
+    model_version: values.modelVersion || "generic-work-activity-v1",
+    signals: (values.signals || []).map((signal) => ({
+      driver_key: signal.driverKey,
+      activity_key: signal.activityKey,
+      demand_mode: signal.demandMode,
+      quantity: Number(signal.quantity || 0),
+      source_ref: signal.sourceRef,
+    })),
+  };
+}
+
 export async function loadWorkforceFlexibility(personId) {
   const query = `person_id=${encodeURIComponent(personId)}`;
   const [availability, openShifts] = await Promise.all([
@@ -124,19 +140,11 @@ export async function retireWorkforceLaborStandard(activityKey) {
 }
 
 export async function previewWorkforceActivityDemand(values) {
-  return safe(apiPost("/workforce/flexibility/demand-preview", {
-    worksite_id: values.worksiteId,
-    interval_start: values.intervalStart,
-    interval_minutes: Number(values.intervalMinutes || 60),
-    model_version: values.modelVersion || "generic-work-activity-v1",
-    signals: (values.signals || []).map((signal) => ({
-      driver_key: signal.driverKey,
-      activity_key: signal.activityKey,
-      demand_mode: signal.demandMode,
-      quantity: Number(signal.quantity || 0),
-      source_ref: signal.sourceRef,
-    })),
-  }));
+  return safe(apiPost("/workforce/flexibility/demand-preview", demandPayload(values)));
+}
+
+export async function previewWorkforceActivityCapacity(values) {
+  return safe(apiPost("/workforce/activity-capacity-preview", demandPayload(values)));
 }
 
 export async function updateWorkforceEmployeeCapabilities(employeeId, values) {

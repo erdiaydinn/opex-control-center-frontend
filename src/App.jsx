@@ -27,6 +27,7 @@ const WorkforceBootstrapBoundary = lazy(() => import("./modules/workforce/Workfo
 const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
 const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
 const RecruitmentOnboardingTasks = lazy(() => import("./modules/recruitment/RecruitmentOnboardingTasks.jsx"));
+const OnboardingTaskLauncher = lazy(() => import("./modules/recruitment/OnboardingTaskLauncher.jsx"));
 const CandidateOfferPortal = lazy(() => import("./modules/recruitment/CandidateOfferPortal.jsx"));
 const CandidateInterviewPortal = lazy(() => import("./modules/recruitment/CandidateInterviewPortal.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
@@ -67,7 +68,7 @@ export default function App() {
               are immediately removed from the address bar and public API calls attach no employee token. */}
           <Route path="/candidate/offer" element={<CandidateOfferPortal />} />
           <Route path="/candidate/interview" element={<CandidateInterviewPortal />} />
-          <Route path="/" element={<ProtectedRoute><ControlCenterHome /></ProtectedRoute>} />
+          <Route path="/" element={<ProtectedRoute><><ControlCenterHome /><OnboardingTaskLauncher /></></ProtectedRoute>} />
           <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
           <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
           <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />

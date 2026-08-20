@@ -1,0 +1,45 @@
+name: EAY Hiring UI Gateway
+
+on:
+  pull_request:
+    branches: [product/eay-hiring-ai-document-trust-v1]
+    paths:
+      - "src/App.jsx"
+      - "src/api/client.js"
+      - "src/modules/recruitment/**"
+      - "Dockerfile"
+      - "nginx.conf"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/eay-hiring-ui-gateway.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-hiring-ui-gateway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-gateway-contract:
+    name: Frontend build and nginx rendered-config contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Build production UI image
+        run: docker build --tag eay-hiring-ui-gateway-ci .
+      - name: Prove envsubst gateway identity and document policy
+        run: >-
+          docker run --rm
+          -e DOCKOS_GATEWAY_SECRET=ci-gateway-secret-do-not-use
+          eay-hiring-ui-gateway-ci
+          sh -ec '
+            test -f /etc/nginx/conf.d/default.conf &&
+            grep -Fq "proxy_set_header X-DockOS-Gateway ci-gateway-secret-do-not-use;" /etc/nginx/conf.d/default.conf &&
+            grep -Fq "Content-Security-Policy" /etc/nginx/conf.d/default.conf &&
+            grep -Fq "Permissions-Policy \"camera=(self), microphone=(), geolocation=(self)\"" /etc/nginx/conf.d/default.conf &&
+            ! grep -Fq "${DOCKOS_GATEWAY_SECRET}" /etc/nginx/conf.d/default.conf &&
+            nginx -t
+          '

@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">EAY Inventory</string>
+    <string name="eay_mobile_app_name">EAY Mobile</string>
     <string name="managed_device_uuid">Managed device UUID</string>
     <string name="managed_enrollment_code">Single-use enrollment code</string>
     <string name="terminal_sign_in">Sign in with corporate SSO</string>

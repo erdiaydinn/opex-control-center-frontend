@@ -10,7 +10,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="@string/app_name"
+        android:label="@string/eay_mobile_app_name"
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.OpexInventory"
@@ -20,15 +20,19 @@
             android:name="android.content.APP_RESTRICTIONS"
             android:resource="@xml/app_restrictions" />
         <activity
-            android:name=".MainActivity"
+            android:name=".EayMobilePreviewActivity"
             android:exported="true"
-            android:launchMode="singleTop"
             android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait" />
         <activity
             android:name="net.openid.appauth.RedirectUriReceiverActivity"
             android:exported="true">

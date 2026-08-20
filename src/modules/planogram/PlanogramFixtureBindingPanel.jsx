@@ -300,7 +300,9 @@ export default function PlanogramFixtureBindingPanel({
                 <label>
                   <span>{c("side")}</span>
                   <select value={selection.side || ""} onChange={(event) => updateSelection(fixture.element_id, "side", event.target.value)}>
-                    <option value="">—</option><option value="L">L</option><option value="R">R</option>
+                    <option value="">—</option>
+                    {/* i18n-data-literal: fixture side protocol values stored as L/R machine codes */}
+                    <option value="L">L</option><option value="R">R</option>
                   </select>
                 </label>
                 <label><span>{c("position")}</span><input type="number" min="1" max="500" step="1" value={selection.position || ""} onChange={(event) => updateSelection(fixture.element_id, "position", event.target.value)} /></label>

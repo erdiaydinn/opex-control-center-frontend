@@ -1,5 +1,4 @@
 import * as XLSX from "xlsx";
-import { apiPost } from "../../api/client.js";
 import { normalizeWarehouseName, resolveHrWarehouse } from "./staffingNorms.js";
 
 function safeNumber(value) {
@@ -288,6 +287,7 @@ export async function parseTimeOffFile(file) {
   // Node-based unit tests keep the deterministic local parser. Browser runtime
   // always delegates untrusted XLSX/CSV parsing to the authenticated backend.
   if (typeof window === "undefined" || typeof btoa === "undefined") return parseTimeOffFileLocal(file);
+  const { apiPost } = await import("../../api/client.js");
   const bytes = new Uint8Array(await file.arrayBuffer());
   const parsed = await apiPost("/workforce/time-off/parse", {
     file_name: file.name,

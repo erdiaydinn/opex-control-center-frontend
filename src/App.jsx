@@ -28,6 +28,7 @@ const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePicke
 const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
 const RecruitmentOnboardingTasks = lazy(() => import("./modules/recruitment/RecruitmentOnboardingTasks.jsx"));
 const OnboardingTaskLauncher = lazy(() => import("./modules/recruitment/OnboardingTaskLauncher.jsx"));
+const CandidateDocumentPortal = lazy(() => import("./modules/recruitment/CandidateDocumentPortal.jsx"));
 const CandidateOfferPortal = lazy(() => import("./modules/recruitment/CandidateOfferPortal.jsx"));
 const CandidateInterviewPortal = lazy(() => import("./modules/recruitment/CandidateInterviewPortal.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           {/* Candidate capability portals stay outside employee SSO. Secrets live in URL fragments,
               are immediately removed from the address bar and public API calls attach no employee token. */}
+          <Route path="/candidate/documents" element={<CandidateDocumentPortal />} />
           <Route path="/candidate/offer" element={<CandidateOfferPortal />} />
           <Route path="/candidate/interview" element={<CandidateInterviewPortal />} />
           <Route path="/" element={<ProtectedRoute><><ControlCenterHome /><OnboardingTaskLauncher /></></ProtectedRoute>} />

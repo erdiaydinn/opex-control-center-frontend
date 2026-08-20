@@ -52,16 +52,16 @@ export async function claimWorkforceOpenShift(openShiftId, personId) {
 }
 
 export async function loadWorkforceFlexibilityAdmin() {
-  const [locations, activities, people] = await Promise.all([
+  const [locations, activities] = await Promise.all([
     safe(apiGet("/workforce/warehouses")),
     safe(apiGet("/workforce/flexibility/activities")),
-    safe(apiGet("/workforce/people")),
   ]);
-  return {
-    locations: locations.rows || [],
-    activities: activities.rows || [],
-    people: people.rows || [],
-  };
+  return { locations: locations.rows || [], activities: activities.rows || [] };
+}
+
+export async function loadWorkforceCapabilityPeople() {
+  const result = await safe(apiGet("/workforce/people"));
+  return result.rows || [];
 }
 
 export async function createWorkforceOpenShift(values) {

@@ -117,7 +117,7 @@ def build_operational_intent(kind: str, payload: dict[str, Any]) -> dict[str, An
         conditions = sorted(
             {
                 str(value).strip().upper()
-                for value in (payload.get("allowed_conditions") or ["GOOD"])
+                for value in (payload.get("allowed_conditions") or [])
                 if str(value).strip()
             }
         )
@@ -378,15 +378,27 @@ def record_operational_event(
             (_advisory_key(f"operational:{principal.tenant_id}:{mission_id}"),),
         )
         old = db.execute(
-            """SELECT e.payload_hash,r.response
+            """SELECT e.payload_hash,e.employee_id,e.device_id,e.shift_id,
+                      e.mission_id,e.claim_id,m.warehouse_id,r.response
                FROM inventory_operational_events e
                JOIN inventory_operational_event_responses r USING(tenant_id,event_id)
+               JOIN inventory_operational_missions m
+                 ON m.tenant_id=e.tenant_id AND m.mission_id=e.mission_id
                WHERE e.tenant_id=%s AND e.event_id=%s""",
             (principal.tenant_id, event_id),
         ).fetchone()
         if old:
             if old["payload_hash"] != calculated:
                 raise InventoryRuleError("Event ID farklı payload ile tekrar kullanılamaz.")
+            if (
+                old["employee_id"] != principal.employee_id
+                or old["device_id"] != principal.device_id
+                or old["shift_id"] != shift
+                or old["mission_id"] != mission_id
+                or old["claim_id"] != claim_id
+                or old["warehouse_id"] not in principal.warehouse_scope
+            ):
+                raise PermissionError("Operational replay aktör/cihaz/vardiya/mission bağı geçersiz.")
             replay = dict(old["response"])
             replay["idempotent_replay"] = True
             db.commit()

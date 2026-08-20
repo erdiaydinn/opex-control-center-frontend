@@ -60,12 +60,13 @@ class CandidateEvidenceStorageTests(unittest.TestCase):
         self.digest = sha256(self.content).hexdigest()
         self.key = "quarantine/eay-ci/11111111-1111-1111-1111-111111111111"
 
-    def put(self, retention_until: datetime | None = None):
+    def put(self, retention_until: datetime | None = None, *, content: bytes | None = None):
+        value = self.content if content is None else content
         return self.store.put(
             tenant_id="eay-ci",
             object_key=self.key,
-            plaintext=self.content,
-            expected_sha256=self.digest,
+            plaintext=value,
+            expected_sha256=sha256(value).hexdigest(),
             retention_until=retention_until or datetime.now(UTC) + timedelta(days=1),
         )
 
@@ -80,6 +81,14 @@ class CandidateEvidenceStorageTests(unittest.TestCase):
             ),
             self.content,
         )
+
+    def test_duplicate_same_bytes_is_retry_safe_but_different_bytes_fail(self):
+        retention_until = datetime.now(UTC) + timedelta(days=1)
+        first = self.put(retention_until)
+        second = self.put(retention_until)
+        self.assertEqual(first["object_key"], second["object_key"])
+        with self.assertRaises(EvidenceStorageError):
+            self.put(retention_until, content=b"%PDF-1.7\ndifferent-evidence")
 
     def test_digest_mismatch_fails(self):
         self.put()
@@ -121,7 +130,6 @@ class CandidateEvidenceStorageTests(unittest.TestCase):
             now=retention_until + timedelta(seconds=1),
         )
         self.assertNotIn(("bucket", self.key), self.s3.objects)
-        # A DB metadata cleanup failure after deletion must be recoverable.
         self.store.delete_after_retention(
             tenant_id="eay-ci",
             object_key=self.key,

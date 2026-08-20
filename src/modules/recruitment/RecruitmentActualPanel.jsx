@@ -60,7 +60,7 @@ export default function RecruitmentActualPanel({ data, refresh, flash, setError,
 
     <div className="rec-panel">
       <div className="rec-panel-head"><div><span className="rec-kicker">{m("staffingReconciliation")}</span><h2>{m("staffingReconciliationHeading")}</h2></div><button className="rec-secondary" onClick={refresh}><RefreshCw size={16} /> {m("refresh")}</button></div>
-      <div className="rec-table-wrap"><table className="rec-actual-table"><thead><tr><th>{m("depot")}</th><th>{m("capacity")}</th><th>{m("hrActual")}</th><th>{m("fte")}</th><th>Employee Master</th><th>{m("hrEmDelta")}</th><th>{m("openReq")}</th><th>{m("netGap")}</th><th>{m("dataQuality")}</th></tr></thead><tbody>
+      <div className="rec-table-wrap"><table className="rec-actual-table"><thead><tr><th>{m("depot")}</th><th>{m("capacity")}</th><th>{m("hrActual")}</th><th>{m("fte")}</th><th>{m("emActual")}</th><th>{m("hrEmDelta")}</th><th>{m("openReq")}</th><th>{m("netGap")}</th><th>{m("dataQuality")}</th></tr></thead><tbody>
         {rows.map((row) => <tr key={row.warehouseName}>
           <td><strong>{row.warehouseName}</strong><small>{row.normRecord?.regionalExecutive || m("byPending")}</small></td>
           <td><strong>{row.capacity}</strong><small>{row.normStatus === "TEMPORARY_ACTIVE" ? m("temporaryNorm") : m("capacityLabel")}</small></td>

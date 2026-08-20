@@ -103,3 +103,19 @@ class DeviceEnrollCreate(BaseModel):
 
     activation_code: str = Field(min_length=32, max_length=256)
     public_key_pem: str = Field(min_length=100, max_length=2000)
+
+
+class DeviceReplaceCreate(BaseModel):
+    """Managed replacement request issued from the new physical device.
+
+    Tenant, employee and new-device identity never come from this body. They are
+    derived from verified OIDC plus X-EAY-Device-ID. The old device id is only the
+    authority being revoked/superseded; queued evidence is never rebound to the
+    replacement device.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    replaced_device_id: str = Field(min_length=36, max_length=36)
+    activation_code: str = Field(min_length=32, max_length=256)
+    public_key_pem: str = Field(min_length=100, max_length=2000)

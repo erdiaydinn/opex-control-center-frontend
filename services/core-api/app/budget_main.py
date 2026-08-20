@@ -3,9 +3,11 @@
 from app.main import app
 from app.modules.budget.planning_engine_routes import router as budget_planning_router
 from app.modules.budget.routes import router as budget_router
+from app.modules.planogram.commercial_router import router as planogram_commercial_router
 from app.modules.planogram.economics_router import router as planogram_economics_router
 from app.modules.planogram.execution_router import router as planogram_execution_router
 from app.modules.planogram.optimizer_router import router as planogram_optimizer_router
+from app.modules.planogram.realogram_router import router as planogram_realogram_router
 from app.modules.planogram.router import router as planogram_router
 from app.modules.planogram.scenario_router import router as planogram_scenario_router
 from app.modules.planogram.shelf_scan_router import router as planogram_shelf_scan_router
@@ -26,3 +28,5 @@ app.include_router(planogram_economics_router)
 app.include_router(planogram_scenario_router)
 app.include_router(planogram_store_scan_review_router)
 app.include_router(planogram_store_scan_fixture_router)
+app.include_router(planogram_commercial_router)
+app.include_router(planogram_realogram_router)

@@ -1,0 +1,96 @@
+name: EAY Planogram - Commercial Merchandising and Temporal Realogram
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "apps/planai/backend/commercial_merchandising.py"
+      - "apps/planai/backend/tests/test_commercial_merchandising.py"
+      - "services/core-api/app/modules/planogram/commercial_adapter.py"
+      - "services/core-api/app/modules/planogram/commercial_router.py"
+      - "services/core-api/app/modules/planogram/temporal_realogram.py"
+      - "services/core-api/app/modules/planogram/realogram_router.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_commercial_realogram_contract.py"
+      - "services/core-api/tests/test_planogram_temporal_realogram.py"
+      - ".github/workflows/eay-planogram-commercial-realogram.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/commercial_merchandising.py"
+      - "apps/planai/backend/tests/test_commercial_merchandising.py"
+      - "services/core-api/app/modules/planogram/commercial_adapter.py"
+      - "services/core-api/app/modules/planogram/commercial_router.py"
+      - "services/core-api/app/modules/planogram/temporal_realogram.py"
+      - "services/core-api/app/modules/planogram/realogram_router.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_commercial_realogram_contract.py"
+      - "services/core-api/tests/test_planogram_temporal_realogram.py"
+      - ".github/workflows/eay-planogram-commercial-realogram.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-commercial-realogram-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commercial-realogram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API test dependencies
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Strict lint new retail-intelligence surfaces
+        run: >-
+          ruff check
+          apps/planai/backend/commercial_merchandising.py
+          apps/planai/backend/tests/test_commercial_merchandising.py
+          services/core-api/app/modules/planogram/commercial_adapter.py
+          services/core-api/app/modules/planogram/commercial_router.py
+          services/core-api/app/modules/planogram/temporal_realogram.py
+          services/core-api/app/modules/planogram/realogram_router.py
+          services/core-api/app/budget_main.py
+          services/core-api/tests/test_planogram_commercial_realogram_contract.py
+          services/core-api/tests/test_planogram_temporal_realogram.py
+      - name: Commercial assortment facing space elasticity and replenishment convergence
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_commercial_merchandising.py
+      - name: Temporal realogram and API contract convergence
+        run: >-
+          python -m pytest -q
+          services/core-api/tests/test_planogram_temporal_realogram.py
+          services/core-api/tests/test_planogram_commercial_realogram_contract.py
+      - name: Prove API routes and authority boundaries
+        run: |
+          python - <<'PY'
+          from app.budget_main import app
+
+          paths = app.openapi()["paths"]
+          required = {
+              "/v1/planogram/commercial-merchandising-preview",
+              "/v1/planogram/temporal-realogram-preview",
+          }
+          assert required <= set(paths), sorted(required - set(paths))
+          print("PLANOGRAM_COMMERCIAL_MERCHANDISING_PREVIEW=PASS")
+          print("PLANOGRAM_TEMPORAL_REALOGRAM_PREVIEW=PASS")
+          print("PLANOGRAM_ASSORTMENT_EXECUTION_AUTHORITY=FALSE")
+          print("PLANOGRAM_REALOGRAM_AUTO_CORRECTION_AUTHORITY=FALSE")
+          print("PLANOGRAM_MARKET_LEADERSHIP_FIELD_PROOF=REQUIRED")
+          PY

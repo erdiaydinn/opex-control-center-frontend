@@ -26,6 +26,7 @@ const InventoryProductionBoundary = lazy(() => import("./modules/inventory/Inven
 const WorkforceBootstrapBoundary = lazy(() => import("./modules/workforce/WorkforceBootstrapBoundary.jsx"));
 const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePickerApp.jsx"));
 const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
+const RecruitmentOnboardingTasks = lazy(() => import("./modules/recruitment/RecruitmentOnboardingTasks.jsx"));
 const CandidateOfferPortal = lazy(() => import("./modules/recruitment/CandidateOfferPortal.jsx"));
 const CandidateInterviewPortal = lazy(() => import("./modules/recruitment/CandidateInterviewPortal.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
@@ -83,6 +84,9 @@ export default function App() {
           <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceBootstrapBoundary /></WorkforceUiProvider></ProtectedRoute>} />
           <Route path="/workforce/app" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforcePickerApp /></WorkforceUiProvider></ProtectedRoute>} />
           <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentBootstrapBoundary /></ProtectedRoute>} />
+          {/* Cross-functional tasks are not tied to Recruitment module visibility; the backend
+              returns only the signed user's owner-role + warehouse-scoped task projection. */}
+          <Route path="/onboarding/tasks" element={<ProtectedRoute><RecruitmentOnboardingTasks /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
           <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute></ProtectedRoute>} />

@@ -7,6 +7,7 @@ PostgreSQL capability authority instead of writing a local file.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from hashlib import sha256
 import os
 from pathlib import Path
@@ -57,6 +58,26 @@ def locate_candidate_evidence(
     return record, candidate, evidence
 
 
+def _encrypted_store_for(evidence: dict) -> S3KmsEnvelopeEvidenceStore:
+    if not persistence.ENABLED or (persistence.schema_version() or 0) < 40:
+        raise CandidateEvidenceRuntimeError(
+            "Şifreli aday kanıt otoritesi V40 olmadan kullanılamaz."
+        )
+    try:
+        store = S3KmsEnvelopeEvidenceStore.from_environment()
+    except EvidenceStorageError as error:
+        raise CandidateEvidenceRuntimeError(str(error)) from error
+    if evidence.get("storage_bucket") != store.bucket:
+        raise CandidateEvidenceRuntimeError("Aday kanıt storage bucket otoritesi eşleşmiyor.")
+    if evidence.get("kms_key_id") != store.kms_key_id:
+        raise CandidateEvidenceRuntimeError("Aday kanıt KMS anahtar otoritesi eşleşmiyor.")
+    if evidence.get("encryption_scheme") != "AES-256-GCM+AWS-KMS-DATA-KEY":
+        raise CandidateEvidenceRuntimeError("Aday kanıt şifreleme sözleşmesi geçersiz.")
+    if int(evidence.get("envelope_version") or 0) != 1:
+        raise CandidateEvidenceRuntimeError("Aday kanıt zarf sürümü desteklenmiyor.")
+    return store
+
+
 def read_candidate_evidence(
     request_id: str,
     candidate_id: str,
@@ -70,22 +91,7 @@ def read_candidate_evidence(
 
     backend = str(evidence.get("storage_backend") or "LEGACY_LOCAL").strip().upper()
     if backend == "S3_KMS_ENVELOPE":
-        if not persistence.ENABLED or (persistence.schema_version() or 0) < 40:
-            raise CandidateEvidenceRuntimeError(
-                "Şifreli aday kanıt okuma otoritesi V40 olmadan kullanılamaz."
-            )
-        try:
-            store = S3KmsEnvelopeEvidenceStore.from_environment()
-        except EvidenceStorageError as error:
-            raise CandidateEvidenceRuntimeError(str(error)) from error
-        if evidence.get("storage_bucket") != store.bucket:
-            raise CandidateEvidenceRuntimeError("Aday kanıt storage bucket otoritesi eşleşmiyor.")
-        if evidence.get("kms_key_id") != store.kms_key_id:
-            raise CandidateEvidenceRuntimeError("Aday kanıt KMS anahtar otoritesi eşleşmiyor.")
-        if evidence.get("encryption_scheme") != "AES-256-GCM+AWS-KMS-DATA-KEY":
-            raise CandidateEvidenceRuntimeError("Aday kanıt şifreleme sözleşmesi geçersiz.")
-        if int(evidence.get("envelope_version") or 0) != 1:
-            raise CandidateEvidenceRuntimeError("Aday kanıt zarf sürümü desteklenmiyor.")
+        store = _encrypted_store_for(evidence)
         try:
             plaintext = store.get(
                 tenant_id=persistence.tenant_id(),
@@ -165,3 +171,48 @@ def secure_hr_candidate_upload(
     if candidate is None:
         raise CandidateEvidenceRuntimeError("Aday kanıt finalize sonrası bulunamadı.")
     return candidate
+
+
+def purge_expired_encrypted_candidate_evidence(
+    *,
+    now: datetime | None = None,
+) -> dict:
+    """Delete expired encrypted objects before aggregate metadata is purged.
+
+    The subsequent DB metadata purge is intentionally separate. If it fails,
+    retrying this phase after retention is idempotent for an already-missing
+    exact object, allowing metadata cleanup without leaking an orphan object.
+    """
+    cutoff = (now or datetime.now(UTC)).astimezone(UTC)
+    deleted = 0
+    for record in _records():
+        for candidate in record.get("candidates", []):
+            for evidence in candidate.get("evidence", []):
+                if str(evidence.get("storage_backend") or "").upper() != "S3_KMS_ENVELOPE":
+                    continue
+                retention_value = evidence.get("retention_until")
+                if not retention_value:
+                    raise CandidateEvidenceRuntimeError(
+                        "Şifreli aday kanıtında retention_until eksik."
+                    )
+                try:
+                    retention_until = datetime.fromisoformat(str(retention_value)).astimezone(UTC)
+                except ValueError as error:
+                    raise CandidateEvidenceRuntimeError(
+                        "Şifreli aday kanıt retention tarihi geçersiz."
+                    ) from error
+                if retention_until > cutoff:
+                    continue
+                store = _encrypted_store_for(evidence)
+                try:
+                    store.delete_after_retention(
+                        tenant_id=persistence.tenant_id(),
+                        object_key=str(evidence.get("stored_name") or evidence.get("object_key") or ""),
+                        expected_sha256=str(evidence["sha256"]),
+                        retention_until=retention_until,
+                        now=cutoff,
+                    )
+                except EvidenceStorageError as error:
+                    raise CandidateEvidenceRuntimeError(str(error)) from error
+                deleted += 1
+    return {"encrypted_objects_deleted": deleted, "cutoff": cutoff.isoformat()}

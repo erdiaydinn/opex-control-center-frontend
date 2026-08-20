@@ -26,7 +26,7 @@ class InventoryDeviceRecoveryPostgresTests(unittest.TestCase):
         ).decode()
 
     def seed_replacement_case(self, *, replacement_scope=frozenset({"WH-1"})):
-        tenant = f"device-recovery-{uuid4()}"
+        tenant = os.getenv("INVENTORY_TEST_TENANT", f"device-recovery-{uuid4()}")
         employee_id = "EMP-RECOVERY"
         old_device_id = uuid4()
         new_device_id = uuid4()

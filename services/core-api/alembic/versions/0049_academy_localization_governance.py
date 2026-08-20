@@ -225,12 +225,18 @@ def upgrade() -> None:
             translator varchar(255);
             latest_event varchar(20);
         BEGIN
+            -- Serialize review-state transitions without granting UPDATE on the
+            -- immutable lineage table. SELECT ... FOR UPDATE would require the
+            -- runtime role to hold UPDATE privilege and would weaken that boundary.
+            PERFORM pg_advisory_xact_lock(
+                hashtextextended(NEW.translation_id::text, 0)
+            );
+
             SELECT translator_subject
             INTO translator
             FROM academy_translation_lineage
             WHERE tenant_id = NEW.tenant_id
-              AND id = NEW.translation_id
-            FOR UPDATE;
+              AND id = NEW.translation_id;
 
             IF translator IS NULL THEN
                 RAISE EXCEPTION 'Academy translation lineage not found';

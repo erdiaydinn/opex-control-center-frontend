@@ -47,6 +47,7 @@ object DataWedge {
     }
 
     fun startSession(context: Context): Session {
+        TerminalFeedbackRuntime.initialize(context)
         val sessionId = randomSessionId()
         val session = Session(
             action = ACTION_PREFIX + sessionId,

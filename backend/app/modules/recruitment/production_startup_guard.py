@@ -2,7 +2,8 @@
 
 The future e-Devlet institutional M2M contract is optional external capacity.
 Every repository/infrastructure-controlled Hiring authority, including governed
-recruitment orchestration, audit fencing and interview scheduling, must be ready.
+recruitment orchestration, audit fencing, interview scheduling and anonymous
+capability abuse protection, must be ready.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import os
 
 from app.modules.workforce import persistence
 from .candidate_evidence_storage import EvidenceStorageError, S3KmsEnvelopeEvidenceStore
+from .public_capability_guard import PublicCapabilityGuardError, preflight as public_capability_preflight
 from .scanner_database_authority import ScannerDatabaseAuthorityError, live_preflight as scanner_db_preflight
 from .scanner_key_authority import AwsKmsHmacKeyAuthority, ScannerKeyAuthorityError
 
@@ -43,5 +45,11 @@ def assert_recruitment_production_ready() -> None:
         S3KmsEnvelopeEvidenceStore.from_environment()
         AwsKmsHmacKeyAuthority.from_environment()
         scanner_db_preflight()
-    except (EvidenceStorageError, ScannerKeyAuthorityError, ScannerDatabaseAuthorityError) as error:
+        public_capability_preflight()
+    except (
+        EvidenceStorageError,
+        ScannerKeyAuthorityError,
+        ScannerDatabaseAuthorityError,
+        PublicCapabilityGuardError,
+    ) as error:
         raise RecruitmentProductionStartupError(str(error)) from error

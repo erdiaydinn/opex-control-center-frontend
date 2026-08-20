@@ -52,11 +52,18 @@ def _project_operational_mobile_row(
     next_step = steps[completed_steps]
 
     planned = Decimal(str(row["planned_quantity"]))
-    allowed_conditions = [
+    stored_conditions = [
         str(value).strip().upper()
         for value in (row.get("allowed_conditions") or [])
         if str(value).strip()
     ]
+    # Conditions are executable mission guidance only for RECEIVING. Historical
+    # rows may carry the old default GOOD value for other mission types; never
+    # project that irrelevant field into a terminal contract that cannot execute it.
+    allowed_conditions = stored_conditions if "CONDITION" in canonical_steps else []
+    if "CONDITION" in canonical_steps and not allowed_conditions:
+        return None
+
     return {
         "mission_id": str(row["mission_id"]),
         "warehouse_id": str(row["warehouse_id"]),

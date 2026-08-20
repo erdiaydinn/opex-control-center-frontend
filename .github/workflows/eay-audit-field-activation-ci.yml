@@ -1,0 +1,55 @@
+name: EAY Audit Field Activation CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/modules/audit/field_activation_proof.py"
+      - "services/core-api/app/modules/audit/vision_inference_authorization.py"
+      - "services/core-api/tests/test_audit_field_activation_proof.py"
+      - ".github/workflows/eay-audit-field-activation-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-field-acceptance-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-field-activation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  field-activation:
+    name: Production field / UAT activation authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Field activation adversarial tests
+        run: pytest -q tests/test_audit_field_activation_proof.py
+      - name: Ruff field activation boundary
+        run: >-
+          ruff check
+          app/modules/audit/field_activation_proof.py
+          tests/test_audit_field_activation_proof.py
+      - name: Ruff SQL-heavy vision authorization
+        run: ruff check --ignore E501 app/modules/audit/vision_inference_authorization.py
+      - name: Compile field activation boundary
+        run: >-
+          python -m compileall -q
+          app/modules/audit/field_activation_proof.py
+          app/modules/audit/vision_inference_authorization.py
+          tests/test_audit_field_activation_proof.py
+      - name: Verify production fail-closed binding
+        run: >-
+          python -c "from pathlib import Path; p=Path('app/modules/audit/vision_inference_authorization.py').read_text(); assert 'current_production_field_activation_proof_unavailable' in p; assert 'field_activation_fingerprint' in p; print('Audit production field activation binding: PASS')"

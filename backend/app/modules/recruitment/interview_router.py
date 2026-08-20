@@ -13,6 +13,7 @@ from .interview_scheduling import (
     issue_booking_capability,
     list_candidate_schedules,
     mutate_candidate_booking,
+    schedule_scope,
     update_schedule_status,
     view_candidate_schedule,
 )
@@ -58,6 +59,12 @@ class CandidateInterviewMutationInput(CandidateInterviewCapabilityInput):
 
 def _scope(request_id: str, request: Request, role: str) -> None:
     _require_rows_in_scope(request, role, [_request_row(request_id)])
+
+
+def _schedule_scope(schedule_id: str, request: Request, role: str) -> str:
+    request_id = schedule_scope(schedule_id)
+    _scope(request_id, request, role)
+    return request_id
 
 
 @router.post("/requests/{request_id}/candidates/{candidate_id}/interviews", status_code=status.HTTP_201_CREATED)
@@ -114,15 +121,21 @@ def set_interview_schedule_status(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
-    actor, _ = _identity(request)
     try:
+        _schedule_scope(schedule_id, request, x_opex_role)
+        actor, _ = _identity(request)
         return update_schedule_status(schedule_id, payload.status, actor)
     except InterviewSchedulingError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
-@router.post("/interviews/{schedule_id}/booking-capabilities", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/requests/{request_id}/candidates/{candidate_id}/interviews/{schedule_id}/booking-capabilities",
+    status_code=status.HTTP_201_CREATED,
+)
 def create_interview_capability(
+    request_id: str,
+    candidate_id: str,
     schedule_id: str,
     payload: InterviewCapabilityInput,
     request: Request,
@@ -130,9 +143,17 @@ def create_interview_capability(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
-    actor, _ = _identity(request)
+    _scope(request_id, request, x_opex_role)
     try:
-        return issue_booking_capability(schedule_id, expires_in_hours=payload.expires_in_hours, actor=actor)
+        if schedule_scope(schedule_id) != request_id:
+            raise InterviewSchedulingError("Interview schedule request scope ile eşleşmiyor.")
+        actor, _ = _identity(request)
+        return issue_booking_capability(
+            schedule_id,
+            candidate_id,
+            expires_in_hours=payload.expires_in_hours,
+            actor=actor,
+        )
     except InterviewSchedulingError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

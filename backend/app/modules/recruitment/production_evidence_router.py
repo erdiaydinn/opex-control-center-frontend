@@ -17,9 +17,16 @@ from app.modules.workforce import persistence
 from app.modules.workforce.router import _require_rows_in_scope
 from .candidate_evidence_runtime import (
     CandidateEvidenceRuntimeError,
+    locate_candidate_evidence,
     purge_expired_encrypted_candidate_evidence,
+    read_candidate_evidence,
 )
 from .candidate_scan_authority import CandidateScanAuthorityError, record_verified_scan
+from .evidence_release_authority import (
+    EvidenceReleaseAuthorityError,
+    require_candidate_evidence_released,
+    require_request_evidence_released,
+)
 from .production_authority_preflight import (
     ProductionAuthorityPreflightError,
     run_live_preflight,
@@ -39,10 +46,11 @@ from .request_evidence_scan_authority import (
     record_verified_request_scan,
 )
 from .router import _identity, _read_upload_limited, _request_row, _require
-from .schemas import RecruitmentDecision
+from .schemas import RecruitmentCandidateDecision, RecruitmentDecision
 from .service import (
     RecruitmentRuleError,
     add_evidence,
+    decide_candidate,
     decide_request,
     purge_expired_recruitment_data,
 )
@@ -65,16 +73,24 @@ def _encrypted_mode() -> bool:
 
 
 def _require_request_evidence_clean(record: dict) -> None:
+    if not (_encrypted_mode() and record.get("evidence_required")):
+        return
     evidence = record.get("evidence") or {}
-    if (
-        _encrypted_mode()
-        and record.get("evidence_required")
-        and evidence.get("storage_backend") == "S3_KMS_ENVELOPE"
-        and evidence.get("content_safety_state") != "MALWARE_CLEARED"
-    ):
-        raise RecruitmentRuleError(
-            "Planlı ayrılış kanıtı kriptografik scanner receipt ile temizlenmeden görüntülenemez/onaylanamaz."
-        )
+    require_request_evidence_released(str(record.get("id") or ""), evidence)
+
+
+def _require_candidate_evidence_clean(
+    request_id: str,
+    candidate_id: str,
+    candidate: dict,
+) -> None:
+    if not _encrypted_mode():
+        return
+    evidence_rows = list(candidate.get("evidence") or [])
+    if not evidence_rows:
+        raise EvidenceReleaseAuthorityError("Aday evidence authority bulunamadı.")
+    for evidence in evidence_rows:
+        require_candidate_evidence_released(request_id, candidate_id, evidence)
 
 
 @router.post("/requests/{request_id}/evidence")
@@ -115,6 +131,23 @@ async def upload_request_evidence(
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@router.post("/requests/{request_id}/evidence/quarantine/retry", include_in_schema=False)
+def retry_request_evidence_quarantine(
+    request_id: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Idempotently recover a committed encrypted object whose quarantine seal was interrupted."""
+    _require(x_opex_role, x_opex_permissions, "manageRecruitmentSettings")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return seal_request_evidence_quarantine(request_id, actor=actor)
+    except RequestEvidenceQuarantineError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
 @router.get("/requests/{request_id}/evidence")
 def download_request_evidence(
     request_id: str,
@@ -147,7 +180,11 @@ def download_request_evidence(
                 "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
             },
         )
-    except (RecruitmentEvidenceRuntimeError, RecruitmentRuleError) as error:
+    except (
+        RecruitmentEvidenceRuntimeError,
+        RecruitmentRuleError,
+        EvidenceReleaseAuthorityError,
+    ) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
@@ -167,8 +204,76 @@ def secure_request_decision(
         if payload.decision == "APPROVED":
             _require_request_evidence_clean(record)
         return decide_request(request_id, payload.decision, payload.note, actor, actor_name)
-    except RecruitmentRuleError as error:
+    except (RecruitmentRuleError, EvidenceReleaseAuthorityError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/decision")
+def secure_candidate_decision(
+    request_id: str,
+    candidate_id: str,
+    payload: RecruitmentCandidateDecision,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
+    actor, _ = _identity(request)
+    candidate = next(
+        (row for row in record.get("candidates", []) if row.get("id") == candidate_id),
+        None,
+    )
+    try:
+        if candidate is None:
+            raise RecruitmentRuleError("Aday bulunamadı.")
+        if payload.decision == "APPROVED":
+            _require_candidate_evidence_clean(request_id, candidate_id, candidate)
+        return decide_candidate(request_id, candidate_id, payload.decision, payload.note, actor)
+    except (RecruitmentRuleError, EvidenceReleaseAuthorityError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/requests/{request_id}/candidates/{candidate_id}/evidence/{digest}")
+def secure_candidate_evidence_download(
+    request_id: str,
+    candidate_id: str,
+    digest: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+):
+    _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
+    try:
+        _, candidate, evidence = locate_candidate_evidence(request_id, candidate_id, digest)
+        if _encrypted_mode():
+            require_candidate_evidence_released(request_id, candidate_id, evidence)
+        content, metadata = read_candidate_evidence(request_id, candidate_id, digest)
+        actor, _ = _identity(request)
+        persistence.append_audit(
+            "RECRUITMENT_CANDIDATE_EVIDENCE_ACCESSED",
+            actor,
+            record_id=request_id,
+            candidate_id=candidate.get("id"),
+            evidence_sha256=metadata.get("sha256"),
+            storage_backend=metadata.get("storage_backend", "LEGACY_LOCAL"),
+        )
+        filename = quote(str(metadata.get("original_name") or "candidate-evidence")[:240])
+        return Response(
+            content=content,
+            media_type=metadata["content_type"],
+            headers={
+                "Cache-Control": "no-store, private",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            },
+        )
+    except (CandidateEvidenceRuntimeError, EvidenceReleaseAuthorityError) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/candidate-evidence/scanner-receipts", include_in_schema=False)

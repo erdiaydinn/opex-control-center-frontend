@@ -11,6 +11,10 @@ from .candidate_evidence_runtime import (
     CandidateEvidenceRuntimeError,
     locate_candidate_evidence,
 )
+from .evidence_release_authority import (
+    EvidenceReleaseAuthorityError,
+    require_candidate_evidence_released,
+)
 from .official_document_m2m import AuthorizedOfficialM2MAdapter, OfficialM2MError
 
 
@@ -43,7 +47,9 @@ def verify_authorized_candidate_document(
     """Call an authorized provider and seal its result into the Hiring aggregate.
 
     ``subject_reference`` and the raw barcode are transport-only inputs and are
-    deliberately not copied into the Hiring aggregate or audit record.
+    deliberately not copied into the Hiring aggregate or audit record. In
+    production the exact evidence must first be released by the V42 append-only
+    scanner authority; aggregate JSON alone can never authorize an external call.
     """
     try:
         _, _, evidence = locate_candidate_evidence(
@@ -54,10 +60,11 @@ def verify_authorized_candidate_document(
     except CandidateEvidenceRuntimeError as error:
         raise OfficialM2MRuntimeError(str(error)) from error
 
-    if os.getenv("DOCKOS_ENV", "development").strip().lower() == "production":
-        if not persistence.ENABLED or (persistence.schema_version() or 0) < 40:
+    production = os.getenv("DOCKOS_ENV", "development").strip().lower() == "production"
+    if production:
+        if not persistence.ENABLED or (persistence.schema_version() or 0) < persistence.SCHEMA_VERSION:
             raise OfficialM2MRuntimeError(
-                "Production resmî M2M doğrulaması PostgreSQL V40 olmadan kullanılamaz."
+                "Production resmî M2M doğrulaması current PostgreSQL security schema olmadan kullanılamaz."
             )
         if str(evidence.get("storage_backend") or "").upper() != "S3_KMS_ENVELOPE":
             raise OfficialM2MRuntimeError(
@@ -83,6 +90,14 @@ def verify_authorized_candidate_document(
             "İçerik güvenliği temizlenmeden dış resmî doğrulama çağrısı yapılamaz."
         )
 
+    if production:
+        try:
+            require_candidate_evidence_released(request_id, candidate_id, evidence)
+        except EvidenceReleaseAuthorityError as error:
+            raise OfficialM2MRuntimeError(
+                "Exact evidence append-only scanner authority tarafından serbest bırakılmadı."
+            ) from error
+
     try:
         authority = adapter or AuthorizedOfficialM2MAdapter.from_environment()
         result = authority.verify_document(
@@ -99,6 +114,8 @@ def verify_authorized_candidate_document(
         raise OfficialM2MRuntimeError("Yetkili M2M provider imza kanıtı eksik.")
     if result.get("verification_method") != "AUTHORIZED_OFFICIAL_API":
         raise OfficialM2MRuntimeError("Yetkili M2M verification method otoritesi geçersiz.")
+    if result.get("truth_boundary") != "AUTHORIZED_MACHINE_TO_MACHINE":
+        raise OfficialM2MRuntimeError("Yetkili M2M truth boundary geçersiz.")
 
     from .service import RecruitmentRuleError, record_candidate_document_verification
 

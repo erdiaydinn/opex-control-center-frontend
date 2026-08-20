@@ -6,6 +6,10 @@ repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 locale_contract="$repo_root/config/eay_localization.json"
 main_activity="$source_root/java/com/eay/inventory/MainActivity.kt"
 datawedge="$source_root/java/com/eay/inventory/DataWedge.kt"
+operational_client="$source_root/java/com/eay/inventory/InventoryOperationalTaskClient.kt"
+operational_router="$repo_root/backend/app/modules/inventory/operational_mobile_router.py"
+operational_claim="$repo_root/backend/app/modules/inventory/operational_claim.py"
+operational_v9="$repo_root/backend/migrations/009_inventory_operational_runtime_authority.sql"
 app_gradle="$repo_root/android-inventory/app/build.gradle.kts"
 
 for forbidden in 'ANDROID_ID' 'EncryptedSharedPreferences' 'HttpURLConnection' 'usesCleartextTraffic="true"' 'username.*password'; do
@@ -22,6 +26,10 @@ grep -R -q 'AuthorizationRequest' "$source_root"
 grep -R -q 'com.eay.inventory.SCAN' "$source_root"
 test -f "$locale_contract" || { echo "missing canonical localization contract" >&2; exit 1; }
 test -f "$datawedge" || { echo "missing production DataWedge contract" >&2; exit 1; }
+test -f "$operational_client" || { echo "missing operational mobile client" >&2; exit 1; }
+test -f "$operational_router" || { echo "missing operational mobile router" >&2; exit 1; }
+test -f "$operational_claim" || { echo "missing signed operational claim authority" >&2; exit 1; }
+test -f "$operational_v9" || { echo "missing operational runtime authority migration" >&2; exit 1; }
 
 # Managed Zebra decode feedback must be explicit. This is decode acknowledgement,
 # not business acceptance; application-level accepted/rejected feedback remains a
@@ -32,6 +40,29 @@ grep -q 'putString("decode_haptic_feedback", "1")' "$datawedge"
 grep -q 'putString("decoding_led_feedback", "1")' "$datawedge"
 grep -q 'putParcelableArray("PLUGIN_CONFIG", arrayOf(barcodePlugin, intentPlugin))' "$datawedge"
 
+# Operational mission claim is a mutation: OIDC + device id alone is insufficient.
+# Both client and backend must bind claim to active shift + mission using the same
+# fresh timestamp/nonce/hardware-backed device proof contract as terminal events.
+grep -q 'InventoryOperationalClaimContract.hash' "$operational_client"
+grep -q 'X-EAY-Request-Timestamp' "$operational_client"
+grep -q 'X-EAY-Request-Nonce' "$operational_client"
+grep -q 'X-EAY-Device-Signature' "$operational_client"
+grep -q 'x_eay_request_timestamp' "$operational_router"
+grep -q 'x_eay_request_nonce' "$operational_router"
+grep -q 'x_eay_device_signature' "$operational_router"
+grep -q 'claim_operational_mission_signed' "$operational_router"
+grep -q '_verify_device_proof' "$operational_claim"
+grep -q 'operational_claim_hash' "$operational_claim"
+
+# V9 closes runtime schema drift and ensures a replaced managed device cannot
+# strand or inherit an operational claim. Replay responses and claims remain
+# append-only evidence; only release metadata may change.
+grep -q 'inventory_operational_intent_v9_check' "$operational_v9"
+grep -q 'inventory_operational_claim_v9_guard' "$operational_v9"
+grep -q 'inventory_operational_responses_immutable' "$operational_v9"
+grep -q 'inventory_device_operational_recovery_v9' "$operational_v9"
+grep -q "release_reason='DEVICE_REPLACED'" "$operational_v9"
+
 # The production task and quantity-entry surfaces must use the shared typed Compose boundary.
 # Compose callbacks remain presentation-only and return to the existing signed claim/controller path.
 grep -q 'EayTerminalRuntimeView' "$main_activity"
@@ -39,6 +70,7 @@ grep -q 'FieldPresentationAdapter.missionIntentCard' "$main_activity"
 grep -q 'fieldUi.renderBlindCount' "$main_activity"
 grep -q 'BlindCountPresentationCopy' "$main_activity"
 grep -q 'missionClaimClient.claim' "$main_activity"
+grep -q 'operationalClaimClient.claim' "$main_activity"
 grep -q 'controller.enterQuantity' "$main_activity"
 grep -q 'controller.confirmItem()' "$main_activity"
 grep -q 'implementation(project(":field-presentation-adapter"))' "$app_gradle"

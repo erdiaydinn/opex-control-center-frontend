@@ -283,7 +283,9 @@ async def test_credentials_are_evidence_bound_self_scoped_and_append_only() -> N
                 issuer,
                 request_id="credential-revoke-1",
                 badge_award_id=award_id,
-                payload=BadgeRevocationRequest(reason="Credential withdrawn after governance review"),
+                payload=BadgeRevocationRequest(
+                    reason="Credential withdrawn after governance review"
+                ),
             )
             await _close_session(revoke_session, commit=True)
         except Exception:

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.modules.workforce import service
-from app.modules.workforce.timeoff_parser import parse_timeoff_bytes
+from app.modules.workforce.timeoff_parser import TimeOffParseError, _safe_xml, parse_timeoff_bytes
 
 
 ADMIN_HEADERS = {
@@ -91,6 +91,11 @@ class TimeOffParserTests(unittest.TestCase):
         self.assertEqual(parsed["rows"][0]["type_id"], "annual")
         self.assertEqual(parsed["rows"][0]["date"], "2026-06-01")
         self.assertEqual(parsed["rows"][0]["minutes"], 0)
+
+    def test_xlsx_xml_dtd_and_entity_are_rejected_before_parsing(self):
+        malicious = b'<!DOCTYPE x [<!ENTITY leak "boom">]><x>&leak;</x>'
+        with self.assertRaises(TimeOffParseError):
+            _safe_xml(malicious, "XLSX worksheet")
 
     def test_work_accident_wins_over_generic_sick_leave(self):
         csv_bytes = (

@@ -179,7 +179,7 @@ export default function WorkforceActivityStudio() {
     <div className="wfx-activity-template-toolbar">
       <label>{m("template")}<select value={templateKey} onChange={(event) => setTemplateKey(event.target.value)}>{TEMPLATE_KEYS.map((key) => <option key={key} value={key}>{m(key)}</option>)}</select></label>
       <label>{m("effective")}<input type="date" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} /></label>
-      <label className="wide">{m("source")}<input value={sourceRef} maxLength={300} onChange={(event) => setSourceRef(event.target.value)} placeholder="SOP / approved standard / authority reference" /></label>
+      <label className="wide">{m("source")}<input value={sourceRef} maxLength={300} onChange={(event) => setSourceRef(event.target.value)} placeholder={m("source")} /></label>
       <button type="button" onClick={() => preview()} disabled={busy === "preview"}><RefreshCw size={16} />{m("preview")}</button>
     </div>
     <p className="wfx-activity-hint"><ShieldCheck size={15} />{m("templateHint")}</p>

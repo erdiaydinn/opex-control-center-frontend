@@ -31,14 +31,17 @@ class InventoryRecoveryCaseContractTest {
     }
 
     @Test
-    fun `security and device quarantine cannot enter supervisor business recovery`() {
+    fun `security device policy and integrity quarantine cannot enter supervisor business recovery`() {
         for (
             reason in listOf(
                 SyncQuarantineReason.AUTH_BINDING_CHANGED,
                 SyncQuarantineReason.TENANT_BINDING_CHANGED,
                 SyncQuarantineReason.DEVICE_REVOKED,
+                SyncQuarantineReason.POLICY_REJECTED,
                 SyncQuarantineReason.CORRUPT_EVENT,
                 SyncQuarantineReason.LEDGER_CHAIN_MISMATCH,
+                SyncQuarantineReason.SERVER_CONTRACT_MISMATCH,
+                SyncQuarantineReason.PERMANENT_REJECTED,
             )
         ) {
             assertNull(
@@ -46,6 +49,23 @@ class InventoryRecoveryCaseContractTest {
                     recoverableEvent().copy(quarantineReason = reason.name),
                 ),
             )
+        }
+    }
+
+    @Test
+    fun `dependency and retry exhaustion remain explicit operational recovery reasons`() {
+        for (
+            reason in listOf(
+                SyncQuarantineReason.DEPENDENCY_BLOCKED,
+                SyncQuarantineReason.RETRY_EXHAUSTED,
+            )
+        ) {
+            val request = requireNotNull(
+                InventoryRecoveryCaseContract.from(
+                    recoverableEvent().copy(quarantineReason = reason.name),
+                ),
+            )
+            assertEquals(reason.name, request.quarantineReason)
         }
     }
 

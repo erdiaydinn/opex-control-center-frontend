@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
@@ -117,13 +118,36 @@ def _canonical_warehouse_id(value: object) -> str | None:
     return _warehouse_key(aliases[0]["id"]) if len(aliases) == 1 else None
 
 
-def _warehouse_scope(request: Request, role: str) -> set[str] | None:
-    """Return the verified warehouse scope for non-global admin identities.
+def _identity_employee_id(request: Request) -> str | None:
+    identity = getattr(request.state, "identity", None)
+    value = getattr(identity, "employee_id", None)
+    return str(value) if value not in (None, "") else None
 
-    Production warehouse/regional managers fail closed when their signed JWT
-    has no scope. Local legacy headers remain tenant-wide for demo/test use.
+
+def _employee_warehouse_id(employee_id: str | None) -> str | None:
+    if not employee_id:
+        return None
+    person = next(
+        (
+            item for item in list_people(False)
+            if str(item.get("id") or item.get("employee_id")) == str(employee_id)
+        ),
+        None,
+    )
+    return _canonical_warehouse_id((person or {}).get("warehouse_id") or (person or {}).get("warehouse"))
+
+
+def _warehouse_scope(request: Request, role: str) -> set[str] | None:
+    """Return verified warehouse scope; employee identities are own-site only.
+
+    Global admin/HR identities retain tenant scope. Regional/warehouse roles use
+    the signed warehouse_scope claim. Employee/picker roles are resolved through
+    canonical Employee Master and never receive tenant-wide location scope in
+    production. Development keeps legacy demo compatibility only when authority
+    claims are absent.
     """
-    if _normalized_role(role) in {"super_admin", "superadmin", "admin", "administrator", "hr"}:
+    normalized_role = _normalized_role(role)
+    if normalized_role in {"super_admin", "superadmin", "admin", "administrator", "hr"}:
         return None
     identity = getattr(request.state, "identity", None)
     scope = {
@@ -133,11 +157,24 @@ def _warehouse_scope(request: Request, role: str) -> set[str] | None:
     }
     if scope:
         return scope
-    if _normalized_role(role) in {"picker", "employee", "worker"}:
+    if normalized_role in {"picker", "employee", "worker"}:
+        own_warehouse = _employee_warehouse_id(_identity_employee_id(request))
+        if own_warehouse:
+            return {own_warehouse}
+        if os.getenv("DOCKOS_ENV", "development").lower() == "production":
+            raise HTTPException(status_code=403, detail="Employee Master depo/store kapsamı gerekli.")
         return None
     if os.getenv("DOCKOS_ENV", "development").lower() == "production":
         raise HTTPException(status_code=403, detail="JWT warehouse_scope claim'i gerekli.")
     return None
+
+
+def _require_global_scope(request: Request, role: str, action: str) -> None:
+    if _warehouse_scope(request, role) is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{action} tenant-geneli authority gerektirir; depo kapsamlı rol bu işlemi yapamaz.",
+        )
 
 
 def _row_warehouse_id(row: dict) -> str | None:
@@ -154,8 +191,8 @@ def _row_warehouse_id(row: dict) -> str | None:
     person_id = row.get("person_id") or row.get("employee_id")
     if person_id and person_id != "*":
         person = next((item for item in list_people(False) if item.get("id") == person_id or item.get("employee_id") == person_id), None)
-        if person and person.get("warehouse_id"):
-            return _canonical_warehouse_id(person["warehouse_id"])
+        if person and (person.get("warehouse_id") or person.get("warehouse")):
+            return _canonical_warehouse_id(person.get("warehouse_id") or person.get("warehouse"))
     warehouse = str(row.get("warehouse") or "").strip().lower()
     if warehouse:
         return _canonical_warehouse_id(warehouse)
@@ -179,33 +216,103 @@ def _enforce_self(request: Request, person_id: str, role: str) -> None:
     person = resolve_person_identity(person_id, "EMPLOYEE_ID")
     if person is not None and not person_has_workforce_access(person):
         raise HTTPException(status_code=403, detail="İşten ayrılmış veya pasif personelin Workforce erişimi kapalıdır.")
-    if role.strip().lower().replace("-", "_").replace(" ", "_") in {"admin", "administrator", "super_admin", "superadmin", "manager", "warehouse_manager", "hr"}:
+    expected = _identity_employee_id(request)
+    if expected:
+        if str(expected) != str(person_id):
+            raise HTTPException(status_code=403, detail="Yalnızca kendi Workforce kaydınıza erişebilirsiniz.")
         return
-    identity = getattr(request.state, "identity", None)
-    expected = getattr(identity, "employee_id", None)
-    if expected and str(expected) == str(person_id):
-        return
-    # Development legacy mode keeps existing test/demo access working. In
-    # production every picker JWT must contain the employee_id claim.
-    import os
+    # Privileged web/admin operations use their dedicated permission + scope
+    # routes. Mobile/self-service presence actions never allow role-based
+    # impersonation in production.
     if os.getenv("DOCKOS_ENV", "development").lower() != "production":
         return
-    raise HTTPException(status_code=403, detail="Yalnızca kendi Workforce kaydınıza erişebilirsiniz.")
+    raise HTTPException(status_code=403, detail="JWT employee_id claim'i gerekli.")
 
 
 def _scoped_person_id(request: Request, requested: str | None, role: str) -> str | None:
-    if role.strip().lower().replace("-", "_").replace(" ", "_") in {"admin", "administrator", "super_admin", "superadmin", "manager", "warehouse_manager", "hr"}:
+    if _normalized_role(role) in {"admin", "administrator", "super_admin", "superadmin", "manager", "warehouse_manager", "hr"}:
         return requested
-    identity = getattr(request.state, "identity", None)
-    expected = getattr(identity, "employee_id", None)
+    expected = _identity_employee_id(request)
     if expected:
         if requested and str(requested) != str(expected):
             raise HTTPException(status_code=403, detail="Başka personele ait kayıt görüntülenemez.")
-        return str(expected)
-    import os
+        return expected
     if os.getenv("DOCKOS_ENV", "development").lower() == "production":
         raise HTTPException(status_code=403, detail="JWT employee_id claim'i gerekli.")
     return requested
+
+
+def _announcement_is_published(row: dict) -> bool:
+    if row.get("active") is False:
+        return False
+    raw = row.get("publish_at")
+    if not raw:
+        return True
+    try:
+        published_at = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=UTC)
+        return published_at.astimezone(UTC) <= datetime.now(UTC)
+    except (TypeError, ValueError):
+        return False
+
+
+def _announcement_target_warehouse(row: dict) -> str | None:
+    target_type = str(row.get("target_type") or "all").strip().lower()
+    target_value = str(row.get("target_value") or "").strip()
+    if target_type == "warehouse":
+        return _canonical_warehouse_id(target_value)
+    if target_type == "person":
+        return _employee_warehouse_id(target_value)
+    return None
+
+
+def _scoped_announcements(request: Request, role: str, rows: list[dict], person_id: str | None = None) -> list[dict]:
+    published = [row for row in rows if _announcement_is_published(row)]
+    if person_id:
+        own_warehouse = _employee_warehouse_id(person_id)
+        return [
+            row for row in published
+            if str(row.get("target_type") or "all").strip().lower() == "all"
+            or (
+                str(row.get("target_type") or "").strip().lower() == "person"
+                and str(row.get("target_value") or "") == str(person_id)
+            )
+            or (
+                str(row.get("target_type") or "").strip().lower() == "warehouse"
+                and own_warehouse is not None
+                and _canonical_warehouse_id(row.get("target_value")) == own_warehouse
+            )
+        ]
+    scope = _warehouse_scope(request, role)
+    if scope is None:
+        return published
+    return [
+        row for row in published
+        if str(row.get("target_type") or "all").strip().lower() == "all"
+        or _announcement_target_warehouse(row) in scope
+    ]
+
+
+def _require_announcement_target_scope(request: Request, role: str, payload: AnnouncementCreateRequest) -> None:
+    scope = _warehouse_scope(request, role)
+    if scope is None:
+        return
+    target_type = payload.target_type.strip().lower()
+    target_value = payload.target_value.strip()
+    if target_type == "all":
+        raise HTTPException(status_code=403, detail="Depo kapsamlı rol tenant geneli duyuru yayınlayamaz.")
+    if target_type == "warehouse":
+        target = _canonical_warehouse_id(target_value)
+        if target is None or target not in scope:
+            raise HTTPException(status_code=403, detail="Duyuru hedefi yetkili depo kapsamınızın dışında.")
+        return
+    if target_type == "person":
+        target = _employee_warehouse_id(target_value)
+        if target is None or target not in scope:
+            raise HTTPException(status_code=403, detail="Duyuru hedef personeli yetkili depo kapsamınızın dışında.")
+        return
+    raise HTTPException(status_code=400, detail="Duyuru hedef tipi geçersiz.")
 
 
 @router.get("/health")
@@ -289,7 +396,7 @@ def mobile_bootstrap(
         "leave_requests": list_leave_requests(person_id, None),
         "manager_tasks": [item for item in list_manager_tasks() if item.get("person_id") == person_id or item.get("assignee_id") == person_id],
         "correction_requests": [item for item in list_manager_tasks() if item.get("shift_id") in shift_ids],
-        "announcements": list_announcements(),
+        "announcements": _scoped_announcements(request, x_opex_role, list_announcements(), person_id),
         "announcement_receipts": list_announcement_receipts(person_id),
         "features": get_feature_flags(),
         "notification_policy": get_notification_policy(),
@@ -315,7 +422,7 @@ def admin_bootstrap(
         "devices": _scoped_rows(request, x_opex_role, list_device_bindings()),
         "leave_requests": _scoped_rows(request, x_opex_role, list_leave_requests()),
         "manager_tasks": _scoped_rows(request, x_opex_role, list_manager_tasks()),
-        "announcements": list_announcements(),
+        "announcements": _scoped_announcements(request, x_opex_role, list_announcements()),
         "features": get_feature_flags(),
         "notification_policy": get_notification_policy(),
         "audit": list_audit(1000) if scope is None and is_action_allowed(x_opex_role, x_opex_permissions, "viewAuditLog") else [],
@@ -380,11 +487,13 @@ def rules() -> dict:
 @router.post("/rules", status_code=status.HTTP_201_CREATED)
 def add_rule_version(
     payload: RuleVersionCreateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageRules")
+    _require_global_scope(request, x_opex_role, "Çalışma kuralı yönetimi")
     return create_rule_version(payload.model_dump(), x_opex_user)
 
 
@@ -536,7 +645,8 @@ def shift_check_out(
 
 @router.get("/breaks")
 def breaks(request: Request, person_id: str | None = None, shift_id: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
-    return {"rows": list_breaks(_scoped_person_id(request, person_id, x_opex_role), shift_id)}
+    rows = list_breaks(_scoped_person_id(request, person_id, x_opex_role), shift_id)
+    return {"rows": _scoped_rows(request, x_opex_role, rows)}
 
 
 @router.post("/shifts/{shift_id}/breaks", status_code=status.HTTP_201_CREATED)
@@ -653,18 +763,21 @@ def resolve_task(
 
 
 @router.get("/announcements")
-def announcements() -> dict:
-    return {"rows": list_announcements()}
+def announcements(request: Request, person_id: str | None = None, x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role")) -> dict:
+    scoped_person = _scoped_person_id(request, person_id, x_opex_role)
+    return {"rows": _scoped_announcements(request, x_opex_role, list_announcements(), scoped_person)}
 
 
 @router.post("/announcements", status_code=status.HTTP_201_CREATED)
 def add_announcement(
     payload: AnnouncementCreateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageAnnouncements")
+    _require_announcement_target_scope(request, x_opex_role, payload)
     return create_announcement(payload.model_dump(), x_opex_user)
 
 
@@ -677,6 +790,9 @@ def dismiss_one_announcement(
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
 ) -> dict:
     _enforce_self(request, payload.person_id, x_opex_role)
+    visible = _scoped_announcements(request, x_opex_role, list_announcements(), payload.person_id)
+    if not any(str(row.get("id")) == str(announcement_id) for row in visible):
+        raise HTTPException(status_code=404, detail="Duyuru bulunamadı.")
     try:
         return dismiss_announcement(announcement_id, payload.person_id, x_opex_user)
     except WorkforceRuleError as error:
@@ -749,17 +865,26 @@ def feature_flags() -> dict:
 
 
 @router.put("/feature-flags")
-def put_feature_flags(payload: FeatureFlagsUpdateRequest, x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"), x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"), x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions")) -> dict:
+def put_feature_flags(
+    payload: FeatureFlagsUpdateRequest,
+    request: Request,
+    x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    _require_global_scope(request, x_opex_role, "Feature flag yönetimi")
     return update_feature_flags(payload.model_dump(), x_opex_user)
 
 
 @router.put("/notification-policy")
 def put_notification_policy(
     payload: NotificationPolicyUpdateRequest,
+    request: Request,
     x_opex_user: str = Header(default="unknown", alias="X-OPEX-User"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageNotifications")
+    _require_global_scope(request, x_opex_role, "Bildirim politikası yönetimi")
     return update_notification_policy(payload.model_dump(), x_opex_user)

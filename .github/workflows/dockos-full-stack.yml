@@ -74,8 +74,13 @@ jobs:
           app.modules.workforce.test_workforce_api
           app.modules.workforce.test_flexibility
           app.modules.workforce.test_flexibility_router
+          app.modules.workforce.test_scope_hardening
+          app.modules.workforce.test_timeoff_parser
+          app.modules.workforce.test_identity_leave_hardening
           app.modules.workforce.test_work_activity_authority
           app.modules.workforce.test_work_activity_catalog
+          app.modules.workforce.test_work_activity_completion
+          app.modules.workforce.test_work_activity_capacity_runtime
           app.modules.recruitment.test_recruitment
           app.modules.recruitment.test_hr_actual
           app.test_security
@@ -112,6 +117,7 @@ jobs:
       PGPASSWORD: postgres
       RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-evidence
       OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
+      OPEX_PII_LOOKUP_KEY: QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1

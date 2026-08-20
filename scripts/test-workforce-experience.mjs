@@ -3,7 +3,12 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
-const vite = await createServer({ server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
+const vite = await createServer({
+  server: { middlewareMode: true },
+  appType: "custom",
+  logLevel: "error",
+  optimizeDeps: { noDiscovery: true },
+});
 try {
   const experience = await vite.ssrLoadModule("/src/modules/workforce/WorkforceExperienceCenter.jsx");
   const auth = await vite.ssrLoadModule("/src/auth/AuthContext.jsx");
@@ -24,7 +29,7 @@ try {
   for (const label of ["Bordro ve Belgeler", "Eğitimlerim", "Nabız Anketi", "Zimmetlerim"]) {
     assert.match(mobile, new RegExp(label));
   }
-  assert.match(admin, /Mahremiyet odaklı kanıt/);
+  assert.match(admin, /Privacy-first evidence/);
   assert.doesNotMatch(`${mobile}${admin}`, /Avans|Harcama|Seyahat|Yan Hak|Budget Intelligence/i);
   console.log("Workforce experience render tests passed.");
 } finally {

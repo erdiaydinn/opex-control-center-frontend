@@ -2,17 +2,20 @@ import React, { useCallback, useEffect, useState } from "react";
 
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import RecruitmentControl from "./RecruitmentControl.jsx";
+import RecruitmentOrchestrationCenter from "./RecruitmentOrchestrationCenter.jsx";
 import { loadRecruitment, primeRecruitmentBootstrap } from "./recruitmentApi.js";
 
 export default function RecruitmentBootstrapBoundary() {
   const { t } = usePlatformPreferences();
   const [state, setState] = useState("loading");
+  const [revision, setRevision] = useState(0);
 
   const bootstrap = useCallback(async () => {
     setState("loading");
     try {
       const snapshot = await loadRecruitment();
       primeRecruitmentBootstrap(snapshot);
+      setRevision((value) => value + 1);
       setState("ready");
     } catch {
       setState("error");
@@ -21,6 +24,12 @@ export default function RecruitmentBootstrapBoundary() {
 
   useEffect(() => {
     bootstrap();
+  }, [bootstrap]);
+
+  useEffect(() => {
+    const reload = () => bootstrap();
+    window.addEventListener("eay:recruitment:external-change", reload);
+    return () => window.removeEventListener("eay:recruitment:external-change", reload);
   }, [bootstrap]);
 
   if (state === "loading") {
@@ -48,7 +57,8 @@ export default function RecruitmentBootstrapBoundary() {
 
   return (
     <section data-eay-product-state="ready">
-      <RecruitmentControl />
+      <RecruitmentControl key={revision} />
+      <RecruitmentOrchestrationCenter />
     </section>
   );
 }

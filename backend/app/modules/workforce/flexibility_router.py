@@ -4,7 +4,7 @@ import os
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
-from . import service
+from . import service, shift_trading
 from .flexibility import (
     claim_open_shift,
     create_open_shift,
@@ -19,6 +19,17 @@ from .flexibility_schemas import (
     WorkActivityApproveRequest,
 )
 from .router import _enforce_self, _require, _require_any, _require_rows_in_scope
+from .shift_trading import (
+    ShiftTradeAcceptRequest,
+    ShiftTradeCreateRequest,
+    ShiftTradeDecisionRequest,
+    accept_shift_trade,
+    approve_shift_trade,
+    cancel_shift_trade,
+    create_shift_trade,
+    list_shift_trades_for_person,
+    reject_shift_trade,
+)
 from .work_activity_catalog import (
     WorkActivityCatalogError,
     approve_activity,
@@ -82,6 +93,17 @@ def _require_catalog_read(role: str, permissions: str) -> None:
     )
 
 
+def _trade_for_manager(trade_id: str, request: Request, role: str) -> dict:
+    trade = next(
+        (row for row in shift_trading._load_trades() if str(row.get("id")) == str(trade_id)),
+        None,
+    )
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Takas/transfer talebi bulunamadı.")
+    _require_rows_in_scope(request, role, [{"warehouse_id": trade.get("warehouse_id")}])
+    return trade
+
+
 @router.get("/availability")
 def get_availability(
     person_id: str,
@@ -112,6 +134,74 @@ def get_open_shifts(
 ) -> dict:
     _strict_employee_self(request, person_id, x_opex_role)
     return {"rows": list_open_shifts_for_person(person_id)}
+
+
+@router.get("/shift-trades")
+def get_shift_trades(
+    person_id: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+) -> dict:
+    _strict_employee_self(request, person_id, x_opex_role)
+    return {"rows": list_shift_trades_for_person(person_id)}
+
+
+@router.post("/shift-trades", status_code=status.HTTP_201_CREATED)
+def post_shift_trade(
+    payload: ShiftTradeCreateRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+) -> dict:
+    _strict_employee_self(request, payload.person_id, x_opex_role)
+    return create_shift_trade(payload.model_dump(mode="json"), _actor(request))
+
+
+@router.post("/shift-trades/{trade_id}/accept")
+def post_shift_trade_accept(
+    trade_id: str,
+    payload: ShiftTradeAcceptRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+) -> dict:
+    _strict_employee_self(request, payload.person_id, x_opex_role)
+    return accept_shift_trade(trade_id, payload.person_id, _actor(request))
+
+
+@router.post("/shift-trades/{trade_id}/cancel")
+def post_shift_trade_cancel(
+    trade_id: str,
+    payload: ShiftTradeAcceptRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+) -> dict:
+    _strict_employee_self(request, payload.person_id, x_opex_role)
+    return cancel_shift_trade(trade_id, payload.person_id, _actor(request))
+
+
+@router.post("/shift-trades/{trade_id}/approve")
+def post_shift_trade_approve(
+    trade_id: str,
+    payload: ShiftTradeDecisionRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "createShift")
+    _trade_for_manager(trade_id, request, x_opex_role)
+    return approve_shift_trade(trade_id, _actor(request), payload.note)
+
+
+@router.post("/shift-trades/{trade_id}/reject")
+def post_shift_trade_reject(
+    trade_id: str,
+    payload: ShiftTradeDecisionRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "createShift")
+    _trade_for_manager(trade_id, request, x_opex_role)
+    return reject_shift_trade(trade_id, _actor(request), payload.note)
 
 
 @router.get("/activities")

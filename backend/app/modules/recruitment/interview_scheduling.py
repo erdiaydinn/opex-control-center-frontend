@@ -1,8 +1,8 @@
 """Candidate self-service interview scheduling with rotating capabilities.
 
-No external calendar account is required for authority. PostgreSQL serializes slot
-capacity and each candidate mutation revokes the presented capability and returns
-a fresh successor token, so copied/replayed mutation links fail closed.
+Interview slots are shared by vacancy+pipeline stage, so candidates compete for
+real capacity under PostgreSQL row locks. Candidate mutations revoke the presented
+capability and return a fresh successor token; replayed mutation links fail closed.
 """
 from __future__ import annotations
 
@@ -65,6 +65,7 @@ def create_schedule(
     slots: list[dict[str, Any]],
     actor: str,
 ) -> dict:
+    """Create a shared vacancy/stage slot pool, using candidate_id only to resolve stage."""
     _ensure_ready()
     _candidate_exists(request_id, candidate_id)
     try:
@@ -115,10 +116,10 @@ def create_schedule(
             raise InterviewSchedulingError("Offer/READY_TO_HIRE aşamasında yeni mülakat açılamaz.")
         cursor.execute(
             """INSERT INTO recruitment.interview_schedules(
-                 tenant_id,schedule_id,request_id,candidate_id,stage,title,timezone,
+                 tenant_id,schedule_id,request_id,stage,title,timezone,
                  meeting_mode,location_label,instructions,duration_minutes,created_by
-               ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (tenant, schedule_id, request_id, candidate_id, stage, title, timezone, mode,
+               ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (tenant, schedule_id, request_id, stage, title, timezone, mode,
              location_label, instructions, duration, actor),
         )
         slot_rows = []
@@ -135,15 +136,33 @@ def create_schedule(
             cursor,
             "RECRUITMENT_INTERVIEW_SCHEDULE_CREATED",
             actor,
-            {"record_id": request_id, "candidate_id": candidate_id, "schedule_id": str(schedule_id), "stage": stage, "slot_count": len(slot_rows), "meeting_mode": mode},
+            {"record_id": request_id, "seed_candidate_id": candidate_id, "schedule_id": str(schedule_id), "stage": stage, "slot_count": len(slot_rows), "meeting_mode": mode},
         )
         database.commit()
     return {
-        "schedule_id": str(schedule_id), "request_id": request_id, "candidate_id": candidate_id,
-        "stage": stage, "title": title, "timezone": timezone, "meeting_mode": mode,
-        "location_label": location_label, "instructions": instructions, "duration_minutes": duration,
-        "status": "OPEN", "slots": slot_rows,
+        "schedule_id": str(schedule_id), "request_id": request_id, "stage": stage, "title": title,
+        "timezone": timezone, "meeting_mode": mode, "location_label": location_label,
+        "instructions": instructions, "duration_minutes": duration, "status": "OPEN", "slots": slot_rows,
+        "capacity_scope": "VACANCY_STAGE_SHARED",
     }
+
+
+def schedule_scope(schedule_id: str) -> str:
+    _ensure_ready()
+    try:
+        schedule_uuid = UUID(str(schedule_id))
+    except ValueError as error:
+        raise InterviewSchedulingError("Interview schedule kimliği geçersiz.") from error
+    with persistence.connection() as database, database.cursor() as cursor:
+        persistence._set_tenant(cursor)
+        cursor.execute(
+            "SELECT request_id FROM recruitment.interview_schedules WHERE tenant_id=%s AND schedule_id=%s",
+            (persistence.tenant_id(), schedule_uuid),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise InterviewSchedulingError("Interview schedule bulunamadı.")
+        return str(row[0])
 
 
 def list_candidate_schedules(request_id: str, candidate_id: str) -> list[dict]:
@@ -158,22 +177,21 @@ def list_candidate_schedules(request_id: str, candidate_id: str) -> list[dict]:
                       b.booking_id,b.slot_id,b.status
                FROM recruitment.interview_schedules s
                LEFT JOIN recruitment.interview_bookings b
-                 ON b.tenant_id=s.tenant_id AND b.schedule_id=s.schedule_id AND b.candidate_id=s.candidate_id
-               WHERE s.tenant_id=%s AND s.request_id=%s AND s.candidate_id=%s
+                 ON b.tenant_id=s.tenant_id AND b.schedule_id=s.schedule_id AND b.candidate_id=%s
+               WHERE s.tenant_id=%s AND s.request_id=%s
                ORDER BY s.created_at DESC""",
-            (tenant, request_id, candidate_id),
+            (candidate_id, tenant, request_id),
         )
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            result.append({
+        return [
+            {
                 "schedule_id": str(row[0]), "stage": row[1], "title": row[2], "timezone": row[3],
                 "meeting_mode": row[4], "location_label": row[5], "instructions": row[6],
                 "duration_minutes": int(row[7]), "status": row[8], "revision": int(row[9]),
                 "created_at": row[10].isoformat(),
                 "booking": None if row[11] is None else {"booking_id": str(row[11]), "slot_id": str(row[12]) if row[12] else None, "status": row[13]},
-            })
-        return result
+            }
+            for row in cursor.fetchall()
+        ]
 
 
 def update_schedule_status(schedule_id: str, target_status: str, actor: str) -> dict:
@@ -189,14 +207,14 @@ def update_schedule_status(schedule_id: str, target_status: str, actor: str) -> 
     with persistence.connection() as database, database.cursor() as cursor:
         persistence._set_tenant(cursor)
         cursor.execute(
-            """SELECT request_id,candidate_id,status,revision FROM recruitment.interview_schedules
+            """SELECT request_id,status,revision FROM recruitment.interview_schedules
                WHERE tenant_id=%s AND schedule_id=%s FOR UPDATE""",
             (tenant, schedule_uuid),
         )
         row = cursor.fetchone()
         if row is None:
             raise InterviewSchedulingError("Interview schedule bulunamadı.")
-        request_id, candidate_id, current, revision = row
+        request_id, current, revision = row
         if current == "CANCELLED":
             raise InterviewSchedulingError("İptal edilmiş interview schedule yeniden açılamaz.")
         next_revision = int(revision) + 1
@@ -209,13 +227,13 @@ def update_schedule_status(schedule_id: str, target_status: str, actor: str) -> 
             raise InterviewSchedulingError("Interview schedule eşzamanlı değişiklik nedeniyle güncellenemedi.")
         persistence._build_audit_record(
             cursor, "RECRUITMENT_INTERVIEW_SCHEDULE_STATUS_CHANGED", actor,
-            {"record_id": request_id, "candidate_id": candidate_id, "schedule_id": str(schedule_uuid), "from_status": current, "to_status": target},
+            {"record_id": request_id, "schedule_id": str(schedule_uuid), "from_status": current, "to_status": target},
         )
         database.commit()
-    return {"schedule_id": str(schedule_uuid), "status": target, "revision": next_revision}
+    return {"schedule_id": str(schedule_uuid), "request_id": request_id, "status": target, "revision": next_revision}
 
 
-def issue_booking_capability(schedule_id: str, *, expires_in_hours: int, actor: str) -> dict:
+def issue_booking_capability(schedule_id: str, candidate_id: str, *, expires_in_hours: int, actor: str) -> dict:
     _ensure_ready()
     if expires_in_hours < 1 or expires_in_hours > 24 * 30:
         raise InterviewSchedulingError("Interview capability validity geçersiz.")
@@ -226,19 +244,27 @@ def issue_booking_capability(schedule_id: str, *, expires_in_hours: int, actor: 
     tenant = persistence.tenant_id()
     now = _now()
     token = secrets.token_urlsafe(40)
-    token_digest = sha256(token.encode()).digest()
     capability_id = uuid4()
     with persistence.connection() as database, database.cursor() as cursor:
         persistence._set_tenant(cursor)
         cursor.execute(
-            """SELECT request_id,candidate_id,status FROM recruitment.interview_schedules
+            """SELECT request_id,stage,status FROM recruitment.interview_schedules
                WHERE tenant_id=%s AND schedule_id=%s FOR UPDATE""",
             (tenant, schedule_uuid),
         )
         schedule = cursor.fetchone()
         if schedule is None or schedule[2] != "OPEN":
             raise InterviewSchedulingError("Interview schedule açık değil.")
-        request_id, candidate_id, _ = schedule
+        request_id, schedule_stage, _ = schedule
+        _candidate_exists(str(request_id), candidate_id)
+        cursor.execute(
+            """SELECT current_stage FROM recruitment.pipeline_assignments
+               WHERE tenant_id=%s AND request_id=%s AND candidate_id=%s""",
+            (tenant, request_id, candidate_id),
+        )
+        assignment = cursor.fetchone()
+        if assignment is None or str(assignment[0]) != str(schedule_stage):
+            raise InterviewSchedulingError("Aday mevcut pipeline stage ile bu interview schedule arasında eşleşmiyor.")
         cursor.execute(
             """UPDATE recruitment.interview_booking_capabilities SET revoked_at=%s
                WHERE tenant_id=%s AND schedule_id=%s AND candidate_id=%s AND revoked_at IS NULL""",
@@ -250,14 +276,14 @@ def issue_booking_capability(schedule_id: str, *, expires_in_hours: int, actor: 
                  tenant_id,capability_id,schedule_id,candidate_id,token_sha256,generation,
                  expires_at,issued_at,issued_by
                ) VALUES(%s,%s,%s,%s,%s,1,%s,%s,%s)""",
-            (tenant, capability_id, schedule_uuid, candidate_id, token_digest, expires_at, now, actor),
+            (tenant, capability_id, schedule_uuid, candidate_id, sha256(token.encode()).digest(), expires_at, now, actor),
         )
         persistence._build_audit_record(
             cursor, "RECRUITMENT_INTERVIEW_CAPABILITY_ISSUED", actor,
             {"record_id": request_id, "candidate_id": candidate_id, "schedule_id": str(schedule_uuid), "capability_id": str(capability_id)},
         )
         database.commit()
-    return {"capability": token, "capability_id": str(capability_id), "schedule_id": str(schedule_uuid), "expires_at": expires_at.isoformat(), "generation": 1}
+    return {"capability": token, "capability_id": str(capability_id), "schedule_id": str(schedule_uuid), "candidate_id": candidate_id, "expires_at": expires_at.isoformat(), "generation": 1}
 
 
 def _capability_row(cursor, tenant: str, token: str, *, lock: bool):
@@ -305,8 +331,8 @@ def view_candidate_schedule(raw_token: str) -> dict:
         cursor.execute(
             """SELECT request_id,stage,title,timezone,meeting_mode,location_label,instructions,
                       duration_minutes,status FROM recruitment.interview_schedules
-               WHERE tenant_id=%s AND schedule_id=%s AND candidate_id=%s""",
-            (tenant, schedule_id, candidate_id),
+               WHERE tenant_id=%s AND schedule_id=%s""",
+            (tenant, schedule_id),
         )
         schedule = cursor.fetchone()
         if schedule is None:
@@ -325,7 +351,7 @@ def view_candidate_schedule(raw_token: str) -> dict:
         "duration_minutes": int(schedule[7]), "status": schedule[8], "slots": slots,
         "booking": None if booking is None else {"booking_id": str(booking[0]), "slot_id": str(booking[1]) if booking[1] else None, "status": booking[2], "revision": int(booking[3])},
         "capability_generation": int(generation), "capability_expires_at": expires_at.isoformat(),
-        "truth_boundary": "CANDIDATE_BOUND_ROTATING_SCHEDULING_CAPABILITY",
+        "truth_boundary": "CANDIDATE_BOUND_ROTATING_SCHEDULING_CAPABILITY_SHARED_SLOT_CAPACITY",
     }
 
 
@@ -334,13 +360,7 @@ def _rotate_capability(cursor, tenant: str, capability, now: datetime) -> tuple[
     next_token = secrets.token_urlsafe(40)
     next_id = uuid4()
     next_generation = int(generation) + 1
-    cursor.execute(
-        """INSERT INTO recruitment.interview_booking_capabilities(
-             tenant_id,capability_id,schedule_id,candidate_id,token_sha256,generation,
-             expires_at,issued_at,issued_by
-           ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,'CAPABILITY_ROTATION')""",
-        (tenant, next_id, schedule_id, candidate_id, sha256(next_token.encode()).digest(), next_generation, expires_at, now),
-    )
+    # Revoke old first; the partial unique index permits exactly one active token.
     cursor.execute(
         """UPDATE recruitment.interview_booking_capabilities
            SET revoked_at=%s,successor_capability_id=%s
@@ -349,6 +369,13 @@ def _rotate_capability(cursor, tenant: str, capability, now: datetime) -> tuple[
     )
     if cursor.rowcount != 1:
         raise InterviewSchedulingError("Interview capability replay reddedildi.")
+    cursor.execute(
+        """INSERT INTO recruitment.interview_booking_capabilities(
+             tenant_id,capability_id,schedule_id,candidate_id,token_sha256,generation,
+             expires_at,issued_at,issued_by
+           ) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,'CAPABILITY_ROTATION')""",
+        (tenant, next_id, schedule_id, candidate_id, sha256(next_token.encode()).digest(), next_generation, expires_at, now),
+    )
     return next_token, next_generation
 
 
@@ -366,8 +393,8 @@ def mutate_candidate_booking(raw_token: str, action: str, slot_id: str | None = 
         capability_id, schedule_id, candidate_id, _, _, _ = capability
         cursor.execute(
             """SELECT request_id,status FROM recruitment.interview_schedules
-               WHERE tenant_id=%s AND schedule_id=%s AND candidate_id=%s FOR UPDATE""",
-            (tenant, schedule_id, candidate_id),
+               WHERE tenant_id=%s AND schedule_id=%s FOR UPDATE""",
+            (tenant, schedule_id),
         )
         schedule = cursor.fetchone()
         if schedule is None or schedule[1] != "OPEN":
@@ -385,6 +412,7 @@ def mutate_candidate_booking(raw_token: str, action: str, slot_id: str | None = 
                 target_slot = UUID(str(slot_id))
             except (TypeError, ValueError) as error:
                 raise InterviewSchedulingError("Geçerli interview slot seçilmelidir.") from error
+            # All candidates lock the shared slot row before counting occupancy.
             cursor.execute(
                 """SELECT starts_at,ends_at,capacity,status FROM recruitment.interview_slots
                    WHERE tenant_id=%s AND schedule_id=%s AND slot_id=%s FOR UPDATE""",
@@ -460,9 +488,8 @@ def mutate_candidate_booking(raw_token: str, action: str, slot_id: str | None = 
             {"record_id": request_id, "candidate_id": candidate_id, "schedule_id": str(schedule_id), "booking_id": str(booking_id), "from_slot_id": str(old_slot) if old_slot else None, "to_slot_id": str(new_slot) if new_slot else None},
         )
         database.commit()
-    snapshot = view_candidate_schedule(next_token)
     return {
         "accepted": True, "event": event_type, "booking_id": str(booking_id), "revision": revision,
         "next_capability": next_token, "next_capability_generation": next_generation,
-        "schedule": snapshot,
+        "schedule": view_candidate_schedule(next_token),
     }

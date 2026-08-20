@@ -11,6 +11,8 @@ ALTER TABLE inventory_events
 ALTER TABLE inventory_events
   DROP CONSTRAINT IF EXISTS inventory_events_event_type_v4_check;
 ALTER TABLE inventory_events
+  DROP CONSTRAINT IF EXISTS inventory_events_event_type_v6_check;
+ALTER TABLE inventory_events
   ADD CONSTRAINT inventory_events_event_type_v6_check
   CHECK (event_type IN ('SCAN','CORRECTION','UNEXPECTED_SKU','RECOUNT','LOCATION_COMPLETE'));
 

@@ -24,10 +24,10 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
 
     def test_repo_controlled_authorities_are_ready_while_e_devlet_agreement_is_pending(self):
         storage, scanner = self.infrastructure()
-        with patch.dict(os.environ, self.blank_m2m_env(), clear=False), patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=45), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", return_value=storage), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment", return_value=scanner), patch.object(preflight, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}), patch.object(preflight.AuthorizedOfficialM2MAdapter, "from_environment") as official:
+        with patch.dict(os.environ, self.blank_m2m_env(), clear=False), patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=46), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", return_value=storage), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment", return_value=scanner), patch.object(preflight, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}), patch.object(preflight.AuthorizedOfficialM2MAdapter, "from_environment") as official:
             result = preflight.run_live_preflight()
         self.assertTrue(result["ready"])
-        self.assertEqual(result["checks"][0]["key"], "postgres_v45")
+        self.assertEqual(result["checks"][0]["key"], "postgres_v46")
         self.assertEqual(result["external_pending"], ["official_m2m_transport"])
         transport = next(check for check in result["checks"] if check["key"] == "official_m2m_transport")
         self.assertFalse(transport["required"])
@@ -51,7 +51,7 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
             adapter.config.mtls_key = str(key)
             adapter.config.contract_id = "official-contract-v1"
             adapter._access_token.return_value = "opaque-oauth-token"
-            with patch.dict(os.environ, configured, clear=False), patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=45), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", return_value=storage), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment", return_value=scanner), patch.object(preflight, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}), patch.object(preflight.AuthorizedOfficialM2MAdapter, "from_environment", return_value=adapter), patch.object(preflight, "canonical_response_mapper", return_value={}):
+            with patch.dict(os.environ, configured, clear=False), patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=46), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", return_value=storage), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment", return_value=scanner), patch.object(preflight, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}), patch.object(preflight.AuthorizedOfficialM2MAdapter, "from_environment", return_value=adapter), patch.object(preflight, "canonical_response_mapper", return_value={}):
                 result = preflight.run_live_preflight()
         self.assertTrue(result["ready"])
         self.assertEqual(result["external_pending"], [])
@@ -64,20 +64,20 @@ class ProductionAuthorityPreflightTests(unittest.TestCase):
         storage, scanner = self.infrastructure()
         partial = self.blank_m2m_env()
         partial["RECRUITMENT_OFFICIAL_M2M_ENDPOINT"] = "https://institution.example/verify"
-        with patch.dict(os.environ, partial, clear=False), patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=45), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", return_value=storage), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment", return_value=scanner), patch.object(preflight, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}):
+        with patch.dict(os.environ, partial, clear=False), patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=46), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", return_value=storage), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment", return_value=scanner), patch.object(preflight, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}):
             with self.assertRaisesRegex(ProductionAuthorityPreflightError, "kısmi yapılandırması"):
                 preflight.run_live_preflight()
 
-    def test_v44_fails_before_external_authorities_are_touched(self):
-        with patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=44), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment") as storage, patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment") as scanner, patch.object(preflight, "scanner_db_preflight") as scanner_db:
-            with self.assertRaisesRegex(ProductionAuthorityPreflightError, "PostgreSQL V45"):
+    def test_v45_fails_before_external_authorities_are_touched(self):
+        with patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=45), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment") as storage, patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment") as scanner, patch.object(preflight, "scanner_db_preflight") as scanner_db:
+            with self.assertRaisesRegex(ProductionAuthorityPreflightError, "PostgreSQL V46"):
                 preflight.run_live_preflight()
         storage.assert_not_called()
         scanner.assert_not_called()
         scanner_db.assert_not_called()
 
     def test_aws_storage_failure_is_fail_closed_before_scanner_authorities(self):
-        with patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=45), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", side_effect=EvidenceStorageError("Object Lock disabled")), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment") as scanner, patch.object(preflight, "scanner_db_preflight") as scanner_db:
+        with patch.object(preflight.persistence, "ENABLED", True), patch.object(preflight.persistence, "schema_version", return_value=46), patch.object(preflight.S3KmsEnvelopeEvidenceStore, "from_environment", side_effect=EvidenceStorageError("Object Lock disabled")), patch.object(preflight.AwsKmsHmacKeyAuthority, "from_environment") as scanner, patch.object(preflight, "scanner_db_preflight") as scanner_db:
             with self.assertRaisesRegex(ProductionAuthorityPreflightError, "Object Lock disabled"):
                 preflight.run_live_preflight()
         scanner.assert_not_called()

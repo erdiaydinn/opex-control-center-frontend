@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "alembic" / "versions" / "0056_audit_visit_manifests.py"
 

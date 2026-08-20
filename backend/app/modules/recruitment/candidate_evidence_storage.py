@@ -1,4 +1,4 @@
-"""Encrypted immutable object storage for candidate evidence.
+"""Encrypted immutable object storage for recruitment evidence.
 
 Production evidence is envelope encrypted with an AWS KMS data key and
 AES-256-GCM. KMS encryption context is also AES-GCM AAD, binding ciphertext to
@@ -109,6 +109,36 @@ class S3KmsEnvelopeEvidenceStore:
             ),
         )
 
+    def preflight(self) -> dict[str, object]:
+        """Verify live AWS authorities without writing evidence bytes."""
+        try:
+            key = self.kms.describe_key(KeyId=self.kms_key_id)["KeyMetadata"]
+            if key.get("KeyState") != "Enabled":
+                raise EvidenceStorageError("Evidence KMS anahtarı Enabled durumda değil.")
+            if key.get("KeyUsage") != "ENCRYPT_DECRYPT":
+                raise EvidenceStorageError("Evidence KMS anahtarı ENCRYPT_DECRYPT kullanımında değil.")
+            if key.get("KeySpec") not in {"SYMMETRIC_DEFAULT", "AES_256"}:
+                raise EvidenceStorageError("Evidence KMS anahtar türü data-key zarfı için uygun değil.")
+            versioning = self.s3.get_bucket_versioning(Bucket=self.bucket)
+            if versioning.get("Status") != "Enabled":
+                raise EvidenceStorageError("Evidence S3 bucket versioning Enabled olmalıdır.")
+            lock = self.s3.get_object_lock_configuration(Bucket=self.bucket).get(
+                "ObjectLockConfiguration", {}
+            )
+            if lock.get("ObjectLockEnabled") != "Enabled":
+                raise EvidenceStorageError("Evidence S3 Object Lock etkin değil.")
+        except EvidenceStorageError:
+            raise
+        except Exception as error:
+            raise EvidenceStorageError("AWS evidence authority preflight başarısız.") from error
+        return {
+            "kms_key_state": key.get("KeyState"),
+            "kms_key_usage": key.get("KeyUsage"),
+            "s3_versioning": versioning.get("Status"),
+            "s3_object_lock": lock.get("ObjectLockEnabled"),
+            "object_lock_mode": self.object_lock_mode,
+        }
+
     def put(
         self,
         *,
@@ -206,11 +236,15 @@ class S3KmsEnvelopeEvidenceStore:
         tenant_id: str,
         object_key: str,
         expected_sha256: str,
+        version_id: str | None = None,
     ) -> bytes:
         key = _object_key(tenant_id, object_key)
         context = _context(tenant_id, key, expected_sha256.lower())
         try:
-            raw = self.s3.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+            request = {"Bucket": self.bucket, "Key": key}
+            if version_id:
+                request["VersionId"] = version_id
+            raw = self.s3.get_object(**request)["Body"].read()
             envelope = json.loads(raw)
             if (
                 envelope.get("version") != 1
@@ -246,6 +280,19 @@ class S3KmsEnvelopeEvidenceStore:
             raise EvidenceStorageError("Çözülen aday kanıt özeti eşleşmiyor.")
         return plaintext
 
+    def _exact_versions(self, key: str) -> list[dict]:
+        try:
+            response = self.s3.list_object_versions(Bucket=self.bucket, Prefix=key)
+        except Exception as error:
+            raise EvidenceStorageError("Evidence S3 version listesi okunamadı.") from error
+        if response.get("IsTruncated"):
+            raise EvidenceStorageError("Evidence nesnesinde beklenmeyen version pagination oluştu.")
+        return [
+            version
+            for version in response.get("Versions", [])
+            if version.get("Key") == key and version.get("VersionId")
+        ]
+
     def delete_after_retention(
         self,
         *,
@@ -255,32 +302,32 @@ class S3KmsEnvelopeEvidenceStore:
         retention_until: datetime,
         now: datetime | None = None,
     ) -> None:
-        """Delete only after retention expiry and exact-object verification.
-
-        A retry after a successful delete is accepted only after retention has
-        expired. Before expiry, a missing object remains an integrity incident.
-        """
+        """Delete the exact immutable S3 version after logical retention expiry."""
         observed = (now or datetime.now(UTC)).astimezone(UTC)
         if observed < retention_until.astimezone(UTC):
             raise EvidenceStorageError(
                 "Aday kanıtı saklama süresi dolmadan silinemez."
             )
         key = _object_key(tenant_id, object_key)
-        try:
-            self.get(
-                tenant_id=tenant_id,
-                object_key=key,
-                expected_sha256=expected_sha256,
+        versions = self._exact_versions(key)
+        if not versions:
+            return
+        if len(versions) != 1:
+            raise EvidenceStorageError(
+                "Immutable evidence nesnesinde beklenmeyen birden fazla S3 versiyonu bulundu."
             )
-        except EvidenceStorageError as error:
-            if _is_missing_object(error.__cause__):
-                return
-            raise
+        version_id = str(versions[0]["VersionId"])
+        self.get(
+            tenant_id=tenant_id,
+            object_key=key,
+            expected_sha256=expected_sha256,
+            version_id=version_id,
+        )
         try:
-            self.s3.delete_object(Bucket=self.bucket, Key=key)
+            self.s3.delete_object(Bucket=self.bucket, Key=key, VersionId=version_id)
         except Exception as error:
             if _is_missing_object(error):
                 return
             raise EvidenceStorageError(
-                "Retention süresi dolan şifreli aday kanıtı silinemedi."
+                "Retention süresi dolan şifreli aday kanıt versiyonu silinemedi."
             ) from error

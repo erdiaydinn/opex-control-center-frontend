@@ -93,6 +93,15 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_content.py", "create_content"),
     ("modules/academy/repository_content.py", "create_content_version"),
     ("modules/academy/repository_content.py", "create_media_asset"),
+    # Academy credential authority security review: exact functions only.
+    # SQL is static text() with bound parameters, tenant selection is principal-bound,
+    # and migration 0050 enforces FORCE RLS plus append-only credential evidence.
+    ("modules/academy/repository_credentials.py", "create_badge_definition"),
+    ("modules/academy/repository_credentials.py", "retire_badge_definition"),
+    ("modules/academy/repository_credentials.py", "issue_badge_award"),
+    ("modules/academy/repository_credentials.py", "revoke_badge_award"),
+    ("modules/academy/repository_credentials.py", "list_my_badge_credentials"),
+    ("modules/academy/repository_credentials.py", "get_my_badge_credential"),
     ("modules/academy/repository_enrollment.py", "create_manual_enrollment"),
     ("modules/academy/repository_enrollment.py", "reconcile_role_enrollments"),
     ("modules/academy/repository_enrollment.py", "list_enrollments"),

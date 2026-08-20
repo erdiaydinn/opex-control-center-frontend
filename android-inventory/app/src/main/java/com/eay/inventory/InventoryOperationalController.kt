@@ -51,12 +51,16 @@ class InventoryOperationalController(
         eventId: String = UUID.randomUUID().toString(),
         occurredAt: String = Instant.now().toString(),
     ): InventoryOperationalCaptureResult = captureMutex.withLock {
+        val startedAt = System.nanoTime()
         val expected = session.nextStep
-            ?: return@withLock InventoryOperationalCaptureResult(
-                OperationalCaptureCode.ALREADY_COMPLETED,
-                null,
-                progressCurrent(),
-                completed = true,
+            ?: return@withLock feedback(
+                InventoryOperationalCaptureResult(
+                    OperationalCaptureCode.ALREADY_COMPLETED,
+                    null,
+                    progressCurrent(),
+                    completed = true,
+                ),
+                startedAt,
             )
         if (step != expected) {
             val previous = session.evidence.lastOrNull()
@@ -71,18 +75,24 @@ class InventoryOperationalController(
             ) {
                 // Rapid duplicate physical ingress after the prior capture committed is
                 // presentation-idempotent. No second durable event or device sequence is minted.
-                return@withLock InventoryOperationalCaptureResult(
-                    OperationalCaptureCode.EXACT_REPLAY,
-                    expected,
-                    progressCurrent(),
-                    completed = session.completed,
+                return@withLock feedback(
+                    InventoryOperationalCaptureResult(
+                        OperationalCaptureCode.EXACT_REPLAY,
+                        expected,
+                        progressCurrent(),
+                        completed = session.completed,
+                    ),
+                    startedAt,
                 )
             }
-            return@withLock InventoryOperationalCaptureResult(
-                OperationalCaptureCode.WRONG_STEP,
-                expected,
-                progressCurrent(),
-                completed = false,
+            return@withLock feedback(
+                InventoryOperationalCaptureResult(
+                    OperationalCaptureCode.WRONG_STEP,
+                    expected,
+                    progressCurrent(),
+                    completed = false,
+                ),
+                startedAt,
             )
         }
         val event = queue.enqueueOperationalStep(
@@ -106,11 +116,29 @@ class InventoryOperationalController(
         if (reduced.code == OperationalCaptureCode.ACCEPTED || reduced.code == OperationalCaptureCode.EXACT_REPLAY) {
             session = reduced.session
         }
-        InventoryOperationalCaptureResult(
-            code = reduced.code,
-            nextStep = session.nextStep,
-            progressCurrent = progressCurrent(),
-            completed = session.completed,
+        feedback(
+            InventoryOperationalCaptureResult(
+                code = reduced.code,
+                nextStep = session.nextStep,
+                progressCurrent = progressCurrent(),
+                completed = session.completed,
+            ),
+            startedAt,
         )
+    }
+
+    private fun feedback(
+        result: InventoryOperationalCaptureResult,
+        startedAt: Long,
+    ): InventoryOperationalCaptureResult {
+        TerminalFeedbackRuntime.recordLocalDecision(startedAt)
+        when (result.code) {
+            OperationalCaptureCode.ACCEPTED,
+            OperationalCaptureCode.EXACT_REPLAY,
+            OperationalCaptureCode.ALREADY_COMPLETED,
+            -> TerminalFeedbackRuntime.accepted()
+            else -> TerminalFeedbackRuntime.rejected()
+        }
+        return result
     }
 }

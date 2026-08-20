@@ -1,0 +1,76 @@
+name: EAY Hiring Production Authorities
+on:
+  pull_request:
+    branches: [product/eay-hiring-ai-document-trust-v1]
+    paths:
+      - "backend/app/modules/recruitment/**"
+      - "backend/migrations/023_recruitment_candidate_upload_authority.sql"
+      - "backend/migrations/024_recruitment_production_authority.sql"
+      - "backend/scripts/recruitment_authority_postgres_ci.py"
+      - ".github/workflows/eay-hiring-production-authority.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: eay-hiring-production-authority-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  crypto-and-m2m-contracts:
+    name: KMS scanner and authorized M2M contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: backend
+      DOCKOS_ENV: test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python -m compileall -q backend/app/modules/recruitment backend/scripts/recruitment_authority_postgres_ci.py
+      - run: python -m unittest app.modules.recruitment.test_candidate_evidence_storage -v
+      - run: python -m unittest app.modules.recruitment.test_scanner_key_authority -v
+      - run: python -m unittest app.modules.recruitment.test_official_document_m2m -v
+      - run: python -m unittest app.modules.recruitment.test_scanner_receipt -v
+      - run: python -m unittest app.modules.recruitment.test_official_document_governance -v
+  postgres-authority:
+    name: PostgreSQL role RLS replay concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workforce_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d workforce_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql://workforce_runtime:workforce_runtime_ci@localhost:5432/workforce_ci
+      WORKFORCE_MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      RECRUITMENT_AUTHORITY_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      WORKFORCE_TENANT_ID: eay-ci
+      DOCKOS_ENV: test
+      WORKFORCE_AUTO_MIGRATE: "false"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python scripts/setup_workforce_postgres_ci.py
+      - run: python scripts/recruitment_authority_postgres_ci.py

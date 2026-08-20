@@ -30,6 +30,16 @@ class TimeOffParseError(ValueError):
     """Raised when a Time Off upload is unsupported or unsafe to parse."""
 
 
+def _safe_xml(payload: bytes, label: str) -> ET.Element:
+    lowered = payload.lower()
+    if b"<!doctype" in lowered or b"<!entity" in lowered:
+        raise TimeOffParseError(f"{label} DTD/entity içermemelidir.")
+    try:
+        return ET.fromstring(payload)
+    except ET.ParseError as error:
+        raise TimeOffParseError(f"{label} XML yapısı okunamadı.") from error
+
+
 def _fold(value: object) -> str:
     text = str(value or "").strip().replace("I", "ı").replace("İ", "i").casefold()
     text = text.translate(str.maketrans({"ı": "i", "ğ": "g", "ü": "u", "ş": "s", "ö": "o", "ç": "c"}))
@@ -178,7 +188,7 @@ def _shared_strings(archive: ZipFile) -> list[str]:
     name = "xl/sharedStrings.xml"
     if name not in archive.namelist():
         return []
-    root = ET.fromstring(archive.read(name))
+    root = _safe_xml(archive.read(name), "XLSX sharedStrings")
     result = []
     for item in root:
         result.append("".join(node.text or "" for node in item.iter() if node.tag.endswith("}t")))
@@ -186,22 +196,28 @@ def _shared_strings(archive: ZipFile) -> list[str]:
 
 
 def _sheet_path(archive: ZipFile, preferred_sheet: str = "Time Off Used") -> str:
-    workbook = ET.fromstring(archive.read("xl/workbook.xml"))
-    relations = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    workbook = _safe_xml(archive.read("xl/workbook.xml"), "XLSX workbook")
+    relations = _safe_xml(archive.read("xl/_rels/workbook.xml.rels"), "XLSX relationships")
     relationship_targets = {
         item.attrib.get("Id", ""): item.attrib.get("Target", "")
         for item in relations
+        if str(item.attrib.get("TargetMode", "Internal")).lower() != "external"
     }
     sheets = []
+    archive_names = set(archive.namelist())
     for element in workbook.iter():
         if not element.tag.endswith("}sheet"):
             continue
         relationship_id = next((value for key, value in element.attrib.items() if key.endswith("}id")), "")
         target = relationship_targets.get(relationship_id, "")
+        if not target:
+            continue
         if target.startswith("/"):
             path = target.lstrip("/")
         else:
             path = target if target.startswith("xl/") else f"xl/{target.lstrip('./')}"
+        if ".." in path.split("/") or path not in archive_names:
+            raise TimeOffParseError("XLSX çalışma sayfası ilişkisi güvenli paket sınırının dışında.")
         sheets.append((element.attrib.get("name", ""), path))
     if not sheets:
         raise TimeOffParseError("XLSX içinde çalışma sayfası bulunamadı.")
@@ -222,7 +238,7 @@ def _xlsx_rows(data: bytes) -> list[dict[str, object]]:
             if not required.issubset(set(archive.namelist())):
                 raise TimeOffParseError("Dosya geçerli bir XLSX çalışma kitabı değil.")
             shared = _shared_strings(archive)
-            root = ET.fromstring(archive.read(_sheet_path(archive)))
+            root = _safe_xml(archive.read(_sheet_path(archive)), "XLSX worksheet")
             matrix: list[list[object]] = []
             for row_node in (node for node in root.iter() if node.tag.endswith("}row")):
                 values: dict[int, object] = {}
@@ -267,8 +283,6 @@ def _xlsx_rows(data: bytes) -> list[dict[str, object]]:
             return rows
     except BadZipFile as error:
         raise TimeOffParseError("Dosya geçerli bir XLSX ZIP paketi değil.") from error
-    except ET.ParseError as error:
-        raise TimeOffParseError("XLSX XML yapısı okunamadı.") from error
 
 
 def _csv_rows(data: bytes) -> list[dict[str, object]]:

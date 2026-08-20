@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from statistics import mean
 from typing import Any
 
@@ -44,12 +45,12 @@ def _parse_time(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _location(row: dict[str, Any]) -> tuple[str, str, str]:
@@ -247,7 +248,11 @@ def evaluate_temporal_realogram(
                     )
                 elif not expected_rows:
                     alerts.append(
-                        {**normalized, "alert_code": "sku_not_in_plan", "severity": "medium"}
+                        {
+                            **normalized,
+                            "alert_code": "sku_not_in_plan",
+                            "severity": "medium",
+                        }
                     )
                 else:
                     expected_facing = next(
@@ -338,9 +343,7 @@ def evaluate_temporal_realogram(
             minimum = _number(event.get("min_temperature_c"), float("nan"))
             maximum = _number(event.get("max_temperature_c"), float("nan"))
             breach = elapsed >= 0 and allowed >= 0 and elapsed > allowed
-            if not any(
-                map(lambda value: value != value, (temperature, minimum, maximum))
-            ):
+            if not any(math.isnan(value) for value in (temperature, minimum, maximum)):
                 breach = breach or not minimum <= temperature <= maximum
             normalized.update(
                 {"elapsed_seconds": elapsed, "allowed_seconds": allowed}

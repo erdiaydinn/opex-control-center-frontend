@@ -19,7 +19,6 @@ import {
 import { workforceExperienceMessage } from "../../platform/i18n/workforceExperienceMessages.js";
 import { workforceFlexibilityMessage } from "../../platform/i18n/workforceFlexibilityMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
-import WorkforceActivityStudio from "./WorkforceActivityStudio.jsx";
 import WorkforceFlexibilityAdmin from "./WorkforceFlexibilityAdmin.jsx";
 import WorkforceFlexibilityCenter from "./WorkforceFlexibilityCenter.jsx";
 
@@ -87,7 +86,6 @@ export function WorkforceExperienceAdmin() {
   return <div className="wfx-experience-admin">
     <section className="wfx-panel wfx-experience-admin-hero"><div><span>{m("adminEyebrow")}</span><h2>{m("adminHeading")}</h2><p>{m("adminIntro")}</p></div><div className="wfx-experience-score"><small>{m("experienceScore")}</small><strong>92</strong><span>{m("scoreTrend")}</span></div></section>
     <section className="wfx-experience-admin-grid">{capabilities.map((item) => { const Icon = item.icon; return <article className="wfx-panel" key={item.title}><div className={item.tone}><Icon size={22} /></div><span>{item.title}</span><strong>{item.value}</strong><small>{item.detail}</small></article>; })}</section>
-    <WorkforceActivityStudio />
     <WorkforceFlexibilityAdmin />
     <section className="wfx-panel wfx-market-difference"><header><div><span>{m("productStandard")}</span><h3>{m("outcomeHeading")}</h3></div><Sparkles size={24} /></header><div><article><BadgeCheck size={20} /><span><strong>{m("oneTapTitle")}</strong><small>{m("oneTapDetail")}</small></span></article><article><ShieldCheck size={20} /><span><strong>{m("privacyTitle")}</strong><small>{m("privacyDetail")}</small></span></article><article><CalendarDays size={20} /><span><strong>{m("contextTitle")}</strong><small>{m("contextDetail")}</small></span></article></div></section>
   </div>;

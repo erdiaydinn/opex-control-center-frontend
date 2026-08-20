@@ -122,11 +122,11 @@ class DeviceReplaceCreate(BaseModel):
 
 
 class RecoveryCaseCreate(BaseModel):
-    """Request review of one immutable quarantined terminal event.
+    """Request supervisor review of one operationally recoverable quarantine.
 
-    Raw barcode/quantity payload is intentionally not accepted here. The server
-    stores only identity-safe provenance and the immutable payload hash; a
-    supervisor cannot promote unverified local evidence into stock truth.
+    Policy/identity/device/contract-integrity failures are deliberately excluded
+    from this business recovery path. Raw barcode/quantity payload is not accepted;
+    only immutable event identity/hash and safe provenance may enter review.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -136,7 +136,7 @@ class RecoveryCaseCreate(BaseModel):
     location_id: str = Field(min_length=1, max_length=120)
     payload_hash: str = Field(pattern="^[0-9a-f]{64}$")
     quarantine_reason: str = Field(
-        pattern="^(BUSINESS_CONFLICT|POLICY_REJECTED|SERVER_CONTRACT_MISMATCH|DEPENDENCY_BLOCKED|PERMANENT_REJECTED|RETRY_EXHAUSTED)$"
+        pattern="^(BUSINESS_CONFLICT|DEPENDENCY_BLOCKED|RETRY_EXHAUSTED)$"
     )
     server_code: str | None = Field(default=None, max_length=120)
 

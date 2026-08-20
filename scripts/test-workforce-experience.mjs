@@ -18,7 +18,7 @@ try {
   const mobile = renderWithPreferences(React.createElement(module.WorkforceExperienceCenter, { onBack() {} }));
   const admin = renderWithPreferences(React.createElement(module.WorkforceExperienceAdmin));
   for (const label of ["Bordro ve Belgeler", "Eğitimlerim", "Nabız Anketi", "Zimmetlerim"]) assert.match(mobile, new RegExp(label));
-  assert.match(admin, /Mahremiyet odaklı kanıt/);
+  assert.match(admin, /Privacy-first evidence|Mahremiyet odaklı kanıt/);
   assert.doesNotMatch(`${mobile}${admin}`, /Avans|Harcama|Seyahat|Yan Hak|Budget Intelligence/i);
   console.log("Workforce experience render tests passed.");
 } finally {

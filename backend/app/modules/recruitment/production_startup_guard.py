@@ -1,8 +1,8 @@
 """Fail-closed production startup contract for Hiring authorities.
 
-This guard intentionally treats the future e-Devlet institutional M2M contract
-as optional external capacity. Every repository/infrastructure-controlled Hiring
-security authority must already be ready before the production API starts.
+The future e-Devlet institutional M2M contract is optional external capacity.
+Every repository/infrastructure-controlled Hiring authority, including governed
+recruitment orchestration, must be ready before the production API starts.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class RecruitmentProductionStartupError(RuntimeError):
     pass
 
 
-REQUIRED_RECRUITMENT_SCHEMA_VERSION = 43
+REQUIRED_RECRUITMENT_SCHEMA_VERSION = 44
 
 
 def _production() -> bool:

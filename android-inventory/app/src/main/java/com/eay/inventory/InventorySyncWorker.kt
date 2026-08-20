@@ -122,6 +122,14 @@ class InventorySyncWorker(
             return@withContext Result.retry()
         }
 
+        // Quarantined business evidence is not a dead end and does not require an
+        // operator to press a mutation button. Route only the explicitly recoverable
+        // reasons through the signed server-side maker-checker case flow. Security,
+        // device and integrity quarantines never enter this loop.
+        if (!routeSupervisorRecovery(dao)) {
+            return@withContext Result.retry()
+        }
+
         val due = dao.due(System.currentTimeMillis())
         if (due.isEmpty()) {
             return@withContext if (dao.pendingCount() > 0) {
@@ -280,7 +288,68 @@ class InventorySyncWorker(
                 }
             }
         }
+
+        // Route any business quarantine created by this pass before declaring the
+        // work settled. A transient recovery-service failure retries WorkManager;
+        // immutable evidence remains quarantined throughout.
+        if (!routeSupervisorRecovery(dao)) {
+            return@withContext Result.retry()
+        }
         if (dao.pendingCount() > 0) Result.retry() else Result.success()
+    }
+
+    private suspend fun routeSupervisorRecovery(dao: OfflineEventDao): Boolean {
+        val client = InventoryRecoveryCaseClient(applicationContext)
+        for (event in dao.recoveryCandidates()) {
+            val recovery = InventoryRecoveryContract.classify(event) ?: continue
+            if (recovery.intent != InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW) {
+                continue
+            }
+            when (val result = client.requestReview(event)) {
+                is InventoryRecoveryCaseResult -> when {
+                    result.accepted -> {
+                        val caseId = requireNotNull(result.caseId)
+                        val changed = dao.markRecoveryRequested(event.eventId, caseId)
+                        if (changed != 1) {
+                            // Never silently attach a case to evidence that changed under us.
+                            dao.quarantine(
+                                event.eventId,
+                                SyncQuarantineReason.CORRUPT_EVENT.name,
+                                "RECOVERY_METADATA_RACE",
+                            )
+                        }
+                    }
+
+                    result.code == InventoryRecoveryCaseCode.AUTH_REQUIRED ||
+                        result.code == InventoryRecoveryCaseCode.RETRYABLE -> return false
+
+                    result.code == InventoryRecoveryCaseCode.DEVICE_REJECTED -> dao.quarantine(
+                        event.eventId,
+                        SyncQuarantineReason.DEVICE_REVOKED.name,
+                        "RECOVERY_DEVICE_REJECTED",
+                    )
+
+                    result.code == InventoryRecoveryCaseCode.POLICY_REJECTED -> dao.quarantine(
+                        event.eventId,
+                        SyncQuarantineReason.POLICY_REJECTED.name,
+                        "RECOVERY_POLICY_REJECTED",
+                    )
+
+                    result.code == InventoryRecoveryCaseCode.NOT_ELIGIBLE -> dao.quarantine(
+                        event.eventId,
+                        SyncQuarantineReason.CORRUPT_EVENT.name,
+                        "RECOVERY_NOT_ELIGIBLE",
+                    )
+
+                    else -> dao.quarantine(
+                        event.eventId,
+                        SyncQuarantineReason.SERVER_CONTRACT_MISMATCH.name,
+                        "RECOVERY_${result.code.name}",
+                    )
+                }
+            }
+        }
+        return true
     }
 
     private suspend fun scheduleRetry(

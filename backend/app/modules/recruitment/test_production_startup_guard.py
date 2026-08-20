@@ -16,17 +16,17 @@ class ProductionStartupGuardTests(unittest.TestCase):
             "RECRUITMENT_EVIDENCE_STORAGE_MODE": "s3-kms-envelope",
         }
 
-    def test_v42_is_rejected_even_when_other_config_is_present(self):
+    def test_v43_is_rejected_even_when_other_config_is_present(self):
         with patch.dict(os.environ, self.env(), clear=False), patch.object(
             guard.persistence, "ENABLED", True
-        ), patch.object(guard.persistence, "schema_version", return_value=42):
-            with self.assertRaisesRegex(RecruitmentProductionStartupError, "V43"):
+        ), patch.object(guard.persistence, "schema_version", return_value=43):
+            with self.assertRaisesRegex(RecruitmentProductionStartupError, "V44"):
                 guard.assert_recruitment_production_ready()
 
     def test_repository_controlled_authorities_can_start_without_e_devlet_contract(self):
         with patch.dict(os.environ, self.env(), clear=False), patch.object(
             guard.persistence, "ENABLED", True
-        ), patch.object(guard.persistence, "schema_version", return_value=43), patch.object(
+        ), patch.object(guard.persistence, "schema_version", return_value=44), patch.object(
             guard.S3KmsEnvelopeEvidenceStore, "from_environment"
         ) as storage, patch.object(
             guard.AwsKmsHmacKeyAuthority, "from_environment"
@@ -42,14 +42,14 @@ class ProductionStartupGuardTests(unittest.TestCase):
         bad_storage = {**self.env(), "RECRUITMENT_EVIDENCE_STORAGE_MODE": "legacy-local"}
         with patch.dict(os.environ, bad_storage, clear=False), patch.object(
             guard.persistence, "ENABLED", True
-        ), patch.object(guard.persistence, "schema_version", return_value=43):
+        ), patch.object(guard.persistence, "schema_version", return_value=44):
             with self.assertRaisesRegex(RecruitmentProductionStartupError, "S3/KMS"):
                 guard.assert_recruitment_production_ready()
 
         bad_upload = {**self.env(), "RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE": "legacy-development"}
         with patch.dict(os.environ, bad_upload, clear=False), patch.object(
             guard.persistence, "ENABLED", True
-        ), patch.object(guard.persistence, "schema_version", return_value=43):
+        ), patch.object(guard.persistence, "schema_version", return_value=44):
             with self.assertRaisesRegex(RecruitmentProductionStartupError, "PostgreSQL modunda"):
                 guard.assert_recruitment_production_ready()
 

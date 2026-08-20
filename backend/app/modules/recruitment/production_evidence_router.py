@@ -46,13 +46,20 @@ from .request_evidence_scan_authority import (
     record_verified_request_scan,
 )
 from .router import _identity, _read_upload_limited, _request_row, _require
-from .schemas import RecruitmentCandidateDecision, RecruitmentDecision
+from .schemas import (
+    RecruitmentCandidateDecision,
+    RecruitmentCandidateDocumentAttestation,
+    RecruitmentCandidateDocumentVerification,
+    RecruitmentDecision,
+)
 from .service import (
     RecruitmentRuleError,
     add_evidence,
+    attest_candidate_document_verification,
     decide_candidate,
     decide_request,
     purge_expired_recruitment_data,
+    record_candidate_document_verification,
 )
 
 
@@ -337,6 +344,77 @@ def official_document_human_assist(
                 f"{candidate_id}/document-verifications/attest"
             ),
         }
+    except (
+        CandidateEvidenceRuntimeError,
+        EvidenceReleaseAuthorityError,
+        RecruitmentRuleError,
+    ) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/document-verifications")
+def secure_human_document_verification(
+    request_id: str,
+    candidate_id: str,
+    payload: RecruitmentCandidateDocumentVerification,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Record a human-witnessed result only after the exact file was scanner-released."""
+    _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
+    actor, _ = _identity(request)
+    try:
+        _, _, evidence = locate_candidate_evidence(
+            request_id, candidate_id, payload.evidence_sha256
+        )
+        if _encrypted_mode():
+            require_candidate_evidence_released(request_id, candidate_id, evidence)
+        return record_candidate_document_verification(
+            request_id,
+            candidate_id,
+            payload.model_dump(mode="json"),
+            actor,
+            verification_method="HR_ASSISTED_OFFICIAL_PORTAL",
+        )
+    except (
+        CandidateEvidenceRuntimeError,
+        EvidenceReleaseAuthorityError,
+        RecruitmentRuleError,
+    ) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/document-verifications/attest")
+def secure_human_document_attestation(
+    request_id: str,
+    candidate_id: str,
+    payload: RecruitmentCandidateDocumentAttestation,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Apply four-eyes attestation only while scanner release remains CLEAN."""
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
+    actor, _ = _identity(request)
+    try:
+        _, _, evidence = locate_candidate_evidence(
+            request_id, candidate_id, payload.evidence_sha256
+        )
+        if _encrypted_mode():
+            require_candidate_evidence_released(request_id, candidate_id, evidence)
+        return attest_candidate_document_verification(
+            request_id,
+            candidate_id,
+            payload.evidence_sha256,
+            payload.note,
+            actor,
+        )
     except (
         CandidateEvidenceRuntimeError,
         EvidenceReleaseAuthorityError,

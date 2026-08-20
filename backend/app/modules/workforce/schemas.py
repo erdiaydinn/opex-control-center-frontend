@@ -336,7 +336,7 @@ class LeaveImportRow(BaseModel):
     type_id: str = Field(min_length=1, max_length=120)
     category: str = Field(default="", max_length=180)
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    minutes: int = Field(default=450, ge=0, le=1440)
+    minutes: int = Field(default=0, ge=0, le=1440)
     approval: str = Field(default="Onaylandı", max_length=80)
     note: str = Field(default="", max_length=1000)
     source: str = Field(default="Time Off Used", max_length=255)

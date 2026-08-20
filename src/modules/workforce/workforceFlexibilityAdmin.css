@@ -1,0 +1,35 @@
+.wfx-flex-admin { display: grid; gap: 16px; }
+.wfx-flex-admin > header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.wfx-flex-admin > header div { display: grid; gap: 4px; }
+.wfx-flex-admin > header span { color: #d80b69; font-size: 11px; font-weight: 900; letter-spacing: .09em; }
+.wfx-flex-admin > header h3 { margin: 0; font-size: 20px; }
+.wfx-flex-admin > header p { margin: 0; color: #667085; max-width: 760px; }
+.wfx-flex-admin form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.wfx-flex-admin form label { display: grid; gap: 6px; color: #475467; font-size: 12px; font-weight: 800; }
+.wfx-flex-admin form label.wide { grid-column: span 2; }
+.wfx-flex-admin form input, .wfx-flex-admin form select { min-height: 42px; border: 1px solid rgba(16,24,40,.12); border-radius: 12px; padding: 8px 10px; background: var(--wfx-card, #fff); color: var(--wfx-text, #101828); box-sizing: border-box; width: 100%; }
+.wfx-flex-admin form > button { grid-column: span 2; min-height: 44px; border: 0; border-radius: 12px; background: #d80b69; color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 850; cursor: pointer; align-self: end; }
+.wfx-flex-admin form > button:disabled { opacity: .55; cursor: not-allowed; }
+.wfx-flex-admin-activities { grid-column: 1 / -1; margin: 2px 0; border: 1px solid rgba(16,24,40,.1); border-radius: 15px; padding: 13px; display: grid; gap: 9px; }
+.wfx-flex-admin-activities legend { padding: 0 6px; color: var(--wfx-text, #101828); font-size: 12px; font-weight: 900; }
+.wfx-flex-admin-activities > small, .wfx-flex-admin-activities > p { color: #667085; font-size: 11px; margin: 0; }
+.wfx-flex-admin-activities > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 260px; overflow: auto; }
+.wfx-flex-admin-activities label { display: grid !important; grid-template-columns: auto 1fr; align-items: center; gap: 9px !important; border: 1px solid rgba(16,24,40,.09); border-radius: 12px; padding: 9px 10px; background: rgba(248,250,252,.75); cursor: pointer; }
+.wfx-flex-admin-activities label.selected { border-color: rgba(216,11,105,.35); background: rgba(216,11,105,.055); }
+.wfx-flex-admin-activities label input { width: 17px !important; min-height: 17px !important; accent-color: #d80b69; padding: 0 !important; }
+.wfx-flex-admin-activities label span { display: grid; gap: 2px; min-width: 0; }
+.wfx-flex-admin-activities label strong { color: var(--wfx-text, #101828); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wfx-flex-admin-activities label small { color: #667085; font-size: 10px; font-weight: 650; }
+.wfx-flex-admin-created-activities { display: flex !important; flex-wrap: wrap; gap: 5px !important; margin-top: 4px; }
+.wfx-flex-admin-created-activities span { border-radius: 999px; padding: 3px 7px; background: rgba(18,183,106,.1); color: #067647 !important; font-size: 10px !important; letter-spacing: 0 !important; }
+.wfx-flex-admin-message { display: flex; align-items: center; gap: 9px; border-radius: 13px; padding: 11px 13px; }
+.wfx-flex-admin-message div { display: grid; gap: 2px; }
+.wfx-flex-admin-message small { opacity: .78; }
+.wfx-flex-admin-message.success { background: rgba(18,183,106,.1); border: 1px solid rgba(18,183,106,.18); color: #067647; }
+.wfx-flex-admin-message.error { background: rgba(240,68,56,.09); border: 1px solid rgba(240,68,56,.18); color: #b42318; }
+.wfx-flex-admin-rule, .wfx-flex-admin-denied { display: flex; align-items: center; gap: 8px; color: #667085; font-size: 12px; }
+.wfx-flex-admin-denied { padding: 16px; }
+.wfx-theme-dark .wfx-flex-admin-activities { border-color: rgba(255,255,255,.1); }
+.wfx-theme-dark .wfx-flex-admin-activities label { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.08); }
+@media (max-width: 1100px) { .wfx-flex-admin form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wfx-flex-admin-activities > div { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .wfx-flex-admin form { grid-template-columns: 1fr; } .wfx-flex-admin form label.wide, .wfx-flex-admin form > button { grid-column: auto; } .wfx-flex-admin-activities { grid-column: auto; } .wfx-flex-admin-activities > div { grid-template-columns: 1fr; } }

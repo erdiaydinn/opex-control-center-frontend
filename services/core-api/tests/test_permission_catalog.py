@@ -148,17 +148,34 @@ def test_workforce_contract_is_catalogued() -> None:
 def test_recruitment_actions_are_catalogued() -> None:
     text = _read("modules/recruitment/RecruitmentControl.jsx")
 
-    actions = set(
+    ui_actions = set(
         re.findall(
             r'canAction\(\s*["\']recruitment["\']\s*,'
             r'\s*["\']([^"\']+)["\']\s*\)',
             text,
         )
     )
+    canonical = ACTIONS["recruitment"]
 
-    assert actions == ACTIONS["recruitment"]
+    # Recruitment has server-only authorities as well as UI capability checks.
+    # Every UI check must be canonical, while the canonical set must preserve the
+    # complete governed vacancy/evidence/settings/notification lifecycle.
+    assert ui_actions
+    assert ui_actions <= canonical
+    assert canonical == frozenset(
+        {
+            "viewRecruitment",
+            "createRecruitmentRequest",
+            "approveRecruitmentRequest",
+            "viewRecruitmentEvidence",
+            "manageRecruitmentNorms",
+            "manageRecruitmentActuals",
+            "manageRecruitmentSettings",
+            "manageRecruitmentNotifications",
+        }
+    )
 
-    for action in actions:
+    for action in canonical:
         assert action_permission("recruitment", action) in ALL_PERMISSION_KEYS
 
 

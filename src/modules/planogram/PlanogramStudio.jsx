@@ -160,7 +160,12 @@ export default function PlanogramStudio() {
     setOptimizerRunning(true);
     setPreviewError("");
     try {
-      setPreview(await apiPost("/v1/planogram/picker-tour/simulate", candidate));
+      const response = await apiPost("/v1/planogram/optimize-preview", candidate);
+      setPreview(
+        response?.optimizer_result
+          ? { ...response, engine_result: response.optimizer_result }
+          : response
+      );
     } catch {
       setPreview(null);
       setPreviewError(p("optimizerFailed"));

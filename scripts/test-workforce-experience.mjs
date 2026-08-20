@@ -9,8 +9,13 @@ try {
   const preferences = await vite.ssrLoadModule(
     "/src/platform/preferences/PlatformPreferencesContext.jsx",
   );
+  const auth = await vite.ssrLoadModule("/src/auth/AuthContext.jsx");
   const renderWithPlatform = (component) => renderToStaticMarkup(
-    React.createElement(preferences.PlatformPreferencesProvider, null, component),
+    React.createElement(
+      preferences.PlatformPreferencesProvider,
+      null,
+      React.createElement(auth.AuthProvider, null, component),
+    ),
   );
   const mobile = renderWithPlatform(
     React.createElement(module.WorkforceExperienceCenter, { onBack() {} }),

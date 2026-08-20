@@ -8,7 +8,7 @@ import {
   claimWorkforceOpenShift,
   loadWorkforceFlexibility,
   saveWorkforceAvailability,
-} from "./workforceApi.js";
+} from "./workforceFlexibilityApi.js";
 import "./workforceFlexibility.css";
 
 
@@ -129,7 +129,7 @@ export default function WorkforceFlexibilityCenter() {
       <div className="wfx-flex-shift-list">
         {data.openShifts.map((shift) => <article key={shift.id}>
           <div className="wfx-flex-shift-time"><strong>{formatDate(shift.date, locale)}</strong><span><Clock3 size={15} />{shift.start}–{shift.end}</span></div>
-          <div className="wfx-flex-shift-main"><strong>{shift.warehouse}</strong><small>{shift.role}</small><span><Users size={14} /> {m("capacity", { count: shift.remainingCapacity })}</span></div>
+          <div className="wfx-flex-shift-main"><strong>{shift.warehouse}</strong><small>{shift.role}</small>{shift.activities?.length ? <div className="wfx-flex-activity-chips">{shift.activities.map((activity) => <span key={`${shift.id}-${activity.activityKey}`}>{activity.displayName}</span>)}</div> : null}<span><Users size={14} /> {m("capacity", { count: shift.remainingCapacity })}</span></div>
           <div className="wfx-flex-shift-fit"><b>{m("score", { score: shift.eligibility?.score ?? "—" })}</b>{shift.eligibility?.preferenceMatch ? <small><CheckCircle2 size={13} />{m("preferenceMatch")}</small> : null}</div>
           <button type="button" disabled={busy === `claim-${shift.id}`} onClick={() => claim(shift.id)}>{busy === `claim-${shift.id}` ? m("claiming") : m("claim")}</button>
         </article>)}

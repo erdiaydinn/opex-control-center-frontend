@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
+from . import service
 from .flexibility import (
     claim_open_shift,
     create_open_shift,
@@ -19,10 +20,27 @@ from .flexibility_schemas import (
 )
 from .router import _enforce_self, _require, _require_rows_in_scope
 from .work_activity_catalog import (
+    WorkActivityCatalogError,
     approve_activity,
     list_activity_catalog,
     list_template_candidates,
     retire_activity,
+)
+from .work_activity_labor_catalog import (
+    ActivityLaborCatalogError,
+    approve_labor_standard,
+    list_labor_standards,
+    retire_labor_standard,
+)
+from .work_activity_schemas import (
+    ActivityLaborStandardApproveRequest,
+    EmployeeCapabilitiesUpdateRequest,
+    WorksiteTypeUpdateRequest,
+)
+from .workforce_capability_authority import (
+    WorkforceCapabilityAuthorityError,
+    update_employee_capabilities,
+    update_worksite_type,
 )
 
 
@@ -35,12 +53,6 @@ def _actor(request: Request) -> str:
 
 
 def _strict_employee_self(request: Request, person_id: str, role: str) -> None:
-    """Employee marketplace actions never become manager impersonation paths.
-
-    If a verified identity is present, its employee_id must match regardless of
-    role. Production fails closed when the signed claim is absent. Legacy local
-    development keeps the existing Workforce self-check behavior for fixtures.
-    """
     identity = getattr(request.state, "identity", None)
     expected = getattr(identity, "employee_id", None)
     if expected:
@@ -51,6 +63,10 @@ def _strict_employee_self(request: Request, person_id: str, role: str) -> None:
     if os.getenv("DOCKOS_ENV", "development").lower() == "production":
         raise HTTPException(status_code=403, detail="JWT employee_id claim'i gerekli.")
     _enforce_self(request, person_id, role)
+
+
+def _catalog_conflict(error: Exception) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
 
 @router.get("/availability")
@@ -115,7 +131,10 @@ def post_activity(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
-    return approve_activity(payload.model_dump(mode="json"), _actor(request))
+    try:
+        return approve_activity(payload.model_dump(mode="json"), _actor(request))
+    except WorkActivityCatalogError as error:
+        raise _catalog_conflict(error) from error
 
 
 @router.post("/activities/{activity_key}/retire")
@@ -126,7 +145,83 @@ def post_retire_activity(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
-    return retire_activity(activity_key, _actor(request))
+    try:
+        return retire_activity(activity_key, _actor(request))
+    except WorkActivityCatalogError as error:
+        raise _catalog_conflict(error) from error
+
+
+@router.get("/labor-standards")
+def get_labor_standards(
+    activity_key: str | None = None,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "createShift")
+    return {"rows": list_labor_standards(activity_key=activity_key)}
+
+
+@router.post("/labor-standards", status_code=status.HTTP_201_CREATED)
+def post_labor_standard(
+    payload: ActivityLaborStandardApproveRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    try:
+        return approve_labor_standard(payload.model_dump(mode="json"), _actor(request))
+    except (ActivityLaborCatalogError, WorkActivityCatalogError) as error:
+        raise _catalog_conflict(error) from error
+
+
+@router.post("/labor-standards/{activity_key}/retire")
+def post_retire_labor_standard(
+    activity_key: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    try:
+        return retire_labor_standard(activity_key, _actor(request))
+    except ActivityLaborCatalogError as error:
+        raise _catalog_conflict(error) from error
+
+
+@router.put("/employees/{employee_id}/capabilities")
+def put_employee_capabilities(
+    employee_id: str,
+    payload: EmployeeCapabilitiesUpdateRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageEmployees")
+    person = service.resolve_person_identity(employee_id, "EMPLOYEE_ID")
+    if person is None:
+        raise HTTPException(status_code=404, detail="Employee Master record was not found.")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": person.get("warehouse_id")}])
+    try:
+        return update_employee_capabilities(employee_id, payload.model_dump(mode="json"), _actor(request))
+    except WorkforceCapabilityAuthorityError as error:
+        raise _catalog_conflict(error) from error
+
+
+@router.put("/worksites/{worksite_id}/type")
+def put_worksite_type(
+    worksite_id: str,
+    payload: WorksiteTypeUpdateRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageWarehouses")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": worksite_id}])
+    try:
+        return update_worksite_type(worksite_id, payload.location_type, _actor(request))
+    except WorkforceCapabilityAuthorityError as error:
+        raise _catalog_conflict(error) from error
 
 
 @router.post("/open-shifts", status_code=status.HTTP_201_CREATED)
@@ -138,7 +233,10 @@ def post_open_shift(
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "createShift")
     _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": payload.warehouse_id}])
-    return create_open_shift(payload.model_dump(mode="json"), _actor(request))
+    try:
+        return create_open_shift(payload.model_dump(mode="json"), _actor(request))
+    except WorkActivityCatalogError as error:
+        raise _catalog_conflict(error) from error
 
 
 @router.post("/open-shifts/{open_shift_id}/claim")

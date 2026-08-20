@@ -6,7 +6,7 @@ It does not browse, call models, execute tools, promote Company World truth or
 grant business authority. Instead, it makes the missing scientific behavior
 explicit and testable: decompose unfamiliar problems, seek independent evidence,
 actively falsify the leading explanation, refuse stale/contested conclusions,
-and turn grounded outcomes into recallable lessons.
+and turn grounded outcomes into recallable, calibratable lessons.
 """
 
 from __future__ import annotations
@@ -128,6 +128,7 @@ class HypothesisResearchState(BaseModel):
     independent_source_family_count: int = Field(ge=0)
     falsification_completed: bool
     falsification_refuted: bool
+    material_contestation_resolved: bool
     blockers: tuple[str, ...] = ()
 
 
@@ -193,6 +194,31 @@ class InvestigatorLesson(BaseModel):
         expected = _fingerprint(_payload(self))
         if self.fingerprint != expected:
             raise ValueError("investigator_lesson_fingerprint_mismatch")
+        return self
+
+
+class InvestigatorCalibrationProfile(BaseModel):
+    contract: str = AUTONOMOUS_INVESTIGATOR_CONTRACT
+    tenant_id: str
+    company_id: str
+    sample_count: int = Field(ge=1)
+    mean_brier_score: float = Field(ge=0.0, le=1.0)
+    prediction_error_rate: float = Field(ge=0.0, le=1.0)
+    suggested_confidence_multiplier: float = Field(ge=0.25, le=1.0)
+    lesson_fingerprints: tuple[str, ...] = Field(min_length=1)
+    evidence_refs: tuple[str, ...] = Field(min_length=1)
+    automatic_activation_allowed: bool = False
+    model_weights_mutated: bool = False
+    business_policy_mutated: bool = False
+
+    @model_validator(mode="after")
+    def profile_cannot_self_activate(self) -> "InvestigatorCalibrationProfile":
+        if (
+            self.automatic_activation_allowed
+            or self.model_weights_mutated
+            or self.business_policy_mutated
+        ):
+            raise ValueError("investigator_calibration_cannot_self_modify_production")
         return self
 
 
@@ -268,8 +294,7 @@ def evaluate_autonomous_investigation(
     binding_map = {item.evidence_id: item.source_family_key for item in source_bindings}
     if len(binding_map) != len(source_bindings):
         raise ValueError("investigator_duplicate_source_binding")
-    unknown_bindings = set(binding_map) - set(evidence_ids)
-    if unknown_bindings:
+    if set(binding_map) - set(evidence_ids):
         raise ValueError("investigator_source_binding_unknown_evidence")
 
     falsification_keys = [(item.hypothesis_id, item.test_id) for item in falsification_results]
@@ -288,16 +313,13 @@ def evaluate_autonomous_investigation(
         blockers.append("investigator_world_state_contradicted")
 
     high_stakes = problem.risk in {ResearchRisk.HIGH, ResearchRisk.CRITICAL}
-    if high_stakes:
-        missing_bindings = set(evidence_ids) - set(binding_map)
-        if missing_bindings:
-            blockers.append("investigator_source_family_binding_incomplete")
+    if high_stakes and set(evidence_ids) - set(binding_map):
+        blockers.append("investigator_source_family_binding_incomplete")
 
     states: list[HypothesisResearchState] = []
     candidates: list[HypothesisCandidate] = []
     all_candidates_have_directional_evidence = True
     next_tasks: list[str] = []
-    confidence_caps: list[float] = []
 
     for hypothesis in hypotheses:
         question = ResearchQuestion(
@@ -315,7 +337,6 @@ def evaluate_autonomous_investigation(
             evidence=list(evidence),
             freshness_window=timedelta(seconds=problem.evidence_freshness_seconds),
         )
-        confidence_caps.append(assessment.confidence_cap)
 
         relevant = [item for item in evidence if item.claim_key == hypothesis.claim_key]
         families = {
@@ -368,18 +389,46 @@ def evaluate_autonomous_investigation(
             item.verdict is FalsificationVerdict.REFUTED
             for item in completed.values()
         )
+        falsification_survived = (
+            falsification_completed
+            and bool(completed)
+            and all(
+                item.verdict is FalsificationVerdict.SURVIVED
+                for item in completed.values()
+            )
+        )
+        material_contestation_resolved = (
+            assessment.verdict is ResearchVerdict.CONTESTED
+            and falsification_survived
+        )
 
-        state_blockers: list[str] = list(assessment.blockers)
+        state_blockers = list(assessment.blockers)
+        if material_contestation_resolved:
+            state_blockers = [
+                item
+                for item in state_blockers
+                if item != "research_material_contradiction_unresolved"
+            ]
         if len(families) < problem.minimum_independent_sources:
             state_blockers.append("investigator_independent_source_family_quorum_missing")
         if not falsification_completed:
             state_blockers.append("investigator_falsification_incomplete")
+        if any(
+            item.verdict is FalsificationVerdict.INCONCLUSIVE
+            for item in completed.values()
+        ):
+            state_blockers.append("investigator_falsification_inconclusive")
         if falsification_refuted and not any(
             item.direction is EvidenceDirection.REFUTE for item in hypothesis_evidence
         ):
             state_blockers.append("investigator_refutation_not_reflected_in_evidence")
+
         for gap in assessment.unresolved_gaps:
-            next_tasks.append(f"{hypothesis.hypothesis_id}:{gap}")
+            if not (
+                material_contestation_resolved
+                and gap == "resolve_contradictory_evidence"
+            ):
+                next_tasks.append(f"{hypothesis.hypothesis_id}:{gap}")
         for test_id in sorted(required_tests - set(completed)):
             next_tasks.append(f"{hypothesis.hypothesis_id}:run_falsification:{test_id}")
 
@@ -391,6 +440,7 @@ def evaluate_autonomous_investigation(
                 independent_source_family_count=len(families),
                 falsification_completed=falsification_completed,
                 falsification_refuted=falsification_refuted,
+                material_contestation_resolved=material_contestation_resolved,
                 blockers=tuple(dict.fromkeys(state_blockers)),
             )
         )
@@ -417,6 +467,7 @@ def evaluate_autonomous_investigation(
     else:
         blockers.append("investigator_hypothesis_evidence_incomplete")
 
+    leader_state: HypothesisResearchState | None = None
     if ranking is not None:
         blockers.extend(ranking.blockers)
         if ranking.leading_hypothesis_id is not None:
@@ -426,7 +477,11 @@ def evaluate_autonomous_investigation(
                 if item.hypothesis_id == ranking.leading_hypothesis_id
             )
             blockers.extend(leader_state.blockers)
-            if leader_state.assessment.verdict is not ResearchVerdict.SUPPORTED:
+            research_supported = (
+                leader_state.assessment.verdict is ResearchVerdict.SUPPORTED
+                or leader_state.material_contestation_resolved
+            )
+            if not research_supported:
                 blockers.append("investigator_leading_hypothesis_not_research_supported")
             if leader_state.falsification_refuted:
                 blockers.append("investigator_leading_hypothesis_refuted")
@@ -454,9 +509,16 @@ def evaluate_autonomous_investigation(
     else:
         disposition = InvestigatorDisposition.DECISION_READY
 
-    confidence_cap = min(confidence_caps, default=0.0)
-    if ranking is not None and ranking.assessments:
-        confidence_cap = min(confidence_cap, ranking.assessments[0].confidence)
+    if ranking is not None and ranking.assessments and leader_state is not None:
+        confidence_cap = min(
+            ranking.assessments[0].confidence,
+            leader_state.assessment.confidence_cap,
+        )
+    else:
+        confidence_cap = min(
+            (item.assessment.confidence_cap for item in states),
+            default=0.0,
+        )
     if disposition is not InvestigatorDisposition.DECISION_READY:
         confidence_cap = min(confidence_cap, 0.60)
 
@@ -499,10 +561,14 @@ def build_investigator_lesson(
         raise ValueError("investigator_lesson_requires_grounded_measured_outcome")
     if report.ranking is None or report.ranking.leading_hypothesis_id is None:
         raise ValueError("investigator_lesson_requires_prior_prediction")
+    known_hypotheses = {item.hypothesis_id for item in report.ranking.assessments}
+    if resolved_hypothesis_id not in known_hypotheses:
+        raise ValueError("investigator_lesson_unknown_resolved_hypothesis")
 
     predicted = report.ranking.leading_hypothesis_id
     leader = next(
-        item for item in report.ranking.assessments
+        item
+        for item in report.ranking.assessments
         if item.hypothesis_id == predicted
     )
     probability = leader.confidence
@@ -565,6 +631,47 @@ def build_investigator_lesson(
         model_summary_is_truth=False,
     )
     return lesson, episode
+
+
+def calibrate_investigator_lessons(
+    lessons: tuple[InvestigatorLesson, ...],
+) -> InvestigatorCalibrationProfile:
+    """Aggregate grounded errors into a bounded confidence recommendation."""
+
+    if not lessons:
+        raise ValueError("investigator_calibration_requires_lessons")
+    tenants = {item.tenant_id for item in lessons}
+    companies = {item.company_id for item in lessons}
+    if len(tenants) != 1 or len(companies) != 1:
+        raise ValueError("investigator_calibration_scope_mismatch")
+    fingerprints = tuple(item.fingerprint for item in lessons)
+    if len(fingerprints) != len(set(fingerprints)):
+        raise ValueError("investigator_calibration_duplicate_lesson")
+
+    mean_brier = sum(item.brier_score for item in lessons) / len(lessons)
+    error_rate = sum(1 for item in lessons if not item.prediction_correct) / len(lessons)
+    lesson_multiplier = sum(
+        item.suggested_confidence_multiplier for item in lessons
+    ) / len(lessons)
+    calibration_penalty = 1.0 - 0.50 * mean_brier - 0.25 * error_rate
+    multiplier = max(0.25, min(1.0, lesson_multiplier, calibration_penalty))
+    evidence_refs = tuple(
+        dict.fromkeys(
+            ref
+            for lesson in lessons
+            for ref in lesson.evidence_refs
+        )
+    )
+    return InvestigatorCalibrationProfile(
+        tenant_id=next(iter(tenants)),
+        company_id=next(iter(companies)),
+        sample_count=len(lessons),
+        mean_brier_score=round(mean_brier, 6),
+        prediction_error_rate=round(error_rate, 6),
+        suggested_confidence_multiplier=round(multiplier, 6),
+        lesson_fingerprints=fingerprints,
+        evidence_refs=evidence_refs,
+    )
 
 
 def _validate_hypothesis_set(

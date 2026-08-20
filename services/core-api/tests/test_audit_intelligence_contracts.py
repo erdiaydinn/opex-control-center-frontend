@@ -6,11 +6,20 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_audit_intelligence_metrics_are_server_deterministic() -> None:
     source = (ROOT / "app/modules/audit/intelligence.py").read_text(encoding="utf-8")
     assert '"llm_computed_metrics": False' in source
-    assert '"calculation_version": "audit.intelligence.summary.v1"' in source
+    assert '"calculation_version": "audit.intelligence.summary.v2"' in source
     assert "audit_runs" in source
     assert "audit_actions" in source
     assert "audit_assurance_cases" in source
     assert "receipt_fingerprint" in source
+
+
+def test_official_compliance_score_excludes_focus_visit_scores() -> None:
+    source = (ROOT / "app/modules/audit/intelligence.py").read_text(encoding="utf-8")
+    assert "official_compliance_eligible IS TRUE" in source
+    assert '"official_compliance_only": True' in source
+    assert '"eligibility_column": "audit_runs.official_compliance_eligible"' in source
+    assert '"non_official_score_modes": ["FOCUS_SCORE"]' in source
+    assert "FROM official_scored_runs" in source
 
 
 def test_evidence_coverage_requires_server_privacy_verification() -> None:

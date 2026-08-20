@@ -45,6 +45,8 @@ data class OfflineEvent(
     val createdAt: Long = System.currentTimeMillis(),
     val quarantineReason: String? = null,
     val lastServerCode: String? = null,
+    val recoveryCaseId: String? = null,
+    val recoveryState: String? = null,
 )
 
 @Entity(tableName = "auth_session")
@@ -84,6 +86,13 @@ interface OfflineEventDao {
     )
     suspend fun unsettledBefore(beforeSequence: Long): List<OfflineEvent>
 
+    @Query(
+        "SELECT * FROM offline_events " +
+            "WHERE state='QUARANTINED' AND recoveryCaseId IS NULL " +
+            "ORDER BY deviceSequence LIMIT :limit",
+    )
+    suspend fun recoveryCandidates(limit: Int = 50): List<OfflineEvent>
+
     @Query("UPDATE offline_events SET state='ACKED' WHERE eventId=:eventId")
     suspend fun acknowledge(eventId: String)
 
@@ -112,6 +121,12 @@ interface OfflineEventDao {
     )
     suspend fun quarantine(eventId: String, reason: String, serverCode: String)
 
+    @Query(
+        "UPDATE offline_events SET recoveryCaseId=:caseId, recoveryState='REQUESTED' " +
+            "WHERE eventId=:eventId AND state='QUARANTINED' AND recoveryCaseId IS NULL",
+    )
+    suspend fun markRecoveryRequested(eventId: String, caseId: String): Int
+
     @Query("SELECT COUNT(*) FROM offline_events WHERE state IN ('PENDING','RETRY_WAIT')")
     suspend fun pendingCount(): Int
 
@@ -133,7 +148,7 @@ interface AuthSessionDao {
 
 @Database(
     entities = [OfflineEvent::class, AuthSession::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class InventoryDatabase : RoomDatabase() {
@@ -173,6 +188,20 @@ abstract class InventoryDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Recovery metadata is deliberately separate from immutable event
+                // identity/payload fields. A review case can be attached without
+                // rewriting or promoting quarantined count evidence.
+                db.execSQL(
+                    "ALTER TABLE offline_events ADD COLUMN recoveryCaseId TEXT DEFAULT NULL",
+                )
+                db.execSQL(
+                    "ALTER TABLE offline_events ADD COLUMN recoveryState TEXT DEFAULT NULL",
+                )
+            }
+        }
+
         fun get(context: Context): InventoryDatabase = instance ?: synchronized(this) {
             instance ?: build(context.applicationContext).also { instance = it }
         }
@@ -205,7 +234,7 @@ abstract class InventoryDatabase : RoomDatabase() {
                 "eay-inventory-offline.db",
             )
                 .openHelperFactory(SupportOpenHelperFactory(passphrase))
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         }
 

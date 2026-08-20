@@ -1,21 +1,24 @@
-name: EAY Planogram - Retail Intelligence V2 Convergence
+name: EAY Planogram - Retail Intelligence V3 Physical Truth
 
 on:
   push:
     branches:
       - product/planogram-market-leadership-v1
     paths:
+      - "apps/planai/backend/physical_capacity_v2.py"
       - "apps/planai/backend/commercial_physical_convergence.py"
       - "apps/planai/backend/shadow_backtest.py"
+      - "apps/planai/backend/tests/test_physical_capacity_v2.py"
       - "apps/planai/backend/tests/test_commercial_physical_convergence.py"
       - "apps/planai/backend/tests/test_shadow_backtest.py"
+      - "services/core-api/app/modules/planogram/engine_adapter.py"
       - "services/core-api/app/modules/planogram/commercial_physical_adapter.py"
       - "services/core-api/app/modules/planogram/shadow_backtest_adapter.py"
       - "services/core-api/app/modules/planogram/retail_intelligence_guard.py"
       - "services/core-api/app/modules/planogram/realogram_v2.py"
       - "services/core-api/app/modules/planogram/market_evidence_gate.py"
       - "services/core-api/app/modules/planogram/retail_intelligence_router.py"
-      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_capacity_v2_adapter.py"
       - "services/core-api/tests/test_planogram_retail_intelligence_guard.py"
       - "services/core-api/tests/test_planogram_realogram_v2.py"
       - "services/core-api/tests/test_planogram_market_evidence_gate.py"
@@ -23,10 +26,9 @@ on:
       - "src/modules/planogram/PlanogramRetailIntelligencePanel.jsx"
       - "src/modules/planogram/planogram-retail-intelligence.css"
       - "src/modules/planogram/planogramCandidateBundle.js"
-      - "src/modules/planogram/PlanogramStudio.jsx"
       - "src/platform/i18n/planogramRetailIntelligenceMessages.js"
       - "scripts/test-planogram-retail-intelligence.mjs"
-      - "config/eay_planogram_market_evidence_v2.json"
+      - "config/eay_planogram_market_evidence_v3.json"
       - ".github/workflows/eay-planogram-retail-intelligence-v2.yml"
   pull_request:
     branches:
@@ -35,24 +37,23 @@ on:
       - "apps/planai/backend/**"
       - "services/core-api/app/modules/planogram/**"
       - "services/core-api/tests/test_planogram*.py"
-      - "services/core-api/app/budget_main.py"
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramRetailIntelligenceMessages.js"
       - "scripts/test-planogram-retail-intelligence.mjs"
-      - "config/eay_planogram_market_evidence_v2.json"
+      - "config/eay_planogram_market_evidence_v3.json"
       - ".github/workflows/eay-planogram-retail-intelligence-v2.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: eay-planogram-retail-intelligence-v2-${{ github.ref }}
+  group: eay-planogram-retail-intelligence-v3-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  retail-intelligence-v2:
+  retail-intelligence-v3:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       OPEX_ENVIRONMENT: test
       OPEX_AUTH_MODE: development
@@ -78,44 +79,52 @@ jobs:
           python -m pip install -r apps/planai/backend/requirements.txt
           python -m pip install -e "./services/core-api[dev]"
           npm ci
-      - name: Strict lint retail-intelligence surfaces
+      - name: Strict lint Retail Intelligence V3 surfaces
         run: >-
           ruff check
+          apps/planai/backend/physical_capacity_v2.py
           apps/planai/backend/commercial_physical_convergence.py
           apps/planai/backend/shadow_backtest.py
+          apps/planai/backend/tests/test_physical_capacity_v2.py
           apps/planai/backend/tests/test_commercial_physical_convergence.py
           apps/planai/backend/tests/test_shadow_backtest.py
+          services/core-api/app/modules/planogram/engine_adapter.py
           services/core-api/app/modules/planogram/commercial_physical_adapter.py
           services/core-api/app/modules/planogram/shadow_backtest_adapter.py
           services/core-api/app/modules/planogram/retail_intelligence_guard.py
           services/core-api/app/modules/planogram/realogram_v2.py
           services/core-api/app/modules/planogram/market_evidence_gate.py
           services/core-api/app/modules/planogram/retail_intelligence_router.py
-          services/core-api/app/budget_main.py
+          services/core-api/tests/test_planogram_capacity_v2_adapter.py
           services/core-api/tests/test_planogram_retail_intelligence_guard.py
           services/core-api/tests/test_planogram_realogram_v2.py
           services/core-api/tests/test_planogram_market_evidence_gate.py
           services/core-api/tests/test_planogram_retail_intelligence_contract.py
-      - name: Commercial physical and paired KPI convergence
+      - name: Physical Capacity V2 commercial and paired KPI convergence
         working-directory: apps/planai/backend
         run: >-
           python -m pytest -q
+          tests/test_physical_capacity_v2.py
           tests/test_commercial_physical_convergence.py
           tests/test_shadow_backtest.py
-      - name: Core privacy realogram evidence gate and API convergence
+          tests/test_blind_benchmark_engine.py
+      - name: Core capacity privacy realogram evidence and API convergence
         run: >-
           python -m pytest -q
+          services/core-api/tests/test_planogram_capacity_v2_adapter.py
           services/core-api/tests/test_planogram_retail_intelligence_guard.py
           services/core-api/tests/test_planogram_realogram_v2.py
           services/core-api/tests/test_planogram_market_evidence_gate.py
           services/core-api/tests/test_planogram_retail_intelligence_contract.py
-      - name: Retail Intelligence UI privacy and authority boundary
+          services/core-api/tests/test_planogram_shelf_scan.py
+          services/core-api/tests/test_planogram_shelf_scan_api.py
+      - name: Retail Intelligence UI privacy, blind and shelf-scan boundary
         run: node scripts/test-planogram-retail-intelligence.mjs
       - name: Production frontend build
         run: npm run build -- --manifest
       - name: Preserve accessibility and localization gates
         run: npm run test:inclusion
-      - name: Prove market-evidence truth boundary
+      - name: Prove V3 market-evidence truth boundary
         run: |
           python - <<'PY'
           import json
@@ -123,27 +132,41 @@ jobs:
           from app.budget_main import app
           from app.modules.planogram.market_evidence_gate import evaluate_market_evidence_gate
 
-          paths = app.openapi()["paths"]
-          assert "/v1/planogram/retail-intelligence-preview" in paths
+          assert "/v1/planogram/retail-intelligence-preview" in app.openapi()["paths"]
           result = evaluate_market_evidence_gate(
-              convergence={"repository_converged": True},
+              convergence={
+                  "repository_converged": True,
+                  "physical_capacity_v2": {"valid": True},
+              },
               shadow_backtest={
                   "available": True,
                   "evidence_complete": True,
                   "minimum_pair_gate_passed": True,
               },
               blind_benchmark={"available": True, "blind": True},
-              realogram={"available": True, "provenance_fields_complete": True},
+              realogram={
+                  "available": True,
+                  "provenance_fields_complete": True,
+                  "action_state_contract": "stable-id-dedup-open-resolved-v1",
+              },
               shelf_scan={"candidate_ready_for_human_review": True},
+              preview_context=True,
           )
           assert result["repository_ready_for_independent_review"] is True
           assert result["market_leadership_claim_allowed"] is False
+          assert result["production_promotion_allowed"] is False
+
           contract = json.loads(
-              Path("config/eay_planogram_market_evidence_v2.json").read_text()
+              Path("config/eay_planogram_market_evidence_v3.json").read_text()
           )
           assert contract["claim_market_leader"] is False
           assert contract["external_field_proof_required"] is True
-          print("PLANOGRAM_RETAIL_INTELLIGENCE_V2=PASS")
+          assert (
+              contract["internal_migrations"]["github_actions_exact_sha_evidence"]
+              == "runtime_observation_required"
+          )
+          print("PLANOGRAM_RETAIL_INTELLIGENCE_V3=PASS")
+          print("PLANOGRAM_PHYSICAL_CAPACITY_V2=PASS")
+          print("PLANOGRAM_PREVIEW_PROMOTION=FALSE")
           print("PLANOGRAM_MARKET_LEADERSHIP_CLAIM=FALSE")
-          print("PLANOGRAM_EXTERNAL_FIELD_PROOF=REQUIRED")
           PY

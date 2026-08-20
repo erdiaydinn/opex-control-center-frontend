@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 import json
+from zoneinfo import ZoneInfo
 
 from app.modules.workforce import persistence
-from app.modules.workforce.service import list_warehouses, resolve_person_identity
+from app.modules.workforce.service import list_people, list_warehouses, resolve_person_identity
 
 from .service import RecruitmentRuleError, evaluate
 
@@ -82,11 +83,7 @@ def import_snapshot(payload: dict, actor: str) -> dict:
     if not rows:
         raise RecruitmentRuleError("HR Actual dosyasında işlenebilir kayıt bulunamadı.")
 
-    # Prime the persistence revision from the authoritative store before writing.
-    # persist_snapshot_with_audit still performs optimistic CAS, so concurrent
-    # imports remain fail-closed rather than silently overwriting one another.
     persistence.load_collection(_COLLECTION)
-
     warehouse_index = _warehouse_index()
     sanitized: list[dict] = []
     matched = unmatched = active_rows = 0
@@ -178,14 +175,26 @@ def latest_snapshot() -> dict | None:
     return rows[0] if rows else None
 
 
+def _snapshot_age_days(as_of: object | None) -> int | None:
+    try:
+        snapshot_day = date.fromisoformat(str(as_of))
+    except (TypeError, ValueError):
+        return None
+    today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    return max(0, (today - snapshot_day).days)
+
+
 def snapshot_summary(snapshot: dict | None = None) -> dict | None:
     current = snapshot or latest_snapshot()
     if not current:
         return None
+    age_days = _snapshot_age_days(current.get("as_of"))
     return {
         "source_name": current.get("source_name"),
         "source_sha256": current.get("source_sha256"),
         "as_of": current.get("as_of"),
+        "age_days": age_days,
+        "freshness": "FRESH" if age_days is not None and age_days <= 1 else "STALE",
         "imported_at": current.get("imported_at"),
         "source_rows": int(current.get("source_rows", 0)),
         "active_rows": int(current.get("active_rows", 0)),
@@ -196,17 +205,97 @@ def snapshot_summary(snapshot: dict | None = None) -> dict | None:
     }
 
 
+def _aliases(evaluation: dict) -> set[str]:
+    return {
+        _normalize(evaluation.get("warehouse_id")),
+        _normalize(evaluation.get("warehouse_name")),
+        _normalize(str(evaluation.get("warehouse_name") or "").split(" (")[0]),
+    }
+
+
+def _projection_for_days(evaluation: dict, people: list[dict], days: int) -> dict:
+    today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    horizon = today + timedelta(days=days)
+    aliases = _aliases(evaluation)
+    position_code = str(evaluation.get("position_code") or "STORE_STAFF")
+    wanted_codes = {"STORE_MANAGER"} if position_code == "STORE_MANAGER" else _STAFF_CODES
+    incoming = exits = 0
+    incoming_fte = exit_fte = 0.0
+
+    for person in people:
+        if not person.get("active", True):
+            continue
+        warehouse_aliases = {
+            _normalize(person.get("warehouse_id")),
+            _normalize(person.get("warehouse")),
+            _normalize(str(person.get("warehouse") or "").split(" (")[0]),
+        }
+        if not aliases.intersection(warehouse_aliases):
+            continue
+        if _position_code(person.get("position") or person.get("role")) not in wanted_codes:
+            continue
+        fte = max(0.0, min(2.0, float(person.get("fte", 1) or 0)))
+        try:
+            start = date.fromisoformat(str(person.get("employment_start"))) if person.get("employment_start") else None
+        except ValueError:
+            start = None
+        try:
+            end = date.fromisoformat(str(person.get("employment_end"))) if person.get("employment_end") else None
+        except ValueError:
+            end = None
+        if start and today < start <= horizon:
+            incoming += 1
+            incoming_fte += fte
+        if end and today < end <= horizon:
+            exits += 1
+            exit_fte += fte
+
+    committed = max(0, int(evaluation.get("active", 0)) + incoming - exits)
+    committed_fte = max(0.0, float(evaluation.get("active", 0)) + incoming_fte - exit_fte)
+    open_positions = max(0, int(evaluation.get("open_positions", 0)))
+    capacity = max(0, int(evaluation.get("capacity", 0)))
+    uncovered_gap = max(0, capacity - committed - open_positions)
+    return {
+        "days": days,
+        "incoming": incoming,
+        "confirmed_exits": exits,
+        "committed_headcount": committed,
+        "committed_fte": round(committed_fte, 2),
+        "open_positions": open_positions,
+        "uncovered_gap": uncovered_gap,
+    }
+
+
+def _staffing_projection(evaluation: dict) -> dict:
+    people = list_people(False)
+    projections = {days: _projection_for_days(evaluation, people, days) for days in (30, 60, 90)}
+    next_30 = projections[30]
+    return {
+        "incoming_committed": next_30["incoming"],
+        "confirmed_exits": next_30["confirmed_exits"],
+        "committed_headcount": next_30["committed_headcount"],
+        "committed_fte": next_30["committed_fte"],
+        "uncovered_gap": next_30["uncovered_gap"],
+        "forecast_30": projections[30],
+        "forecast_60": projections[60],
+        "forecast_90": projections[90],
+    }
+
+
 def enrich_evaluation(evaluation: dict) -> dict:
     snapshot = latest_snapshot()
+    projection = _staffing_projection(evaluation)
     if not snapshot:
         return {
             **evaluation,
+            **projection,
             "hr_actual": None,
             "hr_actual_fte": None,
             "hr_actual_unmatched": None,
             "hr_actual_delta": None,
             "hr_actual_as_of": None,
             "hr_actual_source": None,
+            "hr_actual_age_days": None,
             "actual_authority": "EMPLOYEE_MASTER_FALLBACK",
             "decision_actual_source": "EMPLOYEE_MASTER",
         }
@@ -225,12 +314,14 @@ def enrich_evaluation(evaluation: dict) -> dict:
     unmatched = sum(not row.get("matched", False) for row in rows)
     return {
         **evaluation,
+        **projection,
         "hr_actual": hr_actual,
         "hr_actual_fte": hr_fte,
         "hr_actual_unmatched": unmatched,
         "hr_actual_delta": int(evaluation.get("active", 0)) - hr_actual,
         "hr_actual_as_of": snapshot.get("as_of"),
         "hr_actual_source": snapshot.get("source_name"),
+        "hr_actual_age_days": _snapshot_age_days(snapshot.get("as_of")),
         "actual_authority": "HR_SNAPSHOT",
         "decision_actual_source": "EMPLOYEE_MASTER",
     }
@@ -249,9 +340,13 @@ def build_dashboard(scoped_norms: list[dict], scoped_requests: list[dict]) -> di
         "rejected": sum(row.get("status") == "REJECTED" for row in scoped_requests),
         "evidence_required": sum(row.get("status") == "EVIDENCE_REQUIRED" for row in scoped_requests),
         "norm_gap_warehouses": sum(int(row.get("available", 0)) > 0 for row in warehouse_rows),
+        "uncovered_gap_warehouses": sum(int(row.get("uncovered_gap", 0)) > 0 for row in warehouse_rows),
         "warehouse_rows": sorted(
             warehouse_rows,
-            key=lambda row: (int(row.get("available", 0)), int(row.get("hr_actual_unmatched") or 0)),
+            key=lambda row: (
+                int(row.get("uncovered_gap", 0)), int(row.get("available", 0)),
+                int(row.get("hr_actual_unmatched") or 0),
+            ),
             reverse=True,
         ),
     }

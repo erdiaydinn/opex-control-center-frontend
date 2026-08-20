@@ -229,10 +229,9 @@ class AuditVideoVerificationRuntime:
                 reason="decoded video duration/frame count is outside the governed limits",
             )
 
-        expected_sequence = 0
         previous_timestamp = -1
         verified_frames: list[AuditCanonicalVideoFrame] = []
-        for frame in decoded.frames:
+        for expected_sequence, frame in enumerate(decoded.frames):
             if (
                 frame.sequence != expected_sequence
                 or frame.timestamp_ms <= previous_timestamp
@@ -290,7 +289,6 @@ class AuditVideoVerificationRuntime:
                 )
             )
             previous_timestamp = frame.timestamp_ms
-            expected_sequence += 1
 
         frames = tuple(verified_frames)
         return AuditCanonicalVideoManifest(

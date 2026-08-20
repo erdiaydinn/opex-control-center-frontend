@@ -33,24 +33,15 @@ class WorkforceShiftTradeViewTests(unittest.TestCase):
             "full_name": names.get(person_id, person_id),
         }
 
-    def candidate_patches(self, trades=None, evaluator=None):
-        return (
-            patch.object(shift_trading, "_hydrate_schedule"),
-            patch.object(shift_trading, "_load_trades", return_value=list(trades or [])),
-            patch.object(shift_trading, "_assert_shift_tradeable"),
-            patch.object(
-                shift_trading,
-                "_evaluate_assignment",
-                side_effect=evaluator or self.evaluate,
-            ),
-            patch.object(service, "resolve_person_identity", side_effect=self.identity),
-        )
-
     def test_candidate_is_two_way_eligible_and_hides_employee_ids(self):
         shifts = [self.shift("S1", "P1"), self.shift("S2", "P2")]
         with (
             patch.object(service, "_SHIFTS", shifts),
-            *self.candidate_patches(),
+            patch.object(shift_trading, "_hydrate_schedule"),
+            patch.object(shift_trading, "_load_trades", return_value=[]),
+            patch.object(shift_trading, "_assert_shift_tradeable"),
+            patch.object(shift_trading, "_evaluate_assignment", side_effect=self.evaluate),
+            patch.object(service, "resolve_person_identity", side_effect=self.identity),
         ):
             rows = shift_trade_views.list_swap_candidates("P1", "S1")
 
@@ -74,7 +65,11 @@ class WorkforceShiftTradeViewTests(unittest.TestCase):
 
         with (
             patch.object(service, "_SHIFTS", shifts),
-            *self.candidate_patches(evaluator=evaluate),
+            patch.object(shift_trading, "_hydrate_schedule"),
+            patch.object(shift_trading, "_load_trades", return_value=[]),
+            patch.object(shift_trading, "_assert_shift_tradeable"),
+            patch.object(shift_trading, "_evaluate_assignment", side_effect=evaluate),
+            patch.object(service, "resolve_person_identity", side_effect=self.identity),
         ):
             rows = shift_trade_views.list_swap_candidates("P1", "S1")
 
@@ -90,7 +85,11 @@ class WorkforceShiftTradeViewTests(unittest.TestCase):
         }]
         with (
             patch.object(service, "_SHIFTS", shifts),
-            *self.candidate_patches(trades=trades),
+            patch.object(shift_trading, "_hydrate_schedule"),
+            patch.object(shift_trading, "_load_trades", return_value=trades),
+            patch.object(shift_trading, "_assert_shift_tradeable"),
+            patch.object(shift_trading, "_evaluate_assignment", side_effect=self.evaluate),
+            patch.object(service, "resolve_person_identity", side_effect=self.identity),
         ):
             rows = shift_trade_views.list_swap_candidates("P1", "S1")
 

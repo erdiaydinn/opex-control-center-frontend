@@ -21,6 +21,7 @@ async def test_private_reader_returns_exact_jpeg_bytes_without_redirects() -> No
         assert request.url.path == f"/v1/private/field-evidence/{RECEIPT_ID}"
         assert request.headers["x-eay-field-tenant"] == TENANT_ID
         assert request.headers["x-eay-field-expected-bytes"] == str(len(body))
+        assert request.headers["accept"] == "image/jpeg"
         return httpx.Response(
             200,
             headers={"content-type": "image/jpeg", "content-length": str(len(body))},
@@ -93,6 +94,24 @@ async def test_reader_rejects_non_jpeg_object() -> None:
                 tenant_id=TENANT_ID,
                 receipt_id=RECEIPT_ID,
                 expected_byte_size=4,
+                client=client,
+                base_url=BASE_URL,
+                trusted_hosts=TRUSTED,
+            )
+
+
+@pytest.mark.asyncio
+async def test_reader_rejects_caller_attempt_to_expand_media_authority() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("gateway must not be contacted for unauthorized media")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(FieldEvidenceStoreUnavailable, match="image/jpeg only"):
+            await read_private_evidence_object(
+                tenant_id=TENANT_ID,
+                receipt_id=RECEIPT_ID,
+                expected_byte_size=4,
+                expected_media_type="video/mp4",
                 client=client,
                 base_url=BASE_URL,
                 trusted_hosts=TRUSTED,

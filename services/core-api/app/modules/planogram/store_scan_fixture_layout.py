@@ -133,6 +133,12 @@ def build_scanned_fixture_layout_preview(
             blockers.append(f"scan_fixture_depth_mismatch:{element_id}")
 
         storage = str(binding.get("storage_type") or "AMBIENT").upper()
+        hinted_storage = str(fixture.get("hinted_storage_type") or "").strip().upper()
+        if hinted_storage and storage != hinted_storage:
+            blockers.append(
+                f"scan_fixture_storage_hint_mismatch:{element_id}:{hinted_storage}:{storage}"
+            )
+
         fixture_type = str(binding.get("fixture_type") or "").strip()
         fixture_text = fixture_type.lower()
         if storage == "CHILLED" and not any(
@@ -165,6 +171,10 @@ def build_scanned_fixture_layout_preview(
                     "relocatable": False,
                     "utility_relocation_attested": False,
                     "scan_fixture_element_id": element_id,
+                    "scan_source_element_type": str(
+                        fixture.get("source_element_type") or "fixture"
+                    ),
+                    "scan_hinted_storage_type": hinted_storage or None,
                     "scan_confidence": float(fixture.get("confidence") or 0.0),
                     "catalog_source_ref": source_ref,
                     "catalog_attested": True,
@@ -209,6 +219,9 @@ def build_scanned_fixture_layout_preview(
         "scan_fingerprint": scan_fingerprint,
         "reviewed_draft_fingerprint": reviewed.get("reviewed_draft_fingerprint"),
         "recognized_fixture_count": recognized_count,
+        "recognized_temperature_fixture_count": int(
+            normalized.get("recognized_temperature_fixture_count") or 0
+        ),
         "bound_fixture_count": bound_count,
         "fixture_binding_coverage_pct": coverage_pct,
         "physical_layout_preview": layout,
@@ -224,7 +237,8 @@ def build_scanned_fixture_layout_preview(
         "capex_approval_allowed": False,
         "evidence_boundary": (
             "fixture poses come from the fingerprint-bound measured scan and shelf/capacity "
-            "truth comes from human-confirmed catalog bindings; Architecture V2 still requires "
-            "an explicit optimizer bridge plus governed Store DNA approval before production use"
+            "truth comes from human-confirmed catalog bindings; measured chiller/freezer "
+            "equipment remains architecture evidence and its temperature hint must match the "
+            "bound catalog storage class; governed Store DNA approval is still required"
         ),
     }

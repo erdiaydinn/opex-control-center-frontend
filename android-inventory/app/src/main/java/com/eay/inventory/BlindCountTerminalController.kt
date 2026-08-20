@@ -84,10 +84,16 @@ class BlindCountTerminalController(
 
     fun session(): BlindCountSession = state
 
-    fun onAcceptedScan(scan: AcceptedScan): BlindCountControllerResult = when (state.step) {
-        BlindCountStep.SCAN_LOCATION -> verifyLocation(scan)
-        BlindCountStep.SCAN_ITEM -> scanItem(scan)
-        else -> denied(BlindCountCode.DENY_STEP)
+    fun onAcceptedScan(scan: AcceptedScan): BlindCountControllerResult {
+        val startedAt = System.nanoTime()
+        val result = when (state.step) {
+            BlindCountStep.SCAN_LOCATION -> verifyLocation(scan)
+            BlindCountStep.SCAN_ITEM -> scanItem(scan)
+            else -> denied(BlindCountCode.DENY_STEP)
+        }
+        TerminalFeedbackRuntime.recordLocalDecision(startedAt)
+        if (result.accepted) TerminalFeedbackRuntime.accepted() else TerminalFeedbackRuntime.rejected()
+        return result
     }
 
     fun enterQuantity(quantity: Int): BlindCountControllerResult {
@@ -101,17 +107,21 @@ class BlindCountTerminalController(
                 code = BlindCountControllerCode.DENY_PENDING_SCAN,
                 session = state,
                 flowCode = BlindCountCode.DENY_SCAN,
-            )
+            ).also { TerminalFeedbackRuntime.rejected() }
         val confirmation = BlindCountFlow.confirmItem(state, target)
         if (!confirmation.accepted) {
+            TerminalFeedbackRuntime.rejected()
             return denied(confirmation.code)
         }
-        val evidence = confirmation.evidence ?: return denied(BlindCountCode.DENY_STEP)
+        val evidence = confirmation.evidence ?: return denied(BlindCountCode.DENY_STEP).also {
+            TerminalFeedbackRuntime.rejected()
+        }
 
         val durableIdentity = pendingLineIdentity ?: newDurableIdentity().also {
             pendingLineIdentity = it
         }
         if (!isWithinLease(durableIdentity.occurredAt)) {
+            TerminalFeedbackRuntime.rejected()
             return leaseExpired(confirmation.code)
         }
         val durableEvent = try {
@@ -123,6 +133,7 @@ class BlindCountTerminalController(
                 occurredAt = durableIdentity.occurredAt,
             )
         } catch (_: RetryableCountPersistenceException) {
+            TerminalFeedbackRuntime.rejected()
             return persistenceRetry(confirmation.code)
         }
 
@@ -130,6 +141,7 @@ class BlindCountTerminalController(
         pendingItemScan = null
         pendingLineIdentity = null
         pendingCompletionIdentity = null
+        TerminalFeedbackRuntime.accepted()
         return BlindCountControllerResult(
             code = BlindCountControllerCode.OK,
             session = state,
@@ -140,12 +152,16 @@ class BlindCountTerminalController(
 
     suspend fun completeLocation(): BlindCountControllerResult {
         val completion = BlindCountFlow.completeLocation(state, target)
-        if (!completion.accepted) return denied(completion.code)
+        if (!completion.accepted) {
+            TerminalFeedbackRuntime.rejected()
+            return denied(completion.code)
+        }
 
         val durableIdentity = pendingCompletionIdentity ?: newDurableIdentity().also {
             pendingCompletionIdentity = it
         }
         if (!isWithinLease(durableIdentity.occurredAt)) {
+            TerminalFeedbackRuntime.rejected()
             return leaseExpired(completion.code)
         }
         val durableEvent = try {
@@ -156,11 +172,13 @@ class BlindCountTerminalController(
                 occurredAt = durableIdentity.occurredAt,
             )
         } catch (_: RetryableCountPersistenceException) {
+            TerminalFeedbackRuntime.rejected()
             return persistenceRetry(completion.code)
         }
 
         state = completion.session
         pendingCompletionIdentity = null
+        TerminalFeedbackRuntime.accepted()
         return BlindCountControllerResult(
             code = BlindCountControllerCode.OK,
             session = state,

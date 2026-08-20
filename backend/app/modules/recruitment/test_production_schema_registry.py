@@ -31,7 +31,7 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
             43: ("027_recruitment_scanner_role_isolation.sql", "dedicated recruitment scanner database role"),
             44: ("028_recruitment_orchestration.sql", "governed recruitment orchestration"),
             45: ("029_workforce_audit_chain_fencing.sql", "database audit hash chain fencing"),
-            46: ("030_recruitment_interview_scheduling.sql", "candidate self-service interview scheduling authority"),
+            46: ("030_recruitment_interview_scheduling.sql", "shared candidate self-service interview scheduling authority"),
         }
         for version, (filename, label) in expected.items():
             path = migration_dir / filename

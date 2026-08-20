@@ -31,11 +31,14 @@ class PlanogramCommercialPreviewRequest(BaseModel):
     products: list[dict[str, Any]] = Field(min_length=1, max_length=10_000)
     category_capacity_cm: dict[str, float] = Field(default_factory=dict)
     total_shelf_width_cm: float | None = Field(default=None, gt=0, le=10_000_000)
-    substitution_edges: list[CommercialSubstitutionEdge] = Field(default_factory=list, max_length=50_000)
+    substitution_edges: list[CommercialSubstitutionEdge] = Field(
+        default_factory=list,
+        max_length=50_000,
+    )
     objective_weights: dict[str, float] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def require_capacity(self) -> "PlanogramCommercialPreviewRequest":
+    def require_capacity(self) -> PlanogramCommercialPreviewRequest:
         if not self.category_capacity_cm and self.total_shelf_width_cm is None:
             raise ValueError("category_capacity_cm or total_shelf_width_cm is required")
         return self
@@ -56,7 +59,9 @@ async def post_commercial_merchandising_preview(
             products=payload.products,
             category_capacity_cm=payload.category_capacity_cm,
             total_shelf_width_cm=payload.total_shelf_width_cm,
-            substitution_edges=[row.model_dump(mode="python") for row in payload.substitution_edges],
+            substitution_edges=[
+                row.model_dump(mode="python") for row in payload.substitution_edges
+            ],
             objective_weights=payload.objective_weights,
         )
     except PlanogramEngineUnavailable as exc:

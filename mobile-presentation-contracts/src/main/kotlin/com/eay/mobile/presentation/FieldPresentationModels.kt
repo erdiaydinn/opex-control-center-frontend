@@ -155,13 +155,8 @@ enum class FieldOperationalStepKind {
 }
 
 /**
- * Presentation-only projection for Picking, Putaway, Receiving and Transfer.
- *
- * This deliberately carries no tenant, employee, device, shift, claim, token,
- * signature, raw barcode or value hash. Expected blind-count stock also remains
- * impossible to represent. The authoritative adapter may only project safe labels
- * from a server-issued mission; all physical evidence is still admitted by the
- * signed operational-event path.
+ * Render-only projection for the four physical workflows. Sensitive execution
+ * context is intentionally absent; evidence admission remains outside presentation.
  */
 data class OperationalExecutionUiState(
     val missionId: String,

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from .operational_mobile_router import router as operational_mobile_router
 from .recovery import (
     disposition_recovery_case,
     list_open_recovery_cases,
@@ -72,3 +73,6 @@ def disposition_recovery(
         x_eay_request_nonce,
         x_eay_device_signature,
     )
+
+
+router.include_router(operational_mobile_router)

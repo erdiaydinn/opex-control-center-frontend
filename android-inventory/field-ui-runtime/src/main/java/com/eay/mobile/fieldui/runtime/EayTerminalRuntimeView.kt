@@ -13,23 +13,18 @@ import com.eay.mobile.fieldui.BlindCountUiState
 import com.eay.mobile.fieldui.EayFieldTheme
 import com.eay.mobile.fieldui.EayOneShell
 import com.eay.mobile.fieldui.EayTerminalShell
-import com.eay.mobile.presentation.FieldMissionCardModel
+import com.eay.mobile.fieldui.OperationalMissionScreen
 import com.eay.mobile.presentation.EayOneDestination
 import com.eay.mobile.presentation.EayOneNavigationModel
+import com.eay.mobile.presentation.FieldMissionCardModel
 import com.eay.mobile.presentation.FieldRecoveryActionKind
 import com.eay.mobile.presentation.FieldRecoveryBannerModel
 import com.eay.mobile.presentation.FieldRuntimeSurface
 import com.eay.mobile.presentation.FieldSessionRecoveryBannerModel
 import com.eay.mobile.presentation.FieldShellHeader
+import com.eay.mobile.presentation.OperationalExecutionUiState
 
-/**
- * View-system boundary around the shared Compose field UI.
- *
- * The executable Inventory app passes only canonical presentation-safe models plus
- * bounded user-intent callbacks. Authentication, tenant, device, scanner, lease,
- * offline queue and mutation authority stay in the proven Inventory runtime and
- * never become Compose-owned state.
- */
+/** View-system boundary around the shared Compose field UI. */
 class EayTerminalRuntimeView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -37,9 +32,12 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
     private var surface by mutableStateOf<RuntimeSurface>(RuntimeSurface.Empty)
     private var onMissionOpenCallback: (String) -> Unit = {}
     private var onDestinationSelectedCallback: (EayOneDestination) -> Unit = {}
+    private var onDestinationActionCallback: (EayOneDestination) -> Unit = {}
     private var onRecoveryActionCallback: (FieldRecoveryActionKind) -> Unit = {}
     private var onQuantityChangedCallback: (String) -> Unit = {}
     private var onConfirmQuantityCallback: () -> Unit = {}
+    private var onOperationalQuantityChangedCallback: (String) -> Unit = {}
+    private var onOperationalPrimaryActionCallback: () -> Unit = {}
 
     init {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -75,15 +73,27 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
         surface = RuntimeSurface.BlindCount(state)
     }
 
+    fun renderOperationalMission(
+        state: OperationalExecutionUiState,
+        onQuantityChanged: (String) -> Unit,
+        onPrimaryAction: () -> Unit,
+    ) {
+        onOperationalQuantityChangedCallback = onQuantityChanged
+        onOperationalPrimaryActionCallback = onPrimaryAction
+        surface = RuntimeSurface.Operational(state)
+    }
+
     fun renderEayOne(
         navigation: EayOneNavigationModel,
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,
         onDestinationSelected: (EayOneDestination) -> Unit,
         onMissionOpen: (String) -> Unit,
+        onDestinationAction: (EayOneDestination) -> Unit = {},
     ) {
         onDestinationSelectedCallback = onDestinationSelected
         onMissionOpenCallback = onMissionOpen
+        onDestinationActionCallback = onDestinationAction
         surface = RuntimeSurface.EayOne(
             FieldUiRuntimeMapper.eayOne(navigation, header, missions),
         )
@@ -111,12 +121,18 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                     onQuantityChange = { value -> onQuantityChangedCallback(value) },
                     onConfirm = { onConfirmQuantityCallback() },
                 )
+                is RuntimeSurface.Operational -> OperationalMissionScreen(
+                    state = current.state,
+                    onQuantityChange = { value -> onOperationalQuantityChangedCallback(value) },
+                    onPrimaryAction = { onOperationalPrimaryActionCallback() },
+                )
                 is RuntimeSurface.EayOne -> EayOneShell(
                     navigation = current.model.navigation,
                     header = current.model.header,
                     missions = current.model.missions,
                     onDestinationSelected = { onDestinationSelectedCallback(it) },
                     onMissionOpen = { onMissionOpenCallback(it) },
+                    onDestinationAction = { onDestinationActionCallback(it) },
                 )
             }
         }
@@ -140,16 +156,10 @@ internal sealed interface RuntimeSurface {
     data object Empty : RuntimeSurface
     data class Terminal(val model: RuntimeTerminalModel) : RuntimeSurface
     data class BlindCount(val state: BlindCountUiState) : RuntimeSurface
+    data class Operational(val state: OperationalExecutionUiState) : RuntimeSurface
     data class EayOne(val model: RuntimeEayOneModel) : RuntimeSurface
 }
 
-/**
- * Compatibility guard, not a second presentation/authorization mapper.
- *
- * The canonical FieldPresentationAdapter already produces the safe header and mission
- * models. This boundary only prevents an EAY One surface from being rendered by the
- * rugged-terminal view and snapshots the presentation list for Compose rendering.
- */
 internal object FieldUiRuntimeMapper {
     fun eayOne(
         navigation: EayOneNavigationModel,

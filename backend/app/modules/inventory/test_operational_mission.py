@@ -15,6 +15,7 @@ from .operational_mission import (
     normalize_operational_value,
     operational_value_hash,
 )
+from .operational_mobile import _project_operational_mobile_row
 from .production import InventoryPrincipal, canonical_payload_hash, connect
 from .service import InventoryRuleError
 
@@ -92,6 +93,46 @@ class OperationalMissionContractTests(unittest.TestCase):
                 },
             )
 
+    def test_mobile_projection_is_safe_resumable_and_step_accurate(self):
+        principal = InventoryPrincipal(
+            "tenant-a",
+            "sub-a",
+            "EMP-A",
+            frozenset({"WH-1"}),
+            uuid4(),
+        )
+        row = {
+            "mission_id": uuid4(),
+            "warehouse_id": "WH-1",
+            "mission_type": "PICKING",
+            "operation": "inventory.pick.capture",
+            "external_reference": "ORDER-42",
+            "steps": ["SOURCE_LOCATION", "ITEM", "QUANTITY", "CONTAINER", "COMPLETE"],
+            "state": "CLAIMED",
+            "sku_id": "SKU-1",
+            "planned_quantity": Decimal("4.000"),
+            "source_location_id": "A01",
+            "destination_location_id": None,
+            "container_id": "TOTE-1",
+            "allowed_conditions": ["GOOD"],
+            "claim_employee_id": "EMP-A",
+            "claim_device_id": principal.device_id,
+            "claim_shift_id": "SHIFT-A",
+            "completed_steps": 2,
+        }
+        projected = _project_operational_mobile_row(row, principal, "SHIFT-A")
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["claim_status"], "RESUMABLE")
+        self.assertEqual(projected["next_step"], "QUANTITY")
+        self.assertEqual(projected["planned_quantity"], "4")
+        self.assertNotIn("item_value_hash", projected)
+        self.assertNotIn("claim_id", projected)
+
+        foreign = dict(row, claim_employee_id="EMP-B")
+        self.assertIsNone(_project_operational_mobile_row(foreign, principal, "SHIFT-A"))
+        stale_shift = dict(row, claim_shift_id="SHIFT-OLD")
+        self.assertIsNone(_project_operational_mobile_row(stale_shift, principal, "SHIFT-A"))
+
     @patch("backend.app.modules.inventory.operational_mission._assert_active_device")
     def test_foreign_live_claim_is_rejected(self, active_device):
         if not os.getenv("INVENTORY_DATABASE_URL"):
@@ -102,10 +143,6 @@ class OperationalMissionContractTests(unittest.TestCase):
         principal_a = InventoryPrincipal(tenant, "sub-a", "EMP-A", frozenset({"WH-1"}), device_a)
         principal_b = InventoryPrincipal(tenant, "sub-b", "EMP-B", frozenset({"WH-1"}), device_b)
         with connect() as db:
-            # Preserve the production FK boundary in this contract test. The
-            # runtime device preflight is mocked so the test isolates claim
-            # ownership, but both principals still need real managed-device rows
-            # before a claim can satisfy PostgreSQL referential integrity.
             db.execute(
                 """INSERT INTO inventory_devices(
                      tenant_id,device_id,employee_id,public_key_pem,mdm_enrollment_hash,status

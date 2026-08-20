@@ -12,6 +12,7 @@ enum class InventoryRecoverySeverity {
 enum class InventoryRecoveryIntent {
     NONE,
     WAIT_FOR_AUTO_RETRY,
+    WAIT_FOR_SUPERVISOR_REVIEW,
     SIGN_IN_AGAIN,
     RELOAD_MISSIONS,
     RECOVER_MANAGED_DEVICE,
@@ -114,8 +115,16 @@ object InventoryRecoveryContract {
             SyncQuarantineReason.DEPENDENCY_BLOCKED,
             SyncQuarantineReason.PERMANENT_REJECTED,
             SyncQuarantineReason.RETRY_EXHAUSTED,
-            -> InventoryRecoverySeverity.BLOCKING to
-                InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW
+            -> if (
+                event.recoveryState == "REQUESTED" &&
+                !event.recoveryCaseId.isNullOrBlank()
+            ) {
+                InventoryRecoverySeverity.ATTENTION to
+                    InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW
+            } else {
+                InventoryRecoverySeverity.BLOCKING to
+                    InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW
+            }
         }
         return InventoryRecoveryItem(
             eventId = event.eventId,
@@ -153,11 +162,12 @@ object InventoryRecoveryContract {
     private fun intentRank(intent: InventoryRecoveryIntent): Int = when (intent) {
         InventoryRecoveryIntent.NONE -> 0
         InventoryRecoveryIntent.WAIT_FOR_AUTO_RETRY -> 1
-        InventoryRecoveryIntent.RELOAD_MISSIONS -> 2
-        InventoryRecoveryIntent.SIGN_IN_AGAIN -> 3
-        InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW -> 4
-        InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE -> 5
-        InventoryRecoveryIntent.REQUEST_INTEGRITY_REVIEW -> 6
-        InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW -> 7
+        InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW -> 2
+        InventoryRecoveryIntent.RELOAD_MISSIONS -> 3
+        InventoryRecoveryIntent.SIGN_IN_AGAIN -> 4
+        InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW -> 5
+        InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE -> 6
+        InventoryRecoveryIntent.REQUEST_INTEGRITY_REVIEW -> 7
+        InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW -> 8
     }
 }

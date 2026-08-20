@@ -41,6 +41,7 @@ from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.production_evidence_router import router as recruitment_production_evidence_router
 from app.modules.recruitment.production_startup_guard import assert_recruitment_production_ready
 from app.modules.recruitment.router import router as recruitment_router
+from app.modules.recruitment.scanner_callback_router import router as recruitment_scanner_callback_router
 from app.modules.recruitment.service import initialize as initialize_recruitment
 from app.modules.workforce.capacity_router import router as workforce_capacity_router
 from app.modules.workforce.flexibility_router import router as workforce_flexibility_router
@@ -298,6 +299,8 @@ app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(workforce_flexibility_router, prefix="/api")
+# Scanner service ingress must win route precedence before legacy callback definitions.
+app.include_router(recruitment_scanner_callback_router, prefix="/api")
 # Priority encrypted evidence routes intentionally precede the legacy recruitment router.
 app.include_router(recruitment_production_evidence_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")

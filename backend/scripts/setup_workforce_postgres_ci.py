@@ -12,6 +12,18 @@ v29_migration = Path(__file__).resolve().parents[1] / "migrations" / "002_workfo
 v30_migration = Path(__file__).resolve().parents[1] / "migrations" / "003_workforce_v30_acceptance.sql"
 v31_migration = Path(__file__).resolve().parents[1] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql"
 v32_migration = Path(__file__).resolve().parents[1] / "migrations" / "005_workforce_v32_identity_revocation.sql"
+authority_migrations = tuple(
+    Path(__file__).resolve().parents[1] / "migrations" / name
+    for name in (
+        "010_workforce_v33_demand_authority.sql",
+        "011_workforce_v34_capacity_authority.sql",
+        "012_workforce_v35_dpi_authority.sql",
+        "013_workforce_v36_optimizer_authority.sql",
+        "014_workforce_v37_replan_authority.sql",
+        "015_workforce_v38_override_learning.sql",
+        "023_recruitment_candidate_upload_authority.sql",
+    )
+)
 
 with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", (tenant_id,))
@@ -68,6 +80,11 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     )
     cursor.execute(v31_migration.read_text(encoding="utf-8"))
     cursor.execute(v32_migration.read_text(encoding="utf-8"))
+    # CI disables application auto-migration to exercise the production
+    # bootstrap contract. Keep this ordered list aligned with
+    # workforce.persistence._MIGRATION_PATHS / SCHEMA_VERSION.
+    for migration in authority_migrations:
+        cursor.execute(migration.read_text(encoding="utf-8"))
     cursor.execute(
         """SELECT tenant_id FROM recruitment_settings
            WHERE id='v29-upgrade-fixture'"""

@@ -36,6 +36,7 @@ from app.modules.dockos.router import router as dockos_router
 from app.modules.dockos.runtime_db import pool as dockos_db_pool
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import bootstrap_admin, initialize as initialize_identity
+from app.modules.inventory.recovery_router import router as inventory_recovery_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.router import router as recruitment_router
@@ -294,6 +295,7 @@ app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")
 app.include_router(inventory_router, prefix="/api")
+app.include_router(inventory_recovery_router, prefix="/api")
 app.include_router(identity_router, prefix="/api")
 app.mount("/metrics", make_asgi_app())
 

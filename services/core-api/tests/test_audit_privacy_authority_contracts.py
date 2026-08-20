@@ -88,13 +88,18 @@ def test_privacy_migration_preserves_legacy_events_without_elevating_them() -> N
     assert "ck_audit_privacy_rejected_has_scanner" in source
 
 
-def test_private_reader_never_accepts_public_or_redirect_authority() -> None:
+def test_private_reader_never_accepts_public_redirect_or_unbound_media_authority() -> None:
     source = (
         ROOT / "app/modules/field_intelligence/evidence_object_read.py"
     ).read_text(encoding="utf-8")
     assert '"GET"' in source
     assert "follow_redirects=False" in source
     assert '"X-EAY-Field-Tenant"' in source
-    assert 'media_type != "image/jpeg"' in source
+    assert '"X-EAY-Field-Expected-Bytes"' in source
+    assert "ALLOWED_MEDIA_TYPES" in source
+    assert "normalized_media_type not in ALLOWED_MEDIA_TYPES" in source
+    assert '"Accept": normalized_media_type' in source
+    assert "media_type != normalized_media_type" in source
+    assert "parsed_length != expected_byte_size" in source
     assert "return await _bounded_content" in source
     assert "public_url" not in source

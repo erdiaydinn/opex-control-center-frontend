@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from . import service, shift_trading
+from .assignment_ranking import evaluate_assignment_ranking
 
 
 _ACTIVE_MANAGER_STATES = {
@@ -30,6 +31,60 @@ def _shift_summary(shift: dict | None) -> dict | None:
         "role": str(shift.get("role") or ""),
         "warehouse_id": str(shift.get("warehouse_id") or ""),
         "warehouse": str(shift.get("warehouse") or shift.get("warehouse_name") or ""),
+    }
+
+
+def _assignment_ranking(
+    shift: dict,
+    person_id: str,
+    preference_match: bool | None,
+    ignored_shift_ids: set[str] | None = None,
+) -> dict:
+    ignored = {str(value) for value in (ignored_shift_ids or set())}
+    person_shifts = [
+        row
+        for row in service.list_shifts(str(person_id))
+        if row.get("status") != "İptal"
+        and str(row.get("id") or "") not in ignored
+    ]
+    cohort_shifts = [
+        row
+        for row in service._SHIFTS
+        if str(row.get("id") or "") not in ignored
+    ]
+    minimum_rest = service._rule_value("betweenShifts", str(shift["date"]), 660)
+    return evaluate_assignment_ranking(
+        offer=shift,
+        person_id=str(person_id),
+        person_shifts=person_shifts,
+        cohort_shifts=cohort_shifts,
+        preference_match=preference_match,
+        minimum_rest_minutes=minimum_rest,
+    ).as_record()
+
+
+def _combined_swap_ranking(requester: dict, counterpart: dict) -> dict:
+    fairness = min(
+        int(requester["fairness_score"]),
+        int(counterpart["fairness_score"]),
+    )
+    fatigue = max(
+        int(requester["fatigue_risk_score"]),
+        int(counterpart["fatigue_risk_score"]),
+    )
+    band_order = {"LOW": 0, "MODERATE": 1, "HIGH": 2, "CRITICAL": 3}
+    fatigue_band = max(
+        (str(requester["fatigue_risk_band"]), str(counterpart["fatigue_risk_band"])),
+        key=lambda value: band_order.get(value, 99),
+    )
+    return {
+        "policy_ref": str(requester["policy_ref"]),
+        "soft_only": True,
+        "combined_fairness_score": fairness,
+        "combined_fatigue_risk_score": fatigue,
+        "combined_fatigue_risk_band": fatigue_band,
+        "requester": requester,
+        "counterpart": counterpart,
     }
 
 
@@ -74,6 +129,19 @@ def list_swap_candidates(person_id: str, source_shift_id: str) -> list[dict]:
         if not target_eval["eligible"] or not requester_eval["eligible"]:
             continue
 
+        requester_ranking = _assignment_ranking(
+            target,
+            str(person_id),
+            requester_eval.get("preference_match"),
+            ignored_shift_ids={str(source["id"])},
+        )
+        counterpart_ranking = _assignment_ranking(
+            source,
+            target_person_id,
+            target_eval.get("preference_match"),
+            ignored_shift_ids={target_id},
+        )
+        ranking = _combined_swap_ranking(requester_ranking, counterpart_ranking)
         person = service.resolve_person_identity(target_person_id, "EMPLOYEE_ID") or {}
         candidates.append(
             {
@@ -83,6 +151,7 @@ def list_swap_candidates(person_id: str, source_shift_id: str) -> list[dict]:
                 ),
                 "requester_preference_match": requester_eval.get("preference_match"),
                 "counterpart_preference_match": target_eval.get("preference_match"),
+                "assignment_ranking": ranking,
                 "policy_ref": shift_trading._POLICY["policy_ref"],
             }
         )
@@ -91,6 +160,8 @@ def list_swap_candidates(person_id: str, source_shift_id: str) -> list[dict]:
         sorted(
             candidates,
             key=lambda row: (
+                -int(row["assignment_ranking"]["combined_fairness_score"]),
+                int(row["assignment_ranking"]["combined_fatigue_risk_score"]),
                 str(row.get("date")),
                 str(row.get("start")),
                 str(row.get("counterpart_display_name")),

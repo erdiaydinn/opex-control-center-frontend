@@ -158,17 +158,28 @@ function labelAffinity(scan, catalog) {
   return tokens.some((token) => label.includes(token)) ? 0.08 : 0;
 }
 
+function hintedStorage(scan) {
+  const value = String(scan?.hinted_storage_type || "").trim().toUpperCase();
+  return STORAGE_TYPES.has(value) ? value : null;
+}
+
 function matchScore(scan, catalog) {
   const widthCm = Number(scan?.width_m || 0) * 100;
   const depthCm = Number(scan?.depth_m || 0) * 100;
   const widthDelta = Math.abs(widthCm - catalog.fixture_width_cm) / Math.max(catalog.fixture_width_cm, 1);
   const depthDelta = Math.abs(depthCm - catalog.fixture_depth_cm) / Math.max(catalog.fixture_depth_cm, 1);
-  const eligible = dimensionMatches(scan?.width_m, catalog.fixture_width_cm) && dimensionMatches(scan?.depth_m, catalog.fixture_depth_cm);
+  const storageHint = hintedStorage(scan);
+  const storageCompatible = !storageHint || catalog.storage_type === storageHint;
+  const eligible = storageCompatible
+    && dimensionMatches(scan?.width_m, catalog.fixture_width_cm)
+    && dimensionMatches(scan?.depth_m, catalog.fixture_depth_cm);
   return {
     eligible,
     score: Number(Math.max(0, widthDelta + depthDelta - labelAffinity(scan, catalog)).toFixed(6)),
     width_delta_cm: Number(Math.abs(widthCm - catalog.fixture_width_cm).toFixed(2)),
     depth_delta_cm: Number(Math.abs(depthCm - catalog.fixture_depth_cm).toFixed(2)),
+    storage_hint: storageHint,
+    storage_compatible: storageCompatible,
   };
 }
 
@@ -185,6 +196,7 @@ export function suggestPlanogramFixtureCatalogMatches(recognizedFixtures, catalo
     const margin = first && second ? second.score - first.score : Number.POSITIVE_INFINITY;
     return {
       scan_fixture_element_id: String(scan?.element_id || ""),
+      hinted_storage_type: hintedStorage(scan),
       candidates,
       recommended_fixture_id: first?.fixture.fixture_id || null,
       recommendation_safe: Boolean(first && margin >= AUTO_SUGGESTION_MARGIN),
@@ -203,6 +215,8 @@ export function buildPlanogramFixtureBindingsFromSelections(recognizedFixtures, 
     if (!isPlainObject(selection)) return null;
     const fixture = catalogById.get(String(selection.fixture_id || ""));
     if (!fixture) return null;
+    const storageHint = hintedStorage(scan);
+    if (storageHint && fixture.storage_type !== storageHint) return null;
     rows.push({
       scan_fixture_element_id: scanId,
       ...fixture,

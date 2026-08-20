@@ -308,11 +308,20 @@ export default function PlanogramStudio() {
               {previewError ? <p role="alert">{previewError}</p> : null}
             </div>
 
-            {preview ? (
+            {engineResult?.planogram ? (
               <div role="status" aria-live="polite" aria-atomic="true">
                 <p>{p("productionReleaseBlocked")}</p>
-                <PlanogramDigitalTwin preview={preview} locale={locale} />
-                <span hidden>{engineResult ? "engine-result-present" : "engine-result-absent"}</span>
+                <PlanogramDigitalTwin
+                  engineResult={engineResult}
+                  candidate={candidate}
+                  locale={locale}
+                  formatNumber={formatNumber}
+                />
+              </div>
+            ) : preview ? (
+              <div className="planogram-native__preview-empty" role="status" aria-live="polite" aria-atomic="true">
+                <p>{p("productionReleaseBlocked")}</p>
+                <p>{p("previewEmpty")}</p>
               </div>
             ) : (
               <div className="planogram-native__preview-empty">

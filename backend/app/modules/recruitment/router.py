@@ -5,9 +5,11 @@ from fastapi.responses import FileResponse
 
 from app.modules.workforce.authorization import is_action_allowed
 from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
+from .hr_actual import build_dashboard, enrich_evaluation, import_snapshot, snapshot_summary
 from .schemas import (
     RecruitmentCandidateCreate, RecruitmentCandidateDecision, RecruitmentDecision,
-    RecruitmentHireActivate, RecruitmentRequestCreate, RecruitmentSettingsUpdate, StaffingNormPatch,
+    RecruitmentHireActivate, RecruitmentHrActualImport, RecruitmentRequestCreate,
+    RecruitmentSettingsUpdate, StaffingNormPatch,
 )
 from .service import (
     RecruitmentRuleError,
@@ -16,7 +18,6 @@ from .service import (
     activate_hire,
     candidate_evidence_path,
     create_request,
-    dashboard,
     decide_request,
     decide_candidate,
     dispatch_email,
@@ -46,7 +47,7 @@ def _require(role: str, permissions: str, action: str) -> None:
         "by": {"viewRecruitment", "createRecruitmentRequest"},
         "hr": {
             "viewRecruitment", "createRecruitmentRequest", "approveRecruitmentRequest",
-            "viewRecruitmentEvidence", "manageRecruitmentNorms",
+            "viewRecruitmentEvidence", "manageRecruitmentNorms", "manageRecruitmentActuals",
             "manageRecruitmentSettings", "manageRecruitmentNotifications",
         },
     }
@@ -88,9 +89,31 @@ def _without_evidence_metadata(row: dict) -> dict:
     return sanitized
 
 
+def _current_staffing(row: dict) -> dict | None:
+    warehouse_id = row.get("warehouse_id") or row.get("warehouse_name")
+    position_code = row.get("position_code")
+    if not warehouse_id or not position_code:
+        return None
+    try:
+        return enrich_evaluation(
+            evaluate(
+                str(warehouse_id),
+                str(position_code),
+                max(1, int(row.get("quantity", 1))),
+                row.get("planned_departure"),
+                row.get("id"),
+            )
+        )
+    except (RecruitmentRuleError, KeyError, TypeError, ValueError):
+        return None
+
+
 @router.get("/health")
 def health() -> dict:
-    return {"status": "ok", "module": "recruitment", "norm_engine": True, "evidence": True, "email_outbox": True}
+    return {
+        "status": "ok", "module": "recruitment", "norm_engine": True,
+        "hr_actual": True, "evidence": True, "email_outbox": True,
+    }
 
 
 @router.get("/bootstrap")
@@ -101,7 +124,9 @@ def bootstrap(
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "viewRecruitment")
     from app.modules.workforce.service import list_warehouses, list_people
+
     requests = _scoped_rows(request, x_opex_role, list_requests())
+    requests = [{**row, "current_staffing": _current_staffing(row)} for row in requests]
     if not _is_recruitment_admin(x_opex_role):
         requests = [_without_evidence_metadata(row) for row in requests]
     norms = _scoped_rows(
@@ -110,15 +135,11 @@ def bootstrap(
     )
     warehouses = _scoped_rows(request, x_opex_role, list_warehouses())
     people = _scoped_rows(request, x_opex_role, list_people(False))
-    summary = {
-        "pending": sum(row["status"] == "PENDING_APPROVAL" for row in requests),
-        "approved": sum(row["status"] == "APPROVED" for row in requests),
-        "rejected": sum(row["status"] == "REJECTED" for row in requests),
-        "evidence_required": sum(row["status"] == "EVIDENCE_REQUIRED" for row in requests),
-    }
+    summary = build_dashboard(norms, requests)
     return {
         "dashboard": summary, "requests": requests, "norms": norms,
         "settings": get_settings() if _is_recruitment_admin(x_opex_role) else None,
+        "actual_snapshot": snapshot_summary() if _is_recruitment_admin(x_opex_role) else None,
         "email_outbox": list_outbox() if _is_recruitment_admin(x_opex_role) else [],
         "warehouses": warehouses, "people": people,
     }
@@ -133,7 +154,35 @@ def evaluate_request(
     _require(x_opex_role, x_opex_permissions, "createRecruitmentRequest")
     _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": warehouse_id}])
     try:
-        return evaluate(warehouse_id, position_code, quantity)
+        return enrich_evaluation(evaluate(warehouse_id, position_code, quantity))
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/hr-actual/latest")
+def get_hr_actual(
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageRecruitmentActuals")
+    return snapshot_summary() or {
+        "source_name": None, "source_sha256": None, "as_of": None,
+        "source_rows": 0, "active_rows": 0, "active_fte": 0,
+        "matched_rows": 0, "unmatched_rows": 0, "match_rate": 0,
+    }
+
+
+@router.post("/hr-actual/import", status_code=status.HTTP_201_CREATED)
+def import_hr_actual(
+    payload: RecruitmentHrActualImport, request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageRecruitmentActuals")
+    actor, _ = _identity(request)
+    try:
+        return import_snapshot(payload.model_dump(mode="json"), actor)
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

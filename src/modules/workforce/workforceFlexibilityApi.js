@@ -48,6 +48,11 @@ export async function loadWorkforceFlexibility(personId) {
   return { availability: availability.rows || [], openShifts: openShifts.rows || [] };
 }
 
+export async function loadWorkforceOwnShifts(personId) {
+  const result = await safe(apiGet(`/workforce/shifts?person_id=${encodeURIComponent(personId)}`));
+  return result.rows || [];
+}
+
 export async function saveWorkforceAvailability(personId, values) {
   return safe(apiPut("/workforce/flexibility/availability", {
     person_id: String(personId),

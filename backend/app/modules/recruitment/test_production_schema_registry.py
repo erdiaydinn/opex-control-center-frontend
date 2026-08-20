@@ -24,13 +24,14 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
         for left, right in zip(expected, expected[1:]):
             self.assertLess(names.index(left), names.index(right))
 
-    def test_hiring_production_requires_v45_extension_chain(self):
-        self.assertEqual(production_startup_guard.REQUIRED_RECRUITMENT_SCHEMA_VERSION, 45)
+    def test_hiring_production_requires_v46_extension_chain(self):
+        self.assertEqual(production_startup_guard.REQUIRED_RECRUITMENT_SCHEMA_VERSION, 46)
         migration_dir = Path(__file__).resolve().parents[3] / "migrations"
         expected = {
             43: ("027_recruitment_scanner_role_isolation.sql", "dedicated recruitment scanner database role"),
             44: ("028_recruitment_orchestration.sql", "governed recruitment orchestration"),
             45: ("029_workforce_audit_chain_fencing.sql", "database audit hash chain fencing"),
+            46: ("030_recruitment_interview_scheduling.sql", "candidate self-service interview scheduling authority"),
         }
         for version, (filename, label) in expected.items():
             path = migration_dir / filename
@@ -44,6 +45,11 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
         fencing = (migration_dir / expected[45][0]).read_text(encoding="utf-8")
         self.assertIn("pg_advisory_xact_lock", fencing)
         self.assertIn("audit hash chain stale", fencing)
+        scheduling = (migration_dir / expected[46][0]).read_text(encoding="utf-8")
+        for table in ("interview_schedules", "interview_slots", "interview_bookings", "interview_booking_capabilities", "interview_booking_events"):
+            self.assertIn(table, scheduling)
+        self.assertIn("FORCE ROW LEVEL SECURITY", scheduling)
+        self.assertIn("interview booking event is append-only", scheduling)
 
     def test_main_invokes_hiring_guard_and_priority_orchestration(self):
         main_source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
@@ -51,6 +57,8 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
         self.assertLess(main_source.index("assert_recruitment_production_ready()"), main_source.index("initialize_recruitment()"))
         self.assertLess(main_source.index('app.include_router(recruitment_orchestration_router, prefix="/api")'), main_source.index('app.include_router(recruitment_router, prefix="/api")'))
         self.assertIn('app.include_router(recruitment_public_orchestration_router, prefix="/api")', main_source)
+        self.assertIn('app.include_router(recruitment_public_interview_router, prefix="/api")', main_source)
+        self.assertIn('app.include_router(recruitment_interview_router, prefix="/api")', main_source)
 
 
 if __name__ == "__main__":

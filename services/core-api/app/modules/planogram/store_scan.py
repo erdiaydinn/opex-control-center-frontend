@@ -23,6 +23,7 @@ SUPPORTED_PROVIDERS = {
 V1_PROMOTABLE_TYPES = {"wall", "column", "door", "chiller", "freezer"}
 V2_GEOMETRY_TYPES = V1_PROMOTABLE_TYPES | {"opening"}
 STRUCTURAL_TYPES = {"wall", "column", "door", "opening"}
+PRODUCT_BEARING_EQUIPMENT_TYPES = {"fixture", "chiller", "freezer"}
 ORTHOGONAL_TOLERANCE_DEG = 2.0
 MIN_STRUCTURAL_CONFIDENCE = 0.75
 MIN_EQUIPMENT_CONFIDENCE = 0.65
@@ -56,6 +57,14 @@ def _source(provider: str) -> str:
     if provider == "cad_import":
         return "cad_import"
     return "manual_survey"
+
+
+def _equipment_storage_hint(element_type: str) -> str | None:
+    if element_type == "chiller":
+        return "CHILLED"
+    if element_type == "freezer":
+        return "FROZEN"
+    return None
 
 
 def _scan_fingerprint(
@@ -158,7 +167,7 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
             warnings.append(f"scan_element_low_confidence:{element_id}")
             continue
 
-        if element_type == "fixture":
+        if element_type in PRODUCT_BEARING_EQUIPMENT_TYPES:
             recognized_fixtures.append(
                 {
                     "element_id": element_id,
@@ -169,9 +178,15 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
                     "rotation_deg": rotation,
                     "confidence": confidence,
                     "label": raw.get("label"),
+                    "source_element_type": element_type,
+                    "hinted_storage_type": _equipment_storage_hint(element_type),
                 }
             )
-            continue
+            # Generic fixtures are layout evidence only. Chiller/freezer are
+            # dual-role: they remain measured architecture equipment while also
+            # becoming product-bearing fixture-binding cues.
+            if element_type == "fixture":
+                continue
 
         if element_type not in V2_GEOMETRY_TYPES:
             unsupported_type_count += 1
@@ -265,6 +280,11 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         v2_elements=v2_elements,
         recognized_fixtures=recognized_fixtures,
     )
+    temperature_fixture_count = sum(
+        1
+        for row in recognized_fixtures
+        if row.get("hinted_storage_type") in {"CHILLED", "FROZEN"}
+    )
 
     return {
         "contract": STORE_SCAN_CONTRACT_VERSION,
@@ -277,6 +297,7 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "architecture_v2_preview": architecture_v2_preview,
         "architecture_v2_preview_available": architecture_v2_preview is not None,
         "recognized_fixture_count": len(recognized_fixtures),
+        "recognized_temperature_fixture_count": temperature_fixture_count,
         "recognized_fixtures": recognized_fixtures,
         "scan_element_count": len(scan_elements),
         "v1_promoted_element_count": len(v1_elements),

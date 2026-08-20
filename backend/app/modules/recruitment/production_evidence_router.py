@@ -1,8 +1,8 @@
-"""Priority routes that close plaintext request-evidence paths.
+"""Priority Hiring security routes.
 
-This router is mounted before the legacy recruitment router. It preserves the
-public API while ensuring request-level evidence upload/read/retention uses the
-production encrypted authority first.
+Mounted before the legacy recruitment router so production evidence upload,
+read, decision, scanner callbacks, retention, and live-authority preflight share
+one fail-closed security boundary.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from app.modules.workforce import persistence
 from app.modules.workforce.router import _require_rows_in_scope
@@ -18,6 +19,7 @@ from .candidate_evidence_runtime import (
     CandidateEvidenceRuntimeError,
     purge_expired_encrypted_candidate_evidence,
 )
+from .candidate_scan_authority import CandidateScanAuthorityError, record_verified_scan
 from .production_authority_preflight import (
     ProductionAuthorityPreflightError,
     run_live_preflight,
@@ -28,11 +30,30 @@ from .recruitment_evidence_runtime import (
     read_request_evidence,
     secure_request_evidence_upload,
 )
+from .request_evidence_quarantine import (
+    RequestEvidenceQuarantineError,
+    seal_request_evidence_quarantine,
+)
+from .request_evidence_scan_authority import (
+    RequestEvidenceScanAuthorityError,
+    record_verified_request_scan,
+)
 from .router import _identity, _read_upload_limited, _request_row, _require
-from .service import RecruitmentRuleError, add_evidence, purge_expired_recruitment_data
+from .schemas import RecruitmentDecision
+from .service import (
+    RecruitmentRuleError,
+    add_evidence,
+    decide_request,
+    purge_expired_recruitment_data,
+)
 
 
 router = APIRouter(prefix="/recruitment", tags=["Recruitment"])
+
+
+class ScannerReceiptEnvelope(BaseModel):
+    payload: dict[str, str]
+    signature: str = Field(min_length=1, max_length=256)
 
 
 def _encrypted_mode() -> bool:
@@ -41,6 +62,19 @@ def _encrypted_mode() -> bool:
         or os.getenv("RECRUITMENT_EVIDENCE_STORAGE_MODE", "disabled").strip().lower()
         == "s3-kms-envelope"
     )
+
+
+def _require_request_evidence_clean(record: dict) -> None:
+    evidence = record.get("evidence") or {}
+    if (
+        _encrypted_mode()
+        and record.get("evidence_required")
+        and evidence.get("storage_backend") == "S3_KMS_ENVELOPE"
+        and evidence.get("content_safety_state") != "MALWARE_CLEARED"
+    ):
+        raise RecruitmentRuleError(
+            "Planlı ayrılış kanıtı kriptografik scanner receipt ile temizlenmeden görüntülenemez/onaylanamaz."
+        )
 
 
 @router.post("/requests/{request_id}/evidence")
@@ -58,13 +92,14 @@ async def upload_request_evidence(
         content = await _read_upload_limited(file)
         content_type = file.content_type or "application/octet-stream"
         if _encrypted_mode():
-            return secure_request_evidence_upload(
+            secure_request_evidence_upload(
                 request_id,
                 filename=file.filename or "document",
                 content_type=content_type,
                 content=content,
                 actor=actor,
             )
+            return seal_request_evidence_quarantine(request_id, actor=actor)
         return add_evidence(
             request_id,
             file.filename or "document",
@@ -72,7 +107,11 @@ async def upload_request_evidence(
             content,
             actor,
         )
-    except (RecruitmentRuleError, RecruitmentEvidenceRuntimeError) as error:
+    except (
+        RecruitmentRuleError,
+        RecruitmentEvidenceRuntimeError,
+        RequestEvidenceQuarantineError,
+    ) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
@@ -84,8 +123,10 @@ def download_request_evidence(
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ):
     _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
-    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
     try:
+        _require_request_evidence_clean(record)
         content, metadata = read_request_evidence(request_id)
         actor, _ = _identity(request)
         persistence.append_audit(
@@ -106,8 +147,67 @@ def download_request_evidence(
                 "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
             },
         )
-    except RecruitmentEvidenceRuntimeError as error:
+    except (RecruitmentEvidenceRuntimeError, RecruitmentRuleError) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/decision")
+def secure_request_decision(
+    request_id: str,
+    payload: RecruitmentDecision,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    record = _request_row(request_id)
+    _require_rows_in_scope(request, x_opex_role, [record])
+    actor, actor_name = _identity(request)
+    try:
+        if payload.decision == "APPROVED":
+            _require_request_evidence_clean(record)
+        return decide_request(request_id, payload.decision, payload.note, actor, actor_name)
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/candidate-evidence/scanner-receipts", include_in_schema=False)
+def candidate_scanner_receipt(envelope: ScannerReceiptEnvelope) -> dict:
+    """Cryptographic service callback; KMS signature is the result authority."""
+    try:
+        evidence = record_verified_scan(
+            envelope.payload,
+            envelope.signature,
+            actor="recruitment-scanner",
+        )
+        return {
+            "accepted": True,
+            "evidence_id": evidence.get("id"),
+            "content_safety_state": evidence.get("content_safety_state"),
+        }
+    except CandidateScanAuthorityError as error:
+        raise HTTPException(status_code=409, detail="Scanner receipt reddedildi.") from error
+
+
+@router.post("/requests/{request_id}/evidence/scanner-receipts", include_in_schema=False)
+def request_scanner_receipt(
+    request_id: str,
+    envelope: ScannerReceiptEnvelope,
+) -> dict:
+    """Signed scanner callback for encrypted planned-departure evidence."""
+    try:
+        evidence = record_verified_request_scan(
+            request_id,
+            envelope.payload,
+            envelope.signature,
+        )
+        return {
+            "accepted": True,
+            "evidence_id": evidence.get("id"),
+            "content_safety_state": evidence.get("content_safety_state"),
+        }
+    except RequestEvidenceScanAuthorityError as error:
+        raise HTTPException(status_code=409, detail="Scanner receipt reddedildi.") from error
 
 
 @router.post("/production-authorities/preflight")

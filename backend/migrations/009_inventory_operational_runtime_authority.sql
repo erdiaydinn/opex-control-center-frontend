@@ -118,12 +118,6 @@ BEGIN
        AND EXISTS (
          SELECT 1 FROM released r
           WHERE r.tenant_id=m.tenant_id AND r.mission_id=m.mission_id
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM inventory_operational_claims c
-          WHERE c.tenant_id=m.tenant_id
-            AND c.mission_id=m.mission_id
-            AND c.released_at IS NULL
        );
   END IF;
   RETURN NEW;

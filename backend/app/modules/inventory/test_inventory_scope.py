@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .test_inventory_device_recovery import InventoryDeviceRecoveryPostgresTests
 from .test_inventory_explanation_attempt_truth import InventoryExplanationAttemptTruthTests
+from .test_inventory_recovery import InventoryRecoveryPostgresTests
 
 
 class InventoryWarehouseScopeTests(unittest.TestCase):
@@ -65,6 +66,7 @@ class InventoryWarehouseScopeTests(unittest.TestCase):
 def load_tests(loader, tests, pattern):
     tests.addTests(loader.loadTestsFromTestCase(InventoryExplanationAttemptTruthTests))
     tests.addTests(loader.loadTestsFromTestCase(InventoryDeviceRecoveryPostgresTests))
+    tests.addTests(loader.loadTestsFromTestCase(InventoryRecoveryPostgresTests))
     return tests
 
 

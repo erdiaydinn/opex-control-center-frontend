@@ -9,7 +9,10 @@ on:
       - "backend/app/modules/workforce/persistence.py"
       - "backend/migrations/023_recruitment_candidate_upload_authority.sql"
       - "backend/migrations/024_recruitment_production_authority.sql"
+      - "backend/migrations/025_recruitment_request_evidence_scan_authority.sql"
+      - "backend/migrations/026_recruitment_evidence_release_authority.sql"
       - "backend/scripts/recruitment_authority_postgres_ci.py"
+      - "backend/scripts/recruitment_release_authority_postgres_ci.py"
       - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
       - ".github/workflows/eay-hiring-production-authority.yml"
   workflow_dispatch:
@@ -44,15 +47,22 @@ jobs:
           python -m compileall -q backend/app/main.py backend/app/modules/recruitment
           backend/app/modules/workforce/persistence.py
           backend/scripts/recruitment_authority_postgres_ci.py
+          backend/scripts/recruitment_release_authority_postgres_ci.py
           backend/scripts/recruitment_core_privilege_postgres_ci.py
-      - name: Canonical V40 startup registry
+      - name: Canonical V42 startup registry
         run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
+      - name: Live production authority preflight contract
+        run: python -m unittest app.modules.recruitment.test_production_authority_preflight -v
       - name: KMS envelope storage
         run: python -m unittest app.modules.recruitment.test_candidate_evidence_storage -v
       - name: Candidate encrypted evidence read upload retention runtime
         run: python -m unittest app.modules.recruitment.test_candidate_evidence_runtime -v
       - name: Request encrypted evidence and route precedence
         run: python -m unittest app.modules.recruitment.test_recruitment_evidence_runtime -v
+      - name: Evidence release authority adversarial contract
+        run: python -m unittest app.modules.recruitment.test_evidence_release_authority -v
+      - name: Request scanner authority adversarial contract
+        run: python -m unittest app.modules.recruitment.test_request_evidence_scan_authority -v
       - name: Candidate upload authority runtime
         run: python -m unittest app.modules.recruitment.test_candidate_upload_runtime_authority -v
       - name: Candidate scanner runtime contract
@@ -110,7 +120,9 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - name: Seed canonical Workforce PostgreSQL schema
         run: python scripts/setup_workforce_postgres_ci.py
-      - name: Real role RLS rollback replay concurrency acceptance
+      - name: Real candidate role RLS rollback replay concurrency acceptance
         run: python scripts/recruitment_authority_postgres_ci.py
+      - name: Real V41 V42 request scanner and release acceptance
+        run: python scripts/recruitment_release_authority_postgres_ci.py
       - name: Core HR privileges survive authority sealing
         run: python scripts/recruitment_core_privilege_postgres_ci.py

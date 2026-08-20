@@ -134,6 +134,7 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
 
   return (
     <section className="eay-academy-expansion-card" aria-busy={loading ? "true" : "false"}>
+      {/* i18n-brand-literal: canonical EAY Academy product brand */}
       <header className="eay-academy-expansion-head"><div><span><Languages size={16} aria-hidden="true" /> EAY Academy</span><h2>{tx("localizationGovernance")}</h2><p>{tx("localizationHint")}</p></div><button type="button" className="eay-academy-secondary" onClick={load} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} aria-hidden="true" />{tx("refresh")}</button></header>
       {loading ? <p role="status"><LoaderCircle className="spin" size={18} aria-hidden="true" /> {t("loading")}</p> : null}
       {error ? <p className="eay-academy-inline-error" role="alert">{error}</p> : null}
@@ -141,6 +142,7 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
         <div className="eay-academy-governance-grid" data-eay-product-state="ready">
           <section>
             <h3>{tx("localePolicy")}</h3>
+            {/* i18n-data-literal: BCP 47 locale example for machine-readable locale input */}
             <form className="eay-academy-expansion-form" onSubmit={addLocale}><label className="wide"><span>{tx("locale")}</span><input value={newLocale} onChange={(event) => setNewLocale(event.target.value)} placeholder="fa-IR" /></label><button type="submit" className="eay-academy-secondary" disabled={busyAction === "locale"}>{tx("savePolicy")}</button></form>
             <div className="eay-academy-governance-list">{settings.map((item) => <LocalePolicyRow key={item.locale} item={item} locale={locale} t={t} onSaved={load} />)}</div>
           </section>

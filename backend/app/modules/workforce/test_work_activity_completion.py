@@ -73,7 +73,7 @@ class LaborCatalogTests(unittest.TestCase):
 
 
 class CatalogRuntimeTests(unittest.TestCase):
-    def activity_row(self, key="food_grill_cook"):
+    def activity_row(self, key="food_grill_cook", location_types=()):
         return {
             "id": f"ACT-{key}-V1", "tenant_id": "tenant-a", "activity_key": key, "version": 1,
             "display_name": key, "category": "operations", "unit_key": "items", "demand_mode": "VOLUME",
@@ -81,7 +81,7 @@ class CatalogRuntimeTests(unittest.TestCase):
             "source_ref": "activity:v1", "approved_by": "ops", "status": "APPROVED",
             "required_skill_keys": ["grill_station"] if key == "food_grill_cook" else [],
             "required_certification_keys": ["food_safety"] if key == "food_grill_cook" else [],
-            "required_equipment_keys": [], "safety_tags": [], "location_types": [],
+            "required_equipment_keys": [], "safety_tags": [], "location_types": list(location_types),
         }
 
     def labor_row(self, key="food_grill_cook"):
@@ -118,6 +118,36 @@ class CatalogRuntimeTests(unittest.TestCase):
                     worksite_id="SITE-FACTORY-1", interval_start=AT, interval_minutes=60,
                     model_version="generic-v1",
                     signals=[{"driver_key": "mes:line1", "activity_key": "machine_operation", "demand_mode": "VOLUME", "quantity": 20, "source_ref": "mes:plan:v1"}],
+                )
+
+    def test_runtime_fails_closed_when_worksite_type_is_incompatible(self):
+        activity = self.activity_row("machine_operation", ("factory",))
+        with (
+            patch.object(runtime.persistence, "tenant_id", return_value="tenant-a"),
+            patch.object(runtime, "resolve_catalog_activity", return_value=activity),
+            patch.object(runtime, "resolve_labor_standard", return_value=self.labor_row("machine_operation")),
+            patch.object(service, "list_warehouses", return_value=[{"id": "SITE-1", "location_type": "restaurant"}]),
+        ):
+            with self.assertRaisesRegex(runtime.WorkActivityRuntimeError, "not eligible"):
+                runtime.build_catalog_demand_snapshot(
+                    worksite_id="SITE-1", interval_start=AT, interval_minutes=60,
+                    model_version="generic-v1",
+                    signals=[{"driver_key": "mes:line1", "activity_key": "machine_operation", "demand_mode": "VOLUME", "quantity": 1, "source_ref": "mes:v1"}],
+                )
+
+    def test_runtime_requires_classification_for_constrained_activity(self):
+        activity = self.activity_row("food_grill_cook", ("restaurant",))
+        with (
+            patch.object(runtime.persistence, "tenant_id", return_value="tenant-a"),
+            patch.object(runtime, "resolve_catalog_activity", return_value=activity),
+            patch.object(runtime, "resolve_labor_standard", return_value=self.labor_row()),
+            patch.object(service, "list_warehouses", return_value=[{"id": "SITE-1"}]),
+        ):
+            with self.assertRaisesRegex(runtime.WorkActivityRuntimeError, "classification is required"):
+                runtime.build_catalog_demand_snapshot(
+                    worksite_id="SITE-1", interval_start=AT, interval_minutes=60,
+                    model_version="generic-v1",
+                    signals=[{"driver_key": "pos:grill", "activity_key": "food_grill_cook", "demand_mode": "VOLUME", "quantity": 1, "source_ref": "pos:v1"}],
                 )
 
 

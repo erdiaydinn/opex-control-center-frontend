@@ -8,6 +8,7 @@ import {
 } from "./planogramDigitalTwinModel.js";
 import {
   engineeringScaleBar,
+  metricGridStep,
   rotatedRectSvgPoints,
   svgPointString,
 } from "./planogramEngineering2D.js";
@@ -54,6 +55,8 @@ function productFacingCount(product) {
 }
 
 function moduleHeight(module) {
+  const measuredHeight = Number(module?.heightM);
+  if (Number.isFinite(measuredHeight) && measuredHeight > 0) return measuredHeight;
   if (fixtureClass(module.fixtureType) === "pallet") return 0.18;
   const shelfCount = Math.max(1, module.shelfCount || 1);
   return Math.max(1.5, shelfCount * 0.32);
@@ -84,6 +87,8 @@ function Twin2D({ model, t, formatNumber }) {
   const widthDimensionY = Math.min(height - 18, floorBottomY + 24);
   const depthDimensionX = Math.max(18, offsetX - 24);
   const scaleBar = engineeringScaleBar({ floorWidthM: model.floor.widthM, scale });
+  const grid = metricGridStep({ scale });
+  const majorGridPixels = grid.pixels * 5;
   const scaleBarStartX = floorRightX - scaleBar.pixels;
   const scaleBarY = offsetY + 18;
 
@@ -91,12 +96,16 @@ function Twin2D({ model, t, formatNumber }) {
     <div className="eay-twin-2d-wrap">
       <svg className="eay-twin-2d" viewBox={`0 0 ${SVG_WIDTH} ${height}`} role="img" aria-label={t("view2d")}>
         <defs>
-          <pattern id="eay-twin-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" className="eay-twin-grid-line" fill="none" />
+          <pattern id="eay-twin-grid-minor" width={grid.pixels} height={grid.pixels} patternUnits="userSpaceOnUse">
+            <path d={`M ${grid.pixels} 0 L 0 0 0 ${grid.pixels}`} className="eay-twin-grid-line" fill="none" vectorEffect="non-scaling-stroke" />
+          </pattern>
+          <pattern id="eay-twin-grid-major" width={majorGridPixels} height={majorGridPixels} patternUnits="userSpaceOnUse">
+            <path d={`M ${majorGridPixels} 0 L 0 0 0 ${majorGridPixels}`} className="eay-twin-grid-line eay-twin-grid-line-major" fill="none" vectorEffect="non-scaling-stroke" />
           </pattern>
         </defs>
         <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} className="eay-twin-floor" />
-        <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} fill="url(#eay-twin-grid)" pointerEvents="none" />
+        <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} fill="url(#eay-twin-grid-minor)" pointerEvents="none" />
+        <rect x={offsetX} y={offsetY} width={model.floor.widthM * scale} height={model.floor.depthM * scale} fill="url(#eay-twin-grid-major)" pointerEvents="none" />
 
         <g className="eay-twin-engineering-dimensions" aria-hidden="true">
           <line x1={offsetX} y1={floorBottomY} x2={offsetX} y2={widthDimensionY} />

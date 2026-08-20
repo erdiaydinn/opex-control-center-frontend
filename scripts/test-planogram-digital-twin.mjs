@@ -7,6 +7,7 @@ import {
   buildPlanogramDigitalTwinModel,
   PLANOGRAM_DIGITAL_TWIN_LIMITS,
 } from "../src/modules/planogram/planogramDigitalTwinModel.js";
+import { metricGridStep } from "../src/modules/planogram/planogramEngineering2D.js";
 
 function fail(message) {
   console.error(message);
@@ -263,6 +264,7 @@ const moduleDimensionContractResult = {
         module_id: "M-150",
         module_width_cm: 150,
         module_depth_cm: 65,
+        module_height_cm: 210,
         shelves: [{
           shelf_no: 1,
           shelf_width_cm: 100,
@@ -283,6 +285,7 @@ const moduleDimensionContractCandidate = {
         center_y_m: 2,
         module_width_cm: 150,
         module_depth_cm: 65,
+        module_height_cm: 210,
         rotation_deg: 17,
       }],
     }],
@@ -307,6 +310,18 @@ const measuredModule = moduleDimensionContract?.modules?.[0];
 if (!measuredModule) fail("module_*_cm regression fixture did not render.");
 if (!closeTo(measuredModule.widthM, 1.5) || !closeTo(measuredModule.depthM, 0.65)) {
   fail("module_*_cm must override shelf fallback geometry in the digital twin.");
+}
+if (!closeTo(measuredModule.heightM, 2.1)) {
+  fail("module_height_cm must drive the physical 3D fixture height.");
+}
+for (const [scale, expectedMeters, expectedPixels] of [
+  [20, 2, 40],
+  [200, 0.2, 40],
+]) {
+  const grid = metricGridStep({ scale });
+  if (!closeTo(grid.meters, expectedMeters) || !closeTo(grid.pixels, expectedPixels)) {
+    fail("Metric grid must remain scale-correct across small and large floorplans.");
+  }
 }
 const angle = 17 * Math.PI / 180;
 const expectedFootprintWidth = 1.5 * Math.abs(Math.cos(angle)) + 0.65 * Math.abs(Math.sin(angle));

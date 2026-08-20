@@ -74,6 +74,7 @@ function moduleKey(aisleId, moduleId) {
 
 function shelfGeometry(module) {
   const first = Array.isArray(module?.shelves) ? module.shelves[0] || {} : {};
+  const shelfCount = Math.max(1, Array.isArray(module?.shelves) ? module.shelves.length : 1);
   return {
     widthM: positive(
       module?.width_m,
@@ -86,6 +87,12 @@ function shelfGeometry(module) {
       positive(module?.module_depth_cm, 0) / 100 ||
         positive(module?.depth_cm, 0) / 100 ||
         positive(first?.shelf_depth_cm, DEFAULT_MODULE_DEPTH_M * 100) / 100
+    ),
+    heightM: positive(
+      module?.height_m,
+      positive(module?.module_height_cm, 0) / 100 ||
+        positive(module?.height_cm, 0) / 100 ||
+        shelfCount * DEFAULT_SHELF_HEIGHT_M
     ),
   };
 }
@@ -382,6 +389,7 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
         fixtureType: text(merged?.fixture_class ?? merged?.fixture_type ?? merged?.module_type ?? merged?.storage_type).toUpperCase(),
         widthM: geometry.widthM,
         depthM: geometry.depthM,
+        heightM: geometry.heightM,
         ...footprint,
         ...placement,
         coordinateAuthority: placement.hasCoordinates ? "measured" : "topology",

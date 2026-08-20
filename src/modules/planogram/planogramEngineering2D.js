@@ -74,3 +74,21 @@ export function engineeringScaleBar({
     pixels: meters * pixelsPerMeter,
   };
 }
+
+
+export function metricGridStep({ scale, targetPixelSize = 32 }) {
+  const pixelsPerMeter = finite(scale);
+  const targetPixels = finite(targetPixelSize);
+  if (pixelsPerMeter <= 0 || targetPixels <= 0) {
+    throw new TypeError("scale and targetPixelSize must be positive finite numbers");
+  }
+  const rawMeters = targetPixels / pixelsPerMeter;
+  const exponent = 10 ** Math.floor(Math.log10(rawMeters));
+  const normalized = rawMeters / exponent;
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const meters = multiplier * exponent;
+  return {
+    meters,
+    pixels: meters * pixelsPerMeter,
+  };
+}

@@ -23,8 +23,6 @@ enum class FieldRecoveryActionKind {
     NONE,
     SIGN_IN_AGAIN,
     RELOAD_MISSIONS,
-    /** Opens a signed server-side review case; never retries or mutates evidence. */
-    REQUEST_SUPERVISOR_REVIEW,
 }
 
 data class FieldShellHeader(
@@ -44,8 +42,9 @@ data class FieldShellHeader(
 /**
  * Presentation-only recovery explanation for durable evidence.
  *
- * It intentionally cannot represent retry/delete/rebind/reassign mutations. Only
- * bounded local UI intents that must re-enter existing authority paths are representable.
+ * It intentionally cannot represent retry/delete/rebind/reassign/review mutations.
+ * Durable evidence recovery is routed by the signed sync/recovery authority layer;
+ * UI actions remain limited to fresh sign-in and read-only mission reload.
  */
 data class FieldRecoveryBannerModel(
     val severity: FieldRecoveryVisualSeverity,

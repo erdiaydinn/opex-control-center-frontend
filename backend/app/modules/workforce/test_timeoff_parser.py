@@ -131,7 +131,12 @@ class TimeOffParserTests(unittest.TestCase):
         self.assertEqual(body["rows"][0]["person_id"], "EMP-TIMEOFF-1")
         serialized = str(body)
         self.assertNotIn("31987654310", serialized)
-        self.assertNotIn("national_id", serialized)
+        for row in body["rows"]:
+            normalized_keys = {str(key).strip().lower() for key in row}
+            self.assertTrue(
+                normalized_keys.isdisjoint({"tckn", "tc", "national_id", "nationalid", "kimlik_no"}),
+                normalized_keys,
+            )
 
     def test_unmatched_tckn_only_row_is_not_returned_to_browser(self):
         csv_bytes = (

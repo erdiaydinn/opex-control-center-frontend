@@ -5,6 +5,7 @@ import { useAuth } from "../../auth/AuthContext.jsx";
 import { workforceFlexibilityAdminMessage } from "../../platform/i18n/workforceFlexibilityAdminMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import WorkforceActivityAuthoritySuite from "./WorkforceActivityAuthoritySuite.jsx";
+import WorkforceShiftTradeAdminPanel from "./WorkforceShiftTradeAdminPanel.jsx";
 import {
   createWorkforceOpenShift,
   loadWorkforceFlexibilityAdmin,
@@ -103,6 +104,7 @@ export default function WorkforceFlexibilityAdmin() {
       </form>
       <p className="wfx-flex-admin-rule"><ShieldCheck size={15} />{m("rule")}</p>
     </section>
+    <WorkforceShiftTradeAdminPanel warehouseId={form.warehouseId} />
     <WorkforceActivityAuthoritySuite />
   </>;
 }

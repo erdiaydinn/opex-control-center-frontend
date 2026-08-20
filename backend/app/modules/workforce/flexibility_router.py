@@ -18,7 +18,7 @@ from .flexibility_schemas import (
     OpenShiftCreateRequest,
     WorkActivityApproveRequest,
 )
-from .router import _enforce_self, _require, _require_rows_in_scope
+from .router import _enforce_self, _require, _require_any, _require_rows_in_scope
 from .work_activity_catalog import (
     WorkActivityCatalogError,
     approve_activity,
@@ -71,6 +71,17 @@ def _catalog_conflict(error: Exception) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error))
 
 
+def _require_catalog_read(role: str, permissions: str) -> None:
+    """Allow governed catalog reads without granting mutation or shift authority."""
+    _require_any(
+        role,
+        permissions,
+        "createShift",
+        "manageSystemConfig",
+        "manageStaffingNorms",
+    )
+
+
 @router.get("/availability")
 def get_availability(
     person_id: str,
@@ -108,7 +119,7 @@ def get_activity_catalog(
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
-    _require(x_opex_role, x_opex_permissions, "createShift")
+    _require_catalog_read(x_opex_role, x_opex_permissions)
     return {"rows": list_activity_catalog()}
 
 
@@ -159,7 +170,7 @@ def get_labor_standards(
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
-    _require(x_opex_role, x_opex_permissions, "createShift")
+    _require_catalog_read(x_opex_role, x_opex_permissions)
     return {"rows": list_labor_standards(activity_key=activity_key)}
 
 

@@ -1,11 +1,11 @@
 """Bounded Architecture V2 allocation search for fingerprint-reviewed scanned stores.
 
 This preview optimizer is intentionally separate from the V1 production-facing
-V3/V4/V5 line. It accepts only physically complete products, a catalog-bound
+V3/V4/V5 line. It accepts physically complete product data, a catalog-bound
 scanned fixture layout, reviewed Architecture V2 geometry and anonymized baskets.
-It generates deterministic feasible allocations, then ranks them with the real
-Architecture V2 picker-tour simulator. It does not claim global optimality or
-production/installation authority.
+Candidates are allocated deterministically and ranked with the real oriented
+polygon picker-tour simulator. It never grants Store DNA, installation, CAPEX,
+relocation or production authority and never claims a global optimum.
 """
 
 from __future__ import annotations
@@ -17,13 +17,25 @@ from itertools import product as cartesian_product
 from typing import Any
 
 import architecture_truth_v2
-import objective_v3
 import picker_tour_simulation_v2
-from physical_truth import layout_physical_truth_report, product_physical_truth_report
+from physical_truth import layout_truth_report
 
 OPTIMIZER_VERSION = "scanned-physical-optimizer-v6-preview"
 MAX_CANDIDATES = 24
 HEAVY_GRAMS = 4000.0
+VALID_STORAGE_TYPES = {"AMBIENT", "CHILLED", "FROZEN", "PALLET"}
+ESTIMATED_DIMENSION_SOURCES = {"ai_estimated", "estimated", "heuristic", "inferred"}
+OBJECTIVE_ORDER = (
+    "hard_violation_count",
+    "weighted_unplaced_sales",
+    "unplaced_sku_count",
+    "tour_unsimulated_order_count",
+    "tour_p95_m",
+    "tour_average_m",
+    "coverage_shortfall",
+    "brand_fragmentation",
+    "capacity_pressure",
+)
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -53,6 +65,7 @@ def _sales(row: dict[str, Any]) -> float:
         _num(
             row.get("weekly_sales")
             or row.get("sales_7d")
+            or row.get("sales_qty_7d")
             or row.get("sales")
             or row.get("avg_sales"),
             0.0,
@@ -60,15 +73,76 @@ def _sales(row: dict[str, Any]) -> float:
     )
 
 
+def _weight_kg(row: dict[str, Any]) -> float:
+    explicit = _num(row.get("weight_kg") or row.get("product_weight_kg"), 0.0)
+    if explicit > 0:
+        return explicit
+    grams = _num(row.get("weight_g") or row.get("product_weight_g"), 0.0)
+    return grams / 1000.0 if grams > 0 else 0.0
+
+
 def _storage(row: dict[str, Any]) -> str:
     return str(row.get("storage_type") or "").strip().upper()
+
+
+def _product_truth(products: list[dict[str, Any]]) -> dict[str, Any]:
+    blockers: list[str] = []
+    seen: set[str] = set()
+    complete = 0
+    provenance_missing = 0
+    for index, row in enumerate(products):
+        sku = _sku(row) or f"row:{index + 1}"
+        if sku in seen:
+            blockers.append(f"scanned_optimizer_duplicate_sku:{sku}")
+        seen.add(sku)
+        row_blocked = False
+        for field in ("width_cm", "height_cm", "depth_cm"):
+            if _num(row.get(field)) <= 0:
+                blockers.append(f"scanned_optimizer_product_{field}_missing:{sku}")
+                row_blocked = True
+        if _weight_kg(row) <= 0:
+            blockers.append(f"scanned_optimizer_product_weight_missing:{sku}")
+            row_blocked = True
+        storage = _storage(row)
+        if storage not in VALID_STORAGE_TYPES:
+            blockers.append(f"scanned_optimizer_product_storage_invalid:{sku}")
+            row_blocked = True
+        dimension_source = str(row.get("dimension_source") or "").strip().lower()
+        if dimension_source in ESTIMATED_DIMENSION_SOURCES:
+            blockers.append(f"scanned_optimizer_product_dimension_estimated:{sku}")
+            row_blocked = True
+        if not any(
+            str(row.get(key) or "").strip()
+            for key in ("source_ref", "catalog_global_product_id", "pim_product_id", "barcode")
+        ):
+            provenance_missing += 1
+        if not row_blocked:
+            complete += 1
+    if not products:
+        blockers.append("scanned_optimizer_products_required")
+    return {
+        "contract": "scanned-product-physical-truth-v1",
+        "preview_only": True,
+        "authoritative": False,
+        "valid": not blockers,
+        "product_count": len(products),
+        "physically_complete_count": complete,
+        "provenance_missing_count": provenance_missing,
+        "blockers": list(dict.fromkeys(blockers)),
+    }
 
 
 def _demand(orders: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for order in orders:
-        for raw in order.get("skus") or []:
-            sku = str(raw or "").strip().upper()
+        raw = order.get("skus")
+        if raw is None:
+            raw = order.get("items")
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            value = item.get("sku") if isinstance(item, dict) else item
+            sku = str(value or "").strip().upper()
             if sku:
                 counts[sku] = counts.get(sku, 0) + 1
     return counts
@@ -77,7 +151,18 @@ def _demand(orders: list[dict[str, Any]]) -> dict[str, int]:
 def _affinity(orders: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     graph: dict[str, dict[str, int]] = {}
     for order in orders:
-        unique = sorted({str(raw or "").strip().upper() for raw in order.get("skus") or [] if str(raw or "").strip()})
+        raw = order.get("skus")
+        if raw is None:
+            raw = order.get("items")
+        if not isinstance(raw, list):
+            continue
+        values = []
+        for item in raw:
+            value = item.get("sku") if isinstance(item, dict) else item
+            sku = str(value or "").strip().upper()
+            if sku:
+                values.append(sku)
+        unique = sorted(set(values))
         for left_index, left in enumerate(unique):
             graph.setdefault(left, {})
             for right in unique[left_index + 1 :]:
@@ -114,6 +199,7 @@ def _shelf_refs(layout: dict[str, Any]) -> list[dict[str, Any]]:
                     "module": module,
                     "shelf": shelf,
                     "remaining_width_cm": _num(shelf.get("shelf_width_cm")),
+                    "remaining_weight_kg": _num(shelf.get("max_weight_kg")),
                     "placed_skus": [],
                 }
             )
@@ -151,32 +237,44 @@ def _profile_id(profile: dict[str, float]) -> str:
     )
 
 
-def _feasible(product: dict[str, Any], shelf: dict[str, Any], remaining_width_cm: float) -> bool:
+def _feasible(
+    product: dict[str, Any],
+    shelf_ref: dict[str, Any],
+) -> bool:
+    shelf = shelf_ref["shelf"]
     width = _num(product.get("width_cm"))
     height = _num(product.get("height_cm"))
     depth = _num(product.get("depth_cm"))
-    weight_kg = _num(product.get("weight_g")) / 1000.0
-    if min(width, height, depth) <= 0 or weight_kg <= 0:
+    weight_kg = _weight_kg(product)
+    if min(width, height, depth, weight_kg) <= 0:
         return False
-    if width > remaining_width_cm:
+    if width > shelf_ref["remaining_width_cm"]:
         return False
     if height > _num(shelf.get("shelf_height_cm")):
         return False
     if depth > _num(shelf.get("shelf_depth_cm")):
         return False
-    if weight_kg > _num(shelf.get("max_weight_kg")):
+    if weight_kg > shelf_ref["remaining_weight_kg"]:
         return False
     allowed = str(shelf.get("allowed_storage_type") or "").strip().upper()
     return allowed == _storage(product)
 
 
-def _facings(product: dict[str, Any], demand_count: int, max_demand: int, remaining_width_cm: float) -> int:
+def _facings(
+    product: dict[str, Any],
+    demand_count: int,
+    max_demand: int,
+    shelf_ref: dict[str, Any],
+) -> int:
     width = _num(product.get("width_cm"))
-    if width <= 0:
+    weight_kg = _weight_kg(product)
+    if width <= 0 or weight_kg <= 0:
         return 0
     ratio = demand_count / max(1, max_demand)
     target = 4 if ratio >= 0.75 else 3 if ratio >= 0.45 else 2 if ratio >= 0.2 else 1
-    return max(1, min(target, int(remaining_width_cm // width)))
+    by_width = int(shelf_ref["remaining_width_cm"] // width)
+    by_weight = int(shelf_ref["remaining_weight_kg"] // weight_kg)
+    return max(0, min(target, by_width, by_weight, 12))
 
 
 def _shelf_score(
@@ -196,19 +294,20 @@ def _shelf_score(
         graph.get(sku, {}).get(other, 0) for other in shelf_ref["placed_skus"]
     )
     zone = str(shelf.get("zone_type") or "").lower()
-    heavy = _num(product.get("weight_g")) >= HEAVY_GRAMS
+    heavy = _weight_kg(product) * 1000.0 >= HEAVY_GRAMS
     ergonomic_penalty = 0.0
     if heavy and zone not in {"bottom", "lower"}:
         ergonomic_penalty = 12.0
     elif not heavy and zone == "bottom":
         ergonomic_penalty = 1.5
-    category = _text(product, "category", "category_name", "subcategory")
+    category = _text(product, "category", "category_name", "category_l1", "subcategory")
     category_neighbors = 0
     if category:
         category_neighbors = sum(
             1
             for placed in shelf.get("products") or []
-            if _text(placed, "category", "category_name", "subcategory") == category
+            if _text(placed, "category", "category_name", "category_l1", "subcategory")
+            == category
         )
     slack_ratio = shelf_ref["remaining_width_cm"] / max(
         _num(shelf.get("shelf_width_cm")),
@@ -237,7 +336,7 @@ def _ordered_products(
             + centrality * profile["affinity_weight"]
             + _sales(row) * 0.04
         )
-        return (-priority, -_sales(row), -_num(row.get("weight_g")), sku)
+        return (-priority, -_sales(row), -_weight_kg(row), sku)
 
     return sorted((deepcopy(row) for row in products), key=key)
 
@@ -257,11 +356,7 @@ def _allocate_candidate(
     max_demand = max(demand.values(), default=1)
 
     for row in _ordered_products(products, demand, graph, profile):
-        feasible = [
-            shelf_ref
-            for shelf_ref in shelves
-            if _feasible(row, shelf_ref["shelf"], shelf_ref["remaining_width_cm"])
-        ]
+        feasible = [shelf_ref for shelf_ref in shelves if _feasible(row, shelf_ref)]
         if not feasible:
             unplaced.append(row)
             continue
@@ -280,7 +375,7 @@ def _allocate_candidate(
             row,
             demand.get(_sku(row), 0),
             max_demand,
-            selected["remaining_width_cm"],
+            selected,
         )
         if facing_count <= 0:
             unplaced.append(row)
@@ -290,6 +385,7 @@ def _allocate_candidate(
         selected["shelf"].setdefault("products", []).append(placed)
         selected["placed_skus"].append(_sku(row))
         selected["remaining_width_cm"] -= _num(row.get("width_cm")) * facing_count
+        selected["remaining_weight_kg"] -= _weight_kg(row) * facing_count
     return candidate, unplaced
 
 
@@ -305,6 +401,28 @@ def _brand_fragmentation(planogram: dict[str, Any]) -> int:
     return sum(max(0, len(modules) - 1) for modules in brand_modules.values())
 
 
+def _tour_summary(raw: dict[str, Any]) -> dict[str, Any]:
+    orders = raw.get("orders") or {}
+    distance = raw.get("distance_m") or {}
+    input_count = int(orders.get("input_count") or 0)
+    simulated_count = int(orders.get("simulated_count") or 0)
+    return {
+        "available": bool(raw.get("available")),
+        "simulation_version": raw.get("simulation_version"),
+        "routing_algorithm": raw.get("routing_algorithm"),
+        "order_count": input_count,
+        "simulated_order_count": simulated_count,
+        "coverage_pct": float(orders.get("coverage_pct") or 0.0),
+        "unsimulated_order_count": max(0, input_count - simulated_count),
+        "average_m": float(distance.get("average") or 0.0),
+        "p50_m": float(distance.get("p50") or 0.0),
+        "p90_m": float(distance.get("p90") or 0.0),
+        "p95_m": float(distance.get("p95") or 0.0),
+        "max_m": float(distance.get("max") or 0.0),
+        "blockers": list(raw.get("blockers") or []),
+    }
+
+
 def _objective(
     *,
     products: list[dict[str, Any]],
@@ -317,17 +435,22 @@ def _objective(
         _sales(row) for row in products if _sku(row) in unplaced_skus
     )
     coverage = _num(tour.get("coverage_pct"), 0.0)
+    unavailable_penalty = 1 if not tour.get("available") else 0
     return {
-        "hard_violation_count": 0,
+        "hard_violation_count": unavailable_penalty,
         "weighted_unplaced_sales": round(weighted_unplaced_sales, 6),
         "unplaced_sku_count": len(unplaced_skus),
         "tour_unsimulated_order_count": int(tour.get("unsimulated_order_count") or 0),
-        "tour_p95_m": _num(tour.get("p95_m"), float("inf")),
-        "tour_average_m": _num(tour.get("average_m"), float("inf")),
+        "tour_p95_m": _num(tour.get("p95_m"), 1_000_000.0),
+        "tour_average_m": _num(tour.get("average_m"), 1_000_000.0),
         "coverage_shortfall": round(max(0.0, 100.0 - coverage), 6),
         "brand_fragmentation": _brand_fragmentation(planogram),
         "capacity_pressure": 0.0,
     }
+
+
+def _objective_key(objective: dict[str, Any]) -> tuple[float, ...]:
+    return tuple(float(objective.get(name) or 0.0) for name in OBJECTIVE_ORDER)
 
 
 def _fingerprint(payload: dict[str, Any]) -> str:
@@ -352,13 +475,18 @@ def optimize_scanned_store(
 ) -> dict[str, Any]:
     """Allocate products on reviewed Architecture V2 scanned fixture truth."""
     max_candidates = max(1, min(int(max_candidates), MAX_CANDIDATES))
-    product_truth = product_physical_truth_report(products, require_images=False)
-    layout_truth = layout_physical_truth_report(layout)
+    product_truth = _product_truth(products)
+    layout_truth = layout_truth_report(layout)
     architecture_truth = architecture_truth_v2.architecture_truth_report_v2(store_dna)
+    spatial_layout_truth = architecture_truth_v2.layout_architecture_report_v2(
+        layout,
+        store_dna,
+    )
     blockers = [
         *list(product_truth.get("blockers") or []),
         *list(layout_truth.get("blockers") or []),
         *list(architecture_truth.get("blockers") or []),
+        *list(spatial_layout_truth.get("blockers") or []),
     ]
     entry = _picker_entry(store_dna)
     if entry is None:
@@ -371,9 +499,19 @@ def optimize_scanned_store(
             "optimizer_version": OPTIMIZER_VERSION,
             "allowed": False,
             "blockers": blockers,
+            "physical_truth": {
+                "products": product_truth,
+                "layout": layout_truth,
+                "architecture_v2": architecture_truth,
+                "layout_architecture_v2": spatial_layout_truth,
+            },
             "production_authority": False,
+            "store_dna_authority": False,
             "installation_approved": False,
+            "relocation_execution_allowed": False,
+            "capex_approved": False,
             "global_optimum_claim": False,
+            "field_evidence": False,
         }
 
     assert entry is not None
@@ -389,13 +527,13 @@ def optimize_scanned_store(
             graph=graph,
             profile=profile,
         )
-        tour = picker_tour_simulation_v2.simulate_picker_tours_v2(
-            products=products,
-            planogram=planogram,
-            layout=layout,
+        raw_tour = picker_tour_simulation_v2.simulate_picker_tours_v2(
+            result={"planogram": planogram},
+            layout=planogram,
             store_dna=store_dna,
             orders=orders,
         )
+        tour = _tour_summary(raw_tour)
         objective = _objective(
             products=products,
             unplaced=unplaced,
@@ -410,13 +548,13 @@ def optimize_scanned_store(
                 "unplaced_skus": sorted({_sku(row) for row in unplaced}),
                 "tour": tour,
                 "objective": objective,
-                "objective_key": list(objective_v3.objective_key(objective)),
+                "objective_key": list(_objective_key(objective)),
             }
         )
 
     selected = min(
         candidate_rows,
-        key=lambda row: objective_v3.objective_key(row["objective"]),
+        key=lambda row: (_objective_key(row["objective"]), row["profile_id"]),
     )
     summaries = [
         {
@@ -424,12 +562,7 @@ def optimize_scanned_store(
             "profile": row["profile"],
             "objective": row["objective"],
             "objective_key": row["objective_key"],
-            "tour": {
-                "order_count": row["tour"].get("order_count"),
-                "coverage_pct": row["tour"].get("coverage_pct"),
-                "average_m": row["tour"].get("average_m"),
-                "p95_m": row["tour"].get("p95_m"),
-            },
+            "tour": row["tour"],
             "unplaced_skus": row["unplaced_skus"],
         }
         for row in candidate_rows
@@ -448,6 +581,7 @@ def optimize_scanned_store(
             "products": product_truth,
             "layout": layout_truth,
             "architecture_v2": architecture_truth,
+            "layout_architecture_v2": spatial_layout_truth,
         },
         "production_authority": False,
         "store_dna_authority": False,

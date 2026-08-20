@@ -250,6 +250,7 @@ export default function PlanogramStudio() {
             locale={locale}
             formatNumber={formatNumber}
             canCreate={canCreatePreview}
+            optimizationCandidate={candidate}
           />
 
           <section

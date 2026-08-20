@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.modules.planogram.schemas import (
+    PlanogramOrderBasket,
     PlanogramStoreScanAnnotationPreviewRequest,
 )
 
@@ -29,10 +30,9 @@ class PlanogramScannedFixtureBinding(BaseModel):
     shelf_height_cm: float = Field(gt=0, le=1000)
     shelf_depth_cm: float = Field(gt=0, le=2000)
     shelf_max_weight_kg: float = Field(gt=0, le=5000)
-    shelf_zone_types: list[Literal["bottom", "lower", "eye", "upper", "top"]] = Field(
-        min_length=1,
-        max_length=30,
-    )
+    shelf_zone_types: list[
+        Literal["bottom", "lower", "eye", "upper", "top"]
+    ] = Field(min_length=1, max_length=30)
     source_ref: str = Field(min_length=3, max_length=500)
     attested: bool
 
@@ -75,3 +75,28 @@ class PlanogramStoreScanFixtureLayoutPreviewRequest(
         if len(slots) != len(set(slots)):
             raise ValueError("Duplicate aisle/side/position binding slot")
         return self
+
+
+class PlanogramStoreScanOptimizePreviewRequest(
+    PlanogramStoreScanFixtureLayoutPreviewRequest
+):
+    """Server-recomputed V6 optimization input; client layout authority is forbidden."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    products: list[dict[str, Any]] = Field(min_length=1, max_length=5000)
+    order_baskets: list[PlanogramOrderBasket] = Field(min_length=1, max_length=5000)
+    mode: Literal["HYBRID", "CATEGORY", "ABC", "BRAND"] = "HYBRID"
+
+    @field_validator("products")
+    @classmethod
+    def unique_product_skus(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        skus = [
+            str(row.get("sku") or row.get("SKU") or "").strip().upper()
+            for row in value
+        ]
+        if any(not sku for sku in skus):
+            raise ValueError("Every scanned optimizer product requires sku")
+        if len(skus) != len(set(skus)):
+            raise ValueError("Duplicate scanned optimizer product sku")
+        return value

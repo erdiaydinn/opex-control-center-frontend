@@ -56,6 +56,7 @@ export default function PlanogramScanAnnotationWorkspace({
   locale,
   formatNumber,
   canCreate,
+  optimizationCandidate,
 }) {
   const t = useMemo(() => (key) => translatePlanogramScanAnnotation(locale, key), [locale]);
   const scan = scanResponse?.store_scan || null;
@@ -107,14 +108,8 @@ export default function PlanogramScanAnnotationWorkspace({
   const addAtPoint = useCallback((point) => {
     if (!architecture || !canCreate || !point) return;
     const bounded = clampPoint(point, architecture);
-    const boundedWidth = Math.max(
-      0.05,
-      Math.min(Number(widthM) || 0.05, architecture.floor_width_m)
-    );
-    const boundedDepth = Math.max(
-      0.05,
-      Math.min(Number(depthM) || 0.05, architecture.floor_depth_m)
-    );
+    const boundedWidth = Math.max(0.05, Math.min(Number(widthM) || 0.05, architecture.floor_width_m));
+    const boundedDepth = Math.max(0.05, Math.min(Number(depthM) || 0.05, architecture.floor_depth_m));
     sequenceRef.current += 1;
     const next = {
       element_id: `human-${tool}-${sequenceRef.current}`,
@@ -146,10 +141,7 @@ export default function PlanogramScanAnnotationWorkspace({
 
   const handleMapKeyDown = useCallback((event) => {
     if (!architecture || !canCreate) return;
-    const current = keyboardPoint || [
-      architecture.floor_width_m / 2,
-      architecture.floor_depth_m / 2,
-    ];
+    const current = keyboardPoint || [architecture.floor_width_m / 2, architecture.floor_depth_m / 2];
     let next = current;
     if (event.key === "ArrowLeft") next = [current[0] - KEYBOARD_STEP_M, current[1]];
     else if (event.key === "ArrowRight") next = [current[0] + KEYBOARD_STEP_M, current[1]];
@@ -199,10 +191,7 @@ export default function PlanogramScanAnnotationWorkspace({
   return (
     <section className="eay-scan-annotation">
       <header>
-        <div>
-          <Crosshair size={20} aria-hidden="true" />
-          <div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div>
-        </div>
+        <div><Crosshair size={20} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>
         <span>{t("authority")}</span>
       </header>
 
@@ -214,10 +203,7 @@ export default function PlanogramScanAnnotationWorkspace({
               <select
                 value={classifications[opening.element_id] || ""}
                 onChange={(event) => {
-                  setClassifications((current) => ({
-                    ...current,
-                    [opening.element_id]: event.target.value,
-                  }));
+                  setClassifications((current) => ({ ...current, [opening.element_id]: event.target.value }));
                   setReviewed(null);
                 }}
               >
@@ -231,14 +217,7 @@ export default function PlanogramScanAnnotationWorkspace({
       ) : null}
 
       <div className="eay-scan-annotation-tools">
-        <label>
-          <span>{t("tool")}</span>
-          <select value={tool} onChange={(event) => changeTool(event.target.value)}>
-            {PLANOGRAM_SCAN_ANNOTATION_TOOLS.map((row) => (
-              <option key={row} value={row}>{t(row)}</option>
-            ))}
-          </select>
-        </label>
+        <label><span>{t("tool")}</span><select value={tool} onChange={(event) => changeTool(event.target.value)}>{PLANOGRAM_SCAN_ANNOTATION_TOOLS.map((row) => <option key={row} value={row}>{t(row)}</option>)}</select></label>
         <label><span>{t("width")}</span><input type="number" min="0.05" max="500" step="0.05" value={widthM} onChange={(event) => setWidthM(event.target.value)} /></label>
         <label><span>{t("depth")}</span><input type="number" min="0.05" max="500" step="0.05" value={depthM} onChange={(event) => setDepthM(event.target.value)} /></label>
         <label><span>{t("rotation")}</span><input type="number" min="-360" max="360" step="1" value={rotationDeg} onChange={(event) => setRotationDeg(event.target.value)} /></label>
@@ -254,49 +233,22 @@ export default function PlanogramScanAnnotationWorkspace({
         onClick={placeAnnotation}
         onKeyDown={handleMapKeyDown}
       >
-        <rect
-          x={projection.offsetX}
-          y={projection.offsetY}
-          width={architecture.floor_width_m * projection.scale}
-          height={architecture.floor_depth_m * projection.scale}
-          className="eay-scan-annotation-floor"
-        />
+        <rect x={projection.offsetX} y={projection.offsetY} width={architecture.floor_width_m * projection.scale} height={architecture.floor_depth_m * projection.scale} className="eay-scan-annotation-floor" />
         {(architecture.elements || []).map((element) => (
           <polygon
             key={element.element_id}
-            points={svgPointString(rotatedRectSvgPoints({
-              centerXM: element.center_x_m,
-              centerYM: element.center_y_m,
-              widthM: element.width_m,
-              depthM: element.depth_m,
-              rotationDeg: element.rotation_deg,
-            }, projection))}
+            points={svgPointString(rotatedRectSvgPoints({ centerXM: element.center_x_m, centerYM: element.center_y_m, widthM: element.width_m, depthM: element.depth_m, rotationDeg: element.rotation_deg }, projection))}
             className={`eay-scan-annotation-existing eay-scan-annotation-existing--${element.element_type}`}
           />
         ))}
         {annotations.map((element) => (
           <polygon
             key={element.element_id}
-            points={svgPointString(rotatedRectSvgPoints({
-              centerXM: element.center_x_m,
-              centerYM: element.center_y_m,
-              widthM: element.width_m,
-              depthM: element.depth_m,
-              rotationDeg: element.rotation_deg,
-            }, projection))}
+            points={svgPointString(rotatedRectSvgPoints({ centerXM: element.center_x_m, centerYM: element.center_y_m, widthM: element.width_m, depthM: element.depth_m, rotationDeg: element.rotation_deg }, projection))}
             className={`eay-scan-annotation-human eay-scan-annotation-human--${element.element_type}`}
-          >
-            <title>{t(element.element_type)}</title>
-          </polygon>
+          ><title>{t(element.element_type)}</title></polygon>
         ))}
-        {keyboardCircle ? (
-          <circle
-            cx={keyboardCircle.cx}
-            cy={keyboardCircle.cy}
-            r="7"
-            className="eay-scan-annotation-cursor"
-          />
-        ) : null}
+        {keyboardCircle ? <circle cx={keyboardCircle.cx} cy={keyboardCircle.cy} r="7" className="eay-scan-annotation-cursor" /> : null}
       </svg>
 
       <div className="eay-scan-annotation-list">
@@ -304,50 +256,27 @@ export default function PlanogramScanAnnotationWorkspace({
         {annotations.map((row) => (
           <div key={row.element_id}>
             <span>{t(row.element_type)} · {row.center_x_m} / {row.center_y_m} m</span>
-            <button
-              type="button"
-              onClick={() => {
-                setAnnotations((current) => current.filter((item) => item.element_id !== row.element_id));
-                setReviewed(null);
-              }}
-            >
-              <Trash2 size={15} aria-hidden="true" />{t("remove")}
-            </button>
+            <button type="button" onClick={() => { setAnnotations((current) => current.filter((item) => item.element_id !== row.element_id)); setReviewed(null); }}><Trash2 size={15} aria-hidden="true" />{t("remove")}</button>
           </div>
         ))}
       </div>
 
-      <label className="eay-scan-annotation-note">
-        <span>{t("reviewNote")}</span>
-        <textarea maxLength={1000} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} />
-      </label>
-      <button type="button" className="eay-scan-annotation-run" onClick={runReview} disabled={!canCreate || running}>
-        {running ? t("running") : t("run")}
-      </button>
+      <label className="eay-scan-annotation-note"><span>{t("reviewNote")}</span><textarea maxLength={1000} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></label>
+      <button type="button" className="eay-scan-annotation-run" onClick={runReview} disabled={!canCreate || running}>{running ? t("running") : t("run")}</button>
       {!canCreate ? <p>{t("permissionRequired")}</p> : null}
       {error ? <p className="eay-scan-annotation-error" role="alert">{error}</p> : null}
 
       {reviewedResult ? (
         <div className="eay-scan-annotation-result">
-          <div>
-            <ShieldCheck size={18} aria-hidden="true" />
-            <strong>{reviewedResult.reviewed_draft_ready ? t("ready") : t("blocked")}</strong>
-          </div>
+          <div><ShieldCheck size={18} aria-hidden="true" /><strong>{reviewedResult.reviewed_draft_ready ? t("ready") : t("blocked")}</strong></div>
           <span>{t("authority")}</span>
           <div><span>{t("fingerprint")}</span><code>{reviewedResult.reviewed_draft_fingerprint}</code></div>
-          {reviewedResult.blockers?.length ? (
-            <ul>{reviewedResult.blockers.map((row) => <li key={row}><code>{row}</code></li>)}</ul>
-          ) : null}
+          {reviewedResult.blockers?.length ? <ul>{reviewedResult.blockers.map((row) => <li key={row}><code>{row}</code></li>)}</ul> : null}
         </div>
       ) : null}
 
       {reviewedResult?.reviewed_draft_ready ? (
-        <PlanogramScannedDigitalTwin
-          reviewedResult={reviewedResult}
-          scan={scan}
-          locale={locale}
-          formatNumber={formatNumber}
-        />
+        <PlanogramScannedDigitalTwin reviewedResult={reviewedResult} scan={scan} locale={locale} formatNumber={formatNumber} />
       ) : null}
 
       {reviewedResult?.reviewed_draft_ready ? (
@@ -360,6 +289,7 @@ export default function PlanogramScanAnnotationWorkspace({
           locale={locale}
           formatNumber={formatNumber}
           canCreate={canCreate}
+          optimizationCandidate={optimizationCandidate}
         />
       ) : null}
     </section>

@@ -19,6 +19,7 @@ on:
       - "src/platform/i18n/planogramScanAnnotationMessages.js"
       - "src/platform/i18n/planogramScannedTwinMessages.js"
       - "src/platform/i18n/planogramFixtureBindingMessages.js"
+      - "src/platform/i18n/planogramScannedOptimizerMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
       - "scripts/test-planogram-engineering-2d.mjs"
@@ -30,6 +31,7 @@ on:
       - "scripts/test-planogram-scan-annotation.mjs"
       - "scripts/test-planogram-scanned-twin.mjs"
       - "scripts/test-planogram-fixture-binding.mjs"
+      - "scripts/test-planogram-scanned-optimizer-v6.mjs"
       - "scripts/test-planogram-picker-eye-assets.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
@@ -79,6 +81,8 @@ jobs:
         run: node scripts/test-planogram-scanned-twin.mjs
       - name: Scanned fixture catalog binding boundary
         run: node scripts/test-planogram-fixture-binding.mjs
+      - name: Scanned V6 end-to-end Studio chain
+        run: node scripts/test-planogram-scanned-optimizer-v6.mjs
       - name: Picker Eye same-origin asset fidelity boundary
         run: node scripts/test-planogram-picker-eye-assets.mjs
       - name: CFO economics UI authority and provenance boundary
@@ -132,7 +136,11 @@ jobs:
           echo 'MASTER_27_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED'
           echo 'MASTER_27_SCANNED_FIXTURE_CATALOG_BINDING=IMPLEMENTED'
           echo 'MASTER_27_SCANNED_FIXTURE_LAYOUT_AUTHORITY=FALSE'
-          echo 'MASTER_27_ARCHITECTURE_V2_OPTIMIZER_BRIDGE=REQUIRED'
+          echo 'MASTER_27_SCANNED_V6_OPTIMIZER=IMPLEMENTED'
+          echo 'MASTER_27_SCANNED_V6_CLIENT_LAYOUT_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_V6_STORE_DNA_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_V6_GLOBAL_OPTIMUM_CLAIM=FALSE'
+          echo 'MASTER_27_SCANNED_V6_FIELD_EVIDENCE=FALSE'
           echo 'MASTER_27_PICKER_EYE_ASSET_PREVIEW=IMPLEMENTED'
           echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'

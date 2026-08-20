@@ -8,6 +8,7 @@ import {
   normalizePlanogramFixtureBindings,
   safePlanogramFixtureLayoutPreview,
 } from "./planogramFixtureBindings.js";
+import PlanogramScannedOptimizerPanel from "./PlanogramScannedOptimizerPanel.jsx";
 import "./planogram-fixture-binding.css";
 
 const MAX_BINDING_FILE_BYTES = 4 * 1024 * 1024;
@@ -33,8 +34,8 @@ function buildProjection(scan) {
 
 function LayoutOverlay({ result, scan, t }) {
   const projection = buildProjection(scan);
-  const modules = (result?.physical_layout_preview?.aisles || []).flatMap(
-    (aisle) => (aisle.modules || []).map((module) => ({ ...module, aisle_id: aisle.aisle_id }))
+  const modules = (result?.physical_layout_preview?.aisles || []).flatMap((aisle) =>
+    (aisle.modules || []).map((module) => ({ ...module, aisle_id: aisle.aisle_id }))
   );
   if (!projection || !modules.length) return null;
   return (
@@ -77,6 +78,7 @@ export default function PlanogramFixtureBindingPanel({
   locale,
   formatNumber,
   canCreate,
+  optimizationCandidate,
 }) {
   const inputRef = useRef(null);
   const t = useMemo(
@@ -84,8 +86,13 @@ export default function PlanogramFixtureBindingPanel({
     [locale]
   );
   const scan = scanResponse?.store_scan || null;
-  const recognized = Array.isArray(scan?.recognized_fixtures) ? scan.recognized_fixtures : [];
-  const recognizedIds = useMemo(() => recognized.map((row) => row.element_id), [recognized]);
+  const recognized = Array.isArray(scan?.recognized_fixtures)
+    ? scan.recognized_fixtures
+    : [];
+  const recognizedIds = useMemo(
+    () => recognized.map((row) => row.element_id),
+    [recognized]
+  );
   const [bindings, setBindings] = useState(null);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
@@ -173,8 +180,12 @@ export default function PlanogramFixtureBindingPanel({
           <span>{t("upload")}</span>
           <input ref={inputRef} type="file" accept="application/json,.json" onChange={readBindings} />
         </label>
-        <div role="status" aria-live="polite">{bindings ? t("loaded", { name: fileName }) : t("noFile")}</div>
-        <button type="button" onClick={run} disabled={!bindings || !canCreate || running}>{running ? t("running") : t("run")}</button>
+        <div role="status" aria-live="polite">
+          {bindings ? t("loaded", { name: fileName }) : t("noFile")}
+        </div>
+        <button type="button" onClick={run} disabled={!bindings || !canCreate || running}>
+          {running ? t("running") : t("run")}
+        </button>
       </div>
       {error ? <p className="eay-fixture-binding-error" role="alert">{error}</p> : null}
 
@@ -194,6 +205,21 @@ export default function PlanogramFixtureBindingPanel({
             <header><TriangleAlert size={17} aria-hidden="true" /><strong>{t("blockers")}</strong></header>
             {result.blockers?.length ? <ul>{result.blockers.map((row) => <li key={row}><code>{row}</code></li>)}</ul> : <p>{t("none")}</p>}
           </div>
+
+          {result.layout_draft_ready ? (
+            <PlanogramScannedOptimizerPanel
+              scanBundle={scanBundle}
+              scanResponse={scanResponse}
+              classifications={classifications}
+              operationalElements={operationalElements}
+              fixtureBindings={bindings}
+              reviewNote={reviewNote}
+              optimizationCandidate={optimizationCandidate}
+              locale={locale}
+              formatNumber={numberFormat}
+              canCreate={canCreate}
+            />
+          ) : null}
         </div>
       ) : null}
     </section>

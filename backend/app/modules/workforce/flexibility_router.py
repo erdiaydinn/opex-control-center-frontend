@@ -32,9 +32,11 @@ from .work_activity_labor_catalog import (
     list_labor_standards,
     retire_labor_standard,
 )
+from .work_activity_runtime import WorkActivityRuntimeError, build_catalog_demand_snapshot
 from .work_activity_schemas import (
     ActivityLaborStandardApproveRequest,
     EmployeeCapabilitiesUpdateRequest,
+    WorkActivityDemandPreviewRequest,
     WorksiteTypeUpdateRequest,
 )
 from .workforce_capability_authority import (
@@ -187,6 +189,28 @@ def post_retire_labor_standard(
         return retire_labor_standard(activity_key, _actor(request))
     except ActivityLaborCatalogError as error:
         raise _catalog_conflict(error) from error
+
+
+@router.post("/demand-preview")
+def post_demand_preview(
+    payload: WorkActivityDemandPreviewRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageStaffingNorms")
+    _require_rows_in_scope(request, x_opex_role, [{"warehouse_id": payload.worksite_id}])
+    try:
+        snapshot = build_catalog_demand_snapshot(
+            worksite_id=payload.worksite_id,
+            interval_start=payload.interval_start,
+            interval_minutes=payload.interval_minutes,
+            model_version=payload.model_version,
+            signals=[row.model_dump(mode="json") for row in payload.signals],
+        )
+    except WorkActivityRuntimeError as error:
+        raise _catalog_conflict(error) from error
+    return snapshot.as_record()
 
 
 @router.put("/employees/{employee_id}/capabilities")

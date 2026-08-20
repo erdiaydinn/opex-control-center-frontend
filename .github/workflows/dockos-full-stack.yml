@@ -77,6 +77,7 @@ jobs:
           app.modules.workforce.test_work_activity_authority
           app.modules.workforce.test_work_activity_catalog
           app.modules.workforce.test_work_activity_completion
+          app.modules.workforce.test_work_activity_capacity_runtime
           app.modules.recruitment.test_recruitment
           app.modules.recruitment.test_hr_actual
           app.test_security

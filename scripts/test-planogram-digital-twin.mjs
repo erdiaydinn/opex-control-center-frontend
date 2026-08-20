@@ -254,4 +254,68 @@ for (const rule of [
   if (!css.includes(rule)) fail(`Digital twin accessibility/physical-truth CSS missing: ${rule}`);
 }
 
+
+const moduleDimensionContractResult = {
+  planogram: {
+    aisles: [{
+      aisle_id: "MEASURED",
+      modules: [{
+        module_id: "M-150",
+        module_width_cm: 150,
+        module_depth_cm: 65,
+        shelves: [{
+          shelf_no: 1,
+          shelf_width_cm: 100,
+          shelf_depth_cm: 50,
+          products: [],
+        }],
+      }],
+    }],
+  },
+};
+const moduleDimensionContractCandidate = {
+  layout: {
+    aisles: [{
+      aisle_id: "MEASURED",
+      modules: [{
+        module_id: "M-150",
+        center_x_m: 3,
+        center_y_m: 2,
+        module_width_cm: 150,
+        module_depth_cm: 65,
+        rotation_deg: 17,
+      }],
+    }],
+  },
+  store_dna: {
+    architecture: {
+      schema_version: 2,
+      coordinate_system: "cartesian_m_centered_rect",
+      source: "manual_survey",
+      source_ref: "survey://MODULE-DIMENSIONS/v1",
+      floor_width_m: 8,
+      floor_depth_m: 6,
+      elements: [],
+    },
+  },
+};
+const moduleDimensionContract = buildPlanogramDigitalTwinModel(
+  moduleDimensionContractResult,
+  moduleDimensionContractCandidate
+);
+const measuredModule = moduleDimensionContract?.modules?.[0];
+if (!measuredModule) fail("module_*_cm regression fixture did not render.");
+if (!closeTo(measuredModule.widthM, 1.5) || !closeTo(measuredModule.depthM, 0.65)) {
+  fail("module_*_cm must override shelf fallback geometry in the digital twin.");
+}
+const angle = 17 * Math.PI / 180;
+const expectedFootprintWidth = 1.5 * Math.abs(Math.cos(angle)) + 0.65 * Math.abs(Math.sin(angle));
+const expectedFootprintDepth = 1.5 * Math.abs(Math.sin(angle)) + 0.65 * Math.abs(Math.cos(angle));
+if (
+  !closeTo(measuredModule.footprintWidthM, expectedFootprintWidth) ||
+  !closeTo(measuredModule.footprintDepthM, expectedFootprintDepth)
+) {
+  fail("module_*_cm must feed arbitrary-angle physical geometry.");
+}
+
 console.log("Planogram canonical 2D/3D digital twin truth, V2 spatial preview and facing renderer contract: PASS");

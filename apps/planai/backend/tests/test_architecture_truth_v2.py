@@ -144,3 +144,48 @@ def test_v2_remains_fail_closed_for_outside_rotated_geometry() -> None:
 
     assert report["valid"] is False
     assert "architecture_element_outside_floorplate:OUTSIDE" in report["blockers"]
+
+
+
+def test_v2_module_dimension_contract_prefers_module_centimeters() -> None:
+    layout = {
+        "aisles": [
+            {
+                "aisle_id": "A",
+                "modules": [
+                    {
+                        "module_id": "MODULE-CM",
+                        "center_x_m": 5,
+                        "center_y_m": 4,
+                        "module_width_cm": 150,
+                        "module_depth_cm": 65,
+                        "width_cm": 20,
+                        "depth_cm": 20,
+                        "rotation_deg": 17,
+                        "shelves": [
+                            {
+                                "shelf_width_cm": 100,
+                                "shelf_depth_cm": 50,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    report = layout_architecture_report_v2(layout, store_dna_v2())
+
+    collisions = [
+        row
+        for row in report["violations"]
+        if row["type"] == "module_architecture_collision"
+    ]
+    assert collisions == [
+        {
+            "type": "module_architecture_collision",
+            "module_id": "A::MODULE-CM",
+            "element_id": "ANGLED-WALL",
+            "element_type": "wall",
+        }
+    ]

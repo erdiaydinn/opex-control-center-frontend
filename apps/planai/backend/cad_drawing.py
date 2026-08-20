@@ -77,6 +77,10 @@ def _module_dimensions(module: dict[str, Any]) -> tuple[float, float]:
     width = _number(module.get("width_m"))
     depth = _number(module.get("depth_m"))
     if width <= 0:
+        width = _number(module.get("module_width_cm")) / 100.0
+    if depth <= 0:
+        depth = _number(module.get("module_depth_cm")) / 100.0
+    if width <= 0:
         width = _number(module.get("width_cm")) / 100.0
     if depth <= 0:
         depth = _number(module.get("depth_cm")) / 100.0

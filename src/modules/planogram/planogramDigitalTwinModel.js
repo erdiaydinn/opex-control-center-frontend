@@ -77,11 +77,15 @@ function shelfGeometry(module) {
   return {
     widthM: positive(
       module?.width_m,
-      positive(module?.width_cm, 0) / 100 || positive(first?.shelf_width_cm, DEFAULT_MODULE_WIDTH_M * 100) / 100
+      positive(module?.module_width_cm, 0) / 100 ||
+        positive(module?.width_cm, 0) / 100 ||
+        positive(first?.shelf_width_cm, DEFAULT_MODULE_WIDTH_M * 100) / 100
     ),
     depthM: positive(
       module?.depth_m,
-      positive(module?.depth_cm, 0) / 100 || positive(first?.shelf_depth_cm, DEFAULT_MODULE_DEPTH_M * 100) / 100
+      positive(module?.module_depth_cm, 0) / 100 ||
+        positive(module?.depth_cm, 0) / 100 ||
+        positive(first?.shelf_depth_cm, DEFAULT_MODULE_DEPTH_M * 100) / 100
     ),
   };
 }

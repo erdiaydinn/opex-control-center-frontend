@@ -108,7 +108,7 @@ jobs:
       - name: Central SQL execution boundary
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
       - name: Compile Academy
-        run: python -m compileall -q services/core-api/app/modules/academy services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py services/core-api/tests/test_product_role_provisioning.py
+        run: python -m compileall -q services/core-api/app/modules/academy services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py services/core-api/tests/test_academy_localization_governance.py services/core-api/tests/test_product_role_provisioning.py
       - name: Assert one cumulative Alembic head before migration
         working-directory: services/core-api
         shell: bash
@@ -117,7 +117,7 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "0048_product_role_provisioning"
+          test "${heads[0]}" = "0049_academy_localization_governance"
       - name: Migrate through cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head
@@ -133,7 +133,7 @@ jobs:
               )
               try:
                   head = await connection.fetchval("SELECT version_num FROM alembic_version")
-                  assert head == "0048_product_role_provisioning", head
+                  assert head == "0049_academy_localization_governance", head
                   rows = await connection.fetch(
                       "SELECT relname,relrowsecurity,relforcerowsecurity "
                       "FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'"
@@ -160,13 +160,25 @@ jobs:
                       )
                   }
                   assert len(runtime_tables) == 9, runtime_tables
+                  localization_tables = {
+                      row['tablename'] for row in await connection.fetch(
+                          "SELECT tablename FROM pg_tables WHERE schemaname='public' "
+                          "AND tablename IN ('academy_locale_settings','academy_translation_lineage','academy_translation_review_events')"
+                      )
+                  }
+                  assert len(localization_tables) == 3, localization_tables
+                  authority_view = await connection.fetchval(
+                      "SELECT count(*) FROM information_schema.views "
+                      "WHERE table_schema='public' AND table_name='academy_translation_authority'"
+                  )
+                  assert authority_view == 1
               finally:
                   await connection.close()
 
           asyncio.run(main())
           PY
-      - name: Academy lifecycle and new-tenant product-role gates
-        run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py services/core-api/tests/test_product_role_provisioning.py
+      - name: Academy lifecycle localization and new-tenant product-role gates
+        run: pytest -q services/core-api/tests/test_academy_contracts.py services/core-api/tests/test_academy_integration.py services/core-api/tests/test_academy_concurrency.py services/core-api/tests/test_academy_localization_governance.py services/core-api/tests/test_product_role_provisioning.py
 
   platform-regression:
     runs-on: ubuntu-latest
@@ -233,7 +245,7 @@ jobs:
           set -euo pipefail
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "0048_product_role_provisioning"
+          test "${heads[0]}" = "0049_academy_localization_governance"
       - name: Migrate clean database through cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head
@@ -303,10 +315,11 @@ jobs:
       - name: Migrate, seed, dump and restore Academy evidence
         run: |
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"
-          (cd services/core-api && alembic heads | grep -qx '0048_product_role_provisioning (head)')
+          (cd services/core-api && alembic heads | grep -qx '0049_academy_localization_governance (head)')
           (cd services/core-api && alembic upgrade head)
           psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
           SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
+          SET app.actor_subject='academy-dr-ci';
           INSERT INTO tenants(id,slug,display_name)
           VALUES('00000000-0000-0000-0000-00000000d001','academy-dr','Academy DR');
           INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by)
@@ -354,5 +367,7 @@ jobs:
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_document_chunks WHERE locale='fa';" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_playback_receipts';" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_scenario_run_events';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_locale_settings WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND locale='en' AND is_default IS TRUE;" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_translation_review_events';" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM roles WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND key IN ('academy_learner','academy_instructor','academy_admin') AND is_system IS TRUE;" | grep -qx 3
-          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0048_product_role_provisioning
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx 0049_academy_localization_governance

@@ -6,7 +6,6 @@ from uuid import UUID
 import httpx
 
 from .evidence_object_upload import (
-    ALLOWED_MEDIA_TYPES,
     DEFAULT_TRUSTED_STORAGE_HOSTS,
     MAX_EVIDENCE_BYTES,
     FieldEvidenceStoreUnavailable,
@@ -46,11 +45,16 @@ async def read_private_evidence_object(
     trusted_hosts: frozenset[str] | None = None,
     token: str | None = None,
 ) -> bytes:
-    """Read one private evidence object without granting semantic authority.
+    """Read one private JPEG evidence object without granting semantic authority.
 
-    The caller must name the exact expected media type. This adapter does not infer a media type
-    from response bytes and does not grant privacy/model authority. Redirects are forbidden and
-    raw bytes never leave the caller's in-process lifetime.
+    This reader is intentionally narrower than the upload surface. Audit server privacy
+    verification currently admits only immutable sanitized JPEG bytes because its governed
+    scanner contract is ``scan_jpeg``. Video evidence is handled by the separate server-owned
+    decoder which produces canonical JPEG frames before privacy verification. Redirects are
+    forbidden and raw bytes never leave the caller's in-process lifetime.
+
+    ``expected_media_type`` is retained only for call-site compatibility; any value other than
+    ``image/jpeg`` fails closed rather than widening reader authority.
     """
 
     try:
@@ -60,9 +64,12 @@ async def read_private_evidence_object(
         raise FieldEvidenceStoreUnavailable("invalid private Field evidence identity") from exc
     if expected_byte_size <= 0 or expected_byte_size > MAX_EVIDENCE_BYTES:
         raise FieldEvidenceStoreUnavailable("invalid private Field evidence byte-size bound")
+
     normalized_media_type = expected_media_type.split(";", 1)[0].strip().lower()
-    if normalized_media_type not in ALLOWED_MEDIA_TYPES:
-        raise FieldEvidenceStoreUnavailable("invalid private Field evidence media policy")
+    if normalized_media_type != "image/jpeg":
+        raise FieldEvidenceStoreUnavailable(
+            "private Field evidence reader is authorized for image/jpeg only"
+        )
 
     if base_url is None:
         configured_url, configured_hosts, configured_token = storage_runtime_config()
@@ -74,7 +81,7 @@ async def read_private_evidence_object(
         base_url = _normalize_base_url(base_url, trusted_hosts)
 
     headers = {
-        "Accept": normalized_media_type,
+        "Accept": "image/jpeg",
         "X-EAY-Field-Tenant": tenant_id,
         "X-EAY-Field-Expected-Bytes": str(expected_byte_size),
     }
@@ -96,7 +103,7 @@ async def read_private_evidence_object(
                         "private Field evidence store read is unavailable"
                     )
                 media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
-                if media_type != normalized_media_type:
+                if media_type != "image/jpeg":
                     raise FieldEvidenceStoreUnavailable(
                         "private Field evidence store returned an unsupported media type"
                     )

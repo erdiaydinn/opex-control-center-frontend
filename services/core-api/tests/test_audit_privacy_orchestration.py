@@ -61,3 +61,9 @@ def test_privacy_route_remains_scope_bound_and_server_derived() -> None:
     assert "verify_bound_redaction_receipt" in source
     assert 'getattr(request.app.state, "audit_privacy_scanner", None)' in source
     assert "vision_inference_authorized" not in source
+
+
+def test_privacy_route_is_composed_into_production_core_app() -> None:
+    source = (ROOT / "app/budget_main.py").read_text(encoding="utf-8")
+    assert "app.modules.audit.privacy_routes" in source
+    assert "app.include_router(audit_privacy_router)" in source

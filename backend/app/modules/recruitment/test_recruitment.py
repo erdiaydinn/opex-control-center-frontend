@@ -147,6 +147,111 @@ class RecruitmentRuleTests(unittest.TestCase):
             self.assertEqual(approved["status"], "APPROVED")
             self.assertIn("retention_until", approved["evidence"][0])
 
+    def test_official_candidate_document_fails_closed_until_verified_and_subject_matches(self):
+        request = {
+            "id": "REC-OFFICIAL-1", "status": "APPROVED", "quantity": 1,
+            "hires": [], "candidates": [], "revision": 1,
+            "warehouse_id": FULYA["id"], "warehouse_name": FULYA["name"],
+            "position_code": "STORE_STAFF", "position_label": "Mağaza Görevlisi",
+            "history": [], "created_at": "2026-08-01T00:00:00+00:00",
+        }
+        with (
+            TemporaryDirectory() as directory,
+            patch.object(service, "list_requests", return_value=[request]),
+            patch.object(service, "_save_request"),
+            patch.object(service, "_EVIDENCE_DIR", Path(directory)),
+        ):
+            candidate = service.register_candidate(
+                request["id"], {"full_name": "Aday Kişi", "source_ref": "ATS-EDV-1", "note": None}, "hr"
+            )
+            uploaded = service.add_candidate_evidence(
+                request["id"], candidate["id"], "adli-sicil.pdf", "application/pdf",
+                b"%PDF-official-document", "hr", document_type="CRIMINAL_RECORD",
+            )
+            evidence = uploaded["evidence"][0]
+            self.assertEqual(evidence["verification_state"], "BARCODE_EXTRACTION_PENDING")
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "Resmî doğrulama"):
+                service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
+
+            service.record_candidate_document_verification(
+                request["id"], candidate["id"], {
+                    "evidence_sha256": evidence["sha256"], "result": "VERIFIED",
+                    "subject_match": "MATCH", "document_type": "CRIMINAL_RECORD",
+                    "official_receipt_id": "EDV-RECEIPT-1",
+                    "official_response_sha256": "a" * 64,
+                    "issued_at": "2026-08-20", "note": "Resmî portal sonucu İK tarafından görüldü.",
+                }, "hr", verification_method="HR_ASSISTED_OFFICIAL_PORTAL",
+            )
+            self.assertEqual(
+                candidate["evidence"][0]["verification_state"],
+                "HUMAN_WITNESSED_PENDING_ATTESTATION",
+            )
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "Resmî doğrulama"):
+                service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "doğrulayan kişi"):
+                service.attest_candidate_document_verification(
+                    request["id"], candidate["id"], evidence["sha256"], "İkinci kontrol", "hr"
+                )
+            service.attest_candidate_document_verification(
+                request["id"], candidate["id"], evidence["sha256"], "İkinci kontrol tamamlandı", "hr-supervisor"
+            )
+            approved = service.decide_candidate(request["id"], candidate["id"], "APPROVED", "uygun", "hr")
+            self.assertEqual(approved["status"], "APPROVED")
+            self.assertEqual(approved["evidence"][0]["verification_state"], "HUMAN_WITNESSED_ATTESTED")
+
+    def test_official_verification_is_bound_to_exact_bytes_and_document_type(self):
+        request = {
+            "id": "REC-OFFICIAL-2", "status": "SOURCING", "quantity": 1,
+            "revision": 1, "history": [], "candidates": [{
+                "id": "CAND-OFFICIAL", "status": "REVIEW_PENDING", "evidence": [{
+                    "sha256": "b" * 64, "document_type": "RESIDENCE",
+                    "requires_official_verification": True,
+                    "verification_state": "BARCODE_EXTRACTION_PENDING",
+                }],
+            }],
+        }
+        payload = {
+            "evidence_sha256": "c" * 64, "result": "VERIFIED", "subject_match": "MATCH",
+            "document_type": "RESIDENCE", "official_receipt_id": "EDV-2",
+            "official_response_sha256": "d" * 64, "issued_at": "2026-08-20", "note": "Kontrol",
+        }
+        with patch.object(service, "list_requests", return_value=[request]):
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "baytlarıyla eşleşmiyor"):
+                service.record_candidate_document_verification(
+                    request["id"], "CAND-OFFICIAL", payload, "hr",
+                    verification_method="HR_ASSISTED_OFFICIAL_PORTAL",
+                )
+
+    def test_candidate_document_rejects_spoofed_and_active_pdf(self):
+        with self.assertRaisesRegex(service.RecruitmentRuleError, "PDF içerik imzası"):
+            service._validate_candidate_document_bytes("application/pdf", b"not-a-pdf")
+        with self.assertRaisesRegex(service.RecruitmentRuleError, "Aktif veya gömülü"):
+            service._validate_candidate_document_bytes(
+                "application/pdf", b"%PDF-1.7\n1 0 obj << /JavaScript true >>",
+            )
+
+    def test_candidate_document_verification_receipt_is_immutable(self):
+        request = {
+            "id": "REC-IMMUTABLE", "status": "SOURCING", "revision": 1, "history": [],
+            "candidates": [{"id": "C-IMMUTABLE", "status": "REVIEW_PENDING", "evidence": [{
+                "sha256": "e" * 64, "document_type": "RESIDENCE",
+                "requires_official_verification": True,
+                "verification_state": "HUMAN_WITNESSED_PENDING_ATTESTATION",
+                "official_verification": {"verified_by": "first-hr"},
+            }]}],
+        }
+        payload = {
+            "evidence_sha256": "e" * 64, "result": "FAILED", "subject_match": "MISMATCH",
+            "document_type": "RESIDENCE", "official_receipt_id": "FORGED-RETRY",
+            "official_response_sha256": "f" * 64, "issued_at": "2026-08-20", "note": "overwrite",
+        }
+        with patch.object(service, "list_requests", return_value=[request]):
+            with self.assertRaisesRegex(service.RecruitmentRuleError, "değiştirilemez"):
+                service.record_candidate_document_verification(
+                    request["id"], "C-IMMUTABLE", payload, "second-hr",
+                    verification_method="HR_ASSISTED_OFFICIAL_PORTAL",
+                )
+
     def test_retention_purge_redacts_candidate_pii_and_deletes_expired_evidence(self):
         with TemporaryDirectory() as directory:
             evidence_path = Path(directory) / "expired.pdf"
@@ -201,6 +306,15 @@ class RecruitmentScopeApiTests(unittest.TestCase):
             patch("app.security._decode_bearer", return_value=self.claims),
             patch.object(recruitment_router, "list_requests", return_value=rows),
             patch.object(recruitment_router, "list_norms", return_value=[]),
+            patch(
+                "app.modules.workforce.router.list_warehouses",
+                return_value=[{"id": "fulya", "name": "Fulya (İstanbul)"}],
+            ),
+            patch(
+                "app.modules.workforce.service.list_warehouses",
+                return_value=[{"id": "fulya", "name": "Fulya (İstanbul)"}],
+            ),
+            patch("app.modules.workforce.service.list_people", return_value=[]),
         ):
             response = self.client.get("/api/recruitment/bootstrap", headers={"Authorization": "Bearer signed"})
         self.assertEqual(response.status_code, 200)

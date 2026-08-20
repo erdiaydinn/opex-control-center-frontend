@@ -56,9 +56,15 @@ export async function importRecruitmentHrActual(rows, sourceName, asOf) {
 export async function registerRecruitmentCandidate(requestId, values) {
   return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates`, values));
 }
-export async function uploadRecruitmentCandidateEvidence(requestId, candidateId, file) {
-  const form = new FormData(); form.append("file", file);
+export async function uploadRecruitmentCandidateEvidence(requestId, candidateId, file, documentType = "OTHER") {
+  const form = new FormData(); form.append("file", file); form.append("document_type", documentType);
   return safeBackendRequest(apiUpload(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/evidence`, form));
+}
+export async function verifyRecruitmentCandidateDocument(requestId, candidateId, values) {
+  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/document-verifications`, values));
+}
+export async function attestRecruitmentCandidateDocument(requestId, candidateId, evidenceSha256, note) {
+  return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/document-verifications/attest`, { evidence_sha256: evidenceSha256, note }));
 }
 export async function decideRecruitmentCandidate(requestId, candidateId, decision, note) {
   return safeBackendRequest(apiPost(`/recruitment/requests/${encodeURIComponent(requestId)}/candidates/${encodeURIComponent(candidateId)}/decision`, { decision, note }));

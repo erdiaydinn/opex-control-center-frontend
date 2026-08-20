@@ -33,6 +33,11 @@ _POSITION_LABELS = {
     "STORE_MANAGER": "Mağaza Müdürü",
 }
 
+_OFFICIAL_DOCUMENT_TYPES = {
+    "CRIMINAL_RECORD", "RESIDENCE", "SGK_SERVICE", "MILITARY_STATUS",
+    "EDUCATION", "CIVIL_REGISTRY",
+}
+
 _TEMPORARY_PLUS_ONE_WAREHOUSES = {
     "Dicle", "Yenikent", "Muratpaşa", "Lara", "Yıldırım", "Çorlu", "Mimaroba",
     "Konyaaltı", "Tuzla", "Kartal Cumhuriyet", "Fatih", "Anka", "Çekmeköy",
@@ -43,6 +48,28 @@ _TEMPORARY_PLUS_ONE_WAREHOUSES = {
 
 class RecruitmentRuleError(ValueError):
     pass
+
+
+def _validate_candidate_document_bytes(content_type: str, content: bytes) -> None:
+    """Reject obvious type spoofing and active-document payloads before persistence.
+
+    This is a deterministic pre-quarantine gate, not an antivirus verdict.
+    """
+    if not content:
+        raise RecruitmentRuleError("Boş aday belgesi yüklenemez.")
+    if content_type == "application/pdf":
+        if not content.startswith(b"%PDF-"):
+            raise RecruitmentRuleError("PDF içerik imzası geçersiz.")
+        lowered = content.lower()
+        forbidden = (b"/javascript", b"/js", b"/launch", b"/embeddedfile", b"/richmedia", b"/xfa")
+        if any(marker in lowered for marker in forbidden):
+            raise RecruitmentRuleError("Aktif veya gömülü içerik taşıyan PDF kabul edilmez.")
+    elif content_type == "image/png":
+        if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RecruitmentRuleError("PNG içerik imzası geçersiz.")
+    elif content_type == "image/jpeg":
+        if not (content.startswith(b"\xff\xd8\xff") and content.endswith(b"\xff\xd9")):
+            raise RecruitmentRuleError("JPEG içerik imzası geçersiz.")
 
 
 def _now() -> datetime:
@@ -434,14 +461,19 @@ def register_candidate(request_id: str, payload: dict, actor: str) -> dict:
 
 def add_candidate_evidence(
     request_id: str, candidate_id: str, filename: str, content_type: str, content: bytes, actor: str,
+    *, document_type: str = "OTHER",
 ) -> dict:
     if len(content) > 10 * 1024 * 1024 or content_type not in {"application/pdf", "image/jpeg", "image/png"}:
         raise RecruitmentRuleError("Aday kanıtı PDF/JPG/PNG ve en fazla 10 MB olmalıdır.")
+    _validate_candidate_document_bytes(content_type, content)
     with _LOCK:
         record = next((row for row in list_requests() if row["id"] == request_id), None)
         candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
         if candidate is None or candidate["status"] not in {"EVIDENCE_PENDING", "REVIEW_PENDING"}:
             raise RecruitmentRuleError("Aday bulunamadı veya kanıt kabul eden aşamada değil.")
+        normalized_document_type = str(document_type or "OTHER").strip().upper()
+        if normalized_document_type not in _OFFICIAL_DOCUMENT_TYPES | {"OTHER"}:
+            raise RecruitmentRuleError("Desteklenmeyen aday belge türü.")
         expected_revision = int(record.get("revision", 1))
         digest = sha256(content).hexdigest()
         suffix = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[content_type]
@@ -451,11 +483,20 @@ def add_candidate_evidence(
         path.write_bytes(content)
         uploaded_at = _now()
         retention_days = max(1, int(os.getenv("RECRUITMENT_EVIDENCE_RETENTION_DAYS", "365")))
+        requires_official_verification = normalized_document_type in _OFFICIAL_DOCUMENT_TYPES
         evidence = {
             "original_name": Path(filename).name[:240], "content_type": content_type,
             "size": len(content), "sha256": digest, "stored_name": path.name,
             "uploaded_at": uploaded_at.isoformat(), "uploaded_by": actor,
             "retention_until": (uploaded_at + timedelta(days=retention_days)).isoformat(),
+            "document_type": normalized_document_type,
+            "requires_official_verification": requires_official_verification,
+            "verification_state": (
+                "BARCODE_EXTRACTION_PENDING" if requires_official_verification else "NOT_REQUIRED"
+            ),
+            "official_verification": None,
+            "content_safety_state": "STATIC_FORMAT_ACCEPTED_AV_PENDING",
+            "content_safety_truth_boundary": "NOT_MALWARE_CLEARED",
         }
         candidate["evidence"].append(evidence)
         candidate["status"] = "REVIEW_PENDING"
@@ -472,12 +513,149 @@ def add_candidate_evidence(
         return candidate
 
 
+def record_candidate_document_verification(
+    request_id: str, candidate_id: str, payload: dict, actor: str, *, verification_method: str,
+    provider_signature_verified: bool = False,
+) -> dict:
+    """Bind an official-document result to the exact uploaded bytes.
+
+    Browser automation/scraping is intentionally not an authority. Until an
+    approved machine-to-machine adapter exists, HR may witness the official
+    portal result and record its immutable receipt metadata.
+    """
+    allowed_methods = {"HR_ASSISTED_OFFICIAL_PORTAL", "AUTHORIZED_OFFICIAL_API"}
+    if verification_method not in allowed_methods:
+        raise RecruitmentRuleError("Belge doğrulama yöntemi güvenilir değil.")
+    if verification_method == "AUTHORIZED_OFFICIAL_API" and not provider_signature_verified:
+        raise RecruitmentRuleError("Yetkili doğrulayıcı servis imzası doğrulanmadı.")
+    with _LOCK:
+        all_records = list_requests()
+        record = next((row for row in all_records if row["id"] == request_id), None)
+        candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+        if candidate is None or candidate.get("status") not in {"REVIEW_PENDING", "EVIDENCE_PENDING"}:
+            raise RecruitmentRuleError("Aday bulunamadı veya belge doğrulama aşamasında değil.")
+        evidence = next(
+            (item for item in candidate.get("evidence", []) if item.get("sha256") == payload["evidence_sha256"]),
+            None,
+        )
+        if evidence is None:
+            raise RecruitmentRuleError("Doğrulama sonucu yüklenen belge baytlarıyla eşleşmiyor.")
+        if not evidence.get("requires_official_verification"):
+            raise RecruitmentRuleError("Bu belge türü için resmî doğrulama kaydı kabul edilmez.")
+        if evidence.get("document_type") != payload["document_type"]:
+            raise RecruitmentRuleError("Doğrulama belge türü yüklenen kanıtla eşleşmiyor.")
+        if evidence.get("official_verification") is not None:
+            raise RecruitmentRuleError("Belge doğrulama kaydı değiştirilemez; yeni belge yüklenmelidir.")
+        receipt_reused = any(
+            other_evidence.get("official_verification", {}).get("official_receipt_id")
+            == payload["official_receipt_id"]
+            for other_record in all_records
+            for other_candidate in other_record.get("candidates", [])
+            for other_evidence in other_candidate.get("evidence", [])
+            if other_evidence is not evidence
+        )
+        if receipt_reused:
+            raise RecruitmentRuleError("Resmî doğrulama makbuzu daha önce kullanılmış; replay engellendi.")
+        expected_revision = int(record.get("revision", 1))
+        now = _now().isoformat()
+        verified = payload["result"] == "VERIFIED" and payload["subject_match"] == "MATCH"
+        verification = {
+            **payload,
+            "method": verification_method,
+            "verified": verified,
+            "verified_at": now,
+            "verified_by": actor,
+            "truth_boundary": (
+                "HUMAN_WITNESSED_OFFICIAL_PORTAL"
+                if verification_method == "HR_ASSISTED_OFFICIAL_PORTAL"
+                else "AUTHORIZED_MACHINE_TO_MACHINE"
+            ),
+        }
+        evidence["official_verification"] = verification
+        if not verified:
+            evidence["verification_state"] = "OFFICIAL_REVIEW_FAILED"
+        elif verification_method == "AUTHORIZED_OFFICIAL_API":
+            evidence["verification_state"] = "OFFICIAL_VERIFIED"
+        else:
+            evidence["verification_state"] = "HUMAN_WITNESSED_PENDING_ATTESTATION"
+        record["history"].append({
+            "at": now, "action": "CANDIDATE_DOCUMENT_VERIFICATION_RECORDED",
+            "actor": actor, "candidate_id": candidate_id,
+            "evidence_sha256": payload["evidence_sha256"], "result": payload["result"],
+            "subject_match": payload["subject_match"], "method": verification_method,
+        })
+        _save_request(
+            record, expected_revision,
+            audit_event="RECRUITMENT_CANDIDATE_DOCUMENT_VERIFICATION_RECORDED", actor=actor,
+            audit_details={
+                "record_id": request_id, "candidate_id": candidate_id,
+                "evidence_sha256": payload["evidence_sha256"],
+                "official_response_sha256": payload["official_response_sha256"],
+                "result": payload["result"], "subject_match": payload["subject_match"],
+                "method": verification_method,
+            },
+        )
+        return candidate
+
+
+def attest_candidate_document_verification(
+    request_id: str, candidate_id: str, evidence_sha256: str, note: str, actor: str,
+) -> dict:
+    """Apply four-eyes attestation to a witnessed official-portal result."""
+    with _LOCK:
+        record = next((row for row in list_requests() if row["id"] == request_id), None)
+        candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
+        evidence = next(
+            (item for item in (candidate or {}).get("evidence", []) if item.get("sha256") == evidence_sha256),
+            None,
+        )
+        if evidence is None:
+            raise RecruitmentRuleError("Onaylanacak belge kanıtı bulunamadı.")
+        if evidence.get("verification_state") != "HUMAN_WITNESSED_PENDING_ATTESTATION":
+            raise RecruitmentRuleError("Belge ikinci yetkili onayına hazır değil.")
+        verification = evidence.get("official_verification") or {}
+        if verification.get("verified_by") == actor:
+            raise RecruitmentRuleError("Belgeyi doğrulayan kişi ikinci yetkili onayını veremez.")
+        expected_revision = int(record.get("revision", 1))
+        now = _now().isoformat()
+        verification["attestation"] = {
+            "attested_at": now, "attested_by": actor, "note": str(note).strip(),
+            "four_eyes": True,
+        }
+        evidence["verification_state"] = "HUMAN_WITNESSED_ATTESTED"
+        record["history"].append({
+            "at": now, "action": "CANDIDATE_DOCUMENT_VERIFICATION_ATTESTED",
+            "actor": actor, "candidate_id": candidate_id, "evidence_sha256": evidence_sha256,
+        })
+        _save_request(
+            record, expected_revision,
+            audit_event="RECRUITMENT_CANDIDATE_DOCUMENT_VERIFICATION_ATTESTED", actor=actor,
+            audit_details={
+                "record_id": request_id, "candidate_id": candidate_id,
+                "evidence_sha256": evidence_sha256,
+                "witnessed_by": verification.get("verified_by"), "four_eyes": True,
+            },
+        )
+        return candidate
+
+
 def decide_candidate(request_id: str, candidate_id: str, decision: str, note: str, actor: str) -> dict:
     with _LOCK:
         record = next((row for row in list_requests() if row["id"] == request_id), None)
         candidate = next((item for item in (record or {}).get("candidates", []) if item["id"] == candidate_id), None)
         if candidate is None or candidate["status"] != "REVIEW_PENDING" or not candidate.get("evidence"):
             raise RecruitmentRuleError("Aday, kanıt incelemesi tamamlanmadan sonuçlandırılamaz.")
+        unresolved_official = [
+            evidence for evidence in candidate.get("evidence", [])
+            if evidence.get("requires_official_verification")
+            and evidence.get("verification_state") not in {
+                "HUMAN_WITNESSED_ATTESTED", "OFFICIAL_VERIFIED",
+            }
+        ]
+        if decision == "APPROVED" and unresolved_official:
+            raise RecruitmentRuleError(
+                "Resmî doğrulama gereken tüm aday belgeleri geçerli ve kişiyle eşleşmiş olmadan aday onaylanamaz."
+            )
         expected_revision = int(record.get("revision", 1))
         now = _now().isoformat()
         candidate.update({"status": decision, "decision_note": note, "decided_at": now, "decided_by": actor})

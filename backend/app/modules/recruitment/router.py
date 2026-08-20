@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Header, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.modules.workforce.authorization import is_action_allowed
 from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
 from .hr_actual import build_dashboard, enrich_evaluation, import_snapshot, snapshot_summary
 from .schemas import (
-    RecruitmentCandidateCreate, RecruitmentCandidateDecision, RecruitmentDecision,
+    RecruitmentCandidateCreate, RecruitmentCandidateDecision, RecruitmentCandidateDocumentAttestation,
+    RecruitmentCandidateDocumentVerification, RecruitmentDecision,
     RecruitmentHireActivate, RecruitmentHrActualImport, RecruitmentRequestCreate,
     RecruitmentSettingsUpdate, StaffingNormPatch,
 )
@@ -29,6 +30,8 @@ from .service import (
     list_requests,
     purge_expired_recruitment_data,
     register_candidate,
+    attest_candidate_document_verification,
+    record_candidate_document_verification,
     update_settings,
     upsert_norm,
 )
@@ -240,7 +243,16 @@ def download_evidence(
     _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     try:
         path, metadata = evidence_path(request_id)
-        return FileResponse(path, media_type=metadata["content_type"], filename=metadata["original_name"])
+        actor, _ = _identity(request)
+        from app.modules.workforce import persistence
+        persistence.append_audit(
+            "RECRUITMENT_EVIDENCE_ACCESSED", actor, record_id=request_id,
+            evidence_sha256=metadata.get("sha256"),
+        )
+        return FileResponse(
+            path, media_type=metadata["content_type"], filename=metadata["original_name"],
+            headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
+        )
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -293,6 +305,7 @@ def add_candidate(
 @router.post("/requests/{request_id}/candidates/{candidate_id}/evidence")
 async def upload_candidate_evidence(
     request_id: str, candidate_id: str, request: Request, file: UploadFile = File(...),
+    document_type: str = Form(default="OTHER"),
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
 ) -> dict:
@@ -303,6 +316,50 @@ async def upload_candidate_evidence(
         return add_candidate_evidence(
             request_id, candidate_id, file.filename or "document",
             file.content_type or "application/octet-stream", await file.read(), actor,
+            document_type=document_type,
+        )
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/document-verifications")
+def verify_candidate_document(
+    request_id: str, candidate_id: str, payload: RecruitmentCandidateDocumentVerification,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Record a human-witnessed result from the official e-Devlet portal.
+
+    This endpoint deliberately cannot claim an automated official API result.
+    Such authority must arrive through a separately authenticated service adapter.
+    """
+    _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return record_candidate_document_verification(
+            request_id, candidate_id, payload.model_dump(mode="json"), actor,
+            verification_method="HR_ASSISTED_OFFICIAL_PORTAL",
+        )
+    except RecruitmentRuleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/document-verifications/attest")
+def attest_candidate_document(
+    request_id: str, candidate_id: str, payload: RecruitmentCandidateDocumentAttestation,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    try:
+        return attest_candidate_document_verification(
+            request_id, candidate_id, payload.evidence_sha256, payload.note, actor,
         )
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
@@ -333,7 +390,16 @@ def download_candidate_evidence(
     _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     try:
         path, metadata = candidate_evidence_path(request_id, candidate_id, digest)
-        return FileResponse(path, media_type=metadata["content_type"], filename=metadata["original_name"])
+        actor, _ = _identity(request)
+        from app.modules.workforce import persistence
+        persistence.append_audit(
+            "RECRUITMENT_CANDIDATE_EVIDENCE_ACCESSED", actor, record_id=request_id,
+            candidate_id=candidate_id, evidence_sha256=metadata.get("sha256"),
+        )
+        return FileResponse(
+            path, media_type=metadata["content_type"], filename=metadata["original_name"],
+            headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
+        )
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

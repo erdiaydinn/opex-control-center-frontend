@@ -83,6 +83,24 @@ class RecruitmentCandidateDecision(BaseModel):
     note: str = Field(min_length=1, max_length=2000)
 
 
+class RecruitmentCandidateDocumentVerification(BaseModel):
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result: str = Field(pattern=r"^(VERIFIED|FAILED|INCONCLUSIVE)$")
+    subject_match: str = Field(pattern=r"^(MATCH|MISMATCH|NOT_CHECKED)$")
+    document_type: str = Field(
+        pattern=r"^(CRIMINAL_RECORD|RESIDENCE|SGK_SERVICE|MILITARY_STATUS|EDUCATION|CIVIL_REGISTRY|OTHER)$"
+    )
+    official_receipt_id: str = Field(min_length=1, max_length=240)
+    official_response_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    issued_at: date | None = None
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class RecruitmentCandidateDocumentAttestation(BaseModel):
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    note: str = Field(min_length=1, max_length=2000)
+
+
 class RecruitmentHrActualRow(BaseModel):
     employee_id: str | None = Field(default=None, max_length=80)
     tckn: str | None = Field(default=None, pattern=r"^\d{11}$")

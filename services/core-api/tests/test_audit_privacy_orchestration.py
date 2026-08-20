@@ -19,7 +19,8 @@ class _Scanner:
 
 
 def _request_with(scanner: object | None) -> SimpleNamespace:
-    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(audit_privacy_scanner=scanner)))
+    state = SimpleNamespace(audit_privacy_scanner=scanner)
+    return SimpleNamespace(app=SimpleNamespace(state=state))
 
 
 def test_server_privacy_scanner_is_server_owned_and_fail_closed() -> None:

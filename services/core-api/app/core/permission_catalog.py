@@ -263,6 +263,12 @@ for module, actions in ACTIONS.items():
 
 ALL_PERMISSION_KEYS = frozenset(_permission_keys)
 
+
+def is_known_permission(permission_key: str) -> bool:
+    """Fail closed unless a permission is present in the canonical catalog."""
+    return str(permission_key or "").strip() in ALL_PERMISSION_KEYS
+
+
 ACADEMY_LEARNER_PERMISSIONS = frozenset(
     {
         module_permission("academy"),

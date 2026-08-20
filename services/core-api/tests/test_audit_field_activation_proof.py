@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import pytest
@@ -16,6 +17,7 @@ from app.modules.audit.field_activation_proof import (
 TOKEN = "k" * 64
 TENANT = "00000000-0000-0000-0000-000000000123"
 RELEASE_SHA = "a" * 40
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _proof_body(request: httpx.Request, **overrides: object) -> dict[str, object]:
@@ -149,10 +151,9 @@ async def test_production_without_exact_release_sha_fails_closed(monkeypatch) ->
 
 
 def test_vision_authorization_source_binds_production_field_authority() -> None:
-    source = open(
-        "app/modules/audit/vision_inference_authorization.py",
-        encoding="utf-8",
-    ).read()
+    source = (ROOT / "app/modules/audit/vision_inference_authorization.py").read_text(
+        encoding="utf-8"
+    )
     assert "require_field_activation_for_production" in source
     assert "current_production_field_activation_proof_unavailable" in source
     assert "field_activation_fingerprint" in source

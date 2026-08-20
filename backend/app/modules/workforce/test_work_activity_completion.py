@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from . import service
 from . import work_activity_labor_catalog as labor
+from . import work_activity_runtime as runtime
 from .work_activity_authority import (
     ActivityLaborStandardVersion,
     WorkActivityDemandRequest,
@@ -52,12 +53,12 @@ class LaborCatalogTests(unittest.TestCase):
         ):
             row = labor.approve_labor_standard({
                 "activity_key": "food_grill_cook", "seconds_per_unit": 72, "people": 1,
-                "effective_from": "2026-08-20", "source_ref": "approved-time-study:BK-TR:v4",
+                "effective_from": "2026-08-20", "source_ref": "approved-time-study:qsr:v4",
             }, "industrial-engineering@example.test")
         self.assertEqual(row["activity_authority_ref"], "ACT-grill-V2")
         self.assertEqual(row["seconds_per_unit"], "72")
         self.assertEqual(captured["event"], "WORKFORCE_ACTIVITY_LABOR_STANDARD_APPROVED")
-        self.assertEqual(captured["details"]["source_ref"], "approved-time-study:BK-TR:v4")
+        self.assertEqual(captured["details"]["source_ref"], "approved-time-study:qsr:v4")
 
     def test_labor_standard_fails_closed_without_activity_authority(self):
         with (
@@ -69,6 +70,55 @@ class LaborCatalogTests(unittest.TestCase):
                     "activity_key": "machine_operation", "seconds_per_unit": 90, "people": 1,
                     "effective_from": "2026-08-20", "source_ref": "factory-study:v1",
                 }, "ie")
+
+
+class CatalogRuntimeTests(unittest.TestCase):
+    def activity_row(self, key="food_grill_cook"):
+        return {
+            "id": f"ACT-{key}-V1", "tenant_id": "tenant-a", "activity_key": key, "version": 1,
+            "display_name": key, "category": "operations", "unit_key": "items", "demand_mode": "VOLUME",
+            "effective_from": "2026-01-01T00:00:00+00:00", "effective_until": None,
+            "source_ref": "activity:v1", "approved_by": "ops", "status": "APPROVED",
+            "required_skill_keys": ["grill_station"] if key == "food_grill_cook" else [],
+            "required_certification_keys": ["food_safety"] if key == "food_grill_cook" else [],
+            "required_equipment_keys": [], "safety_tags": [], "location_types": [],
+        }
+
+    def labor_row(self, key="food_grill_cook"):
+        return {
+            "id": f"LAB-{key}-V1", "tenant_id": "tenant-a", "activity_key": key, "version": 1,
+            "seconds_per_unit": "90", "people": "1", "effective_from": "2026-01-01T00:00:00+00:00",
+            "effective_until": None, "source_ref": "time-study:v1", "approved_by": "ie", "status": "APPROVED",
+        }
+
+    def test_runtime_uses_tenant_catalog_not_starter_template_or_guessed_timing(self):
+        with (
+            patch.object(runtime.persistence, "tenant_id", return_value="tenant-a"),
+            patch.object(runtime, "resolve_catalog_activity", return_value=self.activity_row()),
+            patch.object(runtime, "resolve_labor_standard", return_value=self.labor_row()),
+        ):
+            snapshot = runtime.build_catalog_demand_snapshot(
+                worksite_id="SITE-QSR-1", interval_start=AT, interval_minutes=60,
+                model_version="generic-v1",
+                signals=[{"driver_key": "pos:grill", "activity_key": "food_grill_cook", "demand_mode": "VOLUME", "quantity": 40, "source_ref": "pos:forecast:v1"}],
+            )
+        self.assertEqual(snapshot.required_man_hours, Decimal("1"))
+        self.assertEqual(snapshot.required_people, Decimal("1"))
+        self.assertEqual(snapshot.contributions[0].required_certification_keys, ("food_safety",))
+        self.assertEqual(snapshot.contributions[0].labor_standard_source_ref, "time-study:v1")
+
+    def test_runtime_fails_closed_when_labor_authority_is_missing(self):
+        with (
+            patch.object(runtime.persistence, "tenant_id", return_value="tenant-a"),
+            patch.object(runtime, "resolve_catalog_activity", return_value=self.activity_row("machine_operation")),
+            patch.object(runtime, "resolve_labor_standard", side_effect=runtime.ActivityLaborCatalogError("missing labor")),
+        ):
+            with self.assertRaisesRegex(runtime.WorkActivityRuntimeError, "missing labor"):
+                runtime.build_catalog_demand_snapshot(
+                    worksite_id="SITE-FACTORY-1", interval_start=AT, interval_minutes=60,
+                    model_version="generic-v1",
+                    signals=[{"driver_key": "mes:line1", "activity_key": "machine_operation", "demand_mode": "VOLUME", "quantity": 20, "source_ref": "mes:plan:v1"}],
+                )
 
 
 class GenericPlanningTests(unittest.TestCase):

@@ -80,7 +80,7 @@ grep -q 'markRecoveryRequested' "$SYNC_WORKER"
 grep -q 'recoveryCaseId' "$DATABASE"
 grep -q 'MIGRATION_4_5' "$DATABASE"
 grep -q 'canonical payload hash substitution is rejected before supervisor request' "$RECOVERY_CASE_TEST"
-grep -q 'security and device quarantine cannot enter supervisor business recovery' "$RECOVERY_CASE_TEST"
+grep -q 'security device policy and integrity quarantine cannot enter supervisor business recovery' "$RECOVERY_CASE_TEST"
 
 grep -q 'InventoryTaskFetchCode.AUTH_REQUIRED' "$TASK_RECOVERY_PRESENTATION"
 grep -q 'FieldRecoveryActionKind.SIGN_IN_AGAIN' "$TASK_RECOVERY_PRESENTATION"

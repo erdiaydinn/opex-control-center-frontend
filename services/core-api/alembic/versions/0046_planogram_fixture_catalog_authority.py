@@ -1,0 +1,170 @@
+"""Add tenant-safe server-authoritative Planogram Fixture Catalog.
+
+Revision ID: 0046_planogram_fixture_catalog_authority
+Revises: 0045_academy_content_locale_expansion
+Create Date: 2026-08-20
+"""
+
+from collections.abc import Sequence
+
+from alembic import op
+
+revision: str = "0046_planogram_fixture_catalog_authority"
+down_revision: str = "0045_academy_content_locale_expansion"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+RUNTIME_ROLE = "opex_runtime"
+
+
+def _tenant_policy(table_name: str) -> None:
+    op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
+    op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
+    op.execute(f"""CREATE POLICY "{table_name}_tenant_isolation" ON "{table_name}"
+        USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)""")
+
+
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE planogram_fixture_catalog_versions (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            fixture_code varchar(80) NOT NULL,
+            fixture_name varchar(160) NOT NULL,
+            version_number integer NOT NULL CHECK (version_number > 0),
+            status varchar(20) NOT NULL DEFAULT 'draft' CHECK (
+                status IN ('draft','submitted','approved','rejected','superseded')
+            ),
+            record jsonb NOT NULL,
+            record_sha256 char(64) NOT NULL CHECK (record_sha256 ~ '^[0-9a-f]{64}$'),
+            created_by varchar(255) NOT NULL,
+            created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            submitted_by varchar(255),
+            submitted_at timestamptz,
+            approved_by varchar(255),
+            approved_at timestamptz,
+            rejected_by varchar(255),
+            rejected_at timestamptz,
+            rejection_reason varchar(500),
+            supersedes_version_id uuid,
+            CONSTRAINT uq_planogram_fixture_catalog_version
+                UNIQUE (tenant_id, fixture_code, version_number),
+            CONSTRAINT uq_planogram_fixture_catalog_tenant_id UNIQUE (tenant_id, id),
+            CONSTRAINT fk_planogram_fixture_catalog_supersedes
+                FOREIGN KEY (tenant_id, supersedes_version_id)
+                REFERENCES planogram_fixture_catalog_versions(tenant_id, id),
+            CONSTRAINT ck_planogram_fixture_catalog_rejection CHECK (
+                status <> 'rejected' OR (
+                    rejected_by IS NOT NULL
+                    AND rejected_at IS NOT NULL
+                    AND rejection_reason IS NOT NULL
+                )
+            )
+        )
+    """)
+    op.execute(
+        "CREATE UNIQUE INDEX uq_planogram_fixture_catalog_active_edit "
+        "ON planogram_fixture_catalog_versions (tenant_id, fixture_code) "
+        "WHERE status IN ('draft','submitted')"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX uq_planogram_fixture_catalog_approved "
+        "ON planogram_fixture_catalog_versions (tenant_id, fixture_code) "
+        "WHERE status='approved'"
+    )
+    op.execute(
+        "CREATE INDEX ix_planogram_fixture_catalog_status "
+        "ON planogram_fixture_catalog_versions "
+        "(tenant_id, fixture_code, status, version_number DESC)"
+    )
+    op.execute("""
+        CREATE TABLE planogram_fixture_catalog_events (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id uuid NOT NULL,
+            fixture_catalog_version_id uuid NOT NULL,
+            event_type varchar(40) NOT NULL CHECK (
+                event_type IN (
+                    'created','updated','submitted','approved',
+                    'rejected','superseded','revised'
+                )
+            ),
+            actor_subject varchar(255) NOT NULL,
+            from_status varchar(20),
+            to_status varchar(20),
+            reason varchar(500),
+            payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+            created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_planogram_fixture_catalog_event_version
+                FOREIGN KEY (tenant_id, fixture_catalog_version_id)
+                REFERENCES planogram_fixture_catalog_versions(tenant_id, id)
+                ON DELETE RESTRICT
+        )
+    """)
+    op.execute(
+        "CREATE INDEX ix_planogram_fixture_catalog_events_version "
+        "ON planogram_fixture_catalog_events "
+        "(tenant_id, fixture_catalog_version_id, created_at)"
+    )
+
+    _tenant_policy("planogram_fixture_catalog_versions")
+    _tenant_policy("planogram_fixture_catalog_events")
+
+    op.execute("""
+        CREATE OR REPLACE FUNCTION planogram_fixture_catalog_immutable_history()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF OLD.status = 'superseded' THEN
+                RAISE EXCEPTION 'Superseded fixture catalog versions are immutable';
+            END IF;
+
+            IF OLD.status = 'approved' THEN
+                IF NEW.status <> 'superseded'
+                   OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+                   OR NEW.fixture_code IS DISTINCT FROM OLD.fixture_code
+                   OR NEW.fixture_name IS DISTINCT FROM OLD.fixture_name
+                   OR NEW.version_number IS DISTINCT FROM OLD.version_number
+                   OR NEW.record IS DISTINCT FROM OLD.record
+                   OR NEW.record_sha256 IS DISTINCT FROM OLD.record_sha256
+                   OR NEW.created_by IS DISTINCT FROM OLD.created_by
+                   OR NEW.created_at IS DISTINCT FROM OLD.created_at
+                   OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by
+                   OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at
+                   OR NEW.approved_by IS DISTINCT FROM OLD.approved_by
+                   OR NEW.approved_at IS DISTINCT FROM OLD.approved_at
+                   OR NEW.rejected_by IS DISTINCT FROM OLD.rejected_by
+                   OR NEW.rejected_at IS DISTINCT FROM OLD.rejected_at
+                   OR NEW.rejection_reason IS DISTINCT FROM OLD.rejection_reason
+                   OR NEW.supersedes_version_id IS DISTINCT FROM OLD.supersedes_version_id
+                THEN
+                    RAISE EXCEPTION
+                        'Approved fixture catalog is immutable except approved -> superseded';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+    """)
+    op.execute(
+        "CREATE TRIGGER trg_planogram_fixture_catalog_immutable_history "
+        "BEFORE UPDATE ON planogram_fixture_catalog_versions "
+        "FOR EACH ROW EXECUTE FUNCTION planogram_fixture_catalog_immutable_history()"
+    )
+
+    op.execute(
+        f"GRANT SELECT, INSERT, UPDATE ON planogram_fixture_catalog_versions TO {RUNTIME_ROLE}"
+    )
+    op.execute(
+        f"GRANT SELECT, INSERT ON planogram_fixture_catalog_events TO {RUNTIME_ROLE}"
+    )
+
+
+def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_planogram_fixture_catalog_immutable_history "
+        "ON planogram_fixture_catalog_versions"
+    )
+    op.execute("DROP FUNCTION IF EXISTS planogram_fixture_catalog_immutable_history()")
+    op.execute("DROP TABLE planogram_fixture_catalog_events")
+    op.execute("DROP TABLE planogram_fixture_catalog_versions")

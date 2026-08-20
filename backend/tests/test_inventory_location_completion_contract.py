@@ -83,7 +83,7 @@ def test_completion_requires_exact_same_attempt_committed_line_count_including_z
     rendered = ast.unparse(_function("record_location_completion"))
     compact = rendered.replace(" ", "")
     assert "count(*)::integerAScommitted_line_count" in compact
-    assert "event_typeIN('SCAN','UNEXPECTED_SKU')" in compact
+    assert "event_typeIN('SCAN','UNEXPECTED_SKU','RECOUNT')" in compact
     assert "attempt_id=%s" in compact
     assert "occurred_at<=%s" in compact
     assert "committed_line_count!=confirmed_line_count" in compact

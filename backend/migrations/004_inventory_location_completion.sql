@@ -17,7 +17,7 @@ ALTER TABLE inventory_events ALTER COLUMN symbology DROP NOT NULL;
 
 ALTER TABLE inventory_events
   ADD CONSTRAINT inventory_events_event_type_v4_check
-  CHECK (event_type IN ('SCAN','CORRECTION','UNEXPECTED_SKU','LOCATION_COMPLETE'));
+  CHECK (event_type IN ('SCAN','CORRECTION','UNEXPECTED_SKU','RECOUNT','LOCATION_COMPLETE'));
 
 ALTER TABLE inventory_events
   ADD CONSTRAINT inventory_events_payload_v4_check

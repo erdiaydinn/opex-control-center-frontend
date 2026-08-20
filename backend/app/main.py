@@ -41,6 +41,7 @@ from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.router import router as recruitment_router
 from app.modules.recruitment.service import initialize as initialize_recruitment
 from app.modules.workforce.capacity_router import router as workforce_capacity_router
+from app.modules.workforce.flexibility_router import router as workforce_flexibility_router
 from app.modules.workforce.router import router as workforce_router
 from app.modules.workforce.service import WorkforceRuleError, initialize_workforce
 from app.security import WorkforceIdentityMiddleware
@@ -292,6 +293,7 @@ def dockos_metrics():
 app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
+app.include_router(workforce_flexibility_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")
 app.include_router(inventory_router, prefix="/api")
 app.include_router(identity_router, prefix="/api")

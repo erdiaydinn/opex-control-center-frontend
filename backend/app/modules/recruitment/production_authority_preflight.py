@@ -43,10 +43,10 @@ def _official_m2m_state() -> str:
 def run_live_preflight() -> dict:
     checks: list[dict] = []
     schema = persistence.schema_version() if persistence.ENABLED else None
-    database_ok = bool(persistence.ENABLED and (schema or 0) >= 44)
-    checks.append({"key": "postgres_v44", "required": True, "ok": database_ok, "detail": f"schema={schema or 0}"})
+    database_ok = bool(persistence.ENABLED and (schema or 0) >= 45)
+    checks.append({"key": "postgres_v45", "required": True, "ok": database_ok, "detail": f"schema={schema or 0}"})
     if not database_ok:
-        raise ProductionAuthorityPreflightError("PostgreSQL V44 authority hazır değil.")
+        raise ProductionAuthorityPreflightError("PostgreSQL V45 authority hazır değil.")
 
     try:
         storage = S3KmsEnvelopeEvidenceStore.from_environment()

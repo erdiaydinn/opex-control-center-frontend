@@ -151,10 +151,14 @@ def build_reviewed_store_scan_draft(
 
     validator = getattr(_load_architecture_v2(), "architecture_truth_report_v2", None)
     if not callable(validator):
-        raise PlanogramEngineUnavailable("Planogram Architecture V2 validator entrypoint is unavailable")
+        raise PlanogramEngineUnavailable(
+            "Planogram Architecture V2 validator entrypoint is unavailable"
+        )
     report = validator(reviewed_store_dna)
     if not isinstance(report, dict):
-        raise PlanogramEngineUnavailable("Planogram Architecture V2 validator returned invalid data")
+        raise PlanogramEngineUnavailable(
+            "Planogram Architecture V2 validator returned invalid data"
+        )
     blockers.extend(str(row) for row in report.get("blockers") or [])
     blockers = list(dict.fromkeys(blockers))
     reviewed_fingerprint = _fingerprint(reviewed_store_dna)

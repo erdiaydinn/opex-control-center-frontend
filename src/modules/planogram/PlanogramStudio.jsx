@@ -185,6 +185,7 @@ export default function PlanogramStudio() {
             <ArrowLeft className="eay-planogram-back-icon" size={18} aria-hidden="true" />
             <span>{t("back")}</span>
           </button>
+          {/* i18n-brand-literal: canonical EAY Planogram product label is intentionally locale-invariant. */}
           <p className="planogram-native__eyebrow">EAY · Planogram</p>
           <h1>{t("title")}</h1>
           <p>{t("subtitle")}</p>
@@ -308,11 +309,20 @@ export default function PlanogramStudio() {
               {previewError ? <p role="alert">{previewError}</p> : null}
             </div>
 
-            {preview ? (
+            {engineResult?.planogram ? (
               <div role="status" aria-live="polite" aria-atomic="true">
                 <p>{p("productionReleaseBlocked")}</p>
-                <PlanogramDigitalTwin preview={preview} locale={locale} />
-                <span hidden>{engineResult ? "engine-result-present" : "engine-result-absent"}</span>
+                <PlanogramDigitalTwin
+                  engineResult={engineResult}
+                  candidate={candidate}
+                  locale={locale}
+                  formatNumber={formatNumber}
+                />
+              </div>
+            ) : preview ? (
+              <div className="planogram-native__preview-empty" role="status" aria-live="polite" aria-atomic="true">
+                <p>{p("productionReleaseBlocked")}</p>
+                <p>{p("previewEmpty")}</p>
               </div>
             ) : (
               <div className="planogram-native__preview-empty">

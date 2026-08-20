@@ -32,16 +32,25 @@ class AuditEvidenceUploadCoordinatorTest {
     }
 
     @Test
-    fun validServerAckDeletesSanitizedEvidence() {
+    fun validServerAckAndDurableCommitDeletesSanitizedEvidence() {
         val (evidence, expectedBytes) = fixture()
+        var committed = false
         val coordinator = AuditEvidenceUploadCoordinator(
-            object : AuditEvidenceUploadTransport {
+            transport = object : AuditEvidenceUploadTransport {
                 override fun upload(
                     request: AuditEvidenceUploadRequest,
                     content: InputStream,
                 ): AuditEvidenceServerReceipt {
                     assertTrue(content.readBytes().contentEquals(expectedBytes))
                     return validAck(request)
+                }
+            },
+            receiptCommitter = object : AuditEvidenceReceiptCommitter {
+                override fun commit(
+                    request: AuditEvidenceUploadRequest,
+                    receipt: AuditEvidenceServerReceipt,
+                ) {
+                    committed = true
                 }
             },
         )
@@ -52,14 +61,16 @@ class AuditEvidenceUploadCoordinatorTest {
             evidence = evidence,
         )
 
+        assertTrue(committed)
         assertFalse(evidence.existsForTest())
     }
 
     @Test
     fun invalidServerAckKeepsSanitizedEvidenceForRetry() {
         val (evidence, _) = fixture()
+        var commitCalled = false
         val coordinator = AuditEvidenceUploadCoordinator(
-            object : AuditEvidenceUploadTransport {
+            transport = object : AuditEvidenceUploadTransport {
                 override fun upload(
                     request: AuditEvidenceUploadRequest,
                     content: InputStream,
@@ -67,9 +78,44 @@ class AuditEvidenceUploadCoordinatorTest {
                     visionInferenceAuthorized = true,
                 )
             },
+            receiptCommitter = object : AuditEvidenceReceiptCommitter {
+                override fun commit(
+                    request: AuditEvidenceUploadRequest,
+                    receipt: AuditEvidenceServerReceipt,
+                ) {
+                    commitCalled = true
+                }
+            },
         )
 
         assertThrows(AuditEvidenceUploadReceiptException::class.java) {
+            coordinator.uploadAndAcknowledge(
+                auditRunId = UUID.randomUUID(),
+                fieldKey = "entrance_overview",
+                evidence = evidence,
+            )
+        }
+        assertFalse(commitCalled)
+        assertTrue(evidence.existsForTest())
+        evidence.acknowledgeAndDelete()
+    }
+
+    @Test
+    fun transportFailureKeepsSanitizedEvidenceForRetry() {
+        val (evidence, _) = fixture()
+        val coordinator = AuditEvidenceUploadCoordinator(
+            transport = object : AuditEvidenceUploadTransport {
+                override fun upload(
+                    request: AuditEvidenceUploadRequest,
+                    content: InputStream,
+                ): AuditEvidenceServerReceipt {
+                    throw IllegalStateException("offline")
+                }
+            },
+            receiptCommitter = noOpCommitter(),
+        )
+
+        assertThrows(IllegalStateException::class.java) {
             coordinator.uploadAndAcknowledge(
                 auditRunId = UUID.randomUUID(),
                 fieldKey = "entrance_overview",
@@ -81,15 +127,21 @@ class AuditEvidenceUploadCoordinatorTest {
     }
 
     @Test
-    fun transportFailureKeepsSanitizedEvidenceForRetry() {
+    fun durableReceiptCommitFailureKeepsSanitizedEvidenceForRetry() {
         val (evidence, _) = fixture()
         val coordinator = AuditEvidenceUploadCoordinator(
-            object : AuditEvidenceUploadTransport {
+            transport = object : AuditEvidenceUploadTransport {
                 override fun upload(
                     request: AuditEvidenceUploadRequest,
                     content: InputStream,
-                ): AuditEvidenceServerReceipt {
-                    throw IllegalStateException("offline")
+                ): AuditEvidenceServerReceipt = validAck(request)
+            },
+            receiptCommitter = object : AuditEvidenceReceiptCommitter {
+                override fun commit(
+                    request: AuditEvidenceUploadRequest,
+                    receipt: AuditEvidenceServerReceipt,
+                ) {
+                    throw IllegalStateException("durable queue unavailable")
                 }
             },
         )
@@ -104,6 +156,14 @@ class AuditEvidenceUploadCoordinatorTest {
         assertTrue(evidence.existsForTest())
         evidence.acknowledgeAndDelete()
     }
+
+    private fun noOpCommitter(): AuditEvidenceReceiptCommitter =
+        object : AuditEvidenceReceiptCommitter {
+            override fun commit(
+                request: AuditEvidenceUploadRequest,
+                receipt: AuditEvidenceServerReceipt,
+            ) = Unit
+        }
 
     private fun validAck(request: AuditEvidenceUploadRequest): AuditEvidenceServerReceipt =
         AuditEvidenceServerReceipt(

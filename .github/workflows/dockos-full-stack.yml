@@ -58,6 +58,10 @@ jobs:
       DOCKOS_PO_SOURCE: LOCAL
       DOCKOS_STATE_FILE: /tmp/dockos_ci_state.json
       DOCKOS_NOTIFICATION_AUTOMATION: "false"
+      # CI-only deterministic encryption material. Production remains fail-closed
+      # and must supply its own secret-managed keys.
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
+      OPEX_PII_LOOKUP_KEY: QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1

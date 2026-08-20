@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Wybierz stan produktu</string>
+    <string name="terminal_scan_container">Zeskanuj pojemnik</string>
+    <string name="terminal_complete_operation">Zakończ operację</string>
+    <string name="terminal_confirm_operation">Potwierdź operację</string>
+    <string name="terminal_operation_saving">Bezpieczne zapisywanie operacji offline…</string>
+    <string name="terminal_operation_saved">Krok operacji zapisany bezpiecznie</string>
+</resources>

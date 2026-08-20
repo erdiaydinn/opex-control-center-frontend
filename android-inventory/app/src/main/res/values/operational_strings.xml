@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Select item condition</string>
+    <string name="terminal_scan_container">Scan container</string>
+    <string name="terminal_complete_operation">Complete operation</string>
+    <string name="terminal_confirm_operation">Confirm operation</string>
+    <string name="terminal_operation_saving">Securing operation offline…</string>
+    <string name="terminal_operation_saved">Operation step saved securely</string>
+</resources>

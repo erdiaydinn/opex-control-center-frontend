@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Seleccionar estado del artículo</string>
+    <string name="terminal_scan_container">Escanear contenedor</string>
+    <string name="terminal_complete_operation">Completar operación</string>
+    <string name="terminal_confirm_operation">Confirmar operación</string>
+    <string name="terminal_operation_saving">Guardando la operación de forma segura sin conexión…</string>
+    <string name="terminal_operation_saved">Paso de operación guardado de forma segura</string>
+</resources>

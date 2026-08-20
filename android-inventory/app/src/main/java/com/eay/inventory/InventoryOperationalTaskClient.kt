@@ -4,6 +4,7 @@ import android.content.Context
 import com.eay.mobile.core.OperationalMissionDefinition
 import com.eay.mobile.core.OperationalMissionType
 import com.eay.mobile.core.OperationalStepKind
+import com.eay.mobile.core.OperationalValueCanonicalizer
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -77,10 +78,34 @@ object InventoryOperationalTaskContract {
         require(task.completedSteps in 0 until task.totalSteps)
         require(task.nextStep == task.steps[task.completedSteps])
         require(task.activeShiftId.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
+        require(task.warehouseId.isNotBlank())
         require(task.state in setOf("OPEN", "CLAIMED"))
         require(task.claimStatus in setOf("AVAILABLE", "RESUMABLE"))
         require(task.skuId.isNotBlank())
         require(task.externalReference.isNotBlank())
+        OperationalValueCanonicalizer.normalize(OperationalStepKind.QUANTITY, task.plannedQuantity)
+
+        if (OperationalStepKind.SOURCE_LOCATION in task.steps) {
+            require(!task.sourceLocationId.isNullOrBlank()) { "Missing server-frozen source location" }
+        }
+        if (OperationalStepKind.DESTINATION_LOCATION in task.steps) {
+            require(!task.destinationLocationId.isNullOrBlank()) { "Missing server-frozen destination location" }
+        }
+        if (OperationalStepKind.CONTAINER in task.steps) {
+            require(!task.containerId.isNullOrBlank()) { "Missing server-frozen container" }
+        }
+
+        val normalizedConditions = task.allowedConditions.map { value ->
+            OperationalValueCanonicalizer.normalize(OperationalStepKind.CONDITION, value)
+        }
+        require(normalizedConditions.distinct().size == normalizedConditions.size) {
+            "Duplicate operational condition"
+        }
+        if (OperationalStepKind.CONDITION in task.steps) {
+            require(normalizedConditions.isNotEmpty()) { "Missing server-frozen condition choices" }
+        } else {
+            require(normalizedConditions.isEmpty()) { "Unexpected condition choices for mission type" }
+        }
         return task
     }
 }
@@ -112,7 +137,10 @@ class InventoryOperationalTaskClient(context: Context) {
                 return InventoryOperationalTaskFetchResult(code)
             }
             return try {
-                InventoryOperationalTaskFetchResult(InventoryTaskFetchCode.OK, parseRows(it.body?.string().orEmpty()))
+                InventoryOperationalTaskFetchResult(
+                    InventoryTaskFetchCode.OK,
+                    parseRows(it.body?.string().orEmpty()),
+                )
             } catch (_: IllegalArgumentException) {
                 InventoryOperationalTaskFetchResult(InventoryTaskFetchCode.CONTRACT_REJECTED)
             } catch (_: JSONException) {
@@ -123,6 +151,7 @@ class InventoryOperationalTaskClient(context: Context) {
 
     private fun parseRows(body: String): List<InventoryOperationalTask> {
         val rows = JSONObject(body).getJSONArray("rows")
+        val missionIds = HashSet<String>()
         return buildList(rows.length()) {
             for (index in 0 until rows.length()) {
                 val row = rows.getJSONObject(index)
@@ -133,10 +162,12 @@ class InventoryOperationalTaskClient(context: Context) {
                 InventoryOperationalTaskContract.rejectForbiddenFields(names)
                 val type = OperationalMissionType.valueOf(row.getString("mission_type"))
                 val steps = parseSteps(row.getJSONArray("steps"))
+                val missionId = UUID.fromString(row.getString("mission_id")).toString()
+                require(missionIds.add(missionId)) { "Duplicate operational mission ID" }
                 add(
                     InventoryOperationalTaskContract.validate(
                         InventoryOperationalTask(
-                            missionId = UUID.fromString(row.getString("mission_id")).toString(),
+                            missionId = missionId,
                             activeShiftId = row.getString("active_shift_id"),
                             warehouseId = row.getString("warehouse_id"),
                             missionType = type,

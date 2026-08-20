@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Ürün durumunu seç</string>
+    <string name="terminal_scan_container">Konteyneri okut</string>
+    <string name="terminal_complete_operation">İşlemi tamamla</string>
+    <string name="terminal_confirm_operation">İşlemi doğrula</string>
+    <string name="terminal_operation_saving">İşlem güvenli çevrimdışı kuyruğa yazılıyor…</string>
+    <string name="terminal_operation_saved">İşlem adımı güvenli kaydedildi</string>
+</resources>

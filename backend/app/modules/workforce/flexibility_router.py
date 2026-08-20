@@ -15,8 +15,15 @@ from .flexibility_schemas import (
     AvailabilityUpsertRequest,
     OpenShiftClaimRequest,
     OpenShiftCreateRequest,
+    WorkActivityApproveRequest,
 )
 from .router import _enforce_self, _require, _require_rows_in_scope
+from .work_activity_catalog import (
+    approve_activity,
+    list_activity_catalog,
+    list_template_candidates,
+    retire_activity,
+)
 
 
 router = APIRouter(prefix="/workforce/flexibility", tags=["Workforce Flexibility"])
@@ -76,6 +83,50 @@ def get_open_shifts(
 ) -> dict:
     _strict_employee_self(request, person_id, x_opex_role)
     return {"rows": list_open_shifts_for_person(person_id)}
+
+
+@router.get("/activities")
+def get_activity_catalog(
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "createShift")
+    return {"rows": list_activity_catalog()}
+
+
+@router.get("/activity-templates/{template_key}")
+def get_activity_template(
+    template_key: str,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    try:
+        return {"template_key": template_key, "rows": list_template_candidates(template_key)}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/activities", status_code=status.HTTP_201_CREATED)
+def post_activity(
+    payload: WorkActivityApproveRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    return approve_activity(payload.model_dump(mode="json"), _actor(request))
+
+
+@router.post("/activities/{activity_key}/retire")
+def post_retire_activity(
+    activity_key: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    _require(x_opex_role, x_opex_permissions, "manageSystemConfig")
+    return retire_activity(activity_key, _actor(request))
 
 
 @router.post("/open-shifts", status_code=status.HTTP_201_CREATED)

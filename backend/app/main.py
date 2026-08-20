@@ -45,6 +45,7 @@ from app.modules.workforce.capacity_router import router as workforce_capacity_r
 from app.modules.workforce.flexibility_router import router as workforce_flexibility_router
 from app.modules.workforce.router import router as workforce_router
 from app.modules.workforce.service import WorkforceRuleError, initialize_workforce
+from app.modules.workforce.timeoff_router import router as workforce_timeoff_router
 from app.security import WorkforceIdentityMiddleware
 
 
@@ -133,7 +134,7 @@ def _replace_verified_dockos_headers(request: Request, email: str, role: str) ->
 
     DockOS route signatures still accept historical X-OPEX arguments. In production
     those values are never taken from the client: this middleware replaces them
-    after both gateway HMAC verification and OIDC token verification succeed.
+    after both gateway HMAC verification and OIDC checks.
     The legacy simple gateway header is also generated internally only so the
     RC7.5 router dependency cannot become an alternate client-authentication path.
     """
@@ -295,6 +296,7 @@ app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(workforce_flexibility_router, prefix="/api")
+app.include_router(workforce_timeoff_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")
 app.include_router(inventory_router, prefix="/api")
 app.include_router(inventory_recovery_router, prefix="/api")

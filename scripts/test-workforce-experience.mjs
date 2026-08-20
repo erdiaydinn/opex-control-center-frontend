@@ -5,10 +5,25 @@ import { createServer } from "vite";
 
 const vite = await createServer({ server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
 try {
-  const module = await vite.ssrLoadModule("/src/modules/workforce/WorkforceExperienceCenter.jsx");
-  const mobile = renderToStaticMarkup(React.createElement(module.WorkforceExperienceCenter, { onBack() {} }));
-  const admin = renderToStaticMarkup(React.createElement(module.WorkforceExperienceAdmin));
-  for (const label of ["Bordro ve Belgeler", "Eğitimlerim", "Nabız Anketi", "Zimmetlerim"]) assert.match(mobile, new RegExp(label));
+  const experience = await vite.ssrLoadModule("/src/modules/workforce/WorkforceExperienceCenter.jsx");
+  const auth = await vite.ssrLoadModule("/src/auth/AuthContext.jsx");
+  const preferences = await vite.ssrLoadModule("/src/platform/preferences/PlatformPreferencesContext.jsx");
+
+  function render(component) {
+    return renderToStaticMarkup(
+      React.createElement(
+        preferences.PlatformPreferencesProvider,
+        null,
+        React.createElement(auth.AuthProvider, null, component),
+      ),
+    );
+  }
+
+  const mobile = render(React.createElement(experience.WorkforceExperienceCenter, { onBack() {} }));
+  const admin = render(React.createElement(experience.WorkforceExperienceAdmin));
+  for (const label of ["Bordro ve Belgeler", "Eğitimlerim", "Nabız Anketi", "Zimmetlerim"]) {
+    assert.match(mobile, new RegExp(label));
+  }
   assert.match(admin, /Mahremiyet odaklı kanıt/);
   assert.doesNotMatch(`${mobile}${admin}`, /Avans|Harcama|Seyahat|Yan Hak|Budget Intelligence/i);
   console.log("Workforce experience render tests passed.");

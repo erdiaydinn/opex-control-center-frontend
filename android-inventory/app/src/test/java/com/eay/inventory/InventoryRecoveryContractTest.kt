@@ -11,6 +11,8 @@ class InventoryRecoveryContractTest {
         reason: String? = null,
         code: String? = null,
         id: String = "11111111-1111-4111-8111-111111111111",
+        recoveryCaseId: String? = null,
+        recoveryState: String? = null,
     ) = OfflineEvent(
         eventId = id,
         deviceSequence = 1,
@@ -20,6 +22,8 @@ class InventoryRecoveryContractTest {
         state = state,
         quarantineReason = reason,
         lastServerCode = code,
+        recoveryCaseId = recoveryCaseId,
+        recoveryState = recoveryState,
     )
 
     @Test
@@ -81,6 +85,29 @@ class InventoryRecoveryContractTest {
     }
 
     @Test
+    fun policyRejectionRoutesToSecurityNotSupervisor() {
+        val result = requireNotNull(
+            InventoryRecoveryContract.classify(
+                event("QUARANTINED", "POLICY_REJECTED", "HTTP_403"),
+            ),
+        )
+        assertEquals(InventoryRecoverySeverity.SECURITY, result.severity)
+        assertEquals(InventoryRecoveryIntent.REQUEST_SECURITY_REVIEW, result.intent)
+        assertNotEquals(InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW, result.intent)
+    }
+
+    @Test
+    fun serverContractAndPermanentRejectionRouteToIntegrityNotSupervisor() {
+        listOf("SERVER_CONTRACT_MISMATCH", "PERMANENT_REJECTED").forEach { reason ->
+            val result = requireNotNull(
+                InventoryRecoveryContract.classify(event("QUARANTINED", reason)),
+            )
+            assertEquals(InventoryRecoverySeverity.SECURITY, result.severity)
+            assertEquals(InventoryRecoveryIntent.REQUEST_INTEGRITY_REVIEW, result.intent)
+        }
+    }
+
+    @Test
     fun deviceLossRoutesToManagedDeviceRecovery() {
         val result = requireNotNull(
             InventoryRecoveryContract.classify(
@@ -90,6 +117,31 @@ class InventoryRecoveryContractTest {
         assertEquals(InventoryRecoverySeverity.BLOCKING, result.severity)
         assertEquals(InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE, result.intent)
         assertEquals("HTTP_410", result.serverCode)
+    }
+
+    @Test
+    fun operationalConflictRoutesToSupervisorThenBecomesWaitOnlyAfterCaseBinding() {
+        val fresh = requireNotNull(
+            InventoryRecoveryContract.classify(
+                event("QUARANTINED", "BUSINESS_CONFLICT", "HTTP_409"),
+            ),
+        )
+        assertEquals(InventoryRecoverySeverity.BLOCKING, fresh.severity)
+        assertEquals(InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW, fresh.intent)
+
+        val routed = requireNotNull(
+            InventoryRecoveryContract.classify(
+                event(
+                    "QUARANTINED",
+                    "BUSINESS_CONFLICT",
+                    "HTTP_409",
+                    recoveryCaseId = "33333333-3333-4333-8333-333333333333",
+                    recoveryState = "REQUESTED",
+                ),
+            ),
+        )
+        assertEquals(InventoryRecoverySeverity.ATTENTION, routed.severity)
+        assertEquals(InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW, routed.intent)
     }
 
     @Test

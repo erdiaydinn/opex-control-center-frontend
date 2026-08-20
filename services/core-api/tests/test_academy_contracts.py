@@ -3,6 +3,14 @@ from uuid import UUID
 
 import pytest
 
+from app.core.localization import (
+    CONTENT_LOCALE_SET,
+    CONTENT_RTL_LOCALES,
+    SUPPORTED_LOCALE_SET,
+    canonicalize_content_locale,
+    canonicalize_locale,
+    content_direction,
+)
 from app.core.security import Principal
 from app.modules.academy.media import (
     AcademyMediaConfig,
@@ -10,7 +18,16 @@ from app.modules.academy.media import (
     issue_playback_token,
     verify_playback_token,
 )
-from app.modules.academy.schemas import ContentCreateRequest, QuestionCreate, QuestionOptionCreate
+from app.modules.academy.schemas import (
+    ContentCreateRequest,
+    DocumentChunkCreate,
+    InteractionSetCreateRequest,
+    PlaybackHeartbeatRequest,
+    QuestionAnswerRequest,
+    QuestionCreate,
+    QuestionOptionCreate,
+    ScenarioCreateRequest,
+)
 
 TENANT = UUID("00000000-0000-0000-0000-00000000a001")
 MEDIA = UUID("00000000-0000-0000-0000-00000000b001")
@@ -28,30 +45,164 @@ def principal() -> Principal:
     )
 
 
-def test_locales_are_restricted_to_eay_ten_locale_contract() -> None:
-    ContentCreateRequest(
+def test_ui_release_locales_stay_narrow_while_academy_content_expands() -> None:
+    expected_ui_locales = {
+        "tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"
+    }
+    expected_extended_examples = {"fa", "ru", "ja", "ur", "ckb", "zh-Hans", "pt-PT"}
+    assert set(SUPPORTED_LOCALE_SET) == expected_ui_locales
+    assert expected_extended_examples.issubset(CONTENT_LOCALE_SET)
+    assert canonicalize_locale("fa-IR") is None
+    assert canonicalize_content_locale("fa-IR") == "fa"
+    assert canonicalize_content_locale("pt_BR") == "pt-BR"
+    assert canonicalize_content_locale("zh-CN") == "zh-Hans"
+
+
+def test_academy_content_locales_normalize_bcp47_aliases() -> None:
+    payload = ContentCreateRequest(
         content_type="sop",
         slug="safe-work",
         title_i18n={
-            "tr": "Güvenli Çalışma",
-            "en": "Safe Work",
-            "de": "Sicheres Arbeiten",
-            "ar": "العمل الآمن",
-            "fr": "Travail sûr",
-            "es": "Trabajo seguro",
-            "it": "Lavoro sicuro",
-            "nl": "Veilig werken",
-            "pl": "Bezpieczna praca",
-            "pt-BR": "Trabalho seguro",
+            "tr-TR": "Güvenli Çalışma",
+            "en-US": "Safe Work",
+            "fa-IR": "کار ایمن",
+            "ja-JP": "安全な作業",
+            "ur-PK": "محفوظ کام",
         },
         version_label="2026.1",
+        locale="fa-IR",
     )
+    assert payload.locale == "fa"
+    assert set(payload.title_i18n) == {"tr", "en", "fa", "ja", "ur"}
+
+    chunk = DocumentChunkCreate(
+        chunk_ordinal=1,
+        locale="ckb-IQ",
+        text_content="ڕێنمایی سەلامەتی",
+    )
+    assert chunk.locale == "ckb"
+    assert QuestionAnswerRequest(question="روش چیست؟", locale="fa-IR").locale == "fa"
+
     with pytest.raises(ValueError, match="Unsupported locales"):
         ContentCreateRequest(
             content_type="sop",
             slug="unsupported-locale",
-            title_i18n={"ja": "安全な作業"},
+            title_i18n={"xx-ZZ": "unsupported"},
             version_label="1",
+        )
+
+
+def test_duplicate_locale_aliases_fail_closed() -> None:
+    with pytest.raises(ValueError, match="Duplicate locale after normalization"):
+        ContentCreateRequest(
+            content_type="sop",
+            slug="duplicate-locale",
+            title_i18n={"tr": "A", "tr-TR": "B"},
+            version_label="1",
+        )
+
+
+def test_content_rtl_is_not_arabic_only() -> None:
+    expected_rtl_locales = {"ar", "fa", "ur", "ckb", "he", "ps"}
+    assert set(CONTENT_RTL_LOCALES) == expected_rtl_locales
+    for locale in ("ar", "fa-IR", "ur-PK", "ckb-IQ", "he-IL", "ps-AF"):
+        assert content_direction(locale) == "rtl"
+    assert content_direction("tr-TR") == "ltr"
+
+
+def test_verified_playback_heartbeat_contract_rejects_reverse_ranges() -> None:
+    with pytest.raises(ValueError, match="to_position_ms"):
+        PlaybackHeartbeatRequest(
+            sequence_no=1,
+            from_position_ms=5000,
+            to_position_ms=4000,
+            client_elapsed_ms=1000,
+        )
+
+
+def test_interaction_authoring_rejects_duplicate_node_keys() -> None:
+    with pytest.raises(ValueError, match="node_key values must be unique"):
+        InteractionSetCreateRequest(
+            content_version_id=VERSION,
+            version_number=1,
+            source_fingerprint="a" * 64,
+            nodes=[
+                {"node_key": "stop", "node_type": "checkpoint", "at_ms": 1000},
+                {"node_key": "stop", "node_type": "hotspot", "at_ms": 2000},
+            ],
+        )
+
+
+def test_scenario_authoring_requires_valid_closed_graph() -> None:
+    scenario = ScenarioCreateRequest(
+        content_version_id=VERSION,
+        scenario_key="inbound-damaged-case",
+        version_number=1,
+        title_i18n={"tr-TR": "Hasarlı ürün senaryosu", "en-US": "Damaged item scenario"},
+        entry_node_key="start",
+        source_fingerprint="b" * 64,
+        nodes=[
+            {"node_key": "start", "node_type": "decision", "prompt_i18n": {"tr": "Ne yaparsın?"}},
+            {
+                "node_key": "done",
+                "node_type": "outcome",
+                "terminal": True,
+                "terminal_outcome": "completed",
+            },
+            {
+                "node_key": "retry",
+                "node_type": "outcome",
+                "terminal": True,
+                "terminal_outcome": "remediation",
+            },
+        ],
+        edges=[
+            {
+                "from_node_key": "start",
+                "choice_key": "reject",
+                "to_node_key": "done",
+                "label_i18n": {"tr": "Hasarlı olarak ayır"},
+                "score_delta": 100,
+                "correct": True,
+            },
+            {
+                "from_node_key": "start",
+                "choice_key": "accept",
+                "to_node_key": "retry",
+                "label_i18n": {"tr": "Stoğa al"},
+                "correct": False,
+            },
+        ],
+        status="published",
+    )
+    assert scenario.title_i18n["tr"] == "Hasarlı ürün senaryosu"
+    assert scenario.title_i18n["en"] == "Damaged item scenario"
+
+    with pytest.raises(ValueError, match="reference declared nodes"):
+        ScenarioCreateRequest(
+            content_version_id=VERSION,
+            scenario_key="invalid-edge",
+            version_number=1,
+            title_i18n={"en": "Invalid"},
+            entry_node_key="start",
+            source_fingerprint="c" * 64,
+            nodes=[
+                {"node_key": "start", "node_type": "decision"},
+                {
+                    "node_key": "done",
+                    "node_type": "outcome",
+                    "terminal": True,
+                    "terminal_outcome": "completed",
+                },
+            ],
+            edges=[
+                {
+                    "from_node_key": "start",
+                    "choice_key": "bad",
+                    "to_node_key": "missing",
+                    "label_i18n": {"en": "Bad"},
+                }
+            ],
         )
 
 

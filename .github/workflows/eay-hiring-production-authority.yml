@@ -1,4 +1,5 @@
 name: EAY Hiring Production Authorities
+
 on:
   pull_request:
     branches: [product/eay-hiring-ai-document-trust-v1]
@@ -9,19 +10,24 @@ on:
       - "backend/scripts/recruitment_authority_postgres_ci.py"
       - ".github/workflows/eay-hiring-production-authority.yml"
   workflow_dispatch:
+
 permissions:
   contents: read
+
 concurrency:
   group: eay-hiring-production-authority-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   crypto-and-m2m-contracts:
-    name: KMS scanner and authorized M2M contracts
+    name: KMS scanner M2M and runtime adversarial contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       PYTHONPATH: backend
       DOCKOS_ENV: test
+      RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-production-authority-evidence
+      OPEX_PII_KEY: Y2ktcmVjcnVpdG1lbnQtcHJvZHVjdGlvbi1hdXRob3JpdHkta2V5LTAwMDA=
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -30,12 +36,31 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r backend/requirements.txt
-      - run: python -m compileall -q backend/app/modules/recruitment backend/scripts/recruitment_authority_postgres_ci.py
-      - run: python -m unittest app.modules.recruitment.test_candidate_evidence_storage -v
-      - run: python -m unittest app.modules.recruitment.test_scanner_key_authority -v
-      - run: python -m unittest app.modules.recruitment.test_official_document_m2m -v
-      - run: python -m unittest app.modules.recruitment.test_scanner_receipt -v
-      - run: python -m unittest app.modules.recruitment.test_official_document_governance -v
+      - name: Compile recruitment authority runtime
+        run: python -m compileall -q backend/app/modules/recruitment backend/scripts/recruitment_authority_postgres_ci.py
+      - name: KMS envelope storage
+        run: python -m unittest app.modules.recruitment.test_candidate_evidence_storage -v
+      - name: Encrypted evidence read upload retention runtime
+        run: python -m unittest app.modules.recruitment.test_candidate_evidence_runtime -v
+      - name: Candidate upload authority runtime
+        run: python -m unittest app.modules.recruitment.test_candidate_upload_runtime_authority -v
+      - name: Candidate scanner runtime contract
+        run: python -m unittest app.modules.recruitment.test_candidate_scan_runtime_contract -v
+      - name: Scanner KMS rotation authority
+        run: python -m unittest app.modules.recruitment.test_scanner_key_authority -v
+      - name: Scanner signed receipt adversarial contract
+        run: python -m unittest app.modules.recruitment.test_scanner_receipt -v
+      - name: Authorized official M2M transport
+        run: python -m unittest app.modules.recruitment.test_official_document_m2m -v
+      - name: Authorized official M2M state machine bridge
+        run: python -m unittest app.modules.recruitment.test_official_document_m2m_runtime -v
+      - name: Official document governance and replay
+        run: python -m unittest app.modules.recruitment.test_official_document_governance -v
+      - name: Candidate upload SQL contract
+        run: python -m unittest app.modules.recruitment.test_candidate_upload_migration_contract -v
+      - name: Recruitment domain regression
+        run: python -m unittest app.modules.recruitment.test_recruitment -v
+
   postgres-authority:
     name: PostgreSQL role RLS replay concurrency
     runs-on: ubuntu-latest
@@ -72,5 +97,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
-      - run: python scripts/setup_workforce_postgres_ci.py
-      - run: python scripts/recruitment_authority_postgres_ci.py
+      - name: Seed canonical Workforce PostgreSQL schema
+        run: python scripts/setup_workforce_postgres_ci.py
+      - name: Real role RLS rollback replay concurrency acceptance
+        run: python scripts/recruitment_authority_postgres_ci.py

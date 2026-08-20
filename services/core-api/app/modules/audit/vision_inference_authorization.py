@@ -17,6 +17,12 @@ from .control_contracts import (
     parse_question_controls,
     question_control_fingerprint,
 )
+from .field_activation_proof import (
+    AuditFieldActivationProof,
+    AuditFieldActivationProofUnavailable,
+    AuditFieldActivationProofVerifier,
+    require_field_activation_for_production,
+)
 from .privacy_verification_runtime import (
     AuditPrivacyScanResult,
     AuditServerPrivacyVerification,
@@ -183,6 +189,12 @@ def _privacy_event_is_current_and_intact(context: dict[str, object]) -> bool:
     return expected == context["verification_fingerprint"]
 
 
+def _field_activation_fingerprint(proof: AuditFieldActivationProof | None) -> str | None:
+    if proof is None:
+        return None
+    return _canonical_sha256(proof.model_dump())
+
+
 def _authorization_fingerprint(
     *,
     tenant_id: str,
@@ -191,6 +203,7 @@ def _authorization_fingerprint(
     control_fingerprint: str,
     proof: ProductionModelProof,
     capabilities: tuple[str, ...],
+    field_activation_fingerprint: str | None = None,
 ) -> str:
     return _canonical_sha256(
         {
@@ -208,6 +221,7 @@ def _authorization_fingerprint(
             "artifact_provenance_fingerprint": proof.artifact_provenance_fingerprint,
             "production_promotion_fingerprint": proof.production_promotion_fingerprint,
             "production_release_proof_fingerprint": proof.production_release_proof_fingerprint,
+            "field_activation_fingerprint": field_activation_fingerprint,
             "capabilities": list(capabilities),
         }
     )
@@ -221,6 +235,7 @@ async def authorize_vision_inference(
     redaction_receipt_id: UUID,
     privacy_verification_event_id: UUID,
     model_proof_verifier: ProductionModelProofVerifier | None = None,
+    field_activation_proof_verifier: AuditFieldActivationProofVerifier | None = None,
 ) -> VisionAuthorizationDecision:
     """Issue a single-use model-inference receipt without granting Audit truth authority."""
 
@@ -257,6 +272,18 @@ async def authorize_vision_inference(
     if vision is None:
         return VisionAuthorizationDecision("blocked", "vision_contract_missing_for_item")
 
+    try:
+        field_activation = await require_field_activation_for_production(
+            tenant_id=tenant_id,
+            capability="photo_vision",
+            verifier=field_activation_proof_verifier,
+        )
+    except AuditFieldActivationProofUnavailable:
+        return VisionAuthorizationDecision(
+            "blocked",
+            "current_production_field_activation_proof_unavailable",
+        )
+
     verifier = model_proof_verifier or configured_production_model_proof_verifier()
     try:
         proof = await verifier.require_current_production(vision.model_record_id)
@@ -274,6 +301,7 @@ async def authorize_vision_inference(
         control_fingerprint=control_fingerprint,
         proof=proof,
         capabilities=capabilities,
+        field_activation_fingerprint=_field_activation_fingerprint(field_activation),
     )
 
     async with engine.begin() as connection:
@@ -364,7 +392,7 @@ async def authorize_vision_inference(
 
     return VisionAuthorizationDecision(
         status="authorized",
-        reason="privacy_contract_and_current_production_model_proof_passed",
+        reason="privacy_model_and_field_authorities_passed",
         authorization_id=str(row["id"]),
         authorization_fingerprint=auth_fingerprint,
         expires_at=row["expires_at"],

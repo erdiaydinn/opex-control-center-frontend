@@ -6,6 +6,7 @@ from uuid import UUID
 import httpx
 
 from .evidence_object_upload import (
+    ALLOWED_MEDIA_TYPES,
     DEFAULT_TRUSTED_STORAGE_HOSTS,
     MAX_EVIDENCE_BYTES,
     FieldEvidenceStoreUnavailable,
@@ -39,6 +40,7 @@ async def read_private_evidence_object(
     tenant_id: str,
     receipt_id: str,
     expected_byte_size: int,
+    expected_media_type: str = "image/jpeg",
     client: httpx.AsyncClient | None = None,
     base_url: str | None = None,
     trusted_hosts: frozenset[str] | None = None,
@@ -46,8 +48,8 @@ async def read_private_evidence_object(
 ) -> bytes:
     """Read one private evidence object without granting semantic authority.
 
-    The adapter deliberately knows only tenant, server receipt identity and an immutable byte-size
-    bound. Hash/privacy/model decisions remain separate authorities. Redirects are forbidden and
+    The caller must name the exact expected media type. This adapter does not infer a media type
+    from response bytes and does not grant privacy/model authority. Redirects are forbidden and
     raw bytes never leave the caller's in-process lifetime.
     """
 
@@ -58,6 +60,9 @@ async def read_private_evidence_object(
         raise FieldEvidenceStoreUnavailable("invalid private Field evidence identity") from exc
     if expected_byte_size <= 0 or expected_byte_size > MAX_EVIDENCE_BYTES:
         raise FieldEvidenceStoreUnavailable("invalid private Field evidence byte-size bound")
+    normalized_media_type = expected_media_type.split(";", 1)[0].strip().lower()
+    if normalized_media_type not in ALLOWED_MEDIA_TYPES:
+        raise FieldEvidenceStoreUnavailable("invalid private Field evidence media policy")
 
     if base_url is None:
         configured_url, configured_hosts, configured_token = storage_runtime_config()
@@ -69,7 +74,7 @@ async def read_private_evidence_object(
         base_url = _normalize_base_url(base_url, trusted_hosts)
 
     headers = {
-        "Accept": "image/jpeg",
+        "Accept": normalized_media_type,
         "X-EAY-Field-Tenant": tenant_id,
         "X-EAY-Field-Expected-Bytes": str(expected_byte_size),
     }
@@ -91,7 +96,7 @@ async def read_private_evidence_object(
                         "private Field evidence store read is unavailable"
                     )
                 media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
-                if media_type != "image/jpeg":
+                if media_type != normalized_media_type:
                     raise FieldEvidenceStoreUnavailable(
                         "private Field evidence store returned an unsupported media type"
                     )

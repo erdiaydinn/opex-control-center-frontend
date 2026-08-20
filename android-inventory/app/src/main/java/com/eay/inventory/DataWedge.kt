@@ -58,6 +58,39 @@ object DataWedge {
     }
 
     private fun configure(context: Context, session: Session) {
+        val barcodePlugin = Bundle().apply {
+            putString("PLUGIN_NAME", "BARCODE")
+            // Preserve device/model-specific decoder tuning while enforcing the
+            // feedback and scanner-enable baseline across the managed Zebra fleet.
+            putString("RESET_CONFIG", "false")
+            putBundle(
+                "PARAM_LIST",
+                Bundle().apply {
+                    putString("scanner_input_enabled", "true")
+                    putString("configure_all_scanners", "true")
+                    putString("decode_haptic_feedback", "1")
+                    putString("decoding_led_feedback", "1")
+                    putString("volume_slider_type", "3")
+                },
+            )
+        }
+        val intentPlugin = Bundle().apply {
+            putString("PLUGIN_NAME", "INTENT")
+            putString("RESET_CONFIG", "true")
+            putBundle(
+                "PARAM_LIST",
+                Bundle().apply {
+                    putString("intent_output_enabled", "true")
+                    putString("intent_action", session.action)
+                    putString("intent_category", session.category)
+                    putString("intent_delivery", "2")
+                    putParcelableArrayList(
+                        "intent_component_info",
+                        secureComponentInfo(context),
+                    )
+                },
+            )
+        }
         val profile = Bundle().apply {
             putString("PROFILE_NAME", "EAY_INVENTORY_PRODUCTION")
             putString("PROFILE_ENABLED", "true")
@@ -71,26 +104,7 @@ object DataWedge {
                     },
                 ),
             )
-            putBundle(
-                "PLUGIN_CONFIG",
-                Bundle().apply {
-                    putString("PLUGIN_NAME", "INTENT")
-                    putString("RESET_CONFIG", "true")
-                    putBundle(
-                        "PARAM_LIST",
-                        Bundle().apply {
-                            putString("intent_output_enabled", "true")
-                            putString("intent_action", session.action)
-                            putString("intent_category", session.category)
-                            putString("intent_delivery", "2")
-                            putParcelableArrayList(
-                                "intent_component_info",
-                                secureComponentInfo(context),
-                            )
-                        },
-                    )
-                },
-            )
+            putParcelableArray("PLUGIN_CONFIG", arrayOf(barcodePlugin, intentPlugin))
         }
         context.sendBroadcast(
             Intent("com.symbol.datawedge.api.ACTION").apply {

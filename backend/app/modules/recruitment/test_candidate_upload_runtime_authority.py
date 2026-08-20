@@ -7,7 +7,7 @@ import unittest
 from app.modules.recruitment import candidate_upload_authority
 
 
-ROUTER_SOURCE = (Path(__file__).with_name("router.py")).read_text(encoding="utf-8")
+ROUTER_SOURCE = Path(__file__).with_name("router.py").read_text(encoding="utf-8")
 
 
 class CandidateUploadRuntimeAuthorityTests(unittest.TestCase):
@@ -15,12 +15,16 @@ class CandidateUploadRuntimeAuthorityTests(unittest.TestCase):
         with self.assertRaises(candidate_upload_authority.CandidateUploadAuthorityError):
             candidate_upload_authority._token_digest("short")
 
-    def test_finalize_locks_authority_before_terminal_transition(self) -> None:
-        source = inspect.getsource(candidate_upload_authority.finalize)
-        evidence_at = source.index("finalize_candidate_evidence_upload")
-        aggregate_at = source.index("SELECT payload,revision")
+    def test_encrypted_finalize_prepares_then_writes_then_consumes_then_commits(self) -> None:
+        source = inspect.getsource(candidate_upload_authority._finalize_encrypted)
+        prepare_at = source.index("prepare_candidate_evidence_upload")
+        object_put_at = source.index("store.put")
+        finalize_at = source.index("finalize_candidate_evidence_upload_v2")
+        aggregate_at = source.index("_persist_aggregate")
         commit_at = source.index("database.commit()")
-        self.assertLess(evidence_at, aggregate_at)
+        self.assertLess(prepare_at, object_put_at)
+        self.assertLess(object_put_at, finalize_at)
+        self.assertLess(finalize_at, aggregate_at)
         self.assertLess(aggregate_at, commit_at)
         self.assertNotIn("UPDATE recruitment.candidate_upload_capabilities", source)
 
@@ -30,30 +34,47 @@ class CandidateUploadRuntimeAuthorityTests(unittest.TestCase):
         self.assertNotIn("INSERT INTO recruitment.candidate_upload_capabilities", source)
 
     def test_router_validates_bytes_before_postgres_finalize(self) -> None:
-        source = ROUTER_SOURCE[ROUTER_SOURCE.index("async def upload_candidate_evidence_with_capability"):]
+        source = ROUTER_SOURCE[
+            ROUTER_SOURCE.index("async def upload_candidate_evidence_with_capability"): 
+        ]
         validate_at = source.index("_validate_candidate_document_bytes")
         finalize_at = source.index("candidate_upload_authority.finalize")
         legacy_consume_at = source.index("consume_candidate_upload_capability")
         self.assertLess(validate_at, finalize_at)
         self.assertLess(finalize_at, legacy_consume_at)
 
-    def test_production_runtime_has_no_legacy_fallback(self) -> None:
-        source = ROUTER_SOURCE[ROUTER_SOURCE.index("def _require_candidate_upload_authority_runtime"):]
+    def test_production_runtime_requires_postgres_v40_and_encrypted_storage(self) -> None:
+        source = ROUTER_SOURCE[
+            ROUTER_SOURCE.index("def _require_candidate_upload_authority_runtime"): 
+        ]
         self.assertIn('mode == "postgres"', source)
+        self.assertIn('required_schema = 40 if environment == "production"', source)
+        self.assertIn('storage_mode == "s3-kms-envelope"', source)
         self.assertIn('environment != "production" and mode == "legacy-development"', source)
 
-    def test_authority_uses_constant_public_error_for_secret_states(self) -> None:
-        self.assertEqual(str(candidate_upload_authority._invalid()),
-                         "Aday yükleme yetkisi geçersiz veya süresi dolmuş.")
+    def test_direct_hr_upload_cannot_bypass_encrypted_authority_in_production(self) -> None:
+        source = ROUTER_SOURCE[
+            ROUTER_SOURCE.index("async def upload_candidate_evidence("): 
+            ROUTER_SOURCE.index("def create_candidate_upload_capability(")
+        ]
+        secure_at = source.index("secure_hr_candidate_upload")
+        legacy_at = source.index("add_candidate_evidence")
+        self.assertLess(secure_at, legacy_at)
+        self.assertIn('environment == "production" or storage_mode == "s3-kms-envelope"', source)
 
-    def test_ambiguous_commit_never_deletes_authoritative_object(self) -> None:
-        source = inspect.getsource(candidate_upload_authority.finalize)
-        temp_cleanup_at = source.index("staged_path.unlink")
-        commit_marker_at = source.index("commit_started = True")
-        commit_at = source.index("database.commit()")
-        self.assertLess(temp_cleanup_at, commit_marker_at)
-        self.assertLess(commit_marker_at, commit_at)
-        self.assertIn("authoritative_path is not None and not commit_started", source)
+    def test_authority_uses_constant_public_error_for_secret_states(self) -> None:
+        self.assertEqual(
+            str(candidate_upload_authority._invalid()),
+            "Aday yükleme yetkisi geçersiz veya süresi dolmuş.",
+        )
+
+    def test_plaintext_finalize_is_explicitly_nonproduction_only(self) -> None:
+        source = inspect.getsource(candidate_upload_authority._finalize_local_development)
+        self.assertIn('== "production"', source)
+        self.assertIn("plaintext dosya sistemine yazılamaz", source)
+        dispatch = inspect.getsource(candidate_upload_authority.finalize)
+        self.assertIn('mode == "s3-kms-envelope"', dispatch)
+        self.assertIn('if environment == "production"', dispatch)
 
 
 if __name__ == "__main__":

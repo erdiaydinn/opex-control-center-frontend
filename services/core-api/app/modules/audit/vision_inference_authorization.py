@@ -32,7 +32,7 @@ from .vision_model_proof import (
     ProductionModelProof,
     ProductionModelProofUnavailable,
     ProductionModelProofVerifier,
-    UnavailableProductionModelProofVerifier,
+    configured_production_model_proof_verifier,
 )
 
 AUTHORIZATION_TTL_MINUTES = 5
@@ -257,7 +257,7 @@ async def authorize_vision_inference(
     if vision is None:
         return VisionAuthorizationDecision("blocked", "vision_contract_missing_for_item")
 
-    verifier = model_proof_verifier or UnavailableProductionModelProofVerifier()
+    verifier = model_proof_verifier or configured_production_model_proof_verifier()
     try:
         proof = await verifier.require_current_production(vision.model_record_id)
     except (KeyError, ValueError, ProductionModelProofUnavailable):

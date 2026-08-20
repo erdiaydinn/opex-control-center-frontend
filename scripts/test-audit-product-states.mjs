@@ -17,6 +17,8 @@ const app = fs.readFileSync("src/App.jsx", "utf8");
 const catalog = fs.readFileSync("src/modules/control-center/commandCenterModules.js", "utf8");
 const workspace = fs.readFileSync("src/modules/audit/AuditCommandCenter.jsx", "utf8");
 const assuranceWorkspace = fs.readFileSync("src/modules/audit/AuditAssuranceWorkspace.jsx", "utf8");
+const actionsWorkspace = fs.readFileSync("src/modules/audit/AuditActionsWorkspace.jsx", "utf8");
+const evidenceWorkspace = fs.readFileSync("src/modules/audit/AuditEvidenceWorkspace.jsx", "utf8");
 const css = fs.readFileSync("src/modules/audit/AuditCommandCenter.css", "utf8");
 const liveCss = fs.readFileSync("src/modules/audit/AuditLiveTruth.css", "utf8");
 const assuranceCss = fs.readFileSync("src/modules/audit/AuditAssuranceWorkspace.css", "utf8");
@@ -57,9 +59,27 @@ requireCondition(accountabilityMigration.includes("REVOKE DELETE ON TABLE audit_
 
 requireCondition(workspace.includes('apiGet("/v1/audit/programs")'), "Desktop Audit must read authoritative program truth");
 requireCondition(workspace.includes('apiGet("/v1/audit/runs?limit=100")'), "Desktop Audit must read authoritative run truth");
+requireCondition(workspace.includes('apiPost("/v1/audit/runs"'), "Desktop Audit must start an audit through server authority");
+requireCondition(workspace.includes('canAction("audit", "startAudit")'), "Start Audit UI must honor central action permission");
+requireCondition(!workspace.includes("manager_subject:"), "Start Audit UI must not supply manager authority");
 requireCondition(workspace.includes('apiFetchWithStatus("/v1/audit/intelligence/summary"'), "Desktop Audit must read the deterministic intelligence receipt");
 requireCondition(workspace.includes('payload?.llm_computed_metrics !== false'), "Desktop Audit must reject an intelligence payload that does not prove deterministic metrics");
 requireCondition(workspace.includes("<AuditAssuranceWorkspace"), "Desktop Audit must compose the live assurance workspace");
+requireCondition(workspace.includes("<AuditActionsWorkspace"), "Desktop Audit must compose the executable Actions workspace");
+requireCondition(workspace.includes("<AuditEvidenceWorkspace"), "Desktop Audit must compose the controlled private-evidence handoff");
+requireCondition(actionsWorkspace.includes('apiGet("/v1/audit/actions?limit=200")'), "Actions workspace must read server-authoritative actions");
+requireCondition(actionsWorkspace.includes("expected_version: selected.version"), "Action mutation must preserve optimistic version authority");
+requireCondition(actionsWorkspace.includes("closure_evidence_ref:"), "Action closure must submit an evidence reference");
+requireCondition(actionsWorkspace.includes("verification_receipt_ref:"), "Verified closure must submit a verification receipt reference");
+requireCondition(actionsWorkspace.includes("origin_field"), "Action detail must expose its governed original question context");
+requireCondition(!actionsWorkspace.includes("assignee_subject:"), "Action UI must not spoof assignee identity while advancing state");
+requireCondition(evidenceWorkspace.includes('"X-EAY-Content-SHA256"'), "Evidence handoff must hash-bind uploaded bytes");
+requireCondition(evidenceWorkspace.includes("client_submission_id="), "Evidence handoff must use an idempotent client submission identity");
+requireCondition(evidenceWorkspace.includes("field_evidence_receipt_id:"), "Redaction claim must bind a server-issued private receipt");
+requireCondition(evidenceWorkspace.includes('file.type === "image/jpeg"'), "Unsupported media must fail closed before upload");
+requireCondition(evidenceWorkspace.includes("canonicalFrames") && evidenceWorkspace.includes("processedFrames"), "Guided evidence must expose complete canonical-frame redaction coverage");
+requireCondition(evidenceWorkspace.includes('t("privacyHold")'), "Client binding must remain visibly held pending server privacy authority");
+requireCondition(!evidenceWorkspace.includes("public_url"), "Evidence UI must not mint or consume public evidence URLs");
 requireCondition(workspace.includes('data-audit-truth-state={live.state}'), "Audit UI must expose live truth state without inventing connection");
 requireCondition(workspace.includes('data-audit-intelligence-state={intelligence.state}'), "Audit UI must expose intelligence connection state");
 requireCondition(workspace.includes('t("noLiveData")'), "Empty KPI state must remain localized and truth-bound rather than synthetic");
@@ -76,6 +96,8 @@ requireCondition(!assuranceWorkspace.includes("Math.random"), "Assurance workspa
 
 requireCondition(routes.includes("await _require_run_scope(principal, scope, audit_run_id)"), "Run-scoped Audit writes must enforce resource authorization");
 requireCondition(routes.includes("await _require_action_scope(principal, scope, action_id)"), "Action updates must enforce resource authorization");
+requireCondition(routes.includes('@router.get("/actions")'), "Audit must expose a scoped Actions list endpoint");
+requireCondition(routes.includes('@router.get("/actions/{action_id}")'), "Audit must expose a scoped Action detail endpoint");
 requireCondition(routes.includes("await _require_assurance_case_scope(principal, scope, case_id)"), "Assurance decisions must enforce resource authorization");
 requireCondition(routes.includes("start_authoritative_run"), "Audit run creation must use server-authoritative accountability");
 requireCondition(routes.includes('"action:audit:manageLocations"') && routes.includes('"/locations/{location_id}/manager-assignment"'), "Manager assignment must use governed location administration");

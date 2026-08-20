@@ -1,5 +1,10 @@
+import hashlib
+import hmac
+import json
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -25,10 +30,45 @@ from app.modules.audit.vision_inference_authorization import (
     _privacy_event_is_current_and_intact,
 )
 from app.modules.audit.vision_model_proof import (
+    AICoreProductionModelProofVerifier,
     ProductionModelProof,
     ProductionModelProofUnavailable,
     UnavailableProductionModelProofVerifier,
 )
+
+
+PROOF_TOKEN = "audit-model-proof-test-token-32-bytes-minimum"
+
+
+def _proof_response(request: httpx.Request, **changes: object) -> httpx.Response:
+    challenge = request.headers["X-EAY-Model-Proof-Challenge"]
+    now = datetime.now(timezone.utc)
+    body: dict[str, object] = {
+        "model_record_id": "vision-model-record",
+        "artifact_sha256": "a" * 64,
+        "artifact_provenance_fingerprint": "b" * 64,
+        "production_promotion_fingerprint": "c" * 64,
+        "production_release_proof_fingerprint": "d" * 64,
+        "challenge": challenge,
+        "issued_at": now.isoformat(),
+        "expires_at": (now + timedelta(seconds=30)).isoformat(),
+    }
+    body.update(changes)
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    body["seal"] = hmac.new(
+        PROOF_TOKEN.encode(), canonical.encode(), hashlib.sha256
+    ).hexdigest()
+    return httpx.Response(200, json=body)
+
+
+async def _verify_with(handler) -> ProductionModelProof:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = AICoreProductionModelProofVerifier(
+            base_url="http://eay-ai-core:8000",
+            token=PROOF_TOKEN,
+            client=client,
+        )
+        return await verifier.require_current_production("vision-model-record")
 
 
 def visual_control(model_record_id: str = "vision-model-record") -> AuditQuestionControl:
@@ -95,6 +135,42 @@ async def test_default_model_proof_verifier_fails_closed() -> None:
     verifier = UnavailableProductionModelProofVerifier()
     with pytest.raises(ProductionModelProofUnavailable):
         await verifier.require_current_production("vision-model-record")
+
+
+@pytest.mark.asyncio
+async def test_ai_core_model_proof_bridge_accepts_fresh_exact_proof() -> None:
+    proof = await _verify_with(lambda request: _proof_response(request))
+    assert proof.model_record_id == "vision-model-record"
+    assert proof.production_release_proof_fingerprint == "d" * 64
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"model_record_id": "fake-model-record"},
+        {"expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()},
+        {"challenge": "e" * 64},
+    ],
+    ids=["wrong-model", "expired-proof", "replayed-challenge"],
+)
+async def test_ai_core_model_proof_bridge_rejects_wrong_expired_or_replayed_proof(
+    changes: dict[str, object],
+) -> None:
+    with pytest.raises(ProductionModelProofUnavailable):
+        await _verify_with(lambda request: _proof_response(request, **changes))
+
+
+@pytest.mark.asyncio
+async def test_ai_core_model_proof_bridge_rejects_tampered_version_or_release_proof() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = _proof_response(request)
+        body = response.json()
+        body["production_release_proof_fingerprint"] = "f" * 64
+        return httpx.Response(200, json=body)
+
+    with pytest.raises(ProductionModelProofUnavailable):
+        await _verify_with(handler)
 
 
 def verified_privacy_context() -> dict[str, object]:
@@ -192,6 +268,29 @@ def test_authorization_fingerprint_binds_model_contract_privacy_and_evidence() -
     )
     assert len(fingerprint) == 64
     assert fingerprint != changed
+
+    wrong_tenant = _authorization_fingerprint(
+        tenant_id=str(uuid4()),
+        context=context,
+        item_key=control.item_key,
+        control_fingerprint=question_control_fingerprint(control),
+        proof=proof,
+        capabilities=tuple(sorted(control.vision_contract.required_capabilities)),
+    )
+    assert fingerprint != wrong_tenant
+
+
+def test_single_use_consumption_is_tenant_bound_and_atomic() -> None:
+    from pathlib import Path
+
+    source = Path(
+        "app/modules/audit/vision_inference_authorization.py"
+    ).read_text(encoding="utf-8")
+    consume = source.split("async def consume_vision_inference_authorization", 1)[1]
+    assert "authorization.tenant_id=CAST(:tenant_id AS UUID)" in consume
+    assert "authorization.consumed_at IS NULL" in consume
+    assert "authorization.expires_at > CURRENT_TIMESTAMP" in consume
+    assert "SET consumed_at=CURRENT_TIMESTAMP" in consume
 
 
 def test_program_settings_without_controls_remain_valid_but_have_no_vision_contract() -> None:

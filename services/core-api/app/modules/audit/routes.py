@@ -31,7 +31,9 @@ from .repository import (
     append_assurance_review,
     create_action,
     create_program,
+    get_action,
     get_location,
+    list_actions,
     list_programs,
     list_runs,
     update_action,
@@ -328,6 +330,34 @@ async def post_audit_action(
         )
     except AuditRepositoryError as exc:
         _raise_repository_error(exc)
+
+
+@router.get("/actions")
+async def get_audit_actions(
+    principal: AuditViewer,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict[str, object]]:
+    scope = require_audit_scope(principal, "feature:audit:actions")
+    return await list_actions(
+        str(principal.tenant_id),
+        location_ids=scope.location_ids,
+        regions=scope.regions,
+        unrestricted=scope.unrestricted,
+        limit=limit,
+    )
+
+
+@router.get("/actions/{action_id}")
+async def get_audit_action(
+    action_id: UUID,
+    principal: AuditViewer,
+) -> dict[str, object]:
+    scope = require_audit_scope(principal, "feature:audit:actions")
+    await _require_action_scope(principal, scope, action_id)
+    action = await get_action(str(principal.tenant_id), action_id)
+    if not action:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit action not found")
+    return action
 
 
 @router.patch("/actions/{action_id}")

@@ -69,6 +69,7 @@
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
 }
 .audit-btn:hover { transform: translateY(-1px); }
+.audit-btn:disabled { cursor: not-allowed; opacity: .48; transform: none; box-shadow: none; }
 .audit-btn--primary { color: #fff; background: linear-gradient(135deg, #1878f2, #0ea5e9); box-shadow: 0 12px 28px rgba(24,120,242,.2); }
 .audit-btn--secondary { color: #1b293b; background: rgba(255,255,255,.84); border-color: #cfdbe7; }
 .audit-btn--dark { width: 100%; color: #fff; background: #0b1220; }
@@ -167,6 +168,16 @@
 .audit-capture__timeline .is-done { border-color: #16a36f; color: #0e7b54; }
 .audit-capture__timeline .is-warning { border-color: #e7a126; color: #a76400; }
 .audit-capture__foot { color: #63758b; font-size: 11px; font-weight: 700; }
+
+.audit-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(7, 15, 28, .62); backdrop-filter: blur(8px); }
+.audit-modal__card { width: min(520px, 100%); padding: 24px; border: 1px solid var(--audit-line); border-radius: 22px; color: var(--audit-ink); background: var(--audit-surface); box-shadow: 0 28px 80px rgba(0,0,0,.28); }
+.audit-modal__card label { display: grid; gap: 7px; margin-top: 16px; color: var(--audit-muted); font-size: 12px; font-weight: 800; }
+.audit-modal__card input, .audit-modal__card select { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--audit-line); border-radius: 11px; color: var(--audit-ink); background: var(--audit-soft); font: inherit; }
+.audit-modal__card input:focus, .audit-modal__card select:focus { outline: 3px solid rgba(24,120,242,.16); border-color: var(--audit-blue); }
+.audit-modal__help { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0 0; color: var(--audit-muted); font-size: 12px; line-height: 1.5; }
+.audit-modal__help svg { flex: 0 0 auto; margin-top: 2px; }
+.audit-modal__error { margin-top: 14px; padding: 10px 12px; border-radius: 10px; color: #991b1b; background: #fff0f2; font-size: 12px; font-weight: 700; }
+.audit-modal__actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
 
 @media (max-width: 1080px) {
   .audit-kpis, .audit-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }

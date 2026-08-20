@@ -18,9 +18,12 @@ import {
   Video,
 } from "lucide-react";
 
-import { apiFetchWithStatus, apiGet } from "../../api/client.js";
+import { apiFetchWithStatus, apiGet, apiPost } from "../../api/client.js";
+import { useAuth } from "../../auth/AuthContext.jsx";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import AuditAssuranceWorkspace from "./AuditAssuranceWorkspace.jsx";
+import AuditActionsWorkspace from "./AuditActionsWorkspace.jsx";
+import AuditEvidenceWorkspace from "./AuditEvidenceWorkspace.jsx";
 import { auditCopy } from "./auditMessages.js";
 import "./AuditCommandCenter.css";
 import "./AuditLiveTruth.css";
@@ -93,7 +96,7 @@ function AuditLiveTruth({ live, locale, t, onRefresh }) {
             <section className="audit-live-column" aria-label={t("audits")}>
               <div className="audit-live-column__heading">{t("audits")}</div>
               {visibleRuns.length > 0 ? visibleRuns.map((run) => (
-                <div className="audit-live-row" key={String(run.id)}>
+                <div className="audit-live-row" id={`audit-run-${run.id}`} key={String(run.id)}>
                   <div>
                     <strong>{run.location_name || run.location_id || "—"}</strong>
                     <span>{run.program_key || "—"} · v{run.program_version ?? "—"}</span>
@@ -150,6 +153,7 @@ function AuditLiveTruth({ live, locale, t, onRefresh }) {
 
 function AuditCommandCenter() {
   const { locale } = usePlatformPreferences();
+  const { canAction } = useAuth();
   const t = (key) => auditCopy(locale, key);
   const [live, setLive] = useState({
     state: "loading",
@@ -161,6 +165,10 @@ function AuditCommandCenter() {
     facts: null,
     receiptFingerprint: null,
   });
+  const [startOpen, setStartOpen] = useState(false);
+  const [startForm, setStartForm] = useState({ program: "", locationId: "", sourceMode: "checklist" });
+  const [startState, setStartState] = useState({ saving: false, error: "" });
+  const [actionsRefreshKey, setActionsRefreshKey] = useState(0);
 
   const refreshLiveTruth = useCallback(async () => {
     setLive((current) => ({ ...current, state: "loading" }));
@@ -218,6 +226,41 @@ function AuditCommandCenter() {
   const scrollToAssurance = useCallback(() => {
     document.getElementById("audit-assurance")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+  const scrollToActions = useCallback(() => {
+    document.getElementById("audit-actions")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const activePrograms = useMemo(
+    () => live.programs.filter((program) => program?.status === "active"),
+    [live.programs],
+  );
+
+  const openStartAudit = useCallback(() => {
+    const first = activePrograms[0];
+    setStartForm({ program: first ? `${first.program_key}:${first.version}` : "", locationId: "", sourceMode: "checklist" });
+    setStartState({ saving: false, error: "" });
+    setStartOpen(true);
+  }, [activePrograms]);
+
+  async function submitStartAudit(event) {
+    event.preventDefault();
+    if (startState.saving) return;
+    const [programKey, rawVersion] = startForm.program.split(":");
+    if (!programKey || !rawVersion || !startForm.locationId.trim()) return;
+    setStartState({ saving: true, error: "" });
+    try {
+      await apiPost("/v1/audit/runs", {
+        program_key: programKey,
+        program_version: Number(rawVersion),
+        location_id: startForm.locationId.trim(),
+        source_mode: startForm.sourceMode,
+      });
+      setStartOpen(false);
+      await refreshLiveTruth();
+    } catch (error) {
+      setStartState({ saving: false, error: error?.message || t("startAuditError") });
+    }
+  }
 
   return (
     <main
@@ -235,7 +278,13 @@ function AuditCommandCenter() {
         </div>
         <div className="audit-hero__actions">
           <button className="audit-btn audit-btn--secondary" type="button" disabled><CalendarDays size={17} /> {t("schedule")}</button>
-          <button className="audit-btn audit-btn--primary" type="button" disabled><Play size={17} /> {t("start")}</button>
+          <button
+            className="audit-btn audit-btn--primary"
+            type="button"
+            onClick={openStartAudit}
+            disabled={!canAction("audit", "startAudit") || live.state === "loading"}
+            title={!activePrograms.length && live.state !== "loading" ? t("activeProgramsRequired") : undefined}
+          ><Play size={17} /> {t("start")}</button>
         </div>
       </header>
 
@@ -245,7 +294,7 @@ function AuditCommandCenter() {
             key={key}
             className={index === 0 ? "is-active" : ""}
             type="button"
-            onClick={key === "assurance" ? scrollToAssurance : undefined}
+            onClick={key === "assurance" ? scrollToAssurance : key === "actions" ? scrollToActions : undefined}
           >
             {t(key)}
           </button>
@@ -301,6 +350,10 @@ function AuditCommandCenter() {
         </div>
       </section>
 
+      <AuditEvidenceWorkspace runs={live.runs} locale={locale} t={t} onActionsChanged={() => setActionsRefreshKey((value) => value + 1)} />
+
+      <AuditActionsWorkspace locale={locale} t={t} refreshKey={actionsRefreshKey} />
+
       <AuditAssuranceWorkspace locale={locale} t={t} />
 
       <section className="audit-grid audit-grid--bottom">
@@ -333,6 +386,39 @@ function AuditCommandCenter() {
           <div className="audit-capture__foot"><ShieldCheck size={15} /> {t("redaction")}</div>
         </article>
       </section>
+
+      {startOpen ? (
+        <div className="audit-modal" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !startState.saving) setStartOpen(false);
+        }}>
+          <form className="audit-modal__card" role="dialog" aria-modal="true" aria-labelledby="audit-start-title" onSubmit={submitStartAudit}>
+            <div className="audit-panel__heading">
+              <div><span className="audit-kicker">{t("audits")}</span><h2 id="audit-start-title">{t("startAuditTitle")}</h2></div>
+              <ShieldCheck size={22} aria-hidden="true" />
+            </div>
+            <label>{t("program")}
+              <select value={startForm.program} onChange={(event) => setStartForm((current) => ({ ...current, program: event.target.value }))} required>
+                <option value="">{t("activeProgramsRequired")}</option>
+                {activePrograms.map((program) => <option key={`${program.program_key}:${program.version}`} value={`${program.program_key}:${program.version}`}>{localizedProgramName(program, locale)} · v{program.version}</option>)}
+              </select>
+            </label>
+            <label>{t("locationId")}
+              <input value={startForm.locationId} onChange={(event) => setStartForm((current) => ({ ...current, locationId: event.target.value }))} maxLength={120} required autoFocus />
+            </label>
+            <label>{t("sourceMode")}
+              <select value={startForm.sourceMode} onChange={(event) => setStartForm((current) => ({ ...current, sourceMode: event.target.value }))}>
+                {["checklist", "photo", "video", "guided_video", "mixed"].map((mode) => <option key={mode} value={mode}>{mode.replaceAll("_", " ")}</option>)}
+              </select>
+            </label>
+            <p className="audit-modal__help"><ShieldCheck size={15} /> {t("startAuditHelp")}</p>
+            {startState.error ? <div className="audit-modal__error" role="alert">{startState.error}</div> : null}
+            <div className="audit-modal__actions">
+              <button className="audit-btn audit-btn--secondary" type="button" disabled={startState.saving} onClick={() => setStartOpen(false)}>{t("cancel")}</button>
+              <button className="audit-btn audit-btn--primary" type="submit" disabled={startState.saving || !startForm.program || !startForm.locationId.trim()}>{startState.saving ? t("starting") : t("start")}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </main>
   );
 }

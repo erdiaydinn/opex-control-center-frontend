@@ -68,6 +68,8 @@ jobs:
         run: pytest -q tests/test_audit_assurance_contracts.py
       - name: Accountability contracts
         run: pytest -q tests/test_audit_accountability_contracts.py
+      - name: Action workspace contracts
+        run: pytest -q tests/test_audit_action_workspace_contracts.py
       - name: Intelligence contracts
         run: pytest -q tests/test_audit_intelligence_contracts.py
       - name: Evidence object contracts
@@ -114,6 +116,7 @@ jobs:
           tests/test_audit_scope_contracts.py
           tests/test_audit_assurance_contracts.py
           tests/test_audit_accountability_contracts.py
+          tests/test_audit_action_workspace_contracts.py
           tests/test_audit_intelligence_contracts.py
           tests/test_audit_evidence_object_contracts.py
           tests/test_audit_evidence_binding_contracts.py

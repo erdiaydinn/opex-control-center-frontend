@@ -450,6 +450,106 @@ async def create_action(
         return _row_dict(row)
 
 
+async def list_actions(
+    tenant_id: str,
+    *,
+    location_ids: frozenset[str] | None,
+    regions: frozenset[str] | None,
+    unrestricted: bool,
+    limit: int = 100,
+) -> list[dict[str, object]]:
+    if not unrestricted and not location_ids and not regions:
+        return []
+    statement = text(
+        """
+        SELECT aa.id, aa.audit_run_id, aa.item_key, aa.title, aa.description,
+               aa.risk_class, aa.priority, aa.status, aa.assignee_subject,
+               aa.due_at, aa.closure_evidence_ref, aa.verification_receipt_ref,
+               aa.version, aa.created_by, aa.created_at, aa.updated_at,
+               ar.program_key, ar.program_version, ar.location_id,
+               fl.name AS location_name, fl.region, ar.started_at AS audit_started_at,
+               COALESCE(origin.field_definition, '{}'::jsonb) AS origin_field
+        FROM audit_actions aa
+        JOIN audit_runs ar
+          ON ar.tenant_id = aa.tenant_id AND ar.id = aa.audit_run_id
+        JOIN field_locations fl
+          ON fl.tenant_id = ar.tenant_id AND fl.location_id = ar.location_id
+        JOIN audit_program_versions apv
+          ON apv.tenant_id = ar.tenant_id
+         AND apv.program_key = ar.program_key
+         AND apv.version = ar.program_version
+        JOIN field_templates ft
+          ON ft.tenant_id = apv.tenant_id
+         AND ft.template_id = apv.field_template_id
+         AND ft.version = apv.field_template_version
+        LEFT JOIN LATERAL (
+          SELECT field_definition
+          FROM jsonb_array_elements(COALESCE(ft.schema->'fields', '[]'::jsonb))
+               AS field_definition
+          WHERE field_definition->>'key' = aa.item_key
+          LIMIT 1
+        ) origin ON TRUE
+        WHERE aa.tenant_id = CAST(:tenant_id AS UUID)
+          AND (
+            :unrestricted
+            OR ar.location_id = ANY(CAST(:location_ids AS VARCHAR[]))
+            OR COALESCE(fl.region, '') = ANY(CAST(:regions AS VARCHAR[]))
+          )
+        ORDER BY (aa.status = 'closed'), aa.due_at, aa.created_at DESC
+        LIMIT :limit
+        """
+    )
+    values = {
+        "tenant_id": tenant_id,
+        "unrestricted": unrestricted,
+        "location_ids": sorted(location_ids or ()),
+        "regions": sorted(regions or ()),
+        "limit": max(1, min(limit, 500)),
+    }
+    async with engine.begin() as connection:
+        await _set_tenant(connection, tenant_id)
+        result = await connection.execute(statement, values)
+        return [_row_dict(row) for row in result]
+
+
+async def get_action(tenant_id: str, action_id: UUID) -> dict[str, object] | None:
+    async with engine.begin() as connection:
+        await _set_tenant(connection, tenant_id)
+        result = await connection.execute(
+            text(
+                """
+                SELECT aa.id, aa.audit_run_id, aa.item_key, aa.title, aa.description,
+                       aa.risk_class, aa.priority, aa.status, aa.assignee_subject,
+                       aa.due_at, aa.closure_evidence_ref, aa.verification_receipt_ref,
+                       aa.version, aa.created_by, aa.created_at, aa.updated_at,
+                       ar.program_key, ar.program_version, ar.location_id,
+                       fl.name AS location_name, fl.region, ar.started_at AS audit_started_at,
+                       COALESCE(origin.field_definition, '{}'::jsonb) AS origin_field
+                FROM audit_actions aa
+                JOIN audit_runs ar ON ar.tenant_id = aa.tenant_id AND ar.id = aa.audit_run_id
+                JOIN field_locations fl ON fl.tenant_id = ar.tenant_id AND fl.location_id = ar.location_id
+                JOIN audit_program_versions apv
+                  ON apv.tenant_id = ar.tenant_id AND apv.program_key = ar.program_key
+                 AND apv.version = ar.program_version
+                JOIN field_templates ft
+                  ON ft.tenant_id = apv.tenant_id AND ft.template_id = apv.field_template_id
+                 AND ft.version = apv.field_template_version
+                LEFT JOIN LATERAL (
+                  SELECT field_definition
+                  FROM jsonb_array_elements(COALESCE(ft.schema->'fields', '[]'::jsonb)) AS field_definition
+                  WHERE field_definition->>'key' = aa.item_key
+                  LIMIT 1
+                ) origin ON TRUE
+                WHERE aa.tenant_id = CAST(:tenant_id AS UUID)
+                  AND aa.id = CAST(:action_id AS UUID)
+                """
+            ),
+            {"tenant_id": tenant_id, "action_id": str(action_id)},
+        )
+        row = result.first()
+        return _row_dict(row) if row else None
+
+
 _ALLOWED_ACTION_TRANSITIONS: dict[str, frozenset[str]] = {
     "open": frozenset({"in_progress", "rejected"}),
     "in_progress": frozenset({"submitted_for_verification", "rejected"}),

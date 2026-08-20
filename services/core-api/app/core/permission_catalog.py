@@ -230,7 +230,18 @@ ACTIONS = MappingProxyType(
         "planogram": frozenset(
             {"view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"}
         ),
-        "recruitment": frozenset({"approveRecruitmentRequest"}),
+        "recruitment": frozenset(
+            {
+                "viewRecruitment",
+                "createRecruitmentRequest",
+                "approveRecruitmentRequest",
+                "viewRecruitmentEvidence",
+                "manageRecruitmentNorms",
+                "manageRecruitmentActuals",
+                "manageRecruitmentSettings",
+                "manageRecruitmentNotifications",
+            }
+        ),
         "workforce": frozenset(
             {
                 "manualCorrection",
@@ -284,6 +295,12 @@ for module, actions in ACTIONS.items():
     _permission_keys.update(action_permission(module, action) for action in actions)
 
 ALL_PERMISSION_KEYS = frozenset(_permission_keys)
+
+
+def is_known_permission(permission_key: str) -> bool:
+    """Fail closed unless a permission is present in the canonical catalog."""
+    return str(permission_key or "").strip() in ALL_PERMISSION_KEYS
+
 
 ACADEMY_LEARNER_PERMISSIONS = frozenset(
     {
@@ -444,20 +461,9 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "platform_admin": frozenset({module_permission("admin_access", "view")}),
         "operator": frozenset(),
         "viewer": frozenset(),
-        "academy_learner": ACADEMY_LEARNER_PERMISSIONS,
-        "academy_instructor": ACADEMY_INSTRUCTOR_PERMISSIONS,
-        "academy_admin": ACADEMY_ADMIN_PERMISSIONS,
         "audit_auditor": AUDIT_AUDITOR_PERMISSIONS,
         "audit_manager": AUDIT_MANAGER_PERMISSIONS,
         "audit_standards": AUDIT_STANDARDS_PERMISSIONS,
         "audit_executive": AUDIT_EXECUTIVE_PERMISSIONS,
-        "field_worker": FIELD_WORKER_PERMISSIONS,
-        "field_manager": FIELD_MANAGER_PERMISSIONS,
-        "planogram_editor": PLANOGRAM_EDITOR_PERMISSIONS,
-        "planogram_admin": PLANOGRAM_ADMIN_PERMISSIONS,
     }
 )
-
-
-def is_known_permission(permission_key: str) -> bool:
-    return permission_key in ALL_PERMISSION_KEYS

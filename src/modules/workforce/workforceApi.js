@@ -29,6 +29,41 @@ async function safeBackendRequest(request, fallback = SAFE_WORKFORCE_BACKEND_ERR
 export async function loadMobileWorkforce(personId) {
   return safeBackendRequest(apiGet(`/workforce/mobile/bootstrap?person_id=${encodeURIComponent(personId)}`));
 }
+export async function loadWorkforceFlexibility(personId) {
+  const query = `person_id=${encodeURIComponent(personId)}`;
+  const [availability, openShifts] = await Promise.all([
+    safeBackendRequest(apiGet(`/workforce/flexibility/availability?${query}`)),
+    safeBackendRequest(apiGet(`/workforce/flexibility/open-shifts?${query}`)),
+  ]);
+  return { availability: availability.rows || [], openShifts: openShifts.rows || [] };
+}
+export async function saveWorkforceAvailability(personId, values) {
+  return safeBackendRequest(apiPut("/workforce/flexibility/availability", {
+    person_id: String(personId),
+    date: values.date,
+    available: values.available,
+    earliest_start: values.available && values.earliestStart ? values.earliestStart : null,
+    latest_end: values.available && values.latestEnd ? values.latestEnd : null,
+    preferred_start: values.available && values.preferredStart ? values.preferredStart : null,
+    preferred_end: values.available && values.preferredEnd ? values.preferredEnd : null,
+    note: values.note || "",
+  }));
+}
+export async function claimWorkforceOpenShift(openShiftId, personId) {
+  return safeBackendRequest(apiPost(`/workforce/flexibility/open-shifts/${encodeURIComponent(openShiftId)}/claim`, { person_id: String(personId) }));
+}
+export async function createWorkforceOpenShift(values) {
+  return safeBackendRequest(apiPost("/workforce/flexibility/open-shifts", {
+    warehouse_id: values.warehouseId,
+    date: values.date,
+    start: values.start,
+    end: values.end,
+    break_minutes: Number(values.breakMinutes || 0),
+    role: values.role || "Picker",
+    capacity: Number(values.capacity || 1),
+    note: values.note || "",
+  }));
+}
 export async function loadAdminWorkforce() { return safeBackendRequest(apiGet("/workforce/admin/bootstrap"), "Backend Workforce verileri alınamadı. Lütfen tekrar deneyin."); }
 export async function createShiftRemote(values) { return safeBackendRequest(apiPost("/workforce/shifts", values)); }
 export async function approveAttendanceRemote(id, note = "") { return safeBackendRequest(apiPost(`/workforce/attendance/${encodeURIComponent(id)}/approve`, { note })); }

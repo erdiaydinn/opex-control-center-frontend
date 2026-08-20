@@ -38,6 +38,7 @@ from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import bootstrap_admin, initialize as initialize_identity
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
+from app.modules.recruitment.production_evidence_router import router as recruitment_production_evidence_router
 from app.modules.recruitment.router import router as recruitment_router
 from app.modules.recruitment.service import initialize as initialize_recruitment
 from app.modules.workforce.capacity_router import router as workforce_capacity_router
@@ -295,6 +296,8 @@ app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(workforce_flexibility_router, prefix="/api")
+# Priority encrypted evidence routes intentionally precede the legacy recruitment router.
+app.include_router(recruitment_production_evidence_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")
 app.include_router(inventory_router, prefix="/api")
 app.include_router(identity_router, prefix="/api")

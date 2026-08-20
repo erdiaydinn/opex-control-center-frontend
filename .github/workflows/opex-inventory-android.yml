@@ -3,7 +3,7 @@ name: OPEX Inventory Android
 on:
   workflow_dispatch:
   push:
-    branches: [main, "agent/opex-inventory-v24"]
+    branches: [main, "agent/opex-inventory-v24", "build/eay-mobile-preview"]
     paths:
       - "android-inventory/**"
       - "scripts/security/gradle_dependency_report_to_cyclonedx.py"

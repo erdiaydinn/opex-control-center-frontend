@@ -2,7 +2,7 @@
 
 The future e-Devlet institutional M2M contract is optional external capacity.
 Every repository/infrastructure-controlled Hiring authority, including governed
-recruitment orchestration, must be ready before the production API starts.
+recruitment orchestration and DB-enforced audit fencing, must be ready first.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class RecruitmentProductionStartupError(RuntimeError):
     pass
 
 
-REQUIRED_RECRUITMENT_SCHEMA_VERSION = 44
+REQUIRED_RECRUITMENT_SCHEMA_VERSION = 45
 
 
 def _production() -> bool:
@@ -29,22 +29,16 @@ def assert_recruitment_production_ready() -> None:
     if not _production():
         return
     if not persistence.ENABLED:
-        raise RecruitmentProductionStartupError(
-            "Production Hiring PostgreSQL olmadan başlatılamaz."
-        )
+        raise RecruitmentProductionStartupError("Production Hiring PostgreSQL olmadan başlatılamaz.")
     schema = persistence.schema_version() or 0
     if schema < REQUIRED_RECRUITMENT_SCHEMA_VERSION:
         raise RecruitmentProductionStartupError(
             f"Production Hiring V{REQUIRED_RECRUITMENT_SCHEMA_VERSION} PostgreSQL authority gerektiriyor; mevcut V{schema}."
         )
     if os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "").strip().lower() != "postgres":
-        raise RecruitmentProductionStartupError(
-            "Production candidate upload authority PostgreSQL modunda olmalıdır."
-        )
+        raise RecruitmentProductionStartupError("Production candidate upload authority PostgreSQL modunda olmalıdır.")
     if os.getenv("RECRUITMENT_EVIDENCE_STORAGE_MODE", "").strip().lower() != "s3-kms-envelope":
-        raise RecruitmentProductionStartupError(
-            "Production recruitment evidence yalnız S3/KMS envelope storage kullanabilir."
-        )
+        raise RecruitmentProductionStartupError("Production recruitment evidence yalnız S3/KMS envelope storage kullanabilir.")
     try:
         S3KmsEnvelopeEvidenceStore.from_environment()
         AwsKmsHmacKeyAuthority.from_environment()

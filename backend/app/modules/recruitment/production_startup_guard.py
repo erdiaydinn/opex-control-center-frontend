@@ -2,7 +2,7 @@
 
 The future e-Devlet institutional M2M contract is optional external capacity.
 Every repository/infrastructure-controlled Hiring authority, including governed
-recruitment orchestration and DB-enforced audit fencing, must be ready first.
+recruitment orchestration, audit fencing and interview scheduling, must be ready.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class RecruitmentProductionStartupError(RuntimeError):
     pass
 
 
-REQUIRED_RECRUITMENT_SCHEMA_VERSION = 45
+REQUIRED_RECRUITMENT_SCHEMA_VERSION = 46
 
 
 def _production() -> bool:

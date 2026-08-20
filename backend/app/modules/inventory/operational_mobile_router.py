@@ -16,6 +16,21 @@ from .schemas import OperationalEventCreate
 router = APIRouter(prefix="/v1/mobile", tags=["Inventory Mobile Operations"])
 
 
+def _operational_event_response(
+    result: dict,
+    active_shift_id: str,
+    claim_id: str,
+) -> dict:
+    """Preserve authoritative replay semantics in the mobile ACK contract."""
+    return {
+        **result,
+        "accepted": result.get("code") == "ACCEPTED",
+        "active_shift_id": active_shift_id,
+        "claim_id": claim_id,
+        "idempotent_replay": bool(result.get("idempotent_replay", False)),
+    }
+
+
 @router.get("/operational-missions")
 def mobile_operational_missions(
     request: Request,
@@ -80,11 +95,8 @@ def mobile_operational_event(
         x_eay_request_nonce,
         x_eay_device_signature,
     )
-    accepted = result.get("code") == "ACCEPTED"
-    return {
-        **result,
-        "accepted": accepted,
-        "active_shift_id": payload.active_shift_id,
-        "claim_id": payload.claim_id,
-        "idempotent_replay": False,
-    }
+    return _operational_event_response(
+        result,
+        payload.active_shift_id,
+        payload.claim_id,
+    )

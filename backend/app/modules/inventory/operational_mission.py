@@ -112,15 +112,17 @@ def build_operational_intent(kind: str, payload: dict[str, Any]) -> dict[str, An
     source = _optional_code(payload, "source_location_id")
     destination = _optional_code(payload, "destination_location_id")
     container = _optional_code(payload, "container_id")
-    conditions = sorted(
-        {
-            str(value).strip().upper()
-            for value in (payload.get("allowed_conditions") or ["GOOD"])
-            if str(value).strip()
-        }
-    )
-    if not conditions:
-        raise InventoryRuleError("En az bir receiving condition kodu zorunludur.")
+    conditions: list[str] = []
+    if mission_type == "RECEIVING":
+        conditions = sorted(
+            {
+                str(value).strip().upper()
+                for value in (payload.get("allowed_conditions") or ["GOOD"])
+                if str(value).strip()
+            }
+        )
+        if not conditions:
+            raise InventoryRuleError("En az bir receiving condition kodu zorunludur.")
 
     if mission_type == "PICKING" and (not source or not container):
         raise InventoryRuleError("Picking source location ve container authority gerektirir.")
@@ -385,8 +387,10 @@ def record_operational_event(
         if old:
             if old["payload_hash"] != calculated:
                 raise InventoryRuleError("Event ID farklı payload ile tekrar kullanılamaz.")
+            replay = dict(old["response"])
+            replay["idempotent_replay"] = True
             db.commit()
-            return old["response"]
+            return replay
 
         row = db.execute(
             """SELECT m.*,c.employee_id,c.device_id,c.shift_id,c.released_at
@@ -462,6 +466,7 @@ def record_operational_event(
             "mission_id": str(mission_id),
             "completed": completed,
             "next_step": None if completed else steps[prior + 1],
+            "idempotent_replay": False,
         }
 
         if completed:

@@ -9,6 +9,8 @@ import com.eay.mobile.core.OperationalStepKind
 import com.eay.mobile.core.OperationalValueCanonicalizer
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class InventoryOperationalCaptureResult(
     val code: OperationalCaptureCode,
@@ -23,6 +25,7 @@ class InventoryOperationalController(
     private val queue: InventoryOfflineQueue,
 ) {
     private val progressOffset = task.completedSteps
+    private val captureMutex = Mutex()
     private var session = OperationalMissionSession(
         definition = OperationalMissionDefinition(
             missionId = task.missionId,
@@ -47,16 +50,35 @@ class InventoryOperationalController(
         rawValue: String,
         eventId: String = UUID.randomUUID().toString(),
         occurredAt: String = Instant.now().toString(),
-    ): InventoryOperationalCaptureResult {
+    ): InventoryOperationalCaptureResult = captureMutex.withLock {
         val expected = session.nextStep
-            ?: return InventoryOperationalCaptureResult(
+            ?: return@withLock InventoryOperationalCaptureResult(
                 OperationalCaptureCode.ALREADY_COMPLETED,
                 null,
                 progressCurrent(),
                 completed = true,
             )
         if (step != expected) {
-            return InventoryOperationalCaptureResult(
+            val previous = session.evidence.lastOrNull()
+            val incomingHash = runCatching {
+                OperationalValueCanonicalizer.hash(step, rawValue)
+            }.getOrNull()
+            if (
+                previous != null &&
+                previous.kind == step &&
+                incomingHash != null &&
+                previous.valueHash == incomingHash
+            ) {
+                // Rapid duplicate physical ingress after the prior capture committed is
+                // presentation-idempotent. No second durable event or device sequence is minted.
+                return@withLock InventoryOperationalCaptureResult(
+                    OperationalCaptureCode.EXACT_REPLAY,
+                    expected,
+                    progressCurrent(),
+                    completed = session.completed,
+                )
+            }
+            return@withLock InventoryOperationalCaptureResult(
                 OperationalCaptureCode.WRONG_STEP,
                 expected,
                 progressCurrent(),
@@ -84,7 +106,7 @@ class InventoryOperationalController(
         if (reduced.code == OperationalCaptureCode.ACCEPTED || reduced.code == OperationalCaptureCode.EXACT_REPLAY) {
             session = reduced.session
         }
-        return InventoryOperationalCaptureResult(
+        InventoryOperationalCaptureResult(
             code = reduced.code,
             nextStep = session.nextStep,
             progressCurrent = progressCurrent(),

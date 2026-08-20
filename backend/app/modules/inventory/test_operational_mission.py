@@ -16,6 +16,7 @@ from .operational_mission import (
     operational_value_hash,
 )
 from .operational_mobile import _project_operational_mobile_row
+from .operational_mobile_router import _operational_event_response
 from .production import InventoryPrincipal, canonical_payload_hash, connect
 from .service import InventoryRuleError
 
@@ -63,11 +64,13 @@ class OperationalMissionContractTests(unittest.TestCase):
         )
         self.assertEqual(picking["source_location_id"], "A01")
         self.assertEqual(picking["container_id"], "TOTE-1")
+        self.assertEqual(picking["allowed_conditions"], [])
 
         putaway = build_operational_intent(
             "PUTAWAY", {**common, "destination_location_id": "b02"}
         )
         self.assertEqual(putaway["destination_location_id"], "B02")
+        self.assertEqual(putaway["allowed_conditions"], [])
 
         receiving = build_operational_intent(
             "RECEIVING", {**common, "container_id": "pallet-9"}
@@ -79,6 +82,7 @@ class OperationalMissionContractTests(unittest.TestCase):
             {**common, "source_location_id": "a01", "destination_location_id": "c03"},
         )
         self.assertNotEqual(transfer["source_location_id"], transfer["destination_location_id"])
+        self.assertEqual(transfer["allowed_conditions"], [])
 
     def test_transfer_same_source_and_destination_fails_closed(self):
         with self.assertRaises(InventoryRuleError):
@@ -125,6 +129,7 @@ class OperationalMissionContractTests(unittest.TestCase):
         self.assertEqual(projected["claim_status"], "RESUMABLE")
         self.assertEqual(projected["next_step"], "QUANTITY")
         self.assertEqual(projected["planned_quantity"], "4")
+        self.assertEqual(projected["allowed_conditions"], [])
         self.assertNotIn("item_value_hash", projected)
         self.assertNotIn("claim_id", projected)
 
@@ -132,6 +137,57 @@ class OperationalMissionContractTests(unittest.TestCase):
         self.assertIsNone(_project_operational_mobile_row(foreign, principal, "SHIFT-A"))
         stale_shift = dict(row, claim_shift_id="SHIFT-OLD")
         self.assertIsNone(_project_operational_mobile_row(stale_shift, principal, "SHIFT-A"))
+
+    def test_receiving_projection_requires_server_frozen_condition_authority(self):
+        principal = InventoryPrincipal(
+            "tenant-a",
+            "sub-a",
+            "EMP-A",
+            frozenset({"WH-1"}),
+            uuid4(),
+        )
+        row = {
+            "mission_id": uuid4(),
+            "warehouse_id": "WH-1",
+            "mission_type": "RECEIVING",
+            "operation": "inventory.receiving.capture",
+            "external_reference": "ASN-42",
+            "steps": ["CONTAINER", "ITEM", "QUANTITY", "CONDITION", "COMPLETE"],
+            "state": "OPEN",
+            "sku_id": "SKU-1",
+            "planned_quantity": Decimal("4"),
+            "source_location_id": None,
+            "destination_location_id": None,
+            "container_id": "PALLET-1",
+            "allowed_conditions": [],
+            "claim_employee_id": None,
+            "claim_device_id": None,
+            "claim_shift_id": None,
+            "completed_steps": 0,
+        }
+        self.assertIsNone(_project_operational_mobile_row(row, principal, "SHIFT-A"))
+        projected = _project_operational_mobile_row(
+            {**row, "allowed_conditions": ["GOOD", "DAMAGED"]},
+            principal,
+            "SHIFT-A",
+        )
+        self.assertEqual(projected["allowed_conditions"], ["GOOD", "DAMAGED"])
+
+    def test_mobile_ack_preserves_authoritative_exact_replay_semantics(self):
+        first = _operational_event_response(
+            {"code": "ACCEPTED", "mission_id": str(uuid4()), "idempotent_replay": False},
+            "SHIFT-A",
+            str(uuid4()),
+        )
+        replay = _operational_event_response(
+            {"code": "ACCEPTED", "mission_id": str(uuid4()), "idempotent_replay": True},
+            "SHIFT-A",
+            str(uuid4()),
+        )
+        self.assertTrue(first["accepted"])
+        self.assertFalse(first["idempotent_replay"])
+        self.assertTrue(replay["accepted"])
+        self.assertTrue(replay["idempotent_replay"])
 
     @patch("backend.app.modules.inventory.operational_mission._assert_active_device")
     def test_foreign_live_claim_is_rejected(self, active_device):
@@ -209,3 +265,13 @@ class OperationalMissionPostgresTests(unittest.TestCase):
                      AND column_name IN ('contract_version','safe_value','numeric_value')"""
             ).fetchall()
             self.assertEqual(len(event_columns), 3)
+            v9 = db.execute(
+                "SELECT name FROM inventory_schema_migrations WHERE version=9"
+            ).fetchone()
+            self.assertIsNotNone(v9)
+            default = db.execute(
+                """SELECT column_default FROM information_schema.columns
+                   WHERE table_name='inventory_operational_missions'
+                     AND column_name='allowed_conditions'"""
+            ).fetchone()["column_default"]
+            self.assertIn("[]", default)

@@ -56,6 +56,17 @@ def _aad(context: dict[str, str]) -> bytes:
     return json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def _is_missing_object(error: BaseException | None) -> bool:
+    if isinstance(error, KeyError):
+        return True
+    response = getattr(error, "response", None)
+    if isinstance(response, dict):
+        code = str((response.get("Error") or {}).get("Code") or "").lower()
+        status = str((response.get("ResponseMetadata") or {}).get("HTTPStatusCode") or "")
+        return code in {"nosuchkey", "notfound", "404"} or status == "404"
+    return False
+
+
 class S3KmsEnvelopeEvidenceStore:
     def __init__(
         self,
@@ -165,8 +176,6 @@ class S3KmsEnvelopeEvidenceStore:
                 IfNoneMatch="*",
             )
         except Exception as error:
-            # Conditional-create retries are safe only when the existing object
-            # decrypts to the exact same bytes under the same KMS/AAD binding.
             try:
                 existing = self.get(
                     tenant_id=tenant_id,
@@ -246,23 +255,32 @@ class S3KmsEnvelopeEvidenceStore:
         retention_until: datetime,
         now: datetime | None = None,
     ) -> None:
-        """Delete only after logical retention expiry and exact-object verification."""
+        """Delete only after retention expiry and exact-object verification.
+
+        A retry after a successful delete is accepted only after retention has
+        expired. Before expiry, a missing object remains an integrity incident.
+        """
         observed = (now or datetime.now(UTC)).astimezone(UTC)
         if observed < retention_until.astimezone(UTC):
             raise EvidenceStorageError(
                 "Aday kanıtı saklama süresi dolmadan silinemez."
             )
         key = _object_key(tenant_id, object_key)
-        # Verify the exact immutable envelope before deleting. Missing/tampered
-        # objects are treated as integrity incidents rather than silent success.
-        self.get(
-            tenant_id=tenant_id,
-            object_key=key,
-            expected_sha256=expected_sha256,
-        )
+        try:
+            self.get(
+                tenant_id=tenant_id,
+                object_key=key,
+                expected_sha256=expected_sha256,
+            )
+        except EvidenceStorageError as error:
+            if _is_missing_object(error.__cause__):
+                return
+            raise
         try:
             self.s3.delete_object(Bucket=self.bucket, Key=key)
         except Exception as error:
+            if _is_missing_object(error):
+                return
             raise EvidenceStorageError(
                 "Retention süresi dolan şifreli aday kanıtı silinemedi."
             ) from error

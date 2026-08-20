@@ -35,6 +35,10 @@ async def build_audit_intelligence_receipt(
 
     No LLM performs arithmetic here. The receipt is suitable as a governed Jarvis
     context source only after the caller's normal Audit authorization is resolved.
+
+    Official compliance score surfaces are fenced from quick/focus/custom visit
+    scores. Non-official visits still contribute real actions, assurance cases and
+    evidence coverage, but can never move the network compliance score/ranking.
     """
 
     scope_denied = not unrestricted and not location_ids and not regions
@@ -66,6 +70,10 @@ async def build_audit_intelligence_receipt(
                         OR ar.location_id = ANY(CAST(:location_ids AS VARCHAR[]))
                         OR COALESCE(fl.region, '') = ANY(CAST(:regions AS VARCHAR[]))
                       )
+                ), official_scored_runs AS (
+                    SELECT *
+                    FROM scoped_runs
+                    WHERE official_compliance_eligible IS TRUE
                 ), scoped_actions AS (
                     SELECT aa.*
                     FROM audit_actions aa
@@ -106,8 +114,10 @@ async def build_audit_intelligence_receipt(
                     (SELECT COUNT(*) FROM scoped_runs)::integer AS total_runs,
                     (SELECT COUNT(*) FROM scoped_runs WHERE status = 'completed')::integer
                       AS completed_runs,
+                    (SELECT COUNT(*) FROM official_scored_runs
+                      WHERE status = 'completed')::integer AS official_completed_runs,
                     (SELECT ROUND(AVG(final_score), 2)
-                       FROM scoped_runs
+                       FROM official_scored_runs
                       WHERE status = 'completed' AND final_score IS NOT NULL)
                       AS average_completed_score,
                     (SELECT COUNT(*) FROM scoped_actions
@@ -161,6 +171,10 @@ async def build_audit_intelligence_receipt(
                         OR ar.location_id = ANY(CAST(:location_ids AS VARCHAR[]))
                         OR COALESCE(fl.region, '') = ANY(CAST(:regions AS VARCHAR[]))
                       )
+                ), official_scored_runs AS (
+                    SELECT *
+                    FROM scoped_runs
+                    WHERE official_compliance_eligible IS TRUE
                 ), action_counts AS (
                     SELECT sr.location_id,
                            COUNT(*) FILTER (
@@ -178,7 +192,7 @@ async def build_audit_intelligence_receipt(
                 ), latest_score AS (
                     SELECT DISTINCT ON (location_id)
                            location_id, final_score, completed_at
-                    FROM scoped_runs
+                    FROM official_scored_runs
                     WHERE status = 'completed' AND final_score IS NOT NULL
                     ORDER BY location_id, completed_at DESC NULLS LAST, started_at DESC
                 )
@@ -218,7 +232,12 @@ async def build_audit_intelligence_receipt(
             "audit_redaction_verification_events",
             "field_locations",
         ],
-        "calculation_version": "audit.intelligence.summary.v1",
+        "calculation_version": "audit.intelligence.summary.v2",
+        "score_authority": {
+            "official_compliance_only": True,
+            "eligibility_column": "audit_runs.official_compliance_eligible",
+            "non_official_score_modes": ["FOCUS_SCORE"],
+        },
         "scope": {
             "unrestricted": unrestricted,
             "location_ids": sorted(location_ids or ()),

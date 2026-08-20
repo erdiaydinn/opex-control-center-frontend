@@ -23,9 +23,10 @@ data class InventoryRecoveryPresentationPolicy(
 /**
  * Converts durable recovery truth into presentation-only copy and bounded UI intent.
  *
- * This layer cannot retry, delete, rebind, reassign or mutate evidence. Security,
- * integrity and managed-device failures block new local mission starts early; a
- * business quarantine may only open a signed server-side supervisor review case.
+ * This layer cannot retry, delete, rebind, reassign, open review cases or mutate
+ * evidence. Business quarantine routing is performed by the signed recovery/sync
+ * authority layer; the terminal only explains whether routing is pending or waiting
+ * for supervisor disposition.
  */
 object InventoryRecoveryPresentation {
     fun policy(summary: InventoryRecoverySummary): InventoryRecoveryPresentationPolicy =
@@ -56,8 +57,6 @@ object InventoryRecoveryPresentation {
                 severity = FieldRecoveryVisualSeverity.BLOCKING,
                 titleRes = R.string.terminal_recovery_title_blocking,
                 messageRes = R.string.terminal_recovery_supervisor,
-                actionKind = FieldRecoveryActionKind.REQUEST_SUPERVISOR_REVIEW,
-                actionLabelRes = R.string.terminal_recovery_request_supervisor,
                 blocksNewMissionStarts = false,
             )
 

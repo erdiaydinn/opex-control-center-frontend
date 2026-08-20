@@ -165,6 +165,34 @@ def upgrade() -> None:
     op.execute(f"GRANT SELECT, INSERT ON TABLE audit_visit_notes TO {RUNTIME_ROLE}")
 
     op.add_column("audit_runs", sa.Column("visit_manifest_id", UUID, nullable=True))
+    op.add_column(
+        "audit_runs",
+        sa.Column(
+            "visit_score_mode",
+            sa.String(length=24),
+            nullable=False,
+            server_default="OFFICIAL_COMPLIANCE",
+        ),
+    )
+    op.add_column(
+        "audit_runs",
+        sa.Column(
+            "official_compliance_eligible",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("TRUE"),
+        ),
+    )
+    op.create_check_constraint(
+        "ck_audit_run_visit_score_mode",
+        "audit_runs",
+        "visit_score_mode IN ('OFFICIAL_COMPLIANCE','FOCUS_SCORE')",
+    )
+    op.create_check_constraint(
+        "ck_audit_run_official_score_binding",
+        "audit_runs",
+        "official_compliance_eligible IS FALSE OR visit_score_mode = 'OFFICIAL_COMPLIANCE'",
+    )
     op.create_foreign_key(
         "fk_audit_run_visit_manifest",
         "audit_runs",
@@ -180,11 +208,21 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("visit_manifest_id IS NOT NULL"),
     )
+    op.create_index(
+        "ix_audit_runs_official_compliance",
+        "audit_runs",
+        ["tenant_id", "official_compliance_eligible", "location_id", "completed_at"],
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_audit_runs_official_compliance", table_name="audit_runs")
     op.drop_index("uq_audit_run_visit_manifest", table_name="audit_runs")
     op.drop_constraint("fk_audit_run_visit_manifest", "audit_runs", type_="foreignkey")
+    op.drop_constraint("ck_audit_run_official_score_binding", "audit_runs", type_="check")
+    op.drop_constraint("ck_audit_run_visit_score_mode", "audit_runs", type_="check")
+    op.drop_column("audit_runs", "official_compliance_eligible")
+    op.drop_column("audit_runs", "visit_score_mode")
     op.drop_column("audit_runs", "visit_manifest_id")
     op.drop_index("ix_audit_visit_notes_manifest_created", table_name="audit_visit_notes")
     op.drop_table("audit_visit_notes")

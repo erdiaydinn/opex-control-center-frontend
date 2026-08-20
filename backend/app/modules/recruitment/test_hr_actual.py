@@ -57,11 +57,14 @@ class RecruitmentHrActualTests(unittest.TestCase):
                     "employee_id": "EMP-CANON", "warehouse_id": "WH-287-FULYA"
                 } if value in {"12345678901", "HR-200"} else None,
             ),
-            patch.object(hr_actual.persistence, "persist_snapshot_with_audit", side_effect=persist),
+            patch.object(hr_actual.persistence, "load_collection", return_value=[]) as load_collection,
+            patch.object(hr_actual.persistence, "persist_snapshot_with_audit", side_effect=persist) as persist_snapshot,
         ):
             summary = hr_actual.import_snapshot(self.payload(), "hr@example.test")
 
         snapshot = captured["collections"]["recruitment_hr_actual"][0]
+        load_collection.assert_called_once_with("recruitment_hr_actual")
+        self.assertLess(load_collection.call_count, persist_snapshot.call_count + 1)
         self.assertEqual(captured["event"], "RECRUITMENT_HR_ACTUAL_IMPORTED")
         self.assertEqual(summary["active_rows"], 2)
         self.assertEqual(summary["active_fte"], 1.5)
@@ -71,6 +74,29 @@ class RecruitmentHrActualTests(unittest.TestCase):
         self.assertEqual(snapshot["rows"][0]["identity_method"], "TCKN")
         self.assertTrue(all("tckn" not in row for row in snapshot["rows"]))
         self.assertTrue(all("full_name" not in row for row in snapshot["rows"]))
+
+    def test_import_primes_persisted_revision_before_cas_write(self):
+        calls = []
+
+        def load(kind):
+            calls.append(("load", kind))
+            return [{"id": kind, "source_sha256": "previous"}]
+
+        def persist(collections, event, actor, **details):
+            calls.append(("persist", next(iter(collections))))
+
+        with (
+            patch.object(hr_actual, "list_warehouses", return_value=[{
+                "id": "WH-287-FULYA", "name": "Fulya (İstanbul)", "code": "FULYA",
+            }]),
+            patch.object(hr_actual, "resolve_person_identity", return_value={"employee_id": "EMP-CANON", "warehouse_id": "WH-287-FULYA"}),
+            patch.object(hr_actual.persistence, "load_collection", side_effect=load),
+            patch.object(hr_actual.persistence, "persist_snapshot_with_audit", side_effect=persist),
+        ):
+            hr_actual.import_snapshot(self.payload(), "hr@example.test")
+
+        self.assertEqual(calls[0], ("load", "recruitment_hr_actual"))
+        self.assertEqual(calls[-1], ("persist", "recruitment_hr_actual"))
 
     def test_hr_actual_enriches_staffing_without_replacing_decision_authority(self):
         snapshot = {

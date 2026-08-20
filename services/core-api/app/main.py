@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.ai_tool_routes import router as ai_tool_router
+from app.agent_job_routes import router as agent_job_router
 from app.core.audit import build_audit_event
 from app.core.authorization import require_control_plane_admin
 from app.core.client_ip import resolve_client_ip
@@ -79,6 +80,7 @@ app = FastAPI(
 )
 
 app.include_router(ai_tool_router)
+app.include_router(agent_job_router)
 app.include_router(intelligence_router)
 app.include_router(field_promotion_router)
 

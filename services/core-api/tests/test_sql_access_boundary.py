@@ -230,6 +230,17 @@ PLANOGRAM_SQL_EXECUTION_POINTS = {
     ("modules/planogram/repository_assignment_lifecycle.py", "close_assignment"),
 }
 
+# Jarvis agent control-plane security review: exact repository methods only.
+# Statements are static text() with bound parameters, every query has an explicit
+# principal-derived tenant predicate, get_tenant_session establishes transaction-local
+# tenant context, and migration 0051 applies FORCE RLS plus append-only event grants.
+JARVIS_AGENT_SQL_EXECUTION_POINTS = {
+    ("agent_job_repository.py", "create"),
+    ("agent_job_repository.py", "get"),
+    ("agent_job_repository.py", "events"),
+    ("agent_job_repository.py", "cancel"),
+}
+
 ALLOWED_SQL_EXECUTION_POINTS = (
     RUNTIME_SQL_EXECUTION_POINTS
     | PRIVILEGED_ADMIN_SQL_POINTS
@@ -237,6 +248,7 @@ ALLOWED_SQL_EXECUTION_POINTS = (
     | ACADEMY_SQL_EXECUTION_POINTS
     | FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS
     | PLANOGRAM_SQL_EXECUTION_POINTS
+    | JARVIS_AGENT_SQL_EXECUTION_POINTS
 )
 
 RUNTIME_ENGINE_CREATION = {

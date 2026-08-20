@@ -13,6 +13,7 @@ const panel = read("src/modules/planogram/PlanogramScannedOptimizerPanel.jsx");
 const sanitizer = read("src/modules/planogram/planogramScannedOptimizer.js");
 const messages = read("src/platform/i18n/planogramScannedOptimizerMessages.js");
 const adapter = read("services/core-api/app/modules/planogram/scanned_optimizer_adapter.py");
+const schemas = read("services/core-api/app/modules/planogram/store_scan_binding_schemas.py");
 
 need(studio, "optimizationCandidate={candidate}", "Studio does not pass the candidate bundle into Store Scan");
 need(storeScan, "optimizationCandidate={optimizationCandidate}", "Store Scan does not forward candidate evidence");
@@ -32,9 +33,14 @@ need(panel, "architecture_route_objective_v2", "V6 route overlay is not wired to
 need(adapter, "picker_tour_evidence_v2", "Server does not expose bounded selected-tour evidence");
 need(adapter, "basket_ref", "Server route evidence is not anonymized to basket references");
 need(adapter, "index >= 3", "Server route evidence is not bounded to three representative baskets");
+need(schemas, "PlanogramOrderBasket", "V6 API no longer reuses the SKU-only anonymized basket contract");
 need(sanitizer, "fingerprint_bound_scanned_v2_optimizer_unattested", "V6 sanitizer authority contract drifted");
 need(sanitizer, "response.production_release_allowed", "V6 sanitizer does not fail closed on production release");
 need(sanitizer, "result.global_optimum_claim", "V6 sanitizer does not reject global-optimum authority leaks");
+
+if (/['\"]order_id['\"]\s*:/.test(adapter) || /\border_id\s*:/.test(schemas)) {
+  throw new Error("Raw order identity leaked into the V6 public evidence contract");
+}
 
 const requestStart = panel.indexOf('apiPost("/v1/planogram/store-scan/optimize-preview"');
 const requestEnd = panel.indexOf("});", requestStart);
@@ -53,6 +59,8 @@ console.log("PLANOGRAM_SCANNED_V6_STUDIO_CHAIN=PASS");
 console.log("PLANOGRAM_SCANNED_V6_RANKED_ALTERNATIVES=PASS");
 console.log("PLANOGRAM_SCANNED_V6_SELECTED_ROUTE_OVERLAY=PASS");
 console.log("PLANOGRAM_SCANNED_V6_ROUTE_EVIDENCE_ANONYMIZED=PASS");
+console.log("PLANOGRAM_SCANNED_V6_RAW_ORDER_IDENTITY=ABSENT");
+console.log("PLANOGRAM_SCANNED_V6_ROUTE_EVIDENCE_LIMIT=3");
 console.log("PLANOGRAM_SCANNED_V6_CLIENT_LAYOUT_AUTHORITY=FALSE");
 console.log("PLANOGRAM_SCANNED_V6_STORE_DNA_AUTHORITY=FALSE");
 console.log("PLANOGRAM_SCANNED_V6_DIGITAL_TWIN=PASS");

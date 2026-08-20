@@ -15,6 +15,8 @@ const base = {
     substitution_edges: [],
     historical_pairs: [],
     realogram_events: [],
+    shelf_scan_shelves: [],
+    shelf_scan_observations: [],
   },
 };
 
@@ -39,17 +41,57 @@ const unsafeEvidence = normalizeCandidateBundle({
 });
 assert.equal(unsafeEvidence, null);
 
+const crossStore = normalizeCandidateBundle({
+  ...base,
+  layout: { store_code: "STORE-2", aisles: [] },
+});
+assert.equal(crossStore, null);
+
+const orphanObservation = normalizeCandidateBundle({
+  ...base,
+  retail_intelligence: {
+    ...base.retail_intelligence,
+    shelf_scan_observations: [{
+      sku: "SKU-1",
+      aisle_id: "A",
+      module_id: "1",
+      shelf_no: "1",
+      facing_count: 1,
+      confidence: 0.99,
+    }],
+  },
+});
+assert.equal(orphanObservation, null);
+
+const blindWithoutBaskets = normalizeCandidateBundle({
+  ...base,
+  retail_intelligence: {
+    ...base.retail_intelligence,
+    blind_candidate_a: { planogram: { aisles: [{}] } },
+    blind_candidate_b: { planogram: { aisles: [{}] } },
+  },
+});
+assert.equal(blindWithoutBaskets, null);
+
 const panel = fs.readFileSync(
   new URL("../src/modules/planogram/PlanogramRetailIntelligencePanel.jsx", import.meta.url),
   "utf8"
 );
 assert.match(panel, /retail-intelligence-preview/);
 assert.match(panel, /market_leadership_claim_allowed !== false/);
-const studio = fs.readFileSync(
-  new URL("../src/modules/planogram/PlanogramStudio.jsx", import.meta.url),
+assert.match(panel, /physical_capacity_v2/);
+assert.match(panel, /open_action_count/);
+assert.match(panel, /resolved_action_count/);
+assert.match(panel, /order_baskets: candidate\.order_baskets/);
+
+const messages = fs.readFileSync(
+  new URL("../src/platform/i18n/planogramRetailIntelligenceMessages.js", import.meta.url),
   "utf8"
 );
-assert.match(studio, /PlanogramRetailIntelligencePanel/);
-console.log("PLANOGRAM_RETAIL_INTELLIGENCE_UI=PASS");
+assert.match(messages, /fullDepthCapacity/);
+assert.match(messages, /actionQueue/);
+
+console.log("PLANOGRAM_RETAIL_INTELLIGENCE_V2_UI=PASS");
 console.log("PLANOGRAM_RETAIL_EVIDENCE_ENUMERABLE=FALSE");
-console.log("PLANOGRAM_RETAIL_PII_GUARD=PASS");
+console.log("PLANOGRAM_RETAIL_PII_AND_STORE_GUARD=PASS");
+console.log("PLANOGRAM_RETAIL_BLIND_SHELF_SCAN_CONTRACT=PASS");

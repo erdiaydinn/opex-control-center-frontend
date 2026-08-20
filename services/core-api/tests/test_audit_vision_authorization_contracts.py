@@ -20,6 +20,8 @@ from app.modules.audit.privacy_verification_runtime import (
 )
 from app.modules.audit.privacy_verification_service import (
     SERVER_PRIVACY_AUTHORITY_VERSION,
+)
+from app.modules.audit.privacy_verification_service import (
     _fingerprint as privacy_verification_fingerprint,
 )
 from app.modules.audit.schemas import AuditProgramCreate

@@ -116,11 +116,13 @@ def evaluate_shadow_backtest(
             "direction": directions[metric],
         }
 
+    incomplete_prefixes = (
+        "pair_source_ref_missing",
+        "pair_attestation_missing",
+        "pair_identity_missing",
+    )
     evidence_complete = not any(
-        blocker.startswith("pair_source_ref_missing")
-        or blocker.startswith("pair_attestation_missing")
-        or blocker.startswith("pair_identity_missing")
-        for blocker in blockers
+        blocker.startswith(incomplete_prefixes) for blocker in blockers
     )
     fingerprint = hashlib.sha256(
         json.dumps(

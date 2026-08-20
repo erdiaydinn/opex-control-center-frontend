@@ -123,6 +123,62 @@ if (buildPlanogramFixtureBindingsFromSelections(recognized, catalog, {
   fail("Catalog assistance fabricated aisle/side/position truth.");
 }
 
+const coldCatalog = normalizePlanogramFixtureCatalog({
+  fixtures: [
+    {
+      ...catalogPayload.fixtures[0],
+      fixture_id: "AMBIENT-SAME-SIZE",
+      fixture_type: "steel_rack",
+      storage_type: "AMBIENT",
+      source_ref: "fixture-master://AMBIENT-SAME-SIZE/v1",
+    },
+    {
+      ...catalogPayload.fixtures[0],
+      fixture_id: "CHILLER-SAME-SIZE",
+      fixture_type: "chilled_cabinet",
+      storage_type: "CHILLED",
+      source_ref: "fixture-master://CHILLER-SAME-SIZE/v1",
+    },
+  ],
+});
+const coldRecognized = [{
+  element_id: "chiller-scan-1",
+  width_m: 1.2,
+  depth_m: 0.6,
+  label: "+4 chilled cabinet",
+  confidence: 0.98,
+  source_element_type: "chiller",
+  hinted_storage_type: "CHILLED",
+}];
+const coldSuggestions = suggestPlanogramFixtureCatalogMatches(coldRecognized, coldCatalog);
+if (
+  coldSuggestions[0]?.recommended_fixture_id !== "CHILLER-SAME-SIZE" ||
+  coldSuggestions[0]?.candidates?.some((row) => row.fixture.storage_type !== "CHILLED")
+) {
+  fail("Cold-chain scan hint did not eliminate incompatible ambient fixture candidates.");
+}
+if (buildPlanogramFixtureBindingsFromSelections(coldRecognized, coldCatalog, {
+  "chiller-scan-1": {
+    fixture_id: "AMBIENT-SAME-SIZE",
+    aisle_id: "COLD",
+    side: "L",
+    position: 1,
+  },
+}) !== null) {
+  fail("Client binding accepted an ambient catalog fixture for a CHILLED scan cue.");
+}
+const chilledBinding = buildPlanogramFixtureBindingsFromSelections(coldRecognized, coldCatalog, {
+  "chiller-scan-1": {
+    fixture_id: "CHILLER-SAME-SIZE",
+    aisle_id: "COLD",
+    side: "L",
+    position: 1,
+  },
+});
+if (!chilledBinding || chilledBinding[0].storage_type !== "CHILLED") {
+  fail("Valid CHILLED catalog fixture could not bind to a CHILLED scan cue.");
+}
+
 const fingerprint = "a".repeat(64);
 const safeResponse = {
   preview_only: true,
@@ -185,4 +241,6 @@ console.log("PLANOGRAM_SCANNED_FIXTURE_CATALOG_ASSIST=PASS");
 console.log("PLANOGRAM_SCANNED_FIXTURE_AMBIGUOUS_AUTO_BIND=FALSE");
 console.log("PLANOGRAM_SCANNED_FIXTURE_TOPOLOGY_FABRICATION=FALSE");
 console.log("PLANOGRAM_SCANNED_FIXTURE_TOPOLOGY_HUMAN_REVIEW=REQUIRED");
+console.log("PLANOGRAM_SCANNED_COLD_CHAIN_STORAGE_HINT=PASS");
+console.log("PLANOGRAM_SCANNED_COLD_CHAIN_WRONG_STORAGE_BIND=BLOCKED");
 console.log("Planogram scanned fixture catalog binding boundary: PASS");

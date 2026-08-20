@@ -12,6 +12,10 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.time.Instant
+import java.util.Locale
 import java.util.UUID
 
 data class InventoryOperationalTask(
@@ -107,6 +111,24 @@ object InventoryOperationalTaskContract {
             require(normalizedConditions.isEmpty()) { "Unexpected condition choices for mission type" }
         }
         return task
+    }
+}
+
+/** Cross-language claim proof contract matching backend operational_claim_hash. */
+object InventoryOperationalClaimContract {
+    fun hash(missionId: String, activeShiftId: String): String {
+        val mission = UUID.fromString(missionId.trim()).toString()
+        val shift = activeShiftId.trim()
+        require(shift.matches(Regex("^[A-Za-z0-9._:-]{1,128}$")))
+        val canonical = buildString {
+            append('{')
+            append("\"active_shift_id\":").append(JSONObject.quote(shift)).append(',')
+            append("\"mission_id\":").append(JSONObject.quote(mission))
+            append('}')
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(Locale.ROOT, it) }
     }
 }
 
@@ -213,10 +235,24 @@ class InventoryOperationalClaimClient(context: Context) {
         val deviceId = runCatching { ManagedDeviceIdentity(appContext).requireDeviceId() }.getOrElse {
             return InventoryOperationalClaimResult(InventoryTaskFetchCode.DEVICE_REJECTED)
         }
+        val commandHash = runCatching {
+            InventoryOperationalClaimContract.hash(task.missionId, task.activeShiftId)
+        }.getOrElse {
+            return InventoryOperationalClaimResult(InventoryTaskFetchCode.CONTRACT_REJECTED)
+        }
+        val timestamp = Instant.now().toString()
+        val nonce = UUID.randomUUID().toString()
+        val proof = "$deviceId\n$timestamp\n$nonce\n$commandHash".toByteArray(Charsets.UTF_8)
+        val signature = runCatching { DeviceRequestSigner.sign(proof) }.getOrElse {
+            return InventoryOperationalClaimResult(InventoryTaskFetchCode.DEVICE_REJECTED)
+        }
         val request = Request.Builder()
             .url(BuildConfig.API_BASE_URL.trimEnd('/') + "/api/inventory/v1/mobile/operational-missions/${task.missionId}/claim")
             .header("Authorization", "Bearer $token")
             .header("X-EAY-Device-ID", deviceId.toString())
+            .header("X-EAY-Request-Timestamp", timestamp)
+            .header("X-EAY-Request-Nonce", nonce)
+            .header("X-EAY-Device-Signature", signature)
             .post("{}".toRequestBody("application/json".toMediaType()))
             .build()
         val response = try {

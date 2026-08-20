@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, Request, status
+import os
+
+from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from .flexibility import (
     claim_open_shift,
@@ -25,6 +27,25 @@ def _actor(request: Request) -> str:
     return str(getattr(identity, "subject", None) or request.headers.get("X-OPEX-User") or "unknown")
 
 
+def _strict_employee_self(request: Request, person_id: str, role: str) -> None:
+    """Employee marketplace actions never become manager impersonation paths.
+
+    If a verified identity is present, its employee_id must match regardless of
+    role. Production fails closed when the signed claim is absent. Legacy local
+    development keeps the existing Workforce self-check behavior for fixtures.
+    """
+    identity = getattr(request.state, "identity", None)
+    expected = getattr(identity, "employee_id", None)
+    if expected:
+        if str(expected) != str(person_id):
+            raise HTTPException(status_code=403, detail="Başka personel adına esneklik veya açık vardiya işlemi yapılamaz.")
+        _enforce_self(request, person_id, role)
+        return
+    if os.getenv("DOCKOS_ENV", "development").lower() == "production":
+        raise HTTPException(status_code=403, detail="JWT employee_id claim'i gerekli.")
+    _enforce_self(request, person_id, role)
+
+
 @router.get("/availability")
 def get_availability(
     person_id: str,
@@ -33,7 +54,7 @@ def get_availability(
     end_date: str | None = None,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
 ) -> dict:
-    _enforce_self(request, person_id, x_opex_role)
+    _strict_employee_self(request, person_id, x_opex_role)
     return {"rows": list_availability(person_id, start_date, end_date)}
 
 
@@ -43,7 +64,7 @@ def put_availability(
     request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
 ) -> dict:
-    _enforce_self(request, payload.person_id, x_opex_role)
+    _strict_employee_self(request, payload.person_id, x_opex_role)
     return upsert_availability(payload.model_dump(mode="json"), _actor(request))
 
 
@@ -53,7 +74,7 @@ def get_open_shifts(
     request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
 ) -> dict:
-    _enforce_self(request, person_id, x_opex_role)
+    _strict_employee_self(request, person_id, x_opex_role)
     return {"rows": list_open_shifts_for_person(person_id)}
 
 
@@ -76,5 +97,5 @@ def post_open_shift_claim(
     request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
 ) -> dict:
-    _enforce_self(request, payload.person_id, x_opex_role)
+    _strict_employee_self(request, payload.person_id, x_opex_role)
     return claim_open_shift(open_shift_id, payload.person_id, _actor(request))

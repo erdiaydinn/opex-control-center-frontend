@@ -40,6 +40,6 @@ jobs:
             grep -Fq "proxy_set_header X-DockOS-Gateway ci-gateway-secret-do-not-use;" /etc/nginx/conf.d/default.conf &&
             grep -Fq "Content-Security-Policy" /etc/nginx/conf.d/default.conf &&
             grep -Fq "Permissions-Policy \"camera=(self), microphone=(), geolocation=(self)\"" /etc/nginx/conf.d/default.conf &&
-            ! grep -Fq "${DOCKOS_GATEWAY_SECRET}" /etc/nginx/conf.d/default.conf &&
+            ! grep -Fq "\${DOCKOS_GATEWAY_SECRET}" /etc/nginx/conf.d/default.conf &&
             nginx -t
           '

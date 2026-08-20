@@ -52,10 +52,10 @@ async def upsert_locale_setting(
             """
             UPDATE academy_locale_settings
             SET is_default = false,
-                updated_by = :actor,
+                updated_by = CAST(:actor AS varchar(255)),
                 updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = :tenant_id
-              AND locale <> :locale
+              AND locale <> CAST(:locale AS varchar(16))
               AND is_default IS TRUE
               AND :is_default IS TRUE
             """
@@ -76,8 +76,14 @@ async def upsert_locale_setting(
                         tenant_id, locale, enabled, required, is_default,
                         allow_machine_draft, created_by, updated_by
                     ) VALUES (
-                        :tenant_id, :locale, :enabled, :required, :is_default,
-                        :allow_machine_draft, :actor, :actor
+                        :tenant_id,
+                        CAST(:locale AS varchar(16)),
+                        :enabled,
+                        :required,
+                        :is_default,
+                        :allow_machine_draft,
+                        CAST(:actor AS varchar(255)),
+                        CAST(:actor AS varchar(255))
                     )
                     ON CONFLICT (tenant_id, locale)
                     DO UPDATE SET
@@ -139,9 +145,9 @@ async def create_translation_lineage(
                         target.id,
                         target.locale,
                         CAST(:translation_method AS varchar(30)),
-                        :translator_subject,
+                        CAST(:translator_subject AS varchar(255)),
                         source.source_sha256,
-                        :translator_subject
+                        CAST(:translator_subject AS varchar(255))
                     FROM academy_content_versions AS source
                     JOIN academy_content_versions AS target
                       ON target.tenant_id = source.tenant_id
@@ -203,13 +209,14 @@ async def submit_translation(
                         lineage.tenant_id,
                         lineage.id,
                         'submitted',
-                        :actor_subject,
+                        CAST(:actor_subject AS varchar(255)),
                         NULL,
-                        :request_id
+                        CAST(:request_id AS varchar(128))
                     FROM academy_translation_lineage AS lineage
                     WHERE lineage.tenant_id = :tenant_id
                       AND lineage.id = :translation_id
-                      AND lineage.translator_subject = :actor_subject
+                      AND lineage.translator_subject =
+                          CAST(:actor_subject AS varchar(255))
                     RETURNING id, translation_id, event_type,
                               actor_subject, reason, request_id, created_at
                     """
@@ -249,14 +256,15 @@ async def review_translation(
                     SELECT
                         lineage.tenant_id,
                         lineage.id,
-                        :decision,
-                        :actor_subject,
-                        :reason,
-                        :request_id
+                        CAST(:decision AS varchar(20)),
+                        CAST(:actor_subject AS varchar(255)),
+                        CAST(:reason AS text),
+                        CAST(:request_id AS varchar(128))
                     FROM academy_translation_lineage AS lineage
                     WHERE lineage.tenant_id = :tenant_id
                       AND lineage.id = :translation_id
-                      AND lineage.translator_subject <> :actor_subject
+                      AND lineage.translator_subject <>
+                          CAST(:actor_subject AS varchar(255))
                     RETURNING id, translation_id, event_type,
                               actor_subject, reason, request_id, created_at
                     """
@@ -298,7 +306,10 @@ async def list_translation_authority(
                            stale, authoritative
                     FROM academy_translation_authority
                     WHERE tenant_id = :tenant_id
-                      AND (:content_id IS NULL OR content_id = :content_id)
+                      AND (
+                          CAST(:content_id AS uuid) IS NULL
+                          OR content_id = CAST(:content_id AS uuid)
+                      )
                     ORDER BY content_id, source_locale, target_locale, translation_id
                     """
                 ),

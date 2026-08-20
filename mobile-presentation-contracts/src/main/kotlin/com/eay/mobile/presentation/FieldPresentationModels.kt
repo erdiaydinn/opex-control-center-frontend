@@ -23,6 +23,8 @@ enum class FieldRecoveryActionKind {
     NONE,
     SIGN_IN_AGAIN,
     RELOAD_MISSIONS,
+    /** Opens a signed server-side review case; never retries or mutates evidence. */
+    REQUEST_SUPERVISOR_REVIEW,
 }
 
 data class FieldShellHeader(

@@ -126,12 +126,13 @@ class TimeOffParserTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
-        self.assertFalse(body["raw_national_id_returned"])
+        self.assertFalse(body["sensitive_data_exposed"])
         self.assertEqual(body["identity_resolved_count"], 1)
         self.assertEqual(body["rows"][0]["person_id"], "EMP-TIMEOFF-1")
         serialized = str(body)
         self.assertNotIn("31987654310", serialized)
         self.assertNotIn("national_id", serialized)
+        self.assertNotIn("tckn", serialized.casefold())
 
     def test_unmatched_tckn_only_row_is_not_returned_to_browser(self):
         csv_bytes = (

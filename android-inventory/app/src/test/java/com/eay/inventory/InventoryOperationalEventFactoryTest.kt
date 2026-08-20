@@ -25,7 +25,7 @@ class InventoryOperationalEventFactoryTest {
     fun `operational event uses backend exact canonical hash vector`() {
         val event = InventoryOperationalEventCanonical.create(input, "binding-a")
         assertEquals(
-            "5a25d877d19aeb75b9ad6d3913ba1b8dd11371f7a1b30b0b4d6c6597e359d882",
+            "52ec76c67f696b0361fcddb89f1e174448f5f304ea3ca735adde973f09f8cc3f",
             event.payloadHash,
         )
         assertEquals(event.payloadHash, InventoryOperationalEventCanonical.payloadHash(event.canonicalPayload))

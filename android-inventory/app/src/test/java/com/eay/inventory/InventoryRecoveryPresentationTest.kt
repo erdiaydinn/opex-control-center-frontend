@@ -11,6 +11,7 @@ class InventoryRecoveryPresentationTest {
     private fun summary(intent: InventoryRecoveryIntent) = InventoryRecoverySummary(
         severity = when (intent) {
             InventoryRecoveryIntent.WAIT_FOR_AUTO_RETRY -> InventoryRecoverySeverity.INFO
+            InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW -> InventoryRecoverySeverity.ATTENTION
             InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW,
             InventoryRecoveryIntent.RECOVER_MANAGED_DEVICE,
             -> InventoryRecoverySeverity.BLOCKING
@@ -33,11 +34,24 @@ class InventoryRecoveryPresentationTest {
     }
 
     @Test
-    fun supervisorReviewDoesNotGloballyStopUnrelatedMissions() {
+    fun supervisorRoutingDoesNotExposeMutationActionOrGloballyStopUnrelatedMissions() {
+        listOf(
+            InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW,
+            InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW,
+        ).forEach { intent ->
+            val policy = InventoryRecoveryPresentation.policy(summary(intent))
+            assertFalse(policy.blocksNewMissionStarts)
+            assertEquals(FieldRecoveryActionKind.NONE, policy.actionKind)
+            assertEquals(null, policy.actionLabelRes)
+        }
+    }
+
+    @Test
+    fun routedSupervisorCaseBecomesAttentionNotFalseSuccess() {
         val policy = InventoryRecoveryPresentation.policy(
-            summary(InventoryRecoveryIntent.REQUEST_SUPERVISOR_REVIEW),
+            summary(InventoryRecoveryIntent.WAIT_FOR_SUPERVISOR_REVIEW),
         )
-        assertEquals(FieldRecoveryVisualSeverity.BLOCKING, policy.severity)
+        assertEquals(FieldRecoveryVisualSeverity.ATTENTION, policy.severity)
         assertFalse(policy.blocksNewMissionStarts)
     }
 

@@ -1,4 +1,5 @@
 from inspect import signature
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,8 @@ from app.modules.audit.privacy_routes import (
     _server_privacy_scanner,
     post_server_privacy_verification,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _Scanner:
@@ -52,7 +55,7 @@ def test_public_privacy_trigger_cannot_supply_authority_fields() -> None:
 
 
 def test_privacy_route_remains_scope_bound_and_server_derived() -> None:
-    source = open("app/modules/audit/privacy_routes.py", encoding="utf-8").read()
+    source = (ROOT / "app/modules/audit/privacy_routes.py").read_text(encoding="utf-8")
     assert "action:audit:submitEvidence" in source
     assert "scope_allows_location" in source
     assert "verify_bound_redaction_receipt" in source

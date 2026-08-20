@@ -8,6 +8,49 @@ import PlanogramPickerEyePreview from "./PlanogramPickerEyePreview.jsx";
 import { safePlanogramScannedOptimizerPreview } from "./planogramScannedOptimizer.js";
 import "./planogram-scanned-optimizer.css";
 
+function objectiveComparator(left, right) {
+  const a = Array.isArray(left?.objective_key) ? left.objective_key : [];
+  const b = Array.isArray(right?.objective_key) ? right.objective_key : [];
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    const delta = Number(a[index] ?? 0) - Number(b[index] ?? 0);
+    if (Math.abs(delta) > 1e-9) return delta;
+  }
+  return String(left?.profile_id || "").localeCompare(String(right?.profile_id || ""));
+}
+
+function representativeRouteOverlay(evidence, selectedP95) {
+  if (!evidence?.available || !Array.isArray(evidence?.explained_orders)) return null;
+  const rows = evidence.explained_orders.filter((row) => Array.isArray(row?.segments));
+  if (!rows.length) return null;
+  const target = Number(selectedP95 || 0);
+  const representative = [...rows].sort((left, right) => {
+    const leftGap = Math.abs(Number(left?.distance_m || 0) - target);
+    const rightGap = Math.abs(Number(right?.distance_m || 0) - target);
+    if (Math.abs(leftGap - rightGap) > 1e-9) return leftGap - rightGap;
+    return Number(right?.distance_m || 0) - Number(left?.distance_m || 0);
+  })[0];
+  const path = [];
+  for (const segment of representative.segments) {
+    for (const point of segment?.path_m || []) {
+      if (!Array.isArray(point) || point.length < 2) continue;
+      const next = [Number(point[0]), Number(point[1])];
+      if (!Number.isFinite(next[0]) || !Number.isFinite(next[1])) continue;
+      const previous = path[path.length - 1];
+      if (!previous || previous[0] !== next[0] || previous[1] !== next[1]) path.push(next);
+    }
+  }
+  if (path.length < 2) return null;
+  return {
+    contract: "architecture-polygon-astar-v2",
+    available: true,
+    preview_only: true,
+    distance_m: Number(representative.distance_m || 0),
+    path_m: path.slice(0, 160),
+    representative_basket_ref: representative.basket_ref,
+  };
+}
+
 export default function PlanogramScannedOptimizerPanel({
   scanBundle,
   scanResponse,
@@ -76,6 +119,16 @@ export default function PlanogramScannedOptimizerPanel({
   const result = response?.result || null;
   const optimizer = result?.optimizer || null;
   const scannedLayout = result?.scanned_layout || null;
+  const routeOverlay = representativeRouteOverlay(
+    optimizer?.picker_tour_evidence_v2,
+    optimizer?.selected_tour?.p95_m
+  );
+  const twinEngineResult = optimizer
+    ? {
+        ...optimizer,
+        ...(routeOverlay ? { architecture_route_objective_v2: routeOverlay } : {}),
+      }
+    : null;
   const twinCandidate = optimizer?.planogram && scannedLayout
     ? {
         ...optimizationCandidate,
@@ -83,6 +136,10 @@ export default function PlanogramScannedOptimizerPanel({
         store_dna: scannedLayout.reviewed_store_dna_v2_preview,
       }
     : null;
+  const rankedCandidates = useMemo(
+    () => [...(optimizer?.candidates || [])].sort(objectiveComparator).slice(0, 4),
+    [optimizer?.candidates]
+  );
   const numberFormat = typeof formatNumber === "function"
     ? formatNumber
     : (value) => new Intl.NumberFormat(locale || "en").format(Number(value || 0));
@@ -116,17 +173,33 @@ export default function PlanogramScannedOptimizerPanel({
           </div>
           <div className="eay-scanned-optimizer-fingerprint"><span>{t("fingerprint")}</span><code>{optimizer.optimizer_fingerprint}</code></div>
 
-          {optimizer.allowed && twinCandidate ? (
+          {rankedCandidates.length ? (
+            <div className="eay-scanned-optimizer-candidates">
+              <strong>{t("candidateCount")}</strong>
+              <div>
+                {rankedCandidates.map((candidate, index) => (
+                  <article key={candidate.profile_id} data-selected={candidate.profile_id === optimizer.selected_profile_id ? "true" : "false"}>
+                    <code>#{index + 1} · {candidate.profile_id}</code>
+                    <span>{t("p95")}: {numberFormat(candidate.tour?.p95_m || 0)} m</span>
+                    <span>{t("average")}: {numberFormat(candidate.tour?.average_m || 0)} m</span>
+                    <span>{t("unplaced")}: {numberFormat(candidate.unplaced_skus?.length || 0)}</span>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {optimizer.allowed && twinCandidate && twinEngineResult ? (
             <div className="eay-scanned-optimizer-twin">
               <h4>{t("twin")}</h4>
               <PlanogramDigitalTwin
-                engineResult={optimizer}
+                engineResult={twinEngineResult}
                 candidate={twinCandidate}
                 locale={locale}
                 formatNumber={numberFormat}
               />
               <PlanogramPickerEyePreview
-                engineResult={optimizer}
+                engineResult={twinEngineResult}
                 candidate={twinCandidate}
                 locale={locale}
                 formatNumber={numberFormat}

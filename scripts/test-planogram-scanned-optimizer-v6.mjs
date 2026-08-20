@@ -12,6 +12,7 @@ const binding = read("src/modules/planogram/PlanogramFixtureBindingPanel.jsx");
 const panel = read("src/modules/planogram/PlanogramScannedOptimizerPanel.jsx");
 const sanitizer = read("src/modules/planogram/planogramScannedOptimizer.js");
 const messages = read("src/platform/i18n/planogramScannedOptimizerMessages.js");
+const adapter = read("services/core-api/app/modules/planogram/scanned_optimizer_adapter.py");
 
 need(studio, "optimizationCandidate={candidate}", "Studio does not pass the candidate bundle into Store Scan");
 need(storeScan, "optimizationCandidate={optimizationCandidate}", "Store Scan does not forward candidate evidence");
@@ -25,6 +26,12 @@ need(panel, "PlanogramDigitalTwin", "V6 result does not render Digital Twin outp
 need(panel, "PlanogramPickerEyePreview", "V6 result does not render Picker Eye output");
 need(panel, "expected_scan_fingerprint", "V6 request is not fingerprint-bound");
 need(panel, "order_baskets: baskets", "V6 request does not carry anonymized baskets");
+need(panel, "representativeRouteOverlay", "V6 selected basket route is not projected into the Digital Twin");
+need(panel, "rankedCandidates", "V6 alternatives are not ranked on the product surface");
+need(panel, "architecture_route_objective_v2", "V6 route overlay is not wired to the arbitrary-angle Twin contract");
+need(adapter, "picker_tour_evidence_v2", "Server does not expose bounded selected-tour evidence");
+need(adapter, "basket_ref", "Server route evidence is not anonymized to basket references");
+need(adapter, "index >= 3", "Server route evidence is not bounded to three representative baskets");
 need(sanitizer, "fingerprint_bound_scanned_v2_optimizer_unattested", "V6 sanitizer authority contract drifted");
 need(sanitizer, "response.production_release_allowed", "V6 sanitizer does not fail closed on production release");
 need(sanitizer, "result.global_optimum_claim", "V6 sanitizer does not reject global-optimum authority leaks");
@@ -43,6 +50,9 @@ for (const locale of ["en", "tr", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-
 }
 
 console.log("PLANOGRAM_SCANNED_V6_STUDIO_CHAIN=PASS");
+console.log("PLANOGRAM_SCANNED_V6_RANKED_ALTERNATIVES=PASS");
+console.log("PLANOGRAM_SCANNED_V6_SELECTED_ROUTE_OVERLAY=PASS");
+console.log("PLANOGRAM_SCANNED_V6_ROUTE_EVIDENCE_ANONYMIZED=PASS");
 console.log("PLANOGRAM_SCANNED_V6_CLIENT_LAYOUT_AUTHORITY=FALSE");
 console.log("PLANOGRAM_SCANNED_V6_STORE_DNA_AUTHORITY=FALSE");
 console.log("PLANOGRAM_SCANNED_V6_DIGITAL_TWIN=PASS");

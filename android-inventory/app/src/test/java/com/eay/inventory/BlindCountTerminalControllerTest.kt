@@ -123,7 +123,7 @@ class BlindCountTerminalControllerTest {
     }
 
     @Test
-    fun `location completion advances only after durable queue insert`() = runBlocking {
+    fun `zero line location completion fails closed before queue insert`() = runBlocking {
         val sink = RecordingSink()
         val controller = controller(
             sink = sink,
@@ -134,15 +134,10 @@ class BlindCountTerminalControllerTest {
 
         val result = controller.completeLocation()
 
-        assertTrue(result.accepted)
-        assertNotNull(result.durableEvent)
-        assertEquals(BlindCountStep.COMPLETE, result.session.step)
-        assertEquals(1, sink.completionAttempts.size)
-        assertEquals(0, sink.completionAttempts.single().third)
-        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"event_kind\":\"LOCATION_COMPLETE\""))
-        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"confirmed_line_count\":0"))
-        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"attempt_id\":\"$ATTEMPT_ID\""))
-        assertTrue(result.durableEvent!!.canonicalPayload.contains("\"lease_id\":\"$LEASE_ID\""))
+        assertEquals(BlindCountControllerCode.DENY_FLOW, result.code)
+        assertEquals(com.eay.mobile.core.BlindCountCode.DENY_TARGET, result.flowCode)
+        assertEquals(BlindCountStep.SCAN_ITEM, result.session.step)
+        assertTrue(sink.completionAttempts.isEmpty())
     }
 
     @Test
@@ -161,6 +156,9 @@ class BlindCountTerminalControllerTest {
             occurredAtFactory = { currentOccurredAt },
         )
         controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+        assertTrue(controller.confirmItem().accepted)
 
         val first = controller.completeLocation()
         assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
@@ -176,11 +174,23 @@ class BlindCountTerminalControllerTest {
     @Test
     fun `expired lease blocks location completion before durable queue write`() = runBlocking {
         val sink = RecordingSink()
-        val controller = controller(
-            sink = sink,
-            occurredAt = "2026-08-18T15:16:00Z",
+        val occurredAt = ArrayDeque(
+            listOf("2026-08-18T15:05:00Z", "2026-08-18T15:16:00Z"),
+        )
+        val controller = BlindCountTerminalController(
+            target = BlindCountTarget(
+                missionId = "mission-1",
+                locationTokenHash = com.eay.mobile.core.BlindCountLocationToken.hash("A-04"),
+            ),
+            eventContext = context(),
+            leaseValidUntil = LEASE_VALID_UNTIL,
+            eventSink = sink,
+            occurredAtFactory = { occurredAt.removeFirst() },
         )
         controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+        assertTrue(controller.confirmItem().accepted)
 
         val result = controller.completeLocation()
 
@@ -214,6 +224,9 @@ class BlindCountTerminalControllerTest {
             occurredAt = "2026-08-18T15:05:00Z",
         )
         controller.onAcceptedScan(locationScan("A-04"))
+        controller.onAcceptedScan(itemScan())
+        controller.enterQuantity(5)
+        assertTrue(controller.confirmItem().accepted)
 
         val first = controller.completeLocation()
         assertEquals(BlindCountControllerCode.PERSIST_RETRY, first.code)
@@ -243,14 +256,17 @@ class BlindCountTerminalControllerTest {
 
     @Test
     fun `completion contract violation is not retried`() {
-        val sink = RecordingSink(contractFailure = true)
-        val controller = controller(sink = sink)
-        controller.onAcceptedScan(locationScan("A-04"))
+        val completionSink = RecordingSink(completionContractFailure = true)
+        val completionController = controller(sink = completionSink)
+        completionController.onAcceptedScan(locationScan("A-04"))
+        completionController.onAcceptedScan(itemScan())
+        completionController.enterQuantity(5)
+        runBlocking { completionController.confirmItem() }
 
         assertThrows(IllegalArgumentException::class.java) {
-            runBlocking { controller.completeLocation() }
+            runBlocking { completionController.completeLocation() }
         }
-        assertEquals(BlindCountStep.SCAN_ITEM, controller.session().step)
+        assertEquals(BlindCountStep.SCAN_ITEM, completionController.session().step)
     }
 
     @Test
@@ -350,6 +366,7 @@ class BlindCountTerminalControllerTest {
         var retryableLineFailuresRemaining: Int = 0,
         var retryableCompletionFailuresRemaining: Int = 0,
         val contractFailure: Boolean = false,
+        val completionContractFailure: Boolean = false,
     ) : BlindCountEventSink {
         val lineAttempts = mutableListOf<Pair<String, String>>()
         val completionAttempts = mutableListOf<Triple<String, String, Int>>()
@@ -389,7 +406,7 @@ class BlindCountTerminalControllerTest {
             occurredAt: String,
         ): OfflineEvent {
             completionAttempts += Triple(eventId, occurredAt, confirmedLineCount)
-            if (contractFailure) {
+            if (completionContractFailure) {
                 throw IllegalArgumentException("simulated immutable completion violation")
             }
             if (retryableCompletionFailuresRemaining > 0) {

@@ -190,7 +190,7 @@ class BlindCountFlowTest {
     }
 
     @Test
-    fun `verified empty location can be explicitly completed`() {
+    fun `location scan alone cannot assert an empty location`() {
         val target = BlindCountTarget(
             missionId = "mission-1",
             locationTokenHash = BlindCountLocationToken.hash("EMPTY-01"),
@@ -201,8 +201,8 @@ class BlindCountFlowTest {
             accepted("location-empty", "EMPTY-01"),
         ).session
         val completed = BlindCountFlow.completeLocation(verified, target)
-        assertTrue(completed.accepted)
+        assertEquals(BlindCountCode.DENY_TARGET, completed.code)
         assertEquals(0, completed.session.confirmedLineCount)
-        assertEquals(BlindCountStep.COMPLETE, completed.session.step)
+        assertEquals(BlindCountStep.SCAN_ITEM, completed.session.step)
     }
 }

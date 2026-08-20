@@ -183,6 +183,12 @@ object BlindCountFlow {
         if (!session.locationVerified || session.step != BlindCountStep.SCAN_ITEM) {
             return denied(BlindCountCode.DENY_STEP, session)
         }
+        // A location scan alone is not evidence that the location is empty.
+        // Empty-location completion requires a separate server-authorized,
+        // signed evidence flow; until that contract exists, fail closed.
+        if (session.confirmedLineCount == 0) {
+            return denied(BlindCountCode.DENY_TARGET, session)
+        }
         if (
             target.targetLineCount != null &&
             session.confirmedLineCount != target.targetLineCount

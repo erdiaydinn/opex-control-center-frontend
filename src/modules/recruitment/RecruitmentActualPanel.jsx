@@ -10,6 +10,11 @@ import "./recruitmentLifecycle.css";
 
 function today() { return new Date().toISOString().slice(0, 10); }
 function valueOrDash(value) { return value == null ? "—" : value; }
+function QualityStatus({ row, hasSnapshot, m }) {
+  if (row.hrActualUnmatched) return <span className="rec-status warning">{row.hrActualUnmatched} {m("actualUnmatched")}</span>;
+  if (hasSnapshot) return <span className="rec-status success">{m("reconciled")}</span>;
+  return <span className="rec-status neutral">{m("snapshotWaiting")}</span>;
+}
 
 export default function RecruitmentActualPanel({ data, refresh, flash, setError, canManage = false }) {
   const { locale } = usePlatformPreferences();
@@ -70,7 +75,7 @@ export default function RecruitmentActualPanel({ data, refresh, flash, setError,
           <td><span className={`rec-status ${row.hrActualDelta == null ? "neutral" : row.hrActualDelta === 0 ? "success" : "warning"}`}>{valueOrDash(row.hrActualDelta)}</span></td>
           <td>{row.openPositions}</td>
           <td><strong>{row.available}</strong></td>
-          <td>{row.hrActualUnmatched ? <span className="rec-status warning">{row.hrActualUnmatched} {m("actualUnmatched")}</span> : snapshot ? <span className="rec-status success">{m("reconciled")}</span> : <span className="rec-status neutral">{m("snapshotWaiting")}</span>}</td>
+          <td><QualityStatus row={row} hasSnapshot={Boolean(snapshot)} m={m} /></td>
         </tr>)}
       </tbody></table>{!rows.length && <div className="rec-empty">{m("noStaffingRows")}</div>}</div>
       <p className="rec-config-note"><ShieldCheck size={15} />{m("authorityNote")}</p>

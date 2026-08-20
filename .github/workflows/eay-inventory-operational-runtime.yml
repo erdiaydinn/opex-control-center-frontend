@@ -1,0 +1,133 @@
+name: EAY Inventory Operational Runtime
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "backend/app/modules/inventory/operational_*.py"
+      - "backend/app/modules/inventory/test_operational_runtime_authority.py"
+      - "backend/migrations/007_inventory_operational_missions.sql"
+      - "backend/migrations/008_inventory_operational_business_authority.sql"
+      - "backend/migrations/009_inventory_operational_runtime_authority.sql"
+      - "android-inventory/app/src/main/java/com/eay/inventory/InventoryOperational*.kt"
+      - "android-inventory/app/src/main/java/com/eay/inventory/TerminalFeedback.kt"
+      - "android-inventory/app/src/test/java/com/eay/inventory/InventoryOperational*.kt"
+      - "android-inventory/app/src/test/java/com/eay/inventory/TerminalFeedbackContractTest.kt"
+      - "ops/inventory/verify-android-production.sh"
+      - ".github/workflows/eay-inventory-operational-runtime.yml"
+  push:
+    branches:
+      - agent/eay-mobile-platform-foundation-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  operational-postgres-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_inventory_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_inventory_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 12
+    env:
+      PYTHONPATH: backend
+      INVENTORY_DATABASE_URL: postgresql://inventory_runtime:inventory_runtime@127.0.0.1:5432/eay_inventory_test
+      INVENTORY_REDIS_URL: redis://127.0.0.1:6379/3
+      INVENTORY_TEST_TENANT: eay-inventory-ci
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - name: Apply authoritative Inventory migrations
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t migrations < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${migrations[@]}"; do
+            version_text="$(basename "$migration")"
+            version_text="${version_text%%_*}"
+            version=$((10#$version_text))
+            (( version < 3 )) && continue
+            psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Create tenant-bound runtime role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d eay_inventory_test -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE inventory_runtime LOGIN PASSWORD 'inventory_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          GRANT CONNECT ON DATABASE eay_inventory_test TO inventory_runtime;
+          GRANT USAGE ON SCHEMA public TO inventory_runtime;
+          GRANT SELECT ON inventory_schema_migrations TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_devices,inventory_device_activation_codes,inventory_device_nonces,inventory_documents,inventory_document_locations,inventory_expected_stock,inventory_events,inventory_event_responses,inventory_revisions,inventory_audit,inventory_outbox TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_mission_attempts TO inventory_runtime;
+          GRANT SELECT,INSERT ON inventory_mission_leases,inventory_mission_lease_closures TO inventory_runtime;
+          GRANT UPDATE (lease_id) ON inventory_mission_leases TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_operational_missions,inventory_operational_claims TO inventory_runtime;
+          GRANT SELECT,INSERT ON inventory_operational_events,inventory_operational_event_responses TO inventory_runtime;
+          GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO inventory_runtime;
+          GRANT EXECUTE ON FUNCTION inventory_current_tenant() TO inventory_runtime;
+          INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');
+          SQL
+      - name: Prove signed claims, supervisor release and replacement recovery
+        run: python -m unittest -v backend.app.modules.inventory.test_operational_runtime_authority
+      - name: Replay v9 migration idempotently
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test
+          -v ON_ERROR_STOP=1
+          -f backend/migrations/009_inventory_operational_runtime_authority.sql
+
+  operational-android-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android-inventory
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Static production authority and feedback contract
+        working-directory: .
+        run: sh ops/inventory/verify-android-production.sh
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: "8.9"
+      - name: Operational contract unit tests and compile
+        run: >-
+          gradle --no-daemon
+          :app:testDebugUnitTest
+          :app:lintDebug
+          :app:assembleDebug

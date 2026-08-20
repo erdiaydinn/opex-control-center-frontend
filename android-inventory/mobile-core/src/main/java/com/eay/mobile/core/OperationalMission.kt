@@ -1,5 +1,10 @@
 package com.eay.mobile.core
 
+import java.math.BigDecimal
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Locale
+
 /** Executable workflow contract for the four physical inventory operations. */
 enum class OperationalMissionType { PICKING, PUTAWAY, RECEIVING, TRANSFER }
 
@@ -46,6 +51,57 @@ data class OperationalMissionDefinition(
             id, OperationalMissionType.TRANSFER, "inventory.transfer.capture",
             listOf(OperationalStepKind.SOURCE_LOCATION, OperationalStepKind.ITEM, OperationalStepKind.QUANTITY, OperationalStepKind.DESTINATION_LOCATION, OperationalStepKind.COMPLETE),
         )
+    }
+}
+
+/**
+ * Canonicalizes the raw physical value before it is device-signature bound.
+ * Raw ITEM values are intentionally not carried by OperationalStepEvidence:
+ * the backend verifies this hash against server-frozen mission intent and
+ * persists only the safe SKU projection.
+ */
+object OperationalValueCanonicalizer {
+    private val codeSteps = setOf(
+        OperationalStepKind.SOURCE_LOCATION,
+        OperationalStepKind.DESTINATION_LOCATION,
+        OperationalStepKind.CONDITION,
+        OperationalStepKind.CONTAINER,
+        OperationalStepKind.COMPLETE,
+    )
+
+    fun normalize(kind: OperationalStepKind, rawValue: String): String {
+        val trimmed = rawValue.trim()
+        require(trimmed.isNotEmpty()) { "Operational value must not be blank" }
+        return when {
+            kind == OperationalStepKind.QUANTITY -> {
+                val value = BigDecimal(trimmed)
+                require(value >= BigDecimal.ZERO && value <= BigDecimal("1000000")) {
+                    "Operational quantity is outside the accepted range"
+                }
+                if (value.compareTo(BigDecimal.ZERO) == 0) "0" else value.stripTrailingZeros().toPlainString()
+            }
+            kind in codeSteps -> {
+                val normalized = trimmed.uppercase(Locale.ROOT)
+                if (kind == OperationalStepKind.COMPLETE) {
+                    require(normalized == "COMPLETE") { "Completion value must be COMPLETE" }
+                }
+                normalized
+            }
+            else -> trimmed
+        }
+    }
+
+    fun hash(kind: OperationalStepKind, rawValue: String): String {
+        val normalized = normalize(kind, rawValue)
+        val material = lengthPrefix(kind.name) + lengthPrefix(normalized)
+        return MessageDigest.getInstance("SHA-256")
+            .digest(material.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun lengthPrefix(value: String): String {
+        val size = value.toByteArray(StandardCharsets.UTF_8).size
+        return "$size:$value"
     }
 }
 

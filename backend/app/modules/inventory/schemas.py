@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -161,20 +163,42 @@ class RecoveryDispositionCreate(BaseModel):
     )
     reason: str = Field(min_length=3, max_length=500)
 
+
 class OperationalMissionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    warehouse_id: str = Field(min_length=1,max_length=120)
+
+    warehouse_id: str = Field(min_length=1, max_length=120)
     mission_type: str = Field(pattern="^(PICKING|PUTAWAY|RECEIVING|TRANSFER)$")
-    external_reference: str = Field(min_length=1,max_length=160)
+    external_reference: str = Field(min_length=1, max_length=160)
+    sku_id: str = Field(min_length=1, max_length=160)
+    # This value crosses only the authenticated backend boundary. It is hashed
+    # immediately and is never stored or returned as mission presentation truth.
+    item_barcode: str = Field(min_length=1, max_length=160)
+    planned_quantity: Decimal = Field(gt=0, le=1_000_000)
+    source_location_id: str | None = Field(default=None, min_length=1, max_length=120)
+    destination_location_id: str | None = Field(default=None, min_length=1, max_length=120)
+    container_id: str | None = Field(default=None, min_length=1, max_length=160)
+    allowed_conditions: list[str] = Field(
+        default_factory=lambda: ["GOOD", "DAMAGED", "EXPIRED", "NO_BARCODE"],
+        min_length=1,
+        max_length=16,
+    )
+
 
 class OperationalEventCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
     event_id: str
     mission_id: str
     claim_id: str
-    active_shift_id: str = Field(min_length=1,max_length=128)
+    active_shift_id: str = Field(min_length=1, max_length=128)
     device_sequence: int = Field(gt=0)
-    step_kind: str = Field(pattern="^(SOURCE_LOCATION|DESTINATION_LOCATION|ITEM|QUANTITY|CONDITION|CONTAINER|COMPLETE)$")
+    step_kind: str = Field(
+        pattern="^(SOURCE_LOCATION|DESTINATION_LOCATION|ITEM|QUANTITY|CONDITION|CONTAINER|COMPLETE)$"
+    )
+    # The raw step value is accepted only to verify the signed value hash and
+    # frozen mission intent. ITEM is never persisted or returned in raw form.
+    value: str = Field(min_length=1, max_length=200)
     value_hash: str = Field(pattern="^[0-9a-f]{64}$")
-    occurred_at: str = Field(min_length=20,max_length=50)
+    occurred_at: str = Field(min_length=20, max_length=50)
     payload_hash: str = Field(pattern="^[0-9a-f]{64}$")

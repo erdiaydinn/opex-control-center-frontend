@@ -1,6 +1,7 @@
 package com.eay.mobile.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -62,6 +63,18 @@ class OperationalMissionTest {
         assertEquals(
             OperationalCaptureCode.EVENT_SUBSTITUTION,
             OperationalMissionReducer.captureEnvelope(session, OperationalStepKind.ITEM, event.copy(operation = "inventory.pick.capture")).code,
+        )
+    }
+
+    @Test fun `typed values canonicalize identically before signing`() {
+        assertEquals("A-04-02", OperationalValueCanonicalizer.normalize(OperationalStepKind.SOURCE_LOCATION, " a-04-02 "))
+        assertEquals("12", OperationalValueCanonicalizer.normalize(OperationalStepKind.QUANTITY, "12.000"))
+        assertEquals("0", OperationalValueCanonicalizer.normalize(OperationalStepKind.QUANTITY, "0.000"))
+        assertEquals("GOOD", OperationalValueCanonicalizer.normalize(OperationalStepKind.CONDITION, "good"))
+        assertEquals(64, OperationalValueCanonicalizer.hash(OperationalStepKind.ITEM, "8690000000001").length)
+        assertNotEquals(
+            OperationalValueCanonicalizer.hash(OperationalStepKind.ITEM, "8690000000001"),
+            OperationalValueCanonicalizer.hash(OperationalStepKind.ITEM, "8690000000002"),
         )
     }
 }

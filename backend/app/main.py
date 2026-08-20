@@ -12,32 +12,17 @@ from prometheus_client import Counter, Histogram, make_asgi_app
 
 from app.modules.dockos import router as dockos_router_module
 from app.modules.dockos import service as dockos_service
-from app.modules.dockos.identity import (
-    authenticate_request as authenticate_dockos_request,
-    reset_identity as reset_dockos_identity,
-    set_identity as set_dockos_identity,
-    verify_gateway as verify_dockos_gateway,
-)
-from app.modules.dockos.observability import (
-    record_reservation,
-    render_prometheus as render_dockos_prometheus,
-    snapshot as dockos_snapshot,
-)
-from app.modules.dockos.persistence import (
-    persistence_mode as dockos_persistence_mode,
-    refresh_state as refresh_dockos_state,
-)
-from app.modules.dockos.production_runtime import (
-    install_service_security as install_dockos_service_security,
-    readiness_checks as dockos_readiness_checks,
-    sync_bigquery_purchase_orders as sync_dockos_bigquery_purchase_orders,
-)
+from app.modules.dockos.identity import authenticate_request as authenticate_dockos_request, reset_identity as reset_dockos_identity, set_identity as set_dockos_identity, verify_gateway as verify_dockos_gateway
+from app.modules.dockos.observability import record_reservation, render_prometheus as render_dockos_prometheus, snapshot as dockos_snapshot
+from app.modules.dockos.persistence import persistence_mode as dockos_persistence_mode, refresh_state as refresh_dockos_state
+from app.modules.dockos.production_runtime import install_service_security as install_dockos_service_security, readiness_checks as dockos_readiness_checks, sync_bigquery_purchase_orders as sync_dockos_bigquery_purchase_orders
 from app.modules.dockos.router import router as dockos_router
 from app.modules.dockos.runtime_db import pool as dockos_db_pool
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import bootstrap_admin, initialize as initialize_identity
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
+from app.modules.recruitment.orchestration_router import public_router as recruitment_public_orchestration_router, router as recruitment_orchestration_router
 from app.modules.recruitment.production_evidence_router import router as recruitment_production_evidence_router
 from app.modules.recruitment.production_startup_guard import assert_recruitment_production_ready
 from app.modules.recruitment.router import router as recruitment_router
@@ -50,53 +35,24 @@ from app.modules.workforce.service import WorkforceRuleError, initialize_workfor
 from app.security import WorkforceIdentityMiddleware
 
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 LOGGER = logging.getLogger("opex.api")
-REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "HTTP requests",
-    ["method", "path", "status"],
-)
-REQUEST_LATENCY = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request latency",
-    ["method", "path"],
-)
+REQUEST_COUNT = Counter("http_requests_total", "HTTP requests", ["method", "path", "status"])
+REQUEST_LATENCY = Histogram("http_request_duration_seconds", "HTTP request latency", ["method", "path"])
 DOCKOS_PRODUCTION = os.getenv("DOCKOS_ENV", "development").lower() == "production"
 
 if os.getenv("SENTRY_DSN"):
     import sentry_sdk
-
-    sentry_sdk.init(
-        dsn=os.environ["SENTRY_DSN"],
-        environment=os.getenv("DOCKOS_ENV", "development"),
-        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
-        send_default_pii=False,
-    )
-
+    sentry_sdk.init(dsn=os.environ["SENTRY_DSN"], environment=os.getenv("DOCKOS_ENV", "development"), traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")), send_default_pii=False)
 
 if DOCKOS_PRODUCTION:
-    # The service may inspect the legacy function arguments, but authority is the
-    # request-scoped identity established only after HMAC gateway + OIDC checks.
     install_dockos_service_security(dockos_service)
     dockos_router_module.is_admin = dockos_service.is_admin
 
-    def _production_live_pos(
-        supplier_name=None,
-        warehouse_name=None,
-        user_email=None,
-        user_role=None,
-    ):
+    def _production_live_pos(supplier_name=None, warehouse_name=None, user_email=None, user_role=None):
         if supplier_name:
             dockos_service.assert_supplier_access(user_email, supplier_name, user_role)
-        return sync_dockos_bigquery_purchase_orders(
-            dockos_service,
-            supplier_name,
-            warehouse_name,
-        )
+        return sync_dockos_bigquery_purchase_orders(dockos_service, supplier_name, warehouse_name)
 
     dockos_router_module.get_live_purchase_orders = _production_live_pos
     dockos_service.get_live_purchase_orders = _production_live_pos
@@ -115,10 +71,7 @@ async def lifespan(_: FastAPI):
 
 
 def _cors_origins() -> list[str]:
-    raw = os.getenv(
-        "OPEX_CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080",
-    )
+    raw = os.getenv("OPEX_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
@@ -132,62 +85,22 @@ def _dockos_pool_stats() -> dict:
 
 
 def _replace_verified_dockos_headers(request: Request, email: str, role: str) -> None:
-    """Remove spoofable client identity and inject only verified server identity.
-
-    DockOS route signatures still accept historical X-OPEX arguments. In production
-    those values are never taken from the client: this middleware replaces them
-    after both gateway HMAC verification and OIDC token verification succeed.
-    The legacy simple gateway header is also generated internally only so the
-    RC7.5 router dependency cannot become an alternate client-authentication path.
-    """
     blocked = {b"x-opex-user", b"x-opex-role", b"x-dockos-gateway"}
     headers = [(key, value) for key, value in request.scope["headers"] if key not in blocked]
-    headers.extend(
-        [
-            (b"x-opex-user", email.encode("utf-8")),
-            (b"x-opex-role", role.encode("utf-8")),
-            (b"x-dockos-gateway", os.environ["DOCKOS_GATEWAY_SECRET"].encode("utf-8")),
-        ]
-    )
+    headers.extend([(b"x-opex-user", email.encode("utf-8")), (b"x-opex-role", role.encode("utf-8")), (b"x-dockos-gateway", os.environ["DOCKOS_GATEWAY_SECRET"].encode("utf-8"))])
     request.scope["headers"] = headers
 
 
-app = FastAPI(
-    title="EAY Platform API",
-    version="26.6.0-converged",
-    docs_url="/api/docs" if not DOCKOS_PRODUCTION else None,
-    redoc_url=None,
-    openapi_url="/api/openapi.json" if not DOCKOS_PRODUCTION else None,
-    lifespan=lifespan,
-)
-
+app = FastAPI(title="EAY Platform API", version="26.6.0-converged", docs_url="/api/docs" if not DOCKOS_PRODUCTION else None, redoc_url=None, openapi_url="/api/openapi.json" if not DOCKOS_PRODUCTION else None, lifespan=lifespan)
 app.add_middleware(WorkforceIdentityMiddleware)
 
 
 @app.exception_handler(WorkforceRuleError)
 async def workforce_conflict_handler(_: Request, error: WorkforceRuleError):
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": str(error)},
-    )
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins(),
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Accept",
-        "Authorization",
-        "Content-Type",
-        "X-Request-ID",
-        "X-EAY-Upload-Capability",
-        "X-DockOS-Gateway-Timestamp",
-        "X-DockOS-Gateway-Nonce",
-        "X-DockOS-Gateway-Signature",
-    ],
-)
+app.add_middleware(CORSMiddleware, allow_origins=_cors_origins(), allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID", "X-EAY-Upload-Capability", "X-DockOS-Gateway-Timestamp", "X-DockOS-Gateway-Nonce", "X-DockOS-Gateway-Signature"])
 
 
 @app.middleware("http")
@@ -196,7 +109,6 @@ async def dockos_production_boundary(request: Request, call_next):
     started = time.perf_counter()
     status_code = 500
     identity_token = None
-
     if DOCKOS_PRODUCTION and path == "/api/dockos/readiness":
         try:
             if dockos_persistence_mode() == "postgres":
@@ -204,35 +116,12 @@ async def dockos_production_boundary(request: Request, call_next):
             checks = dockos_readiness_checks(dockos_service)
             slo = dockos_snapshot(dockos_service, _dockos_pool_stats())
             status_code = 200 if all(item["ok"] for item in checks) else 503
-            return JSONResponse(
-                {
-                    "ready": status_code == 200,
-                    "release": "EAY-converged-production-candidate",
-                    "checks": checks,
-                    "slo": slo,
-                },
-                status_code=status_code,
-            )
+            return JSONResponse({"ready": status_code == 200, "release": "EAY-converged-production-candidate", "checks": checks, "slo": slo}, status_code=status_code)
         except Exception as error:
-            return JSONResponse(
-                {
-                    "ready": False,
-                    "release": "EAY-converged-production-candidate",
-                    "checks": [
-                        {
-                            "key": "readiness",
-                            "ok": False,
-                            "detail": str(error)[:300],
-                        }
-                    ],
-                },
-                status_code=503,
-            )
-
+            return JSONResponse({"ready": False, "release": "EAY-converged-production-candidate", "checks": [{"key": "readiness", "ok": False, "detail": str(error)[:300]}]}, status_code=503)
     protected = path.startswith("/api/dockos") and not path.endswith("/health")
     try:
         if DOCKOS_PRODUCTION and protected:
-            # Verify the original request before replacing any legacy route headers.
             verify_dockos_gateway(request)
             identity = authenticate_dockos_request(request)
             identity_token = set_dockos_identity(identity)
@@ -240,7 +129,6 @@ async def dockos_production_boundary(request: Request, call_next):
             refresh_dockos_state()
         elif dockos_persistence_mode() == "postgres" and path.startswith("/api/dockos"):
             refresh_dockos_state()
-
         response = await call_next(request)
         status_code = response.status_code
         if DOCKOS_PRODUCTION:
@@ -277,32 +165,24 @@ async def request_context(request: Request, call_next):
     REQUEST_COUNT.labels(request.method, route_path, str(response.status_code)).inc()
     REQUEST_LATENCY.labels(request.method, route_path).observe(perf_counter() - started)
     response.headers["X-Request-ID"] = request_id
-    LOGGER.info(
-        "request method=%s path=%s status=%s request_id=%s",
-        request.method,
-        request.url.path,
-        response.status_code,
-        request_id,
-    )
+    LOGGER.info("request method=%s path=%s status=%s request_id=%s", request.method, request.url.path, response.status_code, request_id)
     return response
 
 
 @app.get("/api/dockos/ops/metrics", include_in_schema=False)
 def dockos_metrics():
-    return PlainTextResponse(
-        render_dockos_prometheus(dockos_snapshot(dockos_service, _dockos_pool_stats())),
-        media_type="text/plain; version=0.0.4",
-    )
+    return PlainTextResponse(render_dockos_prometheus(dockos_snapshot(dockos_service, _dockos_pool_stats())), media_type="text/plain; version=0.0.4")
 
 
 app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(workforce_flexibility_router, prefix="/api")
-# Scanner service ingress must win route precedence before legacy callback definitions.
+app.include_router(recruitment_public_orchestration_router, prefix="/api")
 app.include_router(recruitment_scanner_callback_router, prefix="/api")
-# Priority encrypted evidence routes intentionally precede the legacy recruitment router.
 app.include_router(recruitment_production_evidence_router, prefix="/api")
+# Orchestration precedes legacy recruitment so hire activation is fail-closed on readiness.
+app.include_router(recruitment_orchestration_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")
 app.include_router(inventory_router, prefix="/api")
 app.include_router(identity_router, prefix="/api")
@@ -311,9 +191,4 @@ app.mount("/metrics", make_asgi_app())
 
 @app.get("/health", include_in_schema=False)
 def root_health():
-    return {
-        "status": "ok",
-        "service": "eay-platform-backend",
-        "release": "convergence-v0.1",
-        "dockos_persistence": dockos_persistence_mode(),
-    }
+    return {"status": "ok", "service": "eay-platform-backend", "release": "convergence-v0.1", "dockos_persistence": dockos_persistence_mode()}

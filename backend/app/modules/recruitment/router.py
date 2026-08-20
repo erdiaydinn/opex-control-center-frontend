@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import quote
+from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app.modules.workforce.authorization import is_action_allowed
 from app.modules.workforce import persistence
 from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
+from .candidate_evidence_runtime import (
+    CandidateEvidenceRuntimeError,
+    read_candidate_evidence,
+    secure_hr_candidate_upload,
+)
 from .hr_actual import build_dashboard, enrich_evaluation, import_snapshot, snapshot_summary
+from .official_document_m2m_runtime import (
+    OfficialM2MRuntimeError,
+    OfficialM2MVerificationRequest,
+    verify_authorized_candidate_document,
+)
 from .schemas import (
     RecruitmentCandidateCreate, RecruitmentCandidateDecision, RecruitmentCandidateDocumentAttestation,
     RecruitmentCandidateUploadCapabilityCreate,
@@ -22,7 +34,6 @@ from .service import (
     add_candidate_evidence,
     add_evidence,
     activate_hire,
-    candidate_evidence_path,
     create_request,
     decide_request,
     decide_candidate,
@@ -64,16 +75,27 @@ async def _read_upload_limited(file: UploadFile, limit: int = 10 * 1024 * 1024) 
 def _require_candidate_upload_authority_runtime() -> None:
     environment = os.getenv("DOCKOS_ENV", "development").strip().lower()
     mode = os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "disabled").strip().lower()
-    postgres_ready = mode == "postgres" and persistence.ENABLED and persistence.schema_version() >= 39
+    storage_mode = os.getenv("RECRUITMENT_EVIDENCE_STORAGE_MODE", "disabled").strip().lower()
+    required_schema = 40 if environment == "production" or storage_mode == "s3-kms-envelope" else 39
+    postgres_ready = (
+        mode == "postgres"
+        and persistence.ENABLED
+        and (persistence.schema_version() or 0) >= required_schema
+    )
     legacy_ready = environment != "production" and mode == "legacy-development"
-    if not (postgres_ready or legacy_ready):
+    encrypted_storage_ready = environment != "production" or storage_mode == "s3-kms-envelope"
+    if not ((postgres_ready or legacy_ready) and encrypted_storage_ready):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "code": "CANDIDATE_UPLOAD_AUTHORITY_NOT_READY",
-                "message": "Aday yükleme otoritesi atomik PostgreSQL finalize olmadan etkinleştirilemez.",
+                "message": (
+                    "Aday yükleme otoritesi production PostgreSQL V40 ve "
+                    "KMS/envelope storage olmadan etkinleştirilemez."
+                ),
             },
         )
+
 
 _HR_ACTIONS = {
     "viewRecruitment", "createRecruitmentRequest", "approveRecruitmentRequest",
@@ -264,7 +286,13 @@ async def upload_evidence(
     _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     actor, _ = _identity(request)
     try:
-        return add_evidence(request_id, file.filename or "document", file.content_type or "application/octet-stream", await file.read(), actor)
+        return add_evidence(
+            request_id,
+            file.filename or "document",
+            file.content_type or "application/octet-stream",
+            await file.read(),
+            actor,
+        )
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -280,7 +308,6 @@ def download_evidence(
     try:
         path, metadata = evidence_path(request_id)
         actor, _ = _identity(request)
-        from app.modules.workforce import persistence
         persistence.append_audit(
             "RECRUITMENT_EVIDENCE_ACCESSED", actor, record_id=request_id,
             evidence_sha256=metadata.get("sha256"),
@@ -349,12 +376,34 @@ async def upload_candidate_evidence(
     _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     actor, _ = _identity(request)
     try:
+        content = await _read_upload_limited(file)
+        content_type = file.content_type or "application/octet-stream"
+        environment = os.getenv("DOCKOS_ENV", "development").strip().lower()
+        storage_mode = os.getenv("RECRUITMENT_EVIDENCE_STORAGE_MODE", "disabled").strip().lower()
+        if environment == "production" or storage_mode == "s3-kms-envelope":
+            _require_candidate_upload_authority_runtime()
+            if content_type not in {"application/pdf", "image/jpeg", "image/png"}:
+                raise RecruitmentRuleError("Aday kanıtı PDF/JPG/PNG olmalıdır.")
+            _validate_candidate_document_bytes(content_type, content)
+            return secure_hr_candidate_upload(
+                request_id,
+                candidate_id,
+                filename=file.filename or "document",
+                content_type=content_type,
+                content=content,
+                document_type=document_type.strip().upper(),
+                actor=actor,
+            )
         return add_candidate_evidence(
-            request_id, candidate_id, file.filename or "document",
-            file.content_type or "application/octet-stream", await _read_upload_limited(file), actor,
+            request_id,
+            candidate_id,
+            file.filename or "document",
+            content_type,
+            content,
+            actor,
             document_type=document_type,
         )
-    except RecruitmentRuleError as error:
+    except (RecruitmentRuleError, CandidateEvidenceRuntimeError) as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
@@ -434,7 +483,7 @@ def verify_candidate_document(
     """Record a human-witnessed result from the official e-Devlet portal.
 
     This endpoint deliberately cannot claim an automated official API result.
-    Such authority must arrive through a separately authenticated service adapter.
+    Such authority must arrive through the separately authenticated M2M route.
     """
     _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
     _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
@@ -447,6 +496,36 @@ def verify_candidate_document(
         )
     except RecruitmentRuleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/requests/{request_id}/candidates/{candidate_id}/document-verifications/official-m2m")
+def verify_candidate_document_official_m2m(
+    request_id: str,
+    candidate_id: str,
+    payload: OfficialM2MVerificationRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Verify through an explicitly authorized institutional M2M contract only."""
+    _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
+    _require(x_opex_role, x_opex_permissions, "approveRecruitmentRequest")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    actor, _ = _identity(request)
+    correlation_id = request.headers.get("x-request-id") or str(uuid4())
+    try:
+        return verify_authorized_candidate_document(
+            request_id,
+            candidate_id,
+            payload,
+            actor=actor,
+            correlation_id=correlation_id,
+        )
+    except OfficialM2MRuntimeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "OFFICIAL_M2M_NOT_VERIFIED", "message": str(error)},
+        ) from error
 
 
 @router.post("/requests/{request_id}/candidates/{candidate_id}/document-verifications/attest")
@@ -491,18 +570,25 @@ def download_candidate_evidence(
     _require(x_opex_role, x_opex_permissions, "viewRecruitmentEvidence")
     _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
     try:
-        path, metadata = candidate_evidence_path(request_id, candidate_id, digest)
+        content, metadata = read_candidate_evidence(request_id, candidate_id, digest)
         actor, _ = _identity(request)
-        from app.modules.workforce import persistence
         persistence.append_audit(
             "RECRUITMENT_CANDIDATE_EVIDENCE_ACCESSED", actor, record_id=request_id,
             candidate_id=candidate_id, evidence_sha256=metadata.get("sha256"),
+            storage_backend=metadata.get("storage_backend", "LEGACY_LOCAL"),
         )
-        return FileResponse(
-            path, media_type=metadata["content_type"], filename=metadata["original_name"],
-            headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"},
+        filename = quote(str(metadata.get("original_name") or "candidate-evidence")[:240])
+        return Response(
+            content=content,
+            media_type=metadata["content_type"],
+            headers={
+                "Cache-Control": "no-store, private",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            },
         )
-    except RecruitmentRuleError as error:
+    except CandidateEvidenceRuntimeError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 

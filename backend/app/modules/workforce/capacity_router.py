@@ -21,6 +21,9 @@ from .optimizer_router import router as optimizer_router
 from .override_learning_router import router as override_learning_router
 from .replan_router import router as replan_router
 from .skill_capacity import SkillDemand
+from .work_activity_capacity_runtime import build_scheduled_capacity_plan
+from .work_activity_runtime import WorkActivityRuntimeError
+from .work_activity_schemas import WorkActivityDemandPreviewRequest
 
 
 router = APIRouter(prefix="/workforce", tags=["Workforce Capacity"])
@@ -120,6 +123,31 @@ def create_capacity_snapshot(
     # Numeric API convenience while preserving exact decimal components above.
     response["effective_capacity"] = float(snapshot.effective_capacity)
     response["scheduled_fte"] = float(snapshot.scheduled_fte)
+    return response
+
+
+@router.post("/activity-capacity-preview")
+def activity_capacity_preview(
+    payload: WorkActivityDemandPreviewRequest,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict[str, object]:
+    """Compare governed demand with canonical scheduled capability capacity."""
+    _require_any(x_opex_role, x_opex_permissions, "manageStaffingNorms")
+    location_id = _canonical_location_in_scope(request, x_opex_role, payload.worksite_id)
+    try:
+        plan = build_scheduled_capacity_plan(
+            worksite_id=location_id,
+            interval_start=payload.interval_start,
+            interval_minutes=payload.interval_minutes,
+            model_version=payload.model_version,
+            signals=[row.model_dump(mode="json") for row in payload.signals],
+        )
+    except WorkActivityRuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    response = plan.as_record()
+    response["capacity_mode"] = "SCHEDULED_CAPABILITY"
     return response
 
 

@@ -5,10 +5,16 @@ rather than introducing a competing mutable truth store. A terminal can request
 review of one immutable event identity, but it cannot retry, delete, rebind or
 promote that event. Supervisor dispositions are maker-checker and stock-neutral;
 mission reassignment remains the existing server-owned authority path.
+
+Every state-changing recovery command is bound to the same managed-device
+request-proof contract as mission/count mutations: canonical request hash + fresh
+timestamp + nonce + hardware-backed P-256 signature. OIDC alone is not sufficient
+for a production recovery mutation.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 from uuid import UUID, uuid4
@@ -19,6 +25,7 @@ from .production import (
     _assert_active_device,
     _assert_runtime_tenant,
     _audit,
+    _verify_device_proof,
     connect,
 )
 from .service import InventoryRuleError
@@ -50,6 +57,45 @@ def _uuid(value: str | UUID, label: str) -> UUID:
         raise InventoryRuleError(f"{label} UUID geçersiz.") from error
 
 
+def _sha256_json(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def recovery_request_hash(payload: dict[str, Any]) -> str:
+    """Canonical device-proof hash for opening a recovery case."""
+
+    normalized = {
+        "document_id": str(_uuid(payload["document_id"], "Document")),
+        "event_id": str(_uuid(payload["event_id"], "Event")),
+        "location_id": str(payload["location_id"]).strip().upper(),
+        "payload_hash": str(payload["payload_hash"]).strip().lower(),
+        "quarantine_reason": str(payload["quarantine_reason"]).strip().upper(),
+        "server_code": str(payload.get("server_code") or "").strip() or None,
+    }
+    return _sha256_json(normalized)
+
+
+def recovery_disposition_hash(
+    case_id: str | UUID,
+    decision: str,
+    reason: str,
+) -> str:
+    """Canonical device-proof hash for a supervisor disposition."""
+
+    normalized = {
+        "case_id": str(_uuid(case_id, "Recovery case")),
+        "decision": str(decision).strip().upper(),
+        "reason": str(reason).strip(),
+    }
+    return _sha256_json(normalized)
+
+
 def _request_record(db: Any, tenant_id: str, case_id: UUID) -> dict[str, Any] | None:
     row = db.execute(
         """SELECT employee_id,record
@@ -69,6 +115,9 @@ def _request_record(db: Any, tenant_id: str, case_id: UUID) -> dict[str, Any] | 
 def request_recovery_case(
     principal: InventoryPrincipal,
     payload: dict[str, Any],
+    request_timestamp: str,
+    request_nonce: str,
+    device_signature: str,
 ) -> dict[str, Any]:
     """Open one idempotent review case without uploading protected event payload."""
 
@@ -85,12 +134,21 @@ def request_recovery_case(
         raise InventoryRuleError("Recovery payload hash SHA-256 olmalıdır.")
     if not location_id:
         raise InventoryRuleError("Recovery lokasyonu zorunludur.")
+    command_hash = recovery_request_hash(payload)
 
     with connect() as db:
         try:
             db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
             _assert_runtime_tenant(db, principal)
             _assert_active_device(db, principal)
+            _verify_device_proof(
+                db,
+                principal,
+                command_hash,
+                request_timestamp,
+                request_nonce,
+                device_signature,
+            )
             db.execute(
                 "SELECT pg_advisory_xact_lock(%s)",
                 (_advisory_key(f"recovery:{principal.tenant_id}:{event_id}:{payload_hash}"),),
@@ -161,6 +219,7 @@ def request_recovery_case(
                 "source_device_id": str(principal.device_id),
                 "source_employee_id": principal.employee_id,
                 "authoritative_event_match": authoritative_match,
+                "command_hash": command_hash,
                 "evidence_policy": "PRESERVE_NO_CLIENT_PROMOTION",
             }
             _audit(
@@ -221,8 +280,11 @@ def disposition_recovery_case(
     case_id: str | UUID,
     decision: str,
     reason: str,
+    request_timestamp: str,
+    request_nonce: str,
+    device_signature: str,
 ) -> dict[str, Any]:
-    """Append a maker-checker disposition; never mutate quarantined evidence."""
+    """Append a signed maker-checker disposition; never mutate quarantined evidence."""
 
     principal.validate()
     parsed_case_id = _uuid(case_id, "Recovery case")
@@ -232,12 +294,21 @@ def disposition_recovery_case(
         raise InventoryRuleError("Recovery disposition kararı geçersiz.")
     if len(reason) < 3:
         raise InventoryRuleError("Recovery disposition nedeni zorunludur.")
+    command_hash = recovery_disposition_hash(parsed_case_id, decision, reason)
 
     with connect() as db:
         try:
             db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
             _assert_runtime_tenant(db, principal)
             _assert_active_device(db, principal)
+            _verify_device_proof(
+                db,
+                principal,
+                command_hash,
+                request_timestamp,
+                request_nonce,
+                device_signature,
+            )
             db.execute(
                 "SELECT pg_advisory_xact_lock(%s)",
                 (_advisory_key(f"recovery-case:{principal.tenant_id}:{parsed_case_id}"),),
@@ -310,6 +381,7 @@ def disposition_recovery_case(
                 "reason": reason,
                 "authoritative_event_match": authoritative_match,
                 "reviewer_employee_id": principal.employee_id,
+                "command_hash": command_hash,
                 "next_action": next_action,
                 "evidence_policy": "PRESERVE_NO_CLIENT_PROMOTION",
             }

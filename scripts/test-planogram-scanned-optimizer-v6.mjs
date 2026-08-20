@@ -21,8 +21,9 @@ need(annotation, "PlanogramFixtureBindingPanel", "Annotation workspace no longer
 need(annotation, "optimizationCandidate={optimizationCandidate}", "Annotation workspace drops candidate evidence");
 need(binding, "PlanogramScannedOptimizerPanel", "Fixture binding does not mount scanned optimizer");
 need(binding, "result.layout_draft_ready", "Scanned optimizer is not gated by completed fixture layout review");
-need(binding, "fixtureBindings={bindings}", "Fixture binding evidence is not forwarded to V6");
+need(binding, "fixtureBindings={effectiveBindings}", "Reviewed/imported fixture binding evidence is not forwarded to V6");
 need(panel, "/v1/planogram/store-scan/optimize-preview", "V6 API route is not called by the product surface");
+need(panel, "fixture_bindings: fixtureBindings", "V6 request does not carry reviewed fixture binding evidence");
 need(panel, "PlanogramDigitalTwin", "V6 result does not render Digital Twin output");
 need(panel, "PlanogramPickerEyePreview", "V6 result does not render Picker Eye output");
 need(panel, "expected_scan_fingerprint", "V6 request is not fingerprint-bound");

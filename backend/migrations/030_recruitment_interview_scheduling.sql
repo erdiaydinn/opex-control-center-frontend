@@ -1,12 +1,12 @@
 -- Hiring V46: candidate self-service interview scheduling authority.
--- Country-neutral and provider-neutral: slot capacity, booking state and capability
--- rotation live in PostgreSQL. Calendar providers remain optional adapters.
+-- Schedules/slots are shared at vacancy+pipeline-stage scope so concurrent
+-- candidates compete for the same real capacity. Candidate access remains
+-- capability-bound and every mutation rotates the capability.
 
 CREATE TABLE IF NOT EXISTS recruitment.interview_schedules (
   tenant_id text NOT NULL CHECK (btrim(tenant_id) <> ''),
   schedule_id uuid NOT NULL,
   request_id text NOT NULL CHECK (btrim(request_id) <> ''),
-  candidate_id text NOT NULL CHECK (btrim(candidate_id) <> ''),
   stage text NOT NULL CHECK (btrim(stage) <> ''),
   title text NOT NULL CHECK (btrim(title) <> '' AND length(title) <= 180),
   timezone text NOT NULL CHECK (btrim(timezone) <> '' AND length(timezone) <= 80),
@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS recruitment.interview_schedules (
   created_by text NOT NULL CHECK (btrim(created_by) <> ''),
   PRIMARY KEY (tenant_id, schedule_id)
 );
-CREATE INDEX IF NOT EXISTS interview_schedule_candidate_idx
-  ON recruitment.interview_schedules(tenant_id, request_id, candidate_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS interview_schedule_request_idx
+  ON recruitment.interview_schedules(tenant_id, request_id, stage, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS recruitment.interview_slots (
   tenant_id text NOT NULL CHECK (btrim(tenant_id) <> ''),
@@ -78,7 +78,10 @@ CREATE TABLE IF NOT EXISTS recruitment.interview_booking_capabilities (
   FOREIGN KEY (tenant_id, schedule_id)
     REFERENCES recruitment.interview_schedules(tenant_id, schedule_id)
 );
-CREATE INDEX IF NOT EXISTS interview_capability_active_idx
+CREATE UNIQUE INDEX IF NOT EXISTS interview_candidate_active_capability_idx
+  ON recruitment.interview_booking_capabilities(tenant_id, schedule_id, candidate_id)
+  WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS interview_capability_expiry_idx
   ON recruitment.interview_booking_capabilities(tenant_id, expires_at)
   WHERE revoked_at IS NULL;
 
@@ -145,5 +148,5 @@ END;
 $$;
 
 INSERT INTO workforce_schema_migrations(version, name)
-VALUES (46, 'candidate self-service interview scheduling authority')
+VALUES (46, 'shared candidate self-service interview scheduling authority')
 ON CONFLICT (version) DO NOTHING;

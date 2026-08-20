@@ -11,9 +11,11 @@ on:
       - "backend/migrations/024_recruitment_production_authority.sql"
       - "backend/migrations/025_recruitment_request_evidence_scan_authority.sql"
       - "backend/migrations/026_recruitment_evidence_release_authority.sql"
+      - "backend/migrations/027_recruitment_scanner_role_isolation.sql"
       - "backend/scripts/setup_workforce_postgres_ci.py"
       - "backend/scripts/recruitment_authority_postgres_ci.py"
       - "backend/scripts/recruitment_release_authority_postgres_ci.py"
+      - "backend/scripts/recruitment_scanner_role_postgres_ci.py"
       - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
       - ".github/workflows/eay-hiring-production-authority.yml"
   workflow_dispatch:
@@ -50,9 +52,14 @@ jobs:
           backend/scripts/setup_workforce_postgres_ci.py
           backend/scripts/recruitment_authority_postgres_ci.py
           backend/scripts/recruitment_release_authority_postgres_ci.py
+          backend/scripts/recruitment_scanner_role_postgres_ci.py
           backend/scripts/recruitment_core_privilege_postgres_ci.py
-      - name: Canonical V42 startup registry
+      - name: Workforce V42 and Hiring V43 startup contract
         run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
+      - name: Hiring production startup guard
+        run: python -m unittest app.modules.recruitment.test_production_startup_guard -v
+      - name: Dedicated scanner database authority
+        run: python -m unittest app.modules.recruitment.test_scanner_database_authority -v
       - name: Live production authority preflight contract
         run: python -m unittest app.modules.recruitment.test_production_authority_preflight -v
       - name: KMS envelope storage
@@ -111,6 +118,8 @@ jobs:
       DATABASE_URL: postgresql://workforce_runtime:workforce_runtime_ci@localhost:5432/workforce_ci
       WORKFORCE_MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
       RECRUITMENT_AUTHORITY_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      RECRUITMENT_SCANNER_DATABASE_URL: postgresql://eay_candidate_scanner_runtime:candidate_scanner_ci@localhost:5432/workforce_ci
+      RECRUITMENT_SCANNER_DATABASE_ROLE: eay_candidate_scanner_runtime
       WORKFORCE_TENANT_ID: eay-ci
       DOCKOS_ENV: test
       WORKFORCE_AUTO_MIGRATE: "false"
@@ -128,5 +137,7 @@ jobs:
         run: python scripts/recruitment_authority_postgres_ci.py
       - name: Real V41 V42 request scanner and release acceptance
         run: python scripts/recruitment_release_authority_postgres_ci.py
+      - name: Real V43 scanner role separation acceptance
+        run: python scripts/recruitment_scanner_role_postgres_ci.py
       - name: Core HR privileges survive authority sealing
         run: python scripts/recruitment_core_privilege_postgres_ci.py

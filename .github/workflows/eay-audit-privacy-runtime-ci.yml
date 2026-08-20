@@ -3,6 +3,8 @@ name: EAY Audit Privacy Runtime CI
 on:
   pull_request:
     paths:
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/app/modules/audit/privacy_routes.py"
       - "services/core-api/app/modules/audit/privacy_verification_runtime.py"
       - "services/core-api/app/modules/audit/privacy_verification_service.py"
       - "services/core-api/app/modules/field_intelligence/evidence_object_read.py"
@@ -10,10 +12,12 @@ on:
       - "services/core-api/tests/test_audit_privacy_verification_runtime.py"
       - "services/core-api/tests/test_audit_private_evidence_read.py"
       - "services/core-api/tests/test_audit_privacy_authority_contracts.py"
+      - "services/core-api/tests/test_audit_privacy_orchestration.py"
       - ".github/workflows/eay-audit-privacy-runtime-ci.yml"
   push:
     branches:
       - "product/eay-audit-intelligence-v1"
+      - "product/eay-audit-field-readiness-v1"
   workflow_dispatch:
 
 permissions:
@@ -45,14 +49,18 @@ jobs:
           tests/test_audit_privacy_verification_runtime.py
           tests/test_audit_private_evidence_read.py
           tests/test_audit_privacy_authority_contracts.py
-      - name: Ruff privacy runtime and private reader
+          tests/test_audit_privacy_orchestration.py
+      - name: Ruff privacy runtime / route / private reader
         run: >-
           ruff check
+          app/budget_main.py
+          app/modules/audit/privacy_routes.py
           app/modules/audit/privacy_verification_runtime.py
           app/modules/field_intelligence/evidence_object_read.py
           tests/test_audit_privacy_verification_runtime.py
           tests/test_audit_private_evidence_read.py
           tests/test_audit_privacy_authority_contracts.py
+          tests/test_audit_privacy_orchestration.py
       - name: Ruff SQL-heavy privacy service
         run: ruff check --ignore E501 app/modules/audit/privacy_verification_service.py
       - name: Ruff privacy migration
@@ -60,6 +68,8 @@ jobs:
       - name: Compile privacy authority
         run: >-
           python -m compileall -q
+          app/budget_main.py
+          app/modules/audit/privacy_routes.py
           app/modules/audit/privacy_verification_runtime.py
           app/modules/audit/privacy_verification_service.py
           app/modules/field_intelligence/evidence_object_read.py

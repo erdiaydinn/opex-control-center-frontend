@@ -13,9 +13,9 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Business-result feedback, deliberately separate from Zebra/DataWedge decode feedback.
  *
- * DataWedge owns the immediate "barcode decoded" haptic/LED acknowledgement. This
- * layer is emitted only after EAY's local business/controller decision: a short ACK
- * tone for accepted work, and a distinct NACK tone + haptic for rejected work.
+ * DataWedge owns the immediate decode haptic/LED acknowledgement. This layer is
+ * emitted only after EAY's local business/controller decision: a short ACK tone
+ * for accepted work, and a distinct NACK tone + haptic for rejected work.
  * No barcode, SKU, employee, mission or tenant data enters this component.
  */
 object TerminalFeedbackRuntime {

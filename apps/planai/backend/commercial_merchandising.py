@@ -143,9 +143,9 @@ def _product_metrics(row: dict[str, Any]) -> dict[str, Any]:
 
 def _weights(raw: dict[str, Any] | None) -> dict[str, float]:
     result = dict(DEFAULT_WEIGHTS)
-    for name in result:
+    for name, default_value in result.items():
         if isinstance(raw, dict) and raw.get(name) not in (None, ""):
-            result[name] = max(0.0, _number(raw.get(name), result[name]))
+            result[name] = max(0.0, _number(raw.get(name), default_value))
     return result
 
 

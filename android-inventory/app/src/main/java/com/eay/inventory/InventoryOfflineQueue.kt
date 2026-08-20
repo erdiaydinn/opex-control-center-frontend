@@ -3,22 +3,13 @@ package com.eay.inventory
 import androidx.room.withTransaction
 import com.eay.mobile.core.AcceptedScan
 import com.eay.mobile.core.BlindCountLineEvidence
+import com.eay.mobile.core.OperationalStepKind
 
 class RetryableCountPersistenceException(
     cause: Throwable,
 ) : RuntimeException("Encrypted count queue is temporarily unavailable", cause)
 
-/**
- * Single enqueue boundary for terminal mutations.
- *
- * Offline events are deliberately bound to the current interactive OIDC grant.
- * Refresh-token rotation preserves the same binding; a new interactive login
- * receives a new binding and cannot replay mutations created by the old grant.
- *
- * Re-enqueuing the exact same immutable event is idempotent. Reusing an event ID
- * for a different sequence, payload, hash or auth binding fails closed instead
- * of mutating the already-durable event or resurrecting an ACKED event.
- */
+/** Single encrypted enqueue boundary for terminal mutations. */
 class InventoryOfflineQueue(
     private val database: InventoryDatabase,
 ) : BlindCountEventSink {
@@ -72,6 +63,26 @@ class InventoryOfflineQueue(
             deviceSequence = sequence,
             eventId = eventId,
             occurredAt = occurredAt,
+            authBindingId = binding,
+        )
+    }
+
+    suspend fun enqueueOperationalStep(
+        context: InventoryOperationalEventContext,
+        step: OperationalStepKind,
+        rawValue: String,
+        eventId: String,
+        occurredAt: String,
+    ): OfflineEvent = persistWithAllocatedSequence(eventId) { sequence, binding ->
+        InventoryOperationalEventCanonical.create(
+            InventoryOperationalEventInput(
+                context = context,
+                stepKind = step,
+                rawValue = rawValue,
+                eventId = eventId,
+                deviceSequence = sequence,
+                occurredAt = occurredAt,
+            ),
             authBindingId = binding,
         )
     }

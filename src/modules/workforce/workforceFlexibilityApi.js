@@ -97,3 +97,37 @@ export async function approveWorkforceActivity(values) {
 export async function retireWorkforceActivity(activityKey) {
   return safe(apiPost(`/workforce/flexibility/activities/${encodeURIComponent(activityKey)}/retire`, {}));
 }
+
+export async function loadWorkforceLaborStandards(activityKey = "") {
+  const query = activityKey ? `?activity_key=${encodeURIComponent(activityKey)}` : "";
+  const result = await safe(apiGet(`/workforce/flexibility/labor-standards${query}`));
+  return result.rows || [];
+}
+
+export async function approveWorkforceLaborStandard(values) {
+  return safe(apiPost("/workforce/flexibility/labor-standards", {
+    activity_key: values.activityKey,
+    seconds_per_unit: Number(values.secondsPerUnit),
+    people: Number(values.people || 1),
+    effective_from: values.effectiveFrom,
+    source_ref: values.sourceRef,
+  }));
+}
+
+export async function retireWorkforceLaborStandard(activityKey) {
+  return safe(apiPost(`/workforce/flexibility/labor-standards/${encodeURIComponent(activityKey)}/retire`, {}));
+}
+
+export async function updateWorkforceEmployeeCapabilities(employeeId, values) {
+  return safe(apiPut(`/workforce/flexibility/employees/${encodeURIComponent(employeeId)}/capabilities`, {
+    skill_keys: values.skillKeys || [],
+    certification_keys: values.certificationKeys || [],
+    equipment_keys: values.equipmentKeys || [],
+  }));
+}
+
+export async function updateWorkforceWorksiteType(worksiteId, locationType) {
+  return safe(apiPut(`/workforce/flexibility/worksites/${encodeURIComponent(worksiteId)}/type`, {
+    location_type: locationType,
+  }));
+}

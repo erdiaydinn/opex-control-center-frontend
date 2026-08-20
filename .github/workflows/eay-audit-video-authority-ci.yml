@@ -1,0 +1,53 @@
+name: EAY Audit Video Authority CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/modules/audit/video_verification_runtime.py"
+      - "services/core-api/app/modules/audit/privacy_verification_runtime.py"
+      - "services/core-api/tests/test_audit_video_verification_runtime.py"
+      - ".github/workflows/eay-audit-video-authority-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-video-authority-v1"
+      - "product/eay-audit-field-acceptance-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-video-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  video-authority:
+    name: Canonical video privacy authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Video authority adversarial tests
+        run: pytest -q tests/test_audit_video_verification_runtime.py
+      - name: Ruff video authority
+        run: >-
+          ruff check
+          app/modules/audit/video_verification_runtime.py
+          tests/test_audit_video_verification_runtime.py
+      - name: Compile video authority
+        run: >-
+          python -m compileall -q
+          app/modules/audit/video_verification_runtime.py
+          tests/test_audit_video_verification_runtime.py
+      - name: Verify authority boundaries
+        run: >-
+          python -c "from pathlib import Path; p=Path('app/modules/audit/video_verification_runtime.py').read_text(); assert 'MAX_CANONICAL_VIDEO_FRAMES' in p; assert 'vision_inference_authorized: bool = False' in p; assert 'client frame list' in p; assert 'decoder.decode_mp4(content)' in p; print('Audit canonical video authority boundary: PASS')"

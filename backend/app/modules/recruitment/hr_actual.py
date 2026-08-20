@@ -71,14 +71,21 @@ def _identity(row: dict) -> tuple[dict | None, str]:
 
 
 def import_snapshot(payload: dict, actor: str) -> dict:
-    """Persist a minimized, immutable-as-one-version HR actual snapshot.
+    """Persist a minimized, versioned HR Actual snapshot.
 
     TCKN is accepted only transiently for canonical Employee Master resolution and
-    is never stored in the snapshot or returned by this module.
+    is never stored in the snapshot or returned by this module. The current
+    collection revision is loaded before the CAS write so a process restart does
+    not turn a valid next import into a false stale-write conflict.
     """
     rows = list(payload.get("rows") or [])
     if not rows:
         raise RecruitmentRuleError("HR Actual dosyasında işlenebilir kayıt bulunamadı.")
+
+    # Prime the persistence revision from the authoritative store before writing.
+    # persist_snapshot_with_audit still performs optimistic CAS, so concurrent
+    # imports remain fail-closed rather than silently overwriting one another.
+    persistence.load_collection(_COLLECTION)
 
     warehouse_index = _warehouse_index()
     sanitized: list[dict] = []

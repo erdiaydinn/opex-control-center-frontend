@@ -7,6 +7,7 @@ from threading import Lock
 from zoneinfo import ZoneInfo
 
 from . import persistence, service
+from .work_activity_catalog import resolve_activity_bundle
 
 
 _AVAILABILITY_COLLECTION = "workforce_availability"
@@ -148,13 +149,49 @@ def _warehouse_matches(person: dict, offer: dict) -> bool:
     return bool(person_aliases and offer_aliases and person_aliases.intersection(offer_aliases))
 
 
+def _capability_keys(person: dict, field: str) -> set[str]:
+    values = person.get(field) or []
+    if not isinstance(values, (list, tuple, set, frozenset)):
+        return set()
+    return {str(value).strip() for value in values if str(value).strip()}
+
+
+def _activity_summary(row: dict) -> dict:
+    return {
+        "activity_key": str(row["activity_key"]),
+        "activity_version": int(row["version"]),
+        "display_name": str(row["display_name"]),
+        "category": str(row["category"]),
+        "unit_key": str(row["unit_key"]),
+        "demand_mode": str(row["demand_mode"]),
+        "required_skill_keys": list(row.get("required_skill_keys") or []),
+        "required_certification_keys": list(row.get("required_certification_keys") or []),
+        "required_equipment_keys": list(row.get("required_equipment_keys") or []),
+        "safety_tags": list(row.get("safety_tags") or []),
+        "location_types": list(row.get("location_types") or []),
+        "authority_ref": str(row.get("id") or f"{row['activity_key']}:v{row['version']}"),
+        "source_ref": str(row.get("source_ref") or ""),
+    }
+
+
 def create_open_shift(payload: dict, actor: str) -> dict:
     warehouse = _warehouse_record(str(payload["warehouse_id"]))
     if warehouse is None:
-        raise service.WorkforceRuleError("Depo konumu bulunamadı.")
+        raise service.WorkforceRuleError("Depo/çalışma konumu bulunamadı.")
     today = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
     if str(payload["date"]) < today:
         raise service.WorkforceRuleError("Geçmiş tarih için açık vardiya yayınlanamaz.")
+
+    activity_keys = [str(key) for key in payload.get("activity_keys") or []]
+    activity_rows = resolve_activity_bundle(activity_keys, str(payload["date"])) if activity_keys else []
+    activities = [_activity_summary(row) for row in activity_rows]
+    configured_location_type = _normal(warehouse.get("location_type") or warehouse.get("type"))
+    for activity in activities:
+        allowed_types = {_normal(value) for value in activity.get("location_types") or [] if _normal(value)}
+        if configured_location_type and allowed_types and configured_location_type not in allowed_types:
+            raise service.WorkforceRuleError(
+                f"{activity['activity_key']} bu çalışma konumu tipi için onaylı değil."
+            )
 
     minimum_break = service._minimum_break_minutes(payload["start"], payload["end"], payload["date"])
     break_minutes = max(int(payload.get("break_minutes", 60)), minimum_break)
@@ -162,6 +199,7 @@ def create_open_shift(payload: dict, actor: str) -> dict:
     if net_minutes > service._rule_value("dailyMax", payload["date"], 660):
         raise service.WorkforceRuleError("Açık vardiya günlük azami 11 saat net çalışma kuralını aşıyor.")
 
+    normalized_activity_keys = tuple(sorted(activity_keys))
     with _LOCK:
         rows = _load_open_shifts()
         duplicate = next(
@@ -173,11 +211,12 @@ def create_open_shift(payload: dict, actor: str) -> dict:
                 and row.get("start") == payload["start"]
                 and row.get("end") == payload["end"]
                 and _normal(row.get("role")) == _normal(payload.get("role"))
+                and tuple(sorted(str(key) for key in row.get("activity_keys") or [])) == normalized_activity_keys
             ),
             None,
         )
         if duplicate:
-            raise service.WorkforceRuleError("Aynı zaman ve rol için zaten açık vardiya bulunuyor.")
+            raise service.WorkforceRuleError("Aynı zaman, rol ve iş aktiviteleri için zaten açık vardiya bulunuyor.")
         now = datetime.now(ZoneInfo("UTC"))
         record = {
             "id": f"OPEN-{now.strftime('%Y%m%d%H%M%S%f')}",
@@ -188,7 +227,9 @@ def create_open_shift(payload: dict, actor: str) -> dict:
             "end": str(payload["end"]),
             "break_minutes": break_minutes,
             "expected_minutes": net_minutes,
-            "role": str(payload.get("role") or "Picker"),
+            "role": str(payload.get("role") or "Worker"),
+            "activity_keys": activity_keys,
+            "activities": activities,
             "capacity": int(payload.get("capacity", 1)),
             "claimed_count": 0,
             "claims": [],
@@ -207,6 +248,8 @@ def create_open_shift(payload: dict, actor: str) -> dict:
             warehouse_id=record["warehouse_id"],
             date=record["date"],
             capacity=record["capacity"],
+            activity_keys=record["activity_keys"],
+            activity_authority_refs=[item["authority_ref"] for item in activities],
         )
         return deepcopy(record)
 
@@ -222,11 +265,48 @@ def evaluate_open_shift(offer: dict, person_id: str, availability_rows: list[dic
     person = service.resolve_person_identity(str(person_id), "EMPLOYEE_ID")
     reasons: list[str] = []
     if person is None:
-        return {"eligible": False, "score": 0, "preference_match": None, "reasons": ["EMPLOYEE_NOT_FOUND"]}
+        return {
+            "eligible": False,
+            "score": 0,
+            "preference_match": None,
+            "reasons": ["EMPLOYEE_NOT_FOUND"],
+            "missing_skill_keys": [],
+            "missing_certification_keys": [],
+            "missing_equipment_keys": [],
+        }
     if not service.person_has_workforce_access(person, str(offer["date"])):
         reasons.append("EMPLOYMENT_INACTIVE")
     if not _warehouse_matches(person, offer):
         reasons.append("WAREHOUSE_SCOPE_MISMATCH")
+
+    activities = list(offer.get("activities") or [])
+    required_skills = {
+        str(key)
+        for activity in activities
+        for key in activity.get("required_skill_keys") or []
+        if str(key)
+    }
+    required_certifications = {
+        str(key)
+        for activity in activities
+        for key in activity.get("required_certification_keys") or []
+        if str(key)
+    }
+    required_equipment = {
+        str(key)
+        for activity in activities
+        for key in activity.get("required_equipment_keys") or []
+        if str(key)
+    }
+    missing_skills = sorted(required_skills - _capability_keys(person, "skill_keys"))
+    missing_certifications = sorted(required_certifications - _capability_keys(person, "certification_keys"))
+    missing_equipment = sorted(required_equipment - _capability_keys(person, "equipment_keys"))
+    if missing_skills:
+        reasons.append("SKILL_REQUIREMENT")
+    if missing_certifications:
+        reasons.append("CERTIFICATION_REQUIREMENT")
+    if missing_equipment:
+        reasons.append("EQUIPMENT_REQUIREMENT")
 
     availability_rows = _load_availability() if availability_rows is None else availability_rows
     availability = _availability_for(availability_rows, str(person_id), str(offer["date"]))
@@ -270,14 +350,16 @@ def evaluate_open_shift(offer: dict, person_id: str, availability_rows: list[dic
 
     preference_match: bool | None = None
     score = 60
+    if activities:
+        score += 10
     if availability:
-        score = 80
+        score = max(score, 80)
         if availability.get("preferred_start") and availability.get("preferred_end"):
             preference_match = _window_contains(
                 str(availability["preferred_start"]), str(availability["preferred_end"]),
                 str(offer["start"]), str(offer["end"]),
             )
-            score = 100 if preference_match else 75
+            score = 100 if preference_match else max(score, 75)
     if reasons:
         score = 0
     return {
@@ -285,6 +367,10 @@ def evaluate_open_shift(offer: dict, person_id: str, availability_rows: list[dic
         "score": score,
         "preference_match": preference_match,
         "availability_declared": availability is not None,
+        "activity_match": not (missing_skills or missing_certifications or missing_equipment),
+        "missing_skill_keys": missing_skills,
+        "missing_certification_keys": missing_certifications,
+        "missing_equipment_keys": missing_equipment,
         "reasons": reasons,
     }
 
@@ -332,7 +418,7 @@ def claim_open_shift(open_shift_id: str, person_id: str, actor: str) -> dict:
         eligibility = evaluate_open_shift(offer, person_id, availability_rows)
         if not eligibility["eligible"]:
             raise service.WorkforceRuleError(
-                "Açık vardiya mevcut uygunluk, izin, depo kapsamı veya dinlenme kurallarıyla eşleşmiyor."
+                "Açık vardiya uygunluk, yetkinlik, sertifika, ekipman, izin, çalışma konumu veya dinlenme kurallarıyla eşleşmiyor."
             )
         person = service.resolve_person_identity(str(person_id), "EMPLOYEE_ID")
         if person is None:
@@ -349,7 +435,10 @@ def claim_open_shift(open_shift_id: str, person_id: str, actor: str) -> dict:
                     "start": str(offer["start"]),
                     "end": str(offer["end"]),
                     "break_minutes": int(offer.get("break_minutes", 60)),
-                    "role": str(offer.get("role") or person.get("position") or "Picker"),
+                    "role": str(offer.get("role") or person.get("position") or "Worker"),
+                    "activity_keys": list(offer.get("activity_keys") or []),
+                    "activity_bundle": deepcopy(offer.get("activities") or []),
+                    "open_shift_id": str(offer["id"]),
                 },
                 actor,
                 persist=False,
@@ -360,6 +449,7 @@ def claim_open_shift(open_shift_id: str, person_id: str, actor: str) -> dict:
                 "claimed_at": datetime.now(ZoneInfo("UTC")).isoformat(),
                 "eligibility_score": eligibility["score"],
                 "preference_match": eligibility["preference_match"],
+                "activity_keys": list(offer.get("activity_keys") or []),
             }
             offer.setdefault("claims", []).append(claim)
             offer["claimed_count"] = len(offer["claims"])
@@ -377,6 +467,10 @@ def claim_open_shift(open_shift_id: str, person_id: str, actor: str) -> dict:
                 date=offer["date"],
                 eligibility_score=eligibility["score"],
                 preference_match=eligibility["preference_match"],
+                activity_keys=list(offer.get("activity_keys") or []),
+                activity_authority_refs=[
+                    item.get("authority_ref") for item in offer.get("activities") or []
+                ],
             )
         except persistence.ConcurrentWriteError as error:
             service._hydrate_snapshot(before)
@@ -388,4 +482,7 @@ def claim_open_shift(open_shift_id: str, person_id: str, actor: str) -> dict:
         except Exception:
             service._hydrate_snapshot(before)
             raise
-        return {"open_shift": deepcopy({key: value for key, value in offer.items() if key != "claims"}), "shift": deepcopy(shift)}
+        return {
+            "open_shift": deepcopy({key: value for key, value in offer.items() if key != "claims"}),
+            "shift": deepcopy(shift),
+        }

@@ -11,6 +11,7 @@ on:
       - "backend/migrations/024_recruitment_production_authority.sql"
       - "backend/migrations/025_recruitment_request_evidence_scan_authority.sql"
       - "backend/migrations/026_recruitment_evidence_release_authority.sql"
+      - "backend/scripts/setup_workforce_postgres_ci.py"
       - "backend/scripts/recruitment_authority_postgres_ci.py"
       - "backend/scripts/recruitment_release_authority_postgres_ci.py"
       - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
@@ -46,6 +47,7 @@ jobs:
         run: >-
           python -m compileall -q backend/app/main.py backend/app/modules/recruitment
           backend/app/modules/workforce/persistence.py
+          backend/scripts/setup_workforce_postgres_ci.py
           backend/scripts/recruitment_authority_postgres_ci.py
           backend/scripts/recruitment_release_authority_postgres_ci.py
           backend/scripts/recruitment_core_privilege_postgres_ci.py

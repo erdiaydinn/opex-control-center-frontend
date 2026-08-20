@@ -11,13 +11,17 @@ from datetime import datetime
 from threading import Lock
 from zoneinfo import ZoneInfo
 
-from . import persistence, service
+from . import persistence
 from .industry_activity_templates import starter_candidates
 from .work_activity_authority import WorkActivityAuthorityError, WorkActivityVersion
 
 
 _COLLECTION = "workforce_activity_catalog"
 _LOCK = Lock()
+
+
+class WorkActivityCatalogError(ValueError):
+    """Raised when the governed activity catalog cannot resolve authority safely."""
 
 
 def _at(day: str) -> datetime:
@@ -58,11 +62,7 @@ def list_template_candidates(template_key: str) -> tuple[dict[str, object], ...]
 
 
 def approve_activity(payload: dict, actor: str) -> dict:
-    """Create a new approved effective-dated activity version.
-
-    Superseded approved rows are closed at the new effective timestamp. The full
-    before/after snapshot is still CAS/audit protected by Workforce persistence.
-    """
+    """Create a new approved effective-dated activity version."""
     tenant_id = persistence.tenant_id()
     effective_from = _at(str(payload["effective_from"]))
     key = str(payload["activity_key"]).strip()
@@ -138,7 +138,7 @@ def approve_activity(payload: dict, actor: str) -> dict:
                 source_ref=authority.source_ref,
             )
         except persistence.ConcurrentWriteError as error:
-            raise service.WorkforceRuleError(
+            raise WorkActivityCatalogError(
                 "Work activity catalog changed concurrently; approval stopped safely, retry."
             ) from error
         return deepcopy(record)
@@ -152,7 +152,7 @@ def retire_activity(activity_key: str, actor: str) -> dict:
             if str(row.get("activity_key")) == str(activity_key) and row.get("status") == "APPROVED"
         ]
         if not candidates:
-            raise service.WorkforceRuleError("Active work activity was not found.")
+            raise WorkActivityCatalogError("Active work activity was not found.")
         current = max(candidates, key=lambda row: int(row.get("version", 0)))
         current["status"] = "RETIRED"
         current["retired_at"] = datetime.now(ZoneInfo("UTC")).isoformat()
@@ -166,7 +166,7 @@ def retire_activity(activity_key: str, actor: str) -> dict:
                 activity_version=int(current.get("version", 0)),
             )
         except persistence.ConcurrentWriteError as error:
-            raise service.WorkforceRuleError(
+            raise WorkActivityCatalogError(
                 "Work activity catalog changed concurrently; retirement stopped safely, retry."
             ) from error
         return deepcopy(current)
@@ -186,12 +186,12 @@ def resolve_catalog_activity(activity_key: str, day: str) -> dict:
         if authority.is_effective(tenant_id=tenant_id, at=at):
             candidates.append(row)
     if not candidates:
-        raise service.WorkforceRuleError(
+        raise WorkActivityCatalogError(
             f"Approved effective work activity not found: {activity_key}"
         )
     if len(candidates) > 1:
         refs = ", ".join(str(row.get("id")) for row in candidates)
-        raise service.WorkforceRuleError(
+        raise WorkActivityCatalogError(
             f"Ambiguous work activity authority for {activity_key}: {refs}"
         )
     return deepcopy(candidates[0])
@@ -200,5 +200,5 @@ def resolve_catalog_activity(activity_key: str, day: str) -> dict:
 def resolve_activity_bundle(activity_keys: list[str], day: str) -> list[dict]:
     keys = [str(key).strip() for key in activity_keys if str(key).strip()]
     if len(keys) != len(set(keys)):
-        raise service.WorkforceRuleError("Open-shift activity keys must be unique.")
+        raise WorkActivityCatalogError("Open-shift activity keys must be unique.")
     return [resolve_catalog_activity(key, day) for key in keys]

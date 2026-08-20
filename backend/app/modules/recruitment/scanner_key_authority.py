@@ -65,6 +65,35 @@ class AwsKmsHmacKeyAuthority:
             verify_keys=mapping,
         )
 
+    def preflight(self) -> dict[str, object]:
+        """Verify every configured logical kid resolves to an enabled KMS HMAC key."""
+        observed: dict[str, str] = {}
+        try:
+            for kid, key_id in self.verify_keys.items():
+                metadata = self.kms.describe_key(KeyId=key_id)["KeyMetadata"]
+                if metadata.get("KeyState") != "Enabled":
+                    raise ScannerKeyAuthorityError(
+                        f"Scanner KMS key {kid} Enabled durumda değil."
+                    )
+                if metadata.get("KeyUsage") != "GENERATE_VERIFY_MAC":
+                    raise ScannerKeyAuthorityError(
+                        f"Scanner KMS key {kid} GENERATE_VERIFY_MAC kullanımında değil."
+                    )
+                if metadata.get("KeySpec") not in {"HMAC_256", "HMAC_384", "HMAC_512"}:
+                    raise ScannerKeyAuthorityError(
+                        f"Scanner KMS key {kid} HMAC anahtarı değil."
+                    )
+                observed[kid] = str(metadata.get("Arn") or key_id)
+        except ScannerKeyAuthorityError:
+            raise
+        except Exception as error:
+            raise ScannerKeyAuthorityError("Scanner KMS authority preflight başarısız.") from error
+        return {
+            "active_kid": self.active_key_id,
+            "verification_kids": tuple(self.verify_keys),
+            "verified_key_count": len(observed),
+        }
+
     def sign(self, key_id: str, message: bytes) -> bytes:
         kid = str(key_id or "").strip()
         if kid != self.active_key_id:

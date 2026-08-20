@@ -14,7 +14,9 @@ from app.core.resources import engine
 
 from .repository import _set_tenant
 
-ALLOWED_MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/heic", "image/webp"})
+ALLOWED_MEDIA_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/heic", "image/webp", "video/mp4"}
+)
 MAX_EVIDENCE_BYTES = 26_214_400
 DEFAULT_TRUSTED_STORAGE_HOSTS = frozenset({"field-evidence-store", "localhost"})
 
@@ -86,6 +88,7 @@ async def _authorize_upload(
     mission_id: str,
     location_id: str,
     field_key: str,
+    media_type: str,
 ) -> None:
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
@@ -108,7 +111,12 @@ async def _authorize_upload(
                   AND EXISTS (
                     SELECT 1
                     FROM jsonb_array_elements(template.schema->'fields') field
-                    WHERE field->>'key'=:field_key AND field->>'type'='photo'
+                    WHERE field->>'key'=:field_key
+                      AND field->>'type'='photo'
+                      AND (
+                        :media_type <> 'video/mp4'
+                        OR COALESCE(field->'config'->>'allow_video','false')='true'
+                      )
                   )
                 """
             ),
@@ -117,11 +125,12 @@ async def _authorize_upload(
                 "mission_id": mission_id,
                 "location_id": location_id,
                 "field_key": field_key,
+                "media_type": media_type,
             },
         )
         if result.first() is None:
             raise FieldEvidenceUploadError(
-                "photo upload is not authorized for this active Field target"
+                "evidence upload is not authorized for this active Field target/media policy"
             )
 
 
@@ -199,6 +208,7 @@ async def upload_private_evidence_object(
         mission_id=mission_id,
         location_id=location_id,
         field_key=field_key,
+        media_type=normalized_media_type,
     )
     existing = await _existing_receipt(
         tenant_id=tenant_id,

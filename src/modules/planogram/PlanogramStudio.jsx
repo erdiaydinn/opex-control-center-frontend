@@ -185,6 +185,7 @@ export default function PlanogramStudio() {
             <ArrowLeft className="eay-planogram-back-icon" size={18} aria-hidden="true" />
             <span>{t("back")}</span>
           </button>
+          {/* i18n-brand-literal: canonical EAY Planogram product label is intentionally locale-invariant. */}
           <p className="planogram-native__eyebrow">EAY · Planogram</p>
           <h1>{t("title")}</h1>
           <p>{t("subtitle")}</p>

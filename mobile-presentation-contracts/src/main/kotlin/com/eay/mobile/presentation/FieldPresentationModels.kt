@@ -143,3 +143,56 @@ data class BlindCountUiState(
         require(totalLines == null || confirmedLines <= totalLines)
     }
 }
+
+enum class FieldOperationalStepKind {
+    SOURCE_LOCATION,
+    DESTINATION_LOCATION,
+    ITEM,
+    QUANTITY,
+    CONDITION,
+    CONTAINER,
+    COMPLETE,
+}
+
+/**
+ * Presentation-only projection for Picking, Putaway, Receiving and Transfer.
+ *
+ * This deliberately carries no tenant, employee, device, shift, claim, token,
+ * signature, raw barcode or value hash. Expected blind-count stock also remains
+ * impossible to represent. The authoritative adapter may only project safe labels
+ * from a server-issued mission; all physical evidence is still admitted by the
+ * signed operational-event path.
+ */
+data class OperationalExecutionUiState(
+    val missionId: String,
+    val kind: FieldMissionVisualKind,
+    val title: String,
+    val referenceLabel: String,
+    val stepKind: FieldOperationalStepKind,
+    val stepLabel: String,
+    val instruction: String,
+    val progressCurrent: Int,
+    val progressTotal: Int,
+    val quantityText: String = "",
+    val confirmationLabel: String? = null,
+    val syncState: FieldSyncVisualState,
+    val primaryActionLabel: String,
+    val primaryActionEnabled: Boolean,
+) {
+    init {
+        require(missionId.isNotBlank())
+        require(kind in setOf(
+            FieldMissionVisualKind.PICK,
+            FieldMissionVisualKind.PUTAWAY,
+            FieldMissionVisualKind.RECEIVING,
+            FieldMissionVisualKind.TRANSFER,
+        ))
+        require(title.isNotBlank())
+        require(referenceLabel.isNotBlank())
+        require(stepLabel.isNotBlank())
+        require(instruction.isNotBlank())
+        require(progressTotal > 0)
+        require(progressCurrent in 0..progressTotal)
+        require(primaryActionLabel.isNotBlank())
+    }
+}

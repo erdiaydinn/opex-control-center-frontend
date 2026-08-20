@@ -13,11 +13,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -42,6 +42,7 @@ fun EayTerminalShell(
     sessionRecovery: FieldSessionRecoveryBannerModel? = null,
     onRecoveryAction: (FieldRecoveryActionKind) -> Unit = {},
 ) {
+    require(header.runtimeSurface == FieldRuntimeSurface.EAY_TERMINAL)
     Scaffold(modifier = modifier.fillMaxSize()) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -49,21 +50,11 @@ fun EayTerminalShell(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = stringResource(R.string.eay_terminal_brand),
-                        style = MaterialTheme.typography.displaySmall,
-                    )
-                    Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(header.deviceLabel, style = MaterialTheme.typography.bodyLarge)
-                        SyncStatus(header.syncState, header.pendingCount)
-                    }
-                }
+                FieldHeader(
+                    brand = stringResource(R.string.eay_terminal_brand),
+                    header = header,
+                    pendingCount = header.pendingCount,
+                )
             }
             sessionRecovery?.let { recoveryModel ->
                 item {
@@ -90,42 +81,13 @@ fun EayTerminalShell(
                 }
             }
             items(missions, key = { it.missionId }) { mission ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(mission.title, style = MaterialTheme.typography.titleLarge)
-                        if (mission.subtitle.isNotBlank()) {
-                            Text(mission.subtitle, style = MaterialTheme.typography.bodyLarge)
-                        }
-                        val progressCurrent = mission.progressCurrent
-                        val progressTotal = mission.progressTotal
-                        if (progressCurrent != null && progressTotal != null) {
-                            Text(
-                                text = stringResource(
-                                    R.string.blind_count_progress,
-                                    progressCurrent,
-                                    progressTotal,
-                                ),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        Button(
-                            onClick = { onMissionOpen(mission.missionId) },
-                            enabled = mission.enabled,
-                            modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
-                        ) {
-                            Text(mission.primaryActionLabel)
-                        }
-                    }
-                }
+                MissionCard(mission = mission, onMissionOpen = onMissionOpen)
             }
         }
     }
 }
 
-/** Real EAY One navigation surface; callbacks remain intents, never authority. */
+/** Real EAY One navigation surface; callbacks remain presentation intents, never authority. */
 @Composable
 fun EayOneShell(
     navigation: EayOneNavigationModel,
@@ -134,6 +96,7 @@ fun EayOneShell(
     onDestinationSelected: (EayOneDestination) -> Unit,
     onMissionOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onDestinationAction: (EayOneDestination) -> Unit = {},
 ) {
     require(header.runtimeSurface == FieldRuntimeSurface.EAY_ONE)
     Scaffold(
@@ -152,19 +115,147 @@ fun EayOneShell(
         },
     ) { padding ->
         when (navigation.selected) {
-            EayOneDestination.MISSIONS -> EayTerminalShell(
+            EayOneDestination.TODAY -> EayOneMissionSurface(
+                title = destinationTitle(EayOneDestination.TODAY),
                 header = header,
-                missions = missions,
+                missions = missions.take(3),
+                pendingCount = navigation.pendingSyncCount,
                 onMissionOpen = onMissionOpen,
                 modifier = Modifier.padding(padding),
             )
-            else -> Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+            EayOneDestination.MISSIONS -> EayOneMissionSurface(
+                title = destinationTitle(EayOneDestination.MISSIONS),
+                header = header,
+                missions = missions,
+                pendingCount = navigation.pendingSyncCount,
+                onMissionOpen = onMissionOpen,
+                modifier = Modifier.padding(padding),
+            )
+            EayOneDestination.SCAN,
+            EayOneDestination.JARVIS,
+            EayOneDestination.ME,
+            -> EayOneActionSurface(
+                destination = navigation.selected,
+                header = header,
+                pendingCount = navigation.pendingSyncCount,
+                onAction = onDestinationAction,
+                modifier = Modifier.padding(padding),
+            )
+        }
+    }
+}
+
+@Composable
+private fun EayOneMissionSurface(
+    title: String,
+    header: FieldShellHeader,
+    missions: List<FieldMissionCardModel>,
+    pendingCount: Int,
+    onMissionOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(title, style = MaterialTheme.typography.displaySmall)
+                Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
+                SyncStatus(header.syncState, pendingCount)
+            }
+        }
+        if (missions.isNotEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.field_next_missions),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+            }
+        }
+        items(missions, key = { it.missionId }) { mission ->
+            MissionCard(mission = mission, onMissionOpen = onMissionOpen)
+        }
+    }
+}
+
+@Composable
+private fun EayOneActionSurface(
+    destination: EayOneDestination,
+    header: FieldShellHeader,
+    pendingCount: Int,
+    onAction: (EayOneDestination) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Text(destinationTitle(destination), style = MaterialTheme.typography.displaySmall)
+        Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
+        SyncStatus(header.syncState, pendingCount)
+        Button(
+            onClick = { onAction(destination) },
+            modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
+        ) {
+            Text(destination.label())
+        }
+    }
+}
+
+@Composable
+private fun FieldHeader(
+    brand: String,
+    header: FieldShellHeader,
+    pendingCount: Int,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = brand, style = MaterialTheme.typography.displaySmall)
+        Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(header.deviceLabel, style = MaterialTheme.typography.bodyLarge)
+            SyncStatus(header.syncState, pendingCount)
+        }
+    }
+}
+
+@Composable
+private fun MissionCard(
+    mission: FieldMissionCardModel,
+    onMissionOpen: (String) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(mission.title, style = MaterialTheme.typography.titleLarge)
+            if (mission.subtitle.isNotBlank()) {
+                Text(mission.subtitle, style = MaterialTheme.typography.bodyLarge)
+            }
+            val progressCurrent = mission.progressCurrent
+            val progressTotal = mission.progressTotal
+            if (progressCurrent != null && progressTotal != null) {
+                Text(
+                    text = stringResource(
+                        R.string.blind_count_progress,
+                        progressCurrent,
+                        progressTotal,
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            Button(
+                onClick = { onMissionOpen(mission.missionId) },
+                enabled = mission.enabled,
+                modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
             ) {
-                Text(destinationTitle(navigation.selected), style = MaterialTheme.typography.headlineMedium)
-                Text(header.locationLabel, style = MaterialTheme.typography.bodyLarge)
-                SyncStatus(header.syncState, navigation.pendingSyncCount)
+                Text(mission.primaryActionLabel)
             }
         }
     }
@@ -298,6 +389,73 @@ fun BlindCountScreen(
             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
         ) {
             Text(stringResource(R.string.blind_count_confirm))
+        }
+    }
+}
+
+/**
+ * Scanner-first shared execution surface for Picking, Putaway, Receiving and Transfer.
+ * The screen consumes presentation-only state; physical evidence still travels through
+ * the signed MobileEventEnvelope/operational-event authority path.
+ */
+@Composable
+fun OperationalMissionScreen(
+    state: OperationalExecutionUiState,
+    onQuantityChange: (String) -> Unit,
+    onPrimaryAction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Text(state.title, style = MaterialTheme.typography.displaySmall)
+        Text(state.referenceLabel, style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(state.stepLabel, style = MaterialTheme.typography.headlineMedium)
+            SyncStatus(state.syncState, 0)
+        }
+        Text(
+            text = stringResource(
+                R.string.blind_count_progress,
+                state.progressCurrent,
+                state.progressTotal,
+            ),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(state.instruction, style = MaterialTheme.typography.titleLarge)
+        state.confirmationLabel?.let { confirmation ->
+            Surface(
+                tonalElevation = 2.dp,
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Text(
+                    confirmation,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        }
+        if (state.stepKind == FieldOperationalStepKind.QUANTITY) {
+            OutlinedTextField(
+                value = state.quantityText,
+                onValueChange = onQuantityChange,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
+            )
+        }
+        Button(
+            onClick = onPrimaryAction,
+            enabled = state.primaryActionEnabled &&
+                (state.stepKind != FieldOperationalStepKind.QUANTITY || state.quantityText.isNotBlank()),
+            modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
+        ) {
+            Text(state.primaryActionLabel)
         }
     }
 }

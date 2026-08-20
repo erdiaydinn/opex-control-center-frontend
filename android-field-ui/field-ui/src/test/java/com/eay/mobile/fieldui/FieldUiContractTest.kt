@@ -15,6 +15,7 @@ class FieldUiContractTest {
         val model = EayOneNavigationModel(EayOneDestination.MISSIONS, 3, quarantined = false)
         assertEquals(3, model.pendingSyncCount)
     }
+
     @Test
     fun `blind count ui exposes observation not system stock`() {
         val fields = BlindCountUiState::class.java.declaredFields.map { it.name.lowercase() }
@@ -60,5 +61,50 @@ class FieldUiContractTest {
             setOf("SHIFT", "PICK", "COUNT", "PUTAWAY", "RECEIVING", "TRANSFER", "PLANOGRAM", "AUDIT", "ACADEMY", "JARVIS"),
             FieldMissionVisualKind.entries.map { it.name }.toSet(),
         )
+    }
+
+    @Test
+    fun `operational execution is restricted to the four physical workflows`() {
+        val valid = OperationalExecutionUiState(
+            missionId = "pick-1",
+            kind = FieldMissionVisualKind.PICK,
+            title = "Pick",
+            referenceLabel = "Order 42",
+            stepKind = FieldOperationalStepKind.SOURCE_LOCATION,
+            stepLabel = "1 / 5",
+            instruction = "Scan source location",
+            progressCurrent = 0,
+            progressTotal = 5,
+            syncState = FieldSyncVisualState.SYNCED,
+            primaryActionLabel = "Scan",
+            primaryActionEnabled = true,
+        )
+        assertEquals(FieldMissionVisualKind.PICK, valid.kind)
+
+        val invalid = runCatching {
+            valid.copy(kind = FieldMissionVisualKind.COUNT)
+        }
+        assertTrue(invalid.isFailure)
+    }
+
+    @Test
+    fun `operational presentation cannot own authority or raw scan fields`() {
+        val fields = OperationalExecutionUiState::class.java.declaredFields.map { it.name.lowercase() }
+        val forbidden = listOf(
+            "tenant",
+            "employee",
+            "deviceid",
+            "shiftid",
+            "claimid",
+            "token",
+            "signature",
+            "barcode",
+            "valuehash",
+            "expectedstock",
+            "systemstock",
+        )
+        forbidden.forEach { needle ->
+            assertFalse(fields.any { it.contains(needle) })
+        }
     }
 }

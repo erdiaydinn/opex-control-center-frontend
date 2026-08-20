@@ -18,3 +18,5 @@ typealias FieldMissionCardModel = com.eay.mobile.presentation.FieldMissionCardMo
 typealias BlindCountUiState = com.eay.mobile.presentation.BlindCountUiState
 typealias EayOneDestination = com.eay.mobile.presentation.EayOneDestination
 typealias EayOneNavigationModel = com.eay.mobile.presentation.EayOneNavigationModel
+typealias FieldOperationalStepKind = com.eay.mobile.presentation.FieldOperationalStepKind
+typealias OperationalExecutionUiState = com.eay.mobile.presentation.OperationalExecutionUiState

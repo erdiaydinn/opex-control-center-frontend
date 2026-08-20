@@ -16,6 +16,18 @@ class FakeKms:
             "arn:old": b"old-kms-hmac-material-for-test-only",
             "arn:active": b"active-kms-hmac-material-for-test",
         }
+        self.states = {"arn:old": "Enabled", "arn:active": "Enabled"}
+
+    def describe_key(self, **kwargs):
+        key_id = kwargs["KeyId"]
+        return {
+            "KeyMetadata": {
+                "Arn": key_id,
+                "KeyState": self.states[key_id],
+                "KeyUsage": "GENERATE_VERIFY_MAC",
+                "KeySpec": "HMAC_256",
+            }
+        }
 
     def _mac(self, key_id: str, message: bytes) -> bytes:
         return hmac.new(self.secrets[key_id], message, sha256).digest()
@@ -31,6 +43,19 @@ class FakeKms:
 class ScannerKeyAuthorityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.kms = FakeKms()
+
+    def test_live_kms_preflight_checks_every_rotation_key(self):
+        authority = AwsKmsHmacKeyAuthority(
+            active_key_id="2026-08",
+            verify_keys={"2026-07": "arn:old", "2026-08": "arn:active"},
+            kms_client=self.kms,
+        )
+        result = authority.preflight()
+        self.assertEqual(result["active_kid"], "2026-08")
+        self.assertEqual(result["verified_key_count"], 2)
+        self.kms.states["arn:old"] = "Disabled"
+        with self.assertRaisesRegex(ScannerKeyAuthorityError, "Enabled durumda değil"):
+            authority.preflight()
 
     def test_rotation_accepts_prior_receipt_but_only_active_key_signs(self):
         before_rotation = AwsKmsHmacKeyAuthority(

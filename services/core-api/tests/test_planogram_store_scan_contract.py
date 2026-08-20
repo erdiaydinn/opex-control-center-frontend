@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from app.core.security import Principal
+from app.core.security import PermissionAssignment, Principal
 from app.modules.planogram.router import post_store_scan_normalize_preview
 from app.modules.planogram.schemas import PlanogramStoreScanPreviewRequest
 from app.modules.planogram.store_scan import normalize_store_scan
@@ -13,11 +13,20 @@ TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
 
 def principal() -> Principal:
+    permissions = ("module:planogram:view", "action:planogram:create")
     return Principal(
         subject="store-scan-test-user",
         tenant_id=TENANT,
         roles=("super_admin",),
-        permissions=("module:planogram:view", "action:planogram:create"),
+        permissions=permissions,
+        permission_assignments=tuple(
+            PermissionAssignment(
+                key=permission,
+                role_key="super_admin",
+                scope={"warehouses": ["TEST-STORE"]},
+            )
+            for permission in permissions
+        ),
         auth_mode="development",
     )
 

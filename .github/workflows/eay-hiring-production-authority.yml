@@ -12,10 +12,13 @@ on:
       - "backend/migrations/025_recruitment_request_evidence_scan_authority.sql"
       - "backend/migrations/026_recruitment_evidence_release_authority.sql"
       - "backend/migrations/027_recruitment_scanner_role_isolation.sql"
+      - "backend/migrations/028_recruitment_orchestration.sql"
+      - "backend/migrations/029_workforce_audit_chain_fencing.sql"
       - "backend/scripts/setup_workforce_postgres_ci.py"
       - "backend/scripts/recruitment_authority_postgres_ci.py"
       - "backend/scripts/recruitment_release_authority_postgres_ci.py"
       - "backend/scripts/recruitment_scanner_role_postgres_ci.py"
+      - "backend/scripts/recruitment_orchestration_postgres_ci.py"
       - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
       - ".github/workflows/eay-hiring-production-authority.yml"
   workflow_dispatch:
@@ -53,8 +56,9 @@ jobs:
           backend/scripts/recruitment_authority_postgres_ci.py
           backend/scripts/recruitment_release_authority_postgres_ci.py
           backend/scripts/recruitment_scanner_role_postgres_ci.py
+          backend/scripts/recruitment_orchestration_postgres_ci.py
           backend/scripts/recruitment_core_privilege_postgres_ci.py
-      - name: Workforce V42 and Hiring V43 startup contract
+      - name: Workforce V42 and Hiring V45 startup contract
         run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
       - name: Hiring production startup guard
         run: python -m unittest app.modules.recruitment.test_production_startup_guard -v
@@ -62,6 +66,8 @@ jobs:
         run: python -m unittest app.modules.recruitment.test_scanner_database_authority -v
       - name: Scanner service ingress permission
         run: python -m unittest app.modules.recruitment.test_scanner_callback_router -v
+      - name: Recruitment orchestration product contract
+        run: python -m unittest app.modules.recruitment.test_orchestration_contract -v
       - name: Live production authority preflight contract
         run: python -m unittest app.modules.recruitment.test_production_authority_preflight -v
       - name: KMS envelope storage
@@ -141,5 +147,7 @@ jobs:
         run: python scripts/recruitment_release_authority_postgres_ci.py
       - name: Real V43 scanner role separation acceptance
         run: python scripts/recruitment_scanner_role_postgres_ci.py
+      - name: Real V44 orchestration and V45 audit fencing acceptance
+        run: python scripts/recruitment_orchestration_postgres_ci.py
       - name: Core HR privileges survive authority sealing
         run: python scripts/recruitment_core_privilege_postgres_ci.py

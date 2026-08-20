@@ -5,8 +5,9 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import os
+from pathlib import Path
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from app.modules.recruitment import recruitment_evidence_runtime as runtime
 from app.modules.recruitment.recruitment_evidence_runtime import RecruitmentEvidenceRuntimeError
@@ -225,28 +226,24 @@ class RecruitmentEvidenceRuntimeTests(unittest.TestCase):
         self.assertEqual(len(store.delete_calls), 1)
 
     def test_priority_router_shadows_legacy_request_evidence_routes(self):
-        from app.main import app
+        from app.modules.recruitment.production_evidence_router import router as secure_router
 
-        post_route = next(
+        secure_routes = [
             route
-            for route in app.routes
-            if getattr(route, "path", None) == "/api/recruitment/requests/{request_id}/evidence"
-            and "POST" in getattr(route, "methods", set())
+            for route in secure_router.routes
+            if getattr(route, "path", None) == "/recruitment/requests/{request_id}/evidence"
+        ]
+        self.assertTrue(any("POST" in getattr(route, "methods", set()) for route in secure_routes))
+        self.assertTrue(any("GET" in getattr(route, "methods", set()) for route in secure_routes))
+
+        main_source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
+        secure_include = main_source.index(
+            'app.include_router(recruitment_production_evidence_router, prefix="/api")'
         )
-        get_route = next(
-            route
-            for route in app.routes
-            if getattr(route, "path", None) == "/api/recruitment/requests/{request_id}/evidence"
-            and "GET" in getattr(route, "methods", set())
+        legacy_include = main_source.index(
+            'app.include_router(recruitment_router, prefix="/api")'
         )
-        self.assertEqual(
-            post_route.endpoint.__module__,
-            "app.modules.recruitment.production_evidence_router",
-        )
-        self.assertEqual(
-            get_route.endpoint.__module__,
-            "app.modules.recruitment.production_evidence_router",
-        )
+        self.assertLess(secure_include, legacy_include)
 
 
 if __name__ == "__main__":

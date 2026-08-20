@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import RecruitmentCandidateDocumentCenter from "./RecruitmentCandidateDocumentCenter.jsx";
 import RecruitmentControl from "./RecruitmentControl.jsx";
 import RecruitmentInterviewCenter from "./RecruitmentInterviewCenter.jsx";
 import RecruitmentOrchestrationCenter from "./RecruitmentOrchestrationCenter.jsx";
@@ -59,6 +60,7 @@ export default function RecruitmentBootstrapBoundary() {
   return (
     <section data-eay-product-state="ready">
       <RecruitmentControl key={revision} />
+      <RecruitmentCandidateDocumentCenter />
       <RecruitmentOrchestrationCenter />
       <RecruitmentInterviewCenter />
     </section>

@@ -202,7 +202,7 @@ export default function WorkforceShiftTradePanel({ personId }) {
           <div className="wfx-shift-trade-request-main">
             <span className={`status ${String(trade.status || "").toLowerCase()}`}>{workforceShiftTradeStatusMessage(locale, trade.status)}</span>
             <strong>{trade.mode === "SWAP" ? m("modeSwap") : m("modeTransfer")}</strong>
-            <small>{formatDate(trade.date, locale)} · {trade.warehouseId}</small>
+            <small>{formatDate(trade.date, locale)}</small>
           </div>
           <div className="wfx-shift-trade-request-actions">
             {canAccept ? <button type="button" onClick={() => accept(trade.id)} disabled={busy === `accept-${trade.id}`}><CheckCircle2 size={15} />{busy === `accept-${trade.id}` ? m("accepting") : m("accept")}</button> : null}

@@ -11,23 +11,15 @@ import org.junit.Test
 class InventoryRecoveryCaseContractTest {
     @Test
     fun `business quarantine becomes safe recovery request without raw count truth`() {
-        val event = OfflineEvent(
-            eventId = EVENT_ID,
-            deviceSequence = 7,
-            canonicalPayload = canonicalEvent(),
-            payloadHash = "a".repeat(64),
-            authBindingId = "auth-a",
-            state = "QUARANTINED",
-            quarantineReason = SyncQuarantineReason.BUSINESS_CONFLICT.name,
-            lastServerCode = "COUNT_REVISION_CONFLICT",
-        )
+        val event = recoverableEvent()
         val request = requireNotNull(InventoryRecoveryCaseContract.from(event))
         assertEquals(DOCUMENT_ID, request.documentId)
         assertEquals(EVENT_ID, request.eventId)
         assertEquals("A-04", request.locationId)
+        assertEquals(EVENT_PAYLOAD_HASH, request.payloadHash)
         assertEquals(SyncQuarantineReason.BUSINESS_CONFLICT.name, request.quarantineReason)
         assertEquals(
-            "2cba02f00c8b3cf3af43da5abebc8b46939dc3c81e20c19b4e88163af10de8d4",
+            "54a4cb106d45dd378d0581605b03588d040697a968085d3e7a02bb6c7456ae29",
             InventoryRecoveryCaseContract.hash(request),
         )
         val body = InventoryRecoveryCaseContract.body(request)
@@ -51,15 +43,7 @@ class InventoryRecoveryCaseContractTest {
         ) {
             assertNull(
                 InventoryRecoveryCaseContract.from(
-                    OfflineEvent(
-                        eventId = EVENT_ID,
-                        deviceSequence = 7,
-                        canonicalPayload = canonicalEvent(),
-                        payloadHash = "a".repeat(64),
-                        authBindingId = "auth-a",
-                        state = "QUARANTINED",
-                        quarantineReason = reason.name,
-                    ),
+                    recoverableEvent().copy(quarantineReason = reason.name),
                 ),
             )
         }
@@ -69,14 +53,7 @@ class InventoryRecoveryCaseContractTest {
     fun `existing recovery case cannot be reopened from local queue`() {
         assertNull(
             InventoryRecoveryCaseContract.from(
-                OfflineEvent(
-                    eventId = EVENT_ID,
-                    deviceSequence = 7,
-                    canonicalPayload = canonicalEvent(),
-                    payloadHash = "a".repeat(64),
-                    authBindingId = "auth-a",
-                    state = "QUARANTINED",
-                    quarantineReason = SyncQuarantineReason.BUSINESS_CONFLICT.name,
+                recoverableEvent().copy(
                     recoveryCaseId = "33333333-3333-4333-8333-333333333333",
                     recoveryState = "REQUESTED",
                 ),
@@ -86,23 +63,13 @@ class InventoryRecoveryCaseContractTest {
 
     @Test
     fun `recovery response must bind exact event and evidence policy`() {
-        val event = OfflineEvent(
-            eventId = EVENT_ID,
-            deviceSequence = 7,
-            canonicalPayload = canonicalEvent(),
-            payloadHash = "a".repeat(64),
-            authBindingId = "auth-a",
-            state = "QUARANTINED",
-            quarantineReason = SyncQuarantineReason.BUSINESS_CONFLICT.name,
-            lastServerCode = "COUNT_REVISION_CONFLICT",
-        )
-        val request = requireNotNull(InventoryRecoveryCaseContract.from(event))
+        val request = requireNotNull(InventoryRecoveryCaseContract.from(recoverableEvent()))
         val response = JSONObject()
             .put("case_id", "33333333-3333-4333-8333-333333333333")
             .put("event_id", EVENT_ID)
             .put("document_id", DOCUMENT_ID)
             .put("location_id", "A-04")
-            .put("payload_hash", "a".repeat(64))
+            .put("payload_hash", EVENT_PAYLOAD_HASH)
             .put("evidence_policy", "PRESERVE_NO_CLIENT_PROMOTION")
         assertEquals(
             "33333333-3333-4333-8333-333333333333",
@@ -117,20 +84,33 @@ class InventoryRecoveryCaseContractTest {
     }
 
     @Test
-    fun `canonical payload event id substitution is rejected`() {
-        val event = OfflineEvent(
-            eventId = EVENT_ID,
-            deviceSequence = 7,
-            canonicalPayload = JSONObject(canonicalEvent())
-                .put("event_id", "44444444-4444-4444-8444-444444444444")
-                .toString(),
-            payloadHash = "a".repeat(64),
-            authBindingId = "auth-a",
-            state = "QUARANTINED",
-            quarantineReason = SyncQuarantineReason.BUSINESS_CONFLICT.name,
-        )
+    fun `canonical payload event id substitution is rejected even when metadata looks valid`() {
+        val tamperedCanonical = JSONObject(canonicalEvent())
+            .put("event_id", "44444444-4444-4444-8444-444444444444")
+            .toString()
+        val event = recoverableEvent().copy(canonicalPayload = tamperedCanonical)
         assertNull(InventoryRecoveryCaseContract.from(event))
     }
+
+    @Test
+    fun `canonical payload hash substitution is rejected before supervisor request`() {
+        assertNull(
+            InventoryRecoveryCaseContract.from(
+                recoverableEvent().copy(payloadHash = "b".repeat(64)),
+            ),
+        )
+    }
+
+    private fun recoverableEvent() = OfflineEvent(
+        eventId = EVENT_ID,
+        deviceSequence = 7,
+        canonicalPayload = canonicalEvent(),
+        payloadHash = EVENT_PAYLOAD_HASH,
+        authBindingId = "auth-a",
+        state = "QUARANTINED",
+        quarantineReason = SyncQuarantineReason.BUSINESS_CONFLICT.name,
+        lastServerCode = "COUNT_REVISION_CONFLICT",
+    )
 
     private fun canonicalEvent(): String =
         "{\"active_shift_id\":\"SHIFT-1\",\"attempt_id\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"," +
@@ -142,5 +122,7 @@ class InventoryRecoveryCaseContractTest {
     companion object {
         private const val DOCUMENT_ID = "22222222-2222-4222-8222-222222222222"
         private const val EVENT_ID = "11111111-1111-4111-8111-111111111111"
+        private const val EVENT_PAYLOAD_HASH =
+            "477e8d9da5d2c3414b540b897a4a74e56924f5fd49ca4d0a8707971ba2ab044f"
     }
 }

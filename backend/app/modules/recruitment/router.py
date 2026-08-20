@@ -12,6 +12,7 @@ from app.modules.workforce import persistence
 from app.modules.workforce.router import _require_rows_in_scope, _scoped_rows
 from .candidate_evidence_runtime import (
     CandidateEvidenceRuntimeError,
+    purge_expired_encrypted_candidate_evidence,
     read_candidate_evidence,
     secure_hr_candidate_upload,
 )
@@ -72,19 +73,69 @@ async def _read_upload_limited(file: UploadFile, limit: int = 10 * 1024 * 1024) 
         chunks.append(chunk)
 
 
-def _require_candidate_upload_authority_runtime() -> None:
+def _candidate_authority_readiness() -> dict:
     environment = os.getenv("DOCKOS_ENV", "development").strip().lower()
     mode = os.getenv("RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE", "disabled").strip().lower()
     storage_mode = os.getenv("RECRUITMENT_EVIDENCE_STORAGE_MODE", "disabled").strip().lower()
+    schema_version = persistence.schema_version() if persistence.ENABLED else None
     required_schema = 40 if environment == "production" or storage_mode == "s3-kms-envelope" else 39
     postgres_ready = (
         mode == "postgres"
         and persistence.ENABLED
-        and (persistence.schema_version() or 0) >= required_schema
+        and (schema_version or 0) >= required_schema
+    )
+    encrypted_storage_ready = (
+        storage_mode == "s3-kms-envelope"
+        and bool(os.getenv("RECRUITMENT_EVIDENCE_BUCKET", "").strip())
+        and bool(os.getenv("RECRUITMENT_EVIDENCE_KMS_KEY_ID", "").strip())
     )
     legacy_ready = environment != "production" and mode == "legacy-development"
-    encrypted_storage_ready = environment != "production" or storage_mode == "s3-kms-envelope"
-    if not ((postgres_ready or legacy_ready) and encrypted_storage_ready):
+    core_ready = (
+        postgres_ready and (environment != "production" or encrypted_storage_ready)
+    ) or legacy_ready
+    scanner_ready = bool(os.getenv("RECRUITMENT_SCANNER_ACTIVE_KID", "").strip()) and bool(
+        os.getenv("RECRUITMENT_SCANNER_KMS_VERIFY_KEYS", "").strip()
+    )
+    official_m2m_configured = all(
+        os.getenv(name, "").strip()
+        for name in (
+            "RECRUITMENT_OFFICIAL_M2M_ENDPOINT",
+            "RECRUITMENT_OFFICIAL_M2M_TOKEN_URL",
+            "RECRUITMENT_OFFICIAL_M2M_CLIENT_ID",
+            "RECRUITMENT_OFFICIAL_M2M_CLIENT_SECRET",
+            "RECRUITMENT_OFFICIAL_M2M_MTLS_CERT",
+            "RECRUITMENT_OFFICIAL_M2M_MTLS_KEY",
+            "RECRUITMENT_OFFICIAL_M2M_ALLOWED_HOSTS",
+            "RECRUITMENT_OFFICIAL_M2M_CONTRACT_ID",
+            "RECRUITMENT_OFFICIAL_M2M_SIGNATURE_PROFILE",
+            "RECRUITMENT_OFFICIAL_M2M_PROVIDER_PUBLIC_KEY_FILE",
+            "RECRUITMENT_OFFICIAL_M2M_RESPONSE_PROFILE",
+        )
+    )
+    return {
+        "environment": environment,
+        "schema_version": schema_version,
+        "required_schema": required_schema,
+        "upload_authority_mode": mode,
+        "postgres_authority_ready": postgres_ready,
+        "evidence_storage_mode": storage_mode,
+        "encrypted_storage_ready": encrypted_storage_ready,
+        "scanner_kms_configured": scanner_ready,
+        "official_m2m_configured": official_m2m_configured,
+        "core_ready": core_ready,
+        "truth_boundary": (
+            "EXTERNAL_OFFICIAL_M2M_CONFIGURATION_REQUIRED"
+            if environment == "production" and not official_m2m_configured
+            else "CONFIGURED_NOT_LIVE_PROVEN"
+            if official_m2m_configured
+            else "NON_PRODUCTION"
+        ),
+    }
+
+
+def _require_candidate_upload_authority_runtime() -> None:
+    readiness = _candidate_authority_readiness()
+    if not readiness["core_ready"]:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -184,8 +235,12 @@ def _current_staffing(row: dict) -> dict | None:
 @router.get("/health")
 def health() -> dict:
     return {
-        "status": "ok", "module": "recruitment", "norm_engine": True,
-        "hr_actual": True, "evidence": True, "email_outbox": True,
+        "status": "ok",
+        "module": "recruitment",
+        "norm_engine": True,
+        "hr_actual": True,
+        "email_outbox": True,
+        "production_authorities": _candidate_authority_readiness(),
     }
 
 
@@ -637,4 +692,12 @@ def purge_retention(
 ) -> dict:
     _require(x_opex_role, x_opex_permissions, "manageRecruitmentSettings")
     actor, _ = _identity(request)
-    return purge_expired_recruitment_data(actor)
+    try:
+        storage_result = purge_expired_encrypted_candidate_evidence()
+    except CandidateEvidenceRuntimeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "ENCRYPTED_EVIDENCE_RETENTION_FAILED", "message": str(error)},
+        ) from error
+    metadata_result = purge_expired_recruitment_data(actor)
+    return {**metadata_result, **storage_result}

@@ -374,17 +374,20 @@ def upgrade() -> None:
         f"REVOKE DELETE ON academy_locale_settings FROM {RUNTIME_ROLE}"
     )
     op.execute(
-        f"GRANT INSERT ON academy_translation_lineage, academy_translation_review_events TO {RUNTIME_ROLE}"
+        "GRANT INSERT ON academy_translation_lineage, "
+        f"academy_translation_review_events TO {RUNTIME_ROLE}"
     )
     op.execute(
-        f"REVOKE UPDATE, DELETE ON academy_translation_lineage, academy_translation_review_events FROM {RUNTIME_ROLE}"
+        "REVOKE UPDATE, DELETE ON academy_translation_lineage, "
+        f"academy_translation_review_events FROM {RUNTIME_ROLE}"
     )
 
 
 def downgrade() -> None:
     op.execute("DROP VIEW IF EXISTS academy_translation_authority")
     op.execute(
-        "DROP TRIGGER IF EXISTS academy_translation_review_state_guard ON academy_translation_review_events"
+        "DROP TRIGGER IF EXISTS academy_translation_review_state_guard "
+        "ON academy_translation_review_events"
     )
     op.execute("DROP FUNCTION IF EXISTS academy_validate_translation_review_event()")
     for table_name in reversed(LOCALIZATION_TABLES):

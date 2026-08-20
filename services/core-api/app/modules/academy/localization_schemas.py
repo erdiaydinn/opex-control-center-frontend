@@ -3,7 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-
 TranslationMethod = Literal["human", "machine_assisted", "machine_draft"]
 TranslationDecision = Literal["approved", "rejected"]
 

@@ -4,6 +4,7 @@ import { CalendarClock, CheckCircle2, Clock3, RefreshCw, ShieldCheck, Sparkles, 
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { workforceFlexibilityMessage } from "../../platform/i18n/workforceFlexibilityMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import WorkforceShiftTradePanel from "./WorkforceShiftTradePanel.jsx";
 import {
   claimWorkforceOpenShift,
   loadWorkforceFlexibility,
@@ -136,5 +137,7 @@ export default function WorkforceFlexibilityCenter() {
         {!data.openShifts.length ? <div className="wfx-flex-empty">{m("noOpen")}</div> : null}
       </div>
     </section>
+
+    {personId ? <WorkforceShiftTradePanel personId={personId} /> : null}
   </div>;
 }

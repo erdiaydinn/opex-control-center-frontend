@@ -24,6 +24,7 @@ import PlanogramDigitalTwin from "./PlanogramDigitalTwin.jsx";
 import PlanogramEconomicsPanel from "./PlanogramEconomicsPanel.jsx";
 import PlanogramOperationsPanel from "./PlanogramOperationsPanel.jsx";
 import PlanogramPickerEyePreview from "./PlanogramPickerEyePreview.jsx";
+import PlanogramRetailIntelligencePanel from "./PlanogramRetailIntelligencePanel.jsx";
 import PlanogramScenarioPortfolio from "./PlanogramScenarioPortfolio.jsx";
 import PlanogramStoreScanPanel from "./PlanogramStoreScanPanel.jsx";
 import "./planogram-native.css";
@@ -251,6 +252,13 @@ export default function PlanogramStudio() {
             formatNumber={formatNumber}
             canCreate={canCreatePreview}
             optimizationCandidate={candidate}
+          />
+
+          <PlanogramRetailIntelligencePanel
+            candidate={candidate}
+            locale={locale}
+            formatNumber={formatNumber}
+            canCreate={canCreatePreview}
           />
 
           <section

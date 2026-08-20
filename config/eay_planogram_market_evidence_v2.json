@@ -1,0 +1,32 @@
+{
+  "contract": "eay-planogram-market-evidence-v2",
+  "claim_market_leader": false,
+  "external_field_proof_required": true,
+  "repository_gates": [
+    "commercial_physical_convergence",
+    "paired_shadow_kpi_backtest",
+    "blind_ab_repository_benchmark",
+    "temporal_realogram_multisource",
+    "shelf_scan_compliance_review"
+  ],
+  "external_gates": [
+    "server_connector_provenance_verified",
+    "independent_expert_reveal_verified",
+    "controlled_store_pilot_verified",
+    "field_installation_acceptance_verified"
+  ],
+  "authority_boundaries": {
+    "production_release_allowed": false,
+    "assortment_execution_allowed": false,
+    "auto_correction_allowed": false,
+    "causal_claim_allowed": false,
+    "market_leadership_claim_allowed": false
+  },
+  "remaining_external_product_gaps": [
+    "real_wms_iot_scanner_connector_provenance",
+    "real_fixture_vendor_asset_library",
+    "real_pack_texture_or_image_pipeline",
+    "blind_expert_identity_reveal_after_scoring",
+    "controlled_real_store_kpi_pilot"
+  ]
+}

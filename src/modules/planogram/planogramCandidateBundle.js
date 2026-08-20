@@ -8,6 +8,9 @@ const MAX_SKU_LENGTH = 160;
 const MAX_RETAIL_PAIRS = 5000;
 const MAX_REALOGRAM_EVENTS = 100000;
 const MAX_SUBSTITUTION_EDGES = 50000;
+const MAX_SHELF_SCAN_SHELVES = 2000;
+const MAX_SHELF_SCAN_OBSERVATIONS = 20000;
+const MAX_BLIND_AISLES = 2000;
 const RETAIL_KEYS = new Set([
   "store_code",
   "category_capacity_cm",
@@ -17,6 +20,13 @@ const RETAIL_KEYS = new Set([
   "historical_pairs",
   "metric_directions",
   "minimum_backtest_pairs",
+  "blind_candidate_a",
+  "blind_candidate_b",
+  "shelf_scan_shelves",
+  "shelf_scan_observations",
+  "min_detection_confidence",
+  "min_image_quality",
+  "max_occlusion_pct",
   "realogram_events",
   "as_of",
   "stale_after_minutes",
@@ -85,31 +95,88 @@ function normalizeBasket(raw) {
   return { skus };
 }
 
+function validBlindCandidate(raw) {
+  if (!isPlainObject(raw)) return false;
+  const keys = Object.keys(raw);
+  if (keys.length !== 1 || keys[0] !== "planogram") return false;
+  if (!isPlainObject(raw.planogram)) return false;
+  const aisles = raw.planogram.aisles;
+  return Array.isArray(aisles) && aisles.length > 0 && aisles.length <= MAX_BLIND_AISLES;
+}
+
+function validOptionalNumber(raw, key, min, max) {
+  if (raw[key] == null) return true;
+  const value = Number(raw[key]);
+  return Number.isFinite(value) && value >= min && value <= max;
+}
+
 function normalizeRetailIntelligence(raw) {
   if (raw == null) return null;
   if (!isPlainObject(raw) || containsForbiddenIdentity(raw)) return null;
   if (Object.keys(raw).some((key) => !RETAIL_KEYS.has(key))) return null;
+
   const storeCode = String(raw.store_code ?? "").trim();
-  if (!storeCode || storeCode.length > 80 || !/^[A-Za-z0-9._-]+$/.test(storeCode)) return null;
+  if (!storeCode || storeCode.length > 80 || !/^[A-Za-z0-9._-]+$/.test(storeCode)) {
+    return null;
+  }
+
   const substitutionEdges = raw.substitution_edges ?? [];
   const historicalPairs = raw.historical_pairs ?? [];
   const realogramEvents = raw.realogram_events ?? [];
-  if (!Array.isArray(substitutionEdges) || substitutionEdges.length > MAX_SUBSTITUTION_EDGES) return null;
-  if (!Array.isArray(historicalPairs) || historicalPairs.length > MAX_RETAIL_PAIRS) return null;
-  if (!Array.isArray(realogramEvents) || realogramEvents.length > MAX_REALOGRAM_EVENTS) return null;
+  const shelfScanShelves = raw.shelf_scan_shelves ?? [];
+  const shelfScanObservations = raw.shelf_scan_observations ?? [];
+  if (
+    !Array.isArray(substitutionEdges)
+    || substitutionEdges.length > MAX_SUBSTITUTION_EDGES
+    || !Array.isArray(historicalPairs)
+    || historicalPairs.length > MAX_RETAIL_PAIRS
+    || !Array.isArray(realogramEvents)
+    || realogramEvents.length > MAX_REALOGRAM_EVENTS
+    || !Array.isArray(shelfScanShelves)
+    || shelfScanShelves.length > MAX_SHELF_SCAN_SHELVES
+    || !Array.isArray(shelfScanObservations)
+    || shelfScanObservations.length > MAX_SHELF_SCAN_OBSERVATIONS
+  ) {
+    return null;
+  }
+  if (shelfScanObservations.length && !shelfScanShelves.length) return null;
+
+  const blindA = raw.blind_candidate_a ?? null;
+  const blindB = raw.blind_candidate_b ?? null;
+  if (Boolean(blindA) !== Boolean(blindB)) return null;
+  if ((blindA && !validBlindCandidate(blindA)) || (blindB && !validBlindCandidate(blindB))) {
+    return null;
+  }
+
+  if (
+    !validOptionalNumber(raw, "min_detection_confidence", 0.5, 1)
+    || !validOptionalNumber(raw, "min_image_quality", 0, 1)
+    || !validOptionalNumber(raw, "max_occlusion_pct", 0, 100)
+  ) {
+    return null;
+  }
+
   const hasCategoryCapacity = isPlainObject(raw.category_capacity_cm)
     && Object.keys(raw.category_capacity_cm).length > 0;
   const totalShelfWidth = Number(raw.total_shelf_width_cm);
-  if (!hasCategoryCapacity && !(Number.isFinite(totalShelfWidth) && totalShelfWidth > 0)) return null;
+  if (!hasCategoryCapacity && !(Number.isFinite(totalShelfWidth) && totalShelfWidth > 0)) {
+    return null;
+  }
   return structuredClone(raw);
+}
+
+function embeddedStoreMatches(container, expected) {
+  const embedded = String(container?.store_code ?? "").trim().toUpperCase();
+  if (!embedded || embedded === "AUTO") return true;
+  return embedded === expected;
 }
 
 export function normalizeCandidateBundle(payload) {
   if (!isPlainObject(payload)) return null;
   if (
-    !Array.isArray(payload.products) ||
-    payload.products.length === 0 ||
-    payload.products.length > MAX_PRODUCTS
+    !Array.isArray(payload.products)
+    || payload.products.length === 0
+    || payload.products.length > MAX_PRODUCTS
   ) {
     return null;
   }
@@ -132,8 +199,33 @@ export function normalizeCandidateBundle(payload) {
     ? null
     : normalizePlanogramAssetManifest(payload.asset_manifest);
   if (payload.asset_manifest != null && !assetManifest) return null;
+
   const retailIntelligence = normalizeRetailIntelligence(payload.retail_intelligence);
   if (payload.retail_intelligence != null && !retailIntelligence) return null;
+  if (retailIntelligence) {
+    const expectedStore = String(retailIntelligence.store_code).trim().toUpperCase();
+    if (
+      !embeddedStoreMatches(payload.layout, expectedStore)
+      || !embeddedStoreMatches(payload.store_dna, expectedStore)
+    ) {
+      return null;
+    }
+    for (const pair of retailIntelligence.historical_pairs ?? []) {
+      if (String(pair?.store_code ?? "").trim().toUpperCase() !== expectedStore) return null;
+    }
+    for (const candidate of [
+      retailIntelligence.blind_candidate_a,
+      retailIntelligence.blind_candidate_b,
+    ]) {
+      if (candidate && !embeddedStoreMatches(candidate.planogram, expectedStore)) return null;
+    }
+    if (
+      (retailIntelligence.blind_candidate_a || retailIntelligence.blind_candidate_b)
+      && orderBaskets.length === 0
+    ) {
+      return null;
+    }
+  }
 
   const normalized = {
     products: payload.products,
@@ -162,4 +254,7 @@ export const PLANOGRAM_CANDIDATE_LIMITS = Object.freeze({
   maxRetailPairs: MAX_RETAIL_PAIRS,
   maxRealogramEvents: MAX_REALOGRAM_EVENTS,
   maxSubstitutionEdges: MAX_SUBSTITUTION_EDGES,
+  maxShelfScanShelves: MAX_SHELF_SCAN_SHELVES,
+  maxShelfScanObservations: MAX_SHELF_SCAN_OBSERVATIONS,
+  maxBlindAisles: MAX_BLIND_AISLES,
 });

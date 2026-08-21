@@ -4,19 +4,37 @@ import process from "node:process";
 import { SUPPORTED_LOCALES } from "../src/platform/i18n/messages.js";
 import { PLANOGRAM_AUTHORING_MESSAGES } from "../src/platform/i18n/planogramAuthoringMessages.js";
 import {
+  applyOptimizerStoreSceneSuggestions,
+  applyStoreSceneCommand,
   buildPlanogramAuthoringDocument,
+  buildStoreScene,
   candidateFromReviewedStoreScan,
   candidateWithPlanogramAuthoringDocument,
   createPlanogramAuthoringElement,
+  createStoreSceneHistory,
+  createStoreSceneNode,
+  deserializeStoreScene,
+  executeStoreSceneCommand,
+  findStoreSceneAisleViolations,
+  findStoreSceneCollisions,
   PLANOGRAM_AUTHORING_CONTRACT,
+  PLANOGRAM_STORE_SCENE_CONTRACT,
+  projectStoreScene2D,
+  projectStoreScene3D,
+  redoStoreSceneCommand,
   removePlanogramAuthoringElement,
   resizePlanogramAuthoringFloor,
+  serializeStoreScene,
+  snapStoreSceneCoordinate,
+  undoStoreSceneCommand,
   updatePlanogramAuthoringElement,
 } from "../src/modules/planogram/planogramAuthoringModel.js";
 
 function fail(message) { console.error(message); process.exit(1); }
+function pass(id, message) { console.log(`${id}=PASS ${message}`); }
 
 const candidate = {
+  store_code: "STORE-1",
   products: [],
   layout: { aisles: [] },
   mode: "HYBRID",
@@ -69,6 +87,91 @@ const authoredCandidate = candidateWithPlanogramAuthoringDocument(candidate, doc
 if (authoredCandidate.store_dna.architecture.authoring_contract !== PLANOGRAM_AUTHORING_CONTRACT) fail("Authored candidate contract missing.");
 if (authoredCandidate.store_dna.architecture.source_ref !== "scan://STORE-1/e57") fail("Source reference was lost while applying authoring document.");
 
+const scene = buildStoreScene(authoredCandidate, document, { sceneId: "STORE-SCENE-STORE-1" });
+if (!scene || scene.contract !== PLANOGRAM_STORE_SCENE_CONTRACT || scene.units !== "m") fail("Canonical StoreScene contract or real-world unit basis missing.");
+const serialized = serializeStoreScene(scene);
+const roundTripped = deserializeStoreScene(serialized);
+if (serializeStoreScene(roundTripped) !== serialized) fail("StoreScene round-trip is not deterministic.");
+pass("SCENE-001", "deterministic serialize/deserialize round trip");
+
+const projection2D = projectStoreScene2D(scene);
+const projection3D = projectStoreScene3D(scene);
+const commonGeometry2D = projection2D.nodes.map(({ nodeId, nodeType, parentId, geometry, locked }) => ({ nodeId, nodeType, parentId, geometry, locked }));
+const commonGeometry3D = projection3D.nodes.map(({ nodeId, nodeType, parentId, geometry, locked }) => ({ nodeId, nodeType, parentId, geometry, locked }));
+if (JSON.stringify(commonGeometry2D) !== JSON.stringify(commonGeometry3D)) fail("2D and 3D projections diverged from canonical StoreScene geometry.");
+if (projection2D.sceneId !== projection3D.sceneId || projection2D.revision !== projection3D.revision) fail("2D/3D scene identity or revision diverged.");
+pass("SCENE-002", "2D and 3D project identical geometry from one StoreScene");
+
+let history = createStoreSceneHistory(scene);
+const stableNodeId = scene.nodes[0].nodeId;
+const originalCenter = scene.nodes[0].geometry.centerXM;
+history = executeStoreSceneCommand(history, {
+  commandId: "CMD-MOVE-1",
+  type: "UPDATE_NODE",
+  nodeId: stableNodeId,
+  expectedRevision: history.present.revision,
+  patch: { geometry: { centerXM: originalCenter + 0.5 } },
+});
+const editedRevision = history.present.revision;
+if (history.present.nodes[0].nodeId !== stableNodeId || editedRevision !== scene.revision + 1) fail("Stable node id or revision contract drifted during command execution.");
+const editedSerialized = serializeStoreScene(history.present);
+if (deserializeStoreScene(editedSerialized).nodes[0].nodeId !== stableNodeId) fail("Stable node id did not survive persisted edit round trip.");
+pass("SCENE-003", "stable ids and revisions survive editing and persistence round trip");
+
+history = undoStoreSceneCommand(history);
+if (history.present.nodes[0].geometry.centerXM !== originalCenter) fail("Undo did not apply deterministic inverse command.");
+history = redoStoreSceneCommand(history);
+if (history.present.nodes[0].geometry.centerXM !== originalCenter + 0.5) fail("Redo did not deterministically reapply command.");
+pass("UNDO-001", "reversible command history preserves deterministic geometry");
+
+const snappedBoundary = snapStoreSceneCoordinate(1.05, [1.1, 2], { thresholdM: 0.05, gridM: 0.25 });
+if (snappedBoundary !== 1.1) fail(`Snap threshold boundary drifted: ${snappedBoundary}`);
+const snappedGrid = snapStoreSceneCoordinate(1.17, [2], { thresholdM: 0.05, gridM: 0.25 });
+if (snappedGrid !== 1.25) fail(`Grid fallback snap drifted: ${snappedGrid}`);
+pass("SNAP-001", "anchor threshold and grid fallback are deterministic");
+
+let fixtureScene = scene;
+for (const [commandId, node] of [
+  ["CMD-FIXTURE-A", createStoreSceneNode({ nodeId: "FIXTURE-A", nodeType: "fixture", geometry: { centerXM: 2, centerYM: 5, widthM: 1, depthM: 1, rotationDeg: 0 } })],
+  ["CMD-FIXTURE-B", createStoreSceneNode({ nodeId: "FIXTURE-B", nodeType: "fixture", geometry: { centerXM: 3.8, centerYM: 5, widthM: 1, depthM: 1, rotationDeg: 0 } })],
+  ["CMD-FIXTURE-C", createStoreSceneNode({ nodeId: "FIXTURE-C", nodeType: "fixture", geometry: { centerXM: 2.4, centerYM: 5, widthM: 1, depthM: 1, rotationDeg: 12 } })],
+]) {
+  fixtureScene = applyStoreSceneCommand(fixtureScene, {
+    commandId,
+    type: "CREATE_NODE",
+    node,
+    expectedRevision: fixtureScene.revision,
+  }).scene;
+}
+const collisions = findStoreSceneCollisions(fixtureScene);
+if (!collisions.some((row) => [row.leftNodeId, row.rightNodeId].includes("FIXTURE-A") && [row.leftNodeId, row.rightNodeId].includes("FIXTURE-C"))) fail("Oriented fixture overlap was not detected.");
+pass("COLL-001", "oriented overlapping fixtures are detected deterministically");
+
+const aisleViolations = findStoreSceneAisleViolations(fixtureScene, 1);
+const fixturePair = aisleViolations.find((row) => [row.leftNodeId, row.rightNodeId].includes("FIXTURE-A") && [row.leftNodeId, row.rightNodeId].includes("FIXTURE-B"));
+if (!fixturePair || fixturePair.clearanceM !== 0.8 || fixturePair.deficitM !== 0.2) fail(`Aisle clearance measurement drifted: ${JSON.stringify(fixturePair)}`);
+pass("AISLE-001", "minimum aisle violation is deterministic and measurable");
+
+let lockHistory = createStoreSceneHistory(fixtureScene);
+lockHistory = executeStoreSceneCommand(lockHistory, {
+  commandId: "CMD-LOCK-A",
+  type: "SET_LOCK",
+  nodeId: "FIXTURE-A",
+  locked: true,
+  expectedRevision: lockHistory.present.revision,
+});
+const optimizerResult = applyOptimizerStoreSceneSuggestions(lockHistory.present, [
+  { nodeId: "FIXTURE-A", patch: { geometry: { centerXM: 8 } } },
+  { nodeId: "FIXTURE-B", patch: { geometry: { centerXM: 4.2 } } },
+], { optimizerRunId: "OPT-RUN-42" });
+if (!optimizerResult.blocked.some((row) => row.nodeId === "FIXTURE-A" && row.reason === "locked-human-override")) fail("Optimizer overwrote a locked human node.");
+const optimizedB = optimizerResult.scene.nodes.find((row) => row.nodeId === "FIXTURE-B");
+if (optimizedB.geometry.centerXM !== 4.2 || optimizedB.provenance.optimizerRunId !== "OPT-RUN-42") fail("Optimizer scene command or provenance was not applied to unlocked node.");
+pass("LOCK-001", "optimizer respects human locks and records provenance");
+
+if (scene.provenance.physicalTruthAttested !== false || scene.previewOnly !== true) fail("StoreScene existence was promoted into physical truth authority.");
+pass("AUTH-001", "canonical scene remains fail-closed for physical truth authority");
+
 const reviewedResult = {
   reviewed_draft_ready: true,
   reviewed_draft_fingerprint: "reviewed456",
@@ -110,4 +213,4 @@ for (const needle of ["PointerLockControls", "RoomEnvironment", "MeshPhysicalMat
 }
 if (/https?:\/\//.test(pickerEye)) fail("Immersive renderer must not introduce remote asset URLs.");
 
-console.log("Planogram architectural authoring + scan-to-editable + immersive twin contracts: PASS");
+console.log("Planogram architectural authoring + canonical StoreScene + scan-to-editable + immersive twin contracts: PASS");

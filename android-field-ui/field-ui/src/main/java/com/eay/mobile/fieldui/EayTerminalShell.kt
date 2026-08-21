@@ -4,17 +4,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,13 +30,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -73,12 +84,7 @@ fun EayTerminalShell(
                 }
             }
             if (missions.isNotEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.field_next_missions),
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                }
+                item { SectionTitle(stringResource(R.string.field_next_missions)) }
             }
             items(missions, key = { it.missionId }) { mission ->
                 MissionCard(mission = mission, onMissionOpen = onMissionOpen)
@@ -87,7 +93,7 @@ fun EayTerminalShell(
     }
 }
 
-/** Real EAY One navigation surface; callbacks remain presentation intents, never authority. */
+/** Real EAY One navigation surface; callbacks remain presentation intents, never execution truth. */
 @Composable
 fun EayOneShell(
     navigation: EayOneNavigationModel,
@@ -96,9 +102,11 @@ fun EayOneShell(
     onDestinationSelected: (EayOneDestination) -> Unit,
     onMissionOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
+    summary: EayOneHomeSummaryUiState? = null,
     onDestinationAction: (EayOneDestination) -> Unit = {},
 ) {
     require(header.runtimeSurface == FieldRuntimeSurface.EAY_ONE)
+    val visibleMissions = missionsForDestination(navigation.selected, missions)
     Scaffold(
         modifier = modifier.fillMaxSize(),
         bottomBar = {
@@ -107,34 +115,35 @@ fun EayOneShell(
                     NavigationBarItem(
                         selected = destination == navigation.selected,
                         onClick = { onDestinationSelected(destination) },
-                        icon = {},
+                        icon = {
+                            Surface(
+                                modifier = Modifier.size(if (destination == navigation.selected) 10.dp else 7.dp),
+                                shape = CircleShape,
+                                color = if (destination == navigation.selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                },
+                            ) {}
+                        },
                         label = { Text(destination.label()) },
                     )
                 }
             }
         },
     ) { padding ->
-        when (navigation.selected) {
-            EayOneDestination.TODAY -> EayOneMissionSurface(
-                title = destinationTitle(EayOneDestination.TODAY),
+        if (visibleMissions.isNotEmpty() || navigation.selected in setOf(EayOneDestination.TODAY, EayOneDestination.MISSIONS)) {
+            EayOneMissionSurface(
+                title = destinationTitle(navigation.selected),
                 header = header,
-                missions = missions.take(3),
+                missions = visibleMissions,
                 pendingCount = navigation.pendingSyncCount,
+                summary = if (navigation.selected == EayOneDestination.TODAY) summary else null,
                 onMissionOpen = onMissionOpen,
                 modifier = Modifier.padding(padding),
             )
-            EayOneDestination.MISSIONS -> EayOneMissionSurface(
-                title = destinationTitle(EayOneDestination.MISSIONS),
-                header = header,
-                missions = missions,
-                pendingCount = navigation.pendingSyncCount,
-                onMissionOpen = onMissionOpen,
-                modifier = Modifier.padding(padding),
-            )
-            EayOneDestination.SCAN,
-            EayOneDestination.JARVIS,
-            EayOneDestination.ME,
-            -> EayOneActionSurface(
+        } else {
+            EayOneActionSurface(
                 destination = navigation.selected,
                 header = header,
                 pendingCount = navigation.pendingSyncCount,
@@ -145,37 +154,121 @@ fun EayOneShell(
     }
 }
 
+private fun missionsForDestination(
+    destination: EayOneDestination,
+    missions: List<FieldMissionCardModel>,
+): List<FieldMissionCardModel> = when (destination) {
+    EayOneDestination.TODAY -> missions.take(5)
+    EayOneDestination.MISSIONS -> missions
+    EayOneDestination.SCAN -> missions.filter {
+        it.kind in setOf(
+            FieldMissionVisualKind.COUNT,
+            FieldMissionVisualKind.PICK,
+            FieldMissionVisualKind.PUTAWAY,
+            FieldMissionVisualKind.RECEIVING,
+            FieldMissionVisualKind.TRANSFER,
+        )
+    }
+    EayOneDestination.JARVIS -> missions.filter { it.kind == FieldMissionVisualKind.JARVIS }
+    EayOneDestination.ME -> missions.filter {
+        it.kind in setOf(FieldMissionVisualKind.SHIFT, FieldMissionVisualKind.ACADEMY)
+    }
+}
+
 @Composable
 private fun EayOneMissionSurface(
     title: String,
     header: FieldShellHeader,
     missions: List<FieldMissionCardModel>,
     pendingCount: Int,
+    summary: EayOneHomeSummaryUiState?,
     onMissionOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, style = MaterialTheme.typography.displaySmall)
-                Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
-                SyncStatus(header.syncState, pendingCount)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(title, style = MaterialTheme.typography.displaySmall)
+                        Text(header.locationLabel, style = MaterialTheme.typography.bodyLarge)
+                    }
+                    SyncStatus(header.syncState, pendingCount)
+                }
             }
         }
+        summary?.let { model ->
+            item { HomeSummaryCard(model) }
+        }
         if (missions.isNotEmpty()) {
-            item {
-                Text(
-                    text = stringResource(R.string.field_next_missions),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-            }
+            item { SectionTitle(stringResource(R.string.field_next_missions)) }
         }
         items(missions, key = { it.missionId }) { mission ->
             MissionCard(mission = mission, onMissionOpen = onMissionOpen)
+        }
+    }
+}
+
+@Composable
+private fun HomeSummaryCard(model: EayOneHomeSummaryUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = model.title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    text = model.supportingText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            LinearProgressIndicator(
+                progress = { model.progressCurrent.toFloat() / model.progressTotal.toFloat() },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SummaryMetric(model.shiftLabel, model.shiftValue, Modifier.weight(1f))
+                SummaryMetric(model.missionLabel, model.missionValue, Modifier.weight(1f))
+                SummaryMetric(model.attentionLabel, model.attentionValue, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(value, style = MaterialTheme.typography.titleLarge)
         }
     }
 }
@@ -192,9 +285,36 @@ private fun EayOneActionSurface(
         modifier = modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text(destinationTitle(destination), style = MaterialTheme.typography.displaySmall)
-        Text(header.locationLabel, style = MaterialTheme.typography.titleLarge)
-        SyncStatus(header.syncState, pendingCount)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(destinationTitle(destination), style = MaterialTheme.typography.displaySmall)
+                Text(header.locationLabel, style = MaterialTheme.typography.bodyLarge)
+            }
+            SyncStatus(header.syncState, pendingCount)
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            shape = RoundedCornerShape(28.dp),
+            tonalElevation = 2.dp,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(20.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Surface(
+                    modifier = Modifier.size(56.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {}
+                Spacer(Modifier.height(16.dp))
+                Text(destination.label(), style = MaterialTheme.typography.headlineMedium)
+            }
+        }
         Button(
             onClick = { onAction(destination) },
             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
@@ -225,15 +345,35 @@ private fun FieldHeader(
 }
 
 @Composable
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.headlineMedium,
+    )
+}
+
+@Composable
 private fun MissionCard(
     mission: FieldMissionCardModel,
     onMissionOpen: (String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = missionContainer(mission.priority)),
+    ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                KindBadge(mission.kind)
+                PriorityDot(mission.priority)
+            }
             Text(mission.title, style = MaterialTheme.typography.titleLarge)
             if (mission.subtitle.isNotBlank()) {
                 Text(mission.subtitle, style = MaterialTheme.typography.bodyLarge)
@@ -241,6 +381,11 @@ private fun MissionCard(
             val progressCurrent = mission.progressCurrent
             val progressTotal = mission.progressTotal
             if (progressCurrent != null && progressTotal != null) {
+                val fraction = progressCurrent.toFloat() / progressTotal.toFloat()
+                LinearProgressIndicator(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(999.dp)),
+                )
                 Text(
                     text = stringResource(
                         R.string.blind_count_progress,
@@ -250,7 +395,7 @@ private fun MissionCard(
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
-            Button(
+            FilledTonalButton(
                 onClick = { onMissionOpen(mission.missionId) },
                 enabled = mission.enabled,
                 modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
@@ -259,6 +404,43 @@ private fun MissionCard(
             }
         }
     }
+}
+
+@Composable
+private fun KindBadge(kind: FieldMissionVisualKind) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+    ) {
+        Text(
+            text = kind.name,
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun PriorityDot(priority: FieldMissionVisualPriority) {
+    Surface(
+        modifier = Modifier.size(if (priority == FieldMissionVisualPriority.URGENT) 14.dp else 10.dp),
+        shape = CircleShape,
+        color = when (priority) {
+            FieldMissionVisualPriority.LOW -> MaterialTheme.colorScheme.outline
+            FieldMissionVisualPriority.NORMAL -> MaterialTheme.colorScheme.secondary
+            FieldMissionVisualPriority.HIGH -> MaterialTheme.colorScheme.primary
+            FieldMissionVisualPriority.URGENT -> MaterialTheme.colorScheme.error
+        },
+    ) {}
+}
+
+@Composable
+private fun missionContainer(priority: FieldMissionVisualPriority) = when (priority) {
+    FieldMissionVisualPriority.LOW -> MaterialTheme.colorScheme.surfaceVariant
+    FieldMissionVisualPriority.NORMAL -> MaterialTheme.colorScheme.surfaceVariant
+    FieldMissionVisualPriority.HIGH -> MaterialTheme.colorScheme.secondaryContainer
+    FieldMissionVisualPriority.URGENT -> MaterialTheme.colorScheme.errorContainer
 }
 
 @Composable
@@ -349,33 +531,56 @@ fun BlindCountScreen(
     onQuantityChange: (String) -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
+    backActionLabel: String? = null,
+    onBack: () -> Unit = {},
 ) {
     Column(
         modifier = modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(state.locationLabel, style = MaterialTheme.typography.headlineMedium)
-        Text(state.stepLabel, style = MaterialTheme.typography.titleLarge)
-        state.scannedItemLabel?.let {
-            Text(it, style = MaterialTheme.typography.bodyLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            backActionLabel?.let { label ->
+                TextButton(onClick = onBack, modifier = Modifier.sizeIn(minHeight = 56.dp)) {
+                    Text(label)
+                }
+            } ?: Spacer(Modifier.size(1.dp))
+            SyncStatus(state.syncState, 0)
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(state.locationLabel, style = MaterialTheme.typography.headlineMedium)
+                Text(state.stepLabel, style = MaterialTheme.typography.titleLarge)
+                state.scannedItemLabel?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+            }
+        }
+        state.totalLines?.let { total ->
+            LinearProgressIndicator(
+                progress = { state.confirmedLines.toFloat() / total.toFloat() },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
+            )
         }
         OutlinedTextField(
             value = state.observedQuantityText,
             onValueChange = onQuantityChange,
-            label = {
-                Text(stringResource(R.string.blind_count_observed_quantity))
-            },
+            label = { Text(stringResource(R.string.blind_count_observed_quantity)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
         )
         Text(
             text = state.totalLines?.let {
-                stringResource(
-                    R.string.blind_count_progress,
-                    state.confirmedLines,
-                    it,
-                )
+                stringResource(R.string.blind_count_progress, state.confirmedLines, it)
             } ?: pluralStringResource(
                 R.plurals.blind_count_completed_lines,
                 state.confirmedLines,
@@ -383,6 +588,7 @@ fun BlindCountScreen(
             ),
             style = MaterialTheme.typography.bodyLarge,
         )
+        Spacer(Modifier.weight(1f))
         Button(
             onClick = onConfirm,
             enabled = state.scannedItemLabel != null && state.observedQuantityText.isNotBlank(),
@@ -393,51 +599,72 @@ fun BlindCountScreen(
     }
 }
 
-/**
- * Scanner-first shared execution surface for Picking, Putaway, Receiving and Transfer.
- * The screen consumes presentation-only state; physical evidence still travels through
- * the signed MobileEventEnvelope/operational-event authority path.
- */
+/** Scanner-first shared execution surface for Picking, Putaway, Receiving and Transfer. */
 @Composable
 fun OperationalMissionScreen(
     state: OperationalExecutionUiState,
     onQuantityChange: (String) -> Unit,
     onPrimaryAction: () -> Unit,
     modifier: Modifier = Modifier,
+    backActionLabel: String? = null,
+    onBack: () -> Unit = {},
 ) {
     Column(
         modifier = modifier.fillMaxSize().padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(state.title, style = MaterialTheme.typography.displaySmall)
-        Text(state.referenceLabel, style = MaterialTheme.typography.titleLarge)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(state.stepLabel, style = MaterialTheme.typography.headlineMedium)
+            backActionLabel?.let { label ->
+                TextButton(onClick = onBack, modifier = Modifier.sizeIn(minHeight = 56.dp)) {
+                    Text(label)
+                }
+            } ?: Spacer(Modifier.size(1.dp))
             SyncStatus(state.syncState, 0)
         }
-        Text(
-            text = stringResource(
-                R.string.blind_count_progress,
-                state.progressCurrent,
-                state.progressTotal,
-            ),
-            style = MaterialTheme.typography.bodyLarge,
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            KindBadge(state.kind)
+            Text(state.title, style = MaterialTheme.typography.displaySmall)
+            Text(state.referenceLabel, style = MaterialTheme.typography.bodyLarge)
+        }
+        LinearProgressIndicator(
+            progress = { state.progressCurrent.toFloat() / state.progressTotal.toFloat() },
+            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)),
         )
-        Text(state.instruction, style = MaterialTheme.typography.titleLarge)
-        state.confirmationLabel?.let { confirmation ->
-            Surface(
-                tonalElevation = 2.dp,
-                shape = RoundedCornerShape(16.dp),
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Text(state.stepLabel, style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    confirmation,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    text = stringResource(
+                        R.string.blind_count_progress,
+                        state.progressCurrent,
+                        state.progressTotal,
+                    ),
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                Text(state.instruction, style = MaterialTheme.typography.titleLarge)
+                state.confirmationLabel?.let { confirmation ->
+                    Surface(
+                        tonalElevation = 2.dp,
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(
+                            confirmation,
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
             }
         }
         if (state.stepKind == FieldOperationalStepKind.QUANTITY) {
@@ -449,6 +676,7 @@ fun OperationalMissionScreen(
                 modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
             )
         }
+        Spacer(Modifier.weight(1f))
         Button(
             onClick = onPrimaryAction,
             enabled = state.primaryActionEnabled &&
@@ -457,6 +685,148 @@ fun OperationalMissionScreen(
         ) {
             Text(state.primaryActionLabel)
         }
+    }
+}
+
+@Composable
+fun EayModuleDetailScreen(
+    state: EayModuleDetailUiState,
+    onBack: () -> Unit,
+    onPrimaryAction: () -> Unit,
+    onSecondaryAction: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack, modifier = Modifier.sizeIn(minHeight = 56.dp)) {
+                    Text(state.backActionLabel)
+                }
+                SyncStatus(state.syncState, 0)
+            }
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                KindBadge(state.kind)
+                Text(state.eyebrow, style = MaterialTheme.typography.labelLarge)
+                Text(state.title, style = MaterialTheme.typography.displaySmall)
+                Text(state.summary, style = MaterialTheme.typography.bodyLarge)
+                HealthBadge(state.health, state.statusLabel)
+            }
+        }
+        items(state.metrics.chunked(2)) { rowMetrics ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                rowMetrics.forEach { metric ->
+                    MetricCard(metric, Modifier.weight(1f))
+                }
+                if (rowMetrics.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        if (state.sections.isNotEmpty()) {
+            item { HorizontalDivider() }
+        }
+        items(state.sections) { section ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(section.title, style = MaterialTheme.typography.titleLarge)
+                        section.statusLabel?.let { label ->
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Text(
+                                    label,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                        }
+                    }
+                    Text(section.body, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onPrimaryAction,
+                    enabled = state.primaryActionEnabled,
+                    modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 64.dp),
+                ) {
+                    Text(state.primaryActionLabel)
+                }
+                state.secondaryActionLabel?.let { label ->
+                    FilledTonalButton(
+                        onClick = onSecondaryAction,
+                        modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 56.dp),
+                    ) {
+                        Text(label)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricCard(metric: EayModuleMetricUiModel, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        tonalElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(metric.label, style = MaterialTheme.typography.labelLarge)
+            Text(metric.value, style = MaterialTheme.typography.headlineMedium)
+            if (metric.supportingText.isNotBlank()) {
+                Text(metric.supportingText, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthBadge(health: EayModuleHealthVisual, label: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = when (health) {
+            EayModuleHealthVisual.READY -> MaterialTheme.colorScheme.secondaryContainer
+            EayModuleHealthVisual.IN_PROGRESS -> MaterialTheme.colorScheme.primaryContainer
+            EayModuleHealthVisual.ATTENTION -> MaterialTheme.colorScheme.errorContainer
+            EayModuleHealthVisual.LOCKED -> MaterialTheme.colorScheme.surfaceVariant
+        },
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+        )
     }
 }
 
@@ -476,9 +846,7 @@ private fun SyncStatus(state: FieldSyncVisualState, pendingCount: Int) {
     Surface(
         tonalElevation = 2.dp,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.semantics {
-            contentDescription = accessibilityLabel
-        },
+        modifier = Modifier.semantics { contentDescription = accessibilityLabel },
     ) {
         Text(
             text = label,

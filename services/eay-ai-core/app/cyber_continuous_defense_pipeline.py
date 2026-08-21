@@ -308,9 +308,11 @@ class EayAssetInventorySnapshot(BaseModel):
                 raise ValueError("eay_inventory_dependency_endpoint_missing")
             if dependency.to_asset_ref not in asset_set:
                 raise ValueError("eay_inventory_dependency_endpoint_missing")
-        if self.production_deployment_truth_claimed:
-            if not self.assets or not all(asset.deployment_observed for asset in self.assets):
-                raise ValueError("eay_inventory_production_truth_requires_deployment_evidence")
+        if self.production_deployment_truth_claimed and (
+            not self.assets
+            or not all(asset.deployment_observed for asset in self.assets)
+        ):
+            raise ValueError("eay_inventory_production_truth_requires_deployment_evidence")
         if self.execution_authority_granted:
             raise ValueError("eay_inventory_never_grants_execution_authority")
         _verify(self, "eay_inventory_fingerprint_mismatch")
@@ -1861,7 +1863,7 @@ def _parse_datetime(value: Any) -> datetime:
     if not isinstance(value, str) or not value:
         raise LiveThreatSourceUnavailable("cyber_live_source_datetime_missing")
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise LiveThreatSourceUnavailable("cyber_live_source_datetime_invalid") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:

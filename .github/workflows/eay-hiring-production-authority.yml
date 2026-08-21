@@ -73,8 +73,11 @@ jobs:
         run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
       - name: Hiring production startup guard
         run: python -m unittest app.modules.recruitment.test_production_startup_guard -v
-      - name: Hiring V47 lifecycle authority contract
-        run: python -m unittest app.modules.recruitment.test_lifecycle_authority_contract -v
+      - name: Hiring V47 lifecycle and governance contracts
+        run: >-
+          python -m unittest
+          app.modules.recruitment.test_lifecycle_authority_contract
+          app.modules.recruitment.test_lifecycle_governance_contract -v
       - name: Public capability abuse guard
         run: python -m unittest app.modules.recruitment.test_public_capability_guard -v
       - name: Cross-functional onboarding governance

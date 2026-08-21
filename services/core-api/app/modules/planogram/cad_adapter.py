@@ -42,7 +42,9 @@ def generate_cad_preview_document(
     exporter = _load_cad_exporter()
     build = getattr(exporter, "build_cad_preview", None)
     if not callable(build):
-        raise PlanogramEngineUnavailable("Measured Planogram CAD export contract is unavailable")
+        raise PlanogramEngineUnavailable(
+            "Measured Planogram CAD export contract is unavailable"
+        )
     result = build(
         result=optimizer_result,
         layout=layout,
@@ -58,16 +60,23 @@ def generate_cad_preview_document(
         dxf_exporter = _load_dxf_exporter()
         build_dxf = getattr(dxf_exporter, "build_dxf_preview", None)
         if not callable(build_dxf):
-            raise PlanogramEngineUnavailable("Measured Planogram DXF export contract is unavailable")
+            raise PlanogramEngineUnavailable(
+                "Measured Planogram DXF export contract is unavailable"
+            )
         dxf_result = build_dxf(
             result=optimizer_result,
             layout=layout,
             store_dna=store_dna,
         )
-        if not isinstance(dxf_result, dict) or dxf_result.get("production_authority") is not False:
+        if (
+            not isinstance(dxf_result, dict)
+            or dxf_result.get("production_authority") is not False
+        ):
             raise PlanogramEngineUnavailable("DXF preview violated production-authority boundary")
         if not dxf_result.get("available"):
-            raise PlanogramEngineUnavailable("DXF preview could not be generated from measured geometry")
+            raise PlanogramEngineUnavailable(
+                "DXF preview could not be generated from measured geometry"
+            )
         result = {
             **result,
             "dxf": dxf_result.get("dxf"),

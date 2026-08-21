@@ -26,7 +26,7 @@ class PlanogramStoreScanTrustedFixtureLayoutPreviewRequest(
     @model_validator(mode="after")
     def validate_binding_uniqueness(
         self,
-    ) -> "PlanogramStoreScanTrustedFixtureLayoutPreviewRequest":
+    ) -> PlanogramStoreScanTrustedFixtureLayoutPreviewRequest:
         target_ids = [row.scan_fixture_element_id for row in self.fixture_bindings]
         slots = [(row.aisle_id, row.side, row.position) for row in self.fixture_bindings]
         if len(target_ids) != len(set(target_ids)):

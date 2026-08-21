@@ -34,7 +34,7 @@ class PlanogramFixtureCatalogDraftRequest(BaseModel):
     source_ref: str = Field(min_length=3, max_length=500)
 
     @model_validator(mode="after")
-    def validate_geometry(self) -> "PlanogramFixtureCatalogDraftRequest":
+    def validate_geometry(self) -> PlanogramFixtureCatalogDraftRequest:
         if len(self.shelf_zone_types) != self.shelf_count:
             raise ValueError("shelf_zone_types length must equal shelf_count")
         if self.shelf_width_cm > self.fixture_width_cm * 1.05:

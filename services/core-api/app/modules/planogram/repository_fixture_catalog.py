@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
@@ -188,11 +189,20 @@ async def approve_fixture_catalog(
     *,
     note: str | None,
 ) -> dict[str, Any]:
-    target = ((await session.execute(text("""
-        SELECT id, fixture_code, status, submitted_by
-        FROM planogram_fixture_catalog_versions
-        WHERE tenant_id=:tenant_id AND id=:version_id FOR UPDATE
-        """), {"tenant_id": principal.tenant_id, "version_id": version_id})).mappings().one_or_none())
+    target = (
+        (
+            await session.execute(
+                text("""
+                SELECT id, fixture_code, status, submitted_by
+                FROM planogram_fixture_catalog_versions
+                WHERE tenant_id=:tenant_id AND id=:version_id FOR UPDATE
+                """),
+                {"tenant_id": principal.tenant_id, "version_id": version_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
     if target is None or target["status"] != "submitted":
         raise FixtureCatalogStateError("fixture_catalog_submission_not_found_or_not_approvable")
     if target["submitted_by"] == principal.subject:
@@ -273,12 +283,21 @@ async def revise_fixture_catalog(
     *,
     reason: str,
 ) -> dict[str, Any]:
-    source = ((await session.execute(text("""
-        SELECT id, fixture_code, fixture_name, status, record, record_sha256
-        FROM planogram_fixture_catalog_versions
-        WHERE tenant_id=:tenant_id AND id=:version_id
-          AND status IN ('approved','rejected','superseded')
-        """), {"tenant_id": principal.tenant_id, "version_id": version_id})).mappings().one_or_none())
+    source = (
+        (
+            await session.execute(
+                text("""
+                SELECT id, fixture_code, fixture_name, status, record, record_sha256
+                FROM planogram_fixture_catalog_versions
+                WHERE tenant_id=:tenant_id AND id=:version_id
+                  AND status IN ('approved','rejected','superseded')
+                """),
+                {"tenant_id": principal.tenant_id, "version_id": version_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
     if source is None:
         raise FixtureCatalogStateError("fixture_catalog_version_not_revisable")
     return await create_fixture_catalog_draft(

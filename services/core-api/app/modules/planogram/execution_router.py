@@ -80,7 +80,11 @@ async def get_execution_plans(
     visible: list[dict[str, Any]] = []
     for item in items:
         try:
-            ensure_planogram_store_scope(principal, "module:planogram:view", str(item["store_code"]))
+            ensure_planogram_store_scope(
+                principal,
+                "module:planogram:view",
+                str(item["store_code"]),
+            )
         except HTTPException as exc:
             if exc.status_code == status.HTTP_403_FORBIDDEN:
                 continue
@@ -161,7 +165,11 @@ async def post_execution_plan_approve(
 ) -> dict[str, Any]:
     try:
         plan = await _plan_by_id(session, principal, plan_version_id)
-        ensure_planogram_store_scope(principal, "action:planogram:approve", str(plan["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:approve",
+            str(plan["store_code"]),
+        )
         return await approve_plan(session, principal, plan_version_id)
     except PlanogramExecutionError as exc:
         raise _conflict(exc) from exc
@@ -176,7 +184,11 @@ async def post_execution_plan_reject(
 ) -> dict[str, Any]:
     try:
         plan = await _plan_by_id(session, principal, plan_version_id)
-        ensure_planogram_store_scope(principal, "action:planogram:approve", str(plan["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:approve",
+            str(plan["store_code"]),
+        )
         return await reject_plan(
             session,
             principal,
@@ -196,7 +208,11 @@ async def get_execution_assignments(
     visible: list[dict[str, Any]] = []
     for item in items:
         try:
-            ensure_planogram_store_scope(principal, "module:planogram:view", str(item["store_code"]))
+            ensure_planogram_store_scope(
+                principal,
+                "module:planogram:view",
+                str(item["store_code"]),
+            )
         except HTTPException as exc:
             if exc.status_code == status.HTTP_403_FORBIDDEN:
                 continue
@@ -213,7 +229,11 @@ async def post_execution_assignment(
 ) -> dict[str, Any]:
     try:
         plan = await _plan_by_id(session, principal, payload.plan_version_id)
-        ensure_planogram_store_scope(principal, "action:planogram:approve", str(plan["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:approve",
+            str(plan["store_code"]),
+        )
         return await create_assignment(
             session,
             principal,
@@ -233,7 +253,11 @@ async def post_execution_assignment_acknowledge(
 ) -> dict[str, Any]:
     try:
         assignment = await _assignment_by_id(session, principal, assignment_id)
-        ensure_planogram_store_scope(principal, "action:planogram:edit", str(assignment["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:edit",
+            str(assignment["store_code"]),
+        )
         return await acknowledge_assignment(session, principal, assignment_id)
     except PlanogramExecutionError as exc:
         raise _conflict(exc) from exc
@@ -247,7 +271,11 @@ async def post_execution_assignment_close(
 ) -> dict[str, Any]:
     try:
         assignment = await _assignment_by_id(session, principal, assignment_id)
-        ensure_planogram_store_scope(principal, "action:planogram:approve", str(assignment["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:approve",
+            str(assignment["store_code"]),
+        )
         return await close_assignment(session, principal, assignment_id)
     except PlanogramExecutionError as exc:
         raise _conflict(exc) from exc

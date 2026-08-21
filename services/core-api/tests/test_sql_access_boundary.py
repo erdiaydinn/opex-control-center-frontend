@@ -228,6 +228,21 @@ PLANOGRAM_SQL_EXECUTION_POINTS = {
     ("modules/planogram/repository_execution.py", "insert_compliance_observation"),
     ("modules/planogram/repository_plan_edit.py", "update_plan_draft"),
     ("modules/planogram/repository_assignment_lifecycle.py", "close_assignment"),
+    # Fixture Catalog security review: 0046 enables and FORCE-enables RLS for
+    # version/event tables, tenant policies bind to app.tenant_id, and every
+    # repository statement is static SQLAlchemy text() with bound parameters.
+    ("modules/planogram/repository_fixture_catalog.py", "_record_event"),
+    ("modules/planogram/repository_fixture_catalog.py", "list_fixture_catalog_versions"),
+    ("modules/planogram/repository_fixture_catalog.py", "create_fixture_catalog_draft"),
+    ("modules/planogram/repository_fixture_catalog.py", "update_fixture_catalog_draft"),
+    ("modules/planogram/repository_fixture_catalog.py", "submit_fixture_catalog"),
+    ("modules/planogram/repository_fixture_catalog.py", "approve_fixture_catalog"),
+    ("modules/planogram/repository_fixture_catalog.py", "reject_fixture_catalog"),
+    ("modules/planogram/repository_fixture_catalog.py", "revise_fixture_catalog"),
+    (
+        "modules/planogram/repository_fixture_catalog.py",
+        "get_approved_fixture_catalog_versions",
+    ),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (

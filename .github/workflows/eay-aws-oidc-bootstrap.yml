@@ -1,0 +1,45 @@
+name: EAY AWS OIDC Bootstrap
+
+on:
+  push:
+    branches:
+      - infra/eay-production-launch-v1
+    paths:
+      - ".github/workflows/eay-aws-oidc-bootstrap.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  oidc-identity-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::600219017658:role/eay-github-infra-bootstrap
+          aws-region: eu-central-1
+          role-session-name: eay-github-oidc-proof
+
+      - name: Prove caller identity only
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+
+      - name: Assert bootstrap role has no AWS service authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          if aws s3api list-buckets >/tmp/eay-s3-list.out 2>/tmp/eay-s3-list.err; then
+            echo "Bootstrap role unexpectedly has S3 authority. Failing closed."
+            exit 1
+          fi
+          grep -Eq "AccessDenied|not authorized|Unauthorized" /tmp/eay-s3-list.err
+          echo "Fail-closed permission boundary confirmed."

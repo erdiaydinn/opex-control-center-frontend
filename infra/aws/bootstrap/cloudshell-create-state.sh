@@ -6,6 +6,7 @@ REGION="eu-central-1"
 STACK_NAME="eay-terraform-state-bootstrap"
 STATE_BUCKET="eay-tfstate-600219017658-eu-central-1"
 TEMPLATE_URL="https://raw.githubusercontent.com/erdiaydinn/opex-control-center-frontend/infra/eay-production-launch-v1/infra/aws/bootstrap/state-backend.yaml"
+EXPECTED_TEMPLATE_SHA256="9eb6d3b47a6e4b28ba1b22d5ff7fc4175a7697633967312242b9cd72655674d9"
 
 actual_account="$(aws sts get-caller-identity --query Account --output text)"
 if [[ "${actual_account}" != "${EXPECTED_ACCOUNT_ID}" ]]; then
@@ -19,8 +20,18 @@ echo "Target region: ${REGION}"
 echo "State bucket: ${STATE_BUCKET}"
 
 template_file="$(mktemp)"
-trap 'rm -f "${template_file}"' EXIT
+trap 'rm -f "${template_file}" /tmp/eay-state-public-access.json' EXIT
 curl --fail --silent --show-error --location "${TEMPLATE_URL}" --output "${template_file}"
+
+actual_template_sha256="$(sha256sum "${template_file}" | awk '{print $1}')"
+if [[ "${actual_template_sha256}" != "${EXPECTED_TEMPLATE_SHA256}" ]]; then
+  echo "Refusing bootstrap: state template digest mismatch." >&2
+  echo "Expected: ${EXPECTED_TEMPLATE_SHA256}" >&2
+  echo "Actual:   ${actual_template_sha256}" >&2
+  exit 1
+fi
+
+echo "State template digest verified: ${actual_template_sha256}"
 
 aws cloudformation deploy \
   --region "${REGION}" \

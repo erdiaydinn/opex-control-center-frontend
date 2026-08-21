@@ -74,6 +74,36 @@ if (normalizeCandidateBundle(candidateWithManifest(duplicateProductAsset))) {
   fail("Duplicate SKU visual assets must be rejected to preserve deterministic authority.");
 }
 
+const wrongProductNamespace = structuredClone(manifest);
+wrongProductNamespace.product_assets[0].front_image_path = "/api/private/sku-1.webp";
+if (normalizeCandidateBundle(candidateWithManifest(wrongProductNamespace))) {
+  fail("Same-origin product assets outside the governed product namespace must be rejected.");
+}
+
+const wrongFixtureNamespace = structuredClone(manifest);
+wrongFixtureNamespace.fixture_assets[0].model_path = "/uploads/regular-shelf.glb";
+if (normalizeCandidateBundle(candidateWithManifest(wrongFixtureNamespace))) {
+  fail("Same-origin fixture assets outside the governed fixture namespace must be rejected.");
+}
+
+const traversalProduct = structuredClone(manifest);
+traversalProduct.product_assets[0].front_image_path = "/planogram-assets/products/../fixtures/not-a-product.webp";
+if (normalizeCandidateBundle(candidateWithManifest(traversalProduct))) {
+  fail("Dot-segment traversal inside the product asset namespace must be rejected.");
+}
+
+const encodedTraversalFixture = structuredClone(manifest);
+encodedTraversalFixture.fixture_assets[0].model_path = "/planogram-assets/fixtures/%2e%2e/secret.glb";
+if (normalizeCandidateBundle(candidateWithManifest(encodedTraversalFixture))) {
+  fail("Encoded traversal inside the fixture asset namespace must be rejected.");
+}
+
+const fragmentAsset = structuredClone(manifest);
+fragmentAsset.product_assets[0].front_image_path = "/planogram-assets/products/sku-1.webp#unexpected";
+if (normalizeCandidateBundle(candidateWithManifest(fragmentAsset))) {
+  fail("Fragment-bearing governed asset paths must be rejected.");
+}
+
 const unattested = structuredClone(manifest);
 unattested.product_assets[0].attested = false;
 unattested.fixture_assets[0].attested = false;

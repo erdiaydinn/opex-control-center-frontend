@@ -91,6 +91,20 @@ if (/subject=|required_level=|current_level=/.test(skillGap)) {
   console.error(`${skillGapPath}: learner must not supply subject or proficiency authority in the request.`);
   process.exit(1);
 }
+const skillGapActionRequirements = [
+  ['useNavigate', "router-owned recommendation navigation"],
+  ['path?.enrollment_id', "server-authoritative enrollment navigation guard"],
+  ['navigate(`/academy/enrollments/${encodeURIComponent(String(path.enrollment_id))}`)', "direct self-scoped enrollment route"],
+  ['navigate("/academy")', "safe Academy fallback when no enrollment exists"],
+  ['sx("openLearning")', "localized direct learning action"],
+  ['sx("openAcademy")', "localized Academy fallback action"],
+];
+for (const [needle, label] of skillGapActionRequirements) {
+  if (!skillGap.includes(needle)) {
+    console.error(`${skillGapPath}: missing ${label}: ${needle}`);
+    process.exit(1);
+  }
+}
 
 const scenarioRequirements = [
   ['<AcademyScenarioGraphCanvas', "graph canvas composition"],
@@ -122,6 +136,15 @@ const graphRequirements = [
   ['ArrowDown', "keyboard down movement"],
   ['markerEnd="url(#academy-scenario-arrow)"', "directed edge rendering"],
   ['aria-label={`${node.node_key}. ${st(node.node_type)}. ${gx("keyboardMove")}`}', "keyboard move accessible name"],
+  ['const [zoom, setZoom] = useState(1)', "local presentation-only zoom state"],
+  ['(event.clientX - drag.startClientX) / zoom', "zoom-correct pointer x coordinate"],
+  ['(event.clientY - drag.startClientY) / zoom', "zoom-correct pointer y coordinate"],
+  ['function fitView()', "fit-to-viewport control"],
+  ['function resetView()', "reset viewport control"],
+  ['gx("zoomOut")', "localized zoom-out control"],
+  ['gx("zoomIn")', "localized zoom-in control"],
+  ['gx("fitView")', "localized fit-view control"],
+  ['gx("resetView")', "localized reset-view control"],
 ];
 for (const [needle, label] of graphRequirements) {
   if (!graph.includes(needle)) {
@@ -203,4 +226,4 @@ if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.tes
   process.exit(1);
 }
 
-console.log("Academy experience routing, self-scope, graph authoring, localization telemetry, schema, version and locale authority contract: PASS");
+console.log("Academy experience routing, actionable self-scope, graph viewport authoring, localization telemetry, schema, version and locale authority contract: PASS");

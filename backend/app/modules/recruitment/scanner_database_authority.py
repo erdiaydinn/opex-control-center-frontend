@@ -81,27 +81,49 @@ def _connection_context():
 
 @contextmanager
 def transaction() -> Iterator[tuple[object, object]]:
+    """Open the dedicated scanner transaction without masking domain failures.
+
+    Only connection/session-attestation failures are translated to
+    ``ScannerDatabaseAuthorityError``. Exceptions raised by the caller while the
+    transaction is active (for example replay, digest-binding or terminal-malware
+    decisions) must propagate unchanged so the security boundary cannot mislabel
+    a valid fail-closed business rejection as a database-authority outage.
+    """
     if not persistence.ENABLED:
         raise ScannerDatabaseAuthorityError("PostgreSQL persistence yapılandırılmadı.")
     if _production() and (persistence.schema_version() or 0) < REQUIRED_SCHEMA_VERSION:
         raise ScannerDatabaseAuthorityError(
             f"Recruitment scanner PostgreSQL V{REQUIRED_SCHEMA_VERSION} olmadan çalışamaz."
         )
+
     try:
-        with _connection_context() as database, database.cursor() as cursor:
-            persistence._set_tenant(cursor)
-            # Existing unit/local adapters may share the main DB connection; role
-            # attestation becomes mandatory as soon as production or an explicit
-            # scanner DSN is selected.
-            if _production() or _configured_url():
-                _validate_session(cursor)
-            yield database, cursor
+        connection_context = _connection_context()
     except ScannerDatabaseAuthorityError:
         raise
     except Exception as error:
         raise ScannerDatabaseAuthorityError(
             "Dedicated scanner PostgreSQL authority doğrulanamadı."
         ) from error
+
+    with connection_context as database, database.cursor() as cursor:
+        try:
+            persistence._set_tenant(cursor)
+            # Existing unit/local adapters may share the main DB connection; role
+            # attestation becomes mandatory as soon as production or an explicit
+            # scanner DSN is selected.
+            if _production() or _configured_url():
+                _validate_session(cursor)
+        except ScannerDatabaseAuthorityError:
+            raise
+        except Exception as error:
+            raise ScannerDatabaseAuthorityError(
+                "Dedicated scanner PostgreSQL authority doğrulanamadı."
+            ) from error
+
+        # Deliberately outside the setup try/except: caller/domain exceptions
+        # propagate with their original security semantics. The DB context manager
+        # still rolls the transaction back when they escape this yield.
+        yield database, cursor
 
 
 def live_preflight() -> dict:

@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
   id-token: write
-  issues: write
+  statuses: write
 
 jobs:
   oidc-identity-proof:
@@ -86,33 +86,17 @@ jobs:
           cat /tmp/eay-oidc-proof.txt
           echo "sha256=${digest}"
 
-      - name: Record latest verified proof on canonical infrastructure PR
+      - name: Publish exact-head OIDC commit status
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          CALLER_ARN: ${{ steps.identity.outputs.arn }}
-          ACCOUNT_ID: ${{ steps.identity.outputs.account }}
           EVIDENCE_DIGEST: ${{ steps.evidence.outputs.digest }}
         run: |
           set -euo pipefail
-          marker='<!-- eay-aws-oidc-proof -->'
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          body="${marker}
-          ## AWS OIDC bootstrap proof — GREEN
-
-          - exact SHA: \`${GITHUB_SHA}\`
-          - repository/ref: \`${GITHUB_REPOSITORY}:${GITHUB_REF}\`
-          - AWS account: \`${ACCOUNT_ID}\`
-          - caller: \`${CALLER_ARN}\`
-          - bootstrap S3 authority: **DENIED as expected**
-          - evidence SHA-256: \`${EVIDENCE_DIGEST}\`
-          - workflow run: ${run_url}
-
-          This proves GitHub obtained short-lived AWS credentials through the branch-scoped OIDC trust while the bootstrap role remained fail-closed for AWS service access. It does not authorize Terraform apply."
-
-          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/210/comments?per_page=100" --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -n1 || true)"
-          if [[ -n "${existing_id}" ]]; then
-            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_id}" -f body="${body}" >/dev/null
-          else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/210/comments" -f body="${body}" >/dev/null
-          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='EAY AWS OIDC Proof' \
+            -f description='Branch-scoped OIDC assumed; bootstrap S3 authority denied' \
+            -f target_url="${run_url}" >/dev/null
+          echo "Published EAY AWS OIDC Proof status for ${GITHUB_SHA}; evidence=${EVIDENCE_DIGEST}"

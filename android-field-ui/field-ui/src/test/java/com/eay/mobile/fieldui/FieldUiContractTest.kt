@@ -28,13 +28,13 @@ class FieldUiContractTest {
         val result = runCatching {
             FieldMissionCardModel(
                 missionId = "m-1",
-                title = "Sayım",
+                title = "Count",
                 subtitle = "A-04",
                 kind = FieldMissionVisualKind.COUNT,
                 priority = FieldMissionVisualPriority.HIGH,
                 progressCurrent = 12,
                 progressTotal = 10,
-                primaryActionLabel = "Devam et",
+                primaryActionLabel = "Continue",
                 enabled = true,
             )
         }
@@ -81,9 +81,7 @@ class FieldUiContractTest {
         )
         assertEquals(FieldMissionVisualKind.PICK, valid.kind)
 
-        val invalid = runCatching {
-            valid.copy(kind = FieldMissionVisualKind.COUNT)
-        }
+        val invalid = runCatching { valid.copy(kind = FieldMissionVisualKind.COUNT) }
         assertTrue(invalid.isFailure)
     }
 
@@ -103,8 +101,68 @@ class FieldUiContractTest {
             "expectedstock",
             "systemstock",
         )
-        forbidden.forEach { needle ->
-            assertFalse(fields.any { it.contains(needle) })
+        forbidden.forEach { needle -> assertFalse(fields.any { it.contains(needle) }) }
+    }
+
+    @Test
+    fun `home summary rejects impossible progress`() {
+        val invalid = runCatching {
+            EayOneHomeSummaryUiState(
+                title = "Today",
+                supportingText = "Work surface",
+                shiftLabel = "Shift",
+                shiftValue = "14-23",
+                missionLabel = "Missions",
+                missionValue = "5",
+                attentionLabel = "Attention",
+                attentionValue = "1",
+                progressCurrent = 10,
+                progressTotal = 9,
+            )
         }
+        assertTrue(invalid.isFailure)
+    }
+
+    @Test
+    fun `module workspace is restricted to non inventory execution families`() {
+        val valid = EayModuleDetailUiState(
+            moduleId = "audit-preview",
+            kind = FieldMissionVisualKind.AUDIT,
+            eyebrow = "AUDIT",
+            title = "Audit workspace",
+            summary = "Evidence review",
+            health = EayModuleHealthVisual.READY,
+            statusLabel = "Ready",
+            metrics = listOf(EayModuleMetricUiModel("Checks", "8")),
+            sections = listOf(EayModuleDetailSectionUiModel("Evidence", "Review evidence")),
+            syncState = FieldSyncVisualState.SYNCED,
+            backActionLabel = "Back",
+            primaryActionLabel = "Open",
+        )
+        assertEquals(FieldMissionVisualKind.AUDIT, valid.kind)
+
+        val invalid = runCatching { valid.copy(kind = FieldMissionVisualKind.COUNT) }
+        assertTrue(invalid.isFailure)
+    }
+
+    @Test
+    fun `module workspace cannot represent sensitive authority or stock truth`() {
+        val fields = EayModuleDetailUiState::class.java.declaredFields.map { it.name.lowercase() }
+        val forbidden = listOf(
+            "tenant",
+            "employee",
+            "deviceid",
+            "shiftid",
+            "claimid",
+            "token",
+            "signature",
+            "barcode",
+            "valuehash",
+            "expectedstock",
+            "systemstock",
+            "latitude",
+            "longitude",
+        )
+        forbidden.forEach { needle -> assertFalse(fields.any { it.contains(needle) }) }
     }
 }

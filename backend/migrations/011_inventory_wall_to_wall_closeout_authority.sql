@@ -32,30 +32,20 @@ CREATE POLICY inventory_document_closeouts_tenant ON inventory_document_closeout
 USING (tenant_id=inventory_current_tenant())
 WITH CHECK (tenant_id=inventory_current_tenant());
 
--- Scope may be corrected only before any physical counting authority/evidence exists.
--- Once the first attempt/event exists, location and SKU scope are frozen.
-CREATE OR REPLACE FUNCTION inventory_guard_wall_to_wall_scope_v11() RETURNS trigger
+-- Common check used by table-specific triggers. Keeping the trigger functions
+-- table-specific avoids RECORD-field ambiguity across different scope tables.
+CREATE OR REPLACE FUNCTION inventory_assert_wall_to_wall_scope_mutable_v11(
+  v_tenant text,
+  v_document uuid
+) RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_tenant text;
-  v_document uuid;
   v_state text;
   v_started boolean;
 BEGIN
-  v_tenant := CASE WHEN TG_OP='DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END;
-  v_document := CASE WHEN TG_OP='DELETE' THEN OLD.document_id ELSE NEW.document_id END;
-
-  IF TG_TABLE_NAME='inventory_document_locations' AND TG_OP='UPDATE'
-     AND NEW.tenant_id=OLD.tenant_id
-     AND NEW.document_id=OLD.document_id
-     AND NEW.location_id=OLD.location_id THEN
-    -- Completion columns are governed separately by the deferred anchor validator below.
-    RETURN NEW;
-  END IF;
-
   SELECT state INTO v_state
     FROM inventory_documents
    WHERE tenant_id=v_tenant AND id=v_document;
@@ -75,10 +65,54 @@ BEGIN
   IF v_state<>'COUNTING' OR v_started THEN
     RAISE EXCEPTION 'Inventory wall-to-wall scope is frozen after counting starts.';
   END IF;
+END;
+$$;
 
-  IF TG_OP='DELETE' THEN
+CREATE OR REPLACE FUNCTION inventory_guard_wall_to_wall_location_scope_v11() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP='UPDATE' THEN
+    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+       OR NEW.document_id IS DISTINCT FROM OLD.document_id
+       OR NEW.location_id IS DISTINCT FROM OLD.location_id THEN
+      RAISE EXCEPTION 'Inventory wall-to-wall location identity is immutable.';
+    END IF;
+    -- Same-row completion fields are governed by the deferred anchor validator.
+    RETURN NEW;
+  ELSIF TG_OP='DELETE' THEN
+    PERFORM inventory_assert_wall_to_wall_scope_mutable_v11(OLD.tenant_id,OLD.document_id);
     RETURN OLD;
   END IF;
+
+  PERFORM inventory_assert_wall_to_wall_scope_mutable_v11(NEW.tenant_id,NEW.document_id);
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION inventory_guard_wall_to_wall_sku_scope_v11() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF TG_OP='UPDATE' THEN
+    IF NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+       OR NEW.document_id IS DISTINCT FROM OLD.document_id
+       OR NEW.sku IS DISTINCT FROM OLD.sku
+       OR NEW.barcode IS DISTINCT FROM OLD.barcode THEN
+      RAISE EXCEPTION 'Inventory wall-to-wall SKU identity is immutable.';
+    END IF;
+    PERFORM inventory_assert_wall_to_wall_scope_mutable_v11(NEW.tenant_id,NEW.document_id);
+    RETURN NEW;
+  ELSIF TG_OP='DELETE' THEN
+    PERFORM inventory_assert_wall_to_wall_scope_mutable_v11(OLD.tenant_id,OLD.document_id);
+    RETURN OLD;
+  END IF;
+
+  PERFORM inventory_assert_wall_to_wall_scope_mutable_v11(NEW.tenant_id,NEW.document_id);
   RETURN NEW;
 END;
 $$;
@@ -86,12 +120,12 @@ $$;
 DROP TRIGGER IF EXISTS inventory_wall_to_wall_location_scope_v11 ON inventory_document_locations;
 CREATE TRIGGER inventory_wall_to_wall_location_scope_v11
 BEFORE INSERT OR UPDATE OR DELETE ON inventory_document_locations
-FOR EACH ROW EXECUTE FUNCTION inventory_guard_wall_to_wall_scope_v11();
+FOR EACH ROW EXECUTE FUNCTION inventory_guard_wall_to_wall_location_scope_v11();
 
 DROP TRIGGER IF EXISTS inventory_wall_to_wall_sku_scope_v11 ON inventory_expected_stock;
 CREATE TRIGGER inventory_wall_to_wall_sku_scope_v11
 BEFORE INSERT OR UPDATE OR DELETE ON inventory_expected_stock
-FOR EACH ROW EXECUTE FUNCTION inventory_guard_wall_to_wall_scope_v11();
+FOR EACH ROW EXECUTE FUNCTION inventory_guard_wall_to_wall_sku_scope_v11();
 
 -- v4 updates the location row before inserting LOCATION_COMPLETE. A deferred
 -- constraint trigger validates the completed-event anchor at transaction end,

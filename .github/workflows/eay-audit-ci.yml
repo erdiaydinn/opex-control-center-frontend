@@ -22,6 +22,7 @@ on:
       - "services/core-api/alembic/versions/0052_audit_vision_inference_authority.py"
       - "services/core-api/alembic/versions/0057_audit_video_authority.py"
       - "services/core-api/alembic/versions/0058_audit_video_replay_fence.py"
+      - "services/core-api/alembic/versions/0059_audit_inference_lease_immutability.py"
       - ".github/workflows/eay-audit-ci.yml"
   push:
     branches:
@@ -43,6 +44,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -60,6 +65,10 @@ jobs:
         working-directory: services/core-api
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -111,6 +120,7 @@ jobs:
           alembic/versions/0052_audit_vision_inference_authority.py
           alembic/versions/0057_audit_video_authority.py
           alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
           tests/test_audit_video_authority_adversarial.py
       - name: Ruff application boundaries
         run: >-
@@ -165,7 +175,7 @@ jobs:
           tests/test_audit_video_verification_runtime.py
           tests/test_audit_video_authority_integration_contracts.py
           tests/test_audit_video_authority_adversarial.py
-      - name: Ruff migrations 0046-0052 and 0057-0058
+      - name: Ruff migrations 0046-0052 and 0057-0059
         run: >-
           ruff check --ignore E501
           alembic/versions/0046_audit_operating_system.py
@@ -177,3 +187,11 @@ jobs:
           alembic/versions/0052_audit_vision_inference_authority.py
           alembic/versions/0057_audit_video_authority.py
           alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
+      - name: Single Alembic head
+        run: |
+          set -euo pipefail
+          heads="$(alembic heads)"
+          printf '%s\n' "$heads"
+          test "$(printf '%s\n' "$heads" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
+          printf '%s\n' "$heads" | grep -q '^0059_audit_inference_lease_immutability (head)$'

@@ -9,12 +9,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.eay.mobile.fieldui.BlindCountScreen
-import com.eay.mobile.fieldui.BlindCountUiState
 import com.eay.mobile.fieldui.EayFieldTheme
+import com.eay.mobile.fieldui.EayModuleDetailScreen
 import com.eay.mobile.fieldui.EayOneShell
 import com.eay.mobile.fieldui.EayTerminalShell
 import com.eay.mobile.fieldui.OperationalMissionScreen
+import com.eay.mobile.presentation.BlindCountUiState
+import com.eay.mobile.presentation.EayModuleDetailUiState
 import com.eay.mobile.presentation.EayOneDestination
+import com.eay.mobile.presentation.EayOneHomeSummaryUiState
 import com.eay.mobile.presentation.EayOneNavigationModel
 import com.eay.mobile.presentation.FieldMissionCardModel
 import com.eay.mobile.presentation.FieldRecoveryActionKind
@@ -36,8 +39,13 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
     private var onRecoveryActionCallback: (FieldRecoveryActionKind) -> Unit = {}
     private var onQuantityChangedCallback: (String) -> Unit = {}
     private var onConfirmQuantityCallback: () -> Unit = {}
+    private var onBlindCountBackCallback: () -> Unit = {}
     private var onOperationalQuantityChangedCallback: (String) -> Unit = {}
     private var onOperationalPrimaryActionCallback: () -> Unit = {}
+    private var onOperationalBackCallback: () -> Unit = {}
+    private var onModuleBackCallback: () -> Unit = {}
+    private var onModulePrimaryActionCallback: () -> Unit = {}
+    private var onModuleSecondaryActionCallback: () -> Unit = {}
 
     init {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -67,20 +75,30 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
         state: BlindCountUiState,
         onQuantityChanged: (String) -> Unit,
         onConfirmQuantity: () -> Unit,
+        backActionLabel: String? = null,
+        onBack: () -> Unit = {},
     ) {
         onQuantityChangedCallback = onQuantityChanged
         onConfirmQuantityCallback = onConfirmQuantity
-        surface = RuntimeSurface.BlindCount(state)
+        onBlindCountBackCallback = onBack
+        surface = RuntimeSurface.BlindCount(
+            RuntimeBlindCountModel(state = state, backActionLabel = backActionLabel),
+        )
     }
 
     fun renderOperationalMission(
         state: OperationalExecutionUiState,
         onQuantityChanged: (String) -> Unit,
         onPrimaryAction: () -> Unit,
+        backActionLabel: String? = null,
+        onBack: () -> Unit = {},
     ) {
         onOperationalQuantityChangedCallback = onQuantityChanged
         onOperationalPrimaryActionCallback = onPrimaryAction
-        surface = RuntimeSurface.Operational(state)
+        onOperationalBackCallback = onBack
+        surface = RuntimeSurface.Operational(
+            RuntimeOperationalModel(state = state, backActionLabel = backActionLabel),
+        )
     }
 
     fun renderEayOne(
@@ -89,14 +107,27 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
         missions: List<FieldMissionCardModel>,
         onDestinationSelected: (EayOneDestination) -> Unit,
         onMissionOpen: (String) -> Unit,
+        summary: EayOneHomeSummaryUiState? = null,
         onDestinationAction: (EayOneDestination) -> Unit = {},
     ) {
         onDestinationSelectedCallback = onDestinationSelected
         onMissionOpenCallback = onMissionOpen
         onDestinationActionCallback = onDestinationAction
         surface = RuntimeSurface.EayOne(
-            FieldUiRuntimeMapper.eayOne(navigation, header, missions),
+            FieldUiRuntimeMapper.eayOne(navigation, header, missions, summary),
         )
+    }
+
+    fun renderModuleDetail(
+        state: EayModuleDetailUiState,
+        onBack: () -> Unit,
+        onPrimaryAction: () -> Unit,
+        onSecondaryAction: () -> Unit = {},
+    ) {
+        onModuleBackCallback = onBack
+        onModulePrimaryActionCallback = onPrimaryAction
+        onModuleSecondaryActionCallback = onSecondaryAction
+        surface = RuntimeSurface.ModuleDetail(state)
     }
 
     fun clear() {
@@ -117,22 +148,33 @@ class EayTerminalRuntimeView @JvmOverloads constructor(
                     onRecoveryAction = { action -> onRecoveryActionCallback(action) },
                 )
                 is RuntimeSurface.BlindCount -> BlindCountScreen(
-                    state = current.state,
+                    state = current.model.state,
                     onQuantityChange = { value -> onQuantityChangedCallback(value) },
                     onConfirm = { onConfirmQuantityCallback() },
+                    backActionLabel = current.model.backActionLabel,
+                    onBack = { onBlindCountBackCallback() },
                 )
                 is RuntimeSurface.Operational -> OperationalMissionScreen(
-                    state = current.state,
+                    state = current.model.state,
                     onQuantityChange = { value -> onOperationalQuantityChangedCallback(value) },
                     onPrimaryAction = { onOperationalPrimaryActionCallback() },
+                    backActionLabel = current.model.backActionLabel,
+                    onBack = { onOperationalBackCallback() },
                 )
                 is RuntimeSurface.EayOne -> EayOneShell(
                     navigation = current.model.navigation,
                     header = current.model.header,
                     missions = current.model.missions,
+                    summary = current.model.summary,
                     onDestinationSelected = { onDestinationSelectedCallback(it) },
                     onMissionOpen = { onMissionOpenCallback(it) },
                     onDestinationAction = { onDestinationActionCallback(it) },
+                )
+                is RuntimeSurface.ModuleDetail -> EayModuleDetailScreen(
+                    state = current.state,
+                    onBack = { onModuleBackCallback() },
+                    onPrimaryAction = { onModulePrimaryActionCallback() },
+                    onSecondaryAction = { onModuleSecondaryActionCallback() },
                 )
             }
         }
@@ -150,14 +192,26 @@ internal data class RuntimeEayOneModel(
     val navigation: EayOneNavigationModel,
     val header: FieldShellHeader,
     val missions: List<FieldMissionCardModel>,
+    val summary: EayOneHomeSummaryUiState?,
+)
+
+internal data class RuntimeBlindCountModel(
+    val state: BlindCountUiState,
+    val backActionLabel: String?,
+)
+
+internal data class RuntimeOperationalModel(
+    val state: OperationalExecutionUiState,
+    val backActionLabel: String?,
 )
 
 internal sealed interface RuntimeSurface {
     data object Empty : RuntimeSurface
     data class Terminal(val model: RuntimeTerminalModel) : RuntimeSurface
-    data class BlindCount(val state: BlindCountUiState) : RuntimeSurface
-    data class Operational(val state: OperationalExecutionUiState) : RuntimeSurface
+    data class BlindCount(val model: RuntimeBlindCountModel) : RuntimeSurface
+    data class Operational(val model: RuntimeOperationalModel) : RuntimeSurface
     data class EayOne(val model: RuntimeEayOneModel) : RuntimeSurface
+    data class ModuleDetail(val state: EayModuleDetailUiState) : RuntimeSurface
 }
 
 internal object FieldUiRuntimeMapper {
@@ -165,6 +219,7 @@ internal object FieldUiRuntimeMapper {
         navigation: EayOneNavigationModel,
         header: FieldShellHeader,
         missions: List<FieldMissionCardModel>,
+        summary: EayOneHomeSummaryUiState? = null,
     ): RuntimeEayOneModel {
         require(header.runtimeSurface == FieldRuntimeSurface.EAY_ONE) {
             "EAY One runtime requires an EAY_ONE presentation surface"
@@ -172,7 +227,12 @@ internal object FieldUiRuntimeMapper {
         require(navigation.pendingSyncCount == header.pendingCount) {
             "EAY One navigation and canonical sync header disagree"
         }
-        return RuntimeEayOneModel(navigation, header, missions.toList())
+        return RuntimeEayOneModel(
+            navigation = navigation,
+            header = header,
+            missions = missions.toList(),
+            summary = summary,
+        )
     }
 
     fun terminal(

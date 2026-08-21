@@ -8,7 +8,6 @@ from app.modules.workforce.router import _require_rows_in_scope
 from .lifecycle_authority import (
     RecruitmentLifecycleError,
     claim_candidate_communications,
-    close_offboarding_case,
     offer_approval_summary,
     update_offboarding_task,
 )
@@ -19,6 +18,7 @@ from .lifecycle_projection import (
 )
 from .lifecycle_reminders import plan_due_reminders
 from .lifecycle_router import CommunicationClaimInput, OffboardingTaskInput
+from .offboarding_completion_authority import close_offboarding_with_workforce
 from .orchestration import RecruitmentOrchestrationError, candidate_orchestration_summary
 from .router import _identity, _request_row, _require
 
@@ -163,6 +163,6 @@ def governed_offboarding_close(
     if not _allowed(x_opex_role, x_opex_permissions, "closeRecruitmentOffboarding"):
         raise HTTPException(status_code=403, detail="Offboarding case kapatma yetkisi gerekli.")
     try:
-        return close_offboarding_case(case_id, actor=_actor(request))
+        return close_offboarding_with_workforce(case_id, actor=_actor(request))
     except RecruitmentLifecycleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error

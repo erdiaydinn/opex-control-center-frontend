@@ -1,15 +1,9 @@
 """Defensive cyber-security school and graduation gate for EAY Jarvis.
 
-The school broadens Jarvis' defensive knowledge without creating an offensive
-execution plane. It composes public cyber knowledge, EAY architecture awareness,
-and the existing measured cyber benchmark contract.
-
-The boundary is strict:
-- learning attack techniques is allowed only for defensive recognition;
-- exploit generation, credential capture and destructive execution are forbidden;
-- public threat knowledge never proves company exposure or an incident;
-- company/EAY claims require evidence-bound architecture observations;
-- benchmark superiority is narrower than production security superiority.
+The school expands Jarvis' defensive knowledge while preserving a strict
+non-offensive authority boundary. Public threat knowledge is useful for
+recognition, detection and mitigation planning, but never proves company
+exposure or an incident and never grants execution authority.
 """
 
 from __future__ import annotations
@@ -19,7 +13,7 @@ import json
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -330,24 +324,22 @@ def default_cyber_defense_curriculum(
     curriculum_id: str = "eay-jarvis-cyber-defense-school-v1",
 ) -> CyberDefenseCurriculum:
     policies = tuple(_source_policy(source) for source in CyberKnowledgeSource)
-    domain_sources = _required_sources_by_domain()
-    draft = {
-        "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
-        "curriculum_id": curriculum_id,
-        "domains": [domain.value for domain in CyberDefenseDomain],
-        "source_policies": [item.model_dump(mode="json") for item in policies],
-        "required_sources_by_domain": {
-            domain.value: [source.value for source in sources]
-            for domain, sources in domain_sources.items()
+    return _seal_model(
+        CyberDefenseCurriculum,
+        {
+            "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
+            "curriculum_id": curriculum_id,
+            "domains": tuple(CyberDefenseDomain),
+            "source_policies": policies,
+            "required_sources_by_domain": _required_sources_by_domain(),
+            "architecture_evidence_required": True,
+            "exploit_generation_permitted": False,
+            "destructive_execution_permitted": False,
+            "production_mutation_permitted": False,
+            "automatic_remediation_permitted": False,
+            "execution_authority_granted": False,
         },
-        "architecture_evidence_required": True,
-        "exploit_generation_permitted": False,
-        "destructive_execution_permitted": False,
-        "production_mutation_permitted": False,
-        "automatic_remediation_permitted": False,
-        "execution_authority_granted": False,
-    }
-    return CyberDefenseCurriculum.model_validate(_sealed(draft))
+    )
 
 
 def build_source_observation(
@@ -358,15 +350,17 @@ def build_source_observation(
     observed_at: datetime,
     recorded_at: datetime,
 ) -> CyberSourceObservation:
-    draft = {
-        "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
-        "source": source.value,
-        "source_version_ref": source_version_ref,
-        "evidence_ref": evidence_ref,
-        "observed_at": _iso(observed_at),
-        "recorded_at": _iso(recorded_at),
-    }
-    return CyberSourceObservation.model_validate(_sealed(draft))
+    return _seal_model(
+        CyberSourceObservation,
+        {
+            "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
+            "source": source,
+            "source_version_ref": source_version_ref,
+            "evidence_ref": evidence_ref,
+            "observed_at": observed_at,
+            "recorded_at": recorded_at,
+        },
+    )
 
 
 def build_domain_receipt(
@@ -410,7 +404,7 @@ def build_domain_receipt(
         and architecture_complete
         and not unresolved_questions
     )
-    receipt_seed = {
+    seed = {
         "curriculum": curriculum.fingerprint,
         "domain": domain.value,
         "as_of": _iso(as_of),
@@ -418,31 +412,33 @@ def build_domain_receipt(
         "eay_surface_refs": list(eay_surface_refs),
         "evidence_refs": list(evidence_refs),
     }
-    draft = {
-        "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
-        "receipt_id": f"cyber-school:{domain.value}:{_fingerprint(receipt_seed)[:24]}",
-        "curriculum_fingerprint": curriculum.fingerprint,
-        "domain": domain.value,
-        "as_of": _iso(as_of),
-        "source_observations": [item.model_dump(mode="json") for item in observations],
-        "attack_behavior_refs": list(attack_behavior_refs),
-        "weakness_refs": list(weakness_refs),
-        "detection_refs": list(detection_refs),
-        "mitigation_refs": list(mitigation_refs),
-        "eay_surface_refs": list(eay_surface_refs),
-        "evidence_refs": list(evidence_refs),
-        "unresolved_questions": list(unresolved_questions),
-        "source_coverage_complete": source_coverage_complete,
-        "source_freshness_complete": source_freshness_complete,
-        "architecture_awareness_complete": architecture_complete,
-        "defensive_reasoning_ready": ready,
-        "company_exposure_granted": False,
-        "incident_confirmation_granted": False,
-        "exploit_generation_permitted": False,
-        "automatic_remediation_permitted": False,
-        "execution_authority_granted": False,
-    }
-    return CyberDefenseDomainReceipt.model_validate(_sealed(draft))
+    return _seal_model(
+        CyberDefenseDomainReceipt,
+        {
+            "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
+            "receipt_id": f"cyber-school:{domain.value}:{_fingerprint(seed)[:24]}",
+            "curriculum_fingerprint": curriculum.fingerprint,
+            "domain": domain,
+            "as_of": as_of,
+            "source_observations": observations,
+            "attack_behavior_refs": attack_behavior_refs,
+            "weakness_refs": weakness_refs,
+            "detection_refs": detection_refs,
+            "mitigation_refs": mitigation_refs,
+            "eay_surface_refs": eay_surface_refs,
+            "evidence_refs": evidence_refs,
+            "unresolved_questions": unresolved_questions,
+            "source_coverage_complete": source_coverage_complete,
+            "source_freshness_complete": source_freshness_complete,
+            "architecture_awareness_complete": architecture_complete,
+            "defensive_reasoning_ready": ready,
+            "company_exposure_granted": False,
+            "incident_confirmation_granted": False,
+            "exploit_generation_permitted": False,
+            "automatic_remediation_permitted": False,
+            "execution_authority_granted": False,
+        },
+    )
 
 
 def evaluate_cyber_defense_graduation(
@@ -464,10 +460,13 @@ def evaluate_cyber_defense_graduation(
     by_domain = {item.domain: item for item in receipts}
     duplicate_domains = len(by_domain) != len(receipts)
     required_domains = set(curriculum.domains)
-
+    curriculum_bound = all(
+        item.curriculum_fingerprint == curriculum.fingerprint for item in receipts
+    )
     domain_coverage_complete = (
         not duplicate_domains
         and set(by_domain) == required_domains
+        and curriculum_bound
         and all(item.defensive_reasoning_ready for item in receipts)
     )
     source_coverage_complete = domain_coverage_complete and all(
@@ -484,6 +483,8 @@ def evaluate_cyber_defense_graduation(
         blockers.append("cyber_school_duplicate_domain_receipt")
     if set(by_domain) != required_domains:
         blockers.append("cyber_school_domain_coverage_incomplete")
+    if not curriculum_bound:
+        blockers.append("cyber_school_receipt_curriculum_mismatch")
     if receipts and not all(item.defensive_reasoning_ready for item in receipts):
         blockers.append("cyber_school_domain_not_ready")
     if not source_coverage_complete:
@@ -492,9 +493,9 @@ def evaluate_cyber_defense_graduation(
         blockers.append("cyber_school_architecture_awareness_incomplete")
     if not benchmark_superiority:
         blockers.append("cyber_school_benchmark_superiority_not_proven")
-
     blockers.extend(benchmark.blockers)
     blockers = list(dict.fromkeys(blockers))
+
     allowed = not blockers and all(
         (
             domain_coverage_complete,
@@ -503,26 +504,30 @@ def evaluate_cyber_defense_graduation(
             benchmark_superiority,
         )
     )
-    draft = {
-        "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
-        "curriculum_fingerprint": curriculum.fingerprint,
-        "benchmark_profile_fingerprint": benchmark.profile_fingerprint,
-        "domain_receipt_fingerprints": [item.fingerprint for item in receipts],
-        "domain_coverage_complete": domain_coverage_complete,
-        "current_source_coverage_complete": source_coverage_complete,
-        "architecture_awareness_complete": architecture_complete,
-        "benchmark_superiority_proven": benchmark_superiority,
-        "mentor_outperformance_claim_allowed": allowed,
-        "production_security_superiority_claim_allowed": False,
-        "blockers": blockers,
-        "exploit_generation_permitted": False,
-        "execution_authority_granted": False,
-    }
-    return CyberDefenseGraduationDecision.model_validate(_sealed(draft))
+    return _seal_model(
+        CyberDefenseGraduationDecision,
+        {
+            "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
+            "curriculum_fingerprint": curriculum.fingerprint,
+            "benchmark_profile_fingerprint": benchmark.profile_fingerprint,
+            "domain_receipt_fingerprints": tuple(
+                item.fingerprint for item in receipts
+            ),
+            "domain_coverage_complete": domain_coverage_complete,
+            "current_source_coverage_complete": source_coverage_complete,
+            "architecture_awareness_complete": architecture_complete,
+            "benchmark_superiority_proven": benchmark_superiority,
+            "mentor_outperformance_claim_allowed": allowed,
+            "production_security_superiority_claim_allowed": False,
+            "blockers": tuple(blockers),
+            "exploit_generation_permitted": False,
+            "execution_authority_granted": False,
+        },
+    )
 
 
 def _source_policy(source: CyberKnowledgeSource) -> CyberKnowledgeSourcePolicy:
-    specs = {
+    specs: dict[CyberKnowledgeSource, tuple[CyberSourceAuthority, str, int]] = {
         CyberKnowledgeSource.MITRE_ATTACK: (
             CyberSourceAuthority.ATTACK_BEHAVIOR,
             "source:mitre-attack",
@@ -605,111 +610,132 @@ def _source_policy(source: CyberKnowledgeSource) -> CyberKnowledgeSourcePolicy:
         ),
     }
     authority, source_ref, maximum_age = specs[source]
-    draft = {
-        "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
-        "source": source.value,
-        "authority": authority.value,
-        "source_ref": source_ref,
-        "server_side_only": True,
-        "maximum_observation_age_seconds": maximum_age,
-        "can_assert_known_exploitation": source is CyberKnowledgeSource.CISA_KEV,
-        "can_assert_company_exposure": False,
-        "can_confirm_company_incident": False,
-        "attack_instruction_content_allowed": False,
-        "exploit_generation_permitted": False,
-        "credential_capture_permitted": False,
-        "execution_authority_granted": False,
-    }
-    return CyberKnowledgeSourcePolicy.model_validate(_sealed(draft))
+    return _seal_model(
+        CyberKnowledgeSourcePolicy,
+        {
+            "contract": CYBER_DEFENSE_SCHOOL_CONTRACT,
+            "source": source,
+            "authority": authority,
+            "source_ref": source_ref,
+            "server_side_only": True,
+            "maximum_observation_age_seconds": maximum_age,
+            "can_assert_known_exploitation": source is CyberKnowledgeSource.CISA_KEV,
+            "can_assert_company_exposure": False,
+            "can_confirm_company_incident": False,
+            "attack_instruction_content_allowed": False,
+            "exploit_generation_permitted": False,
+            "credential_capture_permitted": False,
+            "execution_authority_granted": False,
+        },
+    )
 
 
 def _required_sources_by_domain() -> dict[
     CyberDefenseDomain,
     tuple[CyberKnowledgeSource, ...],
 ]:
+    source = CyberKnowledgeSource
     return {
         CyberDefenseDomain.WEB_API: (
-            CyberKnowledgeSource.OWASP_ASVS,
-            CyberKnowledgeSource.OWASP_API,
-            CyberKnowledgeSource.CWE,
-            CyberKnowledgeSource.CAPEC,
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.CISA_KEV,
-            CyberKnowledgeSource.NVD_CVE,
+            source.OWASP_ASVS,
+            source.OWASP_API,
+            source.CWE,
+            source.CAPEC,
+            source.MITRE_ATTACK,
+            source.CISA_KEV,
+            source.NVD_CVE,
         ),
         CyberDefenseDomain.IDENTITY: (
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.CWE,
-            CyberKnowledgeSource.CAPEC,
-            CyberKnowledgeSource.OWASP_ASVS,
-            CyberKnowledgeSource.MITRE_D3FEND,
+            source.MITRE_ATTACK,
+            source.CWE,
+            source.CAPEC,
+            source.OWASP_ASVS,
+            source.MITRE_D3FEND,
         ),
         CyberDefenseDomain.CLOUD_CONTAINER: (
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.CISA_KEV,
-            CyberKnowledgeSource.FIRST_EPSS,
-            CyberKnowledgeSource.NVD_CVE,
-            CyberKnowledgeSource.VENDOR_ADVISORY,
-            CyberKnowledgeSource.MITRE_D3FEND,
+            source.MITRE_ATTACK,
+            source.CISA_KEV,
+            source.FIRST_EPSS,
+            source.NVD_CVE,
+            source.VENDOR_ADVISORY,
+            source.MITRE_D3FEND,
         ),
         CyberDefenseDomain.ENDPOINT_NETWORK: (
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.CISA_KEV,
-            CyberKnowledgeSource.FIRST_EPSS,
-            CyberKnowledgeSource.NVD_CVE,
-            CyberKnowledgeSource.SIGMA,
-            CyberKnowledgeSource.YARA,
-            CyberKnowledgeSource.MITRE_D3FEND,
+            source.MITRE_ATTACK,
+            source.CISA_KEV,
+            source.FIRST_EPSS,
+            source.NVD_CVE,
+            source.SIGMA,
+            source.YARA,
+            source.MITRE_D3FEND,
         ),
         CyberDefenseDomain.SOFTWARE_SUPPLY_CHAIN: (
-            CyberKnowledgeSource.CISA_KEV,
-            CyberKnowledgeSource.NVD_CVE,
-            CyberKnowledgeSource.GITHUB_SECURITY_ADVISORY,
-            CyberKnowledgeSource.VENDOR_ADVISORY,
-            CyberKnowledgeSource.CWE,
+            source.CISA_KEV,
+            source.NVD_CVE,
+            source.GITHUB_SECURITY_ADVISORY,
+            source.VENDOR_ADVISORY,
+            source.CWE,
         ),
         CyberDefenseDomain.DATA_SECURITY: (
-            CyberKnowledgeSource.OWASP_ASVS,
-            CyberKnowledgeSource.OWASP_API,
-            CyberKnowledgeSource.CWE,
-            CyberKnowledgeSource.CAPEC,
-            CyberKnowledgeSource.MITRE_ATTACK,
+            source.OWASP_ASVS,
+            source.OWASP_API,
+            source.CWE,
+            source.CAPEC,
+            source.MITRE_ATTACK,
         ),
         CyberDefenseDomain.MOBILE_DEVICE: (
-            CyberKnowledgeSource.OWASP_MOBILE,
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.CWE,
-            CyberKnowledgeSource.VENDOR_ADVISORY,
+            source.OWASP_MOBILE,
+            source.MITRE_ATTACK,
+            source.CWE,
+            source.VENDOR_ADVISORY,
         ),
         CyberDefenseDomain.AI_AGENTIC: (
-            CyberKnowledgeSource.OWASP_GENAI,
-            CyberKnowledgeSource.CWE,
-            CyberKnowledgeSource.CAPEC,
-            CyberKnowledgeSource.VENDOR_ADVISORY,
-            CyberKnowledgeSource.NIST_CSF,
+            source.OWASP_GENAI,
+            source.CWE,
+            source.CAPEC,
+            source.VENDOR_ADVISORY,
+            source.NIST_CSF,
         ),
         CyberDefenseDomain.INSIDER_SOCIAL: (
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.SIGMA,
-            CyberKnowledgeSource.MITRE_D3FEND,
-            CyberKnowledgeSource.NIST_CSF,
+            source.MITRE_ATTACK,
+            source.SIGMA,
+            source.MITRE_D3FEND,
+            source.NIST_CSF,
         ),
         CyberDefenseDomain.IOT_OT: (
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.CISA_KEV,
-            CyberKnowledgeSource.NVD_CVE,
-            CyberKnowledgeSource.VENDOR_ADVISORY,
-            CyberKnowledgeSource.MITRE_D3FEND,
+            source.MITRE_ATTACK,
+            source.CISA_KEV,
+            source.NVD_CVE,
+            source.VENDOR_ADVISORY,
+            source.MITRE_D3FEND,
         ),
         CyberDefenseDomain.INCIDENT_RESPONSE_DETECTION: (
-            CyberKnowledgeSource.MITRE_ATTACK,
-            CyberKnowledgeSource.SIGMA,
-            CyberKnowledgeSource.YARA,
-            CyberKnowledgeSource.MITRE_D3FEND,
-            CyberKnowledgeSource.CISA_KEV,
-            CyberKnowledgeSource.NIST_CSF,
+            source.MITRE_ATTACK,
+            source.SIGMA,
+            source.YARA,
+            source.MITRE_D3FEND,
+            source.CISA_KEV,
+            source.NIST_CSF,
         ),
     }
+
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def _seal_model(model_type: type[_ModelT], values: dict[str, Any]) -> _ModelT:
+    """Seal using Pydantic's canonical JSON representation.
+
+    This prevents equivalent timezone-aware datetimes such as ``+00:00`` and
+    ``Z`` from producing different fingerprints between construction and
+    validation.
+    """
+
+    constructed = model_type.model_construct(**values, fingerprint="0" * 64)
+    payload = constructed.model_dump(mode="json", exclude={"fingerprint"})
+    return model_type.model_validate(
+        {**payload, "fingerprint": _fingerprint(payload)}
+    )
 
 
 def _unique(values: tuple[str, ...], error: str) -> None:
@@ -728,9 +754,7 @@ def _aware(value: datetime, error: str) -> None:
 
 
 def _payload(model: BaseModel) -> dict[str, Any]:
-    payload = model.model_dump(mode="json")
-    payload.pop("fingerprint", None)
-    return payload
+    return model.model_dump(mode="json", exclude={"fingerprint"})
 
 
 def _verify(model: BaseModel, error: str) -> None:
@@ -738,11 +762,7 @@ def _verify(model: BaseModel, error: str) -> None:
         raise ValueError(error)
 
 
-def _sealed(payload: dict[str, Any]) -> dict[str, Any]:
-    return {**payload, "fingerprint": _fingerprint(payload)}
-
-
-def _fingerprint(payload: dict[str, Any]) -> str:
+def _fingerprint(payload: Any) -> str:
     canonical = json.dumps(
         payload,
         sort_keys=True,

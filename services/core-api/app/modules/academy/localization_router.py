@@ -16,6 +16,7 @@ from app.modules.academy.localization_service import (
     author_translation_lineage,
     configure_locale,
     decide_translation_review,
+    localization_governance_telemetry,
     localization_settings,
     submit_translation_for_review,
     translation_authority,
@@ -84,6 +85,14 @@ async def get_translation_authority(
         content_id=content_id,
     )
     return {"items": items, "count": len(items)}
+
+
+@router.get("/telemetry")
+async def get_localization_governance_telemetry(
+    session: TenantSession,
+    principal: LocalizationManager,
+) -> dict[str, object]:
+    return await localization_governance_telemetry(session, principal)
 
 
 @router.post("/translations", status_code=status.HTTP_201_CREATED)

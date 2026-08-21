@@ -3,6 +3,7 @@ import { CheckCircle2, Languages, LoaderCircle, RefreshCw, Send, ShieldCheck, XC
 
 import { apiGet, apiPost, apiPut } from "../../api/client.js";
 import { translateAcademyExpansion } from "../../platform/i18n/academyExpansionMessages.js";
+import { translateAcademyLocalizationTelemetry } from "../../platform/i18n/academyLocalizationTelemetryMessages.js";
 import { translateAcademyStudioTerm } from "../../platform/i18n/academyStudioTermMessages.js";
 import "./academy-expansion.css";
 
@@ -44,11 +45,45 @@ function LocalePolicyRow({ item, locale, onSaved }) {
   );
 }
 
+function LocalizationTelemetry({ telemetry, locale }) {
+  const lt = (key) => translateAcademyLocalizationTelemetry(locale, key);
+  const number = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }), [locale]);
+  const summary = telemetry?.summary || {};
+  const rows = telemetry?.locales || [];
+
+  return (
+    <section className="eay-academy-localization-telemetry" aria-labelledby="academy-localization-telemetry-title">
+      <header>
+        <div>
+          <h3 id="academy-localization-telemetry-title">{lt("telemetry")}</h3>
+          <p>{lt("telemetryHint")}</p>
+        </div>
+        <span className="eay-academy-status is-draft">{lt("sourceLocale")}: {telemetry?.source_locale || "—"}</span>
+      </header>
+      <div className="eay-academy-telemetry-cards">
+        <article><span>{lt("requiredCoverage")}</span><strong>{number.format(Number(summary.required_coverage_percent || 0))}%</strong></article>
+        <article><span>{lt("authorityGaps")}</span><strong>{number.format(Number(summary.required_authority_gap_count || 0))}</strong></article>
+        <article><span>{lt("staleTranslations")}</span><strong>{number.format(Number(summary.stale_translation_count || 0))}</strong></article>
+        <article><span>{lt("pendingReview")}</span><strong>{number.format(Number(summary.pending_review_count || 0))}</strong></article>
+      </div>
+      {!rows.length ? <p role="status">{lt("noTelemetry")}</p> : (
+        <div className="eay-academy-telemetry-table-wrap">
+          <table className="eay-academy-telemetry-table">
+            <thead><tr><th>{lt("targetLocale")}</th><th>{lt("requiredLocale")}</th><th>{lt("sourceContent")}</th><th>{lt("authoritative")}</th><th>{lt("missingLineage")}</th><th>{lt("staleTranslations")}</th><th>{lt("pendingReview")}</th><th>{lt("machineDraft")}</th><th>{lt("rejected")}</th><th>{lt("coverage")}</th></tr></thead>
+            <tbody>{rows.map((item) => <tr key={item.locale}><td><strong>{item.locale}</strong></td><td>{item.required ? "✓" : "—"}</td><td>{number.format(Number(item.source_content_count || 0))}</td><td>{number.format(Number(item.authoritative_content_count || 0))}</td><td>{number.format(Number(item.missing_lineage_count || 0))}</td><td>{number.format(Number(item.stale_translation_count || 0))}</td><td>{number.format(Number(item.pending_review_count || 0))}</td><td>{number.format(Number(item.machine_draft_content_count || 0))}</td><td>{number.format(Number(item.rejected_translation_count || 0))}</td><td>{number.format(Number(item.coverage_percent || 0))}%</td></tr>)}</tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AcademyLocalizationGovernance({ workspace, locale, t }) {
   const tx = (key) => translateAcademyExpansion(locale, key);
   const st = (key) => translateAcademyStudioTerm(locale, key);
   const [settings, setSettings] = useState([]);
   const [translations, setTranslations] = useState([]);
+  const [telemetry, setTelemetry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newLocale, setNewLocale] = useState("");
@@ -76,12 +111,14 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
     setLoading(true);
     setError("");
     try {
-      const [settingsPayload, translationPayload] = await Promise.all([
+      const [settingsPayload, translationPayload, telemetryPayload] = await Promise.all([
         apiGet("/v1/academy/localization/settings"),
         apiGet("/v1/academy/localization/translations"),
+        apiGet("/v1/academy/localization/telemetry"),
       ]);
       setSettings(settingsPayload?.items || []);
       setTranslations(translationPayload?.items || []);
+      setTelemetry(telemetryPayload || null);
     } catch (reason) {
       setError(reason instanceof Error && reason.message ? reason.message : tx("governanceError"));
     } finally {
@@ -148,22 +185,25 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
       {loading ? <p role="status"><LoaderCircle className="spin" size={18} aria-hidden="true" /> {t("loading")}</p> : null}
       {error ? <p className="eay-academy-inline-error" role="alert">{error}</p> : null}
       {!loading ? (
-        <div className="eay-academy-governance-grid" data-eay-product-state="ready">
-          <section>
-            <h3>{tx("localePolicy")}</h3>
-            <form className="eay-academy-expansion-form" onSubmit={addLocale}><label className="wide"><span>{tx("locale")}</span><input value={newLocale} onChange={(event) => setNewLocale(event.target.value)} placeholder="fa-IR" /></label><button type="submit" className="eay-academy-secondary" disabled={busyAction === "locale"}>{tx("savePolicy")}</button></form>
-            <div className="eay-academy-governance-list">{settings.map((item) => <LocalePolicyRow key={item.locale} item={item} locale={locale} onSaved={load} />)}</div>
-          </section>
-          <section>
-            <h3>{tx("translations")}</h3>
-            <form className="eay-academy-expansion-form" onSubmit={createLineage}>
-              <label><span>{tx("sourceVersion")}</span><select value={sourceVersionId} onChange={(event) => setSourceVersionId(event.target.value)}>{sourceOptions.map((item) => <option value={item.content_version_id} key={item.content_version_id}>{item.slug} · {item.version_label} · {item.locale}</option>)}</select></label>
-              <label><span>{tx("targetVersion")}</span><select value={targetVersionId} onChange={(event) => setTargetVersionId(event.target.value)}>{targetOptions.map((item) => <option value={item.content_version_id} key={item.content_version_id}>{item.slug} · {item.version_label} · {item.locale} · {item.version_status}</option>)}</select></label>
-              <label><span>{tx("translationMethod")}</span><select value={method} onChange={(event) => setMethod(event.target.value)}>{["human", "machine_assisted", "machine_draft"].map((item) => <option value={item} key={item}>{st(item)}</option>)}</select></label>
-              <button type="submit" className="eay-academy-secondary" disabled={!sourceVersionId || !targetVersionId || busyAction === "lineage"}><Send size={15} aria-hidden="true" />{tx("translations")}</button>
-            </form>
-            {!translations.length ? <p role="status">{tx("noTranslations")}</p> : <div className="eay-academy-governance-list">{translations.map((item) => <article className="eay-academy-governance-row" key={item.translation_id}><header><strong>{item.source_locale} → {item.target_locale}</strong><span className={`eay-academy-status ${item.authoritative ? "is-published" : item.stale ? "is-revoked" : "is-draft"}`}>{item.authoritative ? tx("authoritative") : item.stale ? tx("stale") : item.workflow_status}</span></header><small>{tx("sourceVersion")}: {item.source_version_id}</small><small>{tx("targetVersion")}: {item.target_version_id}</small><small>{tx("translationMethod")}: {st(item.translation_method)}</small>{item.workflow_status === "draft" ? <button type="button" className="eay-academy-secondary" onClick={() => act(item.translation_id, "submit")} disabled={busyAction.startsWith(String(item.translation_id))}><Send size={14} aria-hidden="true" />{tx("submitReview")}</button> : null}{item.workflow_status === "submitted" ? <><label><span className="sr-only">{tx("reject")}</span><input value={rejectReasons[item.translation_id] || ""} onChange={(event) => setRejectReasons((value) => ({ ...value, [item.translation_id]: event.target.value }))} /></label><div className="eay-academy-governance-actions"><button type="button" className="eay-academy-secondary" onClick={() => act(item.translation_id, "review", { decision: "approved", reason: null })}><CheckCircle2 size={14} aria-hidden="true" />{tx("approve")}</button><button type="button" className="eay-academy-secondary" disabled={!String(rejectReasons[item.translation_id] || "").trim()} onClick={() => act(item.translation_id, "review", { decision: "rejected", reason: rejectReasons[item.translation_id] })}><XCircle size={14} aria-hidden="true" />{tx("reject")}</button></div></> : null}</article>)}</div>}
-          </section>
+        <div data-eay-product-state="ready">
+          {telemetry ? <LocalizationTelemetry telemetry={telemetry} locale={locale} /> : null}
+          <div className="eay-academy-governance-grid">
+            <section>
+              <h3>{tx("localePolicy")}</h3>
+              <form className="eay-academy-expansion-form" onSubmit={addLocale}><label className="wide"><span>{tx("locale")}</span><input value={newLocale} onChange={(event) => setNewLocale(event.target.value)} placeholder="fa-IR" /></label><button type="submit" className="eay-academy-secondary" disabled={busyAction === "locale"}>{tx("savePolicy")}</button></form>
+              <div className="eay-academy-governance-list">{settings.map((item) => <LocalePolicyRow key={item.locale} item={item} locale={locale} onSaved={load} />)}</div>
+            </section>
+            <section>
+              <h3>{tx("translations")}</h3>
+              <form className="eay-academy-expansion-form" onSubmit={createLineage}>
+                <label><span>{tx("sourceVersion")}</span><select value={sourceVersionId} onChange={(event) => setSourceVersionId(event.target.value)}>{sourceOptions.map((item) => <option value={item.content_version_id} key={item.content_version_id}>{item.slug} · {item.version_label} · {item.locale}</option>)}</select></label>
+                <label><span>{tx("targetVersion")}</span><select value={targetVersionId} onChange={(event) => setTargetVersionId(event.target.value)}>{targetOptions.map((item) => <option value={item.content_version_id} key={item.content_version_id}>{item.slug} · {item.version_label} · {item.locale} · {item.version_status}</option>)}</select></label>
+                <label><span>{tx("translationMethod")}</span><select value={method} onChange={(event) => setMethod(event.target.value)}>{["human", "machine_assisted", "machine_draft"].map((item) => <option value={item} key={item}>{st(item)}</option>)}</select></label>
+                <button type="submit" className="eay-academy-secondary" disabled={!sourceVersionId || !targetVersionId || busyAction === "lineage"}><Send size={15} aria-hidden="true" />{tx("translations")}</button>
+              </form>
+              {!translations.length ? <p role="status">{tx("noTranslations")}</p> : <div className="eay-academy-governance-list">{translations.map((item) => <article className="eay-academy-governance-row" key={item.translation_id}><header><strong>{item.source_locale} → {item.target_locale}</strong><span className={`eay-academy-status ${item.authoritative ? "is-published" : item.stale ? "is-revoked" : "is-draft"}`}>{item.authoritative ? tx("authoritative") : item.stale ? tx("stale") : item.workflow_status}</span></header><small>{tx("sourceVersion")}: {item.source_version_id}</small><small>{tx("targetVersion")}: {item.target_version_id}</small><small>{tx("translationMethod")}: {st(item.translation_method)}</small>{item.workflow_status === "draft" ? <button type="button" className="eay-academy-secondary" onClick={() => act(item.translation_id, "submit")} disabled={busyAction.startsWith(String(item.translation_id))}><Send size={14} aria-hidden="true" />{tx("submitReview")}</button> : null}{item.workflow_status === "submitted" ? <><label><span className="sr-only">{tx("reject")}</span><input value={rejectReasons[item.translation_id] || ""} onChange={(event) => setRejectReasons((value) => ({ ...value, [item.translation_id]: event.target.value }))} /></label><div className="eay-academy-governance-actions"><button type="button" className="eay-academy-secondary" onClick={() => act(item.translation_id, "review", { decision: "approved", reason: null })}><CheckCircle2 size={14} aria-hidden="true" />{tx("approve")}</button><button type="button" className="eay-academy-secondary" disabled={!String(rejectReasons[item.translation_id] || "").trim()} onClick={() => act(item.translation_id, "review", { decision: "rejected", reason: rejectReasons[item.translation_id] })}><XCircle size={14} aria-hidden="true" />{tx("reject")}</button></div></> : null}</article>)}</div>}
+            </section>
+          </div>
         </div>
       ) : null}
     </section>

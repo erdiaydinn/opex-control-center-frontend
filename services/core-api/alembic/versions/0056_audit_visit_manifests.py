@@ -79,7 +79,10 @@ def upgrade() -> None:
             name="fk_audit_visit_program",
         ),
         sa.CheckConstraint(
-            "visit_type IN ('FULL_AUDIT','QUICK_AUDIT','FOCUS_AUDIT','CUSTOM_AUDIT','PEOPLE_VISIT','SPECIAL_VISIT')",
+            (
+                "visit_type IN ('FULL_AUDIT','QUICK_AUDIT','FOCUS_AUDIT',"
+                "'CUSTOM_AUDIT','PEOPLE_VISIT','SPECIAL_VISIT')"
+            ),
             name="ck_audit_visit_type",
         ),
         sa.CheckConstraint(
@@ -99,11 +102,19 @@ def upgrade() -> None:
             name="ck_audit_scored_visit_program",
         ),
         sa.CheckConstraint(
-            "visit_type <> 'PEOPLE_VISIT' OR (program_key IS NULL AND score_mode = 'NO_SCORE' AND official_compliance_eligible IS FALSE)",
+            (
+                "visit_type <> 'PEOPLE_VISIT' OR "
+                "(program_key IS NULL AND score_mode = 'NO_SCORE' "
+                "AND official_compliance_eligible IS FALSE)"
+            ),
             name="ck_audit_people_visit_no_score",
         ),
         sa.CheckConstraint(
-            "visit_type <> 'FULL_AUDIT' OR (score_mode = 'OFFICIAL_COMPLIANCE' AND official_compliance_eligible IS TRUE)",
+            (
+                "visit_type <> 'FULL_AUDIT' OR "
+                "(score_mode = 'OFFICIAL_COMPLIANCE' "
+                "AND official_compliance_eligible IS TRUE)"
+            ),
             name="ck_audit_full_visit_official_score",
         ),
         sa.CheckConstraint(
@@ -150,7 +161,10 @@ def upgrade() -> None:
             name="fk_audit_visit_note_manifest",
         ),
         sa.CheckConstraint(
-            "note_type IN ('HUMAN_CONVERSATION','OPERATION_OBSERVATION','POSITIVE_PRACTICE','FOLLOW_UP','OTHER')",
+            (
+                "note_type IN ('HUMAN_CONVERSATION','OPERATION_OBSERVATION',"
+                "'POSITIVE_PRACTICE','FOLLOW_UP','OTHER')"
+            ),
             name="ck_audit_visit_note_type",
         ),
         sa.CheckConstraint("length(trim(note)) > 0", name="ck_audit_visit_note_nonblank"),

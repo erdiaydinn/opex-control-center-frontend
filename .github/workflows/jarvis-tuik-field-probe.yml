@@ -1,0 +1,68 @@
+name: EAY Jarvis TUIK Field Probe
+
+on:
+  push:
+    branches:
+      - product/jarvis-company-world-live-v1
+    paths:
+      - ".github/workflows/jarvis-tuik-field-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: TUIK one-shot field probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe official TUIK portal and public JSON candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            name="$1"
+            url="$2"
+            headers="${RUNNER_TEMP}/${name}.headers"
+            body="${RUNNER_TEMP}/${name}.body"
+            status="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' \
+              --connect-timeout 10 --max-time 20 \
+              --header 'Accept: application/json, text/html;q=0.9' \
+              --header 'User-Agent: EAY-Jarvis-Field-Probe/1.0' \
+              "$url")"
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+            bytes="$(wc -c < "$body" | tr -d ' ')"
+            sha="$(sha256sum "$body" | awk '{print $1}')"
+            echo "PROBE_NAME=$name"
+            echo "PROBE_URL=$url"
+            echo "PROBE_STATUS=$status"
+            echo "PROBE_CONTENT_TYPE=$content_type"
+            echo "PROBE_BYTES=$bytes"
+            echo "PROBE_SHA256=$sha"
+            python - "$body" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+raw = path.read_bytes()
+try:
+    data = json.loads(raw)
+except Exception:
+    text = raw.decode("utf-8", errors="replace")
+    print("PROBE_JSON=false")
+    print("PROBE_SAMPLE=" + " ".join(text[:300].split()))
+else:
+    print("PROBE_JSON=true")
+    if isinstance(data, dict):
+        print("PROBE_JSON_KEYS=" + ",".join(sorted(map(str, data.keys()))[:30]))
+    elif isinstance(data, list):
+        print(f"PROBE_JSON_LIST_LEN={len(data)}")
+        if data and isinstance(data[0], dict):
+            print("PROBE_JSON_FIRST_KEYS=" + ",".join(sorted(map(str, data[0].keys()))[:30]))
+PY
+          }
+
+          probe portal 'https://veriportali.tuik.gov.tr/tr/'
+          probe themes 'https://veriportali.tuik.gov.tr/api/tr/data/statistical-themes'

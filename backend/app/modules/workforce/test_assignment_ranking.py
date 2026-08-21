@@ -1,5 +1,7 @@
 import unittest
+from unittest.mock import patch
 
+from . import flexibility_ranking
 from .assignment_ranking import POLICY_REF, evaluate_assignment_ranking
 
 
@@ -99,6 +101,30 @@ class WorkforceAssignmentRankingTests(unittest.TestCase):
 
         self.assertEqual(result.recent_minutes, 420)
         self.assertEqual(result.cohort_median_recent_minutes, 420)
+
+    def test_open_shift_discovery_refreshes_canonical_schedule_when_persistence_enabled(self):
+        snapshot = {"shifts": []}
+        with (
+            patch.object(flexibility_ranking.persistence, "ENABLED", True),
+            patch.object(
+                flexibility_ranking.persistence,
+                "load_snapshot",
+                return_value=snapshot,
+            ) as load_snapshot,
+            patch.object(
+                flexibility_ranking.service,
+                "_snapshot_kinds",
+                return_value=["shifts"],
+            ),
+            patch.object(flexibility_ranking.service, "_hydrate_snapshot") as hydrate,
+            patch.object(flexibility_ranking.flexibility, "_load_availability", return_value=[]),
+            patch.object(flexibility_ranking.flexibility, "_load_open_shifts", return_value=[]),
+        ):
+            result = flexibility_ranking.list_ranked_open_shifts_for_person("P1")
+
+        self.assertEqual(result, [])
+        load_snapshot.assert_called_once_with(["shifts"])
+        hydrate.assert_called_once_with(snapshot)
 
 
 if __name__ == "__main__":

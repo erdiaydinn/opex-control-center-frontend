@@ -95,7 +95,7 @@ class GeographicScope(BaseModel):
     location_ref: str | None = Field(default=None, min_length=1, max_length=500)
 
     @model_validator(mode="after")
-    def validate_scope(self) -> "GeographicScope":
+    def validate_scope(self) -> GeographicScope:
         if self.country_code != self.country_code.upper() or not self.country_code.isalpha():
             raise ValueError("company_world_geo_country_code_must_be_upper_alpha2")
         if self.level is GeographicScopeLevel.COUNTRY:
@@ -128,7 +128,7 @@ class CompanyLocationBinding(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_binding(self) -> "CompanyLocationBinding":
+    def validate_binding(self) -> CompanyLocationBinding:
         _aware(self.observed_at, "company_world_location_binding_requires_timezone")
         if self.truth_class not in _COMPANY_TRUTH_CLASSES:
             raise ValueError("company_world_location_binding_requires_company_truth")
@@ -164,7 +164,7 @@ class ExternalContextObservation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_observation(self) -> "ExternalContextObservation":
+    def validate_observation(self) -> ExternalContextObservation:
         _aware(self.occurred_at, "company_world_external_occurred_at_requires_timezone")
         _aware(self.observed_at, "company_world_external_observed_at_requires_timezone")
         if self.observed_at < self.occurred_at:
@@ -217,7 +217,7 @@ class CompanyMetricDeviation(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_deviation(self) -> "CompanyMetricDeviation":
+    def validate_deviation(self) -> CompanyMetricDeviation:
         if (
             self.previous_truth_class not in _COMPANY_TRUTH_CLASSES
             or self.current_truth_class not in _COMPANY_TRUTH_CLASSES
@@ -272,7 +272,7 @@ class ContextCompanyLinkReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def validate_receipt(self) -> "ContextCompanyLinkReceipt":
+    def validate_receipt(self) -> ContextCompanyLinkReceipt:
         _aware(self.as_of, "company_world_link_as_of_requires_timezone")
         if (
             self.causal_claim_proven
@@ -591,7 +591,7 @@ def _resolved_field(
 
 def _numeric_value(field: ResolvedField) -> float:
     if isinstance(field.value, bool) or not isinstance(field.value, (int, float)):
-        raise ValueError("company_world_metric_deviation_requires_numeric_values")
+        raise TypeError("company_world_metric_deviation_requires_numeric_values")
     value = float(field.value)
     if not math.isfinite(value):
         raise ValueError("company_world_metric_deviation_requires_finite_values")

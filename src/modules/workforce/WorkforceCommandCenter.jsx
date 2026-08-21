@@ -47,7 +47,7 @@ function Metric({ icon: Icon, label, value, note, tone = "neutral" }) {
   </article>;
 }
 
-export default function WorkforceCommandCenter() {
+export default function WorkforceCommandCenter({ onLocationChange }) {
   const { locale } = usePlatformPreferences();
   const m = useCallback((key, params) => workforceCommandCenterMessage(locale, key, params), [locale]);
   const [locations, setLocations] = useState([]);
@@ -78,8 +78,10 @@ export default function WorkforceCommandCenter() {
       setLocations(rows);
       const first = rows[0]?.id || "";
       setLocationId(first);
-      if (first) refresh(first);
-      else setStatus("empty");
+      if (first) {
+        onLocationChange?.(first);
+        refresh(first);
+      } else setStatus("empty");
     }).catch((requestError) => {
       if (!active) return;
       setError(requestError.message || m("error"));
@@ -121,6 +123,7 @@ export default function WorkforceCommandCenter() {
             onChange={(event) => {
               const next = event.target.value;
               setLocationId(next);
+              onLocationChange?.(next);
               refresh(next);
             }}
           >

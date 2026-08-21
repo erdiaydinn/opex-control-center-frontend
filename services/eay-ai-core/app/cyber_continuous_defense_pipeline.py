@@ -821,7 +821,7 @@ def ingest_live_public_threat(
         record_id=f"threat:nvd:{cve_id}",
         source=ThreatIntelligenceSource.NVD,
         source_record_id=cve_id,
-        published_at=_parse_datetime(nvd_item.get("published")),
+        published_at=_parse_nvd_datetime(nvd_item.get("published")),
         recorded_at=as_of,
         source_evidence_ref=f"nvd-cve:{cve_id}:{nvd_observation.content_sha256[:16]}",
         product_refs=cpe_refs,
@@ -1859,7 +1859,7 @@ def _normalize_product_part(value: Any) -> str:
     return normalized or "unknown"
 
 
-def _parse_datetime(value: Any) -> datetime:
+def _parse_nvd_datetime(value: Any) -> datetime:
     if not isinstance(value, str) or not value:
         raise LiveThreatSourceUnavailable("cyber_live_source_datetime_missing")
     try:
@@ -1867,7 +1867,7 @@ def _parse_datetime(value: Any) -> datetime:
     except ValueError as exc:
         raise LiveThreatSourceUnavailable("cyber_live_source_datetime_invalid") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise LiveThreatSourceUnavailable("cyber_live_source_datetime_requires_timezone")
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
 
 

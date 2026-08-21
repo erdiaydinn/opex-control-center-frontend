@@ -54,7 +54,7 @@ class ProviderRuntimePolicy(BaseModel):
     evidence_refs: tuple[str, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_exact_policy(self) -> "ProviderRuntimePolicy":
+    def validate_exact_policy(self) -> ProviderRuntimePolicy:
         normalized_prefixes: list[str] = []
         for prefix in self.allowed_path_prefixes:
             normalized = prefix.strip()
@@ -269,16 +269,18 @@ def execute_provider_request(
     )
 
     try:
-        with httpx.Client(
-            follow_redirects=False,
-            timeout=policy.timeout_seconds,
-            transport=transport,
-            trust_env=False,
-        ) as client:
-            with client.stream("GET", plan.url, headers=headers) as response:
-                media_type = _validate_response_headers(response, policy=policy)
-                raw_body = _read_bounded_body(response, max_bytes=policy.max_response_bytes)
-                status_code = response.status_code
+        with (
+            httpx.Client(
+                follow_redirects=False,
+                timeout=policy.timeout_seconds,
+                transport=transport,
+                trust_env=False,
+            ) as client,
+            client.stream("GET", plan.url, headers=headers) as response,
+        ):
+            media_type = _validate_response_headers(response, policy=policy)
+            raw_body = _read_bounded_body(response, max_bytes=policy.max_response_bytes)
+            status_code = response.status_code
     except (ProviderRuntimeBlocked, ProviderRuntimeUnavailable):
         raise
     except httpx.HTTPError as exc:
@@ -289,16 +291,9 @@ def execute_provider_request(
         raise ValueError("provider_runtime_fetched_at_timezone_required")
     fetched_at = fetched_at.astimezone(UTC)
     body_sha256 = hashlib.sha256(raw_body).hexdigest()
-    fingerprint_material = "\n".join(
-        (
-            CONTEXT_PROVIDER_RUNTIME_CONTRACT,
-            plan.provider_id,
-            policy.adapter_id,
-            policy.adapter_version,
-            plan.url,
-            media_type,
-            body_sha256,
-        )
+    fingerprint_material = (
+        f"{CONTEXT_PROVIDER_RUNTIME_CONTRACT}\n{plan.provider_id}\n{policy.adapter_id}\n"
+        f"{policy.adapter_version}\n{plan.url}\n{media_type}\n{body_sha256}"
     ).encode("utf-8")
     evidence_fingerprint = hashlib.sha256(fingerprint_material).hexdigest()
 

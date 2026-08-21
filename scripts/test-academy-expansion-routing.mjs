@@ -2,6 +2,7 @@ import fs from "node:fs";
 import process from "node:process";
 
 import { academyExpansionMessageCoverage } from "../src/platform/i18n/academyExpansionMessages.js";
+import { academyGraphMessageCoverage } from "../src/platform/i18n/academyGraphMessages.js";
 import { academyInteractionMessageCoverage } from "../src/platform/i18n/academyInteractionMessages.js";
 import { academySkillGapMessageCoverage } from "../src/platform/i18n/academySkillGapMessages.js";
 import { academyStudioTermMessageCoverage } from "../src/platform/i18n/academyStudioTermMessages.js";
@@ -11,6 +12,8 @@ const appPath = "src/App.jsx";
 const workspacePath = "src/modules/academy/AcademyWorkspace.jsx";
 const hubPath = "src/modules/academy/AcademyExpansionHub.jsx";
 const achievementsPath = "src/modules/academy/AcademyAchievements.jsx";
+const scenarioPath = "src/modules/academy/AcademyScenarioStudio.jsx";
+const graphPath = "src/modules/academy/AcademyScenarioGraphCanvas.jsx";
 const interactionPath = "src/modules/academy/AcademyInteractionTimelineStudio.jsx";
 const localizationPath = "src/modules/academy/AcademyLocalizationGovernance.jsx";
 const skillGapPath = "src/modules/academy/AcademySkillGap.jsx";
@@ -18,6 +21,8 @@ const app = fs.readFileSync(appPath, "utf8");
 const workspace = fs.readFileSync(workspacePath, "utf8");
 const hub = fs.readFileSync(hubPath, "utf8");
 const achievements = fs.readFileSync(achievementsPath, "utf8");
+const scenario = fs.readFileSync(scenarioPath, "utf8");
+const graph = fs.readFileSync(graphPath, "utf8");
 const interaction = fs.readFileSync(interactionPath, "utf8");
 const localization = fs.readFileSync(localizationPath, "utf8");
 const skillGap = fs.readFileSync(skillGapPath, "utf8");
@@ -86,6 +91,44 @@ if (/subject=|required_level=|current_level=/.test(skillGap)) {
   process.exit(1);
 }
 
+const scenarioRequirements = [
+  ['<AcademyScenarioGraphCanvas', "graph canvas composition"],
+  ['payload: { ...(item.payload || {}), authoring_position: position }', "authoring position persistence"],
+  ['setEntryNodeKey', "stable entry-node identity"],
+  ['from_node_key: edge.from_node_key === oldKey ? newKey', "node rename edge migration"],
+  ['to_node_key: edge.to_node_key === oldKey ? newKey', "node rename target migration"],
+  ['nodes.filter((item) => item.terminal).length <= 1', "last-terminal removal guard"],
+  ['edge.from_node_key !== node.node_key && edge.to_node_key !== node.node_key', "connected-edge cleanup"],
+  ['moveNodeOrder(index, -1)', "node reorder up"],
+  ['moveNodeOrder(index, 1)', "node reorder down"],
+  ['removeEdge(index)', "edge removal"],
+  ['entry_node_key: entryNodeKey', "server-authoritative entry-node submission"],
+  ['crypto.subtle.digest("SHA-256"', "scenario source fingerprint"],
+];
+for (const [needle, label] of scenarioRequirements) {
+  if (!scenario.includes(needle)) {
+    console.error(`${scenarioPath}: missing ${label}: ${needle}`);
+    process.exit(1);
+  }
+}
+
+const graphRequirements = [
+  ['onPointerDown', "pointer drag support"],
+  ['setPointerCapture', "pointer capture"],
+  ['ArrowLeft', "keyboard left movement"],
+  ['ArrowRight', "keyboard right movement"],
+  ['ArrowUp', "keyboard up movement"],
+  ['ArrowDown', "keyboard down movement"],
+  ['markerEnd="url(#academy-scenario-arrow)"', "directed edge rendering"],
+  ['aria-label={`${node.node_key}. ${st(node.node_type)}. ${gx("keyboardMove")}`}', "keyboard move accessible name"],
+];
+for (const [needle, label] of graphRequirements) {
+  if (!graph.includes(needle)) {
+    console.error(`${graphPath}: missing ${label}: ${needle}`);
+    process.exit(1);
+  }
+}
+
 const interactionRequirements = [
   ['apiPost("/v1/academy/admin/interaction-sets"', "canonical interaction authoring API"],
   ['crypto.subtle.digest("SHA-256"', "source fingerprint"],
@@ -129,6 +172,7 @@ if (localization.includes('workspace?.content || []')) {
 
 for (const [name, coverage] of [
   ["expansion", academyExpansionMessageCoverage(UI_LOCALES)],
+  ["graph", academyGraphMessageCoverage(UI_LOCALES)],
   ["interaction", academyInteractionMessageCoverage(UI_LOCALES)],
   ["skill-gap", academySkillGapMessageCoverage(UI_LOCALES)],
   ["studio-terms", academyStudioTermMessageCoverage(UI_LOCALES)],
@@ -141,9 +185,9 @@ for (const [name, coverage] of [
   }
 }
 
-if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.test(skillGap)) {
+if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.test(skillGap) || /localStorage|sessionStorage/.test(scenario)) {
   console.error(`${hubPath}: Academy experience authority must not be inferred from browser storage.`);
   process.exit(1);
 }
 
-console.log("Academy experience routing, self-scope, schema, version and locale authority contract: PASS");
+console.log("Academy experience routing, self-scope, graph authoring, schema, version and locale authority contract: PASS");

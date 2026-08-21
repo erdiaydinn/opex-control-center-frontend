@@ -4,6 +4,7 @@ import { CalendarClock, CheckCircle2, Clock3, RefreshCw, ShieldCheck, Sparkles, 
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { workforceFlexibilityMessage } from "../../platform/i18n/workforceFlexibilityMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import WorkforceShiftTradePanel from "./WorkforceShiftTradePanel.jsx";
 import {
   claimWorkforceOpenShift,
   loadWorkforceFlexibility,
@@ -23,6 +24,16 @@ function formatDate(value, locale) {
   return new Date(`${value}T12:00:00`).toLocaleDateString(locale, {
     day: "2-digit", month: "short", weekday: "short",
   });
+}
+
+function fatigueLabelKey(value) {
+  const band = String(value || "LOW").toUpperCase();
+  return {
+    LOW: "fatigueLow",
+    MODERATE: "fatigueModerate",
+    HIGH: "fatigueHigh",
+    CRITICAL: "fatigueCritical",
+  }[band] || "fatigueLow";
 }
 
 export default function WorkforceFlexibilityCenter() {
@@ -126,15 +137,39 @@ export default function WorkforceFlexibilityCenter() {
 
     <section className="wfx-flex-open-shifts">
       <header><div><small>{m("openShifts")}</small><strong>{data.openShifts.length}</strong></div><Sparkles size={19} /></header>
+      <p className="wfx-flex-ranking-note"><ShieldCheck size={15} /><span>{m("rankingNotice")}</span></p>
       <div className="wfx-flex-shift-list">
-        {data.openShifts.map((shift) => <article key={shift.id}>
-          <div className="wfx-flex-shift-time"><strong>{formatDate(shift.date, locale)}</strong><span><Clock3 size={15} />{shift.start}–{shift.end}</span></div>
-          <div className="wfx-flex-shift-main"><strong>{shift.warehouse}</strong><small>{shift.role}</small>{shift.activities?.length ? <div className="wfx-flex-activity-chips">{shift.activities.map((activity) => <span key={`${shift.id}-${activity.activityKey}`}>{activity.displayName}</span>)}</div> : null}<span><Users size={14} /> {m("capacity", { count: shift.remainingCapacity })}</span></div>
-          <div className="wfx-flex-shift-fit"><b>{m("score", { score: shift.eligibility?.score ?? "—" })}</b>{shift.eligibility?.preferenceMatch ? <small><CheckCircle2 size={13} />{m("preferenceMatch")}</small> : null}</div>
-          <button type="button" disabled={busy === `claim-${shift.id}`} onClick={() => claim(shift.id)}>{busy === `claim-${shift.id}` ? m("claiming") : m("claim")}</button>
-        </article>)}
+        {data.openShifts.map((shift) => {
+          const ranking = shift.eligibility?.assignmentRanking;
+          return <article key={shift.id}>
+            <div className="wfx-flex-shift-time"><strong>{formatDate(shift.date, locale)}</strong><span><Clock3 size={15} />{shift.start}–{shift.end}</span></div>
+            <div className="wfx-flex-shift-main">
+              <strong>{shift.warehouse}</strong>
+              <small>{shift.role}</small>
+              {shift.activities?.length ? <div className="wfx-flex-activity-chips">{shift.activities.map((activity) => <span key={`${shift.id}-${activity.activityKey}`}>{activity.displayName}</span>)}</div> : null}
+              <span><Users size={14} /> {m("capacity", { count: shift.remainingCapacity })}</span>
+              {ranking ? <div className="wfx-flex-ranking-components">
+                <span>{m("preferenceComponent", { score: ranking.preferenceScore ?? "—" })}</span>
+                <span>{m("workloadComponent", { score: ranking.workloadBalanceScore ?? "—" })}</span>
+                <span>{m("restComponent", { score: ranking.restBufferScore ?? "—" })}</span>
+                <span>{m("recoveryComponent", { score: ranking.recoveryScore ?? "—" })}</span>
+              </div> : null}
+              {ranking?.softOnly ? <small className="wfx-flex-ranking-boundary"><ShieldCheck size={12} />{m("rankingSoftOnly")}</small> : null}
+            </div>
+            <div className="wfx-flex-shift-fit">
+              {ranking ? <>
+                <b>{m("fairnessScore", { score: ranking.fairnessScore ?? "—" })}</b>
+                <small className="wfx-flex-fatigue" data-risk={String(ranking.fatigueRiskBand || "LOW").toUpperCase()}>{m("fatigueRisk", { band: m(fatigueLabelKey(ranking.fatigueRiskBand)), score: ranking.fatigueRiskScore ?? "—" })}</small>
+              </> : <b>{m("score", { score: shift.eligibility?.score ?? "—" })}</b>}
+              {shift.eligibility?.preferenceMatch ? <small><CheckCircle2 size={13} />{m("preferenceMatch")}</small> : null}
+            </div>
+            <button type="button" disabled={busy === `claim-${shift.id}`} onClick={() => claim(shift.id)}>{busy === `claim-${shift.id}` ? m("claiming") : m("claim")}</button>
+          </article>;
+        })}
         {!data.openShifts.length ? <div className="wfx-flex-empty">{m("noOpen")}</div> : null}
       </div>
     </section>
+
+    {personId ? <WorkforceShiftTradePanel personId={personId} /> : null}
   </div>;
 }

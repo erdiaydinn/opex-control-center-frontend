@@ -67,13 +67,7 @@ export function WorkforceExperienceCenter({ onBack }) {
   const [courseCompleted, setCourseCompleted] = useState(false);
   const [surveyAnswer, setSurveyAnswer] = useState(null);
   const items = useMemo(() => [
-    {
-      id: "flexibility",
-      title: workforceFlexibilityMessage(locale, "title"),
-      detail: workforceFlexibilityMessage(locale, "detail"),
-      icon: CalendarClock,
-      tone: "pink",
-    },
+    { id: "flexibility", title: workforceFlexibilityMessage(locale, "title"), detail: workforceFlexibilityMessage(locale, "detail"), icon: CalendarClock, tone: "pink" },
     ...EXPERIENCE_ITEMS,
   ], [locale]);
   const title = useMemo(() => items.find((item) => item.id === section)?.title || "Çalışan Merkezi", [items, section]);
@@ -89,5 +83,10 @@ export function WorkforceExperienceAdmin() {
     { icon: ClipboardList, title: m("pulseTitle"), value: m("pulseValue"), detail: m("pulseDetail"), tone: "blue" },
     { icon: Boxes, title: m("assetTitle"), value: m("assetValue"), detail: m("assetDetail"), tone: "green" },
   ];
-  return <div className="wfx-experience-admin"><section className="wfx-panel wfx-experience-admin-hero"><div><span>{m("adminEyebrow")}</span><h2>{m("adminHeading")}</h2><p>{m("adminIntro")}</p></div><div className="wfx-experience-score"><small>{m("experienceScore")}</small><strong>92</strong><span>{m("scoreTrend")}</span></div></section><section className="wfx-experience-admin-grid">{capabilities.map((item) => { const Icon = item.icon; return <article className="wfx-panel" key={item.title}><div className={item.tone}><Icon size={22} /></div><span>{item.title}</span><strong>{item.value}</strong><small>{item.detail}</small></article>; })}</section><WorkforceFlexibilityAdmin /><section className="wfx-panel wfx-market-difference"><header><div><span>{m("productStandard")}</span><h3>{m("outcomeHeading")}</h3></div><Sparkles size={24} /></header><div><article><BadgeCheck size={20} /><span><strong>{m("oneTapTitle")}</strong><small>{m("oneTapDetail")}</small></span></article><article><ShieldCheck size={20} /><span><strong>{m("privacyTitle")}</strong><small>{m("privacyDetail")}</small></span></article><article><CalendarDays size={20} /><span><strong>{m("contextTitle")}</strong><small>{m("contextDetail")}</small></span></article></div></section></div>;
+  return <div className="wfx-experience-admin">
+    <section className="wfx-panel wfx-experience-admin-hero"><div><span>{m("adminEyebrow")}</span><h2>{m("adminHeading")}</h2><p>{m("adminIntro")}</p></div><div className="wfx-experience-score"><small>{m("experienceScore")}</small><strong>92</strong><span>{m("scoreTrend")}</span></div></section>
+    <section className="wfx-experience-admin-grid">{capabilities.map((item) => { const Icon = item.icon; return <article className="wfx-panel" key={item.title}><div className={item.tone}><Icon size={22} /></div><span>{item.title}</span><strong>{item.value}</strong><small>{item.detail}</small></article>; })}</section>
+    <WorkforceFlexibilityAdmin />
+    <section className="wfx-panel wfx-market-difference"><header><div><span>{m("productStandard")}</span><h3>{m("outcomeHeading")}</h3></div><Sparkles size={24} /></header><div><article><BadgeCheck size={20} /><span><strong>{m("oneTapTitle")}</strong><small>{m("oneTapDetail")}</small></span></article><article><ShieldCheck size={20} /><span><strong>{m("privacyTitle")}</strong><small>{m("privacyDetail")}</small></span></article><article><CalendarDays size={20} /><span><strong>{m("contextTitle")}</strong><small>{m("contextDetail")}</small></span></article></div></section>
+  </div>;
 }

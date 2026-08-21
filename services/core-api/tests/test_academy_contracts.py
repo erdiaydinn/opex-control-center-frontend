@@ -12,6 +12,7 @@ from app.core.localization import (
     content_direction,
 )
 from app.core.security import Principal
+from app.modules.academy import skill_gap_service
 from app.modules.academy.media import (
     AcademyMediaConfig,
     build_playback_url,
@@ -133,6 +134,41 @@ def test_interaction_authoring_rejects_duplicate_node_keys() -> None:
         )
 
 
+def test_interaction_authoring_matches_multiple_choice_and_cta_authority() -> None:
+    payload = InteractionSetCreateRequest(
+        content_version_id=VERSION,
+        version_number=2,
+        source_fingerprint="d" * 64,
+        nodes=[
+            {
+                "node_key": "choose",
+                "node_type": "multiple_choice",
+                "at_ms": 1000,
+                "blocking": True,
+                "required": True,
+                "score_weight": 1000,
+            },
+            {
+                "node_key": "continue",
+                "node_type": "cta",
+                "at_ms": 2000,
+            },
+        ],
+    )
+    assert [node.node_type for node in payload.nodes] == ["multiple_choice", "cta"]
+    assert payload.nodes[0].score_weight == 1000
+
+    with pytest.raises(ValueError):
+        InteractionSetCreateRequest(
+            content_version_id=VERSION,
+            version_number=2,
+            source_fingerprint="e" * 64,
+            nodes=[
+                {"node_key": "legacy", "node_type": "multi_choice", "at_ms": 1000}
+            ],
+        )
+
+
 def test_scenario_authoring_requires_valid_closed_graph() -> None:
     scenario = ScenarioCreateRequest(
         content_version_id=VERSION,
@@ -216,6 +252,66 @@ def test_single_choice_requires_exactly_one_correct_option() -> None:
                 QuestionOptionCreate(label_i18n={"en": "B"}, is_correct=True),
             ],
         )
+
+
+@pytest.mark.asyncio
+async def test_skill_gap_contract_is_self_scoped_and_deterministic(monkeypatch) -> None:
+    viewer = principal()
+    session_sentinel = object()
+
+    async def fake_context(session, supplied_principal, *, include_learning_context=False):
+        assert session is session_sentinel
+        assert supplied_principal is viewer
+        assert include_learning_context is True
+        return {
+            "requirements": [
+                {
+                    "skill_key": "inventory.count",
+                    "title_i18n": {"en": "Inventory count"},
+                    "description_i18n": {"en": "Count accurately"},
+                    "required_level": 4,
+                    "role_keys": ["picker"],
+                }
+            ],
+            "proficiencies": [
+                {
+                    "skill_key": "inventory.count",
+                    "observed_level": 2,
+                    "evidence_type": "assessment",
+                    "evidence_ref": "assessment:academy-contract",
+                    "observed_at": "2026-08-21T00:00:00+00:00",
+                }
+            ],
+            "outcomes": [
+                {
+                    "path_key": "inventory-count-recovery",
+                    "title_i18n": {"en": "Inventory count recovery"},
+                    "skill_key": "inventory.count",
+                    "target_level": 4,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        skill_gap_service,
+        "list_my_badge_credentials",
+        fake_context,
+    )
+    snapshot = await skill_gap_service.get_my_skill_gap_snapshot(
+        session_sentinel,  # type: ignore[arg-type]
+        viewer,
+    )
+
+    assert snapshot["subject"] == viewer.subject
+    assert snapshot["roles"] == ["picker"]
+    assert snapshot["gap_count"] == 1
+    assert snapshot["gaps"][0]["current_level"] == 2
+    assert snapshot["gaps"][0]["required_level"] == 4
+    assert snapshot["gaps"][0]["latest_evidence"]["evidence_ref"] == (
+        "assessment:academy-contract"
+    )
+    assert snapshot["recommended_paths"][0]["path_key"] == "inventory-count-recovery"
+    assert snapshot["recommendation_policy"] == "deterministic_role_skill_gap_v1"
 
 
 def test_playback_token_is_short_lived_and_scope_bound() -> None:

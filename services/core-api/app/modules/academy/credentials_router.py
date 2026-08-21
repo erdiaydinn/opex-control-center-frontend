@@ -21,6 +21,7 @@ from app.modules.academy.credentials_service import (
     retire_definition,
     revoke_award,
 )
+from app.modules.academy.skill_gap_service import get_my_skill_gap_snapshot
 
 router = APIRouter(prefix="/credentials", tags=["academy-credentials"])
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
@@ -50,6 +51,14 @@ async def get_my_credentials(
 ) -> dict[str, object]:
     items = await my_credentials(session, principal)
     return {"items": items, "count": len(items)}
+
+
+@router.get("/me/skill-gaps")
+async def get_my_skill_gaps(
+    session: TenantSession,
+    principal: Viewer,
+) -> dict[str, object]:
+    return await get_my_skill_gap_snapshot(session, principal)
 
 
 @router.get("/me/{badge_award_id}")

@@ -23,20 +23,14 @@ class WorkActivityCatalogTests(unittest.TestCase):
 
     def test_approve_activity_versions_and_audits_tenant_authority(self):
         captured = {}
-
         def persist(collections, event, actor, **details):
-            captured["collections"] = collections
-            captured["event"] = event
-            captured["actor"] = actor
-            captured["details"] = details
-
+            captured.update(collections=collections, event=event, actor=actor, details=details)
         with (
             patch.object(catalog.persistence, "tenant_id", return_value="tenant-a"),
             patch.object(catalog.persistence, "load_collection", return_value=[]),
             patch.object(catalog.persistence, "persist_snapshot_with_audit", side_effect=persist),
         ):
             row = catalog.approve_activity(self.payload(), "ops-admin@example.test")
-
         self.assertEqual(row["tenant_id"], "tenant-a")
         self.assertEqual(row["version"], 1)
         self.assertEqual(row["required_skill_keys"], ["grill_station"])
@@ -45,24 +39,11 @@ class WorkActivityCatalogTests(unittest.TestCase):
 
     def test_new_version_closes_previous_effective_authority(self):
         rows = [{
-            "id": "ACT-food_grill_cook-V1",
-            "tenant_id": "tenant-a",
-            "activity_key": "food_grill_cook",
-            "version": 1,
-            "display_name": "Grill cooking",
-            "category": "food_production",
-            "unit_key": "items",
-            "demand_mode": "VOLUME",
-            "required_skill_keys": [],
-            "required_certification_keys": [],
-            "required_equipment_keys": [],
-            "safety_tags": [],
-            "location_types": ["restaurant"],
-            "effective_from": "2026-01-01T00:00:00+03:00",
-            "effective_until": None,
-            "status": "APPROVED",
-            "source_ref": "ops-standard:qsr:v0",
-            "approved_by": "old-admin",
+            "id": "ACT-food_grill_cook-V1", "tenant_id": "tenant-a", "activity_key": "food_grill_cook", "version": 1,
+            "display_name": "Grill cooking", "category": "food_production", "unit_key": "items", "demand_mode": "VOLUME",
+            "required_skill_keys": [], "required_certification_keys": [], "required_equipment_keys": [], "safety_tags": [],
+            "location_types": ["restaurant"], "effective_from": "2026-01-01T00:00:00+03:00", "effective_until": None,
+            "status": "APPROVED", "source_ref": "ops-standard:qsr:v0", "approved_by": "old-admin",
         }]
         captured = {}
         with (
@@ -81,34 +62,20 @@ class WorkActivityCatalogTests(unittest.TestCase):
             patch.object(catalog.persistence, "tenant_id", return_value="tenant-a"),
             patch.object(catalog.persistence, "load_collection", return_value=[]),
         ):
-            with self.assertRaisesRegex(catalog.service.WorkforceRuleError, "not found"):
+            with self.assertRaisesRegex(catalog.WorkActivityCatalogError, "not found"):
                 catalog.resolve_catalog_activity("machine_operation", "2026-08-20")
-
         row = {
-            "id": "ACT-machine_operation-V1",
-            "tenant_id": "tenant-a",
-            "activity_key": "machine_operation",
-            "version": 1,
-            "display_name": "Machine operation",
-            "category": "production",
-            "unit_key": "units",
-            "demand_mode": "VOLUME",
-            "required_skill_keys": [],
-            "required_certification_keys": [],
-            "required_equipment_keys": [],
-            "safety_tags": [],
-            "location_types": ["factory"],
-            "effective_from": "2026-01-01T00:00:00+03:00",
-            "effective_until": None,
-            "status": "APPROVED",
-            "source_ref": "factory-standard:v1",
-            "approved_by": "factory-admin",
+            "id": "ACT-machine_operation-V1", "tenant_id": "tenant-a", "activity_key": "machine_operation", "version": 1,
+            "display_name": "Machine operation", "category": "production", "unit_key": "units", "demand_mode": "VOLUME",
+            "required_skill_keys": [], "required_certification_keys": [], "required_equipment_keys": [], "safety_tags": [],
+            "location_types": ["factory"], "effective_from": "2026-01-01T00:00:00+03:00", "effective_until": None,
+            "status": "APPROVED", "source_ref": "factory-standard:v1", "approved_by": "factory-admin",
         }
         with (
             patch.object(catalog.persistence, "tenant_id", return_value="tenant-a"),
             patch.object(catalog.persistence, "load_collection", return_value=[row, {**row, "id": "ACT-machine_operation-V2", "version": 2}]),
         ):
-            with self.assertRaisesRegex(catalog.service.WorkforceRuleError, "Ambiguous"):
+            with self.assertRaisesRegex(catalog.WorkActivityCatalogError, "Ambiguous"):
                 catalog.resolve_catalog_activity("machine_operation", "2026-08-20")
 
     def test_template_candidates_are_never_persisted_by_reading_template(self):

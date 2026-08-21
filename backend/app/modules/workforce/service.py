@@ -14,7 +14,12 @@ from zoneinfo import ZoneInfo
 
 from . import persistence
 from .attestation import AttestationError, verify as verify_attestation
-from .pii import decrypt as decrypt_pii, encrypt as encrypt_pii
+from .pii import (
+    decrypt as decrypt_pii,
+    encrypt as encrypt_pii,
+    ensure_lookup_key_ready,
+    lookup_digest,
+)
 
 
 _WAREHOUSE_DATA_PATH = Path(__file__).resolve().parent / "data" / "warehouses.json"
@@ -141,10 +146,34 @@ def _hydrate_snapshot(snapshot: dict[str, list[dict]]) -> None:
     _DEVICE_CHALLENGES.update({key: value for key, value in (snapshot.get("device_challenges") or [{}])[0].items() if key != "id"})
 
 
+def _migrate_identity_lookup_digests() -> int:
+    migrated = 0
+    for person in _PEOPLE:
+        if person.get("tckn_lookup_digest"):
+            person.pop("tckn_hash", None)
+            continue
+        ciphertext = person.get("tckn_ciphertext")
+        employee_id = str(person.get("employee_id") or person.get("id") or "")
+        if not ciphertext or not employee_id:
+            continue
+        try:
+            tckn = decrypt_pii(ciphertext, employee_id)
+            person["tckn_lookup_digest"] = lookup_digest(tckn)
+            person.pop("tckn_hash", None)
+            migrated += 1
+        except Exception:
+            # A broken encrypted identity is not guessed or silently replaced.
+            continue
+    return migrated
+
+
 def initialize_workforce() -> None:
     """Validate schema and hydrate one repeatable-read PostgreSQL snapshot."""
     persistence.initialize()
+    if persistence.ENVIRONMENT == "production":
+        ensure_lookup_key_ready()
     if not persistence.ENABLED:
+        _migrate_identity_lookup_digests()
         return
     initialized = persistence.has_snapshot()
     snapshot = persistence.load_snapshot(_snapshot_kinds())
@@ -157,6 +186,12 @@ def initialize_workforce() -> None:
         )
         return
     _hydrate_snapshot(snapshot)
+    migrated = _migrate_identity_lookup_digests()
+    if migrated:
+        persistence.persist_snapshot_with_audit(
+            _snapshot_collections(), "WORKFORCE_TCKN_LOOKUP_DIGEST_MIGRATED", "system",
+            migrated=migrated, lookup_version="v1-hmac-sha256",
+        )
 
 
 def list_warehouses() -> list[dict]:
@@ -190,7 +225,7 @@ def bulk_patch_warehouses(ids: list[str], patch: dict, actor: str) -> list[dict]
 def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict:
     created = updated = 0
     roster_conflicts: list[dict] = []
-    by_tckn_hash = {item.get("tckn_hash"): item for item in _PEOPLE if item.get("tckn_hash")}
+    by_tckn_lookup = {item.get("tckn_lookup_digest"): item for item in _PEOPLE if item.get("tckn_lookup_digest")}
     by_employee_id = {str(item.get("employee_id")): item for item in _PEOPLE if item.get("employee_id") is not None}
     roster_owner = {
         str(roster_id): item
@@ -205,8 +240,11 @@ def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict
             str(value).strip() for value in payload.pop("roster_ids", []) if str(value).strip()
         ))
         tckn = payload.pop("tckn")
-        tckn_hash = sha256(tckn.encode()).hexdigest()
-        existing = by_tckn_hash.get(tckn_hash)
+        tckn_lookup = lookup_digest(tckn)
+        existing = by_tckn_lookup.get(tckn_lookup)
+        if existing is None:
+            legacy_digest = sha256(tckn.encode()).hexdigest()
+            existing = next((item for item in _PEOPLE if item.get("tckn_hash") == legacy_digest), None)
         if existing is None:
             existing = by_employee_id.get(str(employee_id))
         canonical_employee_id = existing["employee_id"] if existing else employee_id
@@ -227,9 +265,9 @@ def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict
             "employee_id": canonical_employee_id,
             "roster_ids": roster_ids,
             "source_employee_id": employee_id if employee_id != canonical_employee_id else payload.get("source_employee_id"),
-            "tckn_hash": tckn_hash,
+            "tckn_lookup_digest": tckn_lookup,
             "tckn_ciphertext": encrypt_pii(tckn, canonical_employee_id),
-            "employee_master_version": 1,
+            "employee_master_version": 2,
             "identity_contract": "TC_TO_EMPLOYEE_TO_ROSTER",
             "updated_at": datetime.now(UTC).isoformat(),
             "updated_by": actor,
@@ -237,6 +275,7 @@ def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict
         if protected.get("employment_end") and str(protected["employment_end"]) <= datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat():
             protected["active"] = False
         if existing:
+            existing.pop("tckn_hash", None)
             existing.update(protected)
             updated += 1
         else:
@@ -244,7 +283,7 @@ def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict
             _PEOPLE.append(protected)
             existing = protected
             created += 1
-        by_tckn_hash[tckn_hash] = existing
+        by_tckn_lookup[tckn_lookup] = existing
         by_employee_id[str(canonical_employee_id)] = existing
         for roster_id in roster_ids:
             roster_owner[roster_id] = existing
@@ -256,17 +295,21 @@ def upsert_people(rows: list[dict], actor: str, *, persist: bool = True) -> dict
 def resolve_person_identity(value: str, method: str = "EMPLOYEE_ID") -> dict | None:
     """Resolve an external identifier to the canonical Employee Master row.
 
-    TC is compared only through its digest; the clear value is never added to
-    logs or import results. Roster identifiers remain aliases and never replace
-    the canonical employee id.
+    TC is compared only through a keyed lookup digest; the clear value is never
+    added to logs or import results. Roster identifiers remain aliases and never
+    replace the canonical employee id.
     """
     candidate = str(value or "").strip()
     normalized = str(method or "EMPLOYEE_ID").strip().upper().replace(" ", "_")
     if not candidate:
         return None
     if normalized in {"TC", "TCKN", "NATIONAL_ID"}:
-        digest = sha256(candidate.encode()).hexdigest()
-        return next((item for item in _PEOPLE if item.get("tckn_hash") == digest), None)
+        digest = lookup_digest(candidate)
+        match = next((item for item in _PEOPLE if item.get("tckn_lookup_digest") == digest), None)
+        if match is not None:
+            return match
+        legacy_digest = sha256(candidate.encode()).hexdigest()
+        return next((item for item in _PEOPLE if item.get("tckn_hash") == legacy_digest), None)
     if normalized in {"ROSTER", "ROSTER_ID", "PICKER_ID"}:
         return next((item for item in _PEOPLE if candidate in {str(value) for value in item.get("roster_ids", [])}), None)
     return next((item for item in _PEOPLE if str(item.get("employee_id")) == candidate), None)
@@ -380,7 +423,7 @@ def process_due_employment_exits(actor: str = "workforce-lifecycle-worker") -> d
 def list_people(can_view_sensitive: bool = False) -> list[dict]:
     result = []
     for item in _PEOPLE:
-        row = {key: value for key, value in item.items() if key not in {"tckn_ciphertext", "tckn_hash"}}
+        row = {key: value for key, value in item.items() if key not in {"tckn_ciphertext", "tckn_hash", "tckn_lookup_digest"}}
         try:
             tckn = decrypt_pii(item["tckn_ciphertext"], item["employee_id"])
         except Exception:
@@ -394,9 +437,36 @@ def list_leaves() -> list[dict]:
     return deepcopy(_LEAVES)
 
 
+def _planned_leave_minutes(person_id: str, leave_date: str) -> int:
+    shift = next(
+        (
+            item for item in _SHIFTS
+            if str(item.get("person_id")) == str(person_id)
+            and str(item.get("date")) == str(leave_date)
+            and item.get("status") != "İptal"
+        ),
+        None,
+    )
+    if shift is not None:
+        expected = int(shift.get("expected_minutes") or 0)
+        if expected > 0:
+            return expected
+        if shift.get("start") and shift.get("end"):
+            return max(0, _gross_shift_minutes(shift["start"], shift["end"]) - int(shift.get("break_minutes") or 0))
+    attendance = next(
+        (
+            item for item in _ATTENDANCE
+            if str(item.get("person_id")) == str(person_id)
+            and _attendance_iso_date(item.get("date")) == str(leave_date)
+        ),
+        None,
+    )
+    return max(0, int((attendance or {}).get("expected_minutes") or 0))
+
+
 def import_leaves(rows: list[dict], actor: str, file_name: str = "") -> dict:
     existing_keys = {(str(item.get("person_id")), str(item.get("date"))) for item in _LEAVES}
-    inserted = skipped = unmatched = 0
+    inserted = skipped = unmatched = duration_derived = duration_unresolved = 0
     for index, payload in enumerate(rows):
         if str(payload.get("person_id")) != "*":
             person = _resolve_import_person(payload)
@@ -410,6 +480,18 @@ def import_leaves(rows: list[dict], actor: str, file_name: str = "") -> dict:
                 "person_id": person["employee_id"],
                 "person_name": payload.get("person_name") or person.get("full_name", ""),
             }
+            provided_minutes = max(0, int(payload.get("minutes") or 0))
+            if provided_minutes > 0:
+                payload["minutes"] = provided_minutes
+                payload["duration_source"] = "SOURCE_FILE"
+                payload["requires_duration_review"] = False
+            else:
+                derived_minutes = _planned_leave_minutes(person["employee_id"], str(payload.get("date") or ""))
+                payload["minutes"] = derived_minutes
+                payload["duration_source"] = "PLANNED_SHIFT" if derived_minutes > 0 else "UNRESOLVED"
+                payload["requires_duration_review"] = derived_minutes <= 0
+                duration_derived += int(derived_minutes > 0)
+                duration_unresolved += int(derived_minutes <= 0)
         key = (str(payload["person_id"]), str(payload["date"]))
         if key in existing_keys:
             skipped += 1
@@ -418,8 +500,14 @@ def import_leaves(rows: list[dict], actor: str, file_name: str = "") -> dict:
         _LEAVES.append(record)
         existing_keys.add(key)
         inserted += 1
-    _append_audit("TIME_OFF_IMPORTED", actor, file_name=file_name, inserted=inserted, skipped=skipped, unmatched=unmatched)
-    return {"inserted": inserted, "skipped": skipped, "unmatched": unmatched, "total": len(rows)}
+    _append_audit(
+        "TIME_OFF_IMPORTED", actor, file_name=file_name, inserted=inserted, skipped=skipped,
+        unmatched=unmatched, duration_derived=duration_derived, duration_unresolved=duration_unresolved,
+    )
+    return {
+        "inserted": inserted, "skipped": skipped, "unmatched": unmatched, "total": len(rows),
+        "duration_derived": duration_derived, "duration_unresolved": duration_unresolved,
+    }
 
 
 def _audit_connection() -> sqlite3.Connection:
@@ -619,12 +707,15 @@ def list_daily_status() -> list[dict]:
         row["leave_records"].append({
             "id": leave.get("id"), "type_id": leave.get("type_id"),
             "category": leave.get("category"), "minutes": int(leave.get("minutes") or 0),
+            "duration_source": leave.get("duration_source"),
+            "requires_duration_review": bool(leave.get("requires_duration_review")),
         })
     result = []
     for row in by_key.values():
         row["leave_present"] = bool(row["leave_records"])
         row["leave_work_conflict"] = bool(row["leave_present"] and row.get("work_present"))
-        row["requires_review"] = bool(row["leave_work_conflict"] or row.get("daily_max_exception"))
+        row["leave_duration_unresolved"] = any(item.get("requires_duration_review") for item in row["leave_records"])
+        row["requires_review"] = bool(row["leave_work_conflict"] or row.get("daily_max_exception") or row["leave_duration_unresolved"])
         result.append(row)
     return deepcopy(sorted(result, key=lambda row: (row["date"], row["person_id"]), reverse=True))
 

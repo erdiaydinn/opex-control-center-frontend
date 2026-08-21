@@ -186,61 +186,140 @@ export async function parseRosterFile(file) {
 }
 
 const CATEGORY_TO_TYPE = {
+  "annual leave": "annual",
   "yıllık izin": "annual",
+  "unpaid leave": "unpaid",
   "ücretsiz izin": "unpaid",
   "ücretsiz": "unpaid",
+  "paternity leave": "paternity",
   "babalık izni": "paternity",
   "babalık": "paternity",
+  "marriage leave": "marriage",
   "evlilik izni": "marriage",
   "evlilik": "marriage",
+  "bereavement leave": "bereavement",
   "yas izni": "bereavement",
   "yas": "bereavement",
-  "hastalık izni (raporlu)": "report",
-  "hastalık izni (iş kazası)": "work_accident",
+  "sick leave": "report",
+  "hastalık izni": "report",
+  "raporlu": "report",
+  "work accident": "work_accident",
   "iş kazası": "work_accident",
+  "menstrual leave": "menstrual",
   "regl izni": "menstrual",
   "regl": "menstrual",
+  "absence": "absence",
   "devamsızlık": "absence",
+  "administrative leave": "administrative",
   "idari izin": "administrative",
   "idari": "administrative",
+  "relocation leave": "relocation",
   "taşınma izni": "relocation",
   "taşınma": "relocation",
   "saha kahramanları günü": "fieldhero",
 };
 
-export async function parseTimeOffFile(file) {
+function resolveTimeOffType(category = "") {
+  const normalized = String(category).trim().toLocaleLowerCase("tr-TR");
+  if (CATEGORY_TO_TYPE[normalized]) return CATEGORY_TO_TYPE[normalized];
+  const alias = Object.keys(CATEGORY_TO_TYPE)
+    .sort((left, right) => right.length - left.length)
+    .find((candidate) => normalized.includes(candidate));
+  if (alias) return CATEGORY_TO_TYPE[alias];
+  const custom = normalized.replaceAll(/[^a-z0-9çğıöşü]+/g, "_").replace(/^_+|_+$/g, "");
+  return custom ? `custom_${custom}` : "custom_unknown";
+}
+
+async function parseTimeOffFileLocal(file) {
   const sourceRows = await readTabularFile(file, "Time Off Used");
   const rows = [];
+  let invalidCount = 0;
   sourceRows.forEach((source, index) => {
-    const personId = String(cell(source, "employee number", "employee no", "employee id", "personel id", "sicil no", "sicil numarası", "sap id") || "").trim();
-    const nationalId = normalizeNationalId(cell(source, "tc", "tck", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası", "national id", "national identity number"));
-    const rawName = String(cell(source, "name", "employee name", "ad soyad", "personel adı", "personel adi") || "").trim();
+    const personId = String(cell(source, "employee number", "employee no", "employee id", "hr employee id", "personel id", "sicil no", "sicil numarası", "sap id") || "").trim();
+    const rawNationalId = normalizeNationalId(cell(source, "tc", "tck", "tckn", "tc no", "tc kimlik", "tc kimlik no", "tc kimlik numarası", "kimlik no", "kimlik numarası", "national id", "national identity number"));
+    const rawName = String(cell(source, "name", "worker", "employee name", "ad soyad", "personel adı", "personel adi") || "").trim();
     const personName = rawName.includes(",") ? rawName.split(",").reverse().join(" ").trim() : rawName;
     const category = String(cell(source, "category", "leave category", "izin türü", "izin tipi", "time off type") || "").trim();
-    const start = dateToIso(cell(source, "from", "start", "start date", "başlangıç", "başlangıç tarihi", "izin başlangıç"));
-    const end = dateToIso(cell(source, "to", "end", "end date", "bitiş", "bitiş tarihi", "izin bitiş")) || start;
-    if ((!personId && nationalId.length !== 11) || !start) return;
+    const singleDateValue = cell(source, "time off date", "leave date", "izin tarihi");
+    const singleDate = dateToIso(singleDateValue);
+    const start = singleDate || dateToIso(cell(source, "from", "start", "start date", "başlangıç", "başlangıç tarihi", "izin başlangıç"));
+    const end = singleDate || dateToIso(cell(source, "to", "end", "end date", "bitiş", "bitiş tarihi", "izin bitiş")) || start;
+    const isDmSingleDate = Boolean(singleDate && personId);
+    const nationalId = isDmSingleDate ? "" : rawNationalId;
+    const sourcePersonId = nationalId.length === 11 ? "" : personId;
+    if ((!personId && nationalId.length !== 11) || !start || !category) { invalidCount += 1; return; }
+    const explicitMinutes = durationMinutes(cell(source, "leave minutes", "time off minutes", "izin dakika", "süre dakika"));
+    const explicitHours = safeNumber(cell(source, "leave hours", "time off hours", "izin saati", "izin saat"));
+    const leaveMinutes = explicitMinutes || (explicitHours > 0 ? Math.round(explicitHours * 60) : 0);
     enumerateDates(start, end).forEach((date) => {
       rows.push({
-        id: `TO-${personId}-${date}-${index}`,
+        id: `TO-${personId || "TC"}-${date}-${index}`,
         personId,
-        sourcePersonId: personId,
-        nationalId,
+        sourcePersonId,
+        ...(nationalId ? { nationalId } : {}),
         personName,
         category,
-        typeId: CATEGORY_TO_TYPE[category.toLocaleLowerCase("tr-TR")] || `custom_${category.toLocaleLowerCase("tr-TR").replaceAll(/[^a-z0-9çğıöşü]+/g, "_")}`,
+        typeId: resolveTimeOffType(category),
         date,
-        minutes: 450,
+        minutes: leaveMinutes,
         approval: "Onaylandı",
         note: cell(source, "notes", "note", "not", "açıklama") || category,
         requestedAt: dateToIso(cell(source, "requested", "request date", "talep tarihi")),
         approvedAt: dateToIso(cell(source, "approved", "approval date", "onay tarihi")),
-        source: "Time Off Used",
-        sourceKey: `${personId}|${date}`,
+        source: isDmSingleDate ? "DM Time Off" : "Time Off Used",
+        sourceKey: `${personId || "TC"}|${date}`,
       });
     });
   });
-  return { rows, sourceCount: sourceRows.length };
+  return { rows, sourceCount: sourceRows.length, invalidCount, parser: "node-test-local" };
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+export async function parseTimeOffFile(file) {
+  // Node-based unit tests keep the deterministic local parser. Browser runtime
+  // always delegates untrusted XLSX/CSV parsing to the authenticated backend.
+  if (typeof window === "undefined" || typeof btoa === "undefined") return parseTimeOffFileLocal(file);
+  const { apiPost } = await import("../../api/client.js");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const parsed = await apiPost("/workforce/time-off/parse", {
+    file_name: file.name,
+    content_base64: bytesToBase64(bytes),
+  });
+  return {
+    rows: (parsed.rows || []).map((row) => ({
+      id: row.id,
+      personId: String(row.person_id || ""),
+      sourcePersonId: String(row.source_person_id || ""),
+      personName: row.person_name || "",
+      category: row.category || "",
+      typeId: row.type_id || "custom_unknown",
+      date: row.date,
+      minutes: Number(row.minutes || 0),
+      approval: row.approval || "Onaylandı",
+      note: row.note || "",
+      requestedAt: row.requested_at || "",
+      approvedAt: row.approved_at || "",
+      source: row.source || "Time Off Used",
+      sourceKey: row.source_key || `${row.person_id || ""}|${row.date || ""}`,
+      identityMethod: row.identity_method || "",
+      identityResolution: row.identity_resolution || "",
+    })),
+    sourceCount: Number(parsed.source_count || 0),
+    invalidCount: Number(parsed.invalid_count || 0),
+    identityResolvedCount: Number(parsed.identity_resolved_count || 0),
+    identityUnmatchedCount: Number(parsed.identity_unmatched_count || 0),
+    sensitiveOnlyUnmatchedCount: Number(parsed.sensitive_only_unmatched_count || 0),
+    parser: parsed.parser || "secure-server-timeoff-v1",
+    rawNationalIdReturned: parsed.raw_national_id_returned === true,
+  };
 }
 
 export async function parseEmployeeFile(file) {

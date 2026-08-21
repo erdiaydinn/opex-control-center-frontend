@@ -417,6 +417,7 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
         width_m: node.geometry.widthM,
         depth_m: node.geometry.depthM,
         rotation_deg: node.geometry.rotationDeg,
+        clearance_m: node.metadata?.clearanceM ?? 0,
       }, profile)).filter((item) => item.widthM > 0 && item.depthM > 0)
     : [];
 

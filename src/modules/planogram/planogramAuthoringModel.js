@@ -419,6 +419,8 @@ function projectStoreScene(scene, view) {
       parentId: node.parentId,
       geometry: { ...node.geometry },
       locked: node.locked,
+      metadata: stableValue(node.metadata || {}),
+      provenance: stableValue(node.provenance || {}),
     })),
   };
 }

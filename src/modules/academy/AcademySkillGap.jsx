@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { BookOpenCheck, LoaderCircle, RefreshCw, ShieldCheck, Target } from "lucide-react";
+import { ArrowRight, BookOpenCheck, LoaderCircle, RefreshCw, ShieldCheck, Target } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import { apiGet } from "../../api/client.js";
 import { translateAcademySkillGap } from "../../platform/i18n/academySkillGapMessages.js";
@@ -11,6 +12,7 @@ function localized(value, locale) {
 }
 
 export default function AcademySkillGap({ locale, t, formatDate }) {
+  const navigate = useNavigate();
   const sx = (key) => translateAcademySkillGap(locale, key);
   const [snapshot, setSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,6 +32,14 @@ export default function AcademySkillGap({ locale, t, formatDate }) {
   }, [locale]);
 
   useEffect(() => { load(); }, [load]);
+
+  function openRecommendedPath(path) {
+    if (path?.enrollment_id) {
+      navigate(`/academy/enrollments/${encodeURIComponent(String(path.enrollment_id))}`);
+      return;
+    }
+    navigate("/academy");
+  }
 
   const gaps = snapshot?.gaps || [];
   const recommendations = snapshot?.recommended_paths || [];
@@ -61,7 +71,20 @@ export default function AcademySkillGap({ locale, t, formatDate }) {
 
           <section className="eay-academy-expansion-set" aria-label={sx("recommendedPaths")}>
             <h3><BookOpenCheck size={17} aria-hidden="true" /> {sx("recommendedPaths")}</h3>
-            {recommendations.length ? <div className="eay-academy-governance-list">{recommendations.map((path) => <article className="eay-academy-governance-row" key={path.path_key}><strong>{localized(path.title_i18n, locale) || path.path_key}</strong><small>{(path.outcomes || []).map((outcome) => `${outcome.skill_key} → ${outcome.target_level}/5`).join(" · ")}</small></article>)}</div> : <p role="status">{sx("noRecommendation")}</p>}
+            {recommendations.length ? (
+              <div className="eay-academy-governance-list">
+                {recommendations.map((path) => (
+                  <article className="eay-academy-governance-row" key={path.path_key}>
+                    <strong>{localized(path.title_i18n, locale) || path.path_key}</strong>
+                    <small>{(path.outcomes || []).map((outcome) => `${outcome.skill_key} → ${outcome.target_level}/5`).join(" · ")}</small>
+                    <button type="button" className="eay-academy-secondary" onClick={() => openRecommendedPath(path)}>
+                      {path.enrollment_id ? sx("openLearning") : sx("openAcademy")}
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : <p role="status">{sx("noRecommendation")}</p>}
           </section>
 
           <small>{sx("policy")}: {snapshot?.recommendation_policy || "deterministic_role_skill_gap_v1"}</small>

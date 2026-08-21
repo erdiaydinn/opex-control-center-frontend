@@ -72,7 +72,7 @@ jobs:
           BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime') THEN
               CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
-                NOSUPERUSER NOCREATEDB NOCREATEROLE;
+                NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
             END IF;
           END
           $$;
@@ -88,18 +88,29 @@ jobs:
             services/core-api/alembic/versions/0044_external_acceptance_evidence.py \
             services/core-api/app/acceptance/external_evidence.py
           python -m json.tool docs/governance/eay_external_acceptance_requirements.json >/dev/null
-      - name: Enforce cumulative single Alembic head
+      - name: Enforce one cumulative head and external-evidence ancestry
         working-directory: services/core-api
+        shell: bash
         run: |
-          alembic heads | tee /tmp/acceptance-heads.txt
-          test "$(grep -c '(head)' /tmp/acceptance-heads.txt)" -eq 1
-          grep -q '0044_external_acceptance_evidence' /tmp/acceptance-heads.txt
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          echo "${heads[0]}" > /tmp/acceptance-current-head.txt
           alembic history | tee /tmp/acceptance-history.txt
+          grep -q '0044_external_acceptance_evidence' /tmp/acceptance-history.txt
           grep -q '0043_shared_platform_delivery_search' /tmp/acceptance-history.txt
           grep -q '0041_academy_learning_os' /tmp/acceptance-history.txt
       - name: Apply cumulative migrations
         working-directory: services/core-api
         run: alembic upgrade head
+      - name: Prove migrated DB is at resolved cumulative head
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          expected_head="$(cat /tmp/acceptance-current-head.txt)"
+          actual_head="$(psql -h localhost -U opex_migrator -d opex_test -Atc 'SELECT version_num FROM alembic_version')"
+          test "$actual_head" = "$expected_head"
       - name: Prove FORCE RLS and runtime read-only authority
         env:
           PGPASSWORD: opex_migrator

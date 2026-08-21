@@ -1,0 +1,285 @@
+.audit-assurance-workspace {
+  max-width: 1560px;
+  margin: 0 auto 14px;
+  padding: 24px;
+  border: 1px solid var(--audit-line);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 18px 52px rgba(15, 23, 42, .055);
+}
+
+.audit-assurance-workspace__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.audit-assurance-workspace__head h2 {
+  margin: 5px 0 7px;
+  font-size: 24px;
+  letter-spacing: -.03em;
+}
+
+.audit-assurance-workspace__head p {
+  max-width: 820px;
+  margin: 0;
+  color: var(--audit-muted);
+  line-height: 1.55;
+}
+
+.audit-assurance-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid #d4dfeb;
+  border-radius: 12px;
+  color: #26364a;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 760;
+}
+
+.audit-assurance-refresh:disabled { cursor: wait; opacity: .62; }
+
+.audit-assurance-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #ffd5dc;
+  border-radius: 15px;
+  color: #9f1e35;
+  background: #fff4f6;
+}
+.audit-assurance-state div { display: grid; gap: 2px; }
+.audit-assurance-state span { font-size: 12px; }
+
+.audit-assurance-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 16px;
+}
+
+.audit-assurance-metrics article {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 62px;
+  padding: 12px 14px;
+  border: 1px solid #e1e8ef;
+  border-radius: 14px;
+  background: #f9fbfd;
+}
+.audit-assurance-metrics article > svg { color: #287de0; }
+.audit-assurance-metrics span { color: #65758a; font-size: 11px; font-weight: 760; }
+.audit-assurance-metrics strong { font-size: 20px; letter-spacing: -.03em; }
+
+.audit-assurance-workspace__grid {
+  display: grid;
+  grid-template-columns: minmax(340px, .8fr) minmax(460px, 1.2fr);
+  gap: 12px;
+}
+
+.audit-assurance-cases,
+.audit-assurance-decision,
+.audit-assurance-calibration {
+  border: 1px solid #dee7f0;
+  border-radius: 18px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.audit-assurance-cases {
+  max-height: 620px;
+  overflow-y: auto;
+}
+
+.audit-assurance-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e5ebf1;
+  background: #fbfcfe;
+}
+.audit-assurance-section-head > div { display: flex; align-items: center; gap: 8px; }
+.audit-assurance-section-head span { color: #26364a; font-size: 12px; font-weight: 820; }
+.audit-assurance-section-head strong { display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 999px; background: #eef4fb; font-size: 10px; }
+.audit-assurance-section-head small { color: #78889b; font-size: 10px; }
+
+.audit-assurance-case {
+  display: block;
+  width: 100%;
+  padding: 15px 16px;
+  border: 0;
+  border-bottom: 1px solid #edf1f5;
+  text-align: start;
+  color: inherit;
+  background: #fff;
+  cursor: pointer;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+.audit-assurance-case:last-child { border-bottom: 0; }
+.audit-assurance-case:hover { background: #f8fbff; }
+.audit-assurance-case.is-selected { background: #f0f7ff; box-shadow: inset 3px 0 0 #1878f2; }
+.audit-assurance-case__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.audit-assurance-case__top strong { font-size: 12px; }
+.audit-assurance-case__item { display: block; margin-top: 7px; color: #55677d; font-size: 11px; font-weight: 720; }
+.audit-assurance-case__decisions { display: flex; gap: 7px; margin-top: 9px; }
+.audit-assurance-case__decisions span { padding: 5px 7px; border-radius: 7px; color: #66788d; background: #f3f6f9; font-size: 9px; }
+.audit-assurance-case time { display: block; margin-top: 8px; color: #98a4b2; font-size: 9px; }
+
+.audit-assurance-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 7px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+.audit-assurance-pill--manager { color: #8c5a00; background: #fff5d9; }
+.audit-assurance-pill--standards { color: #4852a8; background: #eef0ff; }
+.audit-assurance-pill--unassigned { color: #a4283d; background: #fff0f3; }
+.audit-assurance-pill--resolved { color: #087a54; background: #eaf9f3; }
+
+.audit-assurance-decision { min-height: 430px; padding: 18px; }
+.audit-assurance-decision--empty { display: grid; place-items: center; align-content: center; text-align: center; color: #7e8da0; }
+.audit-assurance-decision--empty strong { margin-top: 8px; color: #26364a; }
+.audit-assurance-decision--empty p { max-width: 360px; margin: 4px 0 0; font-size: 12px; }
+.audit-assurance-decision__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.audit-assurance-decision__head > div { display: grid; gap: 4px; }
+.audit-assurance-decision__head span:first-child { color: #76869a; font-size: 10px; font-weight: 700; }
+.audit-assurance-decision__head strong { font-size: 15px; }
+
+.audit-assurance-compare {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 9px;
+  margin: 18px 0;
+}
+.audit-assurance-compare article {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 68px;
+  padding: 12px;
+  border: 1px solid #dde6ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.audit-assurance-compare article > svg { color: #287de0; }
+.audit-assurance-compare article span { color: #718297; font-size: 10px; font-weight: 760; }
+.audit-assurance-compare article strong { font-size: 13px; }
+.audit-assurance-compare__vs { align-self: center; color: #9ba7b4; font-size: 9px; font-weight: 950; }
+
+.audit-assurance-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 0 0 16px; }
+.audit-assurance-meta > div { padding: 10px; border-radius: 11px; background: #f8fafc; }
+.audit-assurance-meta dt { color: #8593a5; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.audit-assurance-meta dd { margin: 4px 0 0; overflow-wrap: anywhere; color: #34455a; font-size: 10px; font-weight: 720; }
+
+.audit-assurance-reason { display: grid; gap: 6px; }
+.audit-assurance-reason > span { color: #536479; font-size: 10px; font-weight: 820; }
+.audit-assurance-reason textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 11px 12px;
+  border: 1px solid #cad7e4;
+  border-radius: 12px;
+  outline: none;
+  color: #1b293b;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+.audit-assurance-reason textarea:focus { border-color: #7eb2ee; box-shadow: 0 0 0 3px rgba(24,120,242,.09); }
+
+.audit-assurance-decision__actions,
+.audit-assurance-standards-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.audit-assurance-decision__actions button,
+.audit-assurance-standards-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid #cfdbe7;
+  border-radius: 10px;
+  color: #23354a;
+  background: #fff;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+.audit-assurance-decision__actions button:first-child { color: #145da9; background: #eef6ff; border-color: #cde2fa; }
+.audit-assurance-decision__actions button:last-child { color: #087a54; background: #effaf6; border-color: #ccecdf; }
+.audit-assurance-decision__actions button:disabled,
+.audit-assurance-standards-actions button:disabled { cursor: not-allowed; opacity: .48; }
+
+.audit-assurance-readonly { display: flex; align-items: center; gap: 7px; margin-top: 12px; padding: 11px; border-radius: 11px; color: #65768a; background: #f4f7fa; font-size: 10px; font-weight: 720; }
+.audit-assurance-error { margin-top: 8px; padding: 8px 10px; border-radius: 9px; color: #9f1e35; background: #fff0f3; font-size: 10px; }
+.audit-assurance-empty { padding: 26px 16px; color: #8694a5; text-align: center; font-size: 11px; }
+
+.audit-assurance-calibration { margin-top: 12px; }
+.audit-assurance-calibration .audit-assurance-section-head > div { display: grid; gap: 2px; }
+.audit-assurance-table-wrap { overflow-x: auto; }
+.audit-assurance-table { width: 100%; border-collapse: collapse; min-width: 820px; }
+.audit-assurance-table th,
+.audit-assurance-table td { padding: 11px 13px; border-bottom: 1px solid #edf1f5; text-align: start; font-size: 10px; }
+.audit-assurance-table th { color: #7b899a; background: #fbfcfd; font-size: 8px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.audit-assurance-table td { color: #405166; }
+.audit-assurance-table tbody tr:last-child td { border-bottom: 0; }
+.audit-assurance-score { display: inline-flex; padding: 4px 7px; border-radius: 999px; color: #126548; background: #edf9f4; font-weight: 850; }
+
+html[data-theme="dark"] .audit-assurance-workspace,
+[data-theme="dark"] .audit-assurance-workspace,
+html[data-theme="dark"] .audit-assurance-cases,
+html[data-theme="dark"] .audit-assurance-decision,
+html[data-theme="dark"] .audit-assurance-calibration,
+[data-theme="dark"] .audit-assurance-cases,
+[data-theme="dark"] .audit-assurance-decision,
+[data-theme="dark"] .audit-assurance-calibration { background: #111c2b; }
+
+html[data-theme="dark"] .audit-assurance-case,
+[data-theme="dark"] .audit-assurance-case,
+html[data-theme="dark"] .audit-assurance-refresh,
+[data-theme="dark"] .audit-assurance-refresh,
+html[data-theme="dark"] .audit-assurance-reason textarea,
+[data-theme="dark"] .audit-assurance-reason textarea { color: #e8f1fb; background: #111c2b; }
+
+@media (max-width: 980px) {
+  .audit-assurance-workspace__grid { grid-template-columns: 1fr; }
+  .audit-assurance-cases { max-height: 420px; }
+}
+
+@media (max-width: 720px) {
+  .audit-assurance-workspace { padding: 17px; }
+  .audit-assurance-workspace__head { flex-direction: column; }
+  .audit-assurance-metrics { grid-template-columns: 1fr 1fr; }
+  .audit-assurance-meta { grid-template-columns: 1fr; }
+  .audit-assurance-compare { grid-template-columns: 1fr; }
+  .audit-assurance-compare__vs { justify-self: center; }
+}
+
+@media (max-width: 440px) {
+  .audit-assurance-metrics { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-assurance-workspace * { transition: none !important; animation: none !important; }
+}

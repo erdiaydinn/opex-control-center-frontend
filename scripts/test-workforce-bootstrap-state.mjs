@@ -26,7 +26,14 @@ const requiredBoundary = [
   'data-eay-product-state="error"',
   'role="alert"',
   't("retry")',
-  'return <WorkforceControl />',
+  'const commandCenterAllowed =',
+  'canAction("workforce", "workforce.pressure.read")',
+  'canAction("workforce", "workforce.schedule.read")',
+  'canAction("workforce", "createShift")',
+  'const flexibilityAdminAllowed = isSuperAdmin() || canAction("workforce", "createShift")',
+  'commandCenterAllowed ? <WorkforceCommandCenter onLocationChange={setCommandLocationId} /> : null',
+  'flexibilityAdminAllowed ? <WorkforceFlexibilityAdmin preferredWarehouseId={commandLocationId} /> : null',
+  '<WorkforceControl />',
 ];
 for (const needle of requiredBoundary) {
   if (!boundary.includes(needle)) {
@@ -40,11 +47,19 @@ if (/error\.message|error\.stack|JSON\.stringify\(error/.test(boundary)) {
   process.exit(1);
 }
 
-const readyIndex = boundary.indexOf('return <WorkforceControl />');
+const readyIndex = boundary.indexOf('const commandCenterAllowed =');
 const bootstrapIndex = boundary.indexOf('await loadAdminWorkforce()');
 if (readyIndex < bootstrapIndex) {
-  console.error("WorkforceControl must not render before authoritative bootstrap is attempted.");
+  console.error("Workforce ready composition must not render before authoritative bootstrap is attempted.");
   process.exit(1);
 }
 
-console.log("Workforce fail-closed bootstrap product-state contract: PASS");
+const commandCenterIndex = boundary.indexOf('commandCenterAllowed ? <WorkforceCommandCenter onLocationChange={setCommandLocationId} /> : null');
+const flexibilityIndex = boundary.indexOf('flexibilityAdminAllowed ? <WorkforceFlexibilityAdmin preferredWarehouseId={commandLocationId} /> : null');
+const controlIndex = boundary.indexOf('<WorkforceControl />');
+if (commandCenterIndex < readyIndex || flexibilityIndex < readyIndex || controlIndex < readyIndex) {
+  console.error("Workforce governed surfaces must remain in the post-bootstrap ready composition.");
+  process.exit(1);
+}
+
+console.log("Workforce fail-closed bootstrap + governed command-center/flexibility composition contract: PASS");

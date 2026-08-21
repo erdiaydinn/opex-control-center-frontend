@@ -48,6 +48,11 @@ export async function loadWorkforceFlexibility(personId) {
   return { availability: availability.rows || [], openShifts: openShifts.rows || [] };
 }
 
+export async function loadWorkforceOwnShifts(personId) {
+  const result = await safe(apiGet(`/workforce/shifts?person_id=${encodeURIComponent(personId)}`));
+  return result.rows || [];
+}
+
 export async function saveWorkforceAvailability(personId, values) {
   return safe(apiPut("/workforce/flexibility/availability", {
     person_id: String(personId),
@@ -65,6 +70,57 @@ export async function claimWorkforceOpenShift(openShiftId, personId) {
   return safe(apiPost(`/workforce/flexibility/open-shifts/${encodeURIComponent(openShiftId)}/claim`, {
     person_id: String(personId),
   }));
+}
+
+export async function loadWorkforceShiftTrades(personId) {
+  const result = await safe(apiGet(`/workforce/flexibility/shift-trades?person_id=${encodeURIComponent(personId)}`));
+  return result.rows || [];
+}
+
+export async function loadWorkforceSwapCandidates(personId, shiftId) {
+  const query = new URLSearchParams({ person_id: String(personId), shift_id: String(shiftId) });
+  const result = await safe(apiGet(`/workforce/flexibility/shift-trades/candidates?${query.toString()}`));
+  return result.rows || [];
+}
+
+export async function createWorkforceShiftTrade(values) {
+  return safe(apiPost("/workforce/flexibility/shift-trades", {
+    person_id: String(values.personId),
+    shift_id: String(values.shiftId),
+    mode: values.mode,
+    target_person_id: values.targetPersonId || null,
+    target_shift_id: values.mode === "SWAP" ? String(values.targetShiftId || "") : null,
+    note: values.note || "",
+  }));
+}
+
+export async function acceptWorkforceShiftTrade(tradeId, personId) {
+  return safe(apiPost(`/workforce/flexibility/shift-trades/${encodeURIComponent(tradeId)}/accept`, {
+    person_id: String(personId),
+  }));
+}
+
+export async function cancelWorkforceShiftTrade(tradeId, personId) {
+  return safe(apiPost(`/workforce/flexibility/shift-trades/${encodeURIComponent(tradeId)}/cancel`, {
+    person_id: String(personId),
+  }));
+}
+
+export async function loadWorkforceShiftTradesAdmin(warehouseId, activeOnly = true) {
+  const query = new URLSearchParams({
+    warehouse_id: String(warehouseId),
+    active_only: activeOnly ? "true" : "false",
+  });
+  const result = await safe(apiGet(`/workforce/flexibility/shift-trades/admin?${query.toString()}`));
+  return result.rows || [];
+}
+
+export async function approveWorkforceShiftTrade(tradeId, note = "") {
+  return safe(apiPost(`/workforce/flexibility/shift-trades/${encodeURIComponent(tradeId)}/approve`, { note }));
+}
+
+export async function rejectWorkforceShiftTrade(tradeId, note = "") {
+  return safe(apiPost(`/workforce/flexibility/shift-trades/${encodeURIComponent(tradeId)}/reject`, { note }));
 }
 
 export async function loadWorkforceFlexibilityAdmin() {

@@ -16,6 +16,7 @@ from .capacity_authority import (
     build_effective_capacity_snapshot,
 )
 from .capacity_repository import get_latest_capacity_snapshot, persist_capacity_snapshot
+from .command_center_router import router as command_center_router
 from .dpi_router import router as dpi_router
 from .optimizer_router import router as optimizer_router
 from .override_learning_router import router as override_learning_router
@@ -174,6 +175,7 @@ def latest_capacity_snapshot(
     return result
 
 
+router.include_router(command_center_router)
 router.include_router(dpi_router)
 router.include_router(optimizer_router)
 router.include_router(replan_router)

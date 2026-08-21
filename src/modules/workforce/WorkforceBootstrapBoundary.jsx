@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 
+import { useAuth } from "../../auth/AuthContext.jsx";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
+import WorkforceCommandCenter from "./WorkforceCommandCenter.jsx";
 import WorkforceControl from "./WorkforceControl.jsx";
+import WorkforceFlexibilityAdmin from "./WorkforceFlexibilityAdmin.jsx";
 import { loadAdminWorkforce } from "./workforceApi.js";
 
 export default function WorkforceBootstrapBoundary() {
+  const { canAction, isSuperAdmin } = useAuth();
   const { t } = usePlatformPreferences();
   const [status, setStatus] = useState("loading");
   const [attempt, setAttempt] = useState(0);
+  const [commandLocationId, setCommandLocationId] = useState("");
 
   const retry = useCallback(() => {
     setStatus("loading");
@@ -55,5 +60,15 @@ export default function WorkforceBootstrapBoundary() {
     );
   }
 
-  return <WorkforceControl />;
+  const commandCenterAllowed = isSuperAdmin()
+    || canAction("workforce", "workforce.pressure.read")
+    || canAction("workforce", "workforce.schedule.read")
+    || canAction("workforce", "createShift");
+  const flexibilityAdminAllowed = isSuperAdmin() || canAction("workforce", "createShift");
+
+  return <>
+    {commandCenterAllowed ? <WorkforceCommandCenter onLocationChange={setCommandLocationId} /> : null}
+    {flexibilityAdminAllowed ? <WorkforceFlexibilityAdmin preferredWarehouseId={commandLocationId} /> : null}
+    <WorkforceControl />
+  </>;
 }

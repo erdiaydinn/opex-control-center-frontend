@@ -1,0 +1,104 @@
+.audit-live-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 18px;
+}
+
+.audit-live-column {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--audit-line);
+  border-radius: 14px;
+  background: rgba(248, 251, 255, .86);
+}
+
+.audit-live-column__heading {
+  margin-bottom: 9px;
+  color: #718196;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.audit-live-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--audit-line);
+}
+
+.audit-live-row:first-of-type { border-top: 0; }
+.audit-live-row > div { min-width: 0; }
+.audit-live-row strong,
+.audit-live-row span,
+.audit-live-row time { display: block; }
+.audit-live-row strong {
+  overflow: hidden;
+  color: var(--audit-ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-live-row span,
+.audit-live-row time {
+  margin-top: 3px;
+  color: var(--audit-muted);
+  font-size: 10px;
+}
+.audit-live-row__meta {
+  flex: 0 0 auto;
+  text-align: end;
+  text-transform: capitalize;
+}
+.audit-live-empty {
+  padding: 18px 4px;
+  color: var(--audit-muted);
+  font-size: 11px;
+}
+
+.audit-status--connected,
+.audit-status--connected-empty {
+  color: #0d7c57;
+  border-color: #bce8d6;
+  background: #f0fbf7;
+}
+.audit-status--connected span,
+.audit-status--connected-empty span {
+  background: #0f9f6e;
+  box-shadow: 0 0 0 4px #dff7ee;
+}
+.audit-status--error {
+  color: #b4233a;
+  border-color: #f2c4cb;
+  background: #fff5f6;
+}
+.audit-status--error span {
+  background: #df334b;
+  box-shadow: 0 0 0 4px #ffe4e8;
+}
+.audit-status--loading span { animation: audit-live-pulse 1s ease-in-out infinite; }
+
+.audit-btn:disabled,
+.audit-link:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+  transform: none;
+}
+
+.is-spinning { animation: audit-live-spin .8s linear infinite; }
+
+@keyframes audit-live-spin { to { transform: rotate(360deg); } }
+@keyframes audit-live-pulse { 50% { opacity: .35; } }
+
+@media (max-width: 760px) {
+  .audit-live-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning,
+  .audit-status--loading span { animation: none !important; }
+}

@@ -23,6 +23,7 @@ from app.modules.identity.service import bootstrap_admin, initialize as initiali
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.interview_router import public_router as recruitment_public_interview_router, router as recruitment_interview_router
+from app.modules.recruitment.lifecycle_governance_router import router as recruitment_lifecycle_governance_router
 from app.modules.recruitment.lifecycle_router import router as recruitment_lifecycle_router
 from app.modules.recruitment.onboarding_router import router as recruitment_onboarding_router
 from app.modules.recruitment.orchestration_router import public_router as recruitment_public_orchestration_router, router as recruitment_orchestration_router
@@ -208,6 +209,8 @@ app.include_router(recruitment_scanner_callback_router, prefix="/api")
 app.include_router(recruitment_production_evidence_router, prefix="/api")
 app.include_router(recruitment_interview_router, prefix="/api")
 app.include_router(recruitment_onboarding_router, prefix="/api")
+# Governance shadows generic lifecycle mutations for owner/waiver/close separation.
+app.include_router(recruitment_lifecycle_governance_router, prefix="/api")
 # V47 lifecycle precedes orchestration so offers cannot bypass four-eyes approval.
 app.include_router(recruitment_lifecycle_router, prefix="/api")
 # Orchestration precedes legacy recruitment so hire activation is fail-closed on readiness.

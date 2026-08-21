@@ -117,13 +117,12 @@ def governed_communication_claim(
     request: Request,
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
     x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
-) -> dict:
-    """Planner+claim is one governed worker operation; no external scheduler is required."""
+) -> list[dict]:
+    """Planner runs before claim while the existing worker response contract remains a list."""
     _require_delivery_worker(x_opex_role, x_opex_permissions)
     try:
-        planned = plan_due_reminders()
-        messages = claim_candidate_communications(worker=_actor(request), limit=payload.limit)
-        return {"planned": planned, "messages": messages}
+        plan_due_reminders()
+        return claim_candidate_communications(worker=_actor(request), limit=payload.limit)
     except RecruitmentLifecycleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

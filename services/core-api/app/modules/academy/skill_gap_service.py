@@ -10,14 +10,21 @@ from app.modules.academy.learning_os import (
     compute_skill_gaps,
     recommend_learning_paths,
 )
-from app.modules.academy.repository_skill_gap import get_skill_gap_context
+from app.modules.academy.repository_credentials import list_my_badge_credentials
 
 
 async def get_my_skill_gap_snapshot(
     session: AsyncSession,
     principal: Principal,
 ) -> dict[str, object]:
-    context = await get_skill_gap_context(session, principal)
+    raw_context = await list_my_badge_credentials(
+        session,
+        principal,
+        include_learning_context=True,
+    )
+    if not isinstance(raw_context, dict):
+        raise RuntimeError("Academy skill-gap context unavailable")
+    context = raw_context
 
     requirements = tuple(
         SkillRequirement(

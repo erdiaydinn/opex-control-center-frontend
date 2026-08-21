@@ -224,7 +224,10 @@ async def test_localization_governance_maker_checker_and_staleness() -> None:
             assert telemetry["summary"]["required_coverage_percent"] == 100.0
             assert telemetry["summary"]["required_authority_gap_count"] == 0
             assert telemetry["quality_score"] is None
-            assert telemetry["quality_score_reason"] == "not_computed_without_linguistic_qa_evidence"
+            assert (
+                telemetry["quality_score_reason"]
+                == "not_computed_without_linguistic_qa_evidence"
+            )
             assert fa["source_content_count"] == 1
             assert fa["lineage_content_count"] == 1
             assert fa["authoritative_content_count"] == 1

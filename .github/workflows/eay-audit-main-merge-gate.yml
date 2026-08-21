@@ -1,0 +1,170 @@
+name: EAY Audit Main Merge Gate
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-main-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_ALEMBIC_HEAD: 0059_audit_inference_lease_immutability
+  ACCEPTED_AUDIT_PROVENANCE_SHA: 98bbfbe4899ffab368bebdaf769d5e44c95b6752
+
+jobs:
+  lineage-and-conflict:
+    name: Exact head / lineage / conflict scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Assert exact PR head and canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "${{ github.base_ref }}" = "product/eay-category-leadership-v1"
+          git merge-base --is-ancestor "${{ github.event.pull_request.base.sha }}" HEAD
+          git merge-base --is-ancestor "$ACCEPTED_AUDIT_PROVENANCE_SHA" HEAD
+      - name: Reject unresolved conflict markers in PR delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r file; do
+            test -f "$file" || continue
+            if grep -I -nE '^(<<<<<<< |=======|>>>>>>> )' "$file"; then
+              echo "Conflict marker detected in $file" >&2
+              bad=1
+            fi
+          done < <(git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD)
+          test "$bad" -eq 0
+      - name: Reject whitespace errors in PR delta
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"...HEAD
+
+  web-regression:
+    name: Audit / Platform / Workforce / Academy / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Audit regression
+        run: npm run test:audit
+      - name: Academy regression
+        run: |
+          node scripts/test-academy-product-states.mjs
+          node scripts/test-academy-expansion-routing.mjs
+      - name: Workforce regression
+        run: npm run test:workforce
+      - name: Full platform web regression
+        run: npm run test:platform
+      - name: Production web build
+        run: npm run build
+
+  core-regression:
+    name: Core API / Ruff / compile / Alembic / full tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API test surface
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Create non-superuser runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Repository Core Ruff gate
+        run: ruff check services/core-api --output-format=github
+      - name: Compile Core API authority
+        run: >-
+          python -m compileall -q
+          services/core-api/app
+          services/core-api/alembic/versions
+          services/core-api/tests
+      - name: Enforce one cumulative Alembic head
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$EXPECTED_ALEMBIC_HEAD"
+      - name: Migrate clean database to cumulative head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Full Core API regression
+        run: pytest -q services/core-api/tests

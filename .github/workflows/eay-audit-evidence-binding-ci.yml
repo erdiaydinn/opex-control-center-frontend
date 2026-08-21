@@ -1,0 +1,60 @@
+name: EAY Audit Evidence Binding CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/modules/audit/evidence_binding.py"
+      - "services/core-api/app/modules/audit/evidence_binding_schemas.py"
+      - "services/core-api/app/modules/audit/routes.py"
+      - "services/core-api/tests/test_audit_evidence_binding_contracts.py"
+      - ".github/workflows/eay-audit-evidence-binding-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-intelligence-v1"
+    paths:
+      - "services/core-api/app/modules/audit/evidence_binding.py"
+      - "services/core-api/app/modules/audit/evidence_binding_schemas.py"
+      - "services/core-api/app/modules/audit/routes.py"
+      - "services/core-api/tests/test_audit_evidence_binding_contracts.py"
+      - ".github/workflows/eay-audit-evidence-binding-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-binding-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence-binding:
+    name: Server evidence → redaction binding
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Binding contracts
+        run: pytest -q tests/test_audit_evidence_binding_contracts.py
+      - name: Compile binding authority
+        run: >-
+          python -m compileall -q
+          app/modules/audit/evidence_binding.py
+          app/modules/audit/evidence_binding_schemas.py
+          app/modules/audit/routes.py
+      - name: Ruff binding boundary
+        run: >-
+          ruff check
+          app/modules/audit/evidence_binding_schemas.py
+          app/modules/audit/routes.py
+          tests/test_audit_evidence_binding_contracts.py
+      - name: Ruff SQL-heavy binding authority
+        run: ruff check --ignore E501 app/modules/audit/evidence_binding.py

@@ -1,0 +1,98 @@
+name: EAY Audit Video Authority CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/modules/audit/evidence_binding.py"
+      - "services/core-api/app/modules/audit/video_*.py"
+      - "services/core-api/app/modules/field_intelligence/video_object_read.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/alembic/versions/0057_audit_video_authority.py"
+      - "services/core-api/alembic/versions/0058_audit_video_replay_fence.py"
+      - "services/core-api/alembic/versions/0059_audit_inference_lease_immutability.py"
+      - "services/core-api/tests/test_audit_video_verification_runtime.py"
+      - "services/core-api/tests/test_audit_video_authority_integration_contracts.py"
+      - "services/core-api/tests/test_audit_video_authority_adversarial.py"
+      - ".github/workflows/eay-audit-video-authority-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-video-authority-v1"
+      - "product/eay-audit-field-acceptance-v1"
+      - "product/eay-audit-field-truth-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-video-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  video-authority:
+    name: Private MP4 / canonical privacy / single-use vision authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Video authority adversarial and integration tests
+        run: >-
+          pytest -q
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
+      - name: Ruff production video authority
+        run: >-
+          ruff check --ignore E501
+          app/modules/audit/evidence_binding.py
+          app/modules/audit/video_verification_runtime.py
+          app/modules/audit/video_verification_service.py
+          app/modules/audit/video_vision_authorization.py
+          app/modules/audit/video_routes.py
+          app/modules/field_intelligence/video_object_read.py
+          app/budget_main.py
+          alembic/versions/0057_audit_video_authority.py
+          alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
+      - name: Compile production video authority
+        run: >-
+          python -m compileall -q
+          app/modules/audit/evidence_binding.py
+          app/modules/audit/video_verification_runtime.py
+          app/modules/audit/video_verification_service.py
+          app/modules/audit/video_vision_authorization.py
+          app/modules/audit/video_routes.py
+          app/modules/field_intelligence/video_object_read.py
+          app/budget_main.py
+          alembic/versions/0057_audit_video_authority.py
+          alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
+      - name: Single Alembic head
+        run: |
+          set -euo pipefail
+          heads="$(alembic heads)"
+          printf '%s\n' "$heads"
+          test "$(printf '%s\n' "$heads" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
+          printf '%s\n' "$heads" | grep -q '^0059_audit_inference_lease_immutability (head)$'
+      - name: Verify production video authority boundaries
+        run: >-
+          python -c "from pathlib import Path; runtime=Path('app/modules/audit/video_verification_runtime.py').read_text(); service=Path('app/modules/audit/video_verification_service.py').read_text(); auth=Path('app/modules/audit/video_vision_authorization.py').read_text(); routes=Path('app/modules/audit/video_routes.py').read_text(); adversarial=Path('tests/test_audit_video_authority_adversarial.py').read_text(); lease=Path('alembic/versions/0059_audit_inference_lease_immutability.py').read_text(); composition=Path('app/budget_main.py').read_text(); assert 'MAX_CANONICAL_VIDEO_FRAMES' in runtime; assert 'vision_inference_authorized: bool = False' in runtime; assert 'read_private_video_object' in service; assert 'ON CONFLICT (tenant_id, verification_fingerprint) DO NOTHING' in service; assert 'capability=\"video_vision\"' in auth; assert 'video_decoder_fingerprint' in auth; assert 'authorization.consumed_at IS NULL' in auth; assert 'audit_video_decoder' in routes; assert 'audit_privacy_scanner' in routes; assert 'test_production_video_activation_fails_closed_without_external_authority' in adversarial; assert 'test_video_authorization_blocks_decoder_drift_before_model_execution' in adversarial; assert 'GRANT UPDATE (consumed_at)' in lease; assert 'app.include_router(audit_video_router)' in composition; print('Audit production video authority boundary: PASS')"

@@ -73,6 +73,29 @@ if (plan.productTextures[0].sku !== "SKU-1" || plan.productTextures[0].facingCou
 }
 if (plan.diagnostics.rejectedUnattestedProducts !== 1) fail("Unattested product packshot rejection must remain observable.");
 
+const lodModule = fixtureModule(9);
+lodModule.centerXM = 28;
+lodModule.centerYM = 28;
+const lodManifest = structuredClone(manifest);
+lodManifest.fixture_assets[0].lod_model_paths = {
+  medium: "/planogram-assets/fixtures/regular-medium.glb",
+  far: "/planogram-assets/fixtures/regular-far.glb",
+};
+const lodPlan = buildPlanogramVisualQualityPlan({
+  floor: { widthM: 20, depthM: 20 },
+  route: { pickerEntryM: [1, 1] },
+  modules: [lodModule],
+}, lodManifest);
+if (lodPlan.fixtureInstances[0]?.modelPath !== "/planogram-assets/fixtures/regular-far.glb") {
+  fail("Far governed fixture must use the attested far LOD asset in the canonical renderer plan.");
+}
+if (lodPlan.fixtureInstances[0]?.lodQuality !== "far" || lodPlan.diagnostics.usedFarLod !== 1) {
+  fail("Far LOD selection must remain observable and deterministic.");
+}
+if (lodPlan.lod.farDistanceM !== PLANOGRAM_VISUAL_QUALITY_LIMITS.farLodDistanceM) {
+  fail("Visual-quality LOD threshold drifted.");
+}
+
 const palletModule = {
   key: "PALLET:P1",
   aisleId: "PALLET",

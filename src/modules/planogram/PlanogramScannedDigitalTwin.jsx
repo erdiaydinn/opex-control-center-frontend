@@ -3,6 +3,7 @@ import { Box, ScanSearch } from "lucide-react";
 
 import { translatePlanogramScannedTwin } from "../../platform/i18n/planogramScannedTwinMessages.js";
 import PlanogramTwinSceneRenderer from "./PlanogramTwinSceneRenderer.jsx";
+import { PLANOGRAM_THREE_ASSET_RUNTIME } from "./planogramThreeAssetRuntime.js";
 import { buildPlanogramUnifiedTwinScene } from "./planogramUnifiedTwinScene.js";
 import "./planogram-scanned-twin.css";
 
@@ -43,6 +44,7 @@ export default function PlanogramScannedDigitalTwin({ reviewedResult, scan, loca
       className="eay-scanned-twin"
       data-scene-contract={sceneModel.contract}
       data-geometry-authority={sceneModel.geometryAuthority}
+      data-asset-runtime-contract={PLANOGRAM_THREE_ASSET_RUNTIME.contract}
     >
       <header>
         <div><ScanSearch size={21} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>

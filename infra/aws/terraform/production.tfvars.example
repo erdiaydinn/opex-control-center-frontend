@@ -1,0 +1,16 @@
+project_name = "eay-platform"
+environment  = "production"
+aws_region   = "eu-central-1"
+
+# Must be globally unique and organization-controlled before apply.
+evidence_bucket_name = "REPLACE-eay-production-evidence"
+backup_bucket_name   = "REPLACE-eay-production-backup"
+
+# Keep these empty during foundation-only apply. Production edge activation requires
+# current authoritative Cloudflare ranges and a validated ACM origin certificate.
+edge_ipv4_cidrs      = []
+edge_ipv6_cidrs      = []
+origin_certificate_arn = ""
+
+# Production defaults are deliberately conservative.
+delete_protection = true

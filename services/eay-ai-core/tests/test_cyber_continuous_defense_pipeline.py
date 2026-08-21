@@ -166,8 +166,8 @@ def _fallback_response(request: httpx.Request) -> httpx.Response:
 
 
 def _ingestion(*, fallback: bool = False):
-    transport = httpx.MockTransport(_fallback_response if fallback else _response)
-    client = LiveThreatFeedClient(transport=transport)
+    handler = _fallback_response if fallback else _response
+    client = LiveThreatFeedClient(transport=httpx.MockTransport(handler))
     try:
         return ingest_live_public_threat(client=client, cve_id=CVE, as_of=NOW)
     finally:
@@ -225,7 +225,6 @@ def _sigma_rule():
             "level": "high",
             "tags": ["attack.t1059", "cve.2026.9001"],
             "logsource": {"category": "process_creation", "product": "windows"},
-            # Detection bodies are deliberately outside this metadata contract.
             "detection": {"selection": {"Image": "example.exe"}},
         },
         evidence_ref="sigmahq:rule:11111111",
@@ -234,26 +233,26 @@ def _sigma_rule():
 
 def test_live_public_ingestion_keeps_kev_nvd_epss_authorities_separate():
     receipt = _ingestion()
-
     assert receipt.primary_threat.source.value == "cisa_kev"
     assert receipt.primary_threat.known_exploited_in_wild is True
     assert receipt.known_exploitation_authority_observed is True
     assert receipt.current_nvd_observed is True
     assert receipt.current_epss_observed is True
-    assert receipt.epss is not None and receipt.epss.score == pytest.approx(0.91)
+    assert receipt.epss is not None
+    assert receipt.epss.score == pytest.approx(0.91)
     assert receipt.nvd_cpe_refs == (CPE,)
     assert receipt.company_truth_granted is False
     assert receipt.execution_authority_granted is False
 
 
-def test_cisa_canonical_transport_failure_falls_back_only_to_official_cisagov_mirror():
+def test_cisa_canonical_failure_falls_back_only_to_official_cisagov_mirror():
     receipt = _ingestion(fallback=True)
-    kev_observations = [
+    observations = [
         item for item in receipt.source_observations if item.source.value == "cisa_kev"
     ]
-    assert len(kev_observations) == 1
-    assert kev_observations[0].transport is FeedTransport.OFFICIAL_MIRROR
-    assert kev_observations[0].canonical_authority_observed is False
+    assert len(observations) == 1
+    assert observations[0].transport is FeedTransport.OFFICIAL_MIRROR
+    assert observations[0].canonical_authority_observed is False
     assert receipt.primary_threat.known_exploited_in_wild is True
 
 
@@ -269,16 +268,16 @@ def test_latest_kev_selection_is_date_based_not_input_order():
     assert latest_kev_cve_id(payload) == "CVE-2026-9002"
 
 
-def test_unknown_or_arbitrary_network_target_is_not_a_supported_public_feed():
+def test_unknown_network_target_is_not_a_supported_public_feed():
     client = LiveThreatFeedClient(transport=httpx.MockTransport(_response))
     try:
         with pytest.raises(ValueError, match="endpoint_not_allowlisted"):
-            client._get_json("https://example.com/feed.json")  # noqa: SLF001
+            client._get_json("https://example.com/feed.json")
     finally:
         client.close()
 
 
-def test_exact_cpe_plus_deployment_evidence_is_required_for_confirmed_eay_impact():
+def test_exact_cpe_plus_deployment_is_required_for_confirmed_eay_impact():
     ingestion = _ingestion()
     confirmed = assess_eay_cve_impact(
         ingestion=ingestion,
@@ -290,7 +289,6 @@ def test_exact_cpe_plus_deployment_evidence_is_required_for_confirmed_eay_impact
         inventory=_inventory(deployed=False, exact_cpe=True),
         as_of=NOW,
     )
-
     assert confirmed.status is EayCveImpactStatus.CONFIRMED
     assert confirmed.matches[0].status is CveAssetMatchStatus.CONFIRMED
     assert confirmed.firm_company_impact_authorized is True
@@ -299,7 +297,7 @@ def test_exact_cpe_plus_deployment_evidence_is_required_for_confirmed_eay_impact
     assert potential.firm_company_impact_authorized is False
 
 
-def test_vendor_product_match_without_exact_cpe_cannot_become_confirmed_exposure():
+def test_vendor_product_match_without_exact_cpe_stays_potential():
     impact = assess_eay_cve_impact(
         ingestion=_ingestion(),
         inventory=_inventory(deployed=True, exact_cpe=False),
@@ -311,7 +309,6 @@ def test_vendor_product_match_without_exact_cpe_cannot_become_confirmed_exposure
 
 
 def test_no_asset_match_is_explicitly_not_proof_that_eay_is_safe():
-    ingestion = _ingestion()
     identity = _identity()
     unrelated = build_asset_observation(
         asset_ref="asset:unrelated",
@@ -330,37 +327,37 @@ def test_no_asset_match_is_explicitly_not_proof_that_eay_is_safe():
         as_of=NOW,
         inventory_coverage_complete=False,
     )
-    impact = assess_eay_cve_impact(ingestion=ingestion, inventory=inventory, as_of=NOW)
-
+    impact = assess_eay_cve_impact(
+        ingestion=_ingestion(),
+        inventory=inventory,
+        as_of=NOW,
+    )
     assert impact.status is EayCveImpactStatus.NO_MATCH_OBSERVED
     assert impact.firm_company_impact_authorized is False
     assert impact.no_match_is_not_proof_of_safety is True
     assert "inventory_coverage_incomplete" in impact.reason_codes
 
 
-def test_evidence_backed_dependency_graph_surfaces_crown_jewel_blast_radius_without_proving_attack():
-    inventory = _inventory()
+def test_dependency_graph_surfaces_crown_jewel_without_proving_attack():
     graph = materialize_eay_attack_graph(
-        inventory=inventory,
+        inventory=_inventory(),
         affected_entry_refs=("asset:eay-api",),
     )
-
     assert graph.path_set is not None
     assert graph.blast_radius is not None
-    assert graph.blast_radius.reachable_crown_jewel_refs == ("asset:postgres-authority",)
+    assert graph.blast_radius.reachable_crown_jewel_refs == (
+        "asset:postgres-authority",
+    )
     assert graph.blast_radius.dangerous_path_count == 1
     assert graph.attack_success_proven is False
     assert graph.execution_authority_granted is False
 
 
-def test_sigma_rule_analysis_reads_metadata_only_and_unknown_telemetry_is_not_a_fake_gap():
-    identity = _identity()
-    ingestion = _ingestion()
+def test_sigma_metadata_only_and_unknown_telemetry_is_not_a_fake_gap():
     rule = _sigma_rule()
-
-    unknown = assess_sigma_coverage(
-        identity=identity,
-        ingestion=ingestion,
+    coverage = assess_sigma_coverage(
+        identity=_identity(),
+        ingestion=_ingestion(),
         rules=(rule,),
         telemetry=(),
         as_of=NOW,
@@ -368,13 +365,12 @@ def test_sigma_rule_analysis_reads_metadata_only_and_unknown_telemetry_is_not_a_
     assert rule.detection_body_ingested is False
     assert rule.attack_technique_ids == ("T1059",)
     assert rule.cve_ids == (CVE,)
-    assert unknown.status is SigmaCoverageStatus.UNVERIFIED
-    assert unknown.firm_detection_gap_authorized is False
+    assert coverage.status is SigmaCoverageStatus.UNVERIFIED
+    assert coverage.firm_detection_gap_authorized is False
 
 
-def test_sigma_explicit_missing_telemetry_can_create_firm_gap_but_never_auto_deploy():
+def test_explicit_missing_telemetry_can_create_firm_gap_but_never_auto_deploy():
     identity = _identity()
-    ingestion = _ingestion()
     rule = _sigma_rule()
     missing = build_sigma_telemetry_observation(
         identity=identity,
@@ -386,12 +382,11 @@ def test_sigma_explicit_missing_telemetry_can_create_firm_gap_but_never_auto_dep
     )
     coverage = assess_sigma_coverage(
         identity=identity,
-        ingestion=ingestion,
+        ingestion=_ingestion(),
         rules=(rule,),
         telemetry=(missing,),
         as_of=NOW,
     )
-
     assert coverage.status is SigmaCoverageStatus.PARTIAL
     assert coverage.missing_rule_ids == (rule.rule_id,)
     assert coverage.firm_detection_gap_authorized is True
@@ -413,14 +408,13 @@ def test_exposure_signal_alone_is_not_an_incident_confirmation():
         impact=impact,
         as_of=NOW,
     )
-
     assert incident is not None
     assert incident.status is IncidentStatus.UNCONFIRMED
     assert incident.causal_claim_proven is False
     assert incident.threat_actor_attribution_proven is False
 
 
-def test_verified_detection_plus_independent_vulnerability_evidence_can_confirm_company_incident_review():
+def test_verified_detection_plus_vulnerability_can_confirm_incident_review():
     identity = _identity()
     ingestion = _ingestion()
     impact = assess_eay_cve_impact(
@@ -449,7 +443,6 @@ def test_verified_detection_plus_independent_vulnerability_evidence_can_confirm_
         as_of=NOW,
         additional_signals=(detection,),
     )
-
     assert incident is not None
     assert incident.status is IncidentStatus.CONFIRMED
     assert incident.causal_claim_proven is False
@@ -478,18 +471,21 @@ def test_defensive_recommendations_are_candidate_only_and_human_gated():
         impact=impact,
         sigma=sigma,
     )
-
     assert recommendations
     assert all(item.requires_human_approval for item in recommendations)
     assert all(item.requires_effect_verification for item in recommendations)
     assert all(item.execution_authority_granted is False for item in recommendations)
 
 
-def test_repository_isolated_sandbox_can_pass_but_does_not_become_authorized_sandbox_benchmark_evidence():
+def test_repository_sandbox_passes_without_becoming_strong_benchmark_evidence():
     identity = _identity()
     ingestion = _ingestion()
     inventory = _inventory()
-    impact = assess_eay_cve_impact(ingestion=ingestion, inventory=inventory, as_of=NOW)
+    impact = assess_eay_cve_impact(
+        ingestion=ingestion,
+        inventory=inventory,
+        as_of=NOW,
+    )
     graph = materialize_eay_attack_graph(
         inventory=inventory,
         affected_entry_refs=("asset:eay-api",),
@@ -523,7 +519,6 @@ def test_repository_isolated_sandbox_can_pass_but_does_not_become_authorized_san
         recommendations=recommendations,
         environment_fingerprint="a" * 64,
     )
-
     assert sandbox.passed is True
     assert sandbox.environment is SandboxEvidenceClass.REPOSITORY_ISOLATED
     assert sandbox.qualifies_as_authorized_sandbox_benchmark_evidence is False
@@ -535,7 +530,11 @@ def test_external_sandbox_requires_explicit_authorization_evidence():
     identity = _identity()
     ingestion = _ingestion()
     inventory = _inventory()
-    impact = assess_eay_cve_impact(ingestion=ingestion, inventory=inventory, as_of=NOW)
+    impact = assess_eay_cve_impact(
+        ingestion=ingestion,
+        inventory=inventory,
+        as_of=NOW,
+    )
     graph = materialize_eay_attack_graph(inventory=inventory)
     sigma = assess_sigma_coverage(
         identity=identity,
@@ -544,7 +543,6 @@ def test_external_sandbox_requires_explicit_authorization_evidence():
         telemetry=(),
         as_of=NOW,
     )
-
     with pytest.raises(ValueError, match="external_requires_authorization"):
         validate_controlled_sandbox(
             identity=identity,
@@ -559,7 +557,7 @@ def test_external_sandbox_requires_explicit_authorization_evidence():
         )
 
 
-def _measurements(value: float, *, evidence_prefix: str) -> tuple[MetricMeasurement, ...]:
+def _measurements(value: float, *, evidence_prefix: str):
     names = (
         "evidence_grounding_accuracy",
         "company_risk_precision",
@@ -582,7 +580,7 @@ def _measurements(value: float, *, evidence_prefix: str) -> tuple[MetricMeasurem
     return tuple(
         MetricMeasurement(
             metric_name=name,
-            value=(0.0 if name in lower_is_better else value),
+            value=0.0 if name in lower_is_better else value,
             sample_count=25,
             evidence_ref=f"{evidence_prefix}:{name}",
         )
@@ -590,7 +588,7 @@ def _measurements(value: float, *, evidence_prefix: str) -> tuple[MetricMeasurem
     )
 
 
-def test_continuous_repository_benchmark_checkpoint_cannot_claim_superiority_even_with_better_fixture_measurements():
+def test_repository_benchmark_cannot_claim_superiority_with_fixture_measurements():
     profile = default_cyber_benchmark_profile(
         profile_id="cyber-continuous-repository",
         evidence_class=CyberBenchmarkEvidenceClass.REPOSITORY,
@@ -614,7 +612,6 @@ def test_continuous_repository_benchmark_checkpoint_cannot_claim_superiority_eve
         measurements=_measurements(1.0, evidence_prefix="benchmark:jarvis"),
         baseline=baseline,
     )
-
     assert checkpoint.comparison is not None
     assert checkpoint.comparison.evidence_class is CyberBenchmarkEvidenceClass.REPOSITORY
     assert checkpoint.benchmark_superiority_claim_allowed is False
@@ -622,7 +619,7 @@ def test_continuous_repository_benchmark_checkpoint_cannot_claim_superiority_eve
     assert checkpoint.automatic_promotion_allowed is False
 
 
-def test_full_continuous_cycle_composes_threat_impact_graph_sigma_incident_recommendation_and_sandbox():
+def test_full_continuous_cycle_composes_all_defensive_stages():
     identity = _identity()
     ingestion = _ingestion()
     inventory = _inventory()
@@ -646,11 +643,11 @@ def test_full_continuous_cycle_composes_threat_impact_graph_sigma_incident_recom
         sandbox_environment_fingerprint="d" * 64,
         attack_technique_ids=("T1059",),
     )
-
     assert cycle.impact.status is EayCveImpactStatus.CONFIRMED
     assert cycle.graph.blast_radius is not None
     assert cycle.sigma.status is SigmaCoverageStatus.COVERED
-    assert cycle.incident is not None and cycle.incident.status is IncidentStatus.UNCONFIRMED
+    assert cycle.incident is not None
+    assert cycle.incident.status is IncidentStatus.UNCONFIRMED
     assert cycle.recommendations
     assert cycle.sandbox.passed is True
     assert cycle.automatic_remediation_permitted is False
@@ -659,7 +656,7 @@ def test_full_continuous_cycle_composes_threat_impact_graph_sigma_incident_recom
     assert cycle.execution_authority_granted is False
 
 
-def test_mock_feed_invalid_nvd_record_fails_closed_instead_of_inventing_cve_truth():
+def test_invalid_nvd_record_fails_closed_instead_of_inventing_cve_truth():
     def bad_response(request: httpx.Request) -> httpx.Response:
         if str(request.url).startswith(NVD_CVE_API_URL):
             return httpx.Response(200, json={"vulnerabilities": []})
@@ -673,8 +670,7 @@ def test_mock_feed_invalid_nvd_record_fails_closed_instead_of_inventing_cve_trut
         client.close()
 
 
-def test_source_payloads_remain_json_serializable_for_audit_evidence():
-    receipt = _ingestion()
-    encoded = json.dumps(receipt.model_dump(mode="json"), sort_keys=True)
+def test_threat_receipt_remains_json_serializable_for_audit_evidence():
+    encoded = json.dumps(_ingestion().model_dump(mode="json"), sort_keys=True)
     assert CVE in encoded
     assert "execution_authority_granted" in encoded

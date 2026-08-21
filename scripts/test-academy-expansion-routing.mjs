@@ -23,7 +23,7 @@ for (const [needle, label] of appRequirements) {
 
 const hubRequirements = [
   ['canFeature("academy", "contentStudio")', "content-studio feature authority"],
-  ['setTab(canStudio ? "scenario" : "achievements")', "learner-safe default surface"],
+  ['useState(canStudio ? "scenario" : "achievements")', "learner-safe default surface"],
   ['data-eay-product-state="loading"', "loading product-state marker"],
   ['data-eay-product-state="ready"', "ready product-state marker"],
   ['role="alert"', "error announcement semantics"],

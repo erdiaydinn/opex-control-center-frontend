@@ -2,4 +2,5 @@
     <string name="eay_one_session_required">Sessione aziendale richiesta</string>
     <string name="eay_one_phone_surface">Telefono personale / di lavoro</string>
     <string name="eay_one_authority_required">Collega la sessione aziendale verificata per usare questa azione.</string>
+    <string name="eay_one_sign_in_again">Accedi di nuovo</string>
 </resources>

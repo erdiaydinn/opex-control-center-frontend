@@ -2,4 +2,5 @@
     <string name="eay_one_session_required">Kurumsal oturum gerekli</string>
     <string name="eay_one_phone_surface">Kişisel / iş telefonu</string>
     <string name="eay_one_authority_required">Bu işlemi kullanmak için onaylı kurumsal oturumu bağlayın.</string>
+    <string name="eay_one_sign_in_again">Yeniden oturum aç</string>
 </resources>

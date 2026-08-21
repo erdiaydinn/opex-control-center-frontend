@@ -10,11 +10,12 @@ const NODE_TYPES = [
   "checkpoint",
   "hotspot",
   "single_choice",
-  "multi_choice",
+  "multiple_choice",
   "drag_drop",
   "overlay",
   "reflection",
   "branch",
+  "cta",
 ];
 
 async function sha256(value) {
@@ -150,7 +151,7 @@ export default function AcademyInteractionTimelineStudio({ workspace, locale, t,
               <label><span>{tx("nodeKey")}</span><input required value={node.node_key} onChange={(event) => updateNode(index, { node_key: event.target.value })} /></label>
               <label><span>{tx("nodeType")}</span><select value={node.node_type} onChange={(event) => updateNode(index, { node_type: event.target.value })}>{NODE_TYPES.map((kind) => <option key={kind} value={kind}>{kind.replaceAll("_", " ")}</option>)}</select></label>
               <label><span>{ix("timeMs")}</span><input type="number" min="0" value={node.at_ms} onChange={(event) => updateNode(index, { at_ms: event.target.value })} /></label>
-              <label><span>{ix("scoreWeight")}</span><input type="number" min="0" max="100" value={node.score_weight} onChange={(event) => updateNode(index, { score_weight: event.target.value })} /></label>
+              <label><span>{ix("scoreWeight")}</span><input type="number" min="0" max="1000" value={node.score_weight} onChange={(event) => updateNode(index, { score_weight: event.target.value })} /></label>
               <label className="grow"><span>{ix("prompt")}</span><input value={node.prompt} onChange={(event) => updateNode(index, { prompt: event.target.value })} /></label>
               <label className="grow"><span>{ix("payload")}</span><input value={node.payloadText} onChange={(event) => updateNode(index, { payloadText: event.target.value })} spellCheck="false" /></label>
               <label className="check"><input type="checkbox" checked={node.blocking} onChange={(event) => updateNode(index, { blocking: event.target.checked })} /><span>{ix("blocking")}</span></label>

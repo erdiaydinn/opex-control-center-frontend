@@ -1,6 +1,7 @@
 import {
   buildFixtureAssetIndex,
   buildProductAssetIndex,
+  PLANOGRAM_ASSET_LIMITS,
 } from "./planogramAssetManifest.js";
 
 const MAX_TEXTURED_PRODUCT_SKUS = 48;
@@ -16,9 +17,13 @@ function normalizeKey(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function safeSameOriginPath(value) {
+function safeGovernedPath(value, expectedPrefix) {
   const path = String(value ?? "").trim();
-  return Boolean(path && path.startsWith("/") && !path.startsWith("//") && !path.includes("\\"));
+  if (!path || !path.startsWith("/") || path.startsWith("//") || path.includes("\\")) return false;
+  if (path.includes("#") || /%(?:2e|2f|5c|00)/i.test(path)) return false;
+  const pathname = path.split("?", 1)[0];
+  if (!pathname.startsWith(expectedPrefix)) return false;
+  return !pathname.split("/").some((segment) => segment === "." || segment === "..");
 }
 
 function productFacingCount(product) {
@@ -74,10 +79,10 @@ function collectModuleProducts(module) {
   return rows;
 }
 
-function visualAssetEligible(asset, expectedExtension) {
+function visualAssetEligible(asset, expectedExtension, expectedPrefix) {
   if (!asset || asset.attested !== true) return false;
   const path = String(asset.model_path ?? asset.front_image_path ?? "");
-  if (!safeSameOriginPath(path)) return false;
+  if (!safeGovernedPath(path, expectedPrefix)) return false;
   return expectedExtension.test(path);
 }
 
@@ -104,7 +109,7 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
     const fixtureAsset = fixtureIndex.get(fixtureKey);
 
     if (fixtureAsset) {
-      if (!visualAssetEligible(fixtureAsset, /\.glb(\?.*)?$/i)) {
+      if (!visualAssetEligible(fixtureAsset, /\.glb(\?.*)?$/i, PLANOGRAM_ASSET_LIMITS.fixtureAssetPrefix)) {
         rejectedUnattestedFixtures += 1;
       } else if (!envelope) {
         rejectedUnattestedFixtures += 1;
@@ -129,7 +134,7 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
       if (!sku) continue;
       const productAsset = productIndex.get(sku);
       if (!productAsset) continue;
-      if (!visualAssetEligible(productAsset, /\.(png|jpe?g|webp|avif)(\?.*)?$/i)) {
+      if (!visualAssetEligible(productAsset, /\.(png|jpe?g|webp|avif)(\?.*)?$/i, PLANOGRAM_ASSET_LIMITS.productAssetPrefix)) {
         rejectedUnattestedProducts += 1;
         continue;
       }

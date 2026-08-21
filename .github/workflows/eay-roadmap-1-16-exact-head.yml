@@ -1,0 +1,246 @@
+name: EAY Roadmap 1-16 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-1-15:
+    name: Require roadmap 1-15 GREEN on same exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for exact-head 1-15 cumulative gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ env.EAY_EXACT_HEAD }}
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request
+          repo=os.environ['GH_REPOSITORY']
+          head=os.environ['HEAD_SHA']
+          token=os.environ['GH_TOKEN']
+          workflow='eay-roadmap-1-15-exact-head.yml'
+          url=f'https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs?event=pull_request&per_page=30'
+          headers={
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          for _ in range(180):
+              request=urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  runs=json.load(response).get('workflow_runs', [])
+              matches=[run for run in runs if run.get('head_sha') == head]
+              if matches:
+                  run=max(matches, key=lambda item: item['id'])
+                  print(f'prior_gate_run={run["id"]} status={run.get("status")} conclusion={run.get("conclusion")}')
+                  if run.get('status') == 'completed':
+                      if run.get('conclusion') != 'success':
+                          raise SystemExit(f'roadmap 1-15 exact-head gate is {run.get("conclusion")}')
+                      print('roadmap_1_15_exact_head_green=true')
+                      raise SystemExit(0)
+              time.sleep(8)
+          raise SystemExit('timed out waiting for roadmap 1-15 exact-head gate')
+          PY
+
+  workforce-override-learning:
+    name: Item 16 manager override learning PostgreSQL authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_workforce_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_workforce_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgresql://workforce_a:runtime_a@localhost:5432/eay_workforce_ci
+      WORKFORCE_TENANT_ID: tenant-a
+      WORKFORCE_AUTO_MIGRATE: "false"
+      DOCKOS_ENV: test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install canonical backend dependencies
+        run: python -m pip install -r backend/requirements.txt "pytest>=8,<9"
+      - name: Compile item 16 authority
+        run: |
+          python -m py_compile \
+            backend/app/modules/workforce/override_learning_authority.py \
+            backend/app/modules/workforce/override_learning_repository.py \
+            backend/app/modules/workforce/override_learning_service.py \
+            backend/app/modules/workforce/override_learning_router.py
+      - name: Apply canonical Workforce V29-V38 migrations
+        run: |
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/002_workforce_v29.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/003_workforce_v30_acceptance.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/004_workforce_v31_lifecycle_acceptance.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/005_workforce_v32_identity_revocation.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/010_workforce_v33_demand_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/011_workforce_v34_capacity_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/012_workforce_v35_dpi_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/013_workforce_v36_optimizer_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/014_workforce_v37_replan_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/015_workforce_v38_override_learning.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -Atc "SELECT max(version) FROM workforce_schema_migrations" | grep -qx '38'
+      - name: Create tenant-bound runtime roles and privileged learning versions
+        run: |
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE workforce_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE workforce_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO workforce_tenant_bindings(role_name,tenant_id)
+          VALUES ('workforce_a','tenant-a'),('workforce_b','tenant-b');
+
+          GRANT SELECT, INSERT ON workforce_dpi_snapshots, workforce_optimizer_proposals,
+            workforce_manager_overrides, workforce_override_outcomes,
+            workforce_override_learning_drafts, workforce_optimizer_learning_receipts
+            TO workforce_a, workforce_b;
+          GRANT SELECT ON workforce_override_learning_versions TO workforce_a, workforce_b;
+
+          INSERT INTO workforce_optimizer_proposals(
+            tenant_id,id,location_id,model_version,dpi_snapshot_fingerprint,
+            dpi_root_cause,dpi_manpower_shortage,input_fingerprint,
+            proposal_fingerprint,recommendation_type,selected_candidate_ids,
+            selected_actions,target_gap_man_hours,covered_gap_man_hours,
+            remaining_gap_man_hours,incremental_cost_minor_units,feasible,
+            automatic_execution_permitted,human_approval_required,explanation,
+            candidate_pool_fingerprint,created_by
+          ) VALUES (
+            'tenant-a','OPT-learning-base','WH-LRN-001','workforce-optimizer-v1',repeat('d',64),
+            'manpower_capacity_shortage',true,repeat('e',64),repeat('a',64),
+            'capacity_gap_proposal','["CALL"]'::jsonb,
+            '[{"candidate_id":"CALL","action_type":"call_in","capacity_gain_man_hours":"2","incremental_cost_minor_units":100,"source_ref":"availability://sanitized/CALL","available":true,"legal_eligible":true,"skill_target":null}]'::jsonb,
+            2,2,0,100,true,false,true,'[]'::jsonb,repeat('f',64),'seed'
+          );
+
+          INSERT INTO workforce_override_learning_versions(
+            tenant_id,version,draft_fingerprint,action_cost_multipliers,source_ref,
+            approved_by,effective_from,status,authority_fingerprint
+          ) VALUES
+          ('tenant-a','override-learning-v1',repeat('1',64),
+            '{"call_in":"1","extend_shift":"1"}'::jsonb,
+            'learning://sanitized/v1','ops-excellence','2026-08-01T00:00:00Z','approved',repeat('2',64)),
+          ('tenant-a','override-learning-v2',repeat('3',64),
+            '{"call_in":"1.5","extend_shift":"1"}'::jsonb,
+            'learning://sanitized/v2','ops-excellence','2026-08-02T00:00:00Z','approved',repeat('4',64)),
+          ('tenant-b','override-learning-v1',repeat('5',64),
+            '{"call_in":"0.9"}'::jsonb,
+            'learning://sanitized/tenant-b/v1','ops-b','2026-08-01T00:00:00Z','approved',repeat('6',64));
+
+          INSERT INTO workforce_manager_overrides(
+            tenant_id,id,location_id,optimizer_proposal_fingerprint,decision,
+            reason_code,reason_note,observed_action_type,pre_kpi_context_ref,
+            actor_subject,source_ref
+          ) VALUES (
+            'tenant-b','OVR-tenant-b','WH-B',repeat('7',64),'modified','break_timing',
+            'sanitized','call_in','workforce-dpi://tenant-b','manager-b','override://tenant-b'
+          );
+          INSERT INTO workforce_override_outcomes(
+            tenant_id,id,override_id,worked,post_kpi_context_ref,kpi_deltas,source_ref,recorded_by
+          ) VALUES (
+            'tenant-b','OUT-tenant-b','OVR-tenant-b',true,'kpi://tenant-b/post',
+            '{"picking_seconds_per_order":"-10"}'::jsonb,'outcome://tenant-b','reviewer-b'
+          );
+          INSERT INTO workforce_override_learning_drafts(
+            tenant_id,id,model_family,sample_count,completed_outcome_count,reason_counts,
+            frequent_override_reasons,action_success_rates,suggested_cost_multipliers,
+            input_fingerprint,draft_fingerprint,automatic_apply_permitted,
+            human_approval_required,created_by
+          ) VALUES (
+            'tenant-b','LRN-tenant-b','workforce-optimizer-override-learning',4,4,
+            '{"break_timing":4}'::jsonb,'["break_timing"]'::jsonb,
+            '{"call_in":"0.75"}'::jsonb,'{"call_in":"1"}'::jsonb,
+            repeat('8',64),repeat('9',64),false,true,'learning-b'
+          );
+          INSERT INTO workforce_optimizer_learning_receipts(
+            tenant_id,id,location_id,optimizer_proposal_fingerprint,learning_version,
+            learning_authority_fingerprint,raw_candidate_pool_fingerprint,created_by
+          ) VALUES (
+            'tenant-b','LRC-tenant-b','WH-B',repeat('a',64),'override-learning-v1',
+            repeat('6',64),repeat('b',64),'optimizer-b'
+          );
+          SQL
+      - name: Run item 16 domain PostgreSQL and API acceptance
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m pytest -q \
+            backend/app/modules/workforce/test_override_learning_authority.py \
+            backend/app/modules/workforce/test_override_learning_postgres.py \
+            backend/app/modules/workforce/test_override_learning_api.py
+      - name: Prove cross-tenant override-learning isolation
+        run: |
+          for table in workforce_manager_overrides workforce_override_outcomes workforce_override_learning_drafts workforce_override_learning_versions workforce_optimizer_learning_receipts; do
+            PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -Atc "SELECT count(*) FROM ${table} WHERE tenant_id='tenant-b';" | grep -qx '0'
+          done
+          if PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_manager_overrides(tenant_id,id,location_id,optimizer_proposal_fingerprint,decision,reason_code,observed_action_type,pre_kpi_context_ref,actor_subject,source_ref) VALUES ('tenant-b','OVR-forbidden','WH-B',repeat('c',64),'modified','x','call_in','kpi://x','attacker','override://x');"; then
+            echo 'cross-tenant override write unexpectedly succeeded' >&2
+            exit 1
+          fi
+      - name: Prove runtime cannot author approved learning versions
+        run: |
+          if PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_override_learning_versions(tenant_id,version,draft_fingerprint,action_cost_multipliers,source_ref,approved_by,effective_from,status,authority_fingerprint) VALUES ('tenant-a','attacker-v99',repeat('d',64),'{}','attacker','attacker',now(),'approved',repeat('e',64));"; then
+            echo 'runtime identity unexpectedly authored approved learning policy' >&2
+            exit 1
+          fi
+      - name: Prove drafts cannot self-apply and learning evidence is immutable
+        run: |
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_override_learning_drafts(tenant_id,id,model_family,sample_count,completed_outcome_count,reason_counts,frequent_override_reasons,action_success_rates,suggested_cost_multipliers,input_fingerprint,draft_fingerprint,automatic_apply_permitted,human_approval_required,created_by) VALUES ('tenant-b','LRN-auto','x',1,1,'{}','[]','{}','{}',repeat('f',64),repeat('0',64),true,false,'seed');"; then
+            echo 'learning draft unexpectedly gained automatic apply authority' >&2
+            exit 1
+          fi
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "UPDATE workforce_manager_overrides SET reason_code='rewritten' WHERE tenant_id='tenant-b' AND id='OVR-tenant-b';"; then
+            echo 'manager override history mutation unexpectedly succeeded' >&2
+            exit 1
+          fi
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "UPDATE workforce_override_learning_versions SET action_cost_multipliers='{}' WHERE tenant_id='tenant-b' AND version='override-learning-v1';"; then
+            echo 'approved learning version mutation unexpectedly succeeded' >&2
+            exit 1
+          fi
+      - name: Preserve production truth boundary
+        run: |
+          echo 'item16_repository_acceptance=true'
+          echo 'override_reason_frequency_measurable=true'
+          echo 'approved_learning_version_changes_future_recommendation=true'
+          echo 'verified_post_action_kpi_outcomes_external_evidence=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-16 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-1-15, workforce-override-learning]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_15_exact_head_green=true'
+          echo 'item16_repository_software_acceptance=true'
+          echo 'production_ready=false'
+          echo 'external_evidence_not_substituted=true'

@@ -1,0 +1,141 @@
+name: EAY Master Roadmap 25 - Planogram Optimizer
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-25-planogram-optimizer
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/**"
+      - "services/core-api/app/modules/planogram/**"
+      - "services/core-api/tests/test_planogram*.py"
+      - "services/core-api/alembic/versions/*planogram*.py"
+      - "services/core-api/app/budget_main.py"
+      - "config/eay_master_roadmap_60.json"
+      - "src/**/*planogram*"
+      - "src/**/Planogram/**"
+      - ".github/workflows/eay-master-roadmap-24-planogram-physical-truth.yml"
+      - ".github/workflows/eay-master-roadmap-25-planogram-optimizer.yml"
+      - ".github/workflows/eay-master-roadmap-26-planogram-execution-compliance.yml"
+      - ".github/workflows/eay-master-roadmap-24-27-cumulative-exact-head.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  optimizer-authority:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
+      - name: Install deterministic Planogram dependencies
+        working-directory: apps/planai/backend
+        run: python -m pip install -r requirements.txt
+      - name: Install Core API test surface
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Verify Master Roadmap item 25 authority
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          roadmap=json.loads(Path('config/eay_master_roadmap_60.json').read_text(encoding='utf-8'))
+          item=next(row for row in roadmap['items'] if row['id']==25)
+          assert item['title']=='Planogram optimizer', item
+          print('MASTER_25_AUTHORITY=PASS')
+          PY
+      - name: Compile architecture optimizer without changing foundation allocator
+        working-directory: apps/planai/backend
+        run: >-
+          python -m compileall -q
+          physical_optimizer.py
+          physical_optimizer_v2.py
+          architecture_truth.py
+          physical_engine.py
+          physical_truth.py
+          engine.py
+      - name: Master 24 physical truth regression
+        working-directory: apps/planai/backend
+        run: >-
+          python -m unittest
+          tests.test_physical_truth
+          tests.test_physical_engine
+          tests.test_physical_truth_audit
+      - name: Architecture truth and route hard-gate acceptance
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_architecture_truth.py
+          tests/test_architecture_route_gate.py
+      - name: Master 25 optimizer adversarial acceptance
+        working-directory: apps/planai/backend
+        run: python -m unittest tests.test_physical_optimizer
+      - name: Prove V2 hard-first and baseline-preserving contract
+        working-directory: apps/planai/backend
+        run: |
+          python - <<'PY'
+          from physical_optimizer import OBJECTIVE_ORDER, STRATEGIES as V1_STRATEGIES
+          from physical_optimizer_v2 import OPTIMIZER_VERSION, STRATEGIES as V2_STRATEGIES
+          assert OBJECTIVE_ORDER[0]=='hard_violation_count'
+          assert V1_STRATEGIES[0]==('baseline', None)
+          assert V2_STRATEGIES[0]==('baseline', None)
+          assert OPTIMIZER_VERSION=='physical-plan-optimizer-v2'
+          assert len(V2_STRATEGIES)==8
+          assert len({name for name, _ in V2_STRATEGIES})==len(V2_STRATEGIES)
+          print('MASTER_25_HARD_FIRST=PASS')
+          print('MASTER_25_BASELINE_ALWAYS_CANDIDATE=PASS')
+          print('MASTER_25_ARCHITECTURE_OPTIMIZER_V2=PASS')
+          PY
+      - name: Lint optimizer V2 and Core boundary
+        run: >-
+          ruff check
+          apps/planai/backend/physical_optimizer.py
+          apps/planai/backend/physical_optimizer_v2.py
+          apps/planai/backend/architecture_truth.py
+          apps/planai/backend/physical_engine.py
+          apps/planai/backend/tests/test_physical_optimizer.py
+          apps/planai/backend/tests/test_architecture_truth.py
+          apps/planai/backend/tests/test_architecture_route_gate.py
+          services/core-api/app/modules/planogram/engine_adapter.py
+          services/core-api/app/modules/planogram/optimizer_router.py
+          services/core-api/app/budget_main.py
+          services/core-api/tests/test_planogram_master25_optimizer_core.py
+      - name: Core optimizer preview and Master 24 native regression
+        run: >-
+          python -m pytest -q
+          services/core-api/tests/test_planogram_master25_optimizer_core.py
+          services/core-api/tests/test_planogram_native_core.py
+          services/core-api/tests/test_planogram_master24_store_dna.py
+      - name: Prove Core route cannot become production release authority
+        run: |
+          python - <<'PY'
+          from app.budget_main import app
+          schema=app.openapi()
+          assert '/v1/planogram/optimize-preview' in schema['paths']
+          from app.modules.planogram.engine_adapter import engine_status
+          status=engine_status()
+          assert status['optimizer']['available'] is True
+          assert status['optimizer']['production_authority'] is False
+          assert status['optimizer']['contract']=='physical-plan-optimizer-v2'
+          assert status['optimizer']['route_objective']=='architecture-grid-astar-v1'
+          print('MASTER_25_CORE_OPTIMIZER_PREVIEW=PASS')
+          print('MASTER_25_ARCHITECTURE_ROUTE_GATE=PASS')
+          print('MASTER_25_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
+          PY

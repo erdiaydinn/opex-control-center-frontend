@@ -1,0 +1,296 @@
+name: EAY Platform Synthetic Load Acceptance
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+    inputs:
+      target_vus:
+        description: Synthetic virtual users for the tenant-isolation burst (minimum 1000)
+        required: false
+        default: "1000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-load-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-tenant-burst:
+    name: Core latency + 1000-VU tenant isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_ALLOWED_HOSTS: 127.0.0.1,localhost
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@127.0.0.1:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@127.0.0.1:5432/opex_test
+      OPEX_REDIS_URL: redis://127.0.0.1:6379/9
+      TENANT_A_ID: 00000000-0000-0000-0000-00000000a001
+      TENANT_B_ID: 00000000-0000-0000-0000-00000000b001
+      SUBJECT_A: load-a
+      SUBJECT_B: load-b
+      TOKEN_A: dev.load-a.00000000-0000-0000-0000-00000000a001.viewer
+      TOKEN_B: dev.load-b.00000000-0000-0000-0000-00000000b001.viewer
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+
+      - name: Install Core API test runtime
+        run: python -m pip install -e "./services/core-api[dev]"
+
+      - name: Create non-bypass runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@127.0.0.1:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Migrate exact cumulative schema
+        working-directory: services/core-api
+        run: alembic upgrade head
+
+      - name: Bootstrap two isolated synthetic tenants
+        working-directory: services/core-api
+        run: |
+          python -m app.cli.bootstrap_access \
+            --tenant-id "$TENANT_A_ID" \
+            --tenant-slug load-a \
+            --tenant-name "Load Tenant A" \
+            --admin-subject "$SUBJECT_A"
+          python -m app.cli.bootstrap_access \
+            --tenant-id "$TENANT_B_ID" \
+            --tenant-slug load-b \
+            --tenant-name "Load Tenant B" \
+            --admin-subject "$SUBJECT_B"
+
+      - name: Start production-shaped Core API workers
+        working-directory: services/core-api
+        run: |
+          nohup python -m uvicorn app.main:app \
+            --host 127.0.0.1 \
+            --port 8000 \
+            --workers 4 \
+            > /tmp/eay-core-load.log 2>&1 &
+          echo $! > /tmp/eay-core-load.pid
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat /tmp/eay-core-load.log
+          exit 1
+
+      - name: Validate k6 contract syntax
+        run: node --check ops/load/k6-platform-core-tenant-burst.js
+
+      - name: Run controlled 50-VU latency gate
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/work" -w /work \
+            -e BASE_URL=http://127.0.0.1:8000 \
+            -e LOAD_PROFILE=latency \
+            -e TARGET_VUS=50 \
+            -e ITERATIONS_PER_VU=2 \
+            -e TENANT_A_ID -e TENANT_B_ID \
+            -e SUBJECT_A -e SUBJECT_B \
+            -e TOKEN_A -e TOKEN_B \
+            grafana/k6:0.57.0 \
+            run ops/load/k6-platform-core-tenant-burst.js
+
+      - name: Allow CI worker pools to drain
+        run: sleep 2
+
+      - name: Run 1000-VU tenant isolation saturation gate
+        id: burst_gate
+        continue-on-error: true
+        env:
+          TARGET_VUS: ${{ github.event_name == 'workflow_dispatch' && inputs.target_vus || '1000' }}
+        run: |
+          case "$TARGET_VUS" in
+            ''|*[!0-9]*)
+              echo "TARGET_VUS must be an integer >= 1000; got '$TARGET_VUS'." >&2
+              exit 1
+              ;;
+          esac
+          if [ "$TARGET_VUS" -lt 1000 ]; then
+            echo "TARGET_VUS=$TARGET_VUS would weaken the canonical 1000-VU hard gate." >&2
+            exit 1
+          fi
+          echo "$TARGET_VUS" > /tmp/eay-burst-target-vus
+          docker run --rm --network host \
+            -v "$PWD:/work" -w /work \
+            -e BASE_URL=http://127.0.0.1:8000 \
+            -e LOAD_PROFILE=burst \
+            -e TARGET_VUS="$TARGET_VUS" \
+            -e ITERATIONS_PER_VU=1 \
+            -e TENANT_A_ID -e TENANT_B_ID \
+            -e SUBJECT_A -e SUBJECT_B \
+            -e TOKEN_A -e TOKEN_B \
+            grafana/k6:0.57.0 \
+            run ops/load/k6-platform-core-tenant-burst.js
+
+      - name: Verify tenant and audit correctness after load
+        if: always() && steps.burst_gate.outcome != 'skipped'
+        working-directory: services/core-api
+        run: |
+          export BURST_TARGET_VUS="$(cat /tmp/eay-burst-target-vus)"
+          python - <<'PY'
+          import asyncio
+          import os
+          import asyncpg
+
+          TENANT_A = "00000000-0000-0000-0000-00000000a001"
+          TENANT_B = "00000000-0000-0000-0000-00000000b001"
+          SUBJECT_A = "load-a"
+          SUBJECT_B = "load-b"
+          burst_vus = int(os.environ["BURST_TARGET_VUS"])
+
+          latency_events_per_tenant = 25 * 2 * 2
+          burst_events_a = ((burst_vus + 1) // 2) * 2
+          burst_events_b = (burst_vus // 2) * 2
+          expected_a = latency_events_per_tenant + burst_events_a
+          expected_b = latency_events_per_tenant + burst_events_b
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@127.0.0.1:5432/opex_test"
+              )
+              try:
+                  rows = await connection.fetch(
+                      """
+                      SELECT tenant_id::text, external_subject
+                      FROM memberships
+                      WHERE tenant_id IN ($1::uuid, $2::uuid)
+                      ORDER BY tenant_id, external_subject
+                      """,
+                      TENANT_A,
+                      TENANT_B,
+                  )
+                  observed = {(row["tenant_id"], row["external_subject"]) for row in rows}
+                  assert observed == {(TENANT_A, SUBJECT_A), (TENANT_B, SUBJECT_B)}, observed
+
+                  audit_rows = await connection.fetch(
+                      """
+                      SELECT tenant_id::text AS tenant_id, actor_subject, action, decision, request_id
+                      FROM audit_events
+                      WHERE tenant_id IN ($1::uuid, $2::uuid)
+                      ORDER BY tenant_id, id
+                      """,
+                      TENANT_A,
+                      TENANT_B,
+                  )
+
+                  expected_subject = {TENANT_A: SUBJECT_A, TENANT_B: SUBJECT_B}
+                  expected_counts = {TENANT_A: expected_a, TENANT_B: expected_b}
+                  counts = {TENANT_A: 0, TENANT_B: 0}
+                  request_ids = {TENANT_A: set(), TENANT_B: set()}
+                  allowed_actions = {"get:/v1/context", "get:/v1/admin/members"}
+
+                  for row in audit_rows:
+                      tenant_id = row["tenant_id"]
+                      assert tenant_id in expected_subject, row
+                      assert row["actor_subject"] == expected_subject[tenant_id], row
+                      assert row["action"] in allowed_actions, row
+                      assert row["decision"] == "allowed", row
+                      assert row["request_id"], row
+                      counts[tenant_id] += 1
+                      request_ids[tenant_id].add(row["request_id"])
+
+                  assert counts == expected_counts, (counts, expected_counts)
+                  assert len(request_ids[TENANT_A]) == expected_a, len(request_ids[TENANT_A])
+                  assert len(request_ids[TENANT_B]) == expected_b, len(request_ids[TENANT_B])
+
+                  foreign_a = await connection.fetchval(
+                      "SELECT COUNT(*) FROM audit_events WHERE tenant_id = $1::uuid AND actor_subject = $2",
+                      TENANT_A,
+                      SUBJECT_B,
+                  )
+                  foreign_b = await connection.fetchval(
+                      "SELECT COUNT(*) FROM audit_events WHERE tenant_id = $1::uuid AND actor_subject = $2",
+                      TENANT_B,
+                      SUBJECT_A,
+                  )
+                  assert foreign_a == 0, foreign_a
+                  assert foreign_b == 0, foreign_b
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Enforce 1000-VU saturation result
+        if: always() && steps.burst_gate.outcome != 'skipped'
+        env:
+          BURST_OUTCOME: ${{ steps.burst_gate.outcome }}
+        run: |
+          if [ "$BURST_OUTCOME" != "success" ]; then
+            echo "1000-VU saturation gate failed; post-load correctness evidence was still collected." >&2
+            exit 1
+          fi
+
+      - name: Record synthetic evidence boundary
+        if: success()
+        run: |
+          cat <<'EOF'
+          This workflow is synthetic CI evidence only.
+          The 50-VU profile is a runner-relative latency regression gate.
+          The 1000-VU profile is a saturation/isolation gate, not a production capacity SLO.
+          Membership RLS isolation and durable tenant-bound HTTP audit correctness are hard gates.
+          Real production readiness still requires staging/production-shape infrastructure evidence.
+          EOF
+
+      - name: Core API diagnostic log
+        if: always()
+        run: tail -n 200 /tmp/eay-core-load.log || true

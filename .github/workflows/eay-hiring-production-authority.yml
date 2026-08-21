@@ -1,0 +1,187 @@
+name: EAY Hiring Production Authorities
+
+on:
+  pull_request:
+    branches: [product/eay-hiring-ai-document-trust-v1]
+    paths:
+      - "backend/app/main.py"
+      - "backend/app/modules/recruitment/**"
+      - "backend/app/modules/workforce/persistence.py"
+      - "backend/migrations/023_recruitment_candidate_upload_authority.sql"
+      - "backend/migrations/024_recruitment_production_authority.sql"
+      - "backend/migrations/025_recruitment_request_evidence_scan_authority.sql"
+      - "backend/migrations/026_recruitment_evidence_release_authority.sql"
+      - "backend/migrations/027_recruitment_scanner_role_isolation.sql"
+      - "backend/migrations/028_recruitment_orchestration.sql"
+      - "backend/migrations/029_workforce_audit_chain_fencing.sql"
+      - "backend/migrations/030_recruitment_interview_scheduling.sql"
+      - "backend/migrations/031_recruitment_lifecycle_authority.sql"
+      - "backend/scripts/setup_workforce_postgres_ci.py"
+      - "backend/scripts/recruitment_authority_postgres_ci.py"
+      - "backend/scripts/recruitment_release_authority_postgres_ci.py"
+      - "backend/scripts/recruitment_scanner_role_postgres_ci.py"
+      - "backend/scripts/recruitment_orchestration_postgres_ci.py"
+      - "backend/scripts/recruitment_interview_postgres_ci.py"
+      - "backend/scripts/recruitment_lifecycle_postgres_ci.py"
+      - "backend/scripts/recruitment_reminder_postgres_ci.py"
+      - "backend/scripts/recruitment_offboarding_workforce_postgres_ci.py"
+      - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
+      - "src/App.jsx"
+      - "src/api/client.js"
+      - "src/modules/recruitment/**"
+      - "Dockerfile"
+      - "nginx.conf"
+      - ".github/workflows/eay-hiring-production-authority.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-hiring-production-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crypto-and-m2m-contracts:
+    name: KMS scanner M2M and runtime adversarial contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: backend
+      DOCKOS_ENV: test
+      RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-production-authority-evidence
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - name: Compile recruitment authority runtime
+        run: >-
+          python -m compileall -q backend/app/main.py backend/app/modules/recruitment
+          backend/app/modules/workforce/persistence.py
+          backend/scripts/setup_workforce_postgres_ci.py
+          backend/scripts/recruitment_authority_postgres_ci.py
+          backend/scripts/recruitment_release_authority_postgres_ci.py
+          backend/scripts/recruitment_scanner_role_postgres_ci.py
+          backend/scripts/recruitment_orchestration_postgres_ci.py
+          backend/scripts/recruitment_interview_postgres_ci.py
+          backend/scripts/recruitment_lifecycle_postgres_ci.py
+          backend/scripts/recruitment_reminder_postgres_ci.py
+          backend/scripts/recruitment_offboarding_workforce_postgres_ci.py
+          backend/scripts/recruitment_core_privilege_postgres_ci.py
+      - name: Workforce V42 and Hiring V47 startup contract
+        run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
+      - name: Hiring production startup guard
+        run: python -m unittest app.modules.recruitment.test_production_startup_guard -v
+      - name: Hiring V47 lifecycle governance and Workforce bridge contracts
+        run: >-
+          python -m unittest
+          app.modules.recruitment.test_lifecycle_authority_contract
+          app.modules.recruitment.test_lifecycle_governance_contract
+          app.modules.recruitment.test_workforce_offboarding_bridge -v
+      - name: Public capability abuse guard
+        run: python -m unittest app.modules.recruitment.test_public_capability_guard -v
+      - name: Cross-functional onboarding governance
+        run: python -m unittest app.modules.recruitment.test_onboarding_authority_contract -v
+      - name: Dedicated scanner database authority
+        run: python -m unittest app.modules.recruitment.test_scanner_database_authority -v
+      - name: Scanner service ingress permission
+        run: python -m unittest app.modules.recruitment.test_scanner_callback_router -v
+      - name: Recruitment orchestration product contract
+        run: python -m unittest app.modules.recruitment.test_orchestration_contract -v
+      - name: Live production authority preflight contract
+        run: python -m unittest app.modules.recruitment.test_production_authority_preflight -v
+      - name: KMS envelope storage
+        run: python -m unittest app.modules.recruitment.test_candidate_evidence_storage -v
+      - name: Candidate encrypted evidence read upload retention runtime
+        run: python -m unittest app.modules.recruitment.test_candidate_evidence_runtime -v
+      - name: Request encrypted evidence and route precedence
+        run: python -m unittest app.modules.recruitment.test_recruitment_evidence_runtime -v
+      - name: Evidence release authority adversarial contract
+        run: python -m unittest app.modules.recruitment.test_evidence_release_authority -v
+      - name: Request scanner authority adversarial contract
+        run: python -m unittest app.modules.recruitment.test_request_evidence_scan_authority -v
+      - name: Candidate upload authority runtime
+        run: python -m unittest app.modules.recruitment.test_candidate_upload_runtime_authority -v
+      - name: Candidate scanner runtime contract
+        run: python -m unittest app.modules.recruitment.test_candidate_scan_runtime_contract -v
+      - name: Scanner KMS rotation authority
+        run: python -m unittest app.modules.recruitment.test_scanner_key_authority -v
+      - name: Scanner signed receipt adversarial contract
+        run: python -m unittest app.modules.recruitment.test_scanner_receipt -v
+      - name: Credential-free official portal human assist
+        run: python -m unittest app.modules.recruitment.test_official_human_assist -v
+      - name: Authorized official M2M transport
+        run: python -m unittest app.modules.recruitment.test_official_document_m2m -v
+      - name: Authorized official M2M state machine bridge
+        run: python -m unittest app.modules.recruitment.test_official_document_m2m_runtime -v
+      - name: Official document governance and replay
+        run: python -m unittest app.modules.recruitment.test_official_document_governance -v
+      - name: Candidate upload SQL contract
+        run: python -m unittest app.modules.recruitment.test_candidate_upload_migration_contract -v
+      - name: Recruitment domain regression
+        run: python -m unittest app.modules.recruitment.test_recruitment -v
+
+  postgres-authority:
+    name: PostgreSQL role RLS replay concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workforce_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d workforce_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql://workforce_runtime:workforce_runtime_ci@localhost:5432/workforce_ci
+      WORKFORCE_MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      RECRUITMENT_AUTHORITY_ADMIN_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      RECRUITMENT_SCANNER_DATABASE_URL: postgresql://eay_candidate_scanner_runtime:candidate_scanner_ci@localhost:5432/workforce_ci
+      RECRUITMENT_SCANNER_DATABASE_ROLE: eay_candidate_scanner_runtime
+      WORKFORCE_TENANT_ID: eay-ci
+      DOCKOS_ENV: test
+      WORKFORCE_AUTO_MIGRATE: "false"
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Seed canonical Workforce PostgreSQL schema
+        run: python scripts/setup_workforce_postgres_ci.py
+      - name: Real candidate role RLS rollback replay concurrency acceptance
+        run: python scripts/recruitment_authority_postgres_ci.py
+      - name: Real V41 V42 request scanner and release acceptance
+        run: python scripts/recruitment_release_authority_postgres_ci.py
+      - name: Real V43 scanner role separation acceptance
+        run: python scripts/recruitment_scanner_role_postgres_ci.py
+      - name: Real V44 orchestration and V45 audit fencing acceptance
+        run: python scripts/recruitment_orchestration_postgres_ci.py
+      - name: Real V46 shared interview capacity rotation and RLS acceptance
+        run: python scripts/recruitment_interview_postgres_ci.py
+      - name: Real V47 offer communication talent and offboarding acceptance
+        run: python scripts/recruitment_lifecycle_postgres_ci.py
+      - name: Real V47 automatic reminder planner acceptance
+        run: python scripts/recruitment_reminder_postgres_ci.py
+      - name: Real Recruitment to Workforce offboarding closure acceptance
+        run: python scripts/recruitment_offboarding_workforce_postgres_ci.py
+      - name: Core HR privileges survive authority sealing
+        run: python scripts/recruitment_core_privilege_postgres_ci.py

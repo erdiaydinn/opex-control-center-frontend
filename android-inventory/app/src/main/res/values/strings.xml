@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">EAY Inventory</string>
+    <string name="managed_device_uuid">Managed device UUID</string>
+    <string name="managed_enrollment_code">Single-use enrollment code</string>
+</resources>

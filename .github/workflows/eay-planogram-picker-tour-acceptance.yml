@@ -1,0 +1,81 @@
+name: EAY Planogram Picker Tour Simulation Acceptance
+
+on:
+  push:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/architecture_truth.py"
+      - "apps/planai/backend/picker_tour_simulation.py"
+      - "apps/planai/backend/tests/test_architecture_truth.py"
+      - "apps/planai/backend/tests/test_picker_tour_simulation.py"
+      - ".github/workflows/eay-planogram-picker-tour-acceptance.yml"
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/architecture_truth.py"
+      - "apps/planai/backend/picker_tour_simulation.py"
+      - "apps/planai/backend/tests/test_architecture_truth.py"
+      - "apps/planai/backend/tests/test_picker_tour_simulation.py"
+      - ".github/workflows/eay-planogram-picker-tour-acceptance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-picker-tour-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measured-picker-tours:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Install focused test tooling
+        run: python -m pip install pytest ruff
+      - name: Compile measured routing primitives
+        run: >-
+          python -m compileall -q
+          apps/planai/backend/architecture_truth.py
+          apps/planai/backend/picker_tour_simulation.py
+          apps/planai/backend/tests/test_architecture_truth.py
+          apps/planai/backend/tests/test_picker_tour_simulation.py
+      - name: Ruff gate measured route primitives
+        run: >-
+          ruff check
+          apps/planai/backend/architecture_truth.py
+          apps/planai/backend/picker_tour_simulation.py
+          apps/planai/backend/tests/test_architecture_truth.py
+          apps/planai/backend/tests/test_picker_tour_simulation.py
+      - name: Run architecture and picker-tour acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_architecture_truth.py tests/test_picker_tour_simulation.py
+      - name: Prove bounded non-synthetic simulation contract
+        working-directory: apps/planai/backend
+        run: |
+          python - <<'PY'
+          from picker_tour_simulation import (
+              MAX_EXPLAINED_ORDERS,
+              MAX_ORDERS_PER_SIMULATION,
+              MAX_PATH_POINTS_PER_SEGMENT,
+              PICKER_TOUR_SIMULATION_VERSION,
+          )
+          assert PICKER_TOUR_SIMULATION_VERSION == 'picker-tour-simulation-v1'
+          assert MAX_ORDERS_PER_SIMULATION <= 5000
+          assert MAX_EXPLAINED_ORDERS <= 50
+          assert MAX_PATH_POINTS_PER_SEGMENT <= 64
+          print('PLANOGRAM_PICKER_TOUR_BOUNDS=PASS')
+          PY
+      - name: Truth boundary
+        run: |
+          echo 'PLANOGRAM_PICKER_TOUR_REPOSITORY_PRIMITIVE=IMPLEMENTED'
+          echo 'PLANOGRAM_REAL_ORDER_BASKETS=REQUIRED_FOR_FIELD_EVIDENCE'
+          echo 'PLANOGRAM_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED'
+          echo 'PLANOGRAM_PRODUCTION_READY=FALSE'

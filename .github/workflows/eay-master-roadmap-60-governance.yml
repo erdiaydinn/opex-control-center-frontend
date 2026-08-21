@@ -1,0 +1,48 @@
+name: EAY Master Roadmap 60 Governance
+
+on:
+  pull_request:
+    branches: [product/eay-product-completion-v1]
+    paths:
+      - 'config/eay_master_roadmap_60.json'
+      - 'scripts/validate_master_roadmap_60.py'
+      - '.github/workflows/eay-master-roadmap-60-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-master-roadmap-60-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  master-roadmap-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Validate canonical master roadmap authority
+        run: python scripts/validate_master_roadmap_60.py
+      - name: Reject ordinal aliasing
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('config/eay_master_roadmap_60.json').read_text())
+          truth = data.get('truth_boundary', '')
+          assert 'MUST NOT be interpreted as master-roadmap item numbers' in truth
+          assert len(data['items']) == 60
+          print('Ordinal aliasing guard: PASS')
+          PY

@@ -1,39 +1,63 @@
-import React,{useEffect,useState}from"react";import"./budget.css";
-const API=import.meta.env.VITE_API_BASE||"http://localhost:8000/api";
+import React,{useEffect,useState}from"react";import{apiGet}from"../../api/client.js";import{usePlatformPreferences}from"../../platform/preferences/PlatformPreferencesContext.jsx";import"./budget.css";
 const money=v=>"₺"+Number(v||0).toLocaleString("tr-TR");
 const CATS=["All","Raf & Ekipman","Soğutucu & Dolap","Elektrik","Tadilat & Zemin","Tente & Cephe","Güvenlik & Yangın","Diğer Saha İşleri"];
 const MONTHS=["All","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const Q=["All","Q1","Q2","Q3","Q4"];
-const fallback={
-summary:{planned_budget:60800000,committed_po:7820000,invoiced_actual:516000,pending_invoice:7304000,remaining_budget:60284000,open_conflicts:4,waiting_tasks:6},
-requests:[
-{id:"PR269882",po:"4400210174",store:"Genel Raf Projesi",category:"Raf & Ekipman",work:"Raf Optimizasyonu Raf temin ve Montaj İşleri",supplier:"Bilpo",cost_center:"8702230000",pr_amount:5551725,invoice_amount:0,invoice_no:"Bekliyor",invoice_date:"",invoice_entry_date:"",construction_class:"CAPEX",accounting_class:"Bekliyor",status:"Pending Invoice",scope:"Ops Relevant",month:"Jul",quarter:"Q3",risk:82},
-{id:"PR268415",po:"4400209269",store:"Genel Soğutucu",category:"Soğutucu & Dolap",work:"Endüstriyel Soğutma Dolabı Temin 30 Adet",supplier:"Supplier 7000077108",cost_center:"8702230000",pr_amount:65610,invoice_amount:0,invoice_no:"Bekliyor",invoice_date:"",invoice_entry_date:"",construction_class:"CAPEX",accounting_class:"Bekliyor",status:"Pending Invoice",scope:"Ops Relevant",month:"Jun",quarter:"Q2",risk:72},
-{id:"PR267210",po:"",store:"Ortaköy",category:"Tadilat & Zemin",work:"Ortaköy depo ön alan zemin kauçuk kaplama ilave iş",supplier:"",cost_center:"8702230000",pr_amount:0,invoice_amount:0,invoice_no:"-",invoice_date:"",invoice_entry_date:"",construction_class:"OPEX",accounting_class:"-",status:"Denied",scope:"Admin Review",month:"Jun",quarter:"Q2",risk:65},
-{id:"PR268381",po:"",store:"Karlıktepe",category:"Tente & Cephe",work:"Karlıktepe Depo Tente Temin ve Montaj",supplier:"",cost_center:"8702",pr_amount:0,invoice_amount:0,invoice_no:"-",invoice_date:"",invoice_entry_date:"",construction_class:"CAPEX",accounting_class:"-",status:"Canceled",scope:"Exclude Requested",month:"Jul",quarter:"Q3",risk:44},
-{id:"PR266041",po:"4400208285",store:"Genel",category:"Soğutucu & Dolap",work:"Martek Dolap Servis İşleri",supplier:"Martek",cost_center:"8702240000",pr_amount:116550,invoice_amount:116550,invoice_no:"INV-2025-88",invoice_date:"2025-06-20",invoice_entry_date:"2025-06-22",construction_class:"OPEX",accounting_class:"OPEX",status:"Invoiced",scope:"Ops Relevant",month:"Jun",quarter:"Q2",risk:51}
-],
-conflicts:[
-{id:"CF-001",ref:"PR269882",type:"missing_invoice",severity:"HIGH",owner:"Accounting",message:"PO ordered/received görünüyor, fatura henüz girilmemiş.",status:"Open"},
-{id:"CF-002",ref:"PR267210",type:"denied_in_scope",severity:"MEDIUM",owner:"Admin",message:"Denied PR raporda görünmemeli; admin exclusion onayı bekliyor.",status:"Open"}
-],
-tasks:[
-{id:"TK-001",ref:"PR269882",assigned_to:"Accounting",question:"Fatura girildi mi? Fatura no, tarih ve tutarı tamamlayın.",action:"Fatura bilgisi girilmeden actual bütçeye yansımasın.",due_date:"2026-05-20",answer:"",status:"Waiting Answer"}
-],
-insights:[
-{title:"Fatura bekleyen büyük PO riski",severity:"HIGH",text:"Raf optimizasyonu PO tutarı yüksek ancak fatura girişi yok. Actual bütçeye yansımıyor; pending invoice olarak yönetilmeli."},
-{title:"Canceled/Denied kayıt ayrıştırması",severity:"MEDIUM",text:"İptal veya denied PR kayıtları rapora otomatik alınmamalı; admin onayıyla scope dışına çıkarılmalı."}
-]};
-async function api(path,fb,opt={}){try{const r=await fetch(API+path,{headers:{"Content-Type":"application/json"},...opt});if(!r.ok)throw 0;return await r.json()}catch{return fb}}
+const EMPTY_DATA={
+summary:{
+planned_budget:0,
+committed_po:0,
+invoiced_actual:0,
+pending_invoice:0,
+remaining_budget:0,
+open_conflicts:0,
+waiting_tasks:0
+},
+requests:[],
+conflicts:[],
+tasks:[],
+insights:[]
+};
+async function api(path){return apiGet(path)}
 export default function BudgetIntelligence(){
-const[tab,setTab]=useState("Executive"),[data,setData]=useState(fallback),[filters,setFilters]=useState({month:"All",quarter:"All",category:"All",scope:"Ops Relevant",compare:false}),[drawer,setDrawer]=useState(null),[task,setTask]=useState(null),[ask,setAsk]=useState(false),[ai,setAi]=useState(""),[prompt,setPrompt]=useState(""),[csv,setCsv]=useState([]);
-useEffect(()=>{const q=new URLSearchParams(filters).toString();Promise.all([api("/budget/summary?"+q,fallback.summary),api("/budget/requests?"+q,fallback.requests),api("/budget/conflicts",fallback.conflicts),api("/budget/tasks",fallback.tasks),api("/budget/insights",fallback.insights)]).then(([summary,requests,conflicts,tasks,insights])=>setData({summary,requests,conflicts,tasks,insights}))},[filters]);
+const{t}=usePlatformPreferences();
+const[tab,setTab]=useState("Executive"),[data,setData]=useState(EMPTY_DATA),[filters,setFilters]=useState({month:"All",quarter:"All",category:"All",scope:"Ops Relevant",compare:false}),[drawer,setDrawer]=useState(null),[task,setTask]=useState(null),[ask,setAsk]=useState(false),[ai,setAi]=useState(""),[prompt,setPrompt]=useState(""),[csv,setCsv]=useState([]),[apiError,setApiError]=useState(false),[loading,setLoading]=useState(true),[reloadKey,setReloadKey]=useState(0);
+useEffect(()=>{
+let active=true;
+const q=new URLSearchParams(filters).toString();
+setLoading(true);
+setApiError(false);
+Promise.all([
+api("/budget/summary?"+q),
+api("/budget/requests?"+q),
+api("/budget/conflicts"),
+api("/budget/tasks"),
+api("/budget/insights")
+])
+.then(([summary,requests,conflicts,tasks,insights])=>{
+if(!active)return;
+setData({summary,requests,conflicts,tasks,insights});
+setLoading(false);
+})
+.catch(()=>{
+if(!active)return;
+setData(EMPTY_DATA);
+setApiError(true);
+setLoading(false);
+});
+return()=>{active=false};
+},[filters,reloadKey]);
 function f(k,v){setFilters(p=>({...p,[k]:v}))}
 function askAI(){const p=prompt.toLowerCase();setAi(p.includes("neden")||p.includes("niye")?"Talebin ana nedeni iş tanımı ve PR başlığında görünüyor. Kapanış için fatura, scope ve task kontrolleri tamamlanmalı.":"Öncelik yüksek tutarlı PO'ların fatura girişi ve canceled/denied kayıtların admin scope kararlarıdır.")}
 function makeTask(ref,owner="Accounting",q="Aksiyon gerekli"){setTask({ref,assigned_to:owner,question:q,action:"",due_date:""})}
 function addTask(x){setData(p=>({...p,tasks:[{id:"TK-"+Date.now(),status:"Waiting Answer",answer:"",asked_by:"Director",...x},...p.tasks]}));setTask(null)}
 function csvLoad(e){const file=e.target.files?.[0];if(!file)return;const rd=new FileReader();rd.onload=()=>{const lines=String(rd.result).split(/\r?\n/).filter(Boolean);const head=lines[0].split(/\t|;|,/).map(x=>x.trim());setCsv(lines.slice(1,9).map(l=>{const v=l.split(/\t|;|,/);return Object.fromEntries(head.map((h,i)=>[h,v[i]||""]))}))};rd.readAsText(file,"UTF-8")}
+const noData=!loading&&!apiError&&!Object.values(data.summary||{}).some(v=>Number(v||0)!==0)&&!data.requests.length&&!data.conflicts.length&&!data.tasks.length&&!data.insights.length;
 return <div className="bi13"><aside><div className="brand"><b/><div><strong>Budget Intelligence</strong><span>Executive Finance OS</span></div></div>{["Executive","Requests","Accounting","Construction","Reconciliation","Task Center","Imports","Admin Scope"].map(x=><button key={x} className={tab===x?"on":""} onClick={()=>setTab(x)}>{x}</button>)}</aside><main><header><div><em>EXECUTIVE CONTROL</em><h1>Budget Intelligence</h1><p>Saha operasyon bütçesi, fatura gerçekleşmesi, scope ayrıştırma ve conflict workflow.</p></div><div className="headBtns"><button onClick={()=>setAsk(true)}>Ask Budget AI</button><button onClick={()=>makeTask("", "Accounting","")}>Task Ata</button></div></header><section className="filters"><Sel l="Ay" v={filters.month} a={MONTHS} on={v=>f("month",v)}/><Sel l="Çeyrek" v={filters.quarter} a={Q} on={v=>f("quarter",v)}/><Sel l="Kategori" v={filters.category} a={CATS} on={v=>f("category",v)}/><Sel l="Scope" v={filters.scope} a={["All","Ops Relevant","Admin Review","Exclude Requested"]} on={v=>f("scope",v)}/><label className="check"><input type="checkbox" checked={filters.compare} onChange={e=>f("compare",e.target.checked)}/> Önceki dönemle kıyasla</label></section>
+{loading&&<section className="bi-product-state" data-eay-product-state="loading" role="status" aria-busy="true" aria-live="polite" aria-atomic="true"><strong>{t("loading")}</strong></section>}
+{!loading&&apiError&&<section className="bi-product-state" data-eay-product-state="error" role="alert" aria-atomic="true"><strong>{t("errorTitle")}</strong><button type="button" onClick={()=>setReloadKey(v=>v+1)}>{t("retry")}</button></section>}
+{noData&&<section className="bi-product-state" data-eay-product-state="empty" role="status" aria-live="polite" aria-atomic="true"><strong>{t("emptyTitle")}</strong></section>}
+{!loading&&!apiError&&!noData&&<div data-eay-product-state="ready">
 {tab==="Executive"&&<Executive data={data} compare={filters.compare} open={setDrawer} makeTask={makeTask}/>}
 {tab==="Requests"&&<Page title="Saha Talepleri"><RequestTable rows={data.requests} open={setDrawer}/></Page>}
 {tab==="Accounting"&&<Accounting rows={data.requests} open={setDrawer}/>}
@@ -42,6 +66,7 @@ return <div className="bi13"><aside><div className="brand"><b/><div><strong>Budg
 {tab==="Task Center"&&<Page title="Task Center"><TaskList rows={data.tasks}/></Page>}
 {tab==="Imports"&&<Page title="SQL / CSV Import"><div className="importBox"><p>Ariba sorgu çıktısını CSV/TSV olarak yükle. Sistem PR title/description üzerinden depo, iş tanımı, kategori ve scope önermeye hazırlanır.</p><input type="file" accept=".csv,.txt,.tsv" onChange={csvLoad}/></div><CsvPreview rows={csv}/></Page>}
 {tab==="Admin Scope"&&<AdminScope rows={data.requests} open={setDrawer}/>}
+</div>}
 </main>{drawer&&<Drawer item={drawer} close={()=>setDrawer(null)} setData={setData}/>} {task&&<TaskModal x={task} set={setTask} add={addTask}/>} {ask&&<AIModal close={()=>setAsk(false)} prompt={prompt} setPrompt={setPrompt} run={askAI} result={ai}/>}</div>}
 function Sel({l,v,a,on}){return <label>{l}<select value={v} onChange={e=>on(e.target.value)}>{a.map(x=><option key={x}>{x}</option>)}</select></label>}
 function Executive({data,compare,open,makeTask}){const s=data.summary;return <><section className="kpis"><K t="Planlanan Bütçe" v={money(s.planned_budget)}/><K t="PO Commit" v={money(s.committed_po)}/><K t="Faturalanan Actual" v={money(s.invoiced_actual)}/><K t="Bekleyen Fatura" v={money(s.pending_invoice)} warn/><K t="Açık Conflict" v={s.open_conflicts}/></section><section className="execGrid"><Card title="Budget vs Actual Trend" wide><Trend rows={data.requests} compare={compare}/></Card><Card title="OPEX / CAPEX Split"><Donut rows={data.requests}/></Card><Card title="Kategori Harcaması"><Category rows={data.requests}/></Card><Card title="Executive Risk Queue"><Risk rows={data.requests} open={open} makeTask={makeTask}/></Card><Card title="AI Executive Notes" wide><div className="notes">{data.insights.map((i,idx)=><div key={idx}><span>{i.severity}</span><b>{i.title}</b><p>{i.text}</p></div>)}</div></Card></section></>}

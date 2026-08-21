@@ -1,0 +1,236 @@
+name: DockOS production convergence
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dockos-production-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
+      - run: npm ci
+      - run: npm run build
+      - name: Validate DockOS locale and RTL contract
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('src/modules/DockOS/DockOSUiContext.jsx','utf8');
+          for (const locale of ['tr','en','de','ar']) if (!s.includes(`${locale}: {`)) throw new Error(`missing ${locale}`);
+          if (!s.includes('dir: locale === "ar" ? "rtl" : "ltr"')) throw new Error('Arabic RTL contract missing');
+          if (!s.includes('["tr", "en", "de", "ar"]')) throw new Error('locale allow-list missing');
+          console.log('DOCKOS_I18N_RTL=PASS');
+          NODE
+
+  backend-json:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DOCKOS_ENV: test
+      DOCKOS_PO_SOURCE: LOCAL
+      DOCKOS_STATE_FILE: /tmp/dockos_ci_state.json
+      DOCKOS_NOTIFICATION_AUTOMATION: "false"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m compileall -q app
+      - run: python -m app.modules.dockos.test_rc2
+      - run: python -m app.modules.dockos.test_notifications
+      - name: Production boundary source guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          main = Path('app/main.py').read_text(encoding='utf-8')
+          assert 'verify_dockos_gateway(request)' in main
+          assert 'authenticate_dockos_request(request)' in main
+          assert '_replace_verified_dockos_headers' in main
+          assert 'DOCKOS_TRUST_ROLE_HEADER' not in main
+          print('DOCKOS_SERVER_AUTHORITY_SOURCE_GUARD=PASS')
+          PY
+
+  postgres-concurrency:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dockos
+          POSTGRES_USER: dockos
+          POSTGRES_PASSWORD: dockos_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dockos -d dockos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://dockos:dockos_ci@127.0.0.1:5432/dockos
+      PGPASSWORD: dockos_ci
+      DOCKOS_ENV: test
+      DOCKOS_PERSISTENCE: postgres
+      DOCKOS_TENANT_KEY: ys_tr
+      DOCKOS_DC_NAMES: Ankara DC
+      DOCKOS_PO_SOURCE: LOCAL
+      DOCKOS_NOTIFICATION_AUTOMATION: "false"
+      WORKFORCE_AUTO_MIGRATE: "false"
+      WORKFORCE_TENANT_ID: eay
+      RECRUITMENT_EVIDENCE_DIR: /tmp/eay/recruitment-evidence
+      INVENTORY_DB: /tmp/eay/inventory.db
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        working-directory: .
+      - name: Apply Workforce V29-V32 migrations once
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_workforce_v29.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/003_workforce_v30_acceptance.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/004_workforce_v31_lifecycle_acceptance.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/005_workforce_v32_identity_revocation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_tenant_bindings(role_name, tenant_id) VALUES (current_user, 'eay') ON CONFLICT (role_name) DO UPDATE SET tenant_id=EXCLUDED.tenant_id;"
+          version=$(psql "$DATABASE_URL" -Atc "SELECT max(version) FROM workforce_schema_migrations;")
+          test "$version" = "32"
+          echo "WORKFORCE_PREMIGRATION=PASS version=$version"
+      - name: Apply DockOS migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_dockos_postgres.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_runtime_hardening.sql
+          psql "$DATABASE_URL" -Atc "SELECT version FROM dockos.schema_migrations ORDER BY version;"
+      - name: Gateway replay SQL regression
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          os.environ['DOCKOS_PERSISTENCE']='postgres'
+          os.environ['DOCKOS_TENANT_KEY']='ys_tr'
+          from app.modules.dockos.tenant_db import consume_gateway_replay
+          timestamp=str(int(time.time()))
+          assert consume_gateway_replay(timestamp,'ci-sql-regression-nonce','ci-sql-regression-signature',60) is True
+          assert consume_gateway_replay(timestamp,'ci-sql-regression-nonce','ci-sql-regression-signature',60) is False
+          print('GATEWAY_REPLAY_SQL_REGRESSION=PASS')
+          PY
+      - name: Gateway replay and rotation acceptance
+        run: python -m app.modules.dockos.test_gateway_replay
+      - name: PostgreSQL reservation concurrency
+        run: python -m app.modules.dockos.test_postgres_concurrency
+      - name: PostgreSQL supplier limits
+        run: python -m app.modules.dockos.test_postgres_limits
+      - name: Serialized durable platform prestart
+        run: python -m app.prestart
+      - name: Prepare and start four-worker API
+        run: |
+          python -m app.modules.dockos.test_http_multiworker_load prepare
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8090 --workers 4 >/tmp/dockos-uvicorn.log 2>&1 &
+          echo $! >/tmp/dockos-api.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8090/health >/tmp/dockos-health.json; then break; fi
+            sleep 1
+          done
+          cat /tmp/dockos-health.json
+          curl -fsS http://127.0.0.1:8090/health >/dev/null
+      - name: Four-worker HTTP capacity load
+        run: python -m app.modules.dockos.test_http_multiworker_load run
+      - name: DockOS runtime metrics contract
+        run: |
+          curl -fsS http://127.0.0.1:8090/api/dockos/ops/metrics >/tmp/dockos.metrics
+          grep -q 'dockos_reservation_latency_p95_ms' /tmp/dockos.metrics
+          grep -q 'dockos_lock_wait_p95_ms' /tmp/dockos.metrics
+          grep -q 'dockos_outbox_oldest_age_seconds' /tmp/dockos.metrics
+          grep -q 'dockos_db_pool_saturation_ratio' /tmp/dockos.metrics
+      - name: Database network interruption is fail-closed
+        run: |
+          PG_ID=$(docker ps --filter ancestor=postgres:16-alpine -q | head -1)
+          test -n "$PG_ID"
+          echo "$PG_ID" >/tmp/dockos-pg.id
+          docker pause "$PG_ID"
+          if curl -fsS --max-time 2 http://127.0.0.1:8090/api/dockos/reservations >/dev/null; then
+            echo 'DB_NETWORK_INTERRUPTION=FAIL request unexpectedly succeeded'
+            docker unpause "$PG_ID"
+            exit 1
+          fi
+          echo 'DB_NETWORK_INTERRUPTION=PASS fail-closed while database paused'
+          docker unpause "$PG_ID"
+      - name: Database network recovery
+        run: |
+          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U dockos -d dockos && break || sleep 1; done
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8090/api/dockos/reservations >/dev/null; then echo 'DB_NETWORK_RECOVERY=PASS'; exit 0; fi
+            sleep 1
+          done
+          echo 'DB_NETWORK_RECOVERY=FAIL'
+          exit 1
+      - name: PostgreSQL restart recovery
+        run: |
+          PG_ID=$(cat /tmp/dockos-pg.id)
+          docker restart "$PG_ID" >/dev/null
+          for i in $(seq 1 30); do pg_isready -h 127.0.0.1 -U dockos -d dockos && break || sleep 1; done
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8090/api/dockos/reservations >/dev/null; then echo 'DB_RESTART_RECOVERY=PASS'; exit 0; fi
+            sleep 1
+          done
+          echo 'DB_RESTART_RECOVERY=FAIL'
+          exit 1
+      - name: PostgreSQL backup and restore acceptance
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --file=/tmp/dockos.dump
+          createdb -h 127.0.0.1 -U dockos dockos_restore
+          pg_restore -h 127.0.0.1 -U dockos -d dockos_restore /tmp/dockos.dump
+          restored=$(psql -h 127.0.0.1 -U dockos -d dockos_restore -Atc "SELECT count(*) FROM dockos.schema_migrations WHERE version IN ('001_dockos_postgres','002_runtime_hardening');")
+          workforce_version=$(psql -h 127.0.0.1 -U dockos -d dockos_restore -Atc "SELECT max(version) FROM workforce_schema_migrations;")
+          test "$restored" = "2"
+          test "$workforce_version" = "32"
+          echo "POSTGRES_BACKUP_RESTORE=PASS dockos_migrations=$restored workforce_version=$workforce_version"
+      - name: Stop API process
+        if: always()
+        run: |
+          if [ -f /tmp/dockos-api.pid ]; then kill "$(cat /tmp/dockos-api.pid)" >/dev/null 2>&1 || true; fi
+      - name: Upload four-worker server diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dockos-four-worker-diagnostics
+          path: |
+            /tmp/dockos-uvicorn.log
+            /tmp/dockos-health.json
+            /tmp/dockos.metrics
+          if-no-files-found: warn
+          retention-days: 5
+
+  container-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Build converged backend container
+        run: docker build -f backend/Dockerfile -t dockos-backend:converged .

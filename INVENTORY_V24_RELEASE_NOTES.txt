@@ -1,0 +1,27 @@
+OPEX INVENTORY V24
+==================
+
+ANA DEGISIKLIKLER
+- APK, OPEX web tasarim sistemiyle ayni pembe/lacivert kart diline tasindi.
+- Ilk acilista Turkce, English, Deutsch ve العربية dil secimi eklendi.
+- Arapca icin uygulama genelinde RTL yerlesim eklendi.
+- API adresi, token ve belge ID normal kullanici ekranindan kaldirildi.
+- Gercek kullanici adi/parola girisi ve guvenli access/refresh oturumu eklendi.
+- Kullanici yalnizca kendi depo kapsamindaki aktif gorevleri gorur.
+- Terminal gorev servisi sistem stogu, beklenen adet, maliyet, SKU ve barkod listesini dondurmez.
+- Saha akisi: Giris > Gorev > Lokasyon okut > Urun okut > Adet > Kaydet.
+- Lokasyon kilidi, DataWedge, titresim ve sifreli offline kuyruk korundu.
+- Access token suresi doldugunda refresh token otomatik dondurulur.
+- Kurulumdaki .env.example / .env.production.example uyumsuzlugu giderildi.
+- V24 isimli kurulum ve baslatma scriptleri eklendi.
+
+APK API ADRESI
+GitHub repository variable:
+  OPEX_API_BASE_URL=https://inventory.company.com
+
+Bu adres build sirasinda APK'ya gomulur ve sayim personeline gosterilmez.
+
+KURULUM
+  Set-ExecutionPolicy -Scope Process Bypass -Force
+  .\INSTALL_OPEX_INVENTORY_V24.ps1
+  .\START_OPEX_INVENTORY_V24.ps1

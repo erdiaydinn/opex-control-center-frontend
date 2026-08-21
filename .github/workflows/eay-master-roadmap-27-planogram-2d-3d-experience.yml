@@ -1,0 +1,94 @@
+name: EAY Master Roadmap 27 - Planogram 2D 3D Experience
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-27-exact-head-gate
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
+    paths:
+      - "src/modules/planogram/**"
+      - "src/platform/i18n/planogramDigitalTwinMessages.js"
+      - "scripts/test-planogram-digital-twin.mjs"
+      - "scripts/test-planogram-route-explainability.mjs"
+      - "package.json"
+      - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-roadmap-27-planogram-digital-twin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  digital-twin-experience:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Reject new hard-coded Planogram UI strings
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Verify Master Roadmap item 27 authority
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const roadmap=JSON.parse(fs.readFileSync('config/eay_master_roadmap_60.json','utf8'));
+          const item=roadmap.items.find((row)=>row.id===27);
+          if (!item || item.title !== 'Planogram 2D/3D experience') throw new Error('Roadmap 27 authority drifted');
+          if (item.external_status !== 'REQUIRED') throw new Error('Roadmap 27 external truth boundary drifted');
+          console.log('MASTER_27_AUTHORITY=PASS');
+          console.log('MASTER_27_EXTERNAL_EVIDENCE=REQUIRED');
+          NODE
+      - name: Digital twin truth and renderer contract
+        run: node scripts/test-planogram-digital-twin.mjs
+      - name: Route explainability backend-to-twin contract
+        run: node scripts/test-planogram-route-explainability.mjs
+      - name: Preserve canonical Planogram product-state boundary
+        run: node scripts/test-planogram-product-states.mjs
+      - name: Production build with dynamic 3D runtime
+        run: npm run build -- --manifest
+      - name: Prove Three.js is code-split away from the main entry
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const manifest=JSON.parse(fs.readFileSync('dist/.vite/manifest.json','utf8'));
+          const entries=Object.entries(manifest);
+          const main=manifest['index.html'] ?? entries.map(([,row])=>row).find((row)=>row.isEntry === true);
+          if (!main?.file) throw new Error('Vite application entry missing');
+          const mainText=fs.readFileSync(`dist/${main.file}`,'utf8');
+          if (mainText.includes('WebGLRenderer') || mainText.includes('OrbitControls')) {
+            throw new Error('Three.js leaked into the eager main entry');
+          }
+          const dynamicThree=entries.filter(([key,row]) => {
+            const identity=`${key} ${row.src ?? ''} ${row.name ?? ''} ${row.file ?? ''}`;
+            return row.isDynamicEntry === true && /three\.module|OrbitControls|node_modules\/three\//i.test(identity);
+          });
+          if (!dynamicThree.length) throw new Error('No dynamic Three.js manifest entry found');
+          for (const [,row] of dynamicThree) {
+            if (!row.file || row.file === main.file) throw new Error('Three.js dynamic entry collapsed into eager main entry');
+          }
+          console.log(`MASTER_27_MAIN_ENTRY=${main.file}`);
+          console.log(`MASTER_27_DYNAMIC_THREE_ENTRIES=${dynamicThree.map(([,row])=>row.file).join(',')}`);
+          console.log('MASTER_27_DYNAMIC_THREE_BOUNDARY=PASS');
+          NODE
+      - name: Preserve accessibility and localization product gate
+        run: npm run test:inclusion
+      - name: Truth boundary
+        run: |
+          echo 'MASTER_27_REPOSITORY_RENDERER=IMPLEMENTED'
+          echo 'MASTER_27_ROUTE_EXPLAINABILITY=IMPLEMENTED'
+          echo 'MASTER_27_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED'
+          echo 'MASTER_27_PRODUCTION_READY=FALSE'

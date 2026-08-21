@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "master_plan_item": "4/60",
+  "repository_acceptance_only": true,
+  "production_ready": false,
+  "frozen_security_baseline_pr": 16,
+  "required_attack_classes": {
+    "cross_tenant_api_rls": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_field_intelligence_rls.py", "services/core-api/tests/test_security_foundation.py"]
+    },
+    "bearer_ambiguity_session_fixation": {
+      "state": "implemented_repository",
+      "rationale": "Platform Core is stateless bearer-authenticated and does not use cookie session authority; duplicate/coalesced bearer credentials are rejected.",
+      "evidence": ["services/core-api/tests/test_bearer_header_boundary.py", "services/core-api/app/main.py"]
+    },
+    "stale_identity_role_downgrade_privilege_escalation": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_identity_foundation_adversarial.py", "services/core-api/app/core/security.py"]
+    },
+    "replay_internal_service": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_internal_service_replay.py", "services/core-api/app/core/internal_service_replay.py"]
+    },
+    "idor_and_scope_smuggling": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_field_governance_contract.py", "services/core-api/tests/test_field_governed_promotion.py"]
+    },
+    "csrf_cors_browser_trust": {
+      "state": "implemented_repository",
+      "rationale": "No cookie authority; browser bearer routes keep CORS credentials disabled and tenant/role/scope are server authority.",
+      "evidence": ["services/core-api/tests/test_cors_runtime_boundary.py", "services/core-api/tests/test_frontend_browser_trust_boundary.py", "services/core-api/app/main.py"]
+    },
+    "proxy_tls_boundary": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_trusted_proxy_boundary.py", "services/core-api/tests/test_production_tls_boundary.py"]
+    },
+    "sql_injection_dynamic_sql": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_sql_access_boundary.py"]
+    },
+    "private_object_storage_receipt_replay": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_field_evidence_object_upload.py", "services/core-api/app/modules/field_intelligence/evidence_integrity.py"]
+    },
+    "export_scope_and_four_eyes": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/tests/test_field_governance_contract.py", "services/core-api/app/modules/field_intelligence/governance.py"]
+    },
+    "tool_call_authorization_replay": {
+      "state": "implemented_repository",
+      "evidence": ["services/core-api/app/ai_tool_routes.py", "services/core-api/app/core/ai_tool_authorization.py"]
+    },
+    "dependency_provenance_sbom": {
+      "state": "implemented_repository",
+      "evidence": ["scripts/security/generate_cyclonedx_sbom.py", ".github/workflows/product-quality-contract.yml"]
+    },
+    "signed_managed_build_gate": {
+      "state": "implemented_repository",
+      "evidence": ["ops/inventory/verify-android-production.sh", "config/product_quality_contract.json"]
+    }
+  },
+  "external_acceptance_still_required": [
+    "real corporate OIDC issuer/JWKS/claims and revocation observation",
+    "managed proxy/WAF/TLS runtime attack testing",
+    "real object storage signed/private access testing",
+    "real mobile device attestation and replay testing",
+    "production secret rotation/recovery rehearsal",
+    "staging penetration/adversarial acceptance"
+  ]
+}

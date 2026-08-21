@@ -1,0 +1,49 @@
+OPEX HIRING CONTROL + WORKFORCE V14 - YEREL PILOT
+================================================
+
+1. Docker Desktop acik ve Linux containers modunda olmali.
+2. ZIP'i bir klasore cikartin.
+3. Klasor icinde PowerShell acin.
+4. Asagidaki iki komutu calistirin:
+
+   Set-ExecutionPolicy -Scope Process Bypass -Force
+   .\INSTALL_OPEX_HIRING_LOCAL_PILOT_V14.ps1
+
+5. Tarayicida acin:
+
+   http://localhost:8080
+
+6. Control Center icindeki "Hiring Control" kartina basin.
+
+Kart gorunmezse
+--------------
+Eski Docker frontend image'i calisiyor olabilir. Ayni klasorde:
+
+   .\REPAIR_HIRING_CARD_V14_1.ps1
+
+Komut tamamlandiktan sonra tarayicida Ctrl+F5 yapin. Kurucu artik kart metnini
+calisan frontend container'inda bulmadan basarili sayilmaz.
+Onarim komutu yeni bir klasorde calistirilirsa .env ve DATABASE_URL de otomatik
+olarak hazirlanir.
+
+Yerel pilotta e-posta testi
+---------------------------
+- Hiring Control > Ayarlar ve Norm ekranindan IK ve partner alicilarini girin.
+- SMTP tanimli degilse onay kaybolmaz; teslim kaydi
+  "SMTP yapilandirmasi gerekli" olarak kuyrukta kalir.
+- Gercek e-posta icin .env icinde RECRUITMENT_SMTP_* alanlarini doldurun ve:
+
+  docker compose up -d --build backend frontend
+
+Kurallar
+--------
+- Magaza Muduru genel kadro normuna dahil edilmez.
+- Varsayilan mudur kapasitesi depo basina 1'dir.
+- Fulya (Istanbul) mudur kapasitesi 2'dir.
+- Aktif calisan + acik talep + planli ayrilis birlikte hesaplanir.
+- Planli istifa/ayrilis talebinde PDF/JPG/PNG belge zorunludur.
+- Onaydan sonra IK ve third-party alicilari icin ayri teslim kaydi olusur.
+- Tum talep, belge, karar, norm ve e-posta islemleri audit log'a yazilir.
+
+Not: Yerel pilotu internete acmayin. Production'da kurum SSO/JWT ve gercek SMTP
+degerleri tamamlanmadan canli personel verisi kullanmayin.

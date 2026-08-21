@@ -1,0 +1,1 @@
+"""OPEX recruitment request module."""

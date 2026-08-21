@@ -1,0 +1,73 @@
+name: EAY Hiring UI Gateway
+
+on:
+  pull_request:
+    branches: [product/eay-hiring-ai-document-trust-v1]
+    paths:
+      - "src/App.jsx"
+      - "src/api/client.js"
+      - "src/modules/recruitment/**"
+      - "Dockerfile"
+      - "nginx.conf"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/eay-hiring-ui-gateway.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-hiring-ui-gateway-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-gateway-contract:
+    name: Frontend build and nginx rendered-config contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Build production UI image
+        run: docker build --tag eay-hiring-ui-gateway-ci .
+      - name: Prove official nginx entrypoint renders gateway identity and document policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The production compose network resolves the backend service name.
+          # In this isolated image contract we provide the same DNS shape without
+          # needing to start the API: nginx only needs the upstream name to resolve
+          # while parsing the static proxy_pass configuration.
+          cid="$(docker run -d \
+            --add-host backend:127.0.0.1 \
+            -e DOCKOS_GATEWAY_SECRET=ci-gateway-secret-do-not-use \
+            eay-hiring-ui-gateway-ci)"
+          cleanup() {
+            docker rm -f "$cid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          # Starting the image with its default nginx command is intentional:
+          # the official entrypoint only executes /docker-entrypoint.d (including
+          # envsubst) for nginx/nginx-debug. Overriding CMD with `sh` would bypass
+          # the very production behavior this gate is meant to prove.
+          for _ in $(seq 1 20); do
+            if [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)" = "true" ]; then
+              break
+            fi
+            sleep 0.25
+          done
+          if [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)" != "true" ]; then
+            echo "nginx container exited before gateway contract validation" >&2
+            docker logs "$cid" >&2 || true
+            exit 1
+          fi
+
+          docker exec "$cid" sh -ec '
+            test -f /etc/nginx/conf.d/default.conf &&
+            grep -Fq "proxy_set_header X-DockOS-Gateway ci-gateway-secret-do-not-use;" /etc/nginx/conf.d/default.conf &&
+            grep -Fq "Content-Security-Policy" /etc/nginx/conf.d/default.conf &&
+            grep -Fq "Permissions-Policy \"camera=(self), microphone=(), geolocation=(self)\"" /etc/nginx/conf.d/default.conf &&
+            ! grep -Fq "\${DOCKOS_GATEWAY_SECRET}" /etc/nginx/conf.d/default.conf &&
+            nginx -t
+          '

@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "updated_at": "2026-08-14",
+  "canonical_source": {
+    "repository": "erdiaydinn/Adaronya",
+    "path": "governance/repository-intelligence-registry.yaml",
+    "commit": "bf03a2f48f6960d13ed11c884477ed4506360b97"
+  },
+  "policy": {
+    "allowed_classes": ["OWN", "IMPORTED", "DISCOVERED"],
+    "allowed_decisions": ["canonical", "adopt", "watch", "reference", "localization-reference", "reject", "pending"],
+    "never_silently_drop": true,
+    "unknown_identity_must_remain_pending": true,
+    "external_code_requires_license_review": true,
+    "prohibit_risky_auto_merge": true,
+    "prohibit_unapproved_production_weight_changes": true
+  },
+  "repositories": [
+    {
+      "id": "eay-opex-frontend",
+      "classification": "OWN",
+      "identity": "erdiaydinn/opex-control-center-frontend",
+      "canonical_upstream": null,
+      "decision": "canonical",
+      "capabilities": ["platform", "frontend", "eay-ai-core"],
+      "review": {"ref": "feature/eay-ai-core-v0.1", "commit": "c5128748c819c56f708f4a62ccfed14402812fd3", "license": "project-owned", "commercial_use": "internal-owner-controlled"}
+    },
+    {
+      "id": "eay-planai-audit",
+      "classification": "OWN",
+      "identity": "erdiaydinn/planai-audit",
+      "canonical_upstream": null,
+      "decision": "canonical",
+      "capabilities": ["planogram", "visual-audit", "audit"],
+      "review": {"ref": "main", "commit": null, "license": "project-owned", "commercial_use": "internal-owner-controlled"}
+    },
+    {
+      "id": "eay-adaronya",
+      "classification": "OWN",
+      "identity": "erdiaydinn/Adaronya",
+      "canonical_upstream": null,
+      "decision": "canonical",
+      "capabilities": ["eay-core", "governance", "repository-intelligence"],
+      "review": {"ref": "main", "commit": "bf03a2f48f6960d13ed11c884477ed4506360b97", "license": "project-owned", "commercial_use": "internal-owner-controlled"}
+    },
+    {
+      "id": "council-high-intelligence",
+      "classification": "IMPORTED",
+      "identity": "0xNyk/council-of-high-intelligence",
+      "source_artifact": "council-of-high-intelligence-main.zip",
+      "canonical_upstream": "0xNyk/council-of-high-intelligence",
+      "decision": "watch",
+      "capabilities": ["multi-agent", "council", "orchestration", "critique", "reasoning"],
+      "review": {"ref": "main", "commit": "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72", "license": "MIT", "commercial_use": "permissive-with-notice"}
+    },
+    {
+      "id": "cl4r1t4s",
+      "classification": "IMPORTED",
+      "identity": "elder-plinius/CL4R1T4S",
+      "source_artifact": "CL4R1T4S-main.zip",
+      "canonical_upstream": "elder-plinius/CL4R1T4S",
+      "decision": "reference",
+      "capabilities": ["agent-reference", "reasoning-reference"],
+      "review": {"ref": "main", "commit": "1a55b8a36d47c86e8d774acef83306d56fb0b302", "license": "AGPL-3.0", "commercial_use": "reference-only-proprietary-eay"}
+    },
+    {
+      "id": "computer-lab-automation",
+      "classification": "IMPORTED",
+      "identity": "mustafadalga/computer-lab-automation",
+      "source_artifact": "computer-lab-automation-master.zip",
+      "canonical_upstream": "mustafadalga/computer-lab-automation",
+      "decision": "reference",
+      "capabilities": ["workflow-automation"],
+      "review": {"ref": "master", "commit": "0f6fa81448062488f01144c67032764af25ee5fe", "license": "GPL-3.0", "commercial_use": "reference-only-unless-separately-cleared"}
+    },
+    {
+      "id": "deep-learning-tutorials",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "Deep-Learning-Tutorials-master.zip",
+      "canonical_upstream": null,
+      "decision": "pending",
+      "capabilities": ["deep-learning", "training-reference"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "impeccable",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "impeccable-main.zip",
+      "canonical_upstream": null,
+      "decision": "pending",
+      "capabilities": ["ui", "ux", "quality"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "image-understanding",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "image_understanding / image_understanding-tthau",
+      "canonical_upstream": null,
+      "decision": "pending",
+      "capabilities": ["vision", "image-understanding", "visual-audit"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "jarvis-archives",
+      "classification": "IMPORTED",
+      "identity": null,
+      "source_artifact": "all previously supplied JARVIS archives",
+      "canonical_upstream": null,
+      "decision": "pending",
+      "capabilities": ["assistant", "orchestration", "tool-use", "execution-security"],
+      "review": {"ref": null, "commit": null, "license": "unresolved", "commercial_use": "blocked"}
+    },
+    {
+      "id": "apache-superset",
+      "classification": "DISCOVERED",
+      "identity": "apache/superset",
+      "canonical_upstream": "apache/superset",
+      "decision": "canonical",
+      "capabilities": ["analytics", "bi", "audit-reporting", "embedding", "semantic-layer"],
+      "review": {"ref": "master", "commit": "cc35056bc96df40e0b0d565c09c665d74a8e74ea", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
+      "id": "patika-superset-tr",
+      "classification": "DISCOVERED",
+      "identity": "Patika-Global-Technology/superset-tr",
+      "canonical_upstream": "apache/superset",
+      "decision": "localization-reference",
+      "capabilities": ["analytics", "localization", "turkish"],
+      "review": {"ref": null, "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+    }
+  ],
+  "required_discovery_domains": [
+    "local-llm-serving-and-routing",
+    "agent-orchestration",
+    "rag-and-retrieval",
+    "evaluation",
+    "observability",
+    "vision-and-document-understanding",
+    "model-registry-and-ml-lifecycle",
+    "workflow-automation",
+    "security-and-guardrails",
+    "analytics-and-semantic-layer",
+    "fine-tuning-and-lora"
+  ]
+}

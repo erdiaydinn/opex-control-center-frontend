@@ -34,7 +34,7 @@ export default function Portal() {
       <header className="portal-header">
         <div>
           <p className="eyebrow">Ana Portal</p>
-          <h1>OPEX Control Center</h1>
+          <h1>EAY OneOps</h1>
         </div>
       </header>
 

@@ -1,0 +1,125 @@
+name: EAY Planogram Physical Truth Convergence
+
+on:
+  push:
+    branches:
+      - product/planogram-*
+      - release/platform-convergence-planogram-v0.1
+      - release/platform-convergence-v0.1
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: planogram-physical-truth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  physical-truth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: apps/planai/backend/requirements.txt
+      - name: Install deterministic Planogram dependencies
+        working-directory: apps/planai/backend
+        run: python -m pip install -r requirements.txt
+      - name: Canonical deterministic and physical-truth contracts
+        working-directory: apps/planai/backend
+        run: |
+          python -m unittest \
+            tests.test_engine_foundation_v4 \
+            tests.test_engine_v3 \
+            tests.test_physical_truth \
+            tests.test_physical_engine \
+            tests.test_physical_truth_audit
+      - name: Compile physical-truth production surface
+        working-directory: apps/planai/backend
+        run: python -m compileall -q engine.py overrides.py physical_truth.py physical_engine.py physical_truth_audit.py
+      - name: Raw incomplete master must remain fail-closed
+        working-directory: apps/planai/backend
+        run: |
+          cat > /tmp/planogram-master.csv <<'CSV'
+          sku,product_name,width_cm,height_cm,depth_cm,image_url,storage_type
+          SKU-1,Water 6 x 1.5 L,,,,,RAF
+          CSV
+          set +e
+          python physical_truth_audit.py \
+            --master /tmp/planogram-master.csv \
+            --out /tmp/planogram-audit.json \
+            >/tmp/planogram-audit.stdout
+          status=$?
+          set -e
+          test "$status" -eq 2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('/tmp/planogram-audit.json').read_text(encoding='utf-8'))
+          assert report['production_ready'] is False
+          assert report['solver_optimizer_allowed'] is False
+          assert report['dataset']['dataset_rows']==1
+          assert report['dataset']['approved_dimension_coverage_pct']==0.0
+          assert report['fixture_requirements']['required_fixture_counts'].get('PALLET')==1
+          assert report['blockers']
+          print('PLANOGRAM_RAW_MASTER_FAIL_CLOSED=PASS')
+          PY
+      - name: Preserve platform authority boundary
+        run: |
+          test ! -e apps/planai/backend/main.py
+          test ! -e apps/planai/backend/auth_routes.py
+          test ! -e apps/planai/backend/security.py
+          test ! -e apps/planai/frontend
+          test -e src/modules/planogram/PlanogramStudio.jsx
+          test -e services/core-api/app/modules/planogram/engine_adapter.py
+          test -e services/core-api/app/modules/planogram/router.py
+          grep -q '/v1/planogram/readiness' src/modules/planogram/PlanogramStudio.jsx
+          ! grep -Eq 'VITE_PLANAI_LEGACY_URL|<iframe|postMessage\(|access_token' src/modules/planogram/PlanogramStudio.jsx
+          echo 'PLANOGRAM_CORE_AUTHORITY_NATIVE_UI=PASS'
+
+  native-core-authority:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API and native Planogram test dependencies
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Lint native Planogram boundary
+        run: >-
+          ruff check
+          services/core-api/app/modules/planogram
+          services/core-api/tests/test_planogram_native_core.py
+      - name: Native Core authority and preview fail-closed tests
+        run: pytest -q services/core-api/tests/test_planogram_native_core.py
+      - name: Assert canonical ASGI route composition
+        run: |
+          python - <<'PY'
+          from app.budget_main import app
+          paths=set(app.openapi()['paths'])
+          assert '/v1/planogram/readiness' in paths
+          assert '/v1/planogram/preview' in paths
+          print('PLANOGRAM_NATIVE_CORE_ROUTES=PASS')
+          PY
+
+  platform-shell-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
+      - run: npm ci
+      - name: Existing EAY shell production build
+        run: npm run build

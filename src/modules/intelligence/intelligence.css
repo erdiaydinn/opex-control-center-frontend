@@ -1,0 +1,135 @@
+.eay-intelligence-shell {
+  min-height: 100vh;
+  padding: 32px clamp(20px, 4vw, 64px) 64px;
+  background: var(--bg, #0b1020);
+  color: var(--text, #f7f8fb);
+}
+
+.eay-intelligence-head,
+.eay-intelligence-toolbar,
+.eay-intelligence-card-head,
+.eay-intelligence-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eay-intelligence-head {
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.eay-intelligence-head h1,
+.eay-intelligence-section h2 {
+  margin: 0;
+}
+
+.eay-intelligence-head p,
+.eay-intelligence-card p,
+.eay-intelligence-note p {
+  color: var(--muted, #aeb7cc);
+}
+
+.eay-intelligence-back,
+.eay-intelligence-retry {
+  min-height: 48px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.eay-intelligence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.eay-intelligence-section {
+  margin-top: 28px;
+}
+
+.eay-intelligence-card,
+.eay-intelligence-note,
+.eay-intelligence-state {
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  padding: 20px;
+}
+
+.eay-intelligence-card-head {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.eay-intelligence-card dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) 1fr;
+  gap: 10px 18px;
+  margin: 18px 0 0;
+}
+
+.eay-intelligence-card dt {
+  color: var(--muted, #aeb7cc);
+}
+
+.eay-intelligence-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.eay-intelligence-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  font-size: 0.82rem;
+}
+
+.eay-intelligence-pill.is-ready {
+  font-weight: 700;
+}
+
+.eay-intelligence-blockers {
+  margin: 14px 0 0;
+  padding-inline-start: 22px;
+  color: var(--muted, #aeb7cc);
+}
+
+.eay-intelligence-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.eay-intelligence-note textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 12px;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.eay-intelligence-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .eay-intelligence-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .eay-intelligence-card dl {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

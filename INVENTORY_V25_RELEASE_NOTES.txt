@@ -1,0 +1,9 @@
+OPEX Control Center Inventory V25
+Release date: 2026-07-29
+
+ACCESS SCOPE SEPARATION
+- The Control Center "Access Control" card now opens platform user, group and module permissions.
+- Inventory counter accounts and warehouse/server-group assignments moved under Inventory administration.
+- Inventory accounts are explicitly labelled as Inventory-only and do not grant OPEX platform access.
+- The legacy /admin/accounts path redirects to /inventory/access-management.
+- Only users with Inventory admin permission can open the Inventory account management page.

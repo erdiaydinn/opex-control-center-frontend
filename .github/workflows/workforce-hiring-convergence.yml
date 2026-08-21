@@ -1,0 +1,167 @@
+name: Workforce Hiring V32 Convergence
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+    paths:
+      - "backend/app/modules/workforce/**"
+      - "backend/app/modules/recruitment/**"
+      - "backend/app/security.py"
+      - "backend/app/test_security.py"
+      - "backend/migrations/002_workforce_v29.sql"
+      - "backend/migrations/003_workforce_v30_acceptance.sql"
+      - "backend/migrations/004_workforce_v31_lifecycle_acceptance.sql"
+      - "backend/migrations/005_workforce_v32_identity_revocation.sql"
+      - "backend/scripts/workforce_*.py"
+      - "backend/scripts/setup_workforce_postgres_ci.py"
+      - "backend/scripts/verify_workforce_restore_ci.py"
+      - "src/modules/workforce/**"
+      - "src/modules/recruitment/**"
+      - "src/App.jsx"
+      - "package.json"
+      - "scripts/test-workforce-*.mjs"
+      - "scripts/test-recruitment-*.mjs"
+      - "docs/WORKFORCE_*.md"
+      - ".github/workflows/workforce-hiring-convergence.yml"
+  push:
+    branches:
+      - release/platform-convergence-v0.1
+      - release/platform-convergence-workforce-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workforce-hiring-v32-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-product-contract:
+    name: Workforce web and employee experience
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:access
+      - run: npm run test:workforce
+      - run: npm run test:platform
+      - run: npm run build
+
+  backend-lifecycle-contract:
+    name: Employee Master and Hiring lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: backend
+      DOCKOS_ENV: test
+      DOCKOS_PERSISTENCE: json
+      DOCKOS_STATE_FILE: /tmp/workforce_dockos_state.json
+      DOCKOS_NOTIFICATION_AUTOMATION: "false"
+      OPEX_ALLOW_LEGACY_HEADERS: "true"
+      WORKFORCE_REQUIRE_LOCAL_AUTH: "false"
+      RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-evidence
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python -m compileall -q backend/app backend/scripts
+      - name: Workforce domain regression
+        run: python -m unittest app.modules.workforce.test_workforce -v
+      - name: Workforce HTTP field-pilot contract
+        run: python -m unittest app.modules.workforce.test_workforce_api -v
+      - name: Recruitment to Employee Master contract
+        run: python -m unittest app.modules.recruitment.test_recruitment -v
+      - name: Production identity boundary
+        run: python -m unittest app.test_security -v
+
+  workforce-postgres:
+    name: Workforce PostgreSQL RLS load and DR
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workforce_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d workforce_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://workforce_runtime:workforce_runtime_ci@localhost:5432/workforce_ci
+      WORKFORCE_MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/workforce_ci
+      WORKFORCE_TENANT_ID: eay-ci
+      WORKFORCE_AUTO_MIGRATE: "false"
+      DOCKOS_ENV: test
+      PGPASSWORD: postgres
+      RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-evidence
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Seed V29 and migrate through V32
+        run: python scripts/setup_workforce_postgres_ci.py
+      - name: Migration replay is idempotent
+        run: python scripts/setup_workforce_postgres_ci.py
+      - name: Tenant RLS and transactional lifecycle acceptance
+        run: python -m unittest app.modules.workforce.test_workforce_persistence -v
+      - name: Production-shape PostgreSQL concurrency gate
+        run: python scripts/workforce_postgres_load_ci.py
+      - name: Database restart durability
+        run: |
+          docker restart ${{ job.services.postgres.id }}
+          for attempt in {1..30}; do pg_isready -h localhost -U postgres -d workforce_ci && break; sleep 1; done
+          psql -h localhost -U postgres -d workforce_ci -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT max(version) FROM workforce_schema_migrations HAVING max(version) >= 32;
+          SELECT count(*) FROM workforce_collection_versions HAVING count(*) > 0;
+          SELECT count(*) FROM workforce_audit HAVING count(*) > 0;
+          SQL
+      - name: Backup and isolated restore rehearsal
+        run: |
+          pg_dump -h localhost -U postgres -Fc -f /tmp/workforce_ci.dump workforce_ci
+          dropdb -h localhost -U postgres --if-exists workforce_restore_ci
+          createdb -h localhost -U postgres workforce_restore_ci
+          pg_restore -h localhost -U postgres -d workforce_restore_ci /tmp/workforce_ci.dump
+          WORKFORCE_RESTORE_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/workforce_restore_ci \
+            python scripts/verify_workforce_restore_ci.py
+
+  external-gates-remain-fail-closed:
+    name: External acceptance stays explicit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Assert field gates are not silently promoted by CI
+        run: |
+          grep -q "Corporate OIDC" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md
+          grep -q "App Attest" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md
+          grep -q "Play Integrity" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md
+          grep -q "Warehouse GPS" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md
+          grep -q "Customer HR files" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md
+          grep -q "Staging PostgreSQL/DR" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md
+          grep -q "No biometric image/template" docs/WORKFORCE_HIRING_ACCEPTANCE_V32.md

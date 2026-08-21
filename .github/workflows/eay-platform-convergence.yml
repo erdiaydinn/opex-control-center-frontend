@@ -1,0 +1,120 @@
+name: EAY Platform Convergence
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+    paths:
+      - "config/eay_release_candidate.json"
+      - "config/module_catalog.json"
+      - "config/product_quality_contract.json"
+      - "scripts/validate_eay_release_candidate.py"
+      - ".github/workflows/eay-platform-convergence.yml"
+  push:
+    branches:
+      - release/platform-convergence-v0.1
+      - release/eay-rc0-test-readiness
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-platform-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-readiness:
+    name: RC0 test-readiness policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Validate version-controlled release candidate
+        run: python scripts/validate_eay_release_candidate.py
+      - name: Enforce non-production RC boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          rc = json.loads(Path('config/eay_release_candidate.json').read_text(encoding='utf-8'))
+          assert rc['release_state'] == 'software_integration_test_ready'
+          assert rc['release_controls']['main_merge_permitted'] is False
+          assert rc['release_controls']['production_activation_permitted'] is False
+          assert rc['release_controls']['production_ready'] is False
+          assert all(not module['production_ready'] for module in rc['commercial_modules'].values())
+          assert all(not module['production_ready'] for module in rc['shared_release_dependencies'].values())
+          print(f"EAY_RC_RUNTIME_SHA={__import__('os').environ.get('GITHUB_SHA', 'local')}")
+          print('EAY_RC_PRODUCTION_READY=false')
+          PY
+
+  topology:
+    name: Security and product topology
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Fetch canonical refs
+        run: |
+          git fetch --no-tags --force origin \
+            +refs/heads/feature/phase-1-security-hardening:refs/remotes/origin/feature/phase-1-security-hardening \
+            +refs/heads/product/workforce-field-pilot-v28:refs/remotes/origin/product/workforce-field-pilot-v28 \
+            +refs/heads/agent/inventory-production-terminal-p0:refs/remotes/origin/agent/inventory-production-terminal-p0
+      - name: Assert product ancestry retained
+        run: |
+          git merge-base --is-ancestor b966cec5969859f91f26096b2b8fd64259da152e HEAD
+          git merge-base --is-ancestor 19f7c93547078b9cec18cec0d39420e33a30f218 HEAD
+      - name: Diagnose frozen Security merge
+        id: security_merge
+        continue-on-error: true
+        run: |
+          set +e
+          git merge-tree --write-tree HEAD 6a1ab7d8e150a8392ba144c4a3e49dcc73130a1d > security-merge.txt 2>&1
+          status=$?
+          cat security-merge.txt
+          exit $status
+      - name: Upload merge evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: security-convergence-merge-tree
+          path: security-merge.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce security mergeability
+        if: steps.security_merge.outcome == 'failure'
+        run: |
+          cat security-merge.txt
+          exit 1
+
+  security-regression:
+    name: Browser authority regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - name: No browser-local authorization authority
+        run: |
+          test ! -f src/auth/accessConfig.js
+          ! grep -R --line-number --fixed-string 'X-Opex-User' src
+          ! grep -R --line-number --fixed-string 'X-Opex-Role' src
+          ! grep -R --line-number --fixed-string 'opex_access_config' src
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
+      - name: Frontend dependency install
+        run: npm ci
+      - name: Frontend production build
+        run: npm run build
+      - name: Compile product backends
+        run: python -m compileall -q backend/app services/core-api/app

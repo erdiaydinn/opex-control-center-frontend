@@ -1,0 +1,29 @@
+OPEX INVENTORY V24 — BAŞLANGIÇ
+================================
+
+YEREL KURULUM
+1. PowerShell'i açın.
+2. Set-ExecutionPolicy -Scope Process Bypass -Force
+3. .\INSTALL_OPEX_INVENTORY_V24.ps1
+4. .\START_OPEX_INVENTORY_V24.ps1
+5. Site: http://localhost:5173/inventory
+6. API:  http://localhost:8000/api/inventory/health
+
+ÜRETİM
+1. `.env.production.example` dosyasını `.env` olarak kopyalayın.
+2. Bütün `CHANGE_WITH_...` değerlerini bağımsız ve güçlü sırlarla değiştirin.
+3. İlk kurulumda `OPEX_BOOTSTRAP_ADMIN_USERNAME/PASSWORD` girin.
+4. PostgreSQL üzerinde `backend/migrations/001_inventory_v23.sql` migrasyonunu çalıştırın.
+5. Onaylı HTTPS ingress arkasında `docker compose up -d --build` çalıştırın.
+6. İlk admin girişinden sonra bootstrap parola değişkenlerini kaldırın.
+7. Access Control alanından depoları, sunucu gruplarını ve kullanıcıları oluşturun.
+8. Sayım kullanıcısını yalnız yetkili olduğu depo/depolara bağlayın.
+9. GitHub repository variable olarak `OPEX_API_BASE_URL` tanımlayın.
+10. Android APK'yı Actions > OPEX Inventory Android hattından üretin.
+
+V24 TEST ÖZETİ
+- Backend: 34/34 başarılı
+- Kör sayım terminal veri sızıntısı testi: başarılı
+- Frontend production build: başarılı
+- ZIP güvenlik ve bütünlük taraması: paketleme sırasında uygulanır
+- Android: GitHub Actions gerçek derleme kapısına bağlıdır

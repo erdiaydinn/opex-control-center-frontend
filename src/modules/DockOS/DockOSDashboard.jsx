@@ -1,58 +1,47 @@
-﻿import React from "react";
-import { Lock, ShieldCheck } from "lucide-react";
+import React from "react";
+import { Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../auth/AuthContext.jsx";
 import DockOSDashboardBase from "./DockOSDashboardBase.jsx";
 import DockOSPermissionBanner from "./DockOSPermissionBanner.jsx";
-import { getDockOSPermissionClassNames } from "./dockosPermissions.js";
+import { DockOSUiProvider, useDockOSUi } from "./DockOSUiContext.jsx";
+import {
+  canDockOSAction,
+  canDockOSFeature,
+  getDockOSPermissionClassNames,
+} from "./dockosPermissions.js";
 import "./dockos-permissions.css";
 
 export default function DockOSDashboard() {
+  return <DockOSUiProvider><DockOSGate /></DockOSUiProvider>;
+}
+
+function DockOSGate() {
   const navigate = useNavigate();
-  const { can, canFeature } = useAuth();
+  const { t, theme, dir } = useDockOSUi();
+  const canView = canDockOSAction("view") && canDockOSFeature("dashboard");
 
-  if (!can("dockos", "view")) {
+  if (!canView) {
     return (
-      <main className="dockos-locked-page">
+      <main dir={dir} className={`dockos-locked-page dockos-theme-${theme}`}>
         <section className="dockos-locked-card">
-          <div>
-            <Lock size={34} />
-          </div>
-
-          <h1>DockOS erişimi yok.</h1>
-          <p>Bu kullanıcı için DockOS modül erişimi Access Control üzerinden açılmalı.</p>
-
-          <button type="button" onClick={() => navigate("/")}>
-            Control Center’a dön
-          </button>
+          <div><Lock size={34} /></div>
+          <h1>{t("noAccess")}</h1>
+          <p>{t("accessHelp")}</p>
+          <button type="button" onClick={() => navigate("/")}>{t("backControl")}</button>
         </section>
       </main>
     );
   }
 
-  if (!canFeature("dockos", "dashboard")) {
-    return (
-      <main className="dockos-locked-page">
-        <section className="dockos-locked-card">
-          <div>
-            <ShieldCheck size={34} />
-          </div>
+  return <DockOSExperience />;
+}
 
-          <h1>DockOS dashboard yetkisi kapalı.</h1>
-          <p>Modüle erişimin var ama dashboard ekranı için detay yetkisi verilmemiş.</p>
-
-          <button type="button" onClick={() => navigate("/")}>
-            Control Center’a dön
-          </button>
-        </section>
-      </main>
-    );
-  }
-
+function DockOSExperience() {
+  const { theme, dir } = useDockOSUi();
   return (
-    <main className={`dockos-permission-shell ${getDockOSPermissionClassNames()}`}>
+    <div dir={dir} className={`dockos-permission-shell dockos-theme-${theme} ${getDockOSPermissionClassNames()}`}>
       <DockOSPermissionBanner />
       <DockOSDashboardBase />
-    </main>
+    </div>
   );
 }

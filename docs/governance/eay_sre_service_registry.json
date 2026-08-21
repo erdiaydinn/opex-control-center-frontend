@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "services": [
+    {"service":"platform-core","owner":"platform","slo":{"availability":0.999,"p95_ms":500}},
+    {"service":"field-intelligence","owner":"field","slo":{"availability":0.995,"p95_ms":800}},
+    {"service":"workforce","owner":"workforce","slo":{"availability":0.995,"p95_ms":800}},
+    {"service":"inventory","owner":"inventory","slo":{"availability":0.995,"p95_ms":700}},
+    {"service":"planogram","owner":"planogram","slo":{"availability":0.995,"p95_ms":1200}},
+    {"service":"dockos","owner":"dockos","slo":{"availability":0.995,"p95_ms":800}},
+    {"service":"budget","owner":"finance-platform","slo":{"availability":0.999,"p95_ms":800}},
+    {"service":"academy","owner":"academy","slo":{"availability":0.995,"p95_ms":1000}},
+    {"service":"jarvis","owner":"ai-platform","slo":{"availability":0.99,"p95_ms":3000}}
+  ],
+  "production_shape_tests": [
+    {"key":"portal_3000_users","required_evidence":"MANAGED_STAGING_LOAD","synthetic_is_sufficient":false},
+    {"key":"inventory_400_terminals","required_evidence":"MANAGED_STAGING_LOAD","synthetic_is_sufficient":false},
+    {"key":"field_mission_burst","required_evidence":"MANAGED_STAGING_LOAD","synthetic_is_sufficient":false},
+    {"key":"academy_1200_media_concurrency","required_evidence":"REAL_MEDIA_ENVIRONMENT_LOAD","synthetic_is_sufficient":false}
+  ],
+  "dr_requirements": {"backup_restore":"MANAGED_STAGING_RESTORE","rpo_rto":"MEASURED","synthetic_is_sufficient":false}
+}

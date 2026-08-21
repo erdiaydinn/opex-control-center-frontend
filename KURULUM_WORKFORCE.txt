@@ -1,0 +1,211 @@
+OPEX CONTROL CENTER - WORKFORCE LIVE V12.9
+========================================
+
+1) ZIP dosyasini bir klasore cikartin.
+2) PowerShell'i cikarttiginiz klasorde acin.
+3) Komutlari aynen sirayla calistirin:
+
+Set-ExecutionPolicy -Scope Process Bypass
+.\INSTALL_OPEX_WORKFORCE_V12_9.ps1
+.\START_OPEX_WORKFORCE.ps1
+
+Yonetim paneli:
+http://localhost:5173/workforce
+
+Picker telefon deneyimi:
+http://localhost:5173/workforce/app
+
+Test:
+.\TEST_OPEX_WORKFORCE.ps1
+
+V12.9 PROFESYONEL MOBIL ANA EKRAN VE SERBEST ACIKLAMA
+------------------------------------------------------
+- Picker ana ekrani basit menu kartlarindan canli operasyon merkezine donusturuldu.
+- Ust vardiya kartinda depo, saat, rol, check-in/mola durumu, kayitli cihaz ve ana aksiyon vardir.
+- Aylik vardiya, tamamlanan vardiya ve acik talep KPI'lari tek bakista gorulur.
+- Arsiv, izin talebi, bildirimler ve gorevler 2x2 profesyonel hizli islem alanindadir.
+- Ana ekrandaki Control Center geri oku kaldirildi; OPEX Workforce uygulama basligi eklendi.
+- Acik/koyu tema ile Turkce, Ingilizce, Almanca ve Arapca yeni alanlarda korunur.
+- Izin, itiraz, yonetici karari, cihaz sifirlama ve manuel duzeltme aciklamalarinda
+  minimum karakter siniri yoktur. Zorunlu alana tek karakter yazilmasi yeterlidir.
+
+V12.8 ANLIK MOLA, KRONOMETRE VE IZIN GONDERIMI
+------------------------------------------------
+- Molaya Cik sonrasi dugme ayni ekranda aninda Molayi Bitir olur; geri donmek gerekmez.
+- Dil katmaninin canli degisen metinleri eski degere cevirmesi genel olarak giderildi.
+- Aktif mola icin vardiya detayinda ve Bildirimler ekraninda saniyelik kronometre bulunur.
+- Mola suresince tarayici sekme basliginda sure gorunur; PWA bildirim izni verildiyse
+  kalici mola bildirimi olusur ve bildirime dokununca vardiya uygulamasi acilir.
+- iOS native kabuk icin ActivityKit/Dynamic Island baslat-bitir koprusu hazirdir.
+- Izin talebi tarih ve aciklama hatalarini artik ekranda gosterir; en az 3 karakter kabul eder.
+- Basarili izin talebi yonetici kuyruguna ve Gorevler ekranina duser; picker onay mesaji alir.
+
+V12.7 MOBIL AKIS, IZIN VE SISTEM KONFIGURASYONU
+------------------------------------------------
+- Mobil vardiya detayi telefon genisliginde tek kolon; butonlar ve formlar tasmaz.
+- Molaya Cik / Molayi Bitir durumu kalici kaydedilir; mola modulu admin tarafindan kapatilabilir.
+- Bildirimlerde tekil silme, okundu yapma, tumunu okundu yapma ve tumunu silme vardir.
+- Picker haftalik izin veya yillik izin talebi gonderebilir.
+- Mudur PC veya mobil Gorevler alaninda onaylar ya da gerekceli reddeder; sonuc picker'a bildirilir.
+- Onaylanan izin gunleri puantaj izin kaydina otomatik donusur ve audit izi uretilir.
+- Sistem Konfigurasyonu alaninda mola, izin talebi, itiraz, duyuru, bildirim, arsiv,
+  yonetici gorevi ve QR ozellikleri sirket bazinda acilip kapatilabilir.
+
+YENI V3 AKISLARI
+----------------
+- Donem Kapanisi: baslangic ve kesim tarihiyle kumulatif IK/bordro CSV'si.
+- Personel Ana Veri: Employee ID, TC, depo, unvan, ise giris/cikis CSV veya XLSX.
+- Toplu Izin: Time Off Used XLSX; ayni kisi ve gun ikinci kez eklenmez.
+- OPEX Roster Lab: Aylik Puantaj CSV, 11 saat istisnasi ve BY/norm raporu.
+- Resmi Tatiller: 2026-2035 resmi, 2036-2050 dogrulama bekleyen projeksiyon.
+
+V4 ARAYUZ
+----------
+- Workforce yonetim ve picker uygulamasinda Turkce, Ingilizce, Almanca ve Arapca.
+- Arapca seciminde uctan uca RTL yerlesim.
+- Kalici acik/koyu tema; tablo, modal, form, mobil ekran ve durum etiketlerinde kontrast.
+- Yazdirma/PDF her temada beyaz zemin ve koyu metinle uretilir.
+- Depo kartlarinda coklu secim ve bolge/geofence/GPS/dogrulama/QR/durum toplu guncelleme.
+
+V5 OPEX DONEM MESAISI
+--------------------
+- OPEX Roster Lab > Donem Mesai Hesabi tum calisanlari roster + Time Off ile hesaplar.
+- Fazla mesai kisi/gun bazinda, resmi tatil haric 7,5 saatin ustunden hesaplanir.
+- Ham net, hesaba esas, normal, resmi tatil, gece, fazla mesai, ucretli/ucretsiz izin,
+  izin cakismasi ve 11 saat uyarisi kisi bazli Excel'e indirilir.
+
+V6 OKUNABILIRLIK VE GOREV AKISI
+-------------------------------
+- Puantaj baskisinda yazi boyutu buyutuldu ve 30 mm bos imza kutulari eklendi.
+- 11 saat kayitlari secilerek toplu 7,5 saat simulasyonuna alinabilir.
+- Secilen kayitlar Warehouse Manager'a, bulunamazsa BY/Regional Executive'e duzeltme
+  gorevi olarak atanir; acik gorevdeki kayit ikinci kez atanmaz.
+- Tablo, cihaz, depo ve kural kartlarindaki metinler buyutuldu; Duzenle dugmesi tasmasi giderildi.
+
+V7 PERSONEL ANA VERI
+--------------------
+- Employee ID tekil anahtariyla CSV/XLSX personel yuklenir; ayni ID ikinci kisi olusturmaz.
+- TC, ad soyad, ise giris, isten cikis, Actual Warehouse, IK depo kodu ve unvan guncellenir.
+- Sonradan gelen cikis tarihi mevcut kisiyi pasife alir; bos alan eski cikisi silmez.
+- Gonderilen IK kod listesindeki 103 depo dogru raporlama adina otomatik eslenir.
+- Ekrandan uygun kolonlarla Excel sablonu indirilebilir.
+
+V8 WORKFORCE ANALYTICS VE KULLANICI YONETIMI
+--------------------------------------------
+- Ana ekran salt okunur Workforce Analytics karar merkezine donusturuldu.
+- Donem, Regional Manager, BY/Regional Executive ve depo filtreleri eklendi.
+- Efektif calisma, fazla mesai/orani, check-in basarisi, norm acigi, kritik depo,
+  gunluk trend, en cok mesai yapan depo ve bolge yoneticisi karsilastirmasi hesaplanir.
+- Norm acigi, kayitsiz kisi-gun, fazla mesai ve 11 saat anomalileri 0-100 is gucu
+  baski skorunda birlestirilir; norm yeterliyken mesai olusan depolar ayrica gosterilir.
+- Dashboard roster + izin + personel ana veri + normu kullanir; roster yoksa canli
+  puantaj verisine guvenli fallback yapar. Mudur ve rider captain norma dahil edilmez.
+- Kullanıcılar ana menusu eklendi. Employee ID ile toplu kisi ekleme/guncelleme,
+  e-posta, TC, ise giris/cikis, Actual Warehouse ve uygulama erisimi birlikte yonetilir.
+- Secilen kisilere toplu uygulama hesabi/davetiye ve sifre sifirlama baglantisi uretilir.
+  Tek baglanti panoya kopyalanir; toplu baglantilar kontrollu CSV olarak indirilir.
+- Personel sablonundaki "Kullanici Hesabi=Evet" alani yukleme sirasinda kullanici
+  davetini olusturur; isten cikisi gelen kisinin erisimi otomatik kapatilir.
+
+V9 ROSTER - IK KIMLIK ESLESTIRME
+--------------------------------
+- Roster Employee ID ile IK Employee ID farkli olsa bile TC uzerinden tek kisiye baglanir.
+- Roster CSV icinde TCK/TC kolonu varsa yukleme aninda otomatik eslesir.
+- Ayri Kimlik Eslestirme ekranina rider_id, rider_name, TCK, contract_name,
+  IsActive, phone_num ve email kolonlu CSV/XLSX dosyasi yuklenebilir.
+- Oncelik TC'dir; HR Employee ID ve tekil e-posta yalniz eski/TC'siz dosyalar icin yedektir.
+- Isim tek basina otomatik eslestirme yapmaz; ayni TC birden fazla kayitta ise Belirsiz kalir.
+- Ham roster ID korunur; donem mesaisi ve Excel'de IK ID ile roster ID birlikte gosterilir.
+- Izin kaydi IK Employee ID uzerindeyken roster farkli ID kullansa dahi kisi+gun bazinda
+  birlesir; izinli gun check-in basarisizligi veya is gucu baskisi olarak sayilmaz.
+
+V10 GECICI ROSTER VE TOPLU ROSTER ID
+------------------------------------
+- Ana sistem check-in/check-out puantajidir; Roster Lab yalniz uygulama gecisinde gecici kaynaktir.
+- Check-in/out'a don dugmesi rosteri silmeden ana dashboard'u gercek puantaja cevirir.
+- Gecici verileri sil; roster, kimlik eslestirme, simulasyon ve roster gorevlerini temizler.
+  Personel, izin, depo, norm ve gercek puantaj kayitlari korunur.
+- Kullanicilar ekraninda rider_id, rider_name, TCK, contract_name, IsActive, phone_num,
+  email formatinda toplu Roster ID eslestirme bulunur.
+- Yuklenen pozisyonlar rapora aynen yansir. Yalniz gercek mudur rolleri norm disinda tutulur.
+
+V11 IK UYUMLU ONDALIK SAAT
+--------------------------
+- Kisi Bazli Mesai Excel ve puantaj dis aktarmalarinda dakika yerine ondalik saat kullanilir.
+- 690 dakika 11.5; 300 dakika 5; 15 dakika 0.25 olarak yazilir.
+- Excel sure hucreleri metin degil sayidir; IK toplama, pivot ve bordro formullerinde kullanabilir.
+
+V12.4 TC ILE OTOMATIK ROSTER ID ESLESTIRME
+------------------------------------------
+- Roster kimlik sablonu artik IK Employee ID istemez.
+- Standart format: rider_id, rider_name, TCK, contract_name, IsActive, phone_num, email.
+- Sistem TCK alanini IK personel ana verisindeki TC ile eslestirir ve IK Employee ID'yi kendisi bulur.
+- TC gelen satirda HR ID veya e-posta yedegine sessizce dusulmez; yanlis kisiye baglanma riski azaltildi.
+
+V12.6 ITIRAZ, YONETICI GOREVI VE BILDIRIM MERKEZI
+--------------------------------------------------
+- Picker vardiya detayindaki Itiraz / Duzeltme Talebi artik form acar ve yonetici kuyruguna kaydeder.
+- Yonetici Gorevleri PC ve mobilde 11 saat gorevleriyle picker taleplerini tek yerde gosterir.
+- Yonetici hedef sure, giris/cikis, karar ve zorunlu gerekceyle duzeltme yapar; ham kayit korunur.
+- Duyuru ve Bildirimler ekraninda tum kullanici, depo veya kisi hedefli duyuru yayinlanir.
+- Vardiyaniz yayinlandi, check-in ve check-out hatirlatmalari ayarlanabilir dakika ile planlanir.
+- Kullanicilar ekraninda tekil personel duzenleme; TC, e-posta, telefon, depo, unvan ve giris/cikis bulunur.
+- Yeni API'ler duzeltme talebi, yonetici gorevi, duyuru, bildirim politikasi ve zamanlanmis bildirimleri kapsar.
+
+ONEMLI POWERSHELL NOTU
+---------------------
+PowerShell mevcut klasordeki scriptleri yalniz dosya adiyla calistirmaz.
+Bu nedenle INSTALL_OPEX_WORKFORCE_V12_9.ps1 yazmayin.
+Mutlaka .\INSTALL_OPEX_WORKFORCE_V12_9.ps1 yazin.
+
+Uretim notu:
+Bu paket calisan ve test edilmis bir entegrasyon/urun adayi sunar. Sirket ici
+canli kullanimdan once SSO/JWT, kalici veritabani, gercek depo koordinatlari,
+native mobil GPS-cihaz butunluk dogrulamasi ve IK/bordro entegrasyonu baglanmalidir.
+OPEX WORKFORCE V13.1 - POWERSHELL / DOCKER
+=======================================
+
+PowerShell dosyalari bulunduklari klasorden adiyla tek basina calismaz.
+Dogru komut:
+
+  Set-ExecutionPolicy -Scope Process Bypass -Force
+  .\INSTALL_OPEX_WORKFORCE_V13_1.ps1
+
+Kurulum PostgreSQL, backend, APNs/FCM worker, otomatik pg_dump yedegi ve
+frontend'i Docker Compose ile baslatir. Kurulumdan sonra .env icinde kurumun
+OIDC/JWKS, Apple/Google ve push anahtarlarini tamamlayin. Bu anahtarlar eksikse
+ilgili production akislari guvenlik geregi basarili sayilmaz.
+
+PowerShell 5.1 uyumlulugu:
+V13.1 guvenli rastgele anahtar uretiminde RandomNumberGenerator.Create().GetBytes()
+kullanir. Eski Windows PowerShell/.NET surumlerinde bulunmayan statik Fill() cagrisi yoktur.
+
+Ayrintili adimlar:
+  docs\URETIM_YAPILANDIRMA_REHBERI_V13_1.md
+
+Yapilandirma kontrolu:
+  .\CHECK_OPEX_CONFIG_V13_1.ps1 -Online
+
+KURUM API/SERVER HENUZ YOKSA - YEREL PILOT
+------------------------------------------
+SSO, Apple/Google dogrulama, APNs/FCM ve WORM degerleri olmadan kapali yerel pilot:
+
+  Set-ExecutionPolicy -Scope Process Bypass -Force
+  .\INSTALL_OPEX_WORKFORCE_LOCAL_PILOT_V13_2.ps1
+
+Ayrinti:
+  docs\YEREL_PILOT_REHBERI_V13_1.md
+
+Yerel pilot internete acilmaz; gercek parola, native cihaz kaniti, dis push ve WORM yoktur.
+
+TEST HAZIRLIK - V13.2
+---------------------
+Yerel pilot kurulduktan sonra:
+
+  .\PREPARE_OPEX_TEST_V13_2.ps1
+
+Kabul listesi:
+  docs\TEST_KABUL_LISTESI_V13_2.md
+
+Hata teshis paketi:
+  .\COLLECT_OPEX_TEST_DIAGNOSTICS_V13_2.ps1

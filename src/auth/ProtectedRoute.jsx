@@ -1,9 +1,24 @@
-﻿import React from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import React from "react";
+import {
+  Navigate,
+  useLocation,
+} from "react-router-dom";
+
 import { useAuth } from "./AuthContext.jsx";
 
-export default function ProtectedRoute({ children, moduleKey, action = "view" }) {
-  const { user, booting, can, isSuperAdmin } = useAuth();
+
+export default function ProtectedRoute({
+  children,
+  moduleKey,
+  action = "view",
+  roles = [],
+}) {
+  const {
+    user,
+    booting,
+    can,
+  } = useAuth();
+
   const location = useLocation();
 
   if (booting) {
@@ -18,18 +33,34 @@ export default function ProtectedRoute({ children, moduleKey, action = "view" })
   }
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location }}
+      />
+    );
   }
 
-  const superAdmin =
-    typeof isSuperAdmin === "function" ? isSuperAdmin() : Boolean(isSuperAdmin);
-
-  const allowed =
+  const moduleAllowed =
     !moduleKey ||
-    superAdmin ||
-    (typeof can === "function" && can(moduleKey, action));
+    (
+      typeof can === "function" &&
+      can(moduleKey, action)
+    );
 
-  if (!allowed) {
+  const requiredRoles =
+    Array.isArray(roles)
+      ? roles.filter(Boolean)
+      : [];
+
+  const roleAllowed =
+    requiredRoles.length === 0 ||
+    requiredRoles.some((role) =>
+      user.roles?.includes(role)
+    );
+
+  if (!moduleAllowed || !roleAllowed) {
     return <Navigate to="/" replace />;
   }
 

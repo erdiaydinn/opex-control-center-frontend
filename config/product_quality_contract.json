@@ -1,0 +1,247 @@
+{
+  "contract_version": 3,
+  "brand": "EAY",
+  "release_policy": {
+    "repository_ready_is_not_production_ready": true,
+    "field_evidence_required_for_market_leading_claim": true,
+    "critical_flow_may_not_depend_on_placeholder_or_demo_data": true,
+    "frontend_may_not_duplicate_authoritative_backend_or_kpi_truth": true,
+    "accessibility_is_a_platform_requirement_not_an_optional_theme": true,
+    "accessibility_preferences_must_not_require_disability_or_health_diagnosis": true,
+    "global_product_quality_gate_required_for_all_product_surfaces": true,
+    "product_surface_may_not_claim_release_eligible_with_untracked_ui_states": true,
+    "repository_quality_evidence_is_not_field_or_production_acceptance": true
+  },
+  "global_dimensions": [
+    "functional_correctness",
+    "security_and_scope",
+    "data_integrity",
+    "task_usability",
+    "visual_quality",
+    "accessibility",
+    "performance",
+    "resilience_and_offline",
+    "localization",
+    "audit_and_explainability"
+  ],
+  "global_acceptance_targets": {
+    "web_accessibility": "WCAG_2_2_AA",
+    "accessibility_enhancements_beyond_minimum": [
+      "screen_reader_semantics",
+      "keyboard_only_operation",
+      "visible_focus",
+      "forced_colors_support",
+      "reduced_motion",
+      "no_color_only_meaning",
+      "text_scaling_without_loss",
+      "large_touch_targets",
+      "visual_equivalent_for_audio_alerts",
+      "captions_by_default_when_available",
+      "transcript_support",
+      "audio_description_support",
+      "descriptive_transcript_support",
+      "non_drag_alternative_for_drag_interactions",
+      "plain_language_and_focus_mode_support"
+    ],
+    "supported_locales": ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"],
+    "rtl_locales": ["ar"],
+    "required_user_states": ["loading", "error", "empty", "offline", "retry"],
+    "localized_system_states": true,
+    "rtl_requires_document_direction": true,
+    "text_scaling_without_loss_percent": 200,
+    "mobile_terminal_min_touch_target_dp": 48,
+    "critical_task_success_rate_percent": 98,
+    "usability_sus_target": 85,
+    "crash_free_sessions_percent": 99.8,
+    "terminal_local_scan_feedback_p95_ms": 150,
+    "terminal_cold_start_p95_seconds": 2.5,
+    "destructive_actions_require_explicit_confirmation": true,
+    "all_mutations_require_recoverable_error_state": true,
+    "offline_mutations_require_idempotent_replay": true
+  },
+  "inclusive_experience": {
+    "visual": [
+      "screen_reader_structure",
+      "accessible_names_and_descriptions",
+      "high_contrast",
+      "forced_colors",
+      "scalable_text",
+      "audio_description_for_visual_media",
+      "chart_table_equivalent",
+      "redundant_non_color_status_cues"
+    ],
+    "hearing": [
+      "captions",
+      "transcripts",
+      "descriptive_transcripts",
+      "visual_alerts",
+      "sign_language_track_capability_when_required_by_audience"
+    ],
+    "motor": [
+      "keyboard_only",
+      "switch_and_voice_control_semantics",
+      "large_targets",
+      "no_drag_only_action",
+      "no_precision_pointer_dependency"
+    ],
+    "cognitive_and_learning": [
+      "consistent_navigation",
+      "focus_mode",
+      "readable_font_option",
+      "chunked_instructions",
+      "plain_language_mode_capability",
+      "pause_resume_for_learning",
+      "adjustable_assessment_accommodations"
+    ],
+    "motion_and_photosensitivity": [
+      "prefers_reduced_motion",
+      "user_reduce_motion_override",
+      "no_unsafe_flashing",
+      "no_required_parallax_or_motion_to_understand_content"
+    ]
+  },
+  "product_surface_standard": {
+    "required_surface_keys": [
+      "control_center",
+      "workforce",
+      "hiring",
+      "inventory",
+      "planogram",
+      "dockos",
+      "budget",
+      "academy",
+      "jarvis",
+      "insight_kpi",
+      "field_intelligence"
+    ],
+    "inherits_global_locale_set": true,
+    "arabic_rtl_required": true,
+    "wcag_2_2_aa_required": true,
+    "keyboard_only_required": true,
+    "visible_focus_required": true,
+    "screen_reader_semantics_required": true,
+    "reduced_motion_required": true,
+    "text_scaling_required": true,
+    "state_copy_must_be_localized": true,
+    "offline_behavior_must_be_explicit": true
+  },
+  "surface_ux_state_coverage": {
+    "control_center": ["loading", "error", "empty", "offline", "retry"],
+    "workforce": ["loading", "error", "empty", "offline", "retry"],
+    "hiring": ["loading", "error", "empty", "offline", "retry"],
+    "inventory": ["loading", "error", "empty", "offline", "retry"],
+    "planogram": ["loading", "error", "empty", "offline", "retry"],
+    "dockos": ["loading", "error", "empty", "offline", "retry"],
+    "budget": ["loading", "error", "empty", "offline", "retry"],
+    "academy": ["loading", "error", "empty", "offline", "retry"],
+    "jarvis": ["loading", "error", "empty", "offline", "retry"],
+    "insight_kpi": ["loading", "error", "empty", "offline", "retry"],
+    "field_intelligence": ["loading", "error", "empty", "offline", "retry"]
+  },
+  "commercial_module_coverage": [
+    "field_intelligence",
+    "workforce",
+    "inventory",
+    "planogram",
+    "dockos",
+    "budget",
+    "academy",
+    "jarvis"
+  ],
+  "surfaces": {
+    "control_center": {
+      "owner": "platform_core",
+      "channels": ["web"],
+      "priority_flows": ["navigation", "module_discovery", "global_preferences", "network_status", "route_error_recovery"],
+      "field_evidence": ["browser_matrix", "assistive_technology_uat", "arabic_rtl_visual_uat"]
+    },
+    "workforce": {
+      "owner": "workforce",
+      "channels": ["web", "mobile", "terminal", "api"],
+      "priority_flows": ["shift", "check_in", "break", "check_out", "leave", "correction", "employee_center"],
+      "field_evidence": ["corporate_oidc", "real_device", "biometric_presence", "gps_geofence", "real_hr_files"]
+    },
+    "hiring": {
+      "owner": "workforce",
+      "separate_employee_master_forbidden": true,
+      "channels": ["web", "api", "email"],
+      "priority_flows": ["norm", "vacancy", "candidate", "evidence", "approval_reject", "notification", "hire", "first_shift", "exit"],
+      "field_evidence": ["real_candidate_inputs", "corporate_identity", "email_delivery", "hr_owner_uat"]
+    },
+    "inventory": {
+      "owner": "inventory",
+      "channels": ["web", "mobile", "terminal", "api"],
+      "terminal_is_native_product_surface": true,
+      "priority_flows": ["assignment", "hardware_scan", "blind_count", "unexpected_sku", "offline_queue", "recount", "supervisor_handoff", "reconciliation", "approval"],
+      "field_evidence": ["managed_signing", "mdm", "corporate_oidc", "tls_pinning", "physical_zebra"]
+    },
+    "planogram": {
+      "owner": "planogram",
+      "channels": ["web", "api"],
+      "priority_flows": ["store_dna", "physical_master", "fixture_model", "constraint_edit", "solve", "infeasible_reason", "2d_validation", "3d_validation", "approval"],
+      "field_evidence": ["real_sku_dimensions", "real_fixture_geometry", "production_catalog", "store_validation"]
+    },
+    "dockos": {
+      "owner": "dockos",
+      "channels": ["web", "mobile", "api", "email"],
+      "priority_flows": ["supplier_access", "po_lookup", "slot_capacity", "reservation", "exception", "notification", "audit"],
+      "field_evidence": ["corporate_auth", "smtp", "bigquery_identity", "pilot_supplier_dc"]
+    },
+    "budget": {
+      "owner": "budget",
+      "channels": ["web", "api", "email"],
+      "priority_flows": ["budget_plan", "cost_center", "request", "approval", "po", "invoice", "actual", "commitment", "forecast", "variance", "reconciliation"],
+      "field_evidence": ["real_finance_files", "erp_accounting_integration", "finance_owner_uat"]
+    },
+    "academy": {
+      "owner": "academy",
+      "channels": ["web", "mobile", "api"],
+      "priority_flows": ["content", "learning_path", "video", "quiz", "progress", "completion", "grounded_qa", "interactive_authoring", "accessibility_tracks"],
+      "media_accessibility_required": ["captions", "transcript", "audio_description_capability", "descriptive_transcript_capability", "keyboard_accessible_player"],
+      "field_evidence": ["real_content", "media_delivery", "concurrency", "learner_uat", "assistive_technology_uat"]
+    },
+    "jarvis": {
+      "owner": "jarvis",
+      "channels": ["web", "mobile", "api", "email", "whatsapp"],
+      "priority_flows": ["question", "citation", "tenant_safe_analysis", "action_proposal", "approval", "execution", "follow_up", "audit", "learning"],
+      "security_guardian_scope": "platform_admin_only",
+      "field_evidence": ["live_bigquery", "controlled_cross_tenant_proof", "governed_model_run", "operator_acceptance"]
+    },
+    "insight_kpi": {
+      "owner": "platform_jarvis",
+      "duplicate_metric_truth_forbidden": true,
+      "channels": ["web", "api"],
+      "priority_flows": ["canonical_metric", "provenance", "tenant_scope", "drilldown", "trend", "export"],
+      "field_evidence": ["promoted_kpi_contracts", "live_schema_evidence", "analytics_uat"]
+    },
+    "field_intelligence": {
+      "owner": "field_intelligence",
+      "channels": ["web", "mobile", "api"],
+      "priority_flows": [
+        "mission_builder",
+        "targeting",
+        "capture",
+        "offline_queue",
+        "reconnect_replay",
+        "attachment_retry",
+        "stale_assignment",
+        "device_sequence_conflict",
+        "evidence",
+        "review",
+        "rework",
+        "reminder",
+        "escalation",
+        "verification",
+        "results"
+      ],
+      "field_evidence": ["real_device", "barcode_camera", "gps_when_policy_requires", "offline_sync", "pilot_locations", "assistive_technology_uat"]
+    }
+  },
+  "next_phase_reserved": {
+    "expense_management": {
+      "separate_module": true,
+      "planned_flow": ["receipt_capture", "ocr", "field_extraction", "confidence_review", "duplicate_policy", "cost_center", "approval", "budget_link", "accounting_export", "audit"],
+      "silent_auto_post_forbidden": true
+    }
+  }
+}

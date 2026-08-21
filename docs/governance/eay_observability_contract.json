@@ -1,0 +1,6 @@
+{
+  "schema_version":1,
+  "required_signals":["logs","traces","metrics","audit","error_rate","latency","queue_depth","db_pool","cache","object_access","ai_tool_calls","business_workflow_health"],
+  "required_dimensions":["service","tenant_safe_hash","environment","workflow","operation","result"],
+  "forbidden_dimensions":["raw_access_token","raw_national_id","raw_secret"]
+}

@@ -1,0 +1,28 @@
+{
+  "applications": [
+    {
+      "packageName": "com.eay.inventory",
+      "installType": "FORCE_INSTALLED",
+      "autoUpdateMode": "AUTO_UPDATE_HIGH_PRIORITY",
+      "defaultPermissionPolicy": "GRANT",
+      "managedConfiguration": {
+        "eay_device_id": "${MDM_GENERATED_UUID}",
+        "eay_enrollment_code": "${ONE_TIME_ACTIVATION_CODE}"
+      }
+    }
+  ],
+  "playStoreMode": "WHITELIST",
+  "installUnknownSourcesAllowed": false,
+  "debuggingFeaturesAllowed": false,
+  "cameraDisabled": false,
+  "screenCaptureDisabled": true,
+  "factoryResetDisabled": true,
+  "safeBootDisabled": true,
+  "statusReportingSettings": {
+    "applicationReportsEnabled": true,
+    "deviceSettingsEnabled": true,
+    "softwareInfoEnabled": true,
+    "memoryInfoEnabled": true,
+    "networkInfoEnabled": true
+  }
+}

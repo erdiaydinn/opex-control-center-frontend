@@ -1,0 +1,152 @@
+name: EAY Product Quality Contract
+
+on:
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+      - product/eay-product-completion-v1
+    paths:
+      - "config/module_catalog.json"
+      - "config/product_quality_contract.json"
+      - "config/ui_i18n_guard.json"
+      - "docs/EAY_PRODUCT_QUALITY_STANDARD.md"
+      - "docs/EAY_GLOBAL_PRODUCT_QUALITY_V3_GATE.md"
+      - "package.json"
+      - "package-lock.json"
+      - "services/core-api/pyproject.toml"
+      - "services/identity-gateway/pyproject.toml"
+      - "services/core-api/app/modules/**"
+      - "services/core-api/app/intelligence_routes.py"
+      - "services/core-api/app/field_governance_routes.py"
+      - "services/core-api/app/field_evidence_object_routes.py"
+      - "backend/app/modules/**"
+      - "scripts/security/generate_cyclonedx_sbom.py"
+      - "scripts/test-supply-chain-lock-integrity.mjs"
+      - "scripts/test-github-action-pinning.mjs"
+      - "scripts/test-platform-load-governance.mjs"
+      - "scripts/test-route-code-splitting.mjs"
+      - "scripts/test-route-split-bundle-budget.mjs"
+      - "scripts/test-dockos-product-state.mjs"
+      - "scripts/validate_product_quality_contract.py"
+      - "scripts/test-platform-inclusion.mjs"
+      - "scripts/test-global-product-quality-v3.mjs"
+      - "scripts/test-field-intelligence-ui.mjs"
+      - "scripts/test-field-mobile-offline.mjs"
+      - "scripts/test-field-governance-ui.mjs"
+      - "scripts/test-no-new-hardcoded-ui-strings.mjs"
+      - "src/**"
+      - "ops/inventory/**"
+      - ".github/workflows/platform-load-acceptance.yml"
+      - ".github/workflows/product-quality-contract.yml"
+  push:
+    branches:
+      - release/platform-product-quality-v0.1
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-product-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-contract:
+    name: Product quality governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: python scripts/validate_product_quality_contract.py
+      - name: Generate truthful CycloneDX pre-build dependency inventory
+        run: >-
+          python scripts/security/generate_cyclonedx_sbom.py
+          --output build/security/eay-platform-prebuild.cdx.json
+      - name: Retain pre-build SBOM evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eay-platform-prebuild-sbom-${{ github.run_id }}
+          path: build/security/eay-platform-prebuild.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: GitHub Action provenance pinning
+        run: node scripts/test-github-action-pinning.mjs
+      - name: Synthetic load governance contract
+        run: node scripts/test-platform-load-governance.mjs
+      - name: Standard and field scorecard are version controlled
+        run: |
+          test -s docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          test -s docs/EAY_GLOBAL_PRODUCT_QUALITY_V3_GATE.md
+          grep -q "Critical-task success" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Inventory terminal" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Inclusive Experience Standard" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Jarvis Security Guardian is EAY platform authority" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Expense Management" docs/EAY_PRODUCT_QUALITY_STANDARD.md
+          grep -q "Five-state release matrix" docs/EAY_GLOBAL_PRODUCT_QUALITY_V3_GATE.md
+          grep -q "Field Intelligence" docs/EAY_GLOBAL_PRODUCT_QUALITY_V3_GATE.md
+          grep -q "repository quality only" docs/EAY_GLOBAL_PRODUCT_QUALITY_V3_GATE.md
+
+  web-shell-regression:
+    name: Web shell access, inclusion and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Reject new hard-coded user-facing UI strings
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Supply-chain lock integrity
+        run: node scripts/test-supply-chain-lock-integrity.mjs
+      - name: GitHub Action provenance pinning
+        run: node scripts/test-github-action-pinning.mjs
+      - name: Synthetic load governance contract
+        run: node scripts/test-platform-load-governance.mjs
+      - run: npm ci
+      - name: Server-authoritative access contract
+        run: npm run test:access
+      - name: Platform inclusion, locale and accessibility baseline
+        run: node scripts/test-platform-inclusion.mjs
+      - name: Global product quality v3 surface gate
+        run: node scripts/test-global-product-quality-v3.mjs
+      - name: Field Intelligence real UI contract
+        run: node scripts/test-field-intelligence-ui.mjs
+      - name: Field Intelligence mobile/offline contract
+        run: node scripts/test-field-mobile-offline.mjs
+      - name: Field governance and promotion UI contract
+        run: node scripts/test-field-governance-ui.mjs
+      - name: Accessibility focus trap contract
+        run: node scripts/test-accessibility-focus-trap.mjs
+      - name: Route accessibility contract
+        run: node scripts/test-route-accessibility.mjs
+      - name: Skip navigation contract
+        run: node scripts/test-skip-navigation.mjs
+      - name: Route error boundary contract
+        run: node scripts/test-route-error-boundary.mjs
+      - name: Route code-splitting source contract
+        run: node scripts/test-route-code-splitting.mjs
+      - name: Intelligence product-state contract
+        run: node scripts/test-intelligence-product-states.mjs
+      - name: DockOS fail-closed product-state contract
+        run: node scripts/test-dockos-product-state.mjs
+      - name: Repository Intelligence registry contract
+        run: node scripts/test-repository-intelligence-registry.mjs
+      - run: npm run build
+      - name: Route-split bundle performance budget
+        run: node scripts/test-route-split-bundle-budget.mjs
+
+  terminal-production-guard:
+    name: Inventory terminal production guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - run: sh ops/inventory/verify-android-production.sh

@@ -1,0 +1,13 @@
+groups:
+  - name: opex-workforce
+    rules:
+      - alert: WorkforceApiDown
+        expr: up{job="opex-workforce"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "OPEX Workforce API erişilemiyor"}
+      - alert: WorkforceHigh5xx
+        expr: rate(http_requests_total{job="opex-workforce",status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Workforce API 5xx oranı yüksek"}

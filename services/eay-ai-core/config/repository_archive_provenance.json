@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-14T15:12:00+03:00",
+  "records": [
+    {
+      "registry_entry_id": "cl4r1t4s",
+      "archive": "CL4R1T4S-main.zip",
+      "archive_sha256": "8f7e5e896160f312df3f7919ba9da4a2f533f4ed53f92c0c7cedc2098034289c",
+      "canonical_repository": "elder-plinius/CL4R1T4S",
+      "ref": "main",
+      "commit_sha": "1a55b8a36d47c86e8d774acef83306d56fb0b302",
+      "tree_sha": "ce4bd8290bb6167211f068b502a7350f531386b9",
+      "readme_blob_sha": "ab6d0176333b114aaf691d97c1d6a1dea9e6160d",
+      "license_blob_sha": "0ad25db4bd1d86c452db3f9602ccdbe172438f52",
+      "match": "EXACT_RECOMPUTED_GIT_TREE",
+      "license": {"spdx": "AGPL-3.0", "status": "VERIFIED"},
+      "commercial_use": "REFERENCE_ONLY_FOR_PROPRIETARY_EAY",
+      "decision": "reference"
+    },
+    {
+      "registry_entry_id": "council-high-intelligence",
+      "archive": "council-of-high-intelligence-main.zip",
+      "archive_sha256": "f885a7900b242080e9aee8968a461987743c1faa78dc5d71f2f3b2655ad4ad15",
+      "canonical_repository": "0xNyk/council-of-high-intelligence",
+      "ref": "main",
+      "commit_sha": "c4d91f07c96e8bc36e3872bbf378ebd4e3f0ac72",
+      "tree_sha": "096e6a6ed723664be19aa7f991669d9591618350",
+      "readme_blob_sha": "c34ed9b8e3b9d57d5ee66bedfc63ee7db7b353fb",
+      "license_blob_sha": "84950a4ce9bdf3e14a3b63a468e69d67896062b6",
+      "match": "EXACT_RECOMPUTED_GIT_TREE",
+      "license": {"spdx": "MIT", "status": "VERIFIED"},
+      "commercial_use": "PERMISSIVE_WITH_NOTICE",
+      "decision": "watch"
+    },
+    {
+      "registry_entry_id": "computer-lab-automation",
+      "archive": "computer-lab-automation-master.zip",
+      "archive_sha256": "a4f0708d4f160908f8094d05294bf27bdc529df487bc372ed8dac8755c4a09e3",
+      "canonical_repository": "mustafadalga/computer-lab-automation",
+      "ref": "master",
+      "commit_sha": "0f6fa81448062488f01144c67032764af25ee5fe",
+      "tree_sha": "58c38a267f050181d089d13f40bee8b1e3ecfc2f",
+      "readme_blob_sha": "dafd8bf16b3f01de366feffe8857d6ea39104753",
+      "license_blob_sha": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7",
+      "match": "EXACT_RECOMPUTED_GIT_TREE",
+      "license": {"spdx": "GPL-3.0", "status": "VERIFIED"},
+      "commercial_use": "REFERENCE_ONLY_UNLESS_SEPARATELY_CLEARED",
+      "decision": "reference"
+    }
+  ]
+}

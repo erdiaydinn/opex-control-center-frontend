@@ -1,0 +1,33 @@
+OPEX INVENTORY V20 — PRODUCTION CANDIDATE
+28.07.2026
+
+V20 kapsamı
+1. Merkezi FastAPI Inventory servisi ve kalıcı SQLite/WAL yerel pilot deposu.
+2. Sunucu tarafı rol, izin ve depo kapsamı kontrolü; üretimde OIDC/JWT zorunluluğu.
+3. Çevrimdışı terminal kuyruğu ve bağlantı geldiğinde otomatik senkronizasyon.
+4. client_event_id ile idempotent tarama; aynı olay ikinci kez stok yazmaz.
+5. Lokasyon kilidi; iki terminalin aynı lokasyonu eşzamanlı sayması engellenir.
+6. Eşik bazlı yeniden sayım ve yönetici onay durumu.
+7. EAN/GTIN/PLU/koli barkodu veri modeline hazır çoklu barkod yaklaşımı.
+8. Eksik lokasyon kapanış engeli ve onaylı belgeye yazma engeli.
+9. Güncelleme/silme trigger'larıyla korunmuş SHA-256 hash zincirli audit.
+10. ERP/WMS gönderimi için INVENTORY_ERP_WEBHOOK üretim konfigürasyon kapısı.
+11. Docker sağlık kontrolü, merkezi hacim, yedek ve gözlemlenebilirlik profilleri.
+12. TR/EN/DE/AR, RTL, dark/light, resmî tutanak ve ayrı fark Excel raporu.
+
+Doğruluk sınırı
+- V20 bir production candidate'tır. Canlı ortam kabulü için gerçek SSO, PostgreSQL,
+  S3 Object Lock/yedek hedefi, ERP endpoint'i ve Zebra/Honeywell cihaz testleri gerekir.
+- Yerel pilotta SQLite kullanılır. 3.000 eşzamanlı kullanıcı hedefi için Inventory
+  persistence katmanı PostgreSQL'e geçirilmeden canlıya çıkılmamalıdır.
+
+Üretim zorunlu çevre değişkenleri
+DOCKOS_ENV=production
+OPEX_ALLOW_LEGACY_HEADERS=false
+OPEX_OIDC_ISSUER=
+OPEX_OIDC_AUDIENCE=
+OPEX_OIDC_JWKS_URL=
+OPEX_OIDC_WAREHOUSE_SCOPE_CLAIM=warehouse_scope
+VITE_INVENTORY_API_REQUIRED=true
+INVENTORY_ERP_WEBHOOK=
+BACKUP_S3_BUCKET=

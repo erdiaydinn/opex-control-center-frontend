@@ -1,0 +1,223 @@
+name: Platform Core CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/opex-command-center-v2
+      - platform-core/**
+      - product/planogram-*
+      - release/platform-convergence-v0.1
+  pull_request:
+    branches:
+      - main
+      - feature/opex-command-center-v2
+      - platform-core/**
+      - release/platform-convergence-v0.1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-core-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Build frontend
+        run: npm run build
+
+  core-api:
+    name: Core API and tenant isolation
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API with reviewed BigQuery SDK extra
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Capture resolved Core Python build dependency closure
+        run: >-
+          python scripts/security/generate_python_build_cyclonedx.py
+          --root opex-core-api
+          --output build/security/eay-core-python-build.cdx.json
+      - name: Retain Core Python dependency evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eay-core-python-build-sbom-${{ github.run_id }}
+          path: build/security/eay-core-python-build.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Create non-superuser runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Lint
+        run: ruff check services/core-api
+      - name: Secure SQL data-access boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+
+      - name: Apply database migrations as migrator
+        working-directory: services/core-api
+        run: alembic upgrade head
+
+      - name: Enforce AI database role isolation
+        run: pytest -q services/core-api/tests/test_ai_database_role_boundary.py
+
+      - name: Test as RLS-bound runtime role
+        id: core_regression
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest services/core-api/tests 2>&1 | tee /tmp/eay-core-pytest.log
+      - name: Retain Core regression failure evidence
+        if: steps.core_regression.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: core-regression-failure-${{ github.run_id }}
+          path: /tmp/eay-core-pytest.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce Core regression hard gate
+        if: steps.core_regression.outcome == 'failure'
+        run: |
+          failures=$(grep -E '^(FAILED|ERROR) ' /tmp/eay-core-pytest.log | tail -20 | tr '\n' '; ' || true)
+          if [ -z "$failures" ]; then
+            failures=$(tail -20 /tmp/eay-core-pytest.log | tr '\n' '; ')
+          fi
+          echo "::error title=Core regression failing tests::$failures"
+          exit 1
+
+  platform-config:
+    name: Platform configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prepare non-secret CI environment
+        run: cp .env.example .env
+      - name: Validate module catalog
+        run: python -m json.tool config/module_catalog.json > /dev/null
+      - name: Validate Docker Compose
+        run: docker compose -f docker-compose.platform.yml config --quiet
+      - name: Build Core API container
+        run: >-
+          docker build
+          --build-context planai=apps/planai/backend
+          -f services/core-api/Dockerfile
+          services/core-api
+      - name: Build frontend container
+        run: docker build -f Dockerfile .
+
+  identity-gateway-security:
+    name: Identity Gateway adversarial boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Install Identity Gateway test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./services/identity-gateway[dev]"
+
+      - name: Capture resolved Identity Gateway Python build dependency closure
+        run: >-
+          python scripts/security/generate_python_build_cyclonedx.py
+          --root opex-identity-gateway
+          --output build/security/eay-identity-python-build.cdx.json
+
+      - name: Retain Identity Gateway Python dependency evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: eay-identity-python-build-sbom-${{ github.run_id }}
+          path: build/security/eay-identity-python-build.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Identity Gateway signer contract
+        run: pytest -q services/identity-gateway/tests
+
+      - name: Generate ephemeral CI signing material
+        run: python scripts/security/generate_identity_ci_material.py
+
+      - name: Production Identity Gateway secret boundary
+        run: python scripts/security/production_identity_secret_gate.py
+
+      - name: Prepare non-root CI secret ownership
+        run: python scripts/security/prepare_identity_ci_secret.py
+
+      - name: Identity Gateway Compose runtime adversarial gate
+        run: python scripts/security/identity_gateway_runtime_gate.py

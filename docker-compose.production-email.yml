@@ -1,0 +1,18 @@
+services:
+  platform-alerts:
+    environment:
+      OPEX_ALERT_EMAIL_ENABLED: "true"
+      OPEX_SMTP_PASSWORD: ""
+      OPEX_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+      OPEX_SMTP_HOST: "${OPEX_SMTP_HOST:?Set production SMTP host}"
+      OPEX_SMTP_PORT: "${OPEX_SMTP_PORT:-587}"
+      OPEX_SMTP_USERNAME: "${OPEX_SMTP_USERNAME:?Set production SMTP username}"
+      OPEX_ALERT_EMAIL_FROM: "${OPEX_ALERT_EMAIL_FROM:?Set production alert sender}"
+      OPEX_ALERT_EMAIL_TO: "${OPEX_ALERT_EMAIL_TO:?Set production alert recipient}"
+    secrets:
+      - source: smtp_password
+        target: smtp_password
+
+secrets:
+  smtp_password:
+    file: "${OPEX_SMTP_PASSWORD_SECRET_FILE:?Set SMTP password secret file path}"

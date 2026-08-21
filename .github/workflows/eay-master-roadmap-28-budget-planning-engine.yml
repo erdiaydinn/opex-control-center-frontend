@@ -1,0 +1,129 @@
+name: EAY Master Roadmap 28-30 - Budget Planning Intelligence Controls
+
+on:
+  push:
+    branches: [agent/master-roadmap-28-budget-planning-engine, product/eay-category-leadership-v1]
+  pull_request:
+    branches: [product/eay-category-leadership-v1]
+    paths:
+      - "backend/app/modules/budget/**"
+      - "backend/**/*budget*.py"
+      - "backend/migrations/*budget*.sql"
+      - "services/core-api/app/modules/budget/**"
+      - "services/core-api/**/*budget*.py"
+      - "services/core-api/alembic/versions/*budget*.py"
+      - "src/**/*budget*"
+      - "src/**/Budget/**"
+      - "config/**/*budget*"
+      - "scripts/**/*budget*"
+      - "config/eay_master_roadmap_60.json"
+      - ".github/workflows/eay-master-roadmap-28-budget-planning-engine.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: eay-master-28-30-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budget-planning-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+      PGPASSWORD: opex_migrator
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_DB: opex_test, POSTGRES_USER: opex_migrator, POSTGRES_PASSWORD: opex_migrator}
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with: {ref: "${{ github.event.pull_request.head.sha || github.sha }}", fetch-depth: 0}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with: {python-version: "3.12", cache: pip}
+      - name: Install Core test shape
+        working-directory: services/core-api
+        run: python -m pip install -e ".[dev,bigquery]"
+      - name: Create runtime role
+        run: |
+          python - <<'PY'
+          import asyncio,asyncpg
+          async def main():
+              c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  if not await c.fetchval("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"):
+                      await c.execute("CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOBYPASSRLS")
+              finally: await c.close()
+          asyncio.run(main())
+          PY
+      - name: Strict lint and unit contracts
+        run: |
+          ruff check \
+            services/core-api/alembic/versions/0037_budget_planning_authority.py \
+            services/core-api/alembic/versions/0038_budget_ai_recommendation_authority.py \
+            services/core-api/alembic/versions/0039_budget_finance_controls.py \
+            services/core-api/alembic/versions/0040_budget_planning_hardening.py \
+            services/core-api/app/modules/budget/planning_engine.py \
+            services/core-api/app/modules/budget/planning_engine_routes.py \
+            services/core-api/app/modules/budget/planning_engine_schemas.py \
+            services/core-api/app/modules/budget/intelligence.py \
+            services/core-api/tests/test_budget_master28_planning.py \
+            services/core-api/tests/test_budget_master28_hardening.py \
+            services/core-api/tests/test_budget_master29_30_controls.py
+          pytest -q services/core-api/tests/test_budget_domain.py services/core-api/tests/test_budget_master28_planning.py services/core-api/tests/test_budget_master28_hardening.py services/core-api/tests/test_budget_master29_30_controls.py services/core-api/tests/test_sql_access_boundary.py
+      - name: Apply cumulative migrations and preserve Budget 0040 milestone
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0040_budget_planning_hardening' /tmp/eay-alembic-history.txt
+          alembic upgrade head
+          current="$(alembic current | awk '/\(head\)/ {print $1}')"
+          test "$current" = "${heads[0]}"
+      - name: Assert planning and finance truth schema
+        run: |
+          python - <<'PY'
+          import asyncio,asyncpg
+          async def main():
+              c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  assert await c.fetchval('SELECT count(*) FROM alembic_version') == 1
+                  for t in ('budget_plan_snapshot','budget_scenario','budget_scenario_assumption','budget_scenario_line','budget_allocation_rule','budget_ai_recommendation','budget_export_request','budget_import_version','budget_finance_uat_attestation'):
+                      r=await c.fetchrow('SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname=$1',t)
+                      assert r and r['relrowsecurity'] and r['relforcerowsecurity'],t
+                  assert await c.fetchval("SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='fk_budget_forecast_exact_scope')")
+                  policy=await c.fetchval("SELECT pg_get_expr(polqual,polrelid) FROM pg_policy WHERE polname='budget_plan_snapshot_global_planning_scope'")
+                  assert '__all__' in policy
+              finally: await c.close()
+          asyncio.run(main())
+          PY
+      - name: Budget route contract
+        working-directory: services/core-api
+        run: python -c "from app.budget_main import app; paths=app.openapi()['paths']; assert '/v1/budget/planning/scenarios' in paths and '/v1/budget/plans' in paths"
+      - name: Production truth boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('services/core-api/app/modules/budget/intelligence.py').read_text().lower()
+          assert 'update actual' not in source and 'update commitment' not in source
+          migration=Path('services/core-api/alembic/versions/0039_budget_finance_controls.py').read_text()
+          assert "environment NOT IN ('ci','repository','synthetic')" in migration
+          hardening=Path('services/core-api/alembic/versions/0040_budget_planning_hardening.py').read_text()
+          assert 'published scenario root is immutable' in hardening
+          PY

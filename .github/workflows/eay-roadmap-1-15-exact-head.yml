@@ -1,0 +1,210 @@
+name: EAY Roadmap 1-15 Exact-Head Acceptance
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  prior-1-14:
+    name: Require roadmap 1-14 GREEN on same exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for exact-head 1-14 cumulative gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ env.EAY_EXACT_HEAD }}
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.parse, urllib.request
+          repo=os.environ['GH_REPOSITORY']
+          head=os.environ['HEAD_SHA']
+          token=os.environ['GH_TOKEN']
+          workflow='eay-roadmap-1-14-exact-head.yml'
+          url=f'https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs?event=pull_request&per_page=30'
+          headers={
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          for attempt in range(150):
+              request=urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  runs=json.load(response).get('workflow_runs', [])
+              matches=[run for run in runs if run.get('head_sha') == head]
+              if matches:
+                  run=max(matches, key=lambda item: item['id'])
+                  status=run.get('status')
+                  conclusion=run.get('conclusion')
+                  print(f'prior_gate_run={run["id"]} status={status} conclusion={conclusion}')
+                  if status == 'completed':
+                      if conclusion != 'success':
+                          raise SystemExit(f'roadmap 1-14 exact-head gate is {conclusion}')
+                      print('roadmap_1_14_exact_head_green=true')
+                      raise SystemExit(0)
+              time.sleep(8)
+          raise SystemExit('timed out waiting for roadmap 1-14 exact-head gate')
+          PY
+
+  workforce-replan:
+    name: Item 15 intraday replan what-if PostgreSQL authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_workforce_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_workforce_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgresql://workforce_a:runtime_a@localhost:5432/eay_workforce_ci
+      WORKFORCE_TENANT_ID: tenant-a
+      WORKFORCE_AUTO_MIGRATE: "false"
+      DOCKOS_ENV: test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install canonical backend dependencies
+        run: python -m pip install -r backend/requirements.txt "pytest>=8,<9"
+      - name: Compile item 15 authority
+        run: |
+          python -m py_compile \
+            backend/app/modules/workforce/replan_authority.py \
+            backend/app/modules/workforce/replan_repository.py \
+            backend/app/modules/workforce/replan_service.py \
+            backend/app/modules/workforce/replan_router.py
+      - name: Apply canonical Workforce V29-V37 migrations
+        run: |
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/002_workforce_v29.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/003_workforce_v30_acceptance.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/004_workforce_v31_lifecycle_acceptance.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/005_workforce_v32_identity_revocation.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/010_workforce_v33_demand_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/011_workforce_v34_capacity_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/012_workforce_v35_dpi_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/013_workforce_v36_optimizer_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -f backend/migrations/014_workforce_v37_replan_authority.sql
+          psql -h localhost -U postgres -d eay_workforce_ci -Atc "SELECT max(version) FROM workforce_schema_migrations" | grep -qx '37'
+      - name: Create tenant-bound runtime roles and approved model authority
+        run: |
+          psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE workforce_a LOGIN PASSWORD 'runtime_a' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          CREATE ROLE workforce_b LOGIN PASSWORD 'runtime_b' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          INSERT INTO workforce_tenant_bindings(role_name,tenant_id)
+          VALUES ('workforce_a','tenant-a'),('workforce_b','tenant-b');
+
+          GRANT SELECT, INSERT ON workforce_labor_standard_versions, workforce_demand_snapshots,
+            workforce_capacity_snapshots, workforce_dpi_snapshots, workforce_optimizer_proposals,
+            workforce_replan_scenarios, workforce_replan_proposals TO workforce_a, workforce_b;
+          GRANT SELECT ON workforce_replan_model_versions TO workforce_a, workforce_b;
+
+          INSERT INTO workforce_replan_model_versions(
+            tenant_id,model_version,kpi_sensitivities,incremental_cost_minor_units_per_man_hour,
+            source_ref,approved_by,effective_from,status,authority_fingerprint
+          ) VALUES
+          ('tenant-a','workforce-replan-v1',
+            '[{"kpi_key":"picking_seconds_per_order","delta_per_dpi_point":"100","source_ref":"model://sanitized/picking-sensitivity-v1"},{"kpi_key":"otp_4_25_pct","delta_per_dpi_point":"-8","source_ref":"model://sanitized/otp-sensitivity-v1"}]'::jsonb,
+            1000,'model://sanitized/replan-v1','ops-excellence','2026-08-01T00:00:00Z','approved',repeat('e',64)),
+          ('tenant-b','workforce-replan-v1',
+            '[{"kpi_key":"picking_seconds_per_order","delta_per_dpi_point":"90","source_ref":"model://sanitized/tenant-b/picking"}]'::jsonb,
+            900,'model://sanitized/tenant-b/replan-v1','ops-b','2026-08-01T00:00:00Z','approved',repeat('f',64));
+
+          INSERT INTO workforce_replan_scenarios(
+            tenant_id,id,location_id,model_version,input_fingerprint,scenario_fingerprint,
+            baseline_demand_snapshot_fingerprint,baseline_capacity_snapshot_fingerprint,
+            baseline_dpi_snapshot_fingerprint,baseline_optimizer_proposal_fingerprint,
+            baseline_required_man_hours,baseline_effective_man_hours,scenario_required_man_hours,
+            scenario_effective_man_hours,baseline_gap_man_hours,scenario_gap_man_hours,
+            gap_delta_man_hours,baseline_dpi,scenario_dpi,dpi_delta,predicted_kpi_deltas,
+            estimated_scenario_cost_minor_units,cost_delta_minor_units,shocks,assumptions,created_by
+          ) VALUES (
+            'tenant-b','SCN-tenant-b','WH-B','workforce-replan-v1',repeat('1',64),repeat('2',64),
+            repeat('3',64),repeat('4',64),repeat('5',64),repeat('6',64),10,10.7,11,10.7,0,0.3,0.3,
+            0.9345794393,1.0280373832,0.0934579439,'{"picking_seconds_per_order":"9.34579439"}'::jsonb,
+            300,300,'[]'::jsonb,'{}'::jsonb,'seed'
+          );
+          INSERT INTO workforce_replan_proposals(
+            tenant_id,id,location_id,scenario_fingerprint,recommendation,replan_required,
+            automatic_apply_permitted,human_approval_required,proposal_fingerprint,created_by
+          ) VALUES (
+            'tenant-b','RPL-tenant-b','WH-B',repeat('2',64),'rerun_constraint_optimizer',true,false,true,repeat('7',64),'seed'
+          );
+          SQL
+      - name: Run item 15 domain PostgreSQL and API acceptance
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m pytest -q \
+            backend/app/modules/workforce/test_replan_authority.py \
+            backend/app/modules/workforce/test_replan_authority_postgres.py \
+            backend/app/modules/workforce/test_replan_api.py
+      - name: Prove cross-tenant replan isolation
+        run: |
+          PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -Atc "SELECT count(*) FROM workforce_replan_model_versions WHERE tenant_id='tenant-b';" | grep -qx '0'
+          PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -Atc "SELECT count(*) FROM workforce_replan_scenarios WHERE tenant_id='tenant-b';" | grep -qx '0'
+          PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -Atc "SELECT count(*) FROM workforce_replan_proposals WHERE tenant_id='tenant-b';" | grep -qx '0'
+          if PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_replan_proposals(tenant_id,id,location_id,scenario_fingerprint,recommendation,replan_required,automatic_apply_permitted,human_approval_required,proposal_fingerprint,created_by) VALUES ('tenant-b','RPL-forbidden','WH-B',repeat('8',64),'forbidden',true,false,true,repeat('9',64),'attacker');"; then
+            echo 'cross-tenant replan write unexpectedly succeeded' >&2
+            exit 1
+          fi
+      - name: Prove runtime cannot author approved replan model
+        run: |
+          if PGPASSWORD=runtime_a psql -h localhost -U workforce_a -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_replan_model_versions(tenant_id,model_version,kpi_sensitivities,incremental_cost_minor_units_per_man_hour,source_ref,approved_by,effective_from,status,authority_fingerprint) VALUES ('tenant-a','attacker-model','[]',0,'attacker','attacker',now(),'approved',repeat('a',64));"; then
+            echo 'runtime identity unexpectedly authored replan model authority' >&2
+            exit 1
+          fi
+      - name: Prove replan history immutable and automatic apply impossible
+        run: |
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "UPDATE workforce_replan_scenarios SET cost_delta_minor_units=999 WHERE tenant_id='tenant-b' AND id='SCN-tenant-b';"; then
+            echo 'replan scenario mutation unexpectedly succeeded' >&2
+            exit 1
+          fi
+          if psql -h localhost -U postgres -d eay_workforce_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workforce_replan_proposals(tenant_id,id,location_id,scenario_fingerprint,recommendation,replan_required,automatic_apply_permitted,human_approval_required,proposal_fingerprint,created_by) VALUES ('tenant-b','RPL-auto','WH-B',repeat('b',64),'apply',true,true,true,repeat('c',64),'seed');"; then
+            echo 'automatic replan apply authority unexpectedly succeeded' >&2
+            exit 1
+          fi
+      - name: Preserve production truth boundary
+        run: |
+          echo 'item15_repository_acceptance=true'
+          echo 'predicted_kpi_delta_is_scenario_estimate=true'
+          echo 'real_calibrated_kpi_sensitivity_and_cost_model_external_evidence=false'
+          echo 'production_ready=false'
+
+  accepted:
+    name: Roadmap 1-15 exact-head repository acceptance
+    runs-on: ubuntu-latest
+    needs: [prior-1-14, workforce-replan]
+    steps:
+      - run: |
+          echo "exact_head=$EAY_EXACT_HEAD"
+          echo 'roadmap_1_14_exact_head_green=true'
+          echo 'item15_repository_software_acceptance=true'
+          echo 'production_ready=false'
+          echo 'external_evidence_not_substituted=true'

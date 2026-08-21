@@ -1,0 +1,170 @@
+name: EAY Master Roadmap 49-55 - External Evidence Ledger Authority
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-49-55-real-acceptance-compose-v2
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - agent/master-roadmap-45-48-sre-compose-v2
+      - product/eay-category-leadership-v1
+    paths:
+      - 'services/core-api/alembic/versions/0044_external_acceptance_evidence.py'
+      - 'services/core-api/app/acceptance/external_evidence.py'
+      - 'services/core-api/tests/test_master49_55_evidence_ledger.py'
+      - 'services/core-api/tests/test_master49_55_external_acceptance.py'
+      - 'docs/governance/eay_external_acceptance_requirements.json'
+      - '.github/workflows/eay-master-roadmap-49-55-evidence-ledger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: eay-master-49-55-ledger-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  external-evidence-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Core API test surface
+        working-directory: services/core-api
+        run: python -m pip install -e '.[dev,bigquery]'
+      - name: Create non-superuser runtime role
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime') THEN
+              CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+            END IF;
+          END
+          $$;
+          SQL
+      - name: Strict Ruff compile and requirements JSON gate
+        run: |
+          ruff check \
+            services/core-api/alembic/versions/0044_external_acceptance_evidence.py \
+            services/core-api/app/acceptance/external_evidence.py \
+            services/core-api/tests/test_master49_55_evidence_ledger.py \
+            services/core-api/tests/test_master49_55_external_acceptance.py
+          python -m py_compile \
+            services/core-api/alembic/versions/0044_external_acceptance_evidence.py \
+            services/core-api/app/acceptance/external_evidence.py
+          python -m json.tool docs/governance/eay_external_acceptance_requirements.json >/dev/null
+      - name: Enforce one cumulative head and external-evidence ancestry
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          echo "${heads[0]}" > /tmp/acceptance-current-head.txt
+          alembic history | tee /tmp/acceptance-history.txt
+          grep -q '0044_external_acceptance_evidence' /tmp/acceptance-history.txt
+          grep -q '0043_shared_platform_delivery_search' /tmp/acceptance-history.txt
+          grep -q '0041_academy_learning_os' /tmp/acceptance-history.txt
+      - name: Apply cumulative migrations
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Prove migrated DB is at resolved cumulative head
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          expected_head="$(cat /tmp/acceptance-current-head.txt)"
+          actual_head="$(psql -h localhost -U opex_migrator -d opex_test -Atc 'SELECT version_num FROM alembic_version')"
+          test "$actual_head" = "$expected_head"
+      - name: Prove FORCE RLS and runtime read-only authority
+        env:
+          PGPASSWORD: opex_migrator
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_class
+              WHERE relname = 'external_acceptance_evidence'
+                AND relrowsecurity
+                AND relforcerowsecurity
+            ) THEN
+              RAISE EXCEPTION 'external acceptance evidence FORCE RLS missing';
+            END IF;
+            IF NOT has_table_privilege(
+              'opex_runtime', 'external_acceptance_evidence', 'SELECT'
+            ) THEN
+              RAISE EXCEPTION 'runtime evidence read privilege missing';
+            END IF;
+            IF has_table_privilege(
+              'opex_runtime', 'external_acceptance_evidence', 'INSERT'
+            ) OR has_table_privilege(
+              'opex_runtime', 'external_acceptance_evidence', 'UPDATE'
+            ) OR has_table_privilege(
+              'opex_runtime', 'external_acceptance_evidence', 'DELETE'
+            ) THEN
+              RAISE EXCEPTION 'runtime external evidence write privilege is forbidden';
+            END IF;
+          END
+          $$;
+          SQL
+      - name: Run evidence-ledger and fail-closed evaluation contracts
+        run: |
+          pytest -q \
+            services/core-api/tests/test_master49_55_evidence_ledger.py \
+            services/core-api/tests/test_master49_55_external_acceptance.py
+      - name: Publish acceptance-authority exact-head status
+        if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/product/eay-category-leadership-v1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=failure
+          description='Master 49-55 external acceptance authority failed'
+          if [ "$JOB_STATUS" = 'success' ]; then
+            state=success
+            description='Master 49-55 external acceptance authority passed; field evidence still required'
+          fi
+          payload=$(printf '{"state":"%s","context":"EAY Master 49-55 Acceptance Authority Exact-Head","description":"%s"}' "$state" "$description")
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            --data "$payload"

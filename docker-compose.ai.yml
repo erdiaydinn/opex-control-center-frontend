@@ -1,0 +1,26 @@
+services:
+  eay-ai-core:
+    build:
+      context: ./services/eay-ai-core
+      dockerfile: Dockerfile
+    profiles: ["ai"]
+    environment:
+      EAY_ENVIRONMENT: "${EAY_ENVIRONMENT:-production}"
+      EAY_AI_DB_PATH: /var/lib/eay-ai/eay_ai.db
+      EAY_AI_TENANT_CONTEXT_JWKS_FILE: /run/secrets/ai_tenant_context_jwks
+      EAY_AI_TENANT_CONTEXT_ISSUER: "${OPEX_INTERNAL_ASSERTION_ISSUER:-opex-identity-gateway}"
+      EAY_AI_TENANT_CONTEXT_AUDIENCE: "${OPEX_AI_TENANT_CONTEXT_AUDIENCE:-eay-ai-core-grounded-retrieval}"
+      EAY_AI_TENANT_CONTEXT_MAX_LIFETIME_SECONDS: "60"
+    expose:
+      - "8091"
+    volumes:
+      - eay_ai_data:/var/lib/eay-ai
+    secrets:
+      - source: internal_assertion_jwks
+        target: ai_tenant_context_jwks
+    restart: unless-stopped
+    networks:
+      - ai_plane
+
+volumes:
+  eay_ai_data:

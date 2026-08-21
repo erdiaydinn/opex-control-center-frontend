@@ -1,0 +1,14 @@
+OPEX Control Center Inventory V19
+Tarih: 28.07.2026
+
+- Ana veri yükleme alanı iki bağımsız dosyaya ayrıldı.
+- Firma lokasyon dosyası yalnızca location/lokasyon sütununu kabul eder.
+- Depo stok dosyası warehouse, sku, barcode, name, expected ve cost alanlarını kabul eder.
+- İki dosya ayrı ayrı doğrulanmadan sayım başlatılamaz.
+- Aynı SKU farklı lokasyonlarda sayıldığında adetler SKU toplamında birleştirilir.
+- Resmî sayım tutanağından satır bazlı fark tablosu çıkarıldı.
+- Resmî tutanak A4 belge hiyerarşisi, beyan metni, özet sonuçlar ve imza alanlarıyla yenilendi.
+- Fark detayları ayrı XLSX raporu olarak oluşturulur.
+- Fark detay raporu belge, depo, lokasyon, SKU, barkod, ürün, sistem, sayım, fark, tutar, fiyat ve kaynak alanlarını içerir.
+- Yazı boyutları, başlık hiyerarşisi, büyük/küçük harf kullanımı ve kart düzeni profesyonel editoryal standarda getirildi.
+- Light/dark tema ve TR/EN/DE/AR seçenekleri korunarak yeni ekran metinleri çeviri kapsamına alındı.

@@ -1,0 +1,213 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-opex}
+      POSTGRES_USER: ${POSTGRES_USER:-opex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env içinde zorunludur}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    logging: &rotated-logs
+      driver: json-file
+      options: {max-size: "20m", max-file: "10"}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opex} -d ${POSTGRES_DB:-opex}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+    ports: []
+    security_opt: [no-new-privileges:true]
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - sh
+      - -ec
+      - exec redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD .env içinde zorunludur}
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+    ports: []
+    security_opt: [no-new-privileges:true]
+
+  inventory-migrate:
+    image: postgres:17-alpine
+    environment:
+      INVENTORY_MIGRATION_DATABASE_URL: ${INVENTORY_MIGRATION_DATABASE_URL:?Dedicated Inventory migration DSN is required}
+    volumes:
+      - ./backend/migrations/003_inventory_production.sql:/migrations/003_inventory_production.sql:ro
+    command: ["sh", "-ec", "psql \"$$INVENTORY_MIGRATION_DATABASE_URL\" -v ON_ERROR_STOP=1 -f /migrations/003_inventory_production.sql"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL .env içinde zorunludur}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL .env içinde zorunludur}
+      EAY_INVENTORY_MODE: ${EAY_INVENTORY_MODE:?Set EAY_INVENTORY_MODE=production for managed terminal deployments}
+      INVENTORY_DATABASE_URL: ${INVENTORY_DATABASE_URL:?Dedicated non-owner Inventory runtime DSN is required}
+      INVENTORY_REDIS_URL: ${INVENTORY_REDIS_URL:?Inventory Redis DSN is required}
+      INVENTORY_MDM_ACTIVATION_PEPPER: ${INVENTORY_MDM_ACTIVATION_PEPPER:?Inventory activation pepper is required}
+      OPEX_LOCAL_JWT_SECRET: ${OPEX_LOCAL_JWT_SECRET:?OPEX_LOCAL_JWT_SECRET en az 48 karakter olmalıdır}
+      OPEX_LOCAL_AUTH_ENABLED: ${OPEX_LOCAL_AUTH_ENABLED:-true}
+      IDENTITY_DB: /var/lib/dockos/identity_v23.db
+      DOCKOS_STATE_FILE: /var/lib/dockos/dockos_state.json
+      DOCKOS_BACKUP_DIR: /var/backups/dockos
+      DOCKOS_SINGLE_WORKER: "true"
+      WORKFORCE_AUDIT_DB: /var/lib/dockos/workforce_audit.db
+      INVENTORY_DB: /var/lib/dockos/inventory_v20.db
+      RECRUITMENT_EVIDENCE_DIR: /var/lib/dockos/recruitment-evidence
+    volumes:
+      - dockos-state:/var/lib/dockos
+      - dockos-backups:/var/backups/dockos
+      - ${APNS_PRIVATE_KEY_HOST_PATH:-./secrets/empty.p8}:/run/secrets/apns-key.p8:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      inventory-migrate:
+        condition: service_completed_successfully
+    ports: ["8000:8000"]
+    restart: unless-stopped
+    networks: [edge, data]
+    security_opt: [no-new-privileges:true]
+    logging: *rotated-logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/inventory/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  notification-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "-m", "app.modules.workforce.notification_worker"]
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL .env içinde zorunludur}
+      APNS_PRIVATE_KEY_PATH: /run/secrets/apns-key.p8
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-service-account.json
+    volumes:
+      - ${APNS_PRIVATE_KEY_HOST_PATH:-./secrets/empty.p8}:/run/secrets/apns-key.p8:ro
+      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST_PATH:-./secrets/google-empty.json}:/run/secrets/google-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *rotated-logs
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+
+  backup:
+    image: postgres:16-alpine
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL .env içinde zorunludur}
+    volumes:
+      - postgres-backups:/backups
+      - ./ops:/ops:ro
+    command: ["/bin/sh", "/ops/backup-loop.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *rotated-logs
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+
+  worm-archiver:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL .env içinde zorunludur}
+    volumes:
+      - ./ops:/ops:ro
+    command: ["/bin/sh", "/ops/worm-loop.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["worm"]
+    logging: *rotated-logs
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_BASE: /api
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID}
+        VITE_OIDC_AUTHORIZE_URL: ${VITE_OIDC_AUTHORIZE_URL}
+        OIDC_EXCHANGE_URL: ${VITE_OIDC_TOKEN_URL}
+        VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI}
+        VITE_OIDC_SCOPE: ${VITE_OIDC_SCOPE:-openid profile email}
+        VITE_LOCAL_PILOT_MODE: ${VITE_LOCAL_PILOT_MODE:-false}
+        VITE_INVENTORY_API_REQUIRED: ${VITE_INVENTORY_API_REQUIRED:-true}
+    environment:
+      DOCKOS_GATEWAY_SECRET: ${DOCKOS_GATEWAY_SECRET}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports: ["8080:80"]
+    restart: unless-stopped
+    networks: [edge]
+    security_opt: [no-new-privileges:true]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports: ["9090:9090"]
+    profiles: ["observability"]
+    restart: unless-stopped
+    networks: [data]
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-before-observability}
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports: ["3000:3000"]
+    profiles: ["observability"]
+    restart: unless-stopped
+    networks: [data]
+
+volumes:
+  postgres-data:
+  postgres-backups:
+  dockos-state:
+  dockos-backups:
+  prometheus-data:
+  grafana-data:
+  redis-data:
+
+networks:
+  edge:
+  data:
+    internal: true

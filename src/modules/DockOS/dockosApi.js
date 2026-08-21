@@ -1,299 +1,245 @@
-﻿import {
-  canUserFeature,
-  getSessionUser,
-} from "../../auth/accessConfig.js";
-import { filterRowsByDockOSScope, getDockOSScope } from "./dockosPermissions.js";
+import {
+  apiFetch as authenticatedApiFetch,
+} from "../../api/client.js";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000/api";
+import {
+  filterRowsByDockOSScope,
+} from "./dockosPermissions.js";
 
+
+const REQUEST_TIMEOUT_MS = 15000;
+
+
+// Scope is never sent by the browser as authorization input.
+// Backend must derive scope from authenticated principal / DB / RLS.
 function appendScopeParams(params) {
-  const scope = getDockOSScope();
-
-  if (!scope || scope.type === "all") {
-    params.set("scope_type", "all");
-    return params;
-  }
-
-  params.set("scope_type", scope.type || "none");
-
-  if (scope.type === "warehouse") {
-    (scope.warehouses || []).forEach((warehouse) => params.append("warehouses", warehouse));
-  }
-
-  if (scope.type === "supplier") {
-    (scope.suppliers || []).forEach((supplier) => params.append("suppliers", supplier));
-  }
-
-  if (scope.type === "region") {
-    (scope.regions || []).forEach((region) => params.append("regions", region));
-  }
-
   return params;
 }
 
-function normalizeApiPayload(payload) {
-  if (Array.isArray(payload)) {
-    return filterRowsByDockOSScope(payload);
-  }
 
-  if (payload && Array.isArray(payload.rows)) {
-    return {
-      ...payload,
-      rows: filterRowsByDockOSScope(payload.rows),
-    };
-  }
+async function apiFetch(path, options = {}) {
+  const controller =
+    new AbortController();
 
-  if (payload && Array.isArray(payload.data)) {
-    return {
-      ...payload,
-      data: filterRowsByDockOSScope(payload.data),
-    };
-  }
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT_MS
+  );
 
-  return payload;
+  try {
+    return await authenticatedApiFetch(
+      path,
+      {
+        ...options,
+        signal: controller.signal,
+      }
+    );
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(
+        "DockOS API iste?i zaman a??m?na u?rad?."
+      );
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function normalizeRows(payload) {
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.rows)
+      ? payload.rows
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : [];
+
+  return filterRowsByDockOSScope(rows);
+}
+
+export async function healthCheck() {
+  return apiFetch("/dockos/health");
 }
 
 export async function getPurchaseOrders(supplierName = "", warehouseName = "") {
-  const sessionUser = getSessionUser();
-
-  if (!sessionUser?.email) {
-    throw new Error("Oturum bulunamadı.");
-  }
-
-  if (!canUserFeature(sessionUser.email, "dockos", "livePurchaseOrders")) {
-    return [];
-  }
-
   const params = new URLSearchParams();
-
   if (supplierName) params.set("supplier_name", supplierName);
   if (warehouseName) params.set("warehouse_name", warehouseName);
-
   appendScopeParams(params);
-
-  try {
-    const res = await fetch(
-      `${API_BASE}/dockos/live-purchase-orders?${params.toString()}`
-    );
-
-    if (!res.ok) throw new Error("Canlı PO alınamadı");
-
-    const payload = await res.json();
-    return normalizeApiPayload(payload);
-  } catch (err) {
-    console.error("DockOS API error:", err);
-    throw err;
-  }
+  return normalizeRows(await apiFetch(`/dockos/live-purchase-orders?${params.toString()}`));
 }
 
-export async function createReservation(payload = {}) {
-  const sessionUser = getSessionUser();
-
-  if (!sessionUser?.email) {
-    throw new Error("Oturum bulunamadı.");
-  }
-
-  if (!canUserFeature(sessionUser.email, "dockos", "supplierAppointments")) {
-    throw new Error("Tedarikçi randevu oluşturma yetkiniz yok.");
-  }
-
-  const res = await fetch(`${API_BASE}/dockos/reservations`, {
+export async function importPurchaseOrders(payload) {
+  return apiFetch("/dockos/purchase-orders/import", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-OPEX-User": sessionUser.email,
-    },
     body: JSON.stringify(payload),
   });
-
-  if (!res.ok) {
-    throw new Error("Randevu oluşturulamadı.");
-  }
-
-  return res.json();
 }
 
-export async function getReservations(paramsInput = {}) {
-  const sessionUser = getSessionUser();
-
-  if (!sessionUser?.email) {
-    throw new Error("Oturum bulunamadı.");
-  }
-
-  if (!canUserFeature(sessionUser.email, "dockos", "supplierAppointments")) {
-    return [];
-  }
-
+export async function getSlots(input = {}) {
   const params = new URLSearchParams();
-
-  Object.entries(paramsInput || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      params.set(key, value);
-    }
-  });
-
-  appendScopeParams(params);
-
-  const res = await fetch(`${API_BASE}/dockos/reservations?${params.toString()}`);
-
-  if (!res.ok) {
-    throw new Error("Randevu listesi alınamadı.");
+  if (typeof input === "string") {
+    if (input) params.set("warehouse_name", input);
+  } else {
+    Object.entries(input || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim()) {
+        params.set(key, value);
+      }
+    });
   }
-
-  const payload = await res.json();
-  return normalizeApiPayload(payload);
+  appendScopeParams(params);
+  return normalizeRows(await apiFetch(`/dockos/slots?${params.toString()}`));
 }
 
-export async function updateReservation(id, payload = {}) {
-  const sessionUser = getSessionUser();
-
-  if (!sessionUser?.email) {
-    throw new Error("Oturum bulunamadı.");
-  }
-
-  if (!canUserAction(sessionUser.email, "dockos", "edit")) {
-    throw new Error("Randevu düzenleme yetkiniz yok.");
-  }
-
-  const res = await fetch(`${API_BASE}/dockos/reservations/${id}`, {
+export async function bulkUpdateCapacity(payload) {
+  return apiFetch("/dockos/slots/capacity/bulk", {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-OPEX-User": sessionUser.email,
-    },
     body: JSON.stringify(payload),
   });
-
-  if (!res.ok) {
-    throw new Error("Randevu güncellenemedi.");
-  }
-
-  return res.json();
 }
 
-export async function deleteReservation(id) {
-  const sessionUser = getSessionUser();
-
-  if (!sessionUser?.email) {
-    throw new Error("Oturum bulunamadı.");
-  }
-
-  if (!canUserAction(sessionUser.email, "dockos", "delete")) {
-    throw new Error("Randevu silme yetkiniz yok.");
-  }
-
-  const res = await fetch(`${API_BASE}/dockos/reservations/${id}`, {
-    method: "DELETE",
-    headers: {
-      "X-OPEX-User": sessionUser.email,
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error("Randevu silinemedi.");
-  }
-
-  return true;
+export async function blockSlotDates(payload) {
+  return apiFetch("/dockos/slots/capacity/block-dates", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export async function getSlots(paramsInput = {}) {
-  const sessionUser = getSessionUser();
+export async function editSlotCapacity(payload) {
+  return apiFetch("/dockos/slots/capacity/edit", { method: "PUT", body: JSON.stringify(payload) });
+}
 
-  if (!sessionUser?.email) {
-    throw new Error("Oturum bulunamadı.");
-  }
+export async function deleteSlotCapacity({ warehouse_name, date, slot }) {
+  const params = new URLSearchParams({ warehouse_name, date, slot });
+  return apiFetch(`/dockos/slots/capacity?${params.toString()}`, { method: "DELETE" });
+}
 
-  if (!canUserFeature(sessionUser.email, "dockos", "supplierAppointments")) {
-    return [];
-  }
-
+export async function getSupplierCapacity(input = {}) {
   const params = new URLSearchParams();
+  Object.entries(input || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) params.set(key, value);
+  });
+  return normalizeRows(await apiFetch(`/dockos/supplier-capacity?${params.toString()}`));
+}
 
-  Object.entries(paramsInput || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
+export async function getSupplierDailyLimits(input = {}) {
+  const params = new URLSearchParams();
+  Object.entries(input || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) params.set(key, value);
+  });
+  return normalizeRows(await apiFetch(`/dockos/supplier-daily-limits?${params.toString()}`));
+}
+
+export async function updateSupplierDailyLimit(payload) {
+  return apiFetch("/dockos/supplier-daily-limits", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function bulkUpdateSupplierCapacity(payload) {
+  return apiFetch("/dockos/supplier-capacity/bulk", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkUpdateSupplierCapacityMatrix(payload) {
+  return apiFetch("/dockos/supplier-capacity/matrix", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createReservation(payload) {
+  return apiFetch("/dockos/reservations", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getReservations(input = {}) {
+  const params = new URLSearchParams();
+  Object.entries(input || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim()) {
       params.set(key, value);
     }
   });
-
   appendScopeParams(params);
+  return normalizeRows(await apiFetch(`/dockos/reservations?${params.toString()}`));
+}
 
-  const res = await fetch(`${API_BASE}/dockos/slots?${params.toString()}`, {
-    headers: {
-      "X-OPEX-User": sessionUser.email,
-    },
+export async function updateReservationArrival(reservationNo, payload) {
+  return apiFetch(`/dockos/reservations/${encodeURIComponent(reservationNo)}/arrival-check`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
   });
-
-  if (!res.ok) {
-    throw new Error("Slot listesi alınamadı.");
-  }
-
-  const payload = await res.json();
-  return normalizeApiPayload(payload);
 }
 
-export async function getWarehouses() {
-  const res = await fetch(`${API_BASE}/dockos/warehouses`);
-
-  if (!res.ok) {
-    throw new Error("Depo listesi alınamadı.");
-  }
-
-  const payload = await res.json();
-  return normalizeApiPayload(payload);
+export async function cancelReservation(reservationNo, adminOverride = false, reason = "") {
+  return apiFetch(
+    `/dockos/reservations/${encodeURIComponent(reservationNo)}/cancel?admin_override=${adminOverride}&reason=${encodeURIComponent(reason)}`,
+    { method: "POST" },
+  );
 }
+
+export async function editReservationAdmin(reservationNo, payload) {
+  return apiFetch(`/dockos/reservations/${encodeURIComponent(reservationNo)}/admin-edit`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function updateReservationStatus(reservationNo, payload) {
+  return apiFetch(`/dockos/reservations/${encodeURIComponent(reservationNo)}/status`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAuditLog(limit = 200) {
+  return normalizeRows(await apiFetch(`/dockos/audit-log?limit=${encodeURIComponent(limit)}`));
+}
+
+export async function askAnalytics(question, filters = {}) {
+  return apiFetch("/dockos/analytics/ask", {
+    method: "POST",
+    body: JSON.stringify({ question, filters }),
+  });
+}
+
+export async function executeAdminCommand(payload) {
+  return apiFetch("/dockos/admin/command/execute", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function getNotificationOutbox(limit = 200) {
+  return normalizeRows(await apiFetch(`/dockos/notifications/outbox?limit=${encodeURIComponent(limit)}`));
+}
+
+export async function processDueNotifications() {
+  return apiFetch("/dockos/notifications/process-due", { method: "POST" });
+}
+
+export async function getWarehouses(supplierName = "") {
+  const params = new URLSearchParams();
+  if (supplierName) params.set("supplier_name", supplierName);
+  return normalizeRows(await apiFetch(`/dockos/warehouses?${params.toString()}`));
+}
+
+export async function getMySuppliers() { return normalizeRows(await apiFetch("/dockos/my-suppliers")); }
+
+export async function getSupplierAccessMappings() { return normalizeRows(await apiFetch("/dockos/supplier-access")); }
+export async function saveSupplierAccessMapping(payload) { return apiFetch("/dockos/supplier-access", { method: "PUT", body: JSON.stringify(payload) }); }
+export async function deleteSupplierAccessMapping(email) { return apiFetch(`/dockos/supplier-access/${encodeURIComponent(email)}`, { method: "DELETE" }); }
+
+export async function createManualPurchaseOrder(payload) { return apiFetch("/dockos/purchase-orders/manual", {method:"POST", body:JSON.stringify(payload)}); }
+
+export async function getKpis(input={}) { const p=new URLSearchParams(); Object.entries(input).forEach(([k,v])=>{if(v)p.set(k,v)}); return apiFetch(`/dockos/kpis?${p}`); }
 
 export async function getSuppliers() {
-  const res = await fetch(`${API_BASE}/dockos/suppliers`);
-
-  if (!res.ok) {
-    throw new Error("Tedarikçi listesi alınamadı.");
-  }
-
-  const payload = await res.json();
-  return normalizeApiPayload(payload);
+  return normalizeRows(await apiFetch("/dockos/suppliers"));
 }
 
-export async function updateReservationArrival(reservationNo, arrivalCheck) {
-  const saved = localStorage.getItem("dockos_reservations");
-  const reservations = saved ? JSON.parse(saved) : [];
-
-  const updated = reservations.map((reservation) =>
-    reservation.reservation_no === reservationNo
-      ? {
-          ...reservation,
-          dc_task_status: "ARRIVAL_CHECK_COMPLETED",
-          arrival_check: arrivalCheck,
-        }
-      : reservation
-  );
-
-  localStorage.setItem("dockos_reservations", JSON.stringify(updated));
-
-  return {
-    reservation_no: reservationNo,
-    status: "UPDATED",
-    message: "Merkez depo kontrolü kaydedildi.",
-  };
+export async function getSettings() {
+  return apiFetch("/dockos/settings");
 }
 
-export async function cancelReservation(reservationNo) {
-  const saved = localStorage.getItem("dockos_reservations");
-  const reservations = saved ? JSON.parse(saved) : [];
-
-  const updated = reservations.map((reservation) =>
-    reservation.reservation_no === reservationNo
-      ? {
-          ...reservation,
-          status: "CANCELLED",
-        }
-      : reservation
-  );
-
-  localStorage.setItem("dockos_reservations", JSON.stringify(updated));
-
-  return {
-    reservation_no: reservationNo,
-    status: "CANCELLED",
-    message: "Rezervasyon iptal edildi.",
-  };
+export async function updateSettings(payload) {
+  return apiFetch("/dockos/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 }

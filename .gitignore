@@ -1,7 +1,8 @@
-﻿node_modules/
+node_modules/
 dist/
 .env
 .env.*
+!.env.example
 *.local
 .vite/
 npm-debug.log*
@@ -9,3 +10,38 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .DS_Store
+
+# Local runtime data
+runtime/
+
+# Personal/workforce imports, runtime databases and key material.
+backend/data/
+data/
+!backend/app/modules/workforce/data/
+!backend/app/modules/workforce/data/warehouses.json
+secrets/
+*.db
+*.sqlite
+*.sqlite3
+*.p8
+*.pem
+*.key
+*.p12
+*.xlsx
+*.xls
+*.csv
+backups/
+release/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local temporary files
+env.txt
+*.backup
+
+# Google OAuth client credentials - never commit
+**/client_secret.json
+**/client_secret_*.json
+.venv-core-api/

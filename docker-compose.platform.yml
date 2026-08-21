@@ -1,0 +1,322 @@
+name: opex-platform
+
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "${OPEX_GATEWAY_PORT:-8080}:80"
+    volumes:
+      - ./infra/nginx/platform.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      core-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - edge
+      - web_plane
+      - api_plane
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - web_plane
+
+  migrate:
+    build:
+      context: ./services/core-api
+      dockerfile: Dockerfile
+      additional_contexts:
+        planai: ./apps/planai/backend
+    command:
+      - sh
+      - -lc
+      - >-
+        alembic upgrade head &&
+        python -m app.cli.sync_backup_role_password
+    environment:
+      OPEX_ENVIRONMENT: "${OPEX_ENVIRONMENT:-development}"
+      OPEX_LOG_LEVEL: "${OPEX_LOG_LEVEL:-INFO}"
+      OPEX_MIGRATION_DATABASE_URL: "${OPEX_MIGRATION_DATABASE_URL:-}"
+      OPEX_MIGRATION_DATABASE_URL_FILE: "${OPEX_MIGRATION_DATABASE_URL_FILE:-}"
+      OPEX_POSTGRES_BACKUP_PASSWORD: "${OPEX_POSTGRES_BACKUP_PASSWORD:-}"
+      OPEX_POSTGRES_BACKUP_PASSWORD_FILE: "${OPEX_POSTGRES_BACKUP_PASSWORD_FILE:-}"
+      OPEX_AUTH_MODE: "${OPEX_AUTH_MODE:-development}"
+      OPEX_OIDC_ISSUER: "${OPEX_OIDC_ISSUER:-}"
+      OPEX_OIDC_AUDIENCE: "${OPEX_OIDC_AUDIENCE:-opex-core-api}"
+      OPEX_OIDC_JWKS_URL: "${OPEX_OIDC_JWKS_URL:-}"
+      OPEX_ALLOWED_HOSTS: "${OPEX_ALLOWED_HOSTS:-localhost,127.0.0.1,core-api,gateway}"
+      OPEX_CORS_ORIGINS: "${OPEX_CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - data_plane
+
+  identity-gateway:
+    build:
+      context: ./services/identity-gateway
+      dockerfile: Dockerfile
+    environment:
+      OPEX_ENVIRONMENT: "${OPEX_ENVIRONMENT:-development}"
+      OPEX_INTERNAL_ASSERTION_ISSUER: "${OPEX_INTERNAL_ASSERTION_ISSUER:-opex-identity-gateway}"
+      OPEX_INTERNAL_ASSERTION_AUDIENCE: "${OPEX_INTERNAL_ASSERTION_AUDIENCE:-opex-core-api}"
+      OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE: "${OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE:-opex-core-preauth}"
+      OPEX_INTERNAL_ASSERTION_LIFETIME_SECONDS: "${OPEX_INTERNAL_ASSERTION_LIFETIME_SECONDS:-30}"
+      OPEX_IDENTITY_GATEWAY_SIGNING_KEY_FILE: /run/secrets/identity_gateway_signing_key
+      OPEX_IDENTITY_GATEWAY_SIGNING_KID: "${OPEX_IDENTITY_GATEWAY_SIGNING_KID:-opex-dev-es256-v1}"
+    secrets:
+      - source: identity_gateway_signing_key
+        target: identity_gateway_signing_key
+    expose:
+      - "8020"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8020/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - identity_core_plane
+      - identity_egress
+
+  core-api:
+    build:
+      context: ./services/core-api
+      dockerfile: Dockerfile
+      additional_contexts:
+        planai: ./apps/planai/backend
+    environment:
+      OPEX_ENVIRONMENT: "${OPEX_ENVIRONMENT:-development}"
+      OPEX_LOG_LEVEL: "${OPEX_LOG_LEVEL:-INFO}"
+      OPEX_DATABASE_URL: "${OPEX_DATABASE_URL:-}"
+      OPEX_DATABASE_URL_FILE: "${OPEX_DATABASE_URL_FILE:-}"
+      OPEX_REDIS_URL: "${OPEX_REDIS_URL:-redis://redis:6379/0}"
+      OPEX_AUTH_MODE: "${OPEX_AUTH_MODE:-development}"
+      OPEX_OIDC_ISSUER: "${OPEX_OIDC_ISSUER:-}"
+      OPEX_OIDC_AUDIENCE: "${OPEX_OIDC_AUDIENCE:-opex-core-api}"
+      OPEX_OIDC_JWKS_URL: "${OPEX_OIDC_JWKS_URL:-}"
+      OPEX_INTERNAL_ASSERTION_ISSUER: "${OPEX_INTERNAL_ASSERTION_ISSUER:-opex-identity-gateway}"
+      OPEX_INTERNAL_ASSERTION_AUDIENCE: "${OPEX_INTERNAL_ASSERTION_AUDIENCE:-opex-core-api}"
+      OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE: "${OPEX_INTERNAL_SERVICE_ASSERTION_AUDIENCE:-opex-core-preauth}"
+      OPEX_INTERNAL_ASSERTION_JWKS_FILE: "/run/secrets/internal_assertion_jwks"
+      OPEX_INTERNAL_ASSERTION_ALGORITHMS: "ES256"
+      OPEX_INTERNAL_ASSERTION_MAX_LIFETIME_SECONDS: "60"
+      OPEX_ALLOWED_HOSTS: "${OPEX_ALLOWED_HOSTS:-localhost,127.0.0.1,core-api,gateway}"
+      OPEX_CORS_ORIGINS: "${OPEX_CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}"
+      OPEX_AI_PROVIDER: "${OPEX_AI_PROVIDER:-ollama}"
+      OPEX_OLLAMA_BASE_URL: "${OPEX_OLLAMA_BASE_URL:-http://ollama:11434}"
+      OPEX_OLLAMA_MODEL: "${OPEX_OLLAMA_MODEL:-qwen3:8b}"
+      OPEX_EXTERNAL_AI_ENABLED: "${OPEX_EXTERNAL_AI_ENABLED:-false}"
+    secrets:
+      - source: internal_assertion_jwks
+        target: internal_assertion_jwks
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - api_plane
+      - identity_core_plane
+      - ops_plane
+      - data_plane
+      - ai_plane
+      - egress
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: "${OPEX_POSTGRES_DB:-opex}"
+      POSTGRES_USER: opex_migrator
+      POSTGRES_PASSWORD: "${OPEX_POSTGRES_MIGRATOR_PASSWORD:-}"
+      POSTGRES_PASSWORD_FILE: "${OPEX_POSTGRES_MIGRATOR_PASSWORD_FILE:-}"
+      OPEX_POSTGRES_RUNTIME_PASSWORD: "${OPEX_POSTGRES_RUNTIME_PASSWORD:-}"
+      OPEX_POSTGRES_RUNTIME_PASSWORD_FILE: "${OPEX_POSTGRES_RUNTIME_PASSWORD_FILE:-}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-runtime-role.sh:/docker-entrypoint-initdb.d/10-runtime-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opex_migrator -d ${OPEX_POSTGRES_DB:-opex}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - data_plane
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - data_plane
+
+  postgres-backup:
+    build:
+      context: ./services/postgres-backup
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: opex_backup
+      PGPASSWORD: "${OPEX_POSTGRES_BACKUP_PASSWORD:-}"
+      PGPASSWORD_FILE: "${OPEX_POSTGRES_BACKUP_PASSWORD_FILE:-}"
+      OPEX_POSTGRES_DB: "${OPEX_POSTGRES_DB:-opex}"
+      OPEX_BACKUP_INTERVAL_HOURS: "${OPEX_BACKUP_INTERVAL_HOURS:-24}"
+      OPEX_BACKUP_RETENTION_DAYS: "${OPEX_BACKUP_RETENTION_DAYS:-14}"
+      TZ: "${OPEX_BACKUP_TIMEZONE:-Europe/Istanbul}"
+      BACKUP_DIR: /backups
+    volumes:
+      - ./runtime/postgres-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - data_plane
+  platform-alerts:
+    build:
+      context: ./services/platform-alerts
+      dockerfile: Dockerfile
+    environment:
+      PYTHONUNBUFFERED: "1"
+      OPEX_PLATFORM_HEALTH_URL: "http://core-api:8000/v1/platform/health"
+      OPEX_ENVIRONMENT: "${OPEX_ENVIRONMENT:-development}"
+      OPEX_PLATFORM_HEALTH_AUTH_MODE: "${OPEX_PLATFORM_HEALTH_AUTH_MODE:-development}"
+      OPEX_PLATFORM_HEALTH_TOKEN: "${OPEX_PLATFORM_HEALTH_TOKEN:-}"
+      OPEX_PLATFORM_HEALTH_TOKEN_FILE: "${OPEX_PLATFORM_HEALTH_TOKEN_FILE:-}"
+      OPEX_ALERT_OIDC_TOKEN_URL: "${OPEX_ALERT_OIDC_TOKEN_URL:-}"
+      OPEX_ALERT_OIDC_CLIENT_ID: "${OPEX_ALERT_OIDC_CLIENT_ID:-}"
+      OPEX_ALERT_OIDC_CLIENT_SECRET: "${OPEX_ALERT_OIDC_CLIENT_SECRET:-}"
+      OPEX_ALERT_OIDC_CLIENT_SECRET_FILE: "${OPEX_ALERT_OIDC_CLIENT_SECRET_FILE:-}"
+      OPEX_ALERT_OIDC_SCOPE: "${OPEX_ALERT_OIDC_SCOPE:-}"
+      OPEX_ALERT_OIDC_AUDIENCE: "${OPEX_ALERT_OIDC_AUDIENCE:-}"
+      OPEX_ALERT_POLL_SECONDS: "${OPEX_ALERT_POLL_SECONDS:-300}"
+      OPEX_ALERT_COOLDOWN_HOURS: "${OPEX_ALERT_COOLDOWN_HOURS:-6}"
+      OPEX_ALERT_EMAIL_ENABLED: "${OPEX_ALERT_EMAIL_ENABLED:-false}"
+      OPEX_SMTP_HOST: "${OPEX_SMTP_HOST:-}"
+      OPEX_SMTP_PORT: "${OPEX_SMTP_PORT:-587}"
+      OPEX_SMTP_USERNAME: "${OPEX_SMTP_USERNAME:-}"
+      OPEX_SMTP_PASSWORD: "${OPEX_SMTP_PASSWORD:-}"
+      OPEX_SMTP_PASSWORD_FILE: "${OPEX_SMTP_PASSWORD_FILE:-}"
+      OPEX_SMTP_FROM: "${OPEX_SMTP_FROM:-EAY OneOps Alerts}"
+      OPEX_ALERT_RECIPIENTS: "${OPEX_ALERT_RECIPIENTS:-}"
+      OPEX_SMTP_STARTTLS: "${OPEX_SMTP_STARTTLS:-true}"
+      OPEX_ALERT_STATE_FILE: "/state/alert-state.json"
+    volumes:
+      - platform_alert_state:/state
+    depends_on:
+      core-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ops_plane
+      - egress
+
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: "1"
+      INFO: "0"
+      EVENTS: "0"
+      POST: "0"
+      LOG_LEVEL: "warning"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose:
+      - "2375"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  platform-agent:
+    build:
+      context: ./services/platform-agent
+      dockerfile: Dockerfile
+    environment:
+      DOCKER_API_URL: "http://docker-socket-proxy:2375"
+      BACKUP_STATUS_FILE: "/backups/backup-status.json"
+    volumes:
+      - ./runtime/postgres-backups:/backups:ro
+    expose:
+      - "8010"
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - monitoring
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    volumes:
+      - ollama_data:/root/.ollama
+    expose:
+      - "11434"
+    restart: unless-stopped
+    networks:
+      - ai_plane
+      - egress
+
+networks:
+  edge:
+  egress:
+  identity_egress:
+  web_plane:
+    internal: true
+  api_plane:
+    internal: true
+  identity_core_plane:
+    internal: true
+  ops_plane:
+    internal: true
+  data_plane:
+    internal: true
+  ai_plane:
+    internal: true
+  monitoring:
+    internal: true
+
+secrets:
+  identity_gateway_signing_key:
+    file: "${OPEX_IDENTITY_GATEWAY_SIGNING_KEY_FILE:-./runtime/identity-gateway/signing-private-key.pem}"
+  internal_assertion_jwks:
+    file: "${OPEX_INTERNAL_ASSERTION_JWKS_SOURCE_FILE:-./runtime/identity-gateway/public-jwks.json}"
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  postgres_backups:
+  platform_alert_state:

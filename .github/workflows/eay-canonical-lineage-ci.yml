@@ -1,0 +1,48 @@
+name: EAY Canonical Lineage Guard
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
+  push:
+    branches:
+      - product/eay-category-leadership-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-canonical-lineage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-lineage:
+    name: Canonical ancestry, frozen anchors and production truth
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Compile lineage validator
+        run: python -m py_compile scripts/validate_canonical_lineage.py
+
+      - name: Validate version-controlled contracts
+        run: python scripts/validate_canonical_lineage.py --manifest-only
+
+      - name: Validate remote canonical ancestry and frozen tips
+        run: python scripts/validate_canonical_lineage.py
+
+      - name: Run adversarial lineage unit tests
+        run: |
+          python -m pip install "pytest>=8,<9"
+          python -m pytest -q backend/tests/test_canonical_lineage_manifest.py

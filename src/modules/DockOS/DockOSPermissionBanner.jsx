@@ -1,105 +1,50 @@
-﻿import React from "react";
-import {
-  Download,
-  FileSpreadsheet,
-  Lock,
-  MapPin,
-  ShieldCheck,
-  Truck,
-  Upload,
-} from "lucide-react";
+import React from "react";
+import { MapPin, ShieldCheck, UserRound } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { getDockOSPermissionSnapshot } from "./dockosPermissions.js";
+import { useDockOSUi } from "./DockOSUiContext.jsx";
 import "./dockos-permissions.css";
 
-const featureLabels = {
-  dashboard: "Dashboard",
-  livePurchaseOrders: "Canlı PO",
-  supplierAppointments: "Tedarikçi Randevu",
-  shipmentDetails: "Sevkiyat Detayları",
-  vehicleTracking: "Araç / Plaka",
-  excelUpload: "Excel Upload",
-  duplicateResolution: "Duplicate Karar",
-};
-
-const actionLabels = {
-  view: "Görüntüle",
-  create: "Oluştur",
-  edit: "Düzenle",
-  approve: "Onayla",
-  export: "Export",
-  delete: "Sil",
-};
-
-function scopeText(scope) {
-  if (!scope || scope.type === "all") return "Tüm Türkiye";
-  if (scope.type === "warehouse") return `Depo bazlı · ${(scope.warehouses || []).join(", ") || "seçilmedi"}`;
-  if (scope.type === "supplier") return `Tedarikçi bazlı · ${(scope.suppliers || []).join(", ") || "seçilmedi"}`;
-  if (scope.type === "region") return `Bölge bazlı · ${(scope.regions || []).join(", ") || "seçilmedi"}`;
-  return "Kapsam yok";
+function scopeText(scope, t) {
+  if (!scope || scope.type === "all") return t("allTurkey");
+  if (scope.type === "warehouse") return (scope.warehouses || []).join(", ") || t("warehouseMissing");
+  if (scope.type === "supplier") return (scope.suppliers || []).join(", ") || t("supplierMissing");
+  if (scope.type === "region") return (scope.regions || []).join(", ") || t("regionMissing");
+  return t("noScope");
 }
 
 export default function DockOSPermissionBanner() {
   const { user } = useAuth();
+  const { t } = useDockOSUi();
   const snapshot = getDockOSPermissionSnapshot();
 
-  const activeFeatures = Object.entries(snapshot.features || {})
-    .filter(([, value]) => value)
-    .map(([key]) => featureLabels[key] || key);
-
-  const activeActions = Object.entries(snapshot.actions || {})
-    .filter(([, value]) => value)
-    .map(([key]) => actionLabels[key] || key);
+  const enabledFeatureCount = Object.values(snapshot.features || {}).filter(Boolean).length;
+  const enabledActionCount = Object.values(snapshot.actions || {}).filter(Boolean).length;
 
   return (
     <section className="dockos-permission-banner">
       <div className="dockos-permission-main">
         <div className="dockos-permission-icon">
-          <ShieldCheck size={22} />
+          <ShieldCheck size={20} />
         </div>
-
         <div>
-          <span>DockOS Permission Layer</span>
-          <strong>{user?.email || "unknown user"}</strong>
-          <p>Bu görünüm Access Control üzerinde tanımlanan grup + kullanıcı yetkilerine göre çalışır.</p>
+          <span>{t("accessProfile")}</span>
+          <strong>{user?.email || snapshot.user?.email || t("userMissing")}</strong>
+          <p>{enabledFeatureCount} {t("screens")} ? {enabledActionCount} {t("actions")}</p>
         </div>
       </div>
 
-      <div className="dockos-permission-grid">
+      <div className="dockos-permission-summary">
         <div>
-          <Truck size={16} />
-          <small>Ekranlar</small>
-          <strong>{activeFeatures.length ? activeFeatures.join(" · ") : "Yetki yok"}</strong>
+          <UserRound size={15} />
+          <span>{t("permission")}</span>
+          <strong>{enabledFeatureCount} {t("screens")} · {enabledActionCount} {t("actions")}</strong>
         </div>
-
         <div>
-          <Download size={16} />
-          <small>Aksiyonlar</small>
-          <strong>{activeActions.length ? activeActions.join(" · ") : "Yetki yok"}</strong>
+          <MapPin size={15} />
+          <span>{t("dataScope")}</span>
+          <strong>{scopeText(snapshot.scope, t)}</strong>
         </div>
-
-        <div>
-          <MapPin size={16} />
-          <small>Veri kapsamı</small>
-          <strong>{scopeText(snapshot.scope)}</strong>
-        </div>
-      </div>
-
-      <div className="dockos-permission-chips">
-        <span className={snapshot.features?.excelUpload ? "on" : "off"}>
-          <Upload size={14} />
-          Excel Upload
-        </span>
-
-        <span className={snapshot.features?.duplicateResolution ? "on" : "off"}>
-          <FileSpreadsheet size={14} />
-          Duplicate Karar
-        </span>
-
-        <span className={snapshot.actions?.approve ? "on" : "off"}>
-          {snapshot.actions?.approve ? <ShieldCheck size={14} /> : <Lock size={14} />}
-          Onay
-        </span>
       </div>
     </section>
   );

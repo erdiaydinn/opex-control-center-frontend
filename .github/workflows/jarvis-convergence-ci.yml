@@ -1,0 +1,230 @@
+name: EAY Jarvis Orders V2 Convergence
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-jarvis-v0.1
+      - release/platform-convergence-v0.1
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/main.py"
+      - "services/core-api/app/core/ai_*.py"
+      - "services/core-api/app/core/permission_catalog.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_ai_*.py"
+      - "services/core-api/tests/test_security_foundation.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/*ai*.py"
+      - "services/core-api/alembic/versions/*jarvis*.py"
+      - "services/core-api/alembic/versions/*orders*.py"
+      - "services/core-api/pyproject.toml"
+      - "services/eay-ai-core/**"
+      - ".github/workflows/jarvis-convergence-ci.yml"
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+      - product/eay-product-completion-v1
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/core-api/app/ai_tool_routes.py"
+      - "services/core-api/app/main.py"
+      - "services/core-api/app/core/ai_*.py"
+      - "services/core-api/app/core/permission_catalog.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_ai_*.py"
+      - "services/core-api/tests/test_security_foundation.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/*ai*.py"
+      - "services/core-api/alembic/versions/*jarvis*.py"
+      - "services/core-api/alembic/versions/*orders*.py"
+      - "services/core-api/pyproject.toml"
+      - "services/eay-ai-core/**"
+      - ".github/workflows/jarvis-convergence-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-orders-v2-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jarvis-contracts:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API with reviewed BigQuery SDK extra
+        run: python -m pip install -e './services/core-api[dev,bigquery]'
+      - name: Create non-superuser runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime
+                          LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Full Core Ruff gate
+        run: ruff check services/core-api --output-format=github
+      - name: Preserve central SQL access boundary before migrations
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Enforce one cumulative Alembic head and preserve Planogram milestone
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          alembic history > /tmp/eay-alembic-history.txt
+          grep -q '0036_planogram_product_roles' /tmp/eay-alembic-history.txt
+      - name: Apply cumulative database migrations
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Complete AI/Jarvis contract suite with file-level process isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          for test_file in services/core-api/tests/test_ai_*.py; do
+            echo "=== JARVIS_TEST_FILE: ${test_file} ==="
+            pytest -q "${test_file}"
+            count=$((count + 1))
+          done
+          test "${count}" -gt 0
+          echo "JARVIS_TEST_FILES=${count}"
+      - name: Server-authoritative Orders V2 live-proof contract
+        run: pytest -q services/core-api/tests/test_ai_orders_v2_live_cross_tenant_runner.py
+      - name: Preserve central platform security boundaries
+        run: pytest -q services/core-api/tests/test_security_foundation.py services/core-api/tests/test_sql_access_boundary.py
+      - name: Verify cumulative runtime authority composition
+        run: |
+          grep -F 'from app.ai_tool_routes import router as ai_tool_router' services/core-api/app/main.py
+          grep -F 'app.include_router(ai_tool_router)' services/core-api/app/main.py
+          grep -F 'from app.modules.academy.router import router as academy_router' services/core-api/app/main.py
+          grep -F 'app.include_router(academy_router)' services/core-api/app/main.py
+          grep -F '"ai_assistant": frozenset(' services/core-api/app/core/permission_catalog.py
+          test ! -e src/auth/accessConfig.js
+          echo 'JARVIS_PLATFORM_AUTHORITY_COMPOSITION=PASS'
+      - name: Compile governed Orders V2 surface
+        run: >-
+          python -m compileall -q
+          services/core-api/app/ai_tool_routes.py
+          services/core-api/app/core/ai_orders_v2_live_cross_tenant_runner.py
+          services/core-api/app/core/ai_orders_v2_policy_transition.py
+          services/core-api/app/core/ai_orders_v2_policy_transition_guard.py
+
+  grounded-decision-quality:
+    name: Grounded answer evidence verifier and confidence authority
+    runs-on: ubuntu-latest
+    env:
+      EAY_ENVIRONMENT: test
+      EAY_AI_DB_PATH: /tmp/eay-ai-ci.db
+      EAY_GROUNDED_CRITIC_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/eay-ai-core/pyproject.toml
+      - name: Install EAY AI Core focused test surface
+        run: python -m pip install -e './services/eay-ai-core[dev]'
+      - name: Compile grounded reasoning verifier and revision boundary
+        run: >-
+          python -m compileall -q
+          services/eay-ai-core/app/grounded_reasoning.py
+          services/eay-ai-core/app/grounded_critic.py
+          services/eay-ai-core/app/grounded_chat.py
+      - name: Run grounded decision-quality adversarial tests
+        working-directory: services/eay-ai-core
+        run: >-
+          pytest -q
+          tests/test_grounded_reasoning.py
+          tests/test_grounded_critic.py
+          tests/test_grounded_critic_integration.py
+          tests/test_grounded_chat.py
+      - name: Prove verifier exposes no private chain-of-thought contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          paths=[
+              Path('services/eay-ai-core/app/grounded_reasoning.py'),
+              Path('services/eay-ai-core/app/grounded_critic.py'),
+              Path('services/eay-ai-core/app/grounded_chat.py'),
+          ]
+          text='\n'.join(path.read_text(encoding='utf-8').lower() for path in paths)
+          assert 'chain_of_thought' not in text
+          assert 'private reasoning' in text
+          assert 'revision_instructions' in text
+          print('JARVIS_DECISION_QUALITY_OBSERVABLE_ONLY=PASS')
+          PY
+      - name: Prove deterministic guard critic revision persistence order
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('services/eay-ai-core/app/grounded_chat.py').read_text(encoding='utf-8')
+          calibrate=text.index('decision_quality = assess_and_calibrate_grounded_answer')
+          critic=text.index('critic, critic_raw = await _run_grounded_critic', calibrate)
+          revision=text.index('revised_answer, revised_quality, revision_raw', critic)
+          save=text.index('store.save_interaction', revision)
+          threshold=text.index('if answer.confidence < settings.low_confidence_threshold', save)
+          assert calibrate < critic < revision < save < threshold
+          print('JARVIS_BOUNDED_VERIFIER_REVISION=PASS')
+          print('JARVIS_CALIBRATED_CONFIDENCE_PERSISTENCE=PASS')
+          PY

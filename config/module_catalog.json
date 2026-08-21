@@ -1,0 +1,152 @@
+{
+  "catalog_version": 1,
+  "product": "OPEX Control Center",
+  "architecture_rule": "One platform core, independently licensed modules, shared channels and shared security boundaries.",
+  "core_services": [
+    {"key": "tenant_management", "name": "Tenant Management", "commercial": false},
+    {"key": "identity_access", "name": "Identity and Access Control", "commercial": false},
+    {"key": "licensing_entitlements", "name": "Licensing and Module Entitlements", "commercial": false},
+    {"key": "audit", "name": "Audit and Evidence Trail", "commercial": false},
+    {"key": "workflow", "name": "Workflow and Approval Engine", "commercial": false},
+    {"key": "notifications", "name": "Notification Hub", "commercial": false},
+    {"key": "platform_health", "name": "Platform Health", "commercial": false}
+  ],
+  "channels": [
+    {"key": "web", "name": "Web Control Center"},
+    {"key": "mobile", "name": "Mobile Application"},
+    {"key": "terminal", "name": "Shared Site Terminal"},
+    {"key": "api", "name": "Integration API"},
+    {"key": "email", "name": "Email"},
+    {"key": "whatsapp", "name": "WhatsApp Business Integration"}
+  ],
+  "platform_shell": {
+    "key": "control_center",
+    "name": "Control Center",
+    "route": "/",
+    "commercial": false,
+    "purpose": "Tenant-branded navigation, cross-module summaries and authorized operational command surface."
+  },
+  "commercial_modules": [
+    {
+      "key": "field_intelligence",
+      "sku": "OPEX-FLD",
+      "name": "Field Intelligence",
+      "route": "/field-intelligence",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "api"],
+      "capabilities": [
+        "mission_command_center",
+        "mission_builder",
+        "authoritative_target_snapshots",
+        "governed_template_editor",
+        "barcode_qr_lot_batch_capture",
+        "expiry_quantity_measurement_capture",
+        "gps_yes_no_multi_row_capture",
+        "private_evidence_reference_capture",
+        "evidence_review_and_rework",
+        "reminder_and_escalation_intents",
+        "field_completion_analytics",
+        "mobile_web_offline_queue",
+        "reconnect_replay",
+        "device_sequence_conflict_detection",
+        "encrypted_attachment_retry",
+        "stale_assignment_detection",
+        "camera_only_policy_gate",
+        "managed_device_policy_gate"
+      ],
+      "critical_controls": [
+        "tenant_and_location_scope",
+        "server_frozen_targets",
+        "append_only_evidence",
+        "idempotent_submission",
+        "latest_evidence_review_only",
+        "raw_public_photo_transport_rejected",
+        "encrypted_offline_attachment_queue",
+        "monotonic_device_sequence",
+        "immutable_template_evidence_policy",
+        "authoritative_device_attestation_required_for_managed_policy",
+        "authoritative_capture_attestation_required_for_camera_only_policy",
+        "notification_dispatch_truth_boundary",
+        "audit_log"
+      ]
+    },
+    {
+      "key": "workforce",
+      "sku": "OPEX-WFM",
+      "name": "Workforce",
+      "route": "/workforce",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "terminal", "api"],
+      "capabilities": ["shift_planning", "mobile_check_in_out", "shared_terminal_check_in_out", "registered_device_binding", "rotating_site_qr", "geofence_policy", "attendance_exceptions", "supervisor_approval", "workforce_analytics"],
+      "critical_controls": ["tenant_isolation", "device_and_session_binding", "policy_versioned_evidence", "anti_replay_controls", "audit_log", "human_exception_flow"]
+    },
+    {
+      "key": "inventory",
+      "sku": "OPEX-INV",
+      "name": "Inventory and Counting",
+      "route": "/inventory",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "terminal", "api"],
+      "capabilities": ["blind_count", "terminal_count", "mobile_count", "count_assignment", "variance_reconciliation", "evidence_capture", "approval_workflow", "inventory_accuracy_analytics"],
+      "critical_controls": ["warehouse_scope", "four_eyes_approval", "immutable_count_evidence", "idempotent_submission", "audit_log"]
+    },
+    {
+      "key": "planogram",
+      "sku": "OPEX-PLG",
+      "name": "Planogram Studio",
+      "route": "/planogram",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "api"],
+      "capabilities": ["fixture_modeling", "product_dimension_modeling", "constraint_validation", "capacity_validation", "optimization", "infeasible_reason_reporting", "validated_2d_3d_rendering"],
+      "critical_controls": ["tenant_product_isolation", "versioned_planograms", "approval_workflow", "solver_traceability"]
+    },
+    {
+      "key": "dockos",
+      "sku": "OPEX-DCK",
+      "name": "DockOS",
+      "route": "/dockos",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "api", "email"],
+      "capabilities": ["supplier_reservations", "dock_capacity", "purchase_order_lookup", "shipment_tracking", "vehicle_plate_search", "exception_management", "validated_excel_ingestion"],
+      "critical_controls": ["supplier_isolation", "warehouse_scope", "preview_before_mutation", "duplicate_detection", "amount_mismatch_decision", "audit_log"]
+    },
+    {
+      "key": "budget",
+      "sku": "OPEX-BGT",
+      "name": "Budget Intelligence",
+      "route": "/budget",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "api", "email"],
+      "capabilities": ["budget_tracking", "purchase_request_tracking", "purchase_order_tracking", "invoice_tracking", "cost_center_visibility", "variance_analysis", "approval_workflow"],
+      "critical_controls": ["cost_center_scope", "four_eyes_approval", "financial_audit_log", "export_control"]
+    },
+    {
+      "key": "academy",
+      "sku": "OPEX-ACD",
+      "name": "OPEX Academy",
+      "route": "/academy",
+      "standalone": true,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "api"],
+      "capabilities": ["sop_library", "document_and_video_learning", "role_based_learning_paths", "quiz_and_completion", "tenant_scoped_search", "grounded_question_answering"],
+      "critical_controls": ["content_entitlements", "tenant_document_isolation", "source_grounded_answers", "learning_audit_log"]
+    },
+    {
+      "key": "jarvis",
+      "sku": "OPEX-AI",
+      "name": "Jarvis Operations Agent",
+      "route": "/jarvis",
+      "standalone": false,
+      "bundle_eligible": true,
+      "channels": ["web", "mobile", "api", "email", "whatsapp"],
+      "capabilities": ["authorized_operational_questions", "cross_module_analysis_within_tenant", "action_proposals", "workflow_creation", "email_drafting_and_sending", "whatsapp_business_messaging", "follow_up_and_reanalysis", "operation_memory"],
+      "critical_controls": ["local_first_ai", "external_ai_disabled_by_default", "permission_recheck_per_tool_call", "tenant_scoped_retrieval", "human_approval_for_high_impact_actions", "prompt_and_tool_audit", "data_minimization"]
+    }
+  ]
+}

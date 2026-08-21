@@ -1,0 +1,40 @@
+name: EAY CI Admission Guard
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - ".github/workflows/**"
+      - "scripts/ci/verify_ci_admission_policy.py"
+      - "docs/ci/historical-workflows/**"
+  push:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - ".github/workflows/**"
+      - "scripts/ci/verify_ci_admission_policy.py"
+      - "docs/ci/historical-workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admission-contract:
+    name: CI admission contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Verify final CI admission policy
+        run: python scripts/ci/verify_ci_admission_policy.py
+      - name: Reject malformed whitespace or conflict markers
+        run: git diff --check

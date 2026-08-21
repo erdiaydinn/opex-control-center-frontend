@@ -1,0 +1,444 @@
+name: EAY Academy Convergence
+
+on:
+  push:
+    branches:
+      - release/platform-convergence-academy-v0.1
+      - release/platform-convergence-v0.1
+      - product/eay-category-leadership-v1
+    paths:
+      - "src/App.jsx"
+      - "src/modules/academy/**"
+      - "src/platform/i18n/academy*Messages.js"
+      - "scripts/test-academy-*.mjs"
+      - "package.json"
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/modules/academy/**"
+      - "services/core-api/alembic/versions/*.py"
+      - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_product_role_provisioning.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "docs/ACADEMY_*.md"
+      - "ops/load/k6-academy-*.js"
+      - ".github/workflows/academy-convergence-ci.yml"
+  pull_request:
+    branches:
+      - release/platform-convergence-v0.1
+      - product/eay-product-completion-v1
+    paths:
+      - "src/App.jsx"
+      - "src/modules/academy/**"
+      - "src/platform/i18n/academy*Messages.js"
+      - "scripts/test-academy-*.mjs"
+      - "package.json"
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/modules/academy/**"
+      - "services/core-api/alembic/versions/*.py"
+      - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_product_role_provisioning.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "docs/ACADEMY_*.md"
+      - "ops/load/k6-academy-*.js"
+      - ".github/workflows/academy-convergence-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: academy-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_ALEMBIC_HEAD: 0051_workforce_hiring_product_role
+
+jobs:
+  academy-postgres:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Create RLS-bound runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Full Core Ruff gate
+        run: ruff check services/core-api
+      - name: Central SQL execution boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Compile Academy
+        run: >-
+          python -m compileall -q
+          services/core-api/app/modules/academy
+          services/core-api/tests/test_academy_authoring.py
+          services/core-api/tests/test_academy_contracts.py
+          services/core-api/tests/test_academy_integration.py
+          services/core-api/tests/test_academy_concurrency.py
+          services/core-api/tests/test_academy_credentials.py
+          services/core-api/tests/test_academy_localization_governance.py
+          services/core-api/tests/test_product_role_provisioning.py
+      - name: Assert one cumulative Alembic head before migration
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$EXPECTED_ALEMBIC_HEAD"
+      - name: Migrate through cumulative platform head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Assert FORCE RLS runtime posture and Academy storage
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  head = await connection.fetchval("SELECT version_num FROM alembic_version")
+                  assert head == os.environ["EXPECTED_ALEMBIC_HEAD"], head
+                  rows = await connection.fetch(
+                      "SELECT relname,relrowsecurity,relforcerowsecurity "
+                      "FROM pg_class WHERE relname LIKE 'academy_%' AND relkind='r'"
+                  )
+                  assert rows
+                  assert all(row["relrowsecurity"] and row["relforcerowsecurity"] for row in rows), rows
+                  role = await connection.fetchrow(
+                      "SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='opex_runtime'"
+                  )
+                  assert role and not role["rolsuper"] and not role["rolbypassrls"]
+                  locale_columns = await connection.fetch(
+                      "SELECT table_name,character_maximum_length FROM information_schema.columns "
+                      "WHERE table_schema='public' "
+                      "AND table_name IN ('academy_content_versions','academy_document_chunks') "
+                      "AND column_name='locale'"
+                  )
+                  assert len(locale_columns) == 2
+                  assert all(row["character_maximum_length"] == 16 for row in locale_columns)
+                  expected_tables = {
+                      'academy_playback_sessions','academy_playback_receipts',
+                      'academy_interaction_sets','academy_interaction_nodes',
+                      'academy_scenarios','academy_scenario_nodes','academy_scenario_edges',
+                      'academy_scenario_runs','academy_scenario_run_events',
+                      'academy_locale_settings','academy_translation_lineage',
+                      'academy_translation_review_events',
+                      'academy_badge_definitions','academy_badge_definition_retirements',
+                      'academy_badge_awards','academy_badge_revocations',
+                  }
+                  present = {
+                      row['tablename'] for row in await connection.fetch(
+                          "SELECT tablename FROM pg_tables WHERE schemaname='public' "
+                          "AND tablename = ANY($1::text[])", list(expected_tables)
+                      )
+                  }
+                  assert present == expected_tables, expected_tables - present
+                  expected_views = {
+                      'academy_translation_authority',
+                      'academy_badge_definition_authority',
+                      'academy_badge_credential_authority',
+                  }
+                  present_views = {
+                      row['table_name'] for row in await connection.fetch(
+                          "SELECT table_name FROM information_schema.views "
+                          "WHERE table_schema='public' AND table_name = ANY($1::text[])",
+                          list(expected_views),
+                      )
+                  }
+                  assert present_views == expected_views, expected_views - present_views
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Academy lifecycle localization credential and product-role gates
+        run: >-
+          pytest -q
+          services/core-api/tests/test_academy_authoring.py
+          services/core-api/tests/test_academy_contracts.py
+          services/core-api/tests/test_academy_integration.py
+          services/core-api/tests/test_academy_concurrency.py
+          services/core-api/tests/test_academy_credentials.py
+          services/core-api/tests/test_academy_localization_governance.py
+          services/core-api/tests/test_product_role_provisioning.py
+
+  platform-regression:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API with reviewed BigQuery SDK extra
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Create clean runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  await connection.execute(
+                      """
+                      CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                      """
+                  )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Assert one cumulative Alembic head
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$EXPECTED_ALEMBIC_HEAD"
+      - name: Migrate clean database through cumulative platform head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Full Platform Core regression on isolated state
+        run: pytest -q services/core-api/tests
+
+  academy-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
+      - name: Validate Academy load contracts
+        run: for f in ops/load/k6-academy-*.js; do node --check "$f"; done
+      - run: npm ci
+      - run: npm run test:platform
+      - run: npm run build
+      - name: Build current cumulative Core API image
+        run: >-
+          docker build
+          --build-context planai=apps/planai/backend
+          -f services/core-api/Dockerfile
+          services/core-api
+      - name: Verify single Core runtime composition
+        run: |
+          grep -F 'from app.modules.academy.router import router as academy_router' services/core-api/app/main.py
+          grep -F 'app.include_router(academy_router)' services/core-api/app/main.py
+          test ! -f services/core-api/app/main_academy.py
+
+  academy-dr:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      PGPASSWORD: opex_migrator
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install PostgreSQL client and Core API
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          python -m pip install -e "./services/core-api[dev]"
+      - name: Migrate, seed, dump and restore Academy evidence
+        run: |
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 -c "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;"
+          (cd services/core-api && alembic heads | grep -qx "$EXPECTED_ALEMBIC_HEAD (head)")
+          (cd services/core-api && alembic upgrade head)
+          psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          SET app.tenant_id='00000000-0000-0000-0000-00000000d001';
+          SET app.actor_subject='academy-dr-ci';
+          INSERT INTO tenants(id,slug,display_name)
+          VALUES('00000000-0000-0000-0000-00000000d001','academy-dr','Academy DR');
+          INSERT INTO academy_content_items(tenant_id,content_type,slug,title_i18n,status,created_by)
+          VALUES(
+            '00000000-0000-0000-0000-00000000d001',
+            'sop','dr-evidence','{"en":"DR evidence","fa":"مدرک بازیابی"}',
+            'published','ci'
+          );
+          INSERT INTO academy_content_versions(
+            tenant_id,content_id,version_label,version_number,locale,status,created_by
+          )
+          SELECT
+            '00000000-0000-0000-0000-00000000d001',id,'2026.1',1,'fa','published','ci'
+          FROM academy_content_items
+          WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND slug='dr-evidence';
+          INSERT INTO academy_document_chunks(
+            tenant_id,content_version_id,chunk_ordinal,locale,heading,text_content,source_page
+          )
+          SELECT
+            '00000000-0000-0000-0000-00000000d001',id,1,'fa','بازیابی',
+            'این مدرک برای آزمون بازیابی چندزبانه است.',1
+          FROM academy_content_versions
+          WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND locale='fa';
+          INSERT INTO academy_skills(
+            id,tenant_id,skill_key,title_i18n,description_i18n,status,created_by
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d050',
+            '00000000-0000-0000-0000-00000000d001',
+            'dr-safe-picking','{"en":"DR Safe Picking"}','{"en":"DR credential skill"}',
+            'active','academy-dr-ci'
+          );
+          INSERT INTO academy_skill_evidence(
+            id,tenant_id,subject,skill_id,observed_level,evidence_type,evidence_ref,recorded_by
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d051',
+            '00000000-0000-0000-0000-00000000d001',
+            'academy-dr-learner','00000000-0000-0000-0000-00000000d050',4,
+            'assessment','dr:assessment:high','academy-dr-ci'
+          );
+          INSERT INTO academy_badge_definitions(
+            id,tenant_id,badge_key,version_number,skill_id,minimum_level,
+            title_i18n,description_i18n,criteria_i18n,validity_days,created_by
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d052',
+            '00000000-0000-0000-0000-00000000d001',
+            'dr-safe-picking.level-3',1,'00000000-0000-0000-0000-00000000d050',3,
+            '{"en":"DR Safe Picking Level 3"}',
+            '{"en":"Evidence-bound restored credential"}',
+            '{"en":"Requires verified level 3 or higher"}',365,'academy-dr-ci'
+          );
+          INSERT INTO academy_badge_awards(
+            id,tenant_id,badge_definition_id,skill_evidence_id,subject,skill_id,
+            observed_level,evidence_type,evidence_ref,issuer_subject,request_id
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d053',
+            '00000000-0000-0000-0000-00000000d001',
+            '00000000-0000-0000-0000-00000000d052',
+            '00000000-0000-0000-0000-00000000d051',
+            'ignored-by-trigger','00000000-0000-0000-0000-00000000d050',1,
+            'assessment','ignored-by-trigger','academy-dr-ci','academy-dr-award-1'
+          );
+          INSERT INTO academy_badge_revocations(
+            tenant_id,badge_award_id,reason,revoked_by,request_id
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d001',
+            '00000000-0000-0000-0000-00000000d053',
+            'DR revocation evidence','academy-dr-ci','academy-dr-revoke-1'
+          );
+          SQL
+          pg_dump -h localhost -U opex_migrator -d opex_test --format=custom --no-owner --no-privileges -f /tmp/academy.dump
+          createdb -h localhost -U opex_migrator opex_restore
+          pg_restore -h localhost -U opex_migrator -d opex_restore --no-owner --no-privileges /tmp/academy.dump
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_content_versions WHERE locale='fa';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_document_chunks WHERE locale='fa';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_playback_receipts';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_scenario_run_events';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_locale_settings WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND locale='en' AND is_default IS TRUE;" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_translation_review_events';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('academy_badge_definitions','academy_badge_definition_retirements','academy_badge_awards','academy_badge_revocations');" | grep -qx 4
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.views WHERE table_schema='public' AND table_name IN ('academy_badge_definition_authority','academy_badge_credential_authority');" | grep -qx 2
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SET app.tenant_id='00000000-0000-0000-0000-00000000d001'; SELECT count(*) FROM academy_badge_credential_authority WHERE badge_award_id='00000000-0000-0000-0000-00000000d053' AND subject='academy-dr-learner' AND observed_level=4 AND evidence_ref='dr:assessment:high' AND revoked IS TRUE AND valid IS FALSE AND signed_portable_credential IS FALSE;" | tail -n 1 | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM roles WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND key IN ('academy_learner','academy_instructor','academy_admin') AND is_system IS TRUE;" | grep -qx 3
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM roles WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND key='recruitment_hr' AND is_system IS TRUE;" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx "$EXPECTED_ALEMBIC_HEAD"

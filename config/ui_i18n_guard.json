@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "baseline_sha": "4c5abaebcdfe64ca9bd9d880ef6eb34704bacdb3",
+  "scan_roots": ["src"],
+  "extensions": [".jsx", ".tsx"],
+  "user_facing_attributes": ["placeholder", "title", "aria-label", "alt"],
+  "allowed_exact_literals": ["EAY", "EAY Academy", "Jarvis", "CSV", "XLSX", "JSON", "fa-IR"],
+  "documented_escape_markers": ["i18n-brand-literal:", "i18n-data-literal:"]
+}

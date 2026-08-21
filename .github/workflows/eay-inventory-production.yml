@@ -1,0 +1,215 @@
+name: EAY Inventory Production Gate
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+      - release/platform-convergence-v0.1
+    paths:
+      - "backend/app/modules/inventory/**"
+      - "backend/migrations/003_inventory_production.sql"
+      - "android-inventory/**"
+      - "src/modules/inventory/**"
+      - "src/App.jsx"
+      - "scripts/test-inventory-*.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/eay-inventory-production.yml"
+  push:
+    branches:
+      - agent/inventory-production-terminal-p0
+      - release/platform-convergence-inventory-v0.1
+      - release/platform-convergence-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-truth-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Inventory production web truth boundary
+        run: node scripts/test-inventory-production-boundary.mjs
+      - name: Platform regression including Inventory boundary
+        run: npm run test:platform
+      - name: Production frontend build
+        run: npm run build
+
+  backend-postgres-adversarial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_inventory_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_inventory_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 12
+    env:
+      PYTHONPATH: backend
+      INVENTORY_DATABASE_URL: postgresql://inventory_runtime:inventory_runtime@127.0.0.1:5432/eay_inventory_test
+      INVENTORY_REDIS_URL: redis://127.0.0.1:6379/3
+      INVENTORY_TEST_TENANT: eay-inventory-ci
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - run: psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/003_inventory_production.sql
+        env:
+          INVENTORY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test
+      - name: Create least-privilege tenant-bound runtime role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d eay_inventory_test -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE inventory_runtime LOGIN PASSWORD 'inventory_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          GRANT CONNECT ON DATABASE eay_inventory_test TO inventory_runtime;
+          GRANT USAGE ON SCHEMA public TO inventory_runtime;
+          GRANT SELECT ON inventory_schema_migrations TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_devices,inventory_device_activation_codes,inventory_device_nonces,inventory_documents,inventory_document_locations,inventory_expected_stock,inventory_events,inventory_event_responses,inventory_revisions,inventory_audit,inventory_outbox TO inventory_runtime;
+          GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO inventory_runtime;
+          GRANT EXECUTE ON FUNCTION inventory_current_tenant() TO inventory_runtime;
+          INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');
+          SQL
+      - name: Inventory PostgreSQL adversarial acceptance
+        run: python -m unittest backend.app.modules.inventory.test_inventory_production -v
+      - name: Inventory-owned backend regression
+        env:
+          DOCKOS_ENV: test
+          DOCKOS_PERSISTENCE: json
+          WORKFORCE_REQUIRE_LOCAL_AUTH: "false"
+          REDIS_URL: redis://127.0.0.1:6379/4
+        run: |
+          python - <<'PY'
+          import redis
+          redis.Redis.from_url("redis://127.0.0.1:6379/4").flushdb()
+          PY
+          python -m unittest -v \
+            backend.app.modules.inventory.test_inventory \
+            backend.app.modules.inventory.test_inventory_scope \
+            backend.app.modules.inventory.test_inventory_production
+      - name: Database restart durability
+        run: |
+          docker restart ${{ job.services.postgres.id }}
+          for attempt in {1..30}; do pg_isready -d "$INVENTORY_DATABASE_URL" && break; sleep 1; done
+          psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_schema_migrations WHERE version=3"
+      - name: Backup and isolated restore acceptance
+        run: |
+          PG_CONTAINER="${{ job.services.postgres.id }}"
+          docker exec "$PG_CONTAINER" pg_dump -U postgres -d eay_inventory_test -Fc > /tmp/eay-inventory.dump
+          docker exec "$PG_CONTAINER" createdb -U postgres eay_inventory_restore
+          docker exec -i "$PG_CONTAINER" pg_restore -U postgres -d eay_inventory_restore --no-owner < /tmp/eay-inventory.dump
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_events"
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_audit"
+      - name: Migration replay
+        env:
+          PGPASSWORD: postgres
+        run: psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -v ON_ERROR_STOP=1 -f backend/migrations/003_inventory_production.sql
+
+  android-debug-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android-inventory
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Reject pilot Android behavior
+        working-directory: .
+        run: sh ops/inventory/verify-android-production.sh
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: "8.9"
+      - run: gradle --no-daemon clean testDebugUnitTest lintDebug assembleDebug
+
+  managed-release:
+    if: github.event_name == 'workflow_dispatch'
+    environment: inventory-production-signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android-inventory
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: "8.9"
+      - name: Fail closed on missing production inputs
+        env:
+          EAY_ANDROID_KEYSTORE_B64: ${{ secrets.EAY_ANDROID_KEYSTORE_B64 }}
+          EAY_ANDROID_KEY_ALIAS: ${{ secrets.EAY_ANDROID_KEY_ALIAS }}
+          EAY_ANDROID_KEY_PASSWORD: ${{ secrets.EAY_ANDROID_KEY_PASSWORD }}
+          EAY_ANDROID_STORE_PASSWORD: ${{ secrets.EAY_ANDROID_STORE_PASSWORD }}
+          EAY_API_BASE_URL: ${{ vars.EAY_API_BASE_URL }}
+          EAY_OIDC_ISSUER: ${{ vars.EAY_OIDC_ISSUER }}
+          EAY_OIDC_CLIENT_ID: ${{ vars.EAY_OIDC_CLIENT_ID }}
+          EAY_TLS_PIN_PRIMARY: ${{ secrets.EAY_TLS_PIN_PRIMARY }}
+          EAY_TLS_PIN_BACKUP: ${{ secrets.EAY_TLS_PIN_BACKUP }}
+        run: ../ops/inventory/verify-managed-release-inputs.sh
+      - name: Materialize ephemeral keystore
+        env:
+          EAY_ANDROID_KEYSTORE_B64: ${{ secrets.EAY_ANDROID_KEYSTORE_B64 }}
+        run: printf '%s' "$EAY_ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/eay-inventory.jks"
+      - name: Build signed release
+        env:
+          EAY_KEYSTORE_FILE: ${{ runner.temp }}/eay-inventory.jks
+          EAY_ANDROID_KEY_ALIAS: ${{ secrets.EAY_ANDROID_KEY_ALIAS }}
+          EAY_ANDROID_KEY_PASSWORD: ${{ secrets.EAY_ANDROID_KEY_PASSWORD }}
+          EAY_ANDROID_STORE_PASSWORD: ${{ secrets.EAY_ANDROID_STORE_PASSWORD }}
+          EAY_API_BASE_URL: ${{ vars.EAY_API_BASE_URL }}
+          EAY_OIDC_ISSUER: ${{ vars.EAY_OIDC_ISSUER }}
+          EAY_OIDC_CLIENT_ID: ${{ vars.EAY_OIDC_CLIENT_ID }}
+          EAY_TLS_PIN_PRIMARY: ${{ secrets.EAY_TLS_PIN_PRIMARY }}
+          EAY_TLS_PIN_BACKUP: ${{ secrets.EAY_TLS_PIN_BACKUP }}
+        run: gradle --no-daemon clean testReleaseUnitTest lintRelease assembleRelease
+      - name: Verify APK signature and digest
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$APK"
+          sha256sum "$APK" | tee "$APK.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: EAY-Inventory-managed-release
+          path: |
+            android-inventory/app/build/outputs/apk/release/app-release.apk
+            android-inventory/app/build/outputs/apk/release/app-release.apk.sha256
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,362 @@
+name: EAY Category Leadership Convergence
+
+on:
+  pull_request:
+    branches:
+      - product/eay-product-completion-v1
+    paths:
+      - "backend/app/modules/data_collection/**"
+      - "backend/app/modules/field_intelligence/**"
+      - "backend/app/modules/customer_promise/**"
+      - "backend/app/modules/workforce/demand_model.py"
+      - "backend/app/modules/workforce/test_demand_model.py"
+      - "backend/app/modules/workforce/pressure_model.py"
+      - "backend/app/modules/workforce/test_pressure_model.py"
+      - "backend/app/modules/workforce/scenario_model.py"
+      - "backend/app/modules/workforce/test_scenario_model.py"
+      - "backend/app/modules/workforce/policy_*.py"
+      - "backend/app/modules/workforce/test_policy_*.py"
+      - "backend/app/modules/workforce/skill_capacity.py"
+      - "backend/app/modules/workforce/test_skill_capacity.py"
+      - "backend/app/platform/business_glossary/**"
+      - "backend/app/platform/workflow_policy/**"
+      - "backend/migrations/006_field_intelligence.sql"
+      - "backend/migrations/007_business_glossary.sql"
+      - "backend/migrations/008_customer_promise_delivery.sql"
+      - "backend/migrations/009_workflow_policy_engine.sql"
+      - "backend/tests/test_business_glossary_*.py"
+      - "backend/tests/test_field_*.py"
+      - "backend/tests/test_customer_promise_*.py"
+      - "backend/tests/test_workflow_policy_*.py"
+      - "docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"
+      - "docs/EAY_CUSTOMER_PROMISE_AND_DELIVERY_EXPERIENCE.md"
+      - "docs/EAY_CONFIGURABLE_WORKFLOW_POLICY_ENGINE.md"
+      - ".github/workflows/eay-category-leadership-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-category-leadership-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Field, scheduling, semantic, promise and workflow-policy contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install focused backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "pydantic>=2.9,<3.0" "pytest>=8,<9"
+      - name: Compile category-leadership backend
+        run: |
+          python -m compileall -q \
+            backend/app/modules/data_collection \
+            backend/app/modules/field_intelligence \
+            backend/app/modules/customer_promise \
+            backend/app/modules/workforce/demand_model.py \
+            backend/app/modules/workforce/pressure_model.py \
+            backend/app/modules/workforce/scenario_model.py \
+            backend/app/modules/workforce/policy_model.py \
+            backend/app/modules/workforce/policy_resolver.py \
+            backend/app/modules/workforce/skill_capacity.py \
+            backend/app/platform/business_glossary \
+            backend/app/platform/workflow_policy
+      - name: Run Field Intelligence adversarial lifecycle offline and persistence contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_field_*.py
+      - name: Run Business Glossary semantic authorization governance and persistence contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_business_glossary_*.py
+      - name: Run Customer Promise delivery deviation privacy and recovery contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_customer_promise_*.py
+      - name: Run Workflow Policy deterministic governance simulation and safety contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_workflow_policy_*.py
+      - name: Run operational data collection contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/app/modules/data_collection/test_service.py
+      - name: Run Workforce demand pressure scenario policy and skill contracts
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m pytest -q \
+            backend/app/modules/workforce/test_demand_model.py \
+            backend/app/modules/workforce/test_pressure_model.py \
+            backend/app/modules/workforce/test_scenario_model.py \
+            backend/app/modules/workforce/test_policy_model.py \
+            backend/app/modules/workforce/test_policy_resolver.py \
+            backend/app/modules/workforce/test_skill_capacity.py
+      - name: Preserve production truth boundary
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          roots = [
+              Path("backend/app/modules/field_intelligence"),
+              Path("backend/app/modules/customer_promise"),
+              Path("backend/app/modules/workforce/demand_model.py"),
+              Path("backend/app/modules/workforce/pressure_model.py"),
+              Path("backend/app/modules/workforce/scenario_model.py"),
+              Path("backend/app/modules/workforce/policy_model.py"),
+              Path("backend/app/modules/workforce/policy_resolver.py"),
+              Path("backend/app/modules/workforce/skill_capacity.py"),
+              Path("backend/app/platform/business_glossary"),
+              Path("backend/app/platform/workflow_policy"),
+              Path("docs/EAY_RISE_ERA_PRODUCT_CONTRACT.md"),
+              Path("docs/EAY_CUSTOMER_PROMISE_AND_DELIVERY_EXPERIENCE.md"),
+              Path("docs/EAY_CONFIGURABLE_WORKFLOW_POLICY_ENGINE.md"),
+          ]
+          patterns = (
+              re.compile(r"production_ready\s*=\s*True"),
+              re.compile(r"[\"']production_ready[\"']\s*:\s*true", re.IGNORECASE),
+          )
+          violations = []
+          for root in roots:
+              files = [root] if root.is_file() else list(root.rglob("*.py")) + list(root.rglob("*.md"))
+              for path in files:
+                  text = path.read_text(encoding="utf-8")
+                  if any(pattern.search(text) for pattern in patterns):
+                      violations.append(str(path))
+          if violations:
+              raise SystemExit(f"production truth boundary violated: {violations}")
+          print("production truth boundary preserved")
+          PY
+
+  postgres-authority:
+    name: Field, Glossary, Promise and Workflow Policy PostgreSQL RLS restart and restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_category_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_category_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Apply category-leadership authority migrations
+        run: |
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/006_field_intelligence.sql
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/007_business_glossary.sql
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/008_customer_promise_delivery.sql
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -f backend/migrations/009_workflow_policy_engine.sql
+      - name: Create isolated runtime identities bindings and seed authorities
+        run: |
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE eay_field_a LOGIN PASSWORD 'runtime_a';
+          CREATE ROLE eay_field_b LOGIN PASSWORD 'runtime_b';
+          INSERT INTO field_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          INSERT INTO glossary_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          INSERT INTO customer_promise_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          INSERT INTO workflow_policy_tenant_bindings(role_name, tenant_id) VALUES ('eay_field_a','tenant-a'),('eay_field_b','tenant-b');
+          GRANT SELECT, INSERT ON field_missions TO eay_field_a, eay_field_b;
+          GRANT SELECT ON field_mission_targets, field_offline_events, field_evidence_envelopes, field_verifications, field_notification_events, field_audit TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT ON glossary_terms TO eay_field_a, eay_field_b;
+          GRANT SELECT ON glossary_governance_events TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT, UPDATE ON customer_promises TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT ON customer_delivery_events, customer_promise_evaluations, customer_cause_assertions, customer_recovery_requests, customer_recovery_decisions TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT, UPDATE ON workflow_policy_definitions TO eay_field_a, eay_field_b;
+          GRANT SELECT, INSERT ON workflow_policy_rules, workflow_policy_governance_events, workflow_policy_event_receipts, workflow_policy_evaluations, workflow_policy_action_intents, workflow_policy_action_decisions TO eay_field_a, eay_field_b;
+          GRANT SELECT ON workflow_policy_current_status TO eay_field_a, eay_field_b;
+
+          INSERT INTO field_missions(tenant_id, mission_id, template_id, template_version, status, priority, target_fingerprint, assigned_at, deadline_at, created_by)
+          VALUES
+            ('tenant-a','mission-a','lot-check',1,'active','normal',repeat('a',64),now(),now()+interval '1 hour','central-a'),
+            ('tenant-b','mission-b','lot-check',1,'active','normal',repeat('b',64),now(),now()+interval '1 hour','central-b');
+          INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, domain, version, status, effective_from, display_name, short_definition, owner_subject)
+          VALUES
+            ('tenant-a','backlog-a','backlog','operations',1,'effective',now(),'{"en":"Backlog"}','{"en":"Tenant A definition"}','owner-a'),
+            ('tenant-b','backlog-b','backlog','operations',1,'effective',now(),'{"en":"Backlog"}','{"en":"Tenant B definition"}','owner-b');
+          INSERT INTO customer_promises(
+            tenant_id,promise_id,external_order_ref,version,supersedes_version,source_system,source_record_ref,
+            committed_at,promised_start_at,promised_end_at,service_level,customer_fee_minor_units,currency,
+            instruction_reference,instruction_fingerprint
+          ) VALUES
+            ('tenant-a','promise-a','order-a',1,NULL,'oms','oms-a-v1',now(),now()+interval '20 min',now()+interval '40 min','standard',499,'TRY','instruction-ref-a',repeat('a',64)),
+            ('tenant-b','promise-b','order-b',1,NULL,'oms','oms-b-v1',now(),now()+interval '20 min',now()+interval '40 min','standard',499,'TRY','instruction-ref-b',repeat('b',64));
+
+          INSERT INTO workflow_policy_definitions(
+            tenant_id,workflow_id,version,source_module,event_type,scope_json,effective_from,content_fingerprint,created_by,created_at
+          ) VALUES
+            ('tenant-a','late-order-recovery',1,'customer_promise','customer_promise.deviation_detected','{"country":"TR"}',now()-interval '1 minute',repeat('e',64),'policy-author-a',now()),
+            ('tenant-b','late-order-recovery',1,'customer_promise','customer_promise.deviation_detected','{"country":"TR"}',now()-interval '1 minute',repeat('f',64),'policy-author-b',now());
+          INSERT INTO workflow_policy_rules(
+            tenant_id,workflow_id,workflow_version,rule_id,priority,match_mode,conditions_json,actions_json
+          ) VALUES
+            ('tenant-a','late-order-recovery',1,'late-alert',100,'all','[{"fact_key":"late_minutes","operator":"gte","value":10}]','[{"action_key":"notify.ops","action_type":"notify","effect":"informational","execution_mode":"automatic","parameters":{"template_id":"late-order"}}]'),
+            ('tenant-b','late-order-recovery',1,'late-alert',100,'all','[{"fact_key":"late_minutes","operator":"gte","value":10}]','[{"action_key":"notify.ops","action_type":"notify","effect":"informational","execution_mode":"automatic","parameters":{"template_id":"late-order"}}]');
+          INSERT INTO workflow_policy_governance_events(
+            tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at
+          ) VALUES
+            ('tenant-a','00000000-0000-0000-0000-0000000000c1','late-order-recovery',1,'draft','approved','policy-approver-a',now()+interval '1 second'),
+            ('tenant-b','00000000-0000-0000-0000-0000000000c2','late-order-recovery',1,'draft','approved','policy-approver-b',now()+interval '1 second');
+          INSERT INTO workflow_policy_governance_events(
+            tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at
+          ) VALUES
+            ('tenant-a','00000000-0000-0000-0000-0000000000c3','late-order-recovery',1,'approved','effective','policy-releaser-a',now()+interval '2 seconds'),
+            ('tenant-b','00000000-0000-0000-0000-0000000000c4','late-order-recovery',1,'approved','effective','policy-releaser-b',now()+interval '2 seconds');
+          SQL
+      - name: Prove cross-tenant zero-read under runtime roles
+        run: |
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM field_missions;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM field_missions;" | grep -qx 'tenant-b'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM glossary_terms;" | grep -qx 'tenant-b'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM customer_promises;" | grep -qx 'tenant-a'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tenant_id, ',') FROM customer_promises;" | grep -qx 'tenant-b'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_definitions WHERE tenant_id='tenant-b';" | grep -qx '0'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_definitions WHERE tenant_id='tenant-a';" | grep -qx '0'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT status FROM workflow_policy_current_status WHERE workflow_id='late-order-recovery';" | grep -qx 'effective'
+          PGPASSWORD=runtime_b psql -h localhost -U eay_field_b -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT status FROM workflow_policy_current_status WHERE workflow_id='late-order-recovery';" | grep -qx 'effective'
+      - name: Prove cross-tenant writes are blocked by RLS
+        run: |
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO field_missions(tenant_id, mission_id, template_id, template_version, status, priority, target_fingerprint, assigned_at, deadline_at, created_by) VALUES ('tenant-b','escape-field','x',1,'active','normal',repeat('c',64),now(),now()+interval '1 hour','attacker');"
+          field_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-b','escape-glossary','escape',1,'draft','{\"en\":\"Escape\"}','{\"en\":\"Escape\"}','attacker');"
+          glossary_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO customer_promises(tenant_id,promise_id,external_order_ref,version,source_system,source_record_ref,committed_at,promised_start_at,promised_end_at,service_level) VALUES ('tenant-b','escape-promise','escape-order',1,'oms','escape',now(),now()+interval '10 min',now()+interval '20 min','standard');"
+          promise_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_definitions(tenant_id,workflow_id,version,source_module,event_type,effective_from,content_fingerprint,created_by) VALUES ('tenant-b','escape-workflow',1,'inventory','inventory.exception',now(),repeat('a',64),'attacker');"
+          workflow_status=$?
+          set -e
+          test "$field_status" -ne 0
+          test "$glossary_status" -ne 0
+          test "$promise_status" -ne 0
+          test "$workflow_status" -ne 0
+      - name: Prove semantic immutability promise append-only and delivery-event idempotency
+        run: |
+          set +e
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO glossary_terms(tenant_id, concept_id, canonical_key, domain, version, status, display_name, short_definition, owner_subject) VALUES ('tenant-a','duplicate-backlog','backlog','operations',1,'draft','{\"en\":\"Duplicate\"}','{\"en\":\"Duplicate\"}','owner');"
+          duplicate_glossary_status=$?
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -c "UPDATE glossary_terms SET short_definition='{\"en\":\"Mutated\"}' WHERE tenant_id='tenant-a' AND concept_id='backlog-a' AND version=1;"
+          glossary_mutation_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "UPDATE customer_promises SET service_level='mutated' WHERE tenant_id='tenant-a' AND promise_id='promise-a' AND version=1;"
+          promise_mutation_status=$?
+          set -e
+          test "$duplicate_glossary_status" -ne 0
+          test "$glossary_mutation_status" -ne 0
+          test "$promise_mutation_status" -ne 0
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO customer_delivery_events(tenant_id,event_id,external_order_ref,event_type,source_system,source_event_ref,occurred_at,idempotency_key,payload_fingerprint) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000a1','order-a','delivered','delivery-platform','source-a-1',now(),'delivery-idempotency-a',repeat('c',64));"
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO customer_delivery_events(tenant_id,event_id,external_order_ref,event_type,source_system,source_event_ref,occurred_at,idempotency_key,payload_fingerprint) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000a2','order-a','delivered','delivery-platform','source-a-2',now(),'delivery-idempotency-a',repeat('d',64));"
+          duplicate_event_status=$?
+          set -e
+          test "$duplicate_event_status" -ne 0
+      - name: Prove workflow governance replay simulation and action safety
+        run: |
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "UPDATE workflow_policy_definitions SET event_type='mutated' WHERE tenant_id='tenant-a' AND workflow_id='late-order-recovery' AND version=1;"
+          workflow_mutation_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_governance_events(tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at,reason) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000c5','late-order-recovery',1,'draft','disabled','attacker',now()+interval '5 seconds','invalid rewind');"
+          governance_rewind_status=$?
+          set -e
+          test "$workflow_mutation_status" -ne 0
+          test "$governance_rewind_status" -ne 0
+
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_definitions(tenant_id,workflow_id,version,source_module,event_type,scope_json,effective_from,content_fingerprint,created_by) VALUES ('tenant-a','self-approve-test',1,'customer_promise','customer_promise.deviation_detected','{\"country\":\"TR\"}',now()-interval '1 minute',repeat('9',64),'same-actor');"
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_governance_events(tenant_id,governance_event_id,workflow_id,workflow_version,from_status,to_status,actor_id,occurred_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000c6','self-approve-test',1,'draft','approved','same-actor',now()+interval '1 second');"
+          self_approval_status=$?
+          set -e
+          test "$self_approval_status" -ne 0
+
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_event_receipts(tenant_id,receipt_id,event_id,idempotency_key,source_module,event_type,subject_ref,scope_json,facts_fingerprint,occurred_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000d0','wf-event-a','workflow-idempotency-a','customer_promise','customer_promise.deviation_detected','order-a','{\"country\":\"TR\",\"region\":\"Marmara\"}',repeat('7',64),now());"
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_event_receipts(tenant_id,receipt_id,event_id,idempotency_key,source_module,event_type,subject_ref,scope_json,facts_fingerprint,occurred_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000d9','wf-event-a-duplicate','workflow-idempotency-a','customer_promise','customer_promise.deviation_detected','order-a','{\"country\":\"TR\"}',repeat('8',64),now());"
+          duplicate_receipt_status=$?
+          set -e
+          test "$duplicate_receipt_status" -ne 0
+
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_evaluations(tenant_id,evaluation_id,workflow_id,workflow_version,event_id,dry_run,matched_rule_ids,decision_fingerprint,evaluated_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000d1','late-order-recovery',1,'wf-event-a',false,ARRAY['late-alert'],repeat('1',64),now());"
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('1',64),'00000000-0000-0000-0000-0000000000d1','notify.ops','notify','informational','automatic','{\"template_id\":\"late-order\"}',false,false,repeat('a',64));"
+
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('2',64),'00000000-0000-0000-0000-0000000000d1','notify.duplicate','notify','informational','automatic','{}',false,false,repeat('a',64));"
+          duplicate_action_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('3',64),'00000000-0000-0000-0000-0000000000d1','refund.auto','notify','financial','automatic','{}',true,false,repeat('b',64));"
+          high_risk_auto_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('4',64),'00000000-0000-0000-0000-0000000000d1','notify.unsafe','notify','informational','automatic','{\"webhook_url\":\"https://example.invalid\"}',false,false,repeat('c',64));"
+          unsafe_payload_status=$?
+          set -e
+          test "$duplicate_action_status" -ne 0
+          test "$high_risk_auto_status" -ne 0
+          test "$unsafe_payload_status" -ne 0
+
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_evaluations(tenant_id,evaluation_id,workflow_id,workflow_version,event_id,dry_run,matched_rule_ids,decision_fingerprint,evaluated_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000d2','late-order-recovery',1,'wf-event-a',true,ARRAY['late-alert'],repeat('2',64),now());"
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('5',64),'00000000-0000-0000-0000-0000000000d2','notify.simulation','notify','informational','automatic','{\"template_id\":\"late-order\"}',false,true,repeat('d',64));"
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_decisions(tenant_id,decision_id,intent_id,decision,decided_by,decided_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000e1',repeat('5',64),'approved','manager',now());"
+          dry_run_approval_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('7',64),'00000000-0000-0000-0000-0000000000d2','notify.mismatch','notify','informational','automatic','{}',false,false,repeat('f',64));"
+          dry_run_context_status=$?
+          set -e
+          test "$dry_run_approval_status" -ne 0
+          test "$dry_run_context_status" -ne 0
+
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_intents(tenant_id,intent_id,evaluation_id,action_key,action_type,effect,execution_mode,parameters_json,approval_required,dry_run,dedupe_key) VALUES ('tenant-a',repeat('6',64),'00000000-0000-0000-0000-0000000000d1','customer_promise.propose_recovery','propose_domain_action','operational','proposal_only','{\"recovery_kind\":\"manual_review\"}',false,false,repeat('e',64));"
+          set +e
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_action_decisions(tenant_id,decision_id,intent_id,decision,decided_by,decided_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000e2',repeat('6',64),'approved','manager',now());"
+          proposal_approval_status=$?
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_evaluations(tenant_id,evaluation_id,workflow_id,workflow_version,event_id,dry_run,matched_rule_ids,decision_fingerprint,evaluated_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000d3','self-approve-test',1,'wf-event-a',false,ARRAY[]::text[],repeat('3',64),now());"
+          draft_live_status=$?
+          set -e
+          test "$proposal_approval_status" -ne 0
+          test "$draft_live_status" -ne 0
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -c "INSERT INTO workflow_policy_evaluations(tenant_id,evaluation_id,workflow_id,workflow_version,event_id,dry_run,matched_rule_ids,decision_fingerprint,evaluated_at) VALUES ('tenant-a','00000000-0000-0000-0000-0000000000d4','self-approve-test',1,'wf-event-a',true,ARRAY[]::text[],repeat('4',64),now());"
+      - name: Prove customer-promise and workflow persistence minimize sensitive payloads
+        run: |
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='customer_promises' AND column_name IN ('customer_name','phone','address','door_code','delivery_instruction_text');" | grep -qx '0'
+          psql -h localhost -U postgres -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='workflow_policy_event_receipts' AND column_name IN ('facts','raw_facts','payload','raw_payload');" | grep -qx '0'
+      - name: Database restart durability
+        run: |
+          docker restart ${{ job.services.postgres.id }}
+          for attempt in {1..30}; do pg_isready -h localhost -U postgres -d eay_category_ci && break; sleep 1; done
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM field_missions;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM glossary_terms;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_promises;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_delivery_events;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_definitions;" | grep -qx '2'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_event_receipts;" | grep -qx '1'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_evaluations;" | grep -qx '3'
+          PGPASSWORD=runtime_a psql -h localhost -U eay_field_a -d eay_category_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_action_intents;" | grep -qx '3'
+      - name: Backup and isolated restore rehearsal
+        run: |
+          pg_dump -h localhost -U postgres -Fc -f /tmp/eay_category_ci.dump eay_category_ci
+          dropdb -h localhost -U postgres --if-exists eay_category_restore_ci
+          createdb -h localhost -U postgres eay_category_restore_ci
+          pg_restore -h localhost -U postgres -d eay_category_restore_ci /tmp/eay_category_ci.dump
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM field_missions;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM glossary_terms;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_promises;" | grep -qx '2'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM customer_delivery_events;" | grep -qx '1'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_definitions;" | grep -qx '3'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_governance_events;" | grep -qx '4'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_event_receipts;" | grep -qx '1'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_evaluations;" | grep -qx '3'
+          psql -h localhost -U postgres -d eay_category_restore_ci -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM workflow_policy_action_intents;" | grep -qx '3'

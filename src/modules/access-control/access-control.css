@@ -1,7 +1,8 @@
 ﻿.access-page {
   position: relative;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: auto;
   color: #101828;
   background:
     radial-gradient(circle at 12% 14%, rgba(250, 0, 80, 0.15), transparent 28%),
@@ -51,7 +52,7 @@
 .access-shell {
   position: relative;
   z-index: 5;
-  width: min(1400px, calc(100% - 72px));
+  width: min(1560px, calc(100% - 32px));
   margin: 0 auto;
   padding: 30px 0 64px;
 }
@@ -236,6 +237,87 @@
   background: rgba(255,255,255,.72);
 }
 
+.access-password-reset {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid rgba(124, 58, 237, .15);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(250, 0, 80, .045), rgba(124, 58, 237, .055));
+}
+
+.access-password-reset > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #7c3aed;
+}
+
+.access-password-reset strong,
+.access-password-reset small {
+  display: block;
+}
+
+.access-password-reset strong {
+  color: #101828;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.access-password-reset small {
+  margin-top: 4px;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.access-password-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: #b42318;
+  background: rgba(180, 35, 24, .08);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.access-temporary-password {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.access-temporary-password label {
+  display: grid;
+  gap: 6px;
+  color: #344054;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.access-temporary-password input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 13px;
+  color: #101828;
+  background: rgba(255,255,255,.88);
+  font: 800 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.access-temporary-password button {
+  min-height: 42px;
+  padding: 0 13px;
+  border-radius: 13px;
+  color: #fff;
+  background: linear-gradient(135deg, #FA0050, #7c3aed);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .access-add-user button {
   border: 0;
   border-radius: 16px;
@@ -297,6 +379,7 @@
 }
 
 .access-editor {
+  min-width: 0;
   padding: 26px;
 }
 
@@ -317,15 +400,19 @@
 }
 
 .access-editor-head h2 {
+  max-width: 100%;
   margin: 6px 0 0;
   color: #101828;
-  font-size: clamp(24px, 3vw, 34px);
-  line-height: 1;
+  font-size: clamp(20px, 2.1vw, 32px);
+  line-height: 1.08;
   letter-spacing: -.06em;
+  overflow-wrap: anywhere;
 }
 
 .access-editor-actions {
   display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -370,7 +457,8 @@
 
 .access-module-table {
   margin-top: 24px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid rgba(15,23,42,.09);
   border-radius: 22px;
   background: rgba(248,250,252,.62);
@@ -561,19 +649,26 @@
   .access-editor-actions {
     flex-wrap: wrap;
   }
+
+  .access-temporary-password {
+    grid-template-columns: 1fr;
+  }
 }
 
 
 /* === ACCESS CONTROL DETAIL PERMISSIONS V2 START === */
 
 .access-grid-v2 {
-  grid-template-columns: minmax(300px, 360px) minmax(560px, 1fr) minmax(340px, 420px);
+  grid-template-columns: minmax(240px, 290px) minmax(450px, 1.35fr) minmax(290px, .9fr);
+  gap: 16px;
   align-items: start;
 }
 
 .access-table-head-v2,
 .access-module-row-v2 {
-  grid-template-columns: 1fr 78px 78px 112px;
+  min-width: 430px;
+  grid-template-columns: minmax(170px, 1fr) 64px 64px 96px;
+  gap: 8px;
 }
 
 .access-detail-btn {
@@ -604,6 +699,7 @@
 }
 
 .access-detail-panel {
+  min-width: 0;
   position: sticky;
   top: 24px;
   max-height: calc(100vh - 48px);
@@ -774,9 +870,9 @@
   color: #101828;
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1120px) {
   .access-grid-v2 {
-    grid-template-columns: minmax(300px, 360px) 1fr;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   }
 
   .access-detail-panel {
@@ -787,7 +883,7 @@
   }
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 860px) {
   .access-grid-v2 {
     grid-template-columns: 1fr;
   }
@@ -812,13 +908,61 @@
 .access-mode-tabs {
   display: inline-flex;
   gap: 8px;
-  margin: 0 0 22px;
+  margin: 0;
   padding: 6px;
   border: 1px solid rgba(15,23,42,.09);
   border-radius: 999px;
   background: rgba(255,255,255,.78);
   backdrop-filter: blur(18px);
   box-shadow: 0 14px 38px rgba(15,23,42,.07);
+}
+
+.access-control-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 22px;
+}
+
+.access-refresh-area {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 10px;
+}
+
+.access-refresh-notice {
+  max-width: 440px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.access-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(15,23,42,.1);
+  border-radius: 15px;
+  color: #101828;
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 14px 38px rgba(15,23,42,.07);
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.access-refresh-btn:hover,
+.access-refresh-btn:focus-visible {
+  border-color: rgba(250,0,80,.3);
+  color: #c90040;
+  outline: none;
 }
 
 .access-mode-tabs button {
@@ -889,6 +1033,21 @@
 }
 
 @media (max-width: 760px) {
+  .access-control-toolbar,
+  .access-refresh-area {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .access-refresh-notice {
+    max-width: none;
+    text-align: left;
+  }
+
+  .access-refresh-btn {
+    width: 100%;
+  }
+
   .access-mode-tabs {
     width: 100%;
   }

@@ -1,0 +1,130 @@
+name: EAY Master Roadmap 24 - Planogram Physical Truth
+
+on:
+  push:
+    branches:
+      - agent/master-roadmap-24-planogram-physical-truth
+      - product/eay-category-leadership-v1
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/**"
+      - "services/core-api/app/modules/planogram/**"
+      - "services/core-api/tests/test_planogram*.py"
+      - "services/core-api/alembic/versions/*planogram*.py"
+      - "services/core-api/app/budget_main.py"
+      - "config/eay_master_roadmap_60.json"
+      - "src/**/*planogram*"
+      - "src/**/Planogram/**"
+      - ".github/workflows/eay-master-roadmap-24-planogram-physical-truth.yml"
+      - ".github/workflows/eay-master-roadmap-25-planogram-optimizer.yml"
+      - ".github/workflows/eay-master-roadmap-26-planogram-execution-compliance.yml"
+      - ".github/workflows/eay-master-roadmap-24-27-cumulative-exact-head.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  physical-truth-authority:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Create non-superuser runtime role
+        run: |
+          python - <<'PY'
+          import asyncio, asyncpg
+          async def main():
+              c=await asyncpg.connect('postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test')
+              try:
+                  exists=await c.fetchval("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')")
+                  if not exists:
+                      await c.execute("CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS")
+              finally:
+                  await c.close()
+          asyncio.run(main())
+          PY
+      - name: Lint Store DNA authority and regression surface
+        run: >-
+          ruff check
+          services/core-api/app/modules/planogram/store_dna.py
+          services/core-api/app/modules/planogram/repository_store_dna.py
+          services/core-api/app/modules/planogram/router.py
+          services/core-api/app/modules/planogram/schemas.py
+          services/core-api/tests/test_planogram_master24_store_dna.py
+          services/core-api/tests/test_planogram_native_core.py
+          services/core-api/tests/test_sql_access_boundary.py
+      - name: Secure SQL data-access boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Apply cumulative Core migrations
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Prove topology geometry separation and native Core regression
+        run: >-
+          pytest -q
+          services/core-api/tests/test_planogram_master24_store_dna.py
+          services/core-api/tests/test_planogram_native_core.py
+      - name: Prove FORCE RLS and immutable history schema
+        run: |
+          PGPASSWORD=opex_migrator psql -h localhost -U opex_migrator -d opex_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE versions_rls boolean; versions_force boolean; events_rls boolean; events_force boolean;
+          BEGIN
+            SELECT relrowsecurity, relforcerowsecurity INTO versions_rls, versions_force FROM pg_class WHERE oid='planogram_store_dna_versions'::regclass;
+            SELECT relrowsecurity, relforcerowsecurity INTO events_rls, events_force FROM pg_class WHERE oid='planogram_store_dna_events'::regclass;
+            IF NOT versions_rls OR NOT versions_force OR NOT events_rls OR NOT events_force THEN RAISE EXCEPTION 'Planogram Store DNA RLS is not FORCE enabled'; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='trg_planogram_store_dna_immutable_history' AND NOT tgisinternal) THEN RAISE EXCEPTION 'immutable history trigger missing'; END IF;
+          END $$;
+          SQL
+      - name: Preserve production truth boundary
+        run: |
+          python - <<'PY'
+          from app.modules.planogram.router import REQUIRED_EVIDENCE
+          assert 'approved_sku_dimensions' in REQUIRED_EVIDENCE
+          assert 'product_image_linkage' in REQUIRED_EVIDENCE
+          assert 'fixture_geometry_capacity' in REQUIRED_EVIDENCE
+          print('MASTER_24_REPOSITORY_PHYSICAL_TRUTH=PASS')
+          print('MASTER_24_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
+          PY

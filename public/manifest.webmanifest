@@ -1,0 +1,12 @@
+{
+  "name": "OPEX Workforce",
+  "short_name": "OPEX",
+  "description": "OPEX Control Center vardiya, puantaj ve picker uygulaması",
+  "start_url": "/workforce/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#df0a6d",
+  "lang": "tr",
+  "dir": "auto"
+}

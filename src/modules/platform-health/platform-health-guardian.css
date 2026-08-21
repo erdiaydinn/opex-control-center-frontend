@@ -1,0 +1,145 @@
+.platform-health-guardian {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.platform-health-guardian > header,
+.platform-health-guardian-title,
+.platform-health-guardian-subhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.platform-health-guardian > header {
+  justify-content: space-between;
+}
+
+.platform-health-guardian-title > div {
+  display: grid;
+  gap: 5px;
+}
+
+.platform-health-guardian-title p,
+.platform-health-guardian-title h2,
+.platform-health-guardian-title span {
+  margin: 0;
+}
+
+.platform-health-guardian-title span,
+.platform-health-guardian-grid span,
+.platform-health-guardian-subhead span,
+.platform-health-guardian li span,
+.platform-health-guardian.is-unavailable span {
+  color: var(--muted, #aeb7cc);
+}
+
+.platform-health-guardian > header > strong {
+  max-width: 280px;
+  text-align: end;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.platform-health-guardian-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.platform-health-guardian-grid article {
+  display: grid;
+  gap: 7px;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+}
+
+.platform-health-guardian-grid span {
+  font-size: 13px;
+}
+
+.platform-health-guardian-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.platform-health-guardian-detail-grid > div {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+}
+
+.platform-health-guardian-subhead {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.platform-health-guardian ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+
+.platform-health-guardian li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.platform-health-guardian code {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.platform-health-guardian.is-loading,
+.platform-health-guardian.is-unavailable {
+  display: flex;
+  align-items: center;
+  min-height: 76px;
+}
+
+.platform-health-guardian.is-unavailable > div {
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 900px) {
+  .platform-health-guardian-grid,
+  .platform-health-guardian-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .platform-health-guardian > header {
+    flex-direction: column;
+  }
+
+  .platform-health-guardian > header > strong {
+    max-width: none;
+    text-align: start;
+  }
+
+  .platform-health-guardian-grid,
+  .platform-health-guardian-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-health-guardian li {
+    flex-direction: column;
+  }
+}

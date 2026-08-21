@@ -2,12 +2,11 @@
 
 A configured specialist is not automatically an expert. This module turns
 capability claims into an auditable admission decision backed by current,
-reproducible benchmark evidence. It is deliberately independent from model
-routing and execution authority: a MASTER result means that the specialist met
-this project's benchmark policy for the named domain and evidence window. It is
-not a universal superiority claim and it never grants permission to mutate a
-business system, sign a legal instrument, move money, change personnel records,
-or run offensive cyber actions.
+reproducible benchmark evidence and an exact specialist identity. It is
+independent from model routing and execution authority: MASTER means that the
+named specialist met this project's benchmark policy for the named domain and
+evidence window. It is not a universal superiority claim and never grants
+business-system, legal-signature, money-movement, personnel or cyber authority.
 """
 
 from __future__ import annotations
@@ -84,6 +83,7 @@ class SpecialistScorecard(BaseModel):
 
 class SpecialistBenchmarkEvidence(BaseModel):
     contract: str = SPECIALIST_MASTERY_CONTRACT
+    specialist_id: str = Field(min_length=1)
     domain: SpecialistDomain
     benchmark_id: str = Field(min_length=1)
     benchmark_version: str = Field(min_length=1)
@@ -143,6 +143,7 @@ class MasteryAdmissionPolicy(BaseModel):
 
 class SpecialistMasteryDecision(BaseModel):
     contract: str = SPECIALIST_MASTERY_CONTRACT
+    specialist_id: str = Field(min_length=1)
     domain: SpecialistDomain
     evaluated_at: datetime
     admitted_tier: MasteryTier
@@ -175,8 +176,6 @@ class SpecialistMasteryDecision(BaseModel):
 
 
 def default_mastery_policy(domain: SpecialistDomain | str) -> MasteryAdmissionPolicy:
-    """Return the default policy, with stricter gates for sensitive domains."""
-
     resolved = SpecialistDomain(domain)
     if resolved not in SENSITIVE_SPECIALIST_DOMAINS:
         return MasteryAdmissionPolicy()
@@ -196,6 +195,7 @@ def default_mastery_policy(domain: SpecialistDomain | str) -> MasteryAdmissionPo
 
 def build_specialist_evidence(
     *,
+    specialist_id: str,
     domain: SpecialistDomain,
     benchmark_id: str,
     benchmark_version: str,
@@ -211,6 +211,7 @@ def build_specialist_evidence(
 ) -> SpecialistBenchmarkEvidence:
     draft = {
         "contract": SPECIALIST_MASTERY_CONTRACT,
+        "specialist_id": specialist_id,
         "domain": domain.value,
         "benchmark_id": benchmark_id,
         "benchmark_version": benchmark_version,
@@ -231,14 +232,17 @@ def build_specialist_evidence(
 
 def admit_specialist_mastery(
     *,
+    specialist_id: str,
     domain: SpecialistDomain | str,
     evidence: tuple[SpecialistBenchmarkEvidence, ...],
     now: datetime,
     policy: MasteryAdmissionPolicy | None = None,
 ) -> SpecialistMasteryDecision:
-    """Admit the highest tier supported by current benchmark evidence."""
+    """Admit the named specialist to the highest tier supported by evidence."""
 
     _require_aware(now, "specialist_mastery_now_requires_timezone")
+    if not specialist_id:
+        raise ValueError("specialist_identity_required")
     resolved_domain = SpecialistDomain(domain)
     rules = policy or default_mastery_policy(resolved_domain)
 
@@ -247,6 +251,8 @@ def admit_specialist_mastery(
     seen_fingerprints: set[str] = set()
     for raw in evidence:
         item = SpecialistBenchmarkEvidence.model_validate(raw.model_dump(mode="json"))
+        if item.specialist_id != specialist_id:
+            raise ValueError("specialist_evidence_identity_mismatch")
         if item.domain is not resolved_domain:
             raise ValueError("specialist_evidence_domain_mismatch")
         if item.observed_at > now:
@@ -262,6 +268,7 @@ def admit_specialist_mastery(
 
     if not accepted:
         return _decision(
+            specialist_id=specialist_id,
             domain=resolved_domain,
             now=now,
             tier=MasteryTier.UNADMITTED,
@@ -306,6 +313,7 @@ def admit_specialist_mastery(
         blockers.extend(master_blockers)
 
     return _decision(
+        specialist_id=specialist_id,
         domain=resolved_domain,
         now=now,
         tier=tier,
@@ -361,9 +369,8 @@ def _weighted_scorecard(
     evidence: list[SpecialistBenchmarkEvidence],
 ) -> SpecialistScorecard:
     total_cases = sum(item.evaluated_cases for item in evidence)
-    fields = tuple(SpecialistScorecard.model_fields)
     values: dict[str, float] = {}
-    for field_name in fields:
+    for field_name in SpecialistScorecard.model_fields:
         weighted = sum(
             getattr(item.scorecard, field_name) * item.evaluated_cases
             for item in evidence
@@ -374,6 +381,7 @@ def _weighted_scorecard(
 
 def _decision(
     *,
+    specialist_id: str,
     domain: SpecialistDomain,
     now: datetime,
     tier: MasteryTier,
@@ -389,6 +397,7 @@ def _decision(
     )
     draft = {
         "contract": SPECIALIST_MASTERY_CONTRACT,
+        "specialist_id": specialist_id,
         "domain": domain.value,
         "evaluated_at": now.isoformat().replace("+00:00", "Z"),
         "admitted_tier": tier.value,

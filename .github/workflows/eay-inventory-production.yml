@@ -8,6 +8,7 @@ on:
     paths:
       - "backend/app/modules/inventory/**"
       - "backend/migrations/*inventory*.sql"
+      - "backend/tests/test_inventory_production_v13_isolated.py"
       - "android-inventory/**"
       - "src/modules/inventory/**"
       - "src/App.jsx"
@@ -157,7 +158,7 @@ jobs:
           INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');
           SQL
       - name: Inventory PostgreSQL adversarial acceptance
-        run: python -m unittest backend.app.modules.inventory.test_inventory_production -v
+        run: python -m unittest backend.tests.test_inventory_production_v13_isolated -v
       - name: Inventory-owned backend regression
         env:
           DOCKOS_ENV: test
@@ -174,7 +175,7 @@ jobs:
             backend.app.modules.inventory.test_inventory_scope \
             backend.app.modules.inventory.test_inventory_sku_identity \
             backend.app.modules.inventory.test_operational_mission \
-            backend.app.modules.inventory.test_inventory_production
+            backend.tests.test_inventory_production_v13_isolated
       - name: Database restart durability
         shell: bash
         run: |

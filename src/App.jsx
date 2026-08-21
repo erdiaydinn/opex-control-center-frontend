@@ -18,7 +18,7 @@ import RouteErrorBoundary from "./platform/accessibility/RouteErrorBoundary.jsx"
 import { usePlatformPreferences } from "./platform/preferences/PlatformPreferencesContext.jsx";
 
 const PlanogramStudio = lazy(() => import("./modules/planogram/PlanogramStudio.jsx"));
-const BudgetIntelligence = lazy(() => import("./modules/budget-intelligence/BudgetIntelligenceV2.jsx"));
+const BudgetIntelligence = lazy(() => import("./modules/budget-intelligence/BudgetIntelligence.jsx"));
 const DockOSDashboard = lazy(() => import("./modules/DockOS/DockOSDashboard.jsx"));
 const AccessControl = lazy(() => import("./modules/access-control/AccessControl.jsx"));
 const ServerAccounts = lazy(() => import("./modules/access-control/ServerAccounts.jsx"));

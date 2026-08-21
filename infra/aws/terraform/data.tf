@@ -55,7 +55,7 @@ resource "aws_db_instance" "postgres" {
   performance_insights_retention_period = 7
 
   auto_minor_version_upgrade = true
-  apply_immediately           = false
+  apply_immediately          = false
   deletion_protection        = var.deletion_protection
   skip_final_snapshot        = false
   final_snapshot_identifier  = "${local.name}-postgres-final"
@@ -118,7 +118,7 @@ resource "aws_elasticache_replication_group" "redis" {
   maintenance_window       = "sun:04:30-sun:05:30"
 
   auto_minor_version_upgrade = true
-  apply_immediately           = false
+  apply_immediately          = false
 
   tags = {
     Name      = "${local.name}-valkey"
@@ -218,7 +218,7 @@ data "aws_iam_policy_document" "evidence_tls" {
       identifiers = ["*"]
     }
 
-    actions   = ["s3:*"]
+    actions = ["s3:*"]
     resources = [
       aws_s3_bucket.evidence.arn,
       "${aws_s3_bucket.evidence.arn}/*"
@@ -247,7 +247,7 @@ data "aws_iam_policy_document" "backup_tls" {
       identifiers = ["*"]
     }
 
-    actions   = ["s3:*"]
+    actions = ["s3:*"]
     resources = [
       aws_s3_bucket.backup.arn,
       "${aws_s3_bucket.backup.arn}/*"

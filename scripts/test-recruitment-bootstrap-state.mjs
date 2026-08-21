@@ -26,7 +26,11 @@ for (const [needle, label] of [
   ['role="alert"', "assertive error semantics"],
   ['t("retry")', "localized retry action"],
   ['data-eay-product-state="ready"', "ready state marker"],
-  ["<RecruitmentControl />", "RecruitmentControl mount after successful bootstrap"],
+  ["<RecruitmentControl", "RecruitmentControl composition after successful bootstrap"],
+  ["<RecruitmentCandidateDocumentCenter", "candidate document trust composition"],
+  ["<RecruitmentOrchestrationCenter", "onboarding orchestration composition"],
+  ["<RecruitmentInterviewCenter", "interview authority composition"],
+  ["<RecruitmentLifecycleCenter", "governed lifecycle composition"],
 ]) {
   if (!boundary.includes(needle)) {
     console.error(`Recruitment bootstrap boundary missing ${label}: ${needle}`);
@@ -44,4 +48,4 @@ if (!api.includes("let primedRecruitmentBootstrap = null") || !api.includes("pri
   process.exit(1);
 }
 
-console.log("Recruitment authoritative bootstrap state contract: PASS");
+console.log("Recruitment authoritative bootstrap state and governed composition contract: PASS");

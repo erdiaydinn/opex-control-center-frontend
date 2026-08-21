@@ -9,9 +9,15 @@ const extensions = new Set(config.extensions || [".jsx", ".tsx"]);
 const attributes = config.user_facing_attributes || ["placeholder", "title", "aria-label", "alt"];
 const allowedExact = new Set(config.allowed_exact_literals || []);
 const escapeMarkers = config.documented_escape_markers || [];
+const GIT_OUTPUT_MAX_BUFFER = 16 * 1024 * 1024;
 
 function git(args, options = {}) {
-  return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...options });
+  return execFileSync("git", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+    maxBuffer: GIT_OUTPUT_MAX_BUFFER,
+  });
 }
 
 function requireCondition(condition, message) {

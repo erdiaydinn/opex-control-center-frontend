@@ -19,6 +19,36 @@ data class InventoryOperationalCaptureResult(
     val completed: Boolean,
 )
 
+/** Pure reducer seeding used only after durable evidence passed restart projection. */
+internal object InventoryOperationalResumeSession {
+    fun seed(
+        task: InventoryOperationalTask,
+        claim: InventoryOperationalClaim,
+        resumeEvidence: List<OperationalStepEvidence>,
+    ): OperationalMissionSession {
+        require(claim.missionId == task.missionId)
+        require(claim.activeShiftId == task.activeShiftId)
+        require(claim.nextStep == task.nextStep)
+        var session = OperationalMissionSession(
+            definition = OperationalMissionDefinition(
+                missionId = task.missionId,
+                type = task.missionType,
+                operation = task.operation,
+                steps = task.steps.drop(task.completedSteps),
+            ),
+        )
+        require(session.nextStep == task.nextStep)
+        for (evidence in resumeEvidence) {
+            val reduced = OperationalMissionReducer.capture(session, evidence)
+            require(reduced.code == OperationalCaptureCode.ACCEPTED) {
+                "Durable operational evidence is not a canonical resume prefix"
+            }
+            session = reduced.session
+        }
+        return session
+    }
+}
+
 class InventoryOperationalController(
     private val task: InventoryOperationalTask,
     private val claim: InventoryOperationalClaim,
@@ -26,20 +56,11 @@ class InventoryOperationalController(
 ) {
     private val progressOffset = task.completedSteps
     private val captureMutex = Mutex()
-    private var session = OperationalMissionSession(
-        definition = OperationalMissionDefinition(
-            missionId = task.missionId,
-            type = task.missionType,
-            operation = task.operation,
-            steps = task.steps.drop(task.completedSteps),
-        ),
+    private var session = InventoryOperationalResumeSession.seed(
+        task = task,
+        claim = claim,
+        resumeEvidence = claim.resumeEvidence,
     )
-
-    init {
-        require(claim.missionId == task.missionId)
-        require(claim.activeShiftId == task.activeShiftId)
-        require(session.nextStep == task.nextStep)
-    }
 
     fun nextStep(): OperationalStepKind? = session.nextStep
 

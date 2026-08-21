@@ -3,8 +3,10 @@ package com.eay.inventory
 import android.content.Context
 import com.eay.mobile.core.OperationalMissionDefinition
 import com.eay.mobile.core.OperationalMissionType
+import com.eay.mobile.core.OperationalStepEvidence
 import com.eay.mobile.core.OperationalStepKind
 import com.eay.mobile.core.OperationalValueCanonicalizer
+import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -51,6 +53,7 @@ data class InventoryOperationalClaim(
     val claimId: String,
     val activeShiftId: String,
     val nextStep: OperationalStepKind,
+    val resumeEvidence: List<OperationalStepEvidence> = emptyList(),
 )
 
 data class InventoryOperationalClaimResult(
@@ -275,11 +278,49 @@ class InventoryOperationalClaimClient(context: Context) {
                 require(missionId == task.missionId)
                 require(shiftId == task.activeShiftId)
                 require(next == task.nextStep)
-                InventoryOperationalClaimResult(
-                    InventoryTaskFetchCode.OK,
+                attachLocalResume(
+                    task,
                     InventoryOperationalClaim(missionId, claimId, shiftId, next),
                 )
             } catch (_: Exception) {
+                InventoryOperationalClaimResult(InventoryTaskFetchCode.CONTRACT_REJECTED)
+            }
+        }
+    }
+
+    private fun attachLocalResume(
+        task: InventoryOperationalTask,
+        claim: InventoryOperationalClaim,
+    ): InventoryOperationalClaimResult {
+        val projection = runCatching {
+            runBlocking {
+                val database = InventoryDatabase.get(appContext)
+                val session = database.sessions().get()
+                    ?: error("Missing durable auth session for operational execution")
+                val unsettled = database.events().unsettledBefore(Long.MAX_VALUE)
+                InventoryOperationalLocalTruth.project(
+                    task = task,
+                    unsettledEvents = unsettled,
+                    currentAuthBindingId = session.authBindingId,
+                    expectedClaimId = claim.claimId,
+                )
+            }
+        }.getOrElse {
+            InventorySyncWorker.enqueue(appContext)
+            return InventoryOperationalClaimResult(InventoryTaskFetchCode.CONTRACT_REJECTED)
+        }
+
+        return when (projection.state) {
+            InventoryLocalCompletionState.OPEN -> InventoryOperationalClaimResult(
+                code = InventoryTaskFetchCode.OK,
+                claim = claim.copy(resumeEvidence = projection.evidence),
+            )
+            InventoryLocalCompletionState.AWAITING_SERVER -> {
+                InventorySyncWorker.enqueue(appContext)
+                InventoryOperationalClaimResult(InventoryTaskFetchCode.RETRYABLE)
+            }
+            InventoryLocalCompletionState.REQUIRES_REVIEW -> {
+                InventorySyncWorker.enqueue(appContext)
                 InventoryOperationalClaimResult(InventoryTaskFetchCode.CONTRACT_REJECTED)
             }
         }

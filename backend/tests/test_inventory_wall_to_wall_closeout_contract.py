@@ -7,6 +7,12 @@ from pathlib import Path
 ROOT = Path(__file__).parents[2]
 MIGRATION = ROOT / "backend" / "migrations" / "011_inventory_wall_to_wall_closeout_authority.sql"
 SCOPE_GUARD_FIX = ROOT / "backend" / "migrations" / "012_inventory_wall_to_wall_scope_guard_fix.sql"
+OPERATOR_ORDERING = (
+    ROOT
+    / "backend"
+    / "migrations"
+    / "013_inventory_wall_to_wall_operator_location_ordering.sql"
+)
 RECONCILIATION = ROOT / "backend" / "app" / "modules" / "inventory" / "reconciliation.py"
 
 
@@ -41,6 +47,48 @@ class InventoryWallToWallCloseoutContractTest(unittest.TestCase):
         expected_stock_branch = sql.index("ELSIF TG_TABLE_NAME<>'inventory_expected_stock' THEN")
         self.assertLess(location_branch, location_field)
         self.assertLess(location_field, expected_stock_branch)
+
+    def test_v13_keeps_one_operator_on_one_active_location(self) -> None:
+        sql = OPERATOR_ORDERING.read_text(encoding="utf-8")
+        self.assertIn("inventory_guard_w2w_operator_lease_v13()", sql)
+        self.assertIn("inventory_guard_w2w_operator_lease_v13_trigger", sql)
+        self.assertIn("pg_advisory_xact_lock", sql)
+        self.assertIn("inventory:w2w:operator:", sql)
+        self.assertIn("a.state='ACTIVE'", sql)
+        self.assertIn("a.attempt_id<>NEW.attempt_id", sql)
+        self.assertIn("latest_owner.employee_id=NEW.employee_id", sql)
+        self.assertIn("ORDER BY l.valid_from DESC, l.issued_at DESC, l.lease_id DESC", sql)
+        self.assertIn("complete or reassign it first", sql)
+        self.assertNotIn("created_by_employee_id=NEW.employee_id", sql)
+
+    def test_v13_makes_lost_found_the_final_governed_location(self) -> None:
+        sql = OPERATOR_ORDERING.read_text(encoding="utf-8")
+        self.assertIn("GENERATED ALWAYS AS", sql)
+        self.assertIn("location_id='LOST_FOUND'", sql)
+        self.assertIn("location_kind='LOST_FOUND'", sql)
+        self.assertIn("inventory_document_one_lost_found_v13_idx", sql)
+        self.assertIn("inventory_guard_w2w_lost_found_attempt_v13()", sql)
+        self.assertIn("standard.completed_event_id IS NULL", sql)
+        self.assertIn("l.location_kind='STANDARD'", sql)
+        self.assertIn("a.state='ACTIVE'", sql)
+        self.assertIn("Lost & Found is the final W2W location", sql)
+        self.assertIn(
+            "VALUES (13,'inventory wall-to-wall operator and lost-found ordering authority')",
+            sql,
+        )
+
+    def test_v13_does_not_create_competing_campaign_or_assignment_truth(self) -> None:
+        sql = OPERATOR_ORDERING.read_text(encoding="utf-8")
+        for forbidden in (
+            "CREATE TABLE inventory_campaign",
+            "CREATE TABLE IF NOT EXISTS inventory_campaign",
+            "CREATE TABLE inventory_operator_assignment",
+            "CREATE TABLE IF NOT EXISTS inventory_operator_assignment",
+        ):
+            self.assertNotIn(forbidden, sql)
+        self.assertIn("ALTER TABLE inventory_document_locations", sql)
+        self.assertIn("inventory_mission_attempts", sql)
+        self.assertIn("inventory_mission_leases", sql)
 
     def test_closeout_evidence_is_immutable_server_generated_and_location_bound(self) -> None:
         sql = MIGRATION.read_text(encoding="utf-8")

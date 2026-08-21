@@ -4,9 +4,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.modules.workforce.authorization import is_action_allowed
+from app.modules.workforce.router import _require_rows_in_scope
 from .lifecycle_authority import (
     RecruitmentLifecycleError,
     close_offboarding_case,
+    offer_approval_summary,
     update_offboarding_task,
 )
 from .lifecycle_projection import (
@@ -15,7 +17,8 @@ from .lifecycle_projection import (
     offboarding_task_authority,
 )
 from .lifecycle_router import OffboardingTaskInput
-from .router import _identity, _require
+from .orchestration import RecruitmentOrchestrationError, candidate_orchestration_summary
+from .router import _identity, _request_row, _require
 
 
 router = APIRouter(prefix="/recruitment", tags=["Recruitment Lifecycle Governance"])
@@ -39,6 +42,38 @@ def _require_offboarding_task_authority(role: str, permissions: str, owner_role:
     owner_action = f"completeRecruitmentOffboarding:{owner_role}"
     if not _allowed(role, permissions, owner_action):
         raise HTTPException(status_code=403, detail=f"{owner_role} offboarding task yetkisi gerekli.")
+
+
+@router.get("/requests/{request_id}/candidates/{candidate_id}/orchestration")
+def governed_candidate_orchestration(
+    request_id: str,
+    candidate_id: str,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Priority shadow: V47 draft offers expose approval truth instead of a null offer state."""
+    _require(x_opex_role, x_opex_permissions, "viewRecruitment")
+    _require_rows_in_scope(request, x_opex_role, [_request_row(request_id)])
+    try:
+        result = candidate_orchestration_summary(request_id, candidate_id)
+        for offer in result.get("offers", []):
+            try:
+                approval = offer_approval_summary(offer["offer_id"])
+            except RecruitmentLifecycleError:
+                offer["approval_status"] = None
+                offer["approval_count"] = None
+                offer["required_approvals"] = None
+                continue
+            offer["approval_status"] = approval["status"]
+            offer["approval_count"] = len([row for row in approval["approvals"] if row["decision"] == "APPROVED"])
+            offer["required_approvals"] = approval["required_approvals"]
+            offer["candidate_delivery_allowed"] = approval["candidate_delivery_allowed"]
+            if not offer.get("state"):
+                offer["state"] = "PENDING" if approval["status"] == "PENDING" else approval["status"]
+        return result
+    except (RecruitmentLifecycleError, RecruitmentOrchestrationError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.get("/offers/approvals")

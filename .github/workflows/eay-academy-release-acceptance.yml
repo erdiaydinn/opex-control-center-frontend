@@ -1,0 +1,209 @@
+name: EAY Academy Release Acceptance
+
+on:
+  push:
+    branches:
+      - security/eay-hiring-production-authorities-v1
+    paths:
+      - "src/App.jsx"
+      - "src/modules/academy/**"
+      - "src/platform/i18n/academy*Messages.js"
+      - "scripts/test-academy-*.mjs"
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/modules/academy/**"
+      - "services/core-api/alembic/versions/*.py"
+      - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_product_role_provisioning.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "package.json"
+      - ".github/workflows/eay-academy-release-acceptance.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/App.jsx"
+      - "src/modules/academy/**"
+      - "src/platform/i18n/academy*Messages.js"
+      - "scripts/test-academy-*.mjs"
+      - "services/core-api/app/core/localization.py"
+      - "services/core-api/app/modules/academy/**"
+      - "services/core-api/alembic/versions/*.py"
+      - "services/core-api/tests/test_academy_*.py"
+      - "services/core-api/tests/test_product_role_provisioning.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "package.json"
+      - ".github/workflows/eay-academy-release-acceptance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: academy-release-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_ALEMBIC_HEAD: 0051_workforce_hiring_product_role
+
+jobs:
+  academy-release-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+      - name: Materialize pinned SheetJS dependency
+        run: node scripts/ci/materialize-sheetjs.mjs
+      - run: npm ci
+      - name: Academy platform contracts
+        run: npm run test:platform
+      - name: Production frontend build
+        run: npm run build
+
+  academy-release-postgres:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - run: python -m pip install -e "./services/core-api[dev]"
+      - name: Create RLS-bound runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' "
+                          "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Full Core Ruff gate
+        run: ruff check services/core-api
+      - name: Central SQL execution boundary
+        run: pytest -q services/core-api/tests/test_sql_access_boundary.py
+      - name: Assert one cumulative Alembic head
+        working-directory: services/core-api
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$EXPECTED_ALEMBIC_HEAD"
+      - name: Migrate cumulative platform head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Academy lifecycle localization telemetry credential gates
+        run: >-
+          pytest -q
+          services/core-api/tests/test_academy_authoring.py
+          services/core-api/tests/test_academy_contracts.py
+          services/core-api/tests/test_academy_integration.py
+          services/core-api/tests/test_academy_concurrency.py
+          services/core-api/tests/test_academy_credentials.py
+          services/core-api/tests/test_academy_localization_governance.py
+          services/core-api/tests/test_product_role_provisioning.py
+
+  academy-release-core-regression:
+    runs-on: ubuntu-latest
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Create runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  await connection.execute(
+                      "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' "
+                      "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+                  )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Migrate cumulative platform head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Full isolated Core regression
+        run: pytest -q services/core-api/tests

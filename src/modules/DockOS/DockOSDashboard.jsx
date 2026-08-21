@@ -2,6 +2,7 @@ import React from "react";
 import { Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import DockOSDashboardBase from "./DockOSDashboardBase.jsx";
+import DockOSExecutiveControlTower from "./DockOSExecutiveControlTower.jsx";
 import DockOSPermissionBanner from "./DockOSPermissionBanner.jsx";
 import { DockOSUiProvider, useDockOSUi } from "./DockOSUiContext.jsx";
 import {
@@ -41,6 +42,7 @@ function DockOSExperience() {
   return (
     <div dir={dir} className={`dockos-permission-shell dockos-theme-${theme} ${getDockOSPermissionClassNames()}`}>
       <DockOSPermissionBanner />
+      <DockOSExecutiveControlTower />
       <DockOSDashboardBase />
     </div>
   );

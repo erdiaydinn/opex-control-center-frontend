@@ -94,6 +94,20 @@ function authoredScene(model) {
 
 function scannedScene(architecture, recognizedFixtures = []) {
   if (!architecture || !Array.isArray(architecture.elements)) return null;
+  const architectureEquipmentIds = new Set(
+    architecture.elements
+      .filter((row) => {
+        const type = text(row?.element_type).toLowerCase();
+        return type === "chiller" || type === "freezer";
+      })
+      .map((row) => text(row?.element_id))
+      .filter(Boolean)
+  );
+  const deduplicatedFixtures = (Array.isArray(recognizedFixtures) ? recognizedFixtures : []).filter((row) => {
+    const identity = text(row?.element_id || row?.fixture_element_id);
+    return !identity || !architectureEquipmentIds.has(identity);
+  });
+
   return Object.freeze({
     contract: "eay.planogram.unified-twin-scene.v1",
     sourceKind: "reviewed_store_scan_preview",
@@ -114,7 +128,7 @@ function scannedScene(architecture, recognizedFixtures = []) {
       clearanceM: number(row.clearance_m),
       coordinateAuthority: "reviewed_scan_measurement_preview",
     }))),
-    fixtures: Object.freeze((recognizedFixtures || []).map((row, index) => Object.freeze({
+    fixtures: Object.freeze(deduplicatedFixtures.map((row, index) => Object.freeze({
       id: text(row.element_id || row.fixture_element_id || `scan-fixture-${index + 1}`),
       fixtureId: fixtureIdFrom(row),
       fixtureCode: fixtureCodeFrom(row),
@@ -135,6 +149,7 @@ function scannedScene(architecture, recognizedFixtures = []) {
     provenance: Object.freeze({
       architectureSourceRef: text(architecture.source_ref),
       sourceContract: text(architecture.contract || architecture.schema_version),
+      deduplicatedColdEquipmentCount: Math.max(0, (Array.isArray(recognizedFixtures) ? recognizedFixtures.length : 0) - deduplicatedFixtures.length),
     }),
   });
 }

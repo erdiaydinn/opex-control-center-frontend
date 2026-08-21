@@ -576,7 +576,16 @@ def _candidate_probes(
     return tuple(
         sorted(
             probes,
-            key=lambda item: (-item.expected_information_gain, item.probe_id),
+            key=lambda item: (
+                0
+                if (
+                    item.strategy is EpistemicStrategy.FALSIFICATION
+                    and item.hypothesis_id == leader_id
+                )
+                else 1,
+                -item.expected_information_gain,
+                item.probe_id,
+            ),
         )
     )
 

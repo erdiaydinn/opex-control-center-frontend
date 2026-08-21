@@ -46,7 +46,7 @@ jobs:
       PYTHONPATH: backend
       DOCKOS_ENV: test
       RECRUITMENT_EVIDENCE_DIR: /tmp/recruitment-production-authority-evidence
-      OPEX_PII_KEY: Y2ktcmVjcnVpdG1lbnQtcHJvZHVjdGlvbi1hdXRob3JpdHkta2V5LTAwMDA=
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1

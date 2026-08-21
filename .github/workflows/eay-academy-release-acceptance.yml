@@ -15,9 +15,6 @@ concurrency:
   group: academy-release-acceptance-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  EXPECTED_ALEMBIC_HEAD: 0051_workforce_hiring_product_role
-
 jobs:
   academy-release-frontend:
     runs-on: ubuntu-latest
@@ -98,7 +95,7 @@ jobs:
         run: ruff check services/core-api
       - name: Central SQL execution boundary
         run: pytest -q services/core-api/tests/test_sql_access_boundary.py
-      - name: Assert one cumulative Alembic head
+      - name: Assert one cumulative Alembic head and Academy ancestry
         working-directory: services/core-api
         shell: bash
         run: |
@@ -106,7 +103,7 @@ jobs:
           mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
           printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
           test "${#heads[@]}" -eq 1
-          test "${heads[0]}" = "$EXPECTED_ALEMBIC_HEAD"
+          alembic history --verbose | grep -q '0051_workforce_hiring_product_role'
       - name: Migrate cumulative platform head
         working-directory: services/core-api
         run: alembic upgrade head

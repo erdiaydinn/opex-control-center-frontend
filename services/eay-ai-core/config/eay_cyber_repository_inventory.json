@@ -1,0 +1,135 @@
+{
+  "contract": "eay-cyber-repository-inventory-v1",
+  "truth_class": "repository_configuration_not_production_deployment",
+  "inventory_coverage_complete": false,
+  "production_deployment_truth_claimed": false,
+  "notes": [
+    "Only repository-observed services and declared package dependencies are represented.",
+    "Dependency version ranges are not converted into exact CPE matches.",
+    "Presence in the repository never proves deployment or vulnerability exposure.",
+    "Criticality values are defensive repository priors and require production asset authority before firm production use."
+  ],
+  "assets": [
+    {
+      "asset_ref": "service:core-api",
+      "surface_kind": "service",
+      "criticality": "high",
+      "product_refs": ["eay-service:core-api"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "service:eay-ai-core",
+      "surface_kind": "ai_agent",
+      "criticality": "high",
+      "product_refs": ["eay-service:eay-ai-core"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/eay-ai-core/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "service:identity-gateway",
+      "surface_kind": "service",
+      "criticality": "high",
+      "product_refs": ["eay-service:identity-gateway"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/identity-gateway/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": true,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "package:fastapi",
+      "surface_kind": "third_party",
+      "criticality": "medium",
+      "product_refs": ["pypi:fastapi"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml", "repo:services/eay-ai-core/pyproject.toml", "repo:services/identity-gateway/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "package:pyjwt",
+      "surface_kind": "third_party",
+      "criticality": "medium",
+      "product_refs": ["pypi:pyjwt"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml", "repo:services/eay-ai-core/pyproject.toml", "repo:services/identity-gateway/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "package:httpx",
+      "surface_kind": "third_party",
+      "criticality": "medium",
+      "product_refs": ["pypi:httpx"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml", "repo:services/eay-ai-core/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "package:sqlalchemy",
+      "surface_kind": "third_party",
+      "criticality": "medium",
+      "product_refs": ["pypi:sqlalchemy"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "package:asyncpg",
+      "surface_kind": "third_party",
+      "criticality": "medium",
+      "product_refs": ["pypi:asyncpg"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    },
+    {
+      "asset_ref": "package:redis",
+      "surface_kind": "third_party",
+      "criticality": "medium",
+      "product_refs": ["pypi:redis"],
+      "cpe_refs": [],
+      "evidence_refs": ["repo:services/core-api/pyproject.toml"],
+      "deployment_observed": false,
+      "internet_reachable": false,
+      "privileged": false,
+      "crown_jewel": false
+    }
+  ],
+  "dependencies": [
+    {"relation_id": "dep:core-api:fastapi", "from_asset_ref": "service:core-api", "to_asset_ref": "package:fastapi", "evidence_refs": ["repo:services/core-api/pyproject.toml"]},
+    {"relation_id": "dep:core-api:pyjwt", "from_asset_ref": "service:core-api", "to_asset_ref": "package:pyjwt", "evidence_refs": ["repo:services/core-api/pyproject.toml"]},
+    {"relation_id": "dep:core-api:httpx", "from_asset_ref": "service:core-api", "to_asset_ref": "package:httpx", "evidence_refs": ["repo:services/core-api/pyproject.toml"]},
+    {"relation_id": "dep:core-api:sqlalchemy", "from_asset_ref": "service:core-api", "to_asset_ref": "package:sqlalchemy", "evidence_refs": ["repo:services/core-api/pyproject.toml"]},
+    {"relation_id": "dep:core-api:asyncpg", "from_asset_ref": "service:core-api", "to_asset_ref": "package:asyncpg", "evidence_refs": ["repo:services/core-api/pyproject.toml"]},
+    {"relation_id": "dep:core-api:redis", "from_asset_ref": "service:core-api", "to_asset_ref": "package:redis", "evidence_refs": ["repo:services/core-api/pyproject.toml"]},
+    {"relation_id": "dep:eay-ai-core:fastapi", "from_asset_ref": "service:eay-ai-core", "to_asset_ref": "package:fastapi", "evidence_refs": ["repo:services/eay-ai-core/pyproject.toml"]},
+    {"relation_id": "dep:eay-ai-core:pyjwt", "from_asset_ref": "service:eay-ai-core", "to_asset_ref": "package:pyjwt", "evidence_refs": ["repo:services/eay-ai-core/pyproject.toml"]},
+    {"relation_id": "dep:eay-ai-core:httpx", "from_asset_ref": "service:eay-ai-core", "to_asset_ref": "package:httpx", "evidence_refs": ["repo:services/eay-ai-core/pyproject.toml"]},
+    {"relation_id": "dep:identity-gateway:fastapi", "from_asset_ref": "service:identity-gateway", "to_asset_ref": "package:fastapi", "evidence_refs": ["repo:services/identity-gateway/pyproject.toml"]},
+    {"relation_id": "dep:identity-gateway:pyjwt", "from_asset_ref": "service:identity-gateway", "to_asset_ref": "package:pyjwt", "evidence_refs": ["repo:services/identity-gateway/pyproject.toml"]}
+  ]
+}

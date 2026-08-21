@@ -4,35 +4,9 @@ on:
   push:
     branches:
       - security/eay-hiring-production-authorities-v1
-    paths:
-      - "src/App.jsx"
-      - "src/modules/academy/**"
-      - "src/platform/i18n/academy*Messages.js"
-      - "scripts/test-academy-*.mjs"
-      - "services/core-api/app/core/localization.py"
-      - "services/core-api/app/modules/academy/**"
-      - "services/core-api/alembic/versions/*.py"
-      - "services/core-api/tests/test_academy_*.py"
-      - "services/core-api/tests/test_product_role_provisioning.py"
-      - "services/core-api/tests/test_sql_access_boundary.py"
-      - "package.json"
-      - ".github/workflows/eay-academy-release-acceptance.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "src/App.jsx"
-      - "src/modules/academy/**"
-      - "src/platform/i18n/academy*Messages.js"
-      - "scripts/test-academy-*.mjs"
-      - "services/core-api/app/core/localization.py"
-      - "services/core-api/app/modules/academy/**"
-      - "services/core-api/alembic/versions/*.py"
-      - "services/core-api/tests/test_academy_*.py"
-      - "services/core-api/tests/test_product_role_provisioning.py"
-      - "services/core-api/tests/test_sql_access_boundary.py"
-      - "package.json"
-      - ".github/workflows/eay-academy-release-acceptance.yml"
 
 permissions:
   contents: read

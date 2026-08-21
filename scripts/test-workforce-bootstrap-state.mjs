@@ -26,7 +26,12 @@ const requiredBoundary = [
   'data-eay-product-state="error"',
   'role="alert"',
   't("retry")',
-  'return <WorkforceControl />',
+  'const commandCenterAllowed =',
+  'canAction("workforce", "workforce.pressure.read")',
+  'canAction("workforce", "workforce.schedule.read")',
+  'canAction("workforce", "createShift")',
+  'commandCenterAllowed ? <WorkforceCommandCenter /> : null',
+  '<WorkforceControl />',
 ];
 for (const needle of requiredBoundary) {
   if (!boundary.includes(needle)) {
@@ -40,11 +45,17 @@ if (/error\.message|error\.stack|JSON\.stringify\(error/.test(boundary)) {
   process.exit(1);
 }
 
-const readyIndex = boundary.indexOf('return <WorkforceControl />');
+const readyIndex = boundary.indexOf('const commandCenterAllowed =');
 const bootstrapIndex = boundary.indexOf('await loadAdminWorkforce()');
 if (readyIndex < bootstrapIndex) {
-  console.error("WorkforceControl must not render before authoritative bootstrap is attempted.");
+  console.error("Workforce ready composition must not render before authoritative bootstrap is attempted.");
   process.exit(1);
 }
 
-console.log("Workforce fail-closed bootstrap product-state contract: PASS");
+const controlIndex = boundary.indexOf('<WorkforceControl />');
+if (controlIndex < readyIndex) {
+  console.error("WorkforceControl must remain in the post-bootstrap ready composition.");
+  process.exit(1);
+}
+
+console.log("Workforce fail-closed bootstrap + command-center composition contract: PASS");

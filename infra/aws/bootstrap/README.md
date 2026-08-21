@@ -46,7 +46,7 @@ The script first proves the AWS account ID, then deploys the CloudFormation temp
 
 ## Exact-head evidence
 
-Changes under `infra/aws/**` trigger both the production infrastructure validation and the branch-scoped OIDC identity proof. The OIDC workflow updates a single evidence marker on PR #210 with the literal commit SHA, AWS caller ARN, denied S3 authority and an evidence SHA-256 digest. This keeps repository validation and cloud-identity proof bound to the same infrastructure head.
+Changes under `infra/aws/**` trigger both the production infrastructure validation and the branch-scoped OIDC identity proof. The OIDC workflow binds the STS role-session name to the literal GitHub SHA, verifies that exact assumed-role ARN, and updates a single evidence marker on PR #210 with the commit SHA, AWS caller ARN, denied S3 authority and an evidence SHA-256 digest. This keeps repository validation and cloud-identity proof bound to the same infrastructure head and makes the same SHA visible in AWS CloudTrail.
 
 ## Promotion gate
 

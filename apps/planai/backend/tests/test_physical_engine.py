@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 
 from physical_engine import generate_production_plan, prepare_production_products
 
@@ -21,6 +22,7 @@ def product(
         "category_l2": category,
         "storage_type": storage,
         "weight_kg": weight,
+        "sales_qty_7d": 20,
         "image_url": f"https://example.test/{sku}.jpg" if image else "",
     }
     if dimensions:
@@ -191,8 +193,17 @@ class PhysicalEngineTests(unittest.TestCase):
         self.assertIsNotNone(water)
         self.assertEqual(water[0]["aisle_id"], "PALLET")
         self.assertEqual(water[3]["storage_type"], "PALLET")
+        self.assertTrue(result["production_capacity_reconciliation"]["valid"])
 
     def test_heavy_product_is_placed_on_bottom_before_scoring(self):
+        # A is deliberately a food/front-zone aisle in the merchandising rules.
+        # Use an approved non-food aisle so this test isolates the heavy-bottom
+        # physical invariant instead of trying to bypass food/chemical separation.
+        heavy_layout = deepcopy(layout())
+        heavy_layout["aisles"][0]["aisle_id"] = "I"
+        heavy_dna = deepcopy(dna())
+        heavy_dna["aisle_module_config"][0]["aisle_id"] = "I"
+
         result = generate_production_plan(
             [
                 product(
@@ -202,8 +213,8 @@ class PhysicalEngineTests(unittest.TestCase):
                     weight=4.0,
                 )
             ],
-            layout(),
-            dna(),
+            heavy_layout,
+            heavy_dna,
         )
         self.assertTrue(
             result["publishable"],
@@ -223,6 +234,7 @@ class PhysicalEngineTests(unittest.TestCase):
             result["operational_physical_validation"]["violation_count"],
             0,
         )
+        self.assertTrue(result["production_capacity_reconciliation"]["valid"])
 
     def test_500g_product_does_not_become_500kg(self):
         row = product("GRAM", "Snack", category="Snacks")

@@ -35,10 +35,12 @@ jobs:
           const app=fs.readFileSync('src/App.jsx','utf8');
           const dock=fs.readFileSync('src/modules/DockOS/DockOSDashboard.jsx','utf8');
           const budget=fs.readFileSync('src/modules/budget-intelligence/BudgetControlTower.jsx','utf8');
+          const budgetRoute=fs.readFileSync('src/modules/budget-intelligence/BudgetIntelligenceV2.jsx','utf8');
           if(!app.includes('BudgetIntelligenceV2.jsx')) throw new Error('Budget V2 route missing');
           if(!dock.includes('DockOSExecutiveControlTower')) throw new Error('DockOS control tower missing');
           if(!budget.includes('/v1/budget/control-tower')) throw new Error('Budget server authority missing');
           if(budget.includes('planned_budget:') || budget.includes('setAi(')) throw new Error('Browser-owned finance truth detected');
+          if(budgetRoute.includes('./BudgetIntelligence.jsx')) throw new Error('Legacy browser finance surface is exposed by final route');
           console.log('CEO_FINAL_PRODUCT_AUTHORITY=PASS');
           NODE
       - run: npm run test:access

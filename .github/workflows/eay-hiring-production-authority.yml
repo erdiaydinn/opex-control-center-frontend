@@ -23,6 +23,7 @@ on:
       - "backend/scripts/recruitment_orchestration_postgres_ci.py"
       - "backend/scripts/recruitment_interview_postgres_ci.py"
       - "backend/scripts/recruitment_lifecycle_postgres_ci.py"
+      - "backend/scripts/recruitment_reminder_postgres_ci.py"
       - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
       - "src/App.jsx"
       - "src/api/client.js"
@@ -68,6 +69,7 @@ jobs:
           backend/scripts/recruitment_orchestration_postgres_ci.py
           backend/scripts/recruitment_interview_postgres_ci.py
           backend/scripts/recruitment_lifecycle_postgres_ci.py
+          backend/scripts/recruitment_reminder_postgres_ci.py
           backend/scripts/recruitment_core_privilege_postgres_ci.py
       - name: Workforce V42 and Hiring V47 startup contract
         run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
@@ -173,5 +175,7 @@ jobs:
         run: python scripts/recruitment_interview_postgres_ci.py
       - name: Real V47 offer communication talent and offboarding acceptance
         run: python scripts/recruitment_lifecycle_postgres_ci.py
+      - name: Real V47 automatic reminder planner acceptance
+        run: python scripts/recruitment_reminder_postgres_ci.py
       - name: Core HR privileges survive authority sealing
         run: python scripts/recruitment_core_privilege_postgres_ci.py

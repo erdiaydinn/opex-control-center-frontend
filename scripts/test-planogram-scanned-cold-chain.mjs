@@ -8,6 +8,7 @@ function fail(message) {
 
 const scan = fs.readFileSync("src/modules/planogram/PlanogramStoreScanPanel.jsx", "utf8");
 const twin = fs.readFileSync("src/modules/planogram/PlanogramScannedDigitalTwin.jsx", "utf8");
+const sharedTwin = fs.readFileSync("src/modules/planogram/PlanogramTwinSceneRenderer.jsx", "utf8");
 const fixture = fs.readFileSync("src/modules/planogram/planogramFixtureBindings.js", "utf8");
 const backend = fs.readFileSync("services/core-api/app/modules/planogram/store_scan.py", "utf8");
 const layout = fs.readFileSync("services/core-api/app/modules/planogram/store_scan_fixture_layout.py", "utf8");
@@ -21,7 +22,8 @@ for (const [text, needle, message] of [
   [fixture, 'catalog.storage_type === storageHint', "Catalog suggestions do not respect scan storage hints"],
   [fixture, 'fixture.storage_type !== storageHint', "Client binding does not fail closed on cold storage mismatch"],
   [scan, 'architectureIds.has(String(fixture.element_id || ""))', "2D Store Scan may double-render cold equipment"],
-  [twin, 'architectureEquipmentIds.has(String(fixture.element_id || ""))', "3D Scanned Twin may double-render cold equipment"],
+  [twin, '<PlanogramTwinSceneRenderer', "Reviewed scan no longer uses the governed shared twin renderer"],
+  [sharedTwin, 'architectureEquipmentIds.has(String(fixture.id || ""))', "Shared 3D Twin may double-render cold equipment"],
 ]) {
   if (!text.includes(needle)) fail(message);
 }

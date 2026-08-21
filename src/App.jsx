@@ -71,7 +71,7 @@ export default function App() {
           <Route path="/candidate/documents" element={<CandidateDocumentPortal />} />
           <Route path="/candidate/offer" element={<CandidateOfferPortal />} />
           <Route path="/candidate/interview" element={<CandidateInterviewPortal />} />
-          <Route path="/" element={<ProtectedRoute><><ControlCenterHome /><OnboardingTaskLauncher /></></ProtectedRoute>} />
+          <Route path="/" element={<ProtectedRoute><React.Fragment><ControlCenterHome /><OnboardingTaskLauncher /></React.Fragment></ProtectedRoute>} />
           <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
           <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
           <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />
@@ -94,7 +94,7 @@ export default function App() {
           <Route path="/onboarding/tasks" element={<ProtectedRoute><RecruitmentOnboardingTasks /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
-          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute>} />
+          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute></ProtectedRoute>} />
           <Route path="/river" element={<Navigate to="/dockos" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

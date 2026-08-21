@@ -142,7 +142,7 @@ def test_single_or_short_health_window_cannot_promote() -> None:
     assert "canary_promotion_observation_span_insufficient" in evidence.blockers
 
 
-def test_duplicate_health_observation_cannot_count_twice() -> None:
+def test_duplicate_health_observation_is_rejected() -> None:
     first = _healthy(1, NOW - timedelta(minutes=40))
     replay = _seal(
         HealthVerdict,
@@ -157,14 +157,13 @@ def test_duplicate_health_observation_cannot_count_twice() -> None:
             "evaluated_at": NOW - timedelta(minutes=20),
         },
     )
-    evidence = assess_promotion_readiness(
-        snapshot=_snapshot(),
-        activation=_activation(),
-        verdicts=(first, replay, _healthy(3, NOW - timedelta(minutes=5))),
-        evaluated_at=NOW,
-    )
-    assert evidence.disposition is PromotionDisposition.HOLD
-    assert "canary_promotion_duplicate_health_observation" in evidence.blockers
+    with pytest.raises(ValueError, match="canary_promotion_observations_must_be_unique"):
+        assess_promotion_readiness(
+            snapshot=_snapshot(),
+            activation=_activation(),
+            verdicts=(first, replay, _healthy(3, NOW - timedelta(minutes=5))),
+            evaluated_at=NOW,
+        )
 
 
 def test_any_drifted_window_blocks_promotion() -> None:

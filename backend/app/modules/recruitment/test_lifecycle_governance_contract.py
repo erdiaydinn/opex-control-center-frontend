@@ -45,9 +45,9 @@ class LifecycleGovernanceContractTests(unittest.TestCase):
         self.assertEqual(result["status"], "COMPLETED")
         update.assert_called_once()
 
-    def test_case_close_requires_distinct_permission(self):
+    def test_case_close_requires_distinct_permission_and_workforce_bridge(self):
         request = Mock()
-        with patch.object(router, "close_offboarding_case") as close:
+        with patch.object(router, "close_offboarding_with_workforce") as close:
             with self.assertRaises(HTTPException) as raised:
                 router.governed_offboarding_close(
                     "11111111-1111-1111-1111-111111111111",
@@ -58,6 +58,20 @@ class LifecycleGovernanceContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 403)
         close.assert_not_called()
 
+        with patch.object(router, "_actor", return_value="hr-closer@example.test"), patch.object(
+            router,
+            "close_offboarding_with_workforce",
+            return_value={"status": "CLOSED", "closure_truth_boundary": "RECRUITMENT_TASKS_PLUS_WORKFORCE_EMPLOYEE_MASTER_AUTHORITY"},
+        ) as close:
+            result = router.governed_offboarding_close(
+                "11111111-1111-1111-1111-111111111111",
+                request,
+                x_opex_role="viewer",
+                x_opex_permissions="closeRecruitmentOffboarding",
+            )
+        self.assertEqual(result["status"], "CLOSED")
+        close.assert_called_once_with("11111111-1111-1111-1111-111111111111", actor="hr-closer@example.test")
+
     def test_global_communication_projection_exposes_no_payload_or_recipient(self):
         projection = (Path(__file__).resolve().parent / "lifecycle_projection.py").read_text(encoding="utf-8")
         function = projection[projection.index("def list_communication_outbox"):projection.index("def offboarding_task_authority")]
@@ -66,6 +80,13 @@ class LifecycleGovernanceContractTests(unittest.TestCase):
         self.assertNotIn('"phone":', function)
         self.assertIn('"payload_exposed": False', function)
         self.assertIn('"recipient_exposed": False', function)
+
+    def test_completion_authority_composes_workforce_before_terminal_record(self):
+        source = (Path(__file__).resolve().parent / "offboarding_completion_authority.py").read_text(encoding="utf-8")
+        self.assertIn("apply_offboarding_to_workforce", source)
+        self.assertIn("close_offboarding_case_record", source)
+        self.assertLess(source.index("apply_offboarding_to_workforce("), source.index("close_offboarding_case_record("))
+        self.assertIn("RECRUITMENT_TASKS_PLUS_WORKFORCE_EMPLOYEE_MASTER_AUTHORITY", source)
 
 
 if __name__ == "__main__":

@@ -230,15 +230,22 @@ PLANOGRAM_SQL_EXECUTION_POINTS = {
     ("modules/planogram/repository_assignment_lifecycle.py", "close_assignment"),
 }
 
-# Jarvis agent control-plane security review: exact repository methods only.
-# Statements are static text() with bound parameters, every query has an explicit
-# principal-derived tenant predicate, get_tenant_session establishes transaction-local
-# tenant context, and migration 0051 applies FORCE RLS plus append-only event grants.
+# Jarvis control-plane security review: exact repository methods only.
+# Statements are static text() with bound parameters, every query has explicit
+# tenant/company/problem/rollout identity predicates where applicable, tenant context
+# is transaction-local, and migrations 0051-0052 enforce FORCE RLS plus append-only journals.
 JARVIS_AGENT_SQL_EXECUTION_POINTS = {
     ("agent_job_repository.py", "create"),
     ("agent_job_repository.py", "get"),
     ("agent_job_repository.py", "events"),
     ("agent_job_repository.py", "cancel"),
+    ("epistemic_rollout_repository.py", "get"),
+    ("epistemic_rollout_repository.py", "_lock"),
+    ("epistemic_rollout_repository.py", "activate"),
+    ("epistemic_rollout_repository.py", "list_receipts"),
+    ("epistemic_rollout_repository.py", "_insert_receipt"),
+    ("epistemic_rollout_repository.py", "append_receipt"),
+    ("epistemic_rollout_repository.py", "transition_snapshot"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (
@@ -329,7 +336,7 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
             if name in EXECUTION_CALLS and location not in ALLOWED_SQL_EXECUTION_POINTS:
                 violations.append(f"{relative}:{node.lineno} {function} -> {name}")
             if name in ENGINE_CALLS and location not in ALLOWED_ENGINE_CREATION:
-                violations.append(f"{relative}:{node.lineno} {function} -> {name}")
+                violations.append(f"{relative}:{node.lineno} {location[1]}")
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

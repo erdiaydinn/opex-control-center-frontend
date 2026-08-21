@@ -97,9 +97,9 @@ resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = "${local.name}-valkey"
   description          = "EAY managed Redis-compatible authority for cache, locks and queues"
 
-  engine         = "valkey"
-  node_type      = var.redis_node_type
-  port           = 6379
+  engine             = "valkey"
+  node_type          = var.redis_node_type
+  port               = 6379
   num_cache_clusters = 2
 
   subnet_group_name  = aws_elasticache_subnet_group.main.name

@@ -238,13 +238,13 @@ def assess_continuous_world(
 
     prior: AutonomousInvestigationReport | None = None
     if prior_investigation is not None:
+        if prior_investigation.tenant_id != tenant_id:
+            raise ValueError("world_watch_prior_investigation_tenant_mismatch")
+        if prior_investigation.company_id != company_id:
+            raise ValueError("world_watch_prior_investigation_company_mismatch")
         prior = AutonomousInvestigationReport.model_validate(
             prior_investigation.model_dump(mode="json")
         )
-        if prior.tenant_id != tenant_id:
-            raise ValueError("world_watch_prior_investigation_tenant_mismatch")
-        if prior.company_id != company_id:
-            raise ValueError("world_watch_prior_investigation_company_mismatch")
 
     expectations = {item.source_key: item for item in source_expectations}
     if len(expectations) != len(source_expectations):

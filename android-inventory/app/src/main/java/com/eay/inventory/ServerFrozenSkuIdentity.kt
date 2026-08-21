@@ -56,4 +56,3 @@ data class ServerFrozenSkuIdentity(
         private fun jsonEscape(value: String): String = JSONObject.quote(value).removeSurrounding("\"")
     }
 }
-

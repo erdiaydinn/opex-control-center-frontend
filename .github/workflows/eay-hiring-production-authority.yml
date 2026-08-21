@@ -24,6 +24,7 @@ on:
       - "backend/scripts/recruitment_interview_postgres_ci.py"
       - "backend/scripts/recruitment_lifecycle_postgres_ci.py"
       - "backend/scripts/recruitment_reminder_postgres_ci.py"
+      - "backend/scripts/recruitment_offboarding_workforce_postgres_ci.py"
       - "backend/scripts/recruitment_core_privilege_postgres_ci.py"
       - "src/App.jsx"
       - "src/api/client.js"
@@ -70,16 +71,18 @@ jobs:
           backend/scripts/recruitment_interview_postgres_ci.py
           backend/scripts/recruitment_lifecycle_postgres_ci.py
           backend/scripts/recruitment_reminder_postgres_ci.py
+          backend/scripts/recruitment_offboarding_workforce_postgres_ci.py
           backend/scripts/recruitment_core_privilege_postgres_ci.py
       - name: Workforce V42 and Hiring V47 startup contract
         run: python -m unittest app.modules.recruitment.test_production_schema_registry -v
       - name: Hiring production startup guard
         run: python -m unittest app.modules.recruitment.test_production_startup_guard -v
-      - name: Hiring V47 lifecycle and governance contracts
+      - name: Hiring V47 lifecycle governance and Workforce bridge contracts
         run: >-
           python -m unittest
           app.modules.recruitment.test_lifecycle_authority_contract
-          app.modules.recruitment.test_lifecycle_governance_contract -v
+          app.modules.recruitment.test_lifecycle_governance_contract
+          app.modules.recruitment.test_workforce_offboarding_bridge -v
       - name: Public capability abuse guard
         run: python -m unittest app.modules.recruitment.test_public_capability_guard -v
       - name: Cross-functional onboarding governance
@@ -153,6 +156,7 @@ jobs:
       WORKFORCE_TENANT_ID: eay-ci
       DOCKOS_ENV: test
       WORKFORCE_AUTO_MIGRATE: "false"
+      OPEX_PII_KEY: Y2ktd29ya2ZvcmNlLXYzMC10ZXN0LWtleS0wMDAwMDA=
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -177,5 +181,7 @@ jobs:
         run: python scripts/recruitment_lifecycle_postgres_ci.py
       - name: Real V47 automatic reminder planner acceptance
         run: python scripts/recruitment_reminder_postgres_ci.py
+      - name: Real Recruitment to Workforce offboarding closure acceptance
+        run: python scripts/recruitment_offboarding_workforce_postgres_ci.py
       - name: Core HR privileges survive authority sealing
         run: python scripts/recruitment_core_privilege_postgres_ci.py

@@ -1,0 +1,37 @@
+name: EAY Audit Release Compose Diagnostic
+
+on:
+  push:
+    branches:
+      - ops/eay-audit-main-compose-runner-20260821
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 9596aef66fa36169b1f998d472cdc822a48a9c72
+          fetch-depth: 0
+      - name: Fetch accepted Audit category head
+        run: git fetch origin 67d98066d7a001e70be8b0974f1171336f91760b
+      - name: Diagnose exact merge conflicts
+        shell: bash
+        run: |
+          set +e
+          git config user.name "EAY Release Compose Diagnostic"
+          git config user.email "release-compose-diagnostic@users.noreply.github.com"
+          git merge --no-commit --no-ff 67d98066d7a001e70be8b0974f1171336f91760b
+          status=$?
+          echo "MERGE_EXIT=$status"
+          echo "CONFLICT_COUNT=$(git diff --name-only --diff-filter=U | wc -l)"
+          echo "--- CONFLICT FILES ---"
+          git diff --name-only --diff-filter=U
+          echo "--- UNMERGED INDEX ---"
+          git ls-files -u
+          echo "--- STATUS ---"
+          git status --short
+          exit $status

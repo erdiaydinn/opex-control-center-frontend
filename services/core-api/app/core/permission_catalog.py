@@ -17,7 +17,6 @@ ROUTE_MODULES = frozenset(
     }
 )
 
-
 MODULE_ADMIN = frozenset(
     {
         "admin_access",
@@ -27,7 +26,6 @@ MODULE_ADMIN = frozenset(
         "planogram",
     }
 )
-
 
 FEATURES = MappingProxyType(
     {
@@ -147,7 +145,6 @@ FEATURES = MappingProxyType(
         ),
     }
 )
-
 
 ACTIONS = MappingProxyType(
     {
@@ -461,6 +458,13 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "platform_admin": frozenset({module_permission("admin_access", "view")}),
         "operator": frozenset(),
         "viewer": frozenset(),
+        "academy_learner": ACADEMY_LEARNER_PERMISSIONS,
+        "academy_instructor": ACADEMY_INSTRUCTOR_PERMISSIONS,
+        "academy_admin": ACADEMY_ADMIN_PERMISSIONS,
+        "field_worker": FIELD_WORKER_PERMISSIONS,
+        "field_manager": FIELD_MANAGER_PERMISSIONS,
+        "planogram_editor": PLANOGRAM_EDITOR_PERMISSIONS,
+        "planogram_admin": PLANOGRAM_ADMIN_PERMISSIONS,
         "audit_auditor": AUDIT_AUDITOR_PERMISSIONS,
         "audit_manager": AUDIT_MANAGER_PERMISSIONS,
         "audit_standards": AUDIT_STANDARDS_PERMISSIONS,

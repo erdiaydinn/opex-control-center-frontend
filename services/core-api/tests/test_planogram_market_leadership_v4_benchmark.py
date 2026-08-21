@@ -111,6 +111,25 @@ def test_adapter_compares_v3_and_v4_without_granting_promotion(monkeypatch) -> N
         lambda: SimpleNamespace(optimize_production_plan=market_optimize),
     )
 
+    # This test isolates repository-objective comparison. Capacity V2 is tested
+    # independently; keep its production fail-closed semantics without making
+    # this unit test depend on an incidental mock planogram payload.
+    def capacity_valid(result):
+        return {
+            **result,
+            "physical_capacity_v2": {
+                "contract": "planogram-physical-capacity-v2-full-depth-stack",
+                "available": True,
+                "valid": True,
+                "violation_count": 0,
+                "warning_count": 0,
+                "missing_evidence_count": 0,
+                "weight_model": "facing_x_depth_units_x_unit_weight",
+            },
+        }
+
+    monkeypatch.setattr(engine_adapter, "_apply_capacity_v2_veto", capacity_valid)
+
     result = engine_adapter.generate_market_leadership_benchmark_preview(
         products=[{"sku": "SKU-1"}],
         layout={},

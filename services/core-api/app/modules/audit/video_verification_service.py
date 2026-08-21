@@ -189,6 +189,24 @@ async def verify_bound_video_receipt(
         raise AuditRepositoryError("video binding changed during server verification")
 
     frame_manifest = _frame_manifest(manifest)
+    parameters = {
+        "tenant_id": tenant_id,
+        "redaction_receipt_id": str(redaction_receipt_id),
+        "verification_status": manifest.status,
+        "verifier_ref": VIDEO_VERIFIER_REF,
+        "authority_version": VIDEO_VERIFICATION_AUTHORITY_VERSION,
+        "verification_fingerprint": verification_fingerprint,
+        "reason": manifest.reason,
+        "observed_sha256": manifest.source_sha256,
+        "observed_byte_size": manifest.source_byte_size,
+        "decoder_ref": manifest.decoder_ref,
+        "decoder_fingerprint": manifest.decoder_fingerprint,
+        "duration_ms": manifest.duration_ms,
+        "canonical_frame_count": manifest.canonical_frame_count,
+        "processed_frame_count": manifest.processed_frame_count,
+        "manifest_fingerprint": manifest.manifest_fingerprint,
+        "frame_manifest": json.dumps(frame_manifest, separators=(",", ":")),
+    }
     async with engine.begin() as connection:
         await _set_tenant(connection, tenant_id)
         existing_result = await connection.execute(
@@ -201,16 +219,12 @@ async def verify_bound_video_receipt(
                 LIMIT 1
                 """
             ),
-            {
-                "tenant_id": tenant_id,
-                "verification_fingerprint": verification_fingerprint,
-            },
+            parameters,
         )
         existing = existing_result.first()
         if existing is not None:
             return {
                 **_dict(existing),
-                "frame_manifest": frame_manifest,
                 "privacy_gate_passed": manifest.privacy_gate_passed,
                 "vision_inference_authorized": False,
                 "idempotent_replay": True,
@@ -234,34 +248,36 @@ async def verify_bound_video_receipt(
                     :duration_ms, :canonical_frame_count, :processed_frame_count,
                     :manifest_fingerprint, CAST(:frame_manifest AS JSONB)
                 )
-                ON CONFLICT (tenant_id, verification_fingerprint) DO UPDATE
-                SET verification_fingerprint = EXCLUDED.verification_fingerprint
+                ON CONFLICT (tenant_id, verification_fingerprint) DO NOTHING
                 RETURNING *
                 """
             ),
-            {
-                "tenant_id": tenant_id,
-                "redaction_receipt_id": str(redaction_receipt_id),
-                "verification_status": manifest.status,
-                "verifier_ref": VIDEO_VERIFIER_REF,
-                "authority_version": VIDEO_VERIFICATION_AUTHORITY_VERSION,
-                "verification_fingerprint": verification_fingerprint,
-                "reason": manifest.reason,
-                "observed_sha256": manifest.source_sha256,
-                "observed_byte_size": manifest.source_byte_size,
-                "decoder_ref": manifest.decoder_ref,
-                "decoder_fingerprint": manifest.decoder_fingerprint,
-                "duration_ms": manifest.duration_ms,
-                "canonical_frame_count": manifest.canonical_frame_count,
-                "processed_frame_count": manifest.processed_frame_count,
-                "manifest_fingerprint": manifest.manifest_fingerprint,
-                "frame_manifest": json.dumps(frame_manifest, separators=(",", ":")),
-            },
+            parameters,
         )
-        event = _dict(insert_result.one())
+        inserted = insert_result.first()
+        if inserted is None:
+            race_result = await connection.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM audit_video_verification_events
+                    WHERE tenant_id = CAST(:tenant_id AS UUID)
+                      AND verification_fingerprint = :verification_fingerprint
+                    LIMIT 1
+                    """
+                ),
+                parameters,
+            )
+            inserted = race_result.first()
+            if inserted is None:
+                raise AuditRepositoryError("video verification replay fence failed closed")
+            idempotent_replay = True
+        else:
+            idempotent_replay = False
+        event = _dict(inserted)
     return {
         **event,
         "privacy_gate_passed": manifest.privacy_gate_passed,
         "vision_inference_authorized": False,
-        "idempotent_replay": False,
+        "idempotent_replay": idempotent_replay,
     }

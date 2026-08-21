@@ -258,6 +258,8 @@ def test_single_choice_requires_exactly_one_correct_option() -> None:
 async def test_skill_gap_contract_is_self_scoped_and_deterministic(monkeypatch) -> None:
     viewer = principal()
     session_sentinel = object()
+    enrollment_id = UUID("00000000-0000-0000-0000-00000000d001")
+    path_id = UUID("00000000-0000-0000-0000-00000000d002")
 
     async def fake_context(session, supplied_principal, *, include_learning_context=False):
         assert session is session_sentinel
@@ -292,11 +294,25 @@ async def test_skill_gap_contract_is_self_scoped_and_deterministic(monkeypatch) 
             ],
         }
 
+    async def fake_enrollments(session, supplied_principal):
+        assert session is session_sentinel
+        assert supplied_principal is viewer
+        return [
+            {
+                "id": enrollment_id,
+                "path_id": path_id,
+                "key": "inventory-count-recovery",
+                "status": "in_progress",
+                "due_at": None,
+            }
+        ]
+
     monkeypatch.setattr(
         skill_gap_service,
         "list_my_badge_credentials",
         fake_context,
     )
+    monkeypatch.setattr(skill_gap_service, "list_enrollments", fake_enrollments)
     snapshot = await skill_gap_service.get_my_skill_gap_snapshot(
         session_sentinel,  # type: ignore[arg-type]
         viewer,
@@ -310,7 +326,11 @@ async def test_skill_gap_contract_is_self_scoped_and_deterministic(monkeypatch) 
     assert snapshot["gaps"][0]["latest_evidence"]["evidence_ref"] == (
         "assessment:academy-contract"
     )
-    assert snapshot["recommended_paths"][0]["path_key"] == "inventory-count-recovery"
+    recommendation = snapshot["recommended_paths"][0]
+    assert recommendation["path_key"] == "inventory-count-recovery"
+    assert recommendation["path_id"] == path_id
+    assert recommendation["enrollment_id"] == enrollment_id
+    assert recommendation["enrollment_status"] == "in_progress"
     assert snapshot["recommendation_policy"] == "deterministic_role_skill_gap_v1"
 
 

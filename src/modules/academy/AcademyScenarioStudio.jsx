@@ -63,16 +63,30 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
   const [status, setStatus] = useState("draft");
   const [nodes, setNodes] = useState(() => initialNodes(locale));
   const [edges, setEdges] = useState(() => initialEdges(locale));
+  const [entryNodeKey, setEntryNodeKey] = useState("start");
   const [selectedNodeKey, setSelectedNodeKey] = useState("start");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const nodeKeys = useMemo(() => nodes.map((item) => item.node_key).filter(Boolean), [nodes]);
-  const entryNodeKey = nodeKeys[0] || "start";
 
   function updateNode(index, patch) {
     setNodes((items) => items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+  }
+
+  function updateNodeKey(index, rawValue) {
+    const oldKey = nodes[index]?.node_key || "";
+    const newKey = rawValue.trim().toLowerCase().replace(/\s+/g, "-");
+    updateNode(index, { node_key: newKey });
+    if (!oldKey || oldKey === newKey) return;
+    setEdges((items) => items.map((edge) => ({
+      ...edge,
+      from_node_key: edge.from_node_key === oldKey ? newKey : edge.from_node_key,
+      to_node_key: edge.to_node_key === oldKey ? newKey : edge.to_node_key,
+    })));
+    if (entryNodeKey === oldKey) setEntryNodeKey(newKey);
+    if (selectedNodeKey === oldKey) setSelectedNodeKey(newKey);
   }
 
   function updateNodePrompt(index, value) {
@@ -119,12 +133,12 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
       setError(gx("cannotRemoveTerminal"));
       return;
     }
+    const remaining = nodes.filter((_, itemIndex) => itemIndex !== index);
     setError("");
-    setNodes((items) => items.filter((_, itemIndex) => itemIndex !== index));
+    setNodes(remaining);
     setEdges((items) => items.filter((edge) => edge.from_node_key !== node.node_key && edge.to_node_key !== node.node_key));
-    if (selectedNodeKey === node.node_key) {
-      setSelectedNodeKey(nodes[index - 1]?.node_key || nodes[index + 1]?.node_key || "");
-    }
+    if (entryNodeKey === node.node_key) setEntryNodeKey(remaining[0]?.node_key || "");
+    if (selectedNodeKey === node.node_key) setSelectedNodeKey(remaining[0]?.node_key || "");
   }
 
   function moveNodeOrder(index, direction) {
@@ -138,12 +152,13 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
   }
 
   function addEdge() {
+    const fallbackEntry = entryNodeKey || nodeKeys[0] || "";
     setEdges((items) => [
       ...items,
       {
-        from_node_key: entryNodeKey,
+        from_node_key: fallbackEntry,
         choice_key: `choice-${items.length + 1}`,
-        to_node_key: nodeKeys.at(-1) || entryNodeKey,
+        to_node_key: nodeKeys.at(-1) || fallbackEntry,
         label_i18n: { [locale]: "" },
         score_delta: 0,
         correct: false,
@@ -158,7 +173,7 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
 
   async function saveScenario(event) {
     event.preventDefault();
-    if (!contentVersionId || !scenarioKey.trim() || !title.trim()) return;
+    if (!contentVersionId || !scenarioKey.trim() || !title.trim() || !entryNodeKey) return;
     setSaving(true);
     setError("");
     setMessage("");
@@ -178,6 +193,7 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
         title: title.trim(),
         description: description.trim(),
         passingScore,
+        entryNodeKey,
         normalizedNodes,
         normalizedEdges,
       }));
@@ -226,12 +242,13 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
         <label className="wide"><span>{t("academyTitle")}</span><input required value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <label className="wide"><span>{t("academyDescription")}</span><textarea rows="2" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <label><span>{t("status")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="draft">{t("draft")}</option><option value="published">{t("published")}</option></select></label>
+        <label><span>{gx("entryNode")}</span><select value={entryNodeKey} onChange={(event) => setEntryNodeKey(event.target.value)}>{nodeKeys.map((key) => <option value={key} key={key}>{key}</option>)}</select></label>
 
         <div className="wide">
           <AcademyScenarioGraphCanvas nodes={nodes} edges={edges} locale={locale} selectedKey={selectedNodeKey} onSelect={setSelectedNodeKey} onMove={updateNodePosition} />
         </div>
 
-        <fieldset className="wide eay-academy-expansion-set"><legend>{tx("nodes")}</legend>{nodes.map((node, index) => <div className={`eay-academy-expansion-row ${selectedNodeKey === node.node_key ? "is-selected" : ""}`} key={`${index}-${node.node_key}`}><label><span>{tx("nodeKey")}</span><input value={node.node_key} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNode(index, { node_key: event.target.value.trim().toLowerCase().replace(/\s+/g, "-") })} /></label><label><span>{tx("nodeType")}</span><select value={node.node_type} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNode(index, { node_type: event.target.value })}>{["scene", "decision", "task", "evidence", "outcome"].map((kind) => <option value={kind} key={kind}>{st(kind)}</option>)}</select></label><label className="grow"><span>{tx("prompt")}</span><input value={node.prompt_i18n?.[locale] || ""} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNodePrompt(index, event.target.value)} /></label><label className="check"><input type="checkbox" checked={node.terminal} onChange={(event) => updateNode(index, { terminal: event.target.checked, terminal_outcome: event.target.checked ? (node.terminal_outcome || "completed") : null })} /><span>{tx("terminal")}</span></label>{node.terminal ? <label><span>{tx("terminalOutcome")}</span><select value={node.terminal_outcome || "completed"} onChange={(event) => updateNode(index, { terminal_outcome: event.target.value })}>{["completed", "failed", "remediation"].map((outcome) => <option value={outcome} key={outcome}>{st(outcome)}</option>)}</select></label> : null}<div className="eay-academy-row-actions"><button type="button" className="eay-academy-icon-action" aria-label={gx("moveNodeUp")} disabled={index === 0} onClick={() => moveNodeOrder(index, -1)}><ArrowUp size={15} aria-hidden="true" /></button><button type="button" className="eay-academy-icon-action" aria-label={gx("moveNodeDown")} disabled={index === nodes.length - 1} onClick={() => moveNodeOrder(index, 1)}><ArrowDown size={15} aria-hidden="true" /></button><button type="button" className="eay-academy-icon-action is-danger" aria-label={gx("removeNode")} onClick={() => removeNode(index)}><Trash2 size={15} aria-hidden="true" /></button></div></div>)}<button type="button" className="eay-academy-secondary" onClick={addNode}><Plus size={15} aria-hidden="true" />{tx("addNode")}</button></fieldset>
+        <fieldset className="wide eay-academy-expansion-set"><legend>{tx("nodes")}</legend>{nodes.map((node, index) => <div className={`eay-academy-expansion-row ${selectedNodeKey === node.node_key ? "is-selected" : ""}`} key={`${index}-${node.node_key}`}><label><span>{tx("nodeKey")}</span><input value={node.node_key} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNodeKey(index, event.target.value)} /></label><label><span>{tx("nodeType")}</span><select value={node.node_type} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNode(index, { node_type: event.target.value })}>{["scene", "decision", "task", "evidence", "outcome"].map((kind) => <option value={kind} key={kind}>{st(kind)}</option>)}</select></label><label className="grow"><span>{tx("prompt")}</span><input value={node.prompt_i18n?.[locale] || ""} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNodePrompt(index, event.target.value)} /></label><label className="check"><input type="checkbox" checked={node.terminal} onChange={(event) => updateNode(index, { terminal: event.target.checked, terminal_outcome: event.target.checked ? (node.terminal_outcome || "completed") : null })} /><span>{tx("terminal")}</span></label>{node.terminal ? <label><span>{tx("terminalOutcome")}</span><select value={node.terminal_outcome || "completed"} onChange={(event) => updateNode(index, { terminal_outcome: event.target.value })}>{["completed", "failed", "remediation"].map((outcome) => <option value={outcome} key={outcome}>{st(outcome)}</option>)}</select></label> : null}<div className="eay-academy-row-actions"><button type="button" className="eay-academy-icon-action" aria-label={gx("moveNodeUp")} disabled={index === 0} onClick={() => moveNodeOrder(index, -1)}><ArrowUp size={15} aria-hidden="true" /></button><button type="button" className="eay-academy-icon-action" aria-label={gx("moveNodeDown")} disabled={index === nodes.length - 1} onClick={() => moveNodeOrder(index, 1)}><ArrowDown size={15} aria-hidden="true" /></button><button type="button" className="eay-academy-icon-action is-danger" aria-label={gx("removeNode")} onClick={() => removeNode(index)}><Trash2 size={15} aria-hidden="true" /></button></div></div>)}<button type="button" className="eay-academy-secondary" onClick={addNode}><Plus size={15} aria-hidden="true" />{tx("addNode")}</button></fieldset>
 
         <fieldset className="wide eay-academy-expansion-set"><legend>{tx("edges")}</legend>{edges.map((edge, index) => <div className="eay-academy-expansion-row" key={`${index}-${edge.choice_key}`}><label><span>{tx("fromNode")}</span><select value={edge.from_node_key} onChange={(event) => updateEdge(index, { from_node_key: event.target.value })}>{nodeKeys.map((key) => <option value={key} key={key}>{key}</option>)}</select></label><label><span>{tx("choiceKey")}</span><input value={edge.choice_key} onChange={(event) => updateEdge(index, { choice_key: event.target.value.trim().toLowerCase().replace(/\s+/g, "-") })} /></label><label><span>{tx("toNode")}</span><select value={edge.to_node_key} onChange={(event) => updateEdge(index, { to_node_key: event.target.value })}>{nodeKeys.map((key) => <option value={key} key={key}>{key}</option>)}</select></label><label className="grow"><span>{tx("choiceLabel")}</span><input value={edge.label_i18n?.[locale] || ""} onChange={(event) => updateEdgeLabel(index, event.target.value)} required /></label><label><span>{tx("scoreDelta")}</span><input type="number" min="-1000" max="1000" value={edge.score_delta} onChange={(event) => updateEdge(index, { score_delta: Number(event.target.value) })} /></label><label className="check"><input type="checkbox" checked={edge.correct} onChange={(event) => updateEdge(index, { correct: event.target.checked })} /><span>{tx("correctChoice")}</span></label><div className="eay-academy-row-actions"><button type="button" className="eay-academy-icon-action is-danger" aria-label={gx("removeEdge")} onClick={() => removeEdge(index)}><Trash2 size={15} aria-hidden="true" /></button></div></div>)}<button type="button" className="eay-academy-secondary" onClick={addEdge}><Plus size={15} aria-hidden="true" />{tx("addEdge")}</button></fieldset>
 

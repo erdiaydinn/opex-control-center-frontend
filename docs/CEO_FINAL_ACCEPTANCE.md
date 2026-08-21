@@ -1,0 +1,1 @@
+This branch is eligible for repository/integration acceptance only after the exact branch head passes the dedicated EAY DockOS Budget CEO Final workflow and inherited canonical regression gates. Main merge and production activation are not implied.

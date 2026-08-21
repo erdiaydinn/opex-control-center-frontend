@@ -12,6 +12,7 @@ import {
   rotatedRectSvgPoints,
   svgPointString,
 } from "./planogramEngineering2D.js";
+import { buildPlanogramVisualQualityPlan } from "./planogramVisualQualityModel.js";
 import "./planogram-digital-twin.css";
 
 const SVG_WIDTH = 1000;
@@ -213,10 +214,18 @@ function Twin2D({ model, t, formatNumber }) {
   );
 }
 
-function buildFacingInstances(THREE, model) {
+function buildTexturePlanIndex(visualPlan) {
+  return new Map((visualPlan?.productTextures || []).map((row) => [
+    `${row.moduleKey}:${row.shelfIndex}:${row.productIndex}`,
+    row,
+  ]));
+}
+
+function buildFacingInstances(THREE, model, visualPlan) {
   const instances = [];
   const maxInstances = PLANOGRAM_DIGITAL_TWIN_LIMITS.maxProductInstances3d;
   const up = new THREE.Vector3(0, 1, 0);
+  const texturePlanIndex = buildTexturePlanIndex(visualPlan);
   let clippedFacingCount = 0;
 
   outer: for (const module of model.modules) {
@@ -237,7 +246,7 @@ function buildFacingInstances(THREE, model) {
       if (!products.length) continue;
       let cursorX = leftEdge;
 
-      for (const product of products) {
+      for (const [productIndex, product] of products.entries()) {
         const facingCount = productFacingCount(product);
         const rawW = Number(product?.width_cm || 0) / 100;
         const rawH = Number(product?.height_cm || 0) / 100;
@@ -245,7 +254,8 @@ function buildFacingInstances(THREE, model) {
         const width = clamp(rawW || 0.08, 0.025, Math.max(0.03, module.widthM * 0.45));
         const productHeight = clamp(rawH || Math.min(0.22, levelHeight * 0.62), 0.035, Math.max(0.05, levelHeight * 0.8));
         const depth = clamp(rawD || 0.07, 0.025, Math.max(0.03, module.depthM * 0.82));
-        const sku = String(product?.sku ?? product?.SKU ?? product?.product_name ?? "SKU");
+        const sku = String(product?.sku ?? product?.SKU ?? product?.product_name ?? "SKU").trim().toUpperCase();
+        const texturePlan = texturePlanIndex.get(`${module.key}:${shelfIndex}:${productIndex}`);
 
         for (let facingIndex = 0; facingIndex < facingCount; facingIndex += 1) {
           if (instances.length >= maxInstances) break outer;
@@ -271,7 +281,27 @@ function buildFacingInstances(THREE, model) {
             quaternion,
             new THREE.Vector3(width, productHeight, depth)
           );
-          instances.push({ matrix, hue: stableHue(sku) });
+
+          let texturePath = null;
+          let frontMatrix = null;
+          if (texturePlan && facingIndex < texturePlan.facingCount) {
+            texturePath = texturePlan.frontImagePath;
+            const planeLocalZ = frontSign * (module.depthM / 2 - frontInset + 0.002);
+            const planeWorldX = module.centerXM + localX * cos - planeLocalZ * sin;
+            const planeWorldZ = module.centerYM + localX * sin + planeLocalZ * cos;
+            const planeQuaternion = quaternion.clone();
+            if (frontSign < 0) {
+              planeQuaternion.multiply(new THREE.Quaternion().setFromAxisAngle(up, Math.PI));
+            }
+            frontMatrix = new THREE.Matrix4();
+            frontMatrix.compose(
+              new THREE.Vector3(planeWorldX, worldY, planeWorldZ),
+              planeQuaternion,
+              new THREE.Vector3(width * 0.94, productHeight * 0.94, 1)
+            );
+          }
+
+          instances.push({ matrix, hue: stableHue(sku), sku, texturePath, frontMatrix });
           cursorX += width + PRODUCT_GAP_M;
         }
       }
@@ -315,6 +345,8 @@ function addOpenShelfFixture(THREE, scene, module, materials, disposables) {
   const group = new THREE.Group();
   group.position.set(module.centerXM, 0, module.centerYM);
   group.rotation.y = (-module.rotationDeg * Math.PI) / 180;
+  group.userData.moduleKey = module.key;
+  group.userData.visualAuthority = "metric_primitive_fallback";
   scene.add(group);
 
   if (kind === "pallet") {
@@ -341,7 +373,7 @@ function addOpenShelfFixture(THREE, scene, module, materials, disposables) {
         { castShadow: false }
       );
     }
-    return;
+    return group;
   }
 
   const postDepth = Math.max(0.04, Math.min(module.depthM * 0.16, 0.08));
@@ -383,9 +415,144 @@ function addOpenShelfFixture(THREE, scene, module, materials, disposables) {
     glass.position.set(0, height * 0.5, module.depthM / 2 + 0.002);
     group.add(glass);
   }
+
+  return group;
 }
 
-function Twin3D({ model, t, onViewerReady }) {
+function disposeMaterial(material, seen) {
+  for (const row of (Array.isArray(material) ? material : [material])) {
+    if (!row || seen.has(row)) continue;
+    seen.add(row);
+    for (const key of ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap"]) {
+      const texture = row[key];
+      if (texture && !seen.has(texture)) {
+        seen.add(texture);
+        texture.dispose?.();
+      }
+    }
+    row.dispose?.();
+  }
+}
+
+function disposeAssetRoots(roots) {
+  const seen = new Set();
+  for (const root of roots) {
+    root?.traverse?.((node) => {
+      if (node.geometry && !seen.has(node.geometry)) {
+        seen.add(node.geometry);
+        node.geometry.dispose?.();
+      }
+      if (node.material) disposeMaterial(node.material, seen);
+    });
+  }
+}
+
+async function addGovernedFixtureAssets(THREE, scene, model, visualPlan, fallbackGroups, assetRoots) {
+  if (!(visualPlan?.fixtureInstances || []).length) return;
+  const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+  const loader = new GLTFLoader();
+  const moduleIndex = new Map(model.modules.map((module) => [module.key, module]));
+  const sourceCache = new Map();
+
+  const sourceFor = async (path) => {
+    if (!sourceCache.has(path)) {
+      sourceCache.set(path, loader.loadAsync(path).then((gltf) => gltf.scene).catch(() => null));
+    }
+    return sourceCache.get(path);
+  };
+
+  await Promise.all(visualPlan.fixtureInstances.map(async (assetPlan) => {
+    const module = moduleIndex.get(assetPlan.moduleKey);
+    if (!module) return;
+    const source = await sourceFor(assetPlan.modelPath);
+    if (!source) return;
+
+    const root = source.clone(true);
+    const sourceBox = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    sourceBox.getSize(size);
+    sourceBox.getCenter(center);
+    if (size.x <= 0 || size.y <= 0 || size.z <= 0) return;
+
+    root.position.sub(center);
+    const group = new THREE.Group();
+    group.add(root);
+    const envelope = assetPlan.targetEnvelopeM;
+    group.scale.set(envelope.widthM / size.x, envelope.heightM / size.y, envelope.depthM / size.z);
+    group.position.set(module.centerXM, envelope.heightM / 2, module.centerYM);
+    group.rotation.y = (-module.rotationDeg * Math.PI) / 180;
+    group.userData.moduleKey = module.key;
+    group.userData.geometryAuthority = assetPlan.geometryAuthority;
+    group.userData.visualAssetAuthority = assetPlan.visualAssetAuthority;
+    group.userData.sourceRef = assetPlan.sourceRef;
+    group.traverse((node) => {
+      if (!node.isMesh) return;
+      node.castShadow = true;
+      node.receiveShadow = true;
+      for (const material of (Array.isArray(node.material) ? node.material : [node.material])) {
+        if (material && "envMapIntensity" in material) material.envMapIntensity = 1.05;
+      }
+    });
+    scene.add(group);
+    assetRoots.push(group);
+    const fallback = fallbackGroups.get(module.key);
+    if (fallback) fallback.visible = false;
+  }));
+}
+
+function addTexturedFacingOverlays(THREE, scene, facingModel, renderer, disposables) {
+  const textured = facingModel.instances.filter((instance) => instance.texturePath && instance.frontMatrix);
+  if (!textured.length) return;
+
+  const planeGeometry = new THREE.PlaneGeometry(1, 1);
+  const materialCache = new Map();
+  const textureLoader = new THREE.TextureLoader();
+  const maxAnisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1;
+  disposables.push(planeGeometry);
+
+  const materialFor = (path) => {
+    if (materialCache.has(path)) return materialCache.get(path);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.48,
+      metalness: 0,
+      transparent: true,
+      alphaTest: 0.025,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    materialCache.set(path, material);
+    disposables.push(material);
+    textureLoader.load(
+      path,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = Math.min(8, maxAnisotropy);
+        material.map = texture;
+        material.needsUpdate = true;
+        disposables.push(texture);
+      },
+      undefined,
+      () => {}
+    );
+    return material;
+  };
+
+  for (const instance of textured) {
+    const plane = new THREE.Mesh(planeGeometry, materialFor(instance.texturePath));
+    plane.matrixAutoUpdate = false;
+    plane.matrix.copy(instance.frontMatrix);
+    plane.renderOrder = 4;
+    plane.userData.sku = instance.sku;
+    plane.userData.visualAssetAuthority = "attested_same_origin_packshot";
+    scene.add(plane);
+  }
+}
+
+function Twin3D({ model, visualPlan, t, onViewerReady }) {
   const mountRef = useRef(null);
   const [state, setState] = useState("loading");
 
@@ -395,18 +562,22 @@ function Twin3D({ model, t, onViewerReady }) {
     let controls;
     let resizeObserver;
     let frame;
+    let environmentTarget;
     const disposables = [];
+    const assetRoots = [];
 
     async function mount() {
       setState("loading");
       try {
         const THREE = await import("three");
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
+        const { RoomEnvironment } = await import("three/examples/jsm/environments/RoomEnvironment.js");
         if (disposed || !mountRef.current) return;
 
         const host = mountRef.current;
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0b10);
+        scene.fog = new THREE.Fog(0x0a0b10, 30, 110);
         const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 500);
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -414,23 +585,37 @@ function Twin3D({ model, t, onViewerReady }) {
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.05;
+        renderer.toneMappingExposure = 1.08;
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        environmentTarget = pmrem.fromScene(new RoomEnvironment(), 0.04);
+        pmrem.dispose();
+        scene.environment = environmentTarget.texture;
+
         host.replaceChildren(renderer.domElement);
         renderer.domElement.setAttribute("role", "img");
         renderer.domElement.setAttribute("aria-label", t("canvasLabel"));
+        renderer.domElement.dataset.visualQualityContract = visualPlan?.contract || "metric-fallback-only";
         renderer.domElement.tabIndex = 0;
 
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x172033, 1.4));
-        const key = new THREE.DirectionalLight(0xffffff, 2.6);
-        key.position.set(model.floor.widthM * 0.35, 12, model.floor.depthM * 0.35);
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x172033, 1.35));
+        const key = new THREE.DirectionalLight(0xffffff, 2.65);
+        key.position.set(model.floor.widthM * 0.35, 11, model.floor.depthM * 0.22);
         key.castShadow = true;
+        key.shadow.mapSize.set(2048, 2048);
         scene.add(key);
-        const fill = new THREE.DirectionalLight(0xbfd7ff, 0.85);
+        const fill = new THREE.DirectionalLight(0xbfd7ff, 0.72);
         fill.position.set(model.floor.widthM, 5, model.floor.depthM);
         scene.add(fill);
 
         const floorGeometry = new THREE.PlaneGeometry(model.floor.widthM, model.floor.depthM);
-        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x171922, roughness: 0.88, metalness: 0.03 });
+        const floorMaterial = new THREE.MeshPhysicalMaterial({
+          color: 0x303640,
+          roughness: 0.78,
+          metalness: 0.01,
+          clearcoat: 0.08,
+          clearcoatRoughness: 0.72,
+          envMapIntensity: 0.65,
+        });
         disposables.push(floorGeometry, floorMaterial);
         const floor = new THREE.Mesh(floorGeometry, floorMaterial);
         floor.rotation.x = -Math.PI / 2;
@@ -438,19 +623,20 @@ function Twin3D({ model, t, onViewerReady }) {
         floor.receiveShadow = true;
         scene.add(floor);
 
-        const grid = new THREE.GridHelper(Math.max(model.floor.widthM, model.floor.depthM), Math.max(10, Math.round(Math.max(model.floor.widthM, model.floor.depthM))), 0x343845, 0x242733);
+        const gridSize = Math.max(model.floor.widthM, model.floor.depthM);
+        const grid = new THREE.GridHelper(gridSize, Math.max(10, Math.round(gridSize)), 0x3c424f, 0x252a33);
         grid.position.set(model.floor.widthM / 2, 0.006, model.floor.depthM / 2);
         scene.add(grid);
         addRouteLines(THREE, scene, model, disposables);
 
         const architectureMaterials = {
-          wall: new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.9 }),
-          column: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.78 }),
-          no_go: new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.82 }),
-          technical: new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.82 }),
-          emergency_exit: new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.67 }),
-          picker_entry: new THREE.MeshStandardMaterial({ color: 0xdf1067, roughness: 0.58 }),
-          default: new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.82 }),
+          wall: new THREE.MeshPhysicalMaterial({ color: 0xb6bcc5, roughness: 0.74, metalness: 0.01, clearcoat: 0.02, envMapIntensity: 0.65 }),
+          column: new THREE.MeshPhysicalMaterial({ color: 0x8d98a7, roughness: 0.58, metalness: 0.08, clearcoat: 0.05 }),
+          no_go: new THREE.MeshPhysicalMaterial({ color: 0x7f1d1d, roughness: 0.75, metalness: 0.02 }),
+          technical: new THREE.MeshPhysicalMaterial({ color: 0x78350f, roughness: 0.72, metalness: 0.08 }),
+          emergency_exit: new THREE.MeshPhysicalMaterial({ color: 0x047857, roughness: 0.52, clearcoat: 0.08 }),
+          picker_entry: new THREE.MeshPhysicalMaterial({ color: 0xdf1067, roughness: 0.48, clearcoat: 0.12 }),
+          default: new THREE.MeshPhysicalMaterial({ color: 0x64748b, roughness: 0.68, metalness: 0.03 }),
         };
         disposables.push(...Object.values(architectureMaterials));
 
@@ -468,13 +654,24 @@ function Twin3D({ model, t, onViewerReady }) {
 
         const fixtureMaterials = {
           frame: {
-            regular: new THREE.MeshStandardMaterial({ color: 0x7c8597, roughness: 0.48, metalness: 0.28 }),
-            chilled: new THREE.MeshStandardMaterial({ color: 0x0891b2, roughness: 0.36, metalness: 0.2 }),
-            frozen: new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.36, metalness: 0.2 }),
+            regular: new THREE.MeshPhysicalMaterial({ color: 0x9aa3b1, roughness: 0.36, metalness: 0.34, clearcoat: 0.12, envMapIntensity: 0.95 }),
+            chilled: new THREE.MeshPhysicalMaterial({ color: 0x4a9eb5, roughness: 0.28, metalness: 0.26, clearcoat: 0.2, envMapIntensity: 1 }),
+            frozen: new THREE.MeshPhysicalMaterial({ color: 0x5e7fc6, roughness: 0.28, metalness: 0.26, clearcoat: 0.2, envMapIntensity: 1 }),
           },
-          pallet: new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.86 }),
-          shelf: new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.38, metalness: 0.32 }),
-          glass: new THREE.MeshPhysicalMaterial({ color: 0xdbeafe, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.16, transmission: 0.55, depthWrite: false }),
+          pallet: new THREE.MeshPhysicalMaterial({ color: 0x8b5e34, roughness: 0.84, metalness: 0.01, clearcoat: 0.02 }),
+          shelf: new THREE.MeshPhysicalMaterial({ color: 0xd7dce3, roughness: 0.31, metalness: 0.36, clearcoat: 0.11, envMapIntensity: 0.9 }),
+          glass: new THREE.MeshPhysicalMaterial({
+            color: 0xdbeafe,
+            roughness: 0.06,
+            metalness: 0,
+            transparent: true,
+            opacity: 0.14,
+            transmission: 0.72,
+            thickness: 0.01,
+            clearcoat: 0.2,
+            envMapIntensity: 1.15,
+            depthWrite: false,
+          }),
         };
         disposables.push(
           ...Object.values(fixtureMaterials.frame),
@@ -483,19 +680,26 @@ function Twin3D({ model, t, onViewerReady }) {
           fixtureMaterials.glass
         );
 
+        const fallbackGroups = new Map();
         for (const module of model.modules) {
-          addOpenShelfFixture(THREE, scene, module, fixtureMaterials, disposables);
+          fallbackGroups.set(module.key, addOpenShelfFixture(THREE, scene, module, fixtureMaterials, disposables));
         }
 
-        const facingModel = buildFacingInstances(THREE, model);
+        const facingModel = buildFacingInstances(THREE, model, visualPlan);
         if (facingModel.instances.length) {
           const productGeometry = new THREE.BoxGeometry(1, 1, 1);
-          const productMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.46, metalness: 0.02 });
+          const productMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            roughness: 0.43,
+            metalness: 0.01,
+            clearcoat: 0.07,
+            envMapIntensity: 0.72,
+          });
           disposables.push(productGeometry, productMaterial);
           const products = new THREE.InstancedMesh(productGeometry, productMaterial, facingModel.instances.length);
           facingModel.instances.forEach((instance, index) => {
             products.setMatrixAt(index, instance.matrix);
-            const color = new THREE.Color().setHSL(instance.hue, 0.58, 0.56, THREE.SRGBColorSpace);
+            const color = new THREE.Color().setHSL(instance.hue, 0.48, 0.66, THREE.SRGBColorSpace);
             products.setColorAt(index, color);
           });
           products.instanceMatrix.needsUpdate = true;
@@ -505,6 +709,9 @@ function Twin3D({ model, t, onViewerReady }) {
           products.userData.clippedFacingCount = facingModel.clippedFacingCount;
           scene.add(products);
         }
+        addTexturedFacingOverlays(THREE, scene, facingModel, renderer, disposables);
+        await addGovernedFixtureAssets(THREE, scene, model, visualPlan, fallbackGroups, assetRoots);
+        if (disposed) return;
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -563,17 +770,26 @@ function Twin3D({ model, t, onViewerReady }) {
       resizeObserver?.disconnect();
       controls?.dispose();
       renderer?.dispose();
+      environmentTarget?.dispose?.();
+      disposeAssetRoots(assetRoots);
       for (const item of disposables) item?.dispose?.();
       if (mountRef.current) mountRef.current.replaceChildren();
       onViewerReady?.(null);
     };
-  }, [model, onViewerReady, t]);
+  }, [model, onViewerReady, t, visualPlan]);
 
   return (
     <div className="eay-twin-3d-shell">
       {state === "loading" ? <div className="eay-twin-3d-state" role="status">{t("threeLoading")}</div> : null}
       {state === "error" ? <div className="eay-twin-3d-state eay-twin-3d-state--error" role="alert">{t("threeError")}</div> : null}
-      <div ref={mountRef} className="eay-twin-3d" data-state={state} />
+      <div
+        ref={mountRef}
+        className="eay-twin-3d"
+        data-state={state}
+        data-visual-authority={visualPlan?.visualAuthority || "metric_primitive_fallback"}
+        data-governed-fixtures={visualPlan?.budgets?.usedFixtureInstances || 0}
+        data-textured-facings={visualPlan?.budgets?.usedTexturedProductFacings || 0}
+      />
     </div>
   );
 }
@@ -603,6 +819,10 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
   const viewerRef = useRef(null);
   const t = useMemo(() => (key) => translatePlanogramDigitalTwin(locale, key), [locale]);
   const model = useMemo(() => buildPlanogramDigitalTwinModel(engineResult, candidate), [candidate, engineResult]);
+  const visualPlan = useMemo(
+    () => buildPlanogramVisualQualityPlan(model, candidate?.asset_manifest || null),
+    [candidate?.asset_manifest, model]
+  );
   const bindViewer = useCallback((viewer) => { viewerRef.current = viewer; }, []);
 
   if (!model) return <section className="eay-twin-empty" role="status"><ScanLine size={20} aria-hidden="true" />{t("noGeometry")}</section>;
@@ -611,7 +831,11 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
   const routeText = model.route?.available ? `${formatNumber(model.route.value)} m` : t("routeUnavailable");
 
   return (
-    <section className="eay-twin" data-geometry-authority={model.geometryAuthority}>
+    <section
+      className="eay-twin"
+      data-geometry-authority={model.geometryAuthority}
+      data-visual-quality-contract={visualPlan?.contract || "metric-fallback-only"}
+    >
       <header className="eay-twin-head">
         <div className="eay-twin-title"><Cuboid size={24} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>
         <div className="eay-twin-tabs" role="tablist" aria-label={t("title")}>
@@ -636,12 +860,16 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
       <RouteHotspots model={model} formatNumber={formatNumber} t={t} />
 
       {view === "2d" ? <Twin2D model={model} t={t} formatNumber={formatNumber} /> : null}
-      {view === "3d" ? <><div className="eay-twin-camera-bar" aria-label={t("view3d")}>
-        <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}><Rotate3D size={16} aria-hidden="true" />{t("perspective")}</button>
-        <button type="button" onClick={() => viewerRef.current?.setPreset("top")}>{t("top")}</button>
-        <button type="button" onClick={() => viewerRef.current?.setPreset("front")}>{t("front")}</button>
-        <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}>{t("reset")}</button>
-      </div><Twin3D model={model} t={t} onViewerReady={bindViewer} /><p className="eay-twin-interaction-hint">{t("interactionHint")}</p></> : null}
+      {view === "3d" ? <>
+        <div className="eay-twin-camera-bar" aria-label={t("view3d")}>
+          <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}><Rotate3D size={16} aria-hidden="true" />{t("perspective")}</button>
+          <button type="button" onClick={() => viewerRef.current?.setPreset("top")}>{t("top")}</button>
+          <button type="button" onClick={() => viewerRef.current?.setPreset("front")}>{t("front")}</button>
+          <button type="button" onClick={() => viewerRef.current?.setPreset("perspective")}>{t("reset")}</button>
+        </div>
+        <Twin3D model={model} visualPlan={visualPlan} t={t} onViewerReady={bindViewer} />
+        <p className="eay-twin-interaction-hint">{t("interactionHint")}</p>
+      </> : null}
     </section>
   );
 }

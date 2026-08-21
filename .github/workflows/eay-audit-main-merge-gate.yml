@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - product/eay-category-leadership-v1
+      - main
 
 permissions:
   contents: read
@@ -14,7 +15,7 @@ concurrency:
 
 env:
   EXPECTED_ALEMBIC_HEAD: 0059_audit_inference_lease_immutability
-  ACCEPTED_AUDIT_PROVENANCE_SHA: 98bbfbe4899ffab368bebdaf769d5e44c95b6752
+  ACCEPTED_AUDIT_PROVENANCE_SHA: d5b2a0b01cdbbe44eb855b7848df55460a152daa
 
 jobs:
   lineage-and-conflict:
@@ -31,7 +32,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "${{ github.base_ref }}" = "product/eay-category-leadership-v1"
+          case "${{ github.base_ref }}" in
+            product/eay-category-leadership-v1|main) ;;
+            *) echo "Unsupported Audit release base: ${{ github.base_ref }}" >&2; exit 1 ;;
+          esac
           git merge-base --is-ancestor "${{ github.event.pull_request.base.sha }}" HEAD
           git merge-base --is-ancestor "$ACCEPTED_AUDIT_PROVENANCE_SHA" HEAD
       - name: Reject unresolved conflict markers in PR delta

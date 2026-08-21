@@ -145,7 +145,7 @@ jobs:
           psql -h localhost -U postgres -d workforce_ci -v ON_ERROR_STOP=1 -f migrations/012_workforce_v35_dpi_authority.sql
           psql -h localhost -U postgres -d workforce_ci -v ON_ERROR_STOP=1 -f migrations/013_workforce_v36_optimizer_authority.sql
           psql -h localhost -U postgres -d workforce_ci -v ON_ERROR_STOP=1 -f migrations/014_workforce_v37_replan_authority.sql
-          psql -h localhost -U postgres -d workforce_ci -Atc "SELECT max(version) FROM workforce_schema_migrations" | grep -qx '37'
+          psql -h localhost -U postgres -d workforce_ci -Atc "SELECT count(*) FROM workforce_schema_migrations WHERE version BETWEEN 30 AND 37" | grep -qx '8'
       - name: Grant tenant-bound runtime only the governed authority surface it needs
         run: |
           psql -h localhost -U postgres -d workforce_ci -v ON_ERROR_STOP=1 <<'SQL'

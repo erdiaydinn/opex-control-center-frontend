@@ -1,12 +1,24 @@
 import fs from "node:fs";
 import process from "node:process";
 
+import { academyExpansionMessageCoverage } from "../src/platform/i18n/academyExpansionMessages.js";
+import { academyInteractionMessageCoverage } from "../src/platform/i18n/academyInteractionMessages.js";
+import { academySkillGapMessageCoverage } from "../src/platform/i18n/academySkillGapMessages.js";
+import { academyStudioTermMessageCoverage } from "../src/platform/i18n/academyStudioTermMessages.js";
+
+const UI_LOCALES = ["tr", "en", "de", "ar", "fr", "es", "it", "nl", "pl", "pt-BR"];
 const appPath = "src/App.jsx";
+const workspacePath = "src/modules/academy/AcademyWorkspace.jsx";
 const hubPath = "src/modules/academy/AcademyExpansionHub.jsx";
 const achievementsPath = "src/modules/academy/AcademyAchievements.jsx";
+const interactionPath = "src/modules/academy/AcademyInteractionTimelineStudio.jsx";
+const skillGapPath = "src/modules/academy/AcademySkillGap.jsx";
 const app = fs.readFileSync(appPath, "utf8");
+const workspace = fs.readFileSync(workspacePath, "utf8");
 const hub = fs.readFileSync(hubPath, "utf8");
 const achievements = fs.readFileSync(achievementsPath, "utf8");
+const interaction = fs.readFileSync(interactionPath, "utf8");
+const skillGap = fs.readFileSync(skillGapPath, "utf8");
 
 const appRequirements = [
   ['lazy(() => import("./modules/academy/AcademyExpansionHub.jsx"))', "lazy Academy expansion boundary"],
@@ -21,15 +33,29 @@ for (const [needle, label] of appRequirements) {
   }
 }
 
+const workspaceRequirements = [
+  ['navigate("/academy/experience")', "visible Academy experience launcher"],
+  ['translateAcademySkillGap(locale, "skillGap")', "learner launcher label"],
+  ['translateAcademyExpansion(locale, "scenarioStudio")', "studio launcher label"],
+];
+for (const [needle, label] of workspaceRequirements) {
+  if (!workspace.includes(needle)) {
+    console.error(`${workspacePath}: missing ${label}: ${needle}`);
+    process.exit(1);
+  }
+}
+
 const hubRequirements = [
   ['canFeature("academy", "contentStudio")', "content-studio feature authority"],
-  ['useState(canStudio ? "scenario" : "achievements")', "learner-safe default surface"],
+  ['useState(canStudio ? "scenario" : "skill-gap")', "learner-safe default surface"],
   ['data-eay-product-state="loading"', "loading product-state marker"],
   ['data-eay-product-state="ready"', "ready product-state marker"],
   ['role="alert"', "error announcement semantics"],
   ['navigate("/academy")', "back-to-Academy composition"],
   ['<AcademyScenarioStudio', "scenario Studio composition"],
+  ['<AcademyInteractionTimelineStudio', "interaction timeline composition"],
   ['<AcademyLocalizationGovernance', "localization governance composition"],
+  ['<AcademySkillGap', "skill-gap composition"],
   ['<AcademyAchievements', "achievement composition"],
 ];
 
@@ -44,10 +70,53 @@ if (!achievements.includes('/v1/academy/credentials/me')) {
   console.error(`${achievementsPath}: learner achievements must use canonical self-scoped credential authority.`);
   process.exit(1);
 }
-
-if (/localStorage|sessionStorage/.test(hub)) {
-  console.error(`${hubPath}: Academy expansion authority must not be inferred from browser storage.`);
+if (achievements.includes('signed_portable_credential: true')) {
+  console.error(`${achievementsPath}: portable credential must not be promoted by frontend hardcode.`);
   process.exit(1);
 }
 
-console.log("Academy expansion routing and authority contract: PASS");
+if (!skillGap.includes('/v1/academy/credentials/me/skill-gaps')) {
+  console.error(`${skillGapPath}: skill gaps must use canonical self-scoped Learning OS authority.`);
+  process.exit(1);
+}
+if (/subject=|required_level=|current_level=/.test(skillGap)) {
+  console.error(`${skillGapPath}: learner must not supply subject or proficiency authority in the request.`);
+  process.exit(1);
+}
+
+const interactionRequirements = [
+  ['apiPost("/v1/academy/admin/interaction-sets"', "canonical interaction authoring API"],
+  ['crypto.subtle.digest("SHA-256"', "source fingerprint"],
+  ['"checkpoint"', "checkpoint node"],
+  ['"hotspot"', "hotspot node"],
+  ['"branch"', "branch node"],
+  ['blocking: true', "blocking default"],
+  ['required: true', "required default"],
+];
+for (const [needle, label] of interactionRequirements) {
+  if (!interaction.includes(needle)) {
+    console.error(`${interactionPath}: missing ${label}: ${needle}`);
+    process.exit(1);
+  }
+}
+
+for (const [name, coverage] of [
+  ["expansion", academyExpansionMessageCoverage(UI_LOCALES)],
+  ["interaction", academyInteractionMessageCoverage(UI_LOCALES)],
+  ["skill-gap", academySkillGapMessageCoverage(UI_LOCALES)],
+  ["studio-terms", academyStudioTermMessageCoverage(UI_LOCALES)],
+]) {
+  for (const locale of UI_LOCALES) {
+    if ((coverage.missing[locale] || []).length || (coverage.extra[locale] || []).length) {
+      console.error(`Academy ${name} i18n coverage mismatch for ${locale}: ${JSON.stringify({ missing: coverage.missing[locale], extra: coverage.extra[locale] })}`);
+      process.exit(1);
+    }
+  }
+}
+
+if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.test(skillGap)) {
+  console.error(`${hubPath}: Academy experience authority must not be inferred from browser storage.`);
+  process.exit(1);
+}
+
+console.log("Academy experience routing, self-scope and locale authority contract: PASS");

@@ -89,15 +89,22 @@ const interactionRequirements = [
   ['crypto.subtle.digest("SHA-256"', "source fingerprint"],
   ['"checkpoint"', "checkpoint node"],
   ['"hotspot"', "hotspot node"],
+  ['"multiple_choice"', "backend-aligned multiple-choice node"],
   ['"branch"', "branch node"],
+  ['"cta"', "call-to-action node"],
   ['blocking: true', "blocking default"],
   ['required: true', "required default"],
+  ['max="1000"', "backend-aligned score weight ceiling"],
 ];
 for (const [needle, label] of interactionRequirements) {
   if (!interaction.includes(needle)) {
     console.error(`${interactionPath}: missing ${label}: ${needle}`);
     process.exit(1);
   }
+}
+if (interaction.includes('"multi_choice"')) {
+  console.error(`${interactionPath}: deprecated multi_choice alias must not diverge from backend multiple_choice authority.`);
+  process.exit(1);
 }
 
 for (const [name, coverage] of [
@@ -119,4 +126,4 @@ if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.tes
   process.exit(1);
 }
 
-console.log("Academy experience routing, self-scope and locale authority contract: PASS");
+console.log("Academy experience routing, self-scope, schema parity and locale authority contract: PASS");

@@ -12,7 +12,7 @@ import ipaddress
 from enum import Enum
 from urllib.parse import parse_qsl, urlparse
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 from .context_provider_registry import ProviderAccessMode, require_provider
 
@@ -46,7 +46,7 @@ class ProviderRequestPlan(BaseModel):
     blockers: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def prohibit_unverified_execution(self) -> "ProviderRequestPlan":
+    def prohibit_unverified_execution(self) -> ProviderRequestPlan:
         if self.execution_permitted and self.blockers:
             raise ValueError("provider_request_execution_cannot_ignore_blockers")
         return self

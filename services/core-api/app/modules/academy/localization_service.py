@@ -213,7 +213,9 @@ def _latest_default_sources(
         if content_id is None:
             continue
         candidate = latest.get(content_id)
-        if candidate is None or int(item.get("version_number") or 0) > int(candidate.get("version_number") or 0):
+        if candidate is None or int(item.get("version_number") or 0) > int(
+            candidate.get("version_number") or 0
+        ):
             latest[content_id] = item
     return list(latest.values())
 
@@ -269,17 +271,25 @@ async def localization_governance_telemetry(
 
         lineage_count = sum(1 for rows in current_by_content.values() if rows)
         authoritative_count = sum(
-            1 for rows in current_by_content.values() if any(bool(row.get("authoritative")) for row in rows)
+            1
+            for rows in current_by_content.values()
+            if any(bool(row.get("authoritative")) for row in rows)
         )
         pending_review_count = sum(
             1
             for rows in current_by_content.values()
-            if any(row.get("workflow_status") == "submitted" and not row.get("stale") for row in rows)
+            if any(
+                row.get("workflow_status") == "submitted" and not row.get("stale")
+                for row in rows
+            )
         )
         machine_draft_count = sum(
             1
             for rows in current_by_content.values()
-            if any(row.get("translation_method") == "machine_draft" and not row.get("stale") for row in rows)
+            if any(
+                row.get("translation_method") == "machine_draft" and not row.get("stale")
+                for row in rows
+            )
         )
         historical = [row for row in authority if row.get("target_locale") == target_locale]
         stale_count = sum(1 for row in historical if row.get("stale"))
@@ -318,10 +328,16 @@ async def localization_governance_telemetry(
             "required_authoritative_slot_count": required_authoritative,
             "required_authority_gap_count": max(0, required_slots - required_authoritative),
             "required_coverage_percent": _coverage_percent(required_authoritative, required_slots),
-            "stale_translation_count": sum(int(row["stale_translation_count"]) for row in locale_rows),
+            "stale_translation_count": sum(
+                int(row["stale_translation_count"]) for row in locale_rows
+            ),
             "pending_review_count": sum(int(row["pending_review_count"]) for row in locale_rows),
-            "rejected_translation_count": sum(int(row["rejected_translation_count"]) for row in locale_rows),
-            "machine_draft_content_count": sum(int(row["machine_draft_content_count"]) for row in locale_rows),
+            "rejected_translation_count": sum(
+                int(row["rejected_translation_count"]) for row in locale_rows
+            ),
+            "machine_draft_content_count": sum(
+                int(row["machine_draft_content_count"]) for row in locale_rows
+            ),
         },
         "locales": locale_rows,
         "quality_score": None,

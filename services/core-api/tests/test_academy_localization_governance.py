@@ -15,6 +15,7 @@ from app.modules.academy.localization_service import (
     author_translation_lineage,
     configure_locale,
     decide_translation_review,
+    localization_governance_telemetry,
     submit_translation_for_review,
     translation_authority,
 )
@@ -215,6 +216,21 @@ async def test_localization_governance_maker_checker_and_staleness() -> None:
             assert authority[0]["workflow_status"] == "approved"
             assert authority[0]["stale"] is False
             assert authority[0]["authoritative"] is True
+
+            telemetry = await localization_governance_telemetry(reviewer_session, reviewer)
+            fa = next(item for item in telemetry["locales"] if item["locale"] == "fa")
+            assert telemetry["source_locale"] == "en"
+            assert telemetry["source_content_count"] == 1
+            assert telemetry["summary"]["required_coverage_percent"] == 100.0
+            assert telemetry["summary"]["required_authority_gap_count"] == 0
+            assert telemetry["quality_score"] is None
+            assert telemetry["quality_score_reason"] == "not_computed_without_linguistic_qa_evidence"
+            assert fa["source_content_count"] == 1
+            assert fa["lineage_content_count"] == 1
+            assert fa["authoritative_content_count"] == 1
+            assert fa["missing_lineage_count"] == 0
+            assert fa["authority_gap_count"] == 0
+            assert fa["coverage_percent"] == 100.0
             await _close_session(reviewer_session, commit=True)
         except Exception:
             await _close_session(reviewer_session, commit=False)
@@ -251,6 +267,18 @@ async def test_localization_governance_maker_checker_and_staleness() -> None:
             assert stale[0]["latest_published_source_version_id"] == SOURCE_V2
             assert stale[0]["stale"] is True
             assert stale[0]["authoritative"] is False
+
+            stale_telemetry = await localization_governance_telemetry(stale_session, reviewer)
+            fa = next(item for item in stale_telemetry["locales"] if item["locale"] == "fa")
+            assert stale_telemetry["summary"]["required_coverage_percent"] == 0.0
+            assert stale_telemetry["summary"]["required_authority_gap_count"] == 1
+            assert stale_telemetry["summary"]["stale_translation_count"] == 1
+            assert fa["lineage_content_count"] == 0
+            assert fa["authoritative_content_count"] == 0
+            assert fa["missing_lineage_count"] == 1
+            assert fa["authority_gap_count"] == 1
+            assert fa["stale_translation_count"] == 1
+            assert fa["coverage_percent"] == 0.0
         finally:
             await _close_session(stale_session, commit=False)
     finally:

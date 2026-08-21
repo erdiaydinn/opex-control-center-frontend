@@ -4,6 +4,7 @@ import process from "node:process";
 import { academyExpansionMessageCoverage } from "../src/platform/i18n/academyExpansionMessages.js";
 import { academyGraphMessageCoverage } from "../src/platform/i18n/academyGraphMessages.js";
 import { academyInteractionMessageCoverage } from "../src/platform/i18n/academyInteractionMessages.js";
+import { academyLocalizationTelemetryMessageCoverage } from "../src/platform/i18n/academyLocalizationTelemetryMessages.js";
 import { academySkillGapMessageCoverage } from "../src/platform/i18n/academySkillGapMessages.js";
 import { academyStudioTermMessageCoverage } from "../src/platform/i18n/academyStudioTermMessages.js";
 
@@ -158,6 +159,13 @@ const localizationRequirements = [
   ['["draft", "published"].includes(item.version_status)', "target lifecycle allowlist"],
   ['["draft", "published"].includes(item.content_status)', "content lifecycle allowlist"],
   ['value={item.content_version_id}', "exact target version identity"],
+  ['apiGet("/v1/academy/localization/telemetry")', "governed localization telemetry API"],
+  ['required_coverage_percent', "required-locale authority coverage"],
+  ['required_authority_gap_count', "authority-gap telemetry"],
+  ['stale_translation_count', "stale/source-change telemetry"],
+  ['pending_review_count', "review-queue telemetry"],
+  ['machine_draft_content_count', "machine-draft exposure telemetry"],
+  ['rejected_translation_count', "review rejection telemetry"],
 ];
 for (const [needle, label] of localizationRequirements) {
   if (!localization.includes(needle)) {
@@ -169,11 +177,16 @@ if (localization.includes('workspace?.content || []')) {
   console.error(`${localizationPath}: translation targets must not regress to latest-content-only inventory.`);
   process.exit(1);
 }
+if (/quality[_A-Z]?score/i.test(localization)) {
+  console.error(`${localizationPath}: frontend must not invent a linguistic quality score without QA evidence.`);
+  process.exit(1);
+}
 
 for (const [name, coverage] of [
   ["expansion", academyExpansionMessageCoverage(UI_LOCALES)],
   ["graph", academyGraphMessageCoverage(UI_LOCALES)],
   ["interaction", academyInteractionMessageCoverage(UI_LOCALES)],
+  ["localization-telemetry", academyLocalizationTelemetryMessageCoverage(UI_LOCALES)],
   ["skill-gap", academySkillGapMessageCoverage(UI_LOCALES)],
   ["studio-terms", academyStudioTermMessageCoverage(UI_LOCALES)],
 ]) {
@@ -190,4 +203,4 @@ if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.tes
   process.exit(1);
 }
 
-console.log("Academy experience routing, self-scope, graph authoring, schema, version and locale authority contract: PASS");
+console.log("Academy experience routing, self-scope, graph authoring, localization telemetry, schema, version and locale authority contract: PASS");

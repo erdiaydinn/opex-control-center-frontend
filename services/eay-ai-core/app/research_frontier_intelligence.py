@@ -361,7 +361,7 @@ def _wave(
         "scheduled_probe_count_after": prior_count + len(probes),
         "strategy_count": len(strategies),
         "expected_information_gain_sum": round(
-            sum(item.expected_information_gain for item in probes),
+            float(sum(item.expected_information_gain for item in probes)),
             6,
         ),
         "reason_codes": list(dict.fromkeys(reasons)),

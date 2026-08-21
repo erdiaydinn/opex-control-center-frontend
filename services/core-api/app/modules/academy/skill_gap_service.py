@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import Principal
@@ -11,6 +14,58 @@ from app.modules.academy.learning_os import (
     recommend_learning_paths,
 )
 from app.modules.academy.repository_credentials import list_my_badge_credentials
+
+
+async def _recommended_path_navigation(
+    session: AsyncSession,
+    principal: Principal,
+    path_keys: tuple[str, ...],
+) -> dict[str, dict[str, object]]:
+    """Resolve self-scoped, server-authoritative navigation for recommended paths."""
+
+    if not path_keys:
+        return {}
+
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    path.key AS path_key,
+                    path.id AS path_id,
+                    enrollment.id AS enrollment_id,
+                    enrollment.status AS enrollment_status,
+                    enrollment.due_at AS enrollment_due_at
+                FROM academy_learning_paths AS path
+                LEFT JOIN academy_enrollments AS enrollment
+                  ON enrollment.tenant_id = path.tenant_id
+                 AND enrollment.path_id = path.id
+                 AND enrollment.subject = CAST(:subject AS varchar(255))
+                WHERE path.tenant_id = :tenant_id
+                  AND path.status = 'published'
+                  AND path.key IN (
+                      SELECT jsonb_array_elements_text(CAST(:path_keys_json AS jsonb))
+                  )
+                ORDER BY path.key
+                """
+            ),
+            {
+                "tenant_id": principal.tenant_id,
+                "subject": principal.subject,
+                "path_keys_json": json.dumps(list(path_keys)),
+            },
+        )
+    ).mappings().all()
+
+    return {
+        str(row["path_key"]): {
+            "path_id": row["path_id"],
+            "enrollment_id": row["enrollment_id"],
+            "enrollment_status": row["enrollment_status"],
+            "enrollment_due_at": row["enrollment_due_at"],
+        }
+        for row in rows
+    }
 
 
 async def get_my_skill_gap_snapshot(
@@ -52,6 +107,11 @@ async def get_my_skill_gap_snapshot(
 
     gaps = compute_skill_gaps(requirements, proficiencies)
     recommended_keys = recommend_learning_paths(gaps, outcomes)
+    navigation_by_path = await _recommended_path_navigation(
+        session,
+        principal,
+        tuple(recommended_keys),
+    )
 
     requirement_by_key = {
         str(item["skill_key"]): item for item in context["requirements"]
@@ -101,6 +161,7 @@ async def get_my_skill_gap_snapshot(
             "path_key": path_key,
             "title_i18n": path_title_by_key.get(path_key, {}),
             "outcomes": outcome_by_path.get(path_key, []),
+            **navigation_by_path.get(path_key, {}),
         }
         for path_key in recommended_keys
     ]

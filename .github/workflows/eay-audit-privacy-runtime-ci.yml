@@ -1,0 +1,79 @@
+name: EAY Audit Privacy Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/app/modules/audit/privacy_routes.py"
+      - "services/core-api/app/modules/audit/privacy_verification_runtime.py"
+      - "services/core-api/app/modules/audit/privacy_verification_service.py"
+      - "services/core-api/app/modules/field_intelligence/evidence_object_read.py"
+      - "services/core-api/alembic/versions/0051_audit_server_privacy_authority.py"
+      - "services/core-api/tests/test_audit_privacy_verification_runtime.py"
+      - "services/core-api/tests/test_audit_private_evidence_read.py"
+      - "services/core-api/tests/test_audit_privacy_authority_contracts.py"
+      - "services/core-api/tests/test_audit_privacy_orchestration.py"
+      - ".github/workflows/eay-audit-privacy-runtime-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-intelligence-v1"
+      - "product/eay-audit-field-readiness-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-privacy-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  privacy-runtime:
+    name: Private read / server privacy authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Privacy authority tests
+        run: >-
+          pytest -q
+          tests/test_audit_privacy_verification_runtime.py
+          tests/test_audit_private_evidence_read.py
+          tests/test_audit_privacy_authority_contracts.py
+          tests/test_audit_privacy_orchestration.py
+      - name: Ruff privacy runtime / route / private reader
+        run: >-
+          ruff check
+          app/budget_main.py
+          app/modules/audit/privacy_routes.py
+          app/modules/audit/privacy_verification_runtime.py
+          app/modules/field_intelligence/evidence_object_read.py
+          tests/test_audit_privacy_verification_runtime.py
+          tests/test_audit_private_evidence_read.py
+          tests/test_audit_privacy_authority_contracts.py
+          tests/test_audit_privacy_orchestration.py
+      - name: Ruff SQL-heavy privacy service
+        run: ruff check --ignore E501 app/modules/audit/privacy_verification_service.py
+      - name: Ruff privacy migration
+        run: ruff check --ignore E501 alembic/versions/0051_audit_server_privacy_authority.py
+      - name: Compile privacy authority
+        run: >-
+          python -m compileall -q
+          app/budget_main.py
+          app/modules/audit/privacy_routes.py
+          app/modules/audit/privacy_verification_runtime.py
+          app/modules/audit/privacy_verification_service.py
+          app/modules/field_intelligence/evidence_object_read.py
+          alembic/versions/0051_audit_server_privacy_authority.py
+      - name: Verify privacy migration lineage
+        run: >-
+          python -c "from pathlib import Path; p=Path('alembic/versions/0051_audit_server_privacy_authority.py').read_text(); assert 'down_revision: str = \"0050_audit_evidence_binding_integrity\"' in p; assert 'server_privacy_v2' in p; assert 'blocked' in p and 'tampered' in p; print('Audit server privacy authority migration lineage: PASS')"

@@ -59,8 +59,36 @@ const timeOff = await parseTimeOffFile(workbookFile("izin.xlsx", "Time Off Used"
 }]));
 assert.equal(timeOff.rows.length, 7);
 assert.equal(timeOff.rows[0].nationalId, "10009717724");
+assert.equal(timeOff.rows[0].sourcePersonId, "");
+assert.equal(timeOff.rows[0].typeId, "report");
 assert.equal(resolveWorkforcePerson(timeOff.rows[0], people).person.id, "HR-77");
 assert.equal(resolveWorkforcePerson(timeOff.rows[0], people).method, "TC");
+
+const dmTimeOff = await parseTimeOffFile(workbookFile("dm-izin.xlsx", "DM Time Off", [
+  {
+    TCKN: "53917234228",
+    "Employee ID": "2021-11-0092",
+    Worker: "Alper Sezen",
+    "Time off Type": "TUR Annual Leave - Yıllık İzin",
+    "Time Off Date": "01.06.2026",
+  },
+  {
+    TCKN: "69658132178",
+    "Employee ID": "2021-12-6341",
+    Worker: "Hasan Koca",
+    "Time off Type": "TUR Sick Leave (w.o notice) - Hastalık İzni (Raporlu)",
+    "Time Off Date": "05.06.2026",
+  },
+]));
+assert.equal(dmTimeOff.rows.length, 2);
+assert.equal(dmTimeOff.invalidCount, 0);
+assert.deepEqual(dmTimeOff.rows.map((row) => row.typeId), ["annual", "report"]);
+assert.deepEqual(dmTimeOff.rows.map((row) => row.date), ["2026-06-01", "2026-06-05"]);
+assert.equal(dmTimeOff.rows[0].personName, "Alper Sezen");
+assert.equal(dmTimeOff.rows[0].sourcePersonId, "2021-11-0092");
+assert.equal(dmTimeOff.rows[0].nationalId, undefined);
+assert.equal(dmTimeOff.rows[0].minutes, 0);
+assert.equal(dmTimeOff.rows[0].source, "DM Time Off");
 
 const lifecycle = await parseEmploymentLifecycleFile(workbookFile("giris-cikis.xlsx", "Personel", [{
   "KİMLİK NO": "10009717724",

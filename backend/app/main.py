@@ -35,6 +35,7 @@ from app.modules.workforce.capacity_router import router as workforce_capacity_r
 from app.modules.workforce.flexibility_router import router as workforce_flexibility_router
 from app.modules.workforce.router import router as workforce_router
 from app.modules.workforce.service import WorkforceRuleError, initialize_workforce
+from app.modules.workforce.timeoff_router import router as workforce_timeoff_router
 from app.security import WorkforceIdentityMiddleware
 
 
@@ -95,9 +96,6 @@ def _replace_verified_dockos_headers(request: Request, email: str, role: str) ->
 
 
 def _production_permissions_policy(path: str) -> str:
-    # API responses normally do not govern the SPA document, but keep the
-    # contract route-aware so a reverse proxy that forwards these headers does
-    # not break camera/GPS product flows.
     if path.startswith("/api/field-intelligence"):
         return "camera=(self), microphone=(), geolocation=(self)"
     if path.startswith("/api/workforce"):
@@ -201,6 +199,7 @@ app.include_router(dockos_router, prefix="/api")
 app.include_router(workforce_router, prefix="/api")
 app.include_router(workforce_capacity_router, prefix="/api")
 app.include_router(workforce_flexibility_router, prefix="/api")
+app.include_router(workforce_timeoff_router, prefix="/api")
 # Capability-only candidate routes sit outside employee SSO and never receive bearer identity.
 app.include_router(recruitment_public_orchestration_router, prefix="/api")
 app.include_router(recruitment_public_interview_router, prefix="/api")

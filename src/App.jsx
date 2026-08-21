@@ -33,6 +33,7 @@ const CandidateOfferPortal = lazy(() => import("./modules/recruitment/CandidateO
 const CandidateInterviewPortal = lazy(() => import("./modules/recruitment/CandidateInterviewPortal.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
 const AcademyPlayer = lazy(() => import("./modules/academy/AcademyPlayer.jsx"));
+const AcademyExpansionHub = lazy(() => import("./modules/academy/AcademyExpansionHub.jsx"));
 const JarvisWorkspace = lazy(() => import("./modules/intelligence/JarvisWorkspace.jsx"));
 const InsightWorkspace = lazy(() => import("./modules/intelligence/InsightWorkspace.jsx"));
 const FieldIntelligenceWorkspace = lazy(() => import("./modules/field-intelligence/FieldIntelligenceWorkspace.jsx"));
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
           <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />
           <Route path="/academy" element={<ProtectedRoute moduleKey="academy"><AcademyWorkspace /></ProtectedRoute>} />
+          <Route path="/academy/experience" element={<ProtectedRoute moduleKey="academy"><AcademyExpansionHub /></ProtectedRoute>} />
           <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
           <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />
           <Route path="/insight" element={<ProtectedRoute moduleKey="insight"><InsightWorkspace /></ProtectedRoute>} />
@@ -92,7 +94,7 @@ export default function App() {
           <Route path="/onboarding/tasks" element={<ProtectedRoute><RecruitmentOnboardingTasks /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />
-          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute></ProtectedRoute>} />
+          <Route path="/platform-health" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><ControlPlaneRoute><PlatformHealth /></ControlPlaneRoute>} />
           <Route path="/river" element={<Navigate to="/dockos" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

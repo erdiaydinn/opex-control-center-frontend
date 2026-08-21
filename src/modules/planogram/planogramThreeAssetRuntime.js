@@ -116,9 +116,10 @@ export function createPlanogramThreeAssetRuntime({ THREE, renderer, transcoderPa
       const lod = new THREE.LOD();
       let added = 0;
       for (const level of levels) {
-        if (!safeGovernedPath(level?.modelPath) || !/\.glb(\?.*)?$/i.test(level.modelPath)) continue;
+        const modelPath = String(level?.modelPath ?? level?.path ?? "").trim();
+        if (!safeGovernedPath(modelPath) || !/\.glb(\?.*)?$/i.test(modelPath)) continue;
         try {
-          const gltf = await loader.loadAsync(level.modelPath);
+          const gltf = await loader.loadAsync(modelPath);
           const root = gltf.scene.clone(true);
           const scale = metricEnvelopeScale(THREE, root, targetEnvelopeM);
           if (!scale) continue;
@@ -129,6 +130,7 @@ export function createPlanogramThreeAssetRuntime({ THREE, renderer, transcoderPa
           group.userData.geometryAuthority = "canonical_store_scene";
           group.userData.visualAssetAuthority = "attested_same_origin_glb_lod";
           group.userData.quality = level.quality;
+          group.userData.modelPath = modelPath;
           group.traverse((node) => {
             if (!node.isMesh) return;
             node.castShadow = true;

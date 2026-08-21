@@ -5,6 +5,8 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { branding } from "../config/branding.js";
 import EayBrand from "../platform/brand/EayBrand.jsx";
+import { translateLogin } from "../platform/i18n/loginMessages.js";
+import { usePlatformPreferences } from "../platform/preferences/PlatformPreferencesContext.jsx";
 
 function requestedReturnTo(location) {
   const from = location.state?.from;
@@ -15,6 +17,8 @@ function requestedReturnTo(location) {
 export default function Login() {
   const location = useLocation();
   const { user, booting, login, authError } = useAuth();
+  const { locale } = usePlatformPreferences();
+  const tx = (key) => translateLogin(locale, key);
   const [error, setError] = useState("");
   const [redirecting, setRedirecting] = useState(false);
 
@@ -23,7 +27,7 @@ export default function Login() {
       <main className="auth-loading-screen">
         <div className="auth-loading-card">
           <EayBrand variant="one" compact />
-          <span>Oturum kontrol ediliyor…</span>
+          <span>{tx("checkingSession")}</span>
         </div>
       </main>
     );
@@ -38,7 +42,7 @@ export default function Login() {
       await login({ returnTo: requestedReturnTo(location) });
     } catch (err) {
       setRedirecting(false);
-      setError(err?.message || "SSO giriş akışı başlatılamadı.");
+      setError(err?.message || tx("ssoFlowFailed"));
     }
   }
 
@@ -54,30 +58,28 @@ export default function Login() {
             <EayBrand variant="one" />
             <div className="ym-real-eyebrow">
               <ShieldCheck size={16} aria-hidden="true" />
-              Kurumsal kimlik doğrulama
+              {tx("identityVerification")}
             </div>
             <h1>{branding.slogan}</h1>
-            <p>Saha, envanter, iş gücü ve karar akışlarını EAY One altında birleştirin.</p>
-            <span>
-              Erişim yalnız kurumsal kimlik sağlayıcısı ve sunucu tarafından doğrulanan yetki kayıtlarıyla açılır.
-            </span>
+            <p>{tx("platformStatement")}</p>
+            <span>{tx("accessStatement")}</span>
           </section>
 
           <section className="ym-real-card">
             <div className="ym-real-head">
               <div className="ym-real-icon"><ShieldCheck size={24} aria-hidden="true" /></div>
               <div>
-                <span>Giriş</span>
-                <h2>EAY One&apos;a eriş</h2>
+                <span>{tx("signIn")}</span>
+                <h2>{tx("accessEayOne")}</h2>
               </div>
             </div>
 
             <div className="ym-real-form">
-              <p>Yerel demo parola veya e-posta yetkilendirmesi kapalıdır. Kurumsal SSO kullanılır.</p>
+              <p>{tx("ssoOnly")}</p>
               {authError ? <p className="ym-real-error">{authError}</p> : null}
               {error ? <p className="ym-real-error">{error}</p> : null}
               <button type="button" className="ym-real-submit" onClick={signIn} disabled={redirecting}>
-                {redirecting ? "Kimlik sağlayıcısına yönlendiriliyor…" : "Kurumsal SSO ile giriş yap"}
+                {redirecting ? tx("redirecting") : tx("signInWithSso")}
                 <ArrowRight size={18} aria-hidden="true" />
               </button>
             </div>

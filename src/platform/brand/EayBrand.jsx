@@ -34,6 +34,7 @@ function OneMark() {
       <circle className="eay-fill-white eay-stroke-navy-thin" cx="70" cy="94" r="6" />
       <path className="eay-stroke-navy" d="M78 94a43 43 0 0 0 35-23" />
       <g transform="translate(24 28) scale(.58)"><MasterGlyph /></g>
+      {/* i18n-brand-literal: protected EAY One wordmark; brand text is intentionally not translated. */}
       <text className="eay-wordmark eay-fill-navy" x="128" y="73">One</text>
     </svg>
   );
@@ -48,6 +49,7 @@ function TerminalMark() {
         <path className="eay-stroke-navy-thin" d="M51 12v10M51 70v10M12 46h10M90 46h10" />
       </g>
       <g transform="translate(113 14) scale(.72)"><MasterGlyph /></g>
+      {/* i18n-brand-literal: protected EAY Terminal lockup; product name is intentionally not translated. */}
       <text className="eay-terminal-word eay-fill-blue" x="139" y="96">TERMINAL</text>
     </svg>
   );
@@ -65,9 +67,13 @@ export default function EayBrand({
     .filter(Boolean)
     .join(" ");
 
+  let mark = <MasterMark />;
+  if (resolved === "one") mark = <OneMark />;
+  if (resolved === "terminal") mark = <TerminalMark />;
+
   return (
     <span className={classes} role="img" aria-label={accessibleLabel}>
-      {resolved === "one" ? <OneMark /> : resolved === "terminal" ? <TerminalMark /> : <MasterMark />}
+      {mark}
     </span>
   );
 }

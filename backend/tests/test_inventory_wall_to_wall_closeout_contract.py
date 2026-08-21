@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 MIGRATION = ROOT / "backend" / "migrations" / "011_inventory_wall_to_wall_closeout_authority.sql"
+SCOPE_GUARD_FIX = ROOT / "backend" / "migrations" / "012_inventory_wall_to_wall_scope_guard_fix.sql"
 RECONCILIATION = ROOT / "backend" / "app" / "modules" / "inventory" / "reconciliation.py"
 
 
@@ -24,6 +25,20 @@ def test_v11_keeps_inventory_document_as_canonical_wall_to_wall_aggregate() -> N
     assert "inventory_schema_migrations(version,name)" in sql
     assert "VALUES (11,'inventory wall-to-wall scope freeze and closeout authority')" in sql
     assert "CREATE TABLE IF NOT EXISTS inventory_campaign" not in sql
+
+
+def test_v12_makes_shared_scope_trigger_record_shape_safe() -> None:
+    sql = SCOPE_GUARD_FIX.read_text(encoding="utf-8")
+    assert "CREATE OR REPLACE FUNCTION inventory_guard_wall_to_wall_scope_v11()" in sql
+    assert "IF TG_TABLE_NAME='inventory_document_locations' THEN" in sql
+    assert "NEW.location_id=OLD.location_id" in sql
+    assert "ELSIF TG_TABLE_NAME<>'inventory_expected_stock' THEN" in sql
+    assert "unsupported table" in sql
+    assert "VALUES (12,'inventory wall-to-wall record-shape safe scope guard')" in sql
+    location_branch = sql.index("IF TG_TABLE_NAME='inventory_document_locations' THEN")
+    location_field = sql.index("NEW.location_id=OLD.location_id")
+    expected_stock_branch = sql.index("ELSIF TG_TABLE_NAME<>'inventory_expected_stock' THEN")
+    assert location_branch < location_field < expected_stock_branch
 
 
 def test_closeout_evidence_is_immutable_server_generated_and_location_bound() -> None:

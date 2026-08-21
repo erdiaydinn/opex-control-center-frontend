@@ -26,7 +26,11 @@ def _scope(state_second: str = "OUT_OF_SCOPE") -> tuple[AuditVisitScopeEntry, ..
             section_key="coffee",
             item_key="coffee.clean",
             state=state_second,
-            reason=("Auditor selected oven-only focus visit" if state_second == "OUT_OF_SCOPE" else None),
+            reason=(
+                "Auditor selected oven-only focus visit"
+                if state_second == "OUT_OF_SCOPE"
+                else None
+            ),
         ),
     )
 

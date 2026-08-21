@@ -8,6 +8,8 @@ const settings = fs.readFileSync("android-inventory/settings.gradle.kts", "utf8"
 const build = fs.readFileSync("android-inventory/eay-one-app/build.gradle.kts", "utf8");
 const manifest = fs.readFileSync("android-inventory/eay-one-app/src/main/AndroidManifest.xml", "utf8");
 const activity = fs.readFileSync("android-inventory/eay-one-app/src/main/java/com/eay/one/MainActivity.kt", "utf8");
+const workflow = fs.readFileSync(".github/workflows/eay-brand-one-host.yml", "utf8");
+const foundation = fs.readFileSync(".github/workflows/eay-mobile-foundation.yml", "utf8");
 
 requireCondition(settings.includes('include(":eay-one-app")'), "EAY One must ship as a separate Android application module");
 requireCondition(build.includes('applicationId = "com.eay.one"'), "EAY One application identity drifted");
@@ -25,4 +27,15 @@ for (const dir of localeDirs) {
   requireCondition(fs.existsSync(`android-inventory/eay-one-app/src/main/res/${dir}/strings.xml`), `Missing EAY One locale resources: ${dir}`);
 }
 
-console.log("EAY One separate-host + fail-closed authority contract: PASS");
+requireCondition(workflow.includes("permissions:\n  contents: read"), "EAY One workflow must remain read-only");
+requireCondition(workflow.includes("EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}"), "EAY One workflow lost exact-head binding");
+requireCondition(workflow.includes('ref: ${{ env.EAY_EXACT_HEAD }}'), "EAY One workflow checkout must bind to exact head");
+requireCondition(workflow.includes("cancel-in-progress: true"), "EAY One workflow must cancel superseded runs");
+requireCondition(workflow.includes("github.event.pull_request.number || github.ref"), "EAY One concurrency must use stable PR/ref identity");
+requireCondition(!workflow.split("jobs:", 1)[0].includes("contents: write"), "EAY One workflow must not gain write permissions");
+requireCondition(workflow.includes(":eay-one-app:assembleDebug :eay-one-app:lintDebug"), "Dedicated EAY One workflow must compile and lint the host");
+requireCondition(foundation.includes(":eay-one-app:lintDebug"), "Mobile Foundation must lint EAY One");
+requireCondition(foundation.includes(":eay-one-app:assembleDebug"), "Mobile Foundation must assemble EAY One");
+requireCondition(foundation.includes("node scripts/test-eay-one-host-contract.mjs"), "Mobile security gate must enforce EAY One authority contract");
+
+console.log("EAY One separate-host + fail-closed authority + CI admission contract: PASS");

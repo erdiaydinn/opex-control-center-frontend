@@ -84,7 +84,8 @@ async def _load_bound_video_receipt(
                        redaction.redacted_evidence_ref,
                        redaction.redacted_object_sha256,
                        redaction.redacted_object_byte_size,
-                       run.field_mission_id, run.status AS run_status,
+                       run.field_mission_id AS run_mission_id,
+                       run.status AS run_status,
                        field.receipt_id AS field_receipt_id,
                        field.mission_id AS field_mission_id,
                        field.location_id AS field_location_id,
@@ -119,9 +120,9 @@ async def _load_bound_video_receipt(
 
     if bound["run_status"] == "cancelled":
         raise AuditRepositoryError("cancelled audit run cannot verify video evidence")
-    if bound["field_mission_id"] is None or bound["field_mission_id"] != bound["field_mission_id"]:
-        raise AuditRepositoryError("video evidence mission authority is invalid")
-    if str(bound["field_mission_id"]) != str(bound["field_mission_id"]):
+    if bound["run_mission_id"] is None or str(bound["run_mission_id"]) != str(
+        bound["field_mission_id"]
+    ):
         raise AuditRepositoryError("video evidence mission authority is invalid")
     if str(bound["location_id"]) != str(bound["field_location_id"]):
         raise AuditRepositoryError("video evidence location authority is invalid")
@@ -233,6 +234,8 @@ async def verify_bound_video_receipt(
                     :duration_ms, :canonical_frame_count, :processed_frame_count,
                     :manifest_fingerprint, CAST(:frame_manifest AS JSONB)
                 )
+                ON CONFLICT (tenant_id, verification_fingerprint) DO UPDATE
+                SET verification_fingerprint = EXCLUDED.verification_fingerprint
                 RETURNING *
                 """
             ),

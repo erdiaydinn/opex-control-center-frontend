@@ -30,7 +30,11 @@ def test_focus_scores_cannot_be_promoted_as_official_compliance() -> None:
     source = MIGRATION.read_text(encoding="utf-8")
 
     assert "ck_audit_run_official_score_binding" in source
-    assert "official_compliance_eligible IS FALSE OR visit_score_mode = 'OFFICIAL_COMPLIANCE'" in source
+    official_binding = (
+        "official_compliance_eligible IS FALSE OR "
+        "visit_score_mode = 'OFFICIAL_COMPLIANCE'"
+    )
+    assert official_binding in source
     assert "ix_audit_runs_official_compliance" in source
     assert "uq_audit_run_visit_manifest" in source
 

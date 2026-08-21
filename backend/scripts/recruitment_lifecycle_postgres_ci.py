@@ -294,14 +294,17 @@ def rls_and_immutability(offer_id: str, case_id: str) -> None:
         try:
             cursor.execute("UPDATE recruitment.offer_approval_events SET reason='tamper' WHERE tenant_id=%s AND approval_id=%s", (TENANT, approval[0]))
         except psycopg.Error as error:
-            assert error.sqlstate == "55000", error.sqlstate
+            # 42501 means the least-privilege runtime role has no UPDATE grant;
+            # 55000 means a more privileged caller reached the append-only trigger.
+            # Either is an authoritative mutation denial and neither widens grants.
+            assert error.sqlstate in {"42501", "55000"}, error.sqlstate
             database.rollback()
         else:
             raise AssertionError("offer approval event was mutable")
         try:
             cursor.execute("UPDATE recruitment.offboarding_events SET actor_ref='tamper' WHERE tenant_id=%s AND case_id=%s", (TENANT, case_id))
         except psycopg.Error as error:
-            assert error.sqlstate == "55000", error.sqlstate
+            assert error.sqlstate in {"42501", "55000"}, error.sqlstate
             database.rollback()
         else:
             raise AssertionError("offboarding event was mutable")

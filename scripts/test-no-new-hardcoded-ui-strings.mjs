@@ -55,6 +55,14 @@ function jsxTernaryPredicate(value) {
   return /^[!A-Za-z_$][\w.$()[\]!\s]*\.length\s*(?:===|!==|[<>]=?)\s*\d+\s*\?$/u.test(normalized);
 }
 
+function jsxArrowExpressionFragment(value) {
+  const normalized = normalizeLiteral(value);
+  // In an added expression such as `items.filter((item) => item.active).length <= 1`,
+  // the zero-context scanner sees the text between `>` and `<` as JSX. Ignore only
+  // the code-shaped fragment ending in `).length`; human-facing prose stays guarded.
+  return /^[A-Za-z_$][\w.$]*\)\.length$/u.test(normalized);
+}
+
 function meaningful(value) {
   const normalized = normalizeLiteral(value);
   return Boolean(
@@ -62,6 +70,7 @@ function meaningful(value) {
     && /\p{L}/u.test(normalized)
     && !brandOnly(normalized)
     && !jsxTernaryPredicate(normalized)
+    && !jsxArrowExpressionFragment(normalized)
   );
 }
 

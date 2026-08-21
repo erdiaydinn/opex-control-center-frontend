@@ -24,6 +24,8 @@ import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../../api/client.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
 import { translateAcademyContent } from "../../platform/i18n/academyContentMessages.js";
+import { translateAcademyExpansion } from "../../platform/i18n/academyExpansionMessages.js";
+import { translateAcademySkillGap } from "../../platform/i18n/academySkillGapMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import AcademyPathAuthoring from "./AcademyPathAuthoring.jsx";
 import "./academy.css";
@@ -380,6 +382,9 @@ export default function AcademyWorkspace() {
 
   const canStudio = canFeature("academy", "contentStudio");
   const canAnalytics = canFeature("academy", "analytics");
+  const experienceLabel = canStudio
+    ? translateAcademyExpansion(locale, "scenarioStudio")
+    : translateAcademySkillGap(locale, "skillGap");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -423,6 +428,7 @@ export default function AcademyWorkspace() {
         <button type="button" className="eay-academy-back" onClick={() => navigate("/")} aria-label={t("back")}><ArrowLeft size={18} aria-hidden="true" /></button>
         <div className="eay-academy-brand"><div><GraduationCap size={21} aria-hidden="true" /></div><span><strong>EAY</strong><small>{t("academy")}</small></span></div>
         <nav>{tabs.map(([key, label, Icon]) => <button type="button" key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}><Icon size={18} aria-hidden="true" /><span>{label}</span></button>)}</nav>
+        <button type="button" className="eay-academy-back" onClick={() => navigate("/academy/experience")} aria-label={experienceLabel}><Sparkles size={18} aria-hidden="true" /><span className="sr-only">{experienceLabel}</span></button>
         <div className="eay-academy-nav-foot"><Users size={17} aria-hidden="true" /><span>{data?.subject || "—"}</span></div>
       </aside>
 

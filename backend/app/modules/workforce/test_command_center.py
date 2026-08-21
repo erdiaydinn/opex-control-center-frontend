@@ -150,6 +150,63 @@ class WorkforceCommandCenterTests(unittest.TestCase):
         self.assertIn("DAILY_LIMIT_BREACH", codes)
         self.assertNotIn("DAILY_LIMIT_WARNING", codes)
 
+    def test_daily_limit_still_uses_break_deducted_expected_minutes(self):
+        shifts = [
+            {"id": "S1", "person_id": "P1", "warehouse_id": "WH-1", "date": "2026-08-21", "start": "06:00", "end": "12:00", "break_minutes": 60, "expected_minutes": 300, "status": "Atandı"},
+            {"id": "S2", "person_id": "P1", "warehouse_id": "WH-1", "date": "2026-08-21", "start": "13:00", "end": "19:00", "break_minutes": 60, "expected_minutes": 300, "status": "Atandı"},
+        ]
+        result = self.build(shifts=shifts, trades=[])
+        self.assertEqual(result["operations"]["daily_limit_breach_count"], 0)
+
+    def test_schedule_snapshot_drift_uses_gross_scheduled_hours_before_break_deduction(self):
+        authority = self.authority()
+        authority["capacity"].update({
+            "scheduled_man_hours": Decimal("1"),
+            "break_man_hours": Decimal("0.25"),
+            "net_available_man_hours": Decimal("0.75"),
+            "skill_feasible_man_hours": Decimal("0.75"),
+            "skill_deficit_man_hours": Decimal("0"),
+            "effective_man_hours": Decimal("0.75"),
+            "scheduled_fte": Decimal("1"),
+            "effective_capacity": Decimal("0.75"),
+            "skill_deficits": {},
+        })
+        shifts = [
+            {"id": "S1", "person_id": "P1", "warehouse_id": "WH-1", "date": "2026-08-21", "start": "07:30", "end": "09:30", "break_minutes": 30, "expected_minutes": 90, "status": "Atandı"},
+        ]
+
+        result = self.build(authority=authority, shifts=shifts, trades=[])
+        codes = [row["code"] for row in result["action_queue"]]
+
+        self.assertNotIn("SCHEDULE_SNAPSHOT_DRIFT", codes)
+        self.assertEqual(result["capacity"]["authority_scheduled_man_hours"], "1")
+        self.assertEqual(result["capacity"]["operational_scheduled_man_hours"], "1")
+        self.assertEqual(result["capacity"]["operational_scheduled_gross_man_hours"], "1")
+        self.assertEqual(result["capacity"]["schedule_snapshot_drift_man_hours"], "0")
+        self.assertEqual(
+            result["capacity"]["schedule_snapshot_comparison_basis"],
+            "GROSS_SCHEDULED_MAN_HOURS",
+        )
+
+    def test_schedule_snapshot_drift_detects_real_gross_schedule_change(self):
+        authority = self.authority()
+        authority["capacity"]["scheduled_man_hours"] = Decimal("1")
+
+        result = self.build(authority=authority, shifts=self.shifts(), trades=[])
+        drift_actions = [
+            row for row in result["action_queue"] if row["code"] == "SCHEDULE_SNAPSHOT_DRIFT"
+        ]
+
+        self.assertEqual(result["capacity"]["operational_scheduled_man_hours"], "2")
+        self.assertEqual(result["capacity"]["schedule_snapshot_drift_man_hours"], "1")
+        self.assertEqual(len(drift_actions), 1)
+        self.assertEqual(drift_actions[0]["severity"], "blocker")
+        self.assertFalse(drift_actions[0]["requires_human_approval"])
+        self.assertIn(
+            "SCHEDULE_DRIFT_BASIS:GROSS_SCHEDULED_MAN_HOURS",
+            drift_actions[0]["evidence_refs"],
+        )
+
     def test_manager_read_model_contains_no_sensitive_identity_material(self):
         result = self.build()
         serialized = json.dumps(result, default=str).casefold()

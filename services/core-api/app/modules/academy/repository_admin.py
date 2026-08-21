@@ -158,6 +158,39 @@ async def academy_admin_summary(
         .mappings()
         .all()
     )
+    content_version_rows = (
+        (
+            await session.execute(
+                text("""
+        SELECT
+            cv.id AS content_version_id,
+            cv.content_id,
+            ci.slug,
+            ci.content_type,
+            ci.title_i18n,
+            ci.status AS content_status,
+            cv.version_label,
+            cv.version_number,
+            cv.locale,
+            cv.mime_type,
+            cv.duration_ms,
+            cv.status AS version_status,
+            cv.published_at,
+            cv.effective_at,
+            cv.retired_at,
+            cv.created_at
+        FROM academy_content_versions AS cv
+        JOIN academy_content_items AS ci
+          ON ci.tenant_id=cv.tenant_id AND ci.id=cv.content_id
+        WHERE cv.tenant_id=:tenant_id
+        ORDER BY ci.slug, cv.locale, cv.version_number DESC, cv.created_at DESC
+    """),
+                {"tenant_id": principal.tenant_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
     quiz_rows = (
         (
             await session.execute(
@@ -238,6 +271,7 @@ async def academy_admin_summary(
         "authoring": {
             "roles": roles,
             "published_versions": [dict(item) for item in version_rows],
+            "content_versions": [dict(item) for item in content_version_rows],
             "quizzes": [dict(item) for item in quiz_rows],
         },
     }

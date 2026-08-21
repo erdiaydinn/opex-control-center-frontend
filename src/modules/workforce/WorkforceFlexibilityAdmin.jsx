@@ -19,11 +19,11 @@ function nextDay() {
   return date.toLocaleDateString("sv-SE", { timeZone: "Europe/Istanbul" });
 }
 
-export default function WorkforceFlexibilityAdmin() {
-  const { canAction } = useAuth();
+export default function WorkforceFlexibilityAdmin({ preferredWarehouseId = "" }) {
+  const { canAction, isSuperAdmin } = useAuth();
   const { locale } = usePlatformPreferences();
   const m = (key, params) => workforceFlexibilityAdminMessage(locale, key, params);
-  const allowed = canAction("workforce", "createShift");
+  const allowed = isSuperAdmin() || canAction("workforce", "createShift");
   const [locations, setLocations] = useState([]);
   const [activities, setActivities] = useState([]);
   const [form, setForm] = useState({ warehouseId: "", date: nextDay(), start: "09:00", end: "18:00", breakMinutes: 60, role: "Worker", activityKeys: [], capacity: 1, note: "" });
@@ -39,10 +39,24 @@ export default function WorkforceFlexibilityAdmin() {
       const rows = data.locations || [];
       setLocations(rows);
       setActivities(data.activities || []);
-      setForm((current) => ({ ...current, warehouseId: current.warehouseId || rows[0]?.id || "" }));
+      setForm((current) => {
+        const preferred = rows.some((row) => String(row.id) === String(preferredWarehouseId))
+          ? String(preferredWarehouseId)
+          : "";
+        return { ...current, warehouseId: preferred || current.warehouseId || rows[0]?.id || "" };
+      });
     }).catch((requestError) => { if (active) setError(requestError.message || m("loadError")); });
     return () => { active = false; };
   }, [allowed]);
+
+  useEffect(() => {
+    if (!preferredWarehouseId) return;
+    const match = locations.find((row) => String(row.id) === String(preferredWarehouseId));
+    if (!match) return;
+    setForm((current) => String(current.warehouseId) === String(match.id)
+      ? current
+      : { ...current, warehouseId: match.id });
+  }, [locations, preferredWarehouseId]);
 
   const selectedLocation = useMemo(
     () => locations.find((row) => String(row.id) === String(form.warehouseId)),
@@ -82,7 +96,7 @@ export default function WorkforceFlexibilityAdmin() {
   }
 
   return <>
-    <section className="wfx-panel wfx-flex-admin">
+    <section className="wfx-panel wfx-flex-admin" data-command-worksite={form.warehouseId || undefined}>
       <header><div><span>{m("eyebrow")}</span><h3>{m("title")}</h3><p>{m("detail")}</p></div><CalendarClock size={24} /></header>
       {error ? <div className="wfx-flex-admin-message error">{error}</div> : null}
       {created ? <div className="wfx-flex-admin-message success"><CheckCircle2 size={16} /><div><strong>{m("published")}</strong><small>{created.warehouse} · {created.date} · {created.start}–{created.end} · {m("remaining", { count: created.capacity })}</small>{created.activities?.length ? <div className="wfx-flex-admin-created-activities">{created.activities.map((activity) => <span key={activity.activityKey}>{activity.displayName}</span>)}</div> : null}</div></div> : null}

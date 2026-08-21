@@ -15,3 +15,11 @@ export function translateAcademyInteraction(locale, key) {
   const messages = ACADEMY_INTERACTION_MESSAGES[locale] || ACADEMY_INTERACTION_MESSAGES.en;
   return messages[key] || ACADEMY_INTERACTION_MESSAGES.en[key] || key;
 }
+
+export function academyInteractionMessageCoverage(locales) {
+  const keys = Object.keys(ACADEMY_INTERACTION_MESSAGES.en).sort();
+  return {
+    missing: Object.fromEntries(locales.map((locale) => [locale, keys.filter((key) => typeof ACADEMY_INTERACTION_MESSAGES[locale]?.[key] !== "string")])),
+    extra: Object.fromEntries(locales.map((locale) => [locale, Object.keys(ACADEMY_INTERACTION_MESSAGES[locale] || {}).filter((key) => !keys.includes(key)).sort()])),
+  };
+}

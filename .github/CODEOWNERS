@@ -1,0 +1,9 @@
+# EAY security-sensitive ownership
+/.github/workflows/ @erdiaydinn
+/scripts/security/ @erdiaydinn
+/services/core-api/app/core/ @erdiaydinn
+/services/core-api/alembic/ @erdiaydinn
+/backend/app/modules/workforce/ @erdiaydinn
+/backend/app/modules/recruitment/ @erdiaydinn
+/docs/security/ @erdiaydinn
+/SECURITY.md @erdiaydinn

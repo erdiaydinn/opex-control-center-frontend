@@ -85,11 +85,12 @@ class OfficialHumanAssistTests(unittest.TestCase):
             / "CandidateDocumentPortal.jsx"
         ).read_text(encoding="utf-8")
         self.assertIn('const EDEVLET_HOME = "https://www.turkiye.gov.tr/"', portal)
-        self.assertIn('window.open(EDEVLET_HOME, "_blank", "noopener,noreferrer")', portal)
+        self.assertIn('href={EDEVLET_HOME} target="_blank" rel="noopener noreferrer"', portal)
         self.assertIn("sessionStorage.setItem(SESSION_KEY, capability)", portal)
         self.assertIn('window.addEventListener("focus", markReturned)', portal)
         self.assertIn("EAY bu sekmeyi okuyamaz ve yönetmez", portal)
         self.assertIn("Tarayıcı güvenliği gereği EAY", portal)
+        self.assertNotIn("window.open", portal)
         self.assertNotIn("document.cookie", portal)
         self.assertNotIn("localStorage.setItem", portal)
         self.assertNotIn("captcha_automation", portal)

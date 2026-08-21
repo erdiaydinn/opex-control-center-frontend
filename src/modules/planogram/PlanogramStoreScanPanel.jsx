@@ -91,6 +91,7 @@ export default function PlanogramStoreScanPanel({
   formatNumber,
   canCreate,
   optimizationCandidate,
+  onOpenEditableModel,
 }) {
   const inputRef = useRef(null);
   const t = useMemo(
@@ -206,6 +207,7 @@ export default function PlanogramStoreScanPanel({
             formatNumber={formatNumber}
             canCreate={canCreate}
             optimizationCandidate={optimizationCandidate}
+            onOpenEditableModel={onOpenEditableModel}
           />
         </div>
       ) : null}

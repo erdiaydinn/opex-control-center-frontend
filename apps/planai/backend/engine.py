@@ -1,5 +1,6 @@
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
+from collections.abc import Iterable
 from pathlib import Path
 import os
 import re
@@ -210,7 +211,7 @@ INPUT_COLUMN_ALIASES = {
 }
 
 
-def normalize_product_row(product: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def normalize_product_row(product: dict[str, Any] | None) -> dict[str, Any]:
     """Add canonical fields while preserving the original upload columns."""
     source = dict(product or {})
     normalized = dict(source)
@@ -224,12 +225,12 @@ def normalize_product_row(product: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return normalized
 
 
-def get(p: Dict[str, Any], names: List[str], default: Any = "") -> Any:
+def get(p: dict[str, Any], names: list[str], default: Any = "") -> Any:
     for n in names:
         if n in p and p[n] not in [None, ""]:
             return p[n]
 
-    lower = {str(k).lower().lstrip("\ufeff"): k for k in p.keys()}
+    lower = {str(k).lower().lstrip("\ufeff"): k for k in p}
     for n in names:
         real = lower.get(str(n).lower())
         if real is not None and p[real] not in [None, ""]:
@@ -238,7 +239,7 @@ def get(p: Dict[str, Any], names: List[str], default: Any = "") -> Any:
     return default
 
 
-def as_text_list(value: Any) -> List[str]:
+def as_text_list(value: Any) -> list[str]:
     """Return a stable, normalized list for rule fields supplied by the UI."""
     if value is None:
         return []
@@ -256,7 +257,7 @@ def _matches_token(value: Any, tokens: Iterable[str]) -> bool:
     return any(token == candidate or token in candidate or candidate in token for token in tokens)
 
 
-def rule_matches_product(p: Dict[str, Any], rule: Optional[Dict[str, Any]], include_storage: bool = True) -> bool:
+def rule_matches_product(p: dict[str, Any], rule: dict[str, Any] | None, include_storage: bool = True) -> bool:
     """Evaluate the complete rule contract used by modules and shelves.
 
     Older UI builds only sent ``brand``/``category``. Newer builds can send
@@ -335,7 +336,7 @@ def safe_pct(numerator: float, denominator: float) -> float:
 # MASTER DATA
 # =====================================================
 
-def product_dedup_key(p: Dict[str, Any]) -> str:
+def product_dedup_key(p: dict[str, Any]) -> str:
     existing = clean_text(get(p, ["planogram_product_key"], ""))
     if existing:
         return existing
@@ -350,7 +351,7 @@ def product_dedup_key(p: Dict[str, Any]) -> str:
     return f"{name}|{b}|{weight_val}|{weight_unit}|{cat}|{sub}"
 
 
-def read_master_rows() -> List[Dict[str, Any]]:
+def read_master_rows() -> list[dict[str, Any]]:
     if os.path.exists(MASTER_XLSX):
         df = pd.read_excel(MASTER_XLSX)
     elif os.path.exists(MASTER_CSV):
@@ -365,7 +366,7 @@ def read_master_rows() -> List[Dict[str, Any]]:
     return df.to_dict(orient="records")
 
 
-def load_master(force: bool = False) -> Dict[str, Any]:
+def load_master(force: bool = False) -> dict[str, Any]:
     if MASTER_CACHE["loaded"] and not force:
         return MASTER_CACHE
 
@@ -408,7 +409,7 @@ def load_master(force: bool = False) -> Dict[str, Any]:
     return MASTER_CACHE
 
 
-def find_master_match(p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def find_master_match(p: dict[str, Any]) -> dict[str, Any] | None:
     master = load_master()
 
     sku_v = norm(get(p, ["sku", "SKU"], ""))
@@ -430,15 +431,15 @@ def find_master_match(p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # PRODUCT ACCESSORS
 # =====================================================
 
-def product_name(p: Dict[str, Any]) -> str:
+def product_name(p: dict[str, Any]) -> str:
     return clean_text(get(p, ["product_name", "Product Name", "name", "Urun", "Ürün"], ""))
 
 
-def sku(p: Dict[str, Any]) -> str:
+def sku(p: dict[str, Any]) -> str:
     return clean_text(get(p, ["sku", "SKU", "barcode", "Stok Kodu", "Urun Kodu"], ""))
 
 
-def brand(p: Dict[str, Any]) -> str:
+def brand(p: dict[str, Any]) -> str:
     b = get(p, ["brand", "Brand", "brand_name", "Marka"], "")
     if clean_text(b):
         return clean_text(b)
@@ -447,7 +448,7 @@ def brand(p: Dict[str, Any]) -> str:
     return clean_text(name.split(" ")[0]) if name else "UNKNOWN"
 
 
-def category_l1(p: Dict[str, Any]) -> str:
+def category_l1(p: dict[str, Any]) -> str:
     return clean_text(get(p, [
         "category_l1",
         "Category L1",
@@ -458,7 +459,7 @@ def category_l1(p: Dict[str, Any]) -> str:
     ], "GENERAL"))
 
 
-def category_l2(p: Dict[str, Any]) -> str:
+def category_l2(p: dict[str, Any]) -> str:
     return clean_text(get(p, [
         "category_l2",
         "Category L2",
@@ -469,7 +470,7 @@ def category_l2(p: Dict[str, Any]) -> str:
     ], "GENERAL"))
 
 
-def image_url(p: Dict[str, Any]) -> str:
+def image_url(p: dict[str, Any]) -> str:
     return clean_text(get(p, [
         "image_url",
         "Product Image URL",
@@ -478,7 +479,7 @@ def image_url(p: Dict[str, Any]) -> str:
     ], ""))
 
 
-def storage_type(p: Dict[str, Any]) -> str:
+def storage_type(p: dict[str, Any]) -> str:
     explicit = get(p, ["storage_type", "Storage Type", "Storage", "storage_raw"], "")
     explicit_storage = normalize_storage(explicit, default="")
     if explicit_storage:
@@ -490,7 +491,7 @@ def storage_type(p: Dict[str, Any]) -> str:
     return normalize_storage(raw)
 
 
-def is_cdc_product(p: Dict[str, Any]) -> bool:
+def is_cdc_product(p: dict[str, Any]) -> bool:
     """Return True only for explicit CDC/cross-dock operational markers.
 
     CDC assortment does not occupy a selling shelf, so it must stay outside
@@ -513,11 +514,11 @@ def is_cdc_product(p: Dict[str, Any]) -> bool:
     return False
 
 
-def requires_pallet_storage(p: Dict[str, Any]) -> bool:
+def requires_pallet_storage(p: dict[str, Any]) -> bool:
     """Use one governed fixture rule in preview and production allocation."""
     return requires_pallet_fixture(p)
 
-def shelf_storage(shelf: Dict[str, Any]) -> str:
+def shelf_storage(shelf: dict[str, Any]) -> str:
     return normalize_storage(get(shelf, [
         "allowed_storage_type",
         "storage_type",
@@ -530,35 +531,35 @@ def shelf_storage(shelf: Dict[str, Any]) -> str:
     ], "AMBIENT"))
 
 
-def width(p: Dict[str, Any]) -> float:
+def width(p: dict[str, Any]) -> float:
     return max(1, num(get(p, ["width_cm", "Width", "en", "product_width_in_cm"], 10), 10))
 
 
-def height(p: Dict[str, Any]) -> float:
+def height(p: dict[str, Any]) -> float:
     return max(1, num(get(p, ["height_cm", "Height", "boy", "product_height_in_cm"], 20), 20))
 
 
-def depth(p: Dict[str, Any]) -> float:
+def depth(p: dict[str, Any]) -> float:
     return max(1, num(get(p, ["depth_cm", "Depth", "derinlik", "product_length_in_cm"], 10), 10))
 
 
-def weight(p: Dict[str, Any]) -> float:
+def weight(p: dict[str, Any]) -> float:
     return max(0.01, num(p.get("weight_kg"), 0.2))
 
 
-def sales_7d(p: Dict[str, Any]) -> float:
+def sales_7d(p: dict[str, Any]) -> float:
     return num(get(p, ["sales_qty_7d", "sales_7d", "sales", "Sales 7D", "% Orders", "percent_orders"], 0), 0)
 
 
-def percent_stops(p: Dict[str, Any]) -> float:
+def percent_stops(p: dict[str, Any]) -> float:
     return num(get(p, ["percent_stops", "% Stops", "Picking Frequency"], 0), 0)
 
 
-def on_hand(p: Dict[str, Any]) -> float:
+def on_hand(p: dict[str, Any]) -> float:
     return num(get(p, ["on_hand_qty", "On-Hand Qty", "stock", "Stock", "Stok"], 0), 0)
 
 
-def case_pack(p: Dict[str, Any]) -> float:
+def case_pack(p: dict[str, Any]) -> float:
     return max(1, num(get(p, [
         "case_pack_qty",
         "case_pack",
@@ -567,7 +568,7 @@ def case_pack(p: Dict[str, Any]) -> float:
     ], 12), 12))
 
 
-def is_approval(p: Dict[str, Any]) -> bool:
+def is_approval(p: dict[str, Any]) -> bool:
     raw = key(f"{get(p, ['current_location', 'Location', 'Lokasyon'], '')} {get(p, ['secondary_location'], '')}")
     return any(x in raw for x in ["APPROVAL", "APPROVE", "ONAY", "FIRE", "IMHA", "İMHA"])
 
@@ -576,7 +577,7 @@ def is_approval(p: Dict[str, Any]) -> bool:
 # ENRICHMENT / NORMALIZATION
 # =====================================================
 
-def ai_estimate_dimensions(p: Dict[str, Any]) -> Dict[str, Any]:
+def ai_estimate_dimensions(p: dict[str, Any]) -> dict[str, Any]:
     raw = norm(f"{product_name(p)} {category_l1(p)} {category_l2(p)} {brand(p)}")
     st = storage_type(p)
 
@@ -618,7 +619,7 @@ def ai_estimate_dimensions(p: Dict[str, Any]) -> Dict[str, Any]:
     return {"width_cm": 10, "height_cm": 20, "depth_cm": 10, "weight_kg": 0.3, "confidence": 0.35, "reason": "generic"}
 
 
-def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dict[str, Any]:
+def enrich_product(raw: dict[str, Any], allow_ai_dimensions: bool = True) -> dict[str, Any]:
     original = normalize_product_row(raw)
     original = apply_overrides_to_product(original)
 
@@ -752,7 +753,7 @@ def enrich_product(raw: Dict[str, Any], allow_ai_dimensions: bool = True) -> Dic
 # PRODUCT CLASSIFICATION
 # =====================================================
 
-def merch_group(p: Dict[str, Any]) -> str:
+def merch_group(p: dict[str, Any]) -> str:
     raw = key(f"{product_name(p)} {category_l1(p)} {category_l2(p)} {brand(p)}")
     st = storage_type(p)
 
@@ -782,19 +783,19 @@ def merch_group(p: Dict[str, Any]) -> str:
     return "FOOD_AMBIENT"
 
 
-def is_food(p: Dict[str, Any]) -> bool:
+def is_food(p: dict[str, Any]) -> bool:
     return str(p.get("_merch_group") or p.get("merch_group") or merch_group(p)).startswith("FOOD")
 
 
-def is_odor(p: Dict[str, Any]) -> bool:
+def is_odor(p: dict[str, Any]) -> bool:
     return str(p.get("_merch_group") or p.get("merch_group") or merch_group(p)) == "NON_FOOD_ODOR"
 
 
-def product_score(p: Dict[str, Any]) -> float:
+def product_score(p: dict[str, Any]) -> float:
     return sales_7d(p) * 3.0 + percent_stops(p) * 12.0 + on_hand(p) * 0.02
 
 
-def classify_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def classify_products(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ranked = sorted(products, key=product_score, reverse=True)
     n = max(len(ranked), 1)
     result = []
@@ -826,7 +827,7 @@ def classify_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # FACING / DEPTH / COVERAGE
 # =====================================================
 
-def facing_count(p: Dict[str, Any]) -> int:
+def facing_count(p: dict[str, Any]) -> int:
     s = sales_7d(p)
     stops = percent_stops(p)
     tier = p.get("_tier")
@@ -840,35 +841,35 @@ def facing_count(p: Dict[str, Any]) -> int:
     return 1
 
 
-def oriented_width(p: Dict[str, Any]) -> float:
+def oriented_width(p: dict[str, Any]) -> float:
     return max(0.1, depth(p) if p.get("is_rotated") else width(p))
 
 
-def oriented_depth(p: Dict[str, Any]) -> float:
+def oriented_depth(p: dict[str, Any]) -> float:
     return max(0.1, width(p) if p.get("is_rotated") else depth(p))
 
 
-def placed_facing(p: Dict[str, Any], default: Optional[int] = None) -> int:
+def placed_facing(p: dict[str, Any], default: int | None = None) -> int:
     raw = p.get("facing_count", p.get("facing", default if default is not None else 1))
     return max(1, min(12, inum(raw, default if default is not None else 1)))
 
 
-def depth_units(p: Dict[str, Any], shelf: Dict[str, Any]) -> int:
+def depth_units(p: dict[str, Any], shelf: dict[str, Any]) -> int:
     return max(1, int(num(shelf.get("shelf_depth_cm"), 50) // oriented_depth(p)))
 
 
-def total_capacity_units(p: Dict[str, Any], shelf: Dict[str, Any], facing: int) -> int:
+def total_capacity_units(p: dict[str, Any], shelf: dict[str, Any], facing: int) -> int:
     return depth_units(p, shelf) * facing
 
 
-def coverage_days(p: Dict[str, Any], shelf: Dict[str, Any], facing: int) -> Optional[float]:
+def coverage_days(p: dict[str, Any], shelf: dict[str, Any], facing: int) -> float | None:
     s = sales_7d(p)
     if s <= 0:
         return None
     return round((total_capacity_units(p, shelf, facing) / s) * 7, 1)
 
 
-def preferred_facing(p: Dict[str, Any], shelf: Dict[str, Any]) -> int:
+def preferred_facing(p: dict[str, Any], shelf: dict[str, Any]) -> int:
     base = facing_count(p)
     cp = case_pack(p)
     depth_cap = depth_units(p, shelf)
@@ -888,7 +889,7 @@ def preferred_facing(p: Dict[str, Any], shelf: Dict[str, Any]) -> int:
     return max(1, min(5, base))
 
 
-def max_fit_facing(p: Dict[str, Any], shelf: Dict[str, Any], include_weight: bool = True) -> int:
+def max_fit_facing(p: dict[str, Any], shelf: dict[str, Any], include_weight: bool = True) -> int:
     """Return the physically possible facing count on the current shelf."""
     remaining = num(shelf.get("shelf_width_cm"), 100) - num(shelf.get("used_width_cm"), 0)
     unit_width = oriented_width(p) * 1.1
@@ -902,12 +903,12 @@ def max_fit_facing(p: Dict[str, Any], shelf: Dict[str, Any], include_weight: boo
     return max(0, min(by_width, 12))
 
 
-def fit_facing(p: Dict[str, Any], shelf: Dict[str, Any]) -> int:
+def fit_facing(p: dict[str, Any], shelf: dict[str, Any]) -> int:
     """Shrink the requested facing to the largest safe value that fits."""
     return min(preferred_facing(p, shelf), max_fit_facing(p, shelf))
 
 
-def used_width(p: Dict[str, Any], shelf: Dict[str, Any], facing: Optional[int] = None) -> float:
+def used_width(p: dict[str, Any], shelf: dict[str, Any], facing: int | None = None) -> float:
     f = placed_facing(p) if facing is None and ("facing" in p or "facing_count" in p) else (facing or preferred_facing(p, shelf))
     return oriented_width(p) * max(1, f) * 1.1
 
@@ -916,7 +917,7 @@ def used_width(p: Dict[str, Any], shelf: Dict[str, Any], facing: Optional[int] =
 # LAYOUT
 # =====================================================
 
-def make_shelves(count: int, storage: str = "AMBIENT", width_cm: float = 100, height_cm: float = 35, depth_cm: float = 50, max_weight: float = 45) -> List[Dict[str, Any]]:
+def make_shelves(count: int, storage: str = "AMBIENT", width_cm: float = 100, height_cm: float = 35, depth_cm: float = 50, max_weight: float = 45) -> list[dict[str, Any]]:
     shelves = []
     count = max(1, int(count))
 
@@ -965,7 +966,7 @@ def generate_default_layout(
     aisle_count: int = 12,
     modules_per_aisle: int = 10,
     shelves_per_module: int = 6,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate the neutral store baseline.
 
     The baseline is exactly 12 × 10 × 6 unless callers explicitly request a
@@ -1022,7 +1023,7 @@ def generate_default_layout(
     }
 
 
-def prepare_layout(layout: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def prepare_layout(layout: dict[str, Any] | None) -> dict[str, Any]:
     plan = deepcopy(layout or generate_default_layout())
 
     for aisle in plan.get("aisles", []):
@@ -1115,14 +1116,14 @@ def prepare_layout(layout: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # SCORING
 # =====================================================
 
-def route_score(aisle: Dict[str, Any], module: Dict[str, Any]) -> float:
+def route_score(aisle: dict[str, Any], module: dict[str, Any]) -> float:
     row = num(aisle.get("row"), 99)
     pos = num(aisle.get("position"), 99)
     mid = num(module.get("module_id"), 99)
     return row * 100 + pos * 10 + mid
 
 
-def front_zone_score(p: Dict[str, Any], aisle: Dict[str, Any]) -> float:
+def front_zone_score(p: dict[str, Any], aisle: dict[str, Any]) -> float:
     aid = key(aisle.get("aisle_id"))
     tier = p.get("_tier")
 
@@ -1165,7 +1166,7 @@ def front_zone_score(p: Dict[str, Any], aisle: Dict[str, Any]) -> float:
     return 30
 
 
-def ergonomics_score(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
+def ergonomics_score(p: dict[str, Any], shelf: dict[str, Any]) -> float:
     z = key(shelf.get("zone_type"))
     w = weight(p)
     tier = p.get("_tier")
@@ -1193,7 +1194,7 @@ def ergonomics_score(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
     return 50
 
 
-def storage_score(p: Dict[str, Any], aisle: Dict[str, Any], module: Dict[str, Any], shelf: Dict[str, Any]) -> float:
+def storage_score(p: dict[str, Any], aisle: dict[str, Any], module: dict[str, Any], shelf: dict[str, Any]) -> float:
     needed = p.get("_storage") or storage_type(p)
     allowed = shelf_storage(shelf)
 
@@ -1212,7 +1213,7 @@ def storage_score(p: Dict[str, Any], aisle: Dict[str, Any], module: Dict[str, An
     return 50
 
 
-def brand_score(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
+def brand_score(p: dict[str, Any], shelf: dict[str, Any]) -> float:
     products = shelf.get("products", [])
     if not products:
         return 40
@@ -1223,7 +1224,7 @@ def brand_score(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
     return same_brand * 180 + same_cat * 90
 
 
-def balance_score(shelf: Dict[str, Any], product: Optional[Dict[str, Any]] = None, facing: Optional[int] = None) -> float:
+def balance_score(shelf: dict[str, Any], product: dict[str, Any] | None = None, facing: int | None = None) -> float:
     used = num(shelf.get("used_width_cm", shelf.get("used", 0)), 0)
     width_cm = num(shelf.get("shelf_width_cm"), 100)
     if product is not None:
@@ -1246,7 +1247,7 @@ def balance_score(shelf: Dict[str, Any], product: Optional[Dict[str, Any]] = Non
 
 
 
-def coverage_score(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
+def coverage_score(p: dict[str, Any], shelf: dict[str, Any]) -> float:
     f = max(1, fit_facing(p, shelf) or 1)
     cov = coverage_days(p, shelf, f)
 
@@ -1261,7 +1262,7 @@ def coverage_score(p: Dict[str, Any], shelf: Dict[str, Any]) -> float:
     return 40
 
 
-def brand_side(product: Dict[str, Any], module: Dict[str, Any], rules: Optional[Dict[str, str]]) -> float:
+def brand_side(product: dict[str, Any], module: dict[str, Any], rules: dict[str, str] | None) -> float:
     if not rules:
         rules = DEFAULT_BRAND_SIDE_RULES
 
@@ -1289,11 +1290,11 @@ def brand_side(product: Dict[str, Any], module: Dict[str, Any], rules: Optional[
     return 60 if key(module.get("side")) == wanted else -120
 
 
-def module_rule_matches(p: Dict[str, Any], module: Dict[str, Any]) -> bool:
+def module_rule_matches(p: dict[str, Any], module: dict[str, Any]) -> bool:
     return rule_matches_product(p, module.get("assignment_rule"))
 
 
-def existing_groups_on_aisle(aisle: Dict[str, Any]) -> set:
+def existing_groups_on_aisle(aisle: dict[str, Any]) -> set:
     groups = set()
     for m in aisle.get("modules", []):
         for s in m.get("shelves", []):
@@ -1305,10 +1306,10 @@ def existing_groups_on_aisle(aisle: Dict[str, Any]) -> set:
 
 
 def merch_compatible(
-    p: Dict[str, Any],
-    aisle: Dict[str, Any],
-    cached_groups: Optional[set] = None,
-    shelf: Optional[Dict[str, Any]] = None,
+    p: dict[str, Any],
+    aisle: dict[str, Any],
+    cached_groups: set | None = None,
+    shelf: dict[str, Any] | None = None,
 ) -> bool:
     aid = key(aisle.get("aisle_id"))
     groups = cached_groups if cached_groups is not None else existing_groups_on_aisle(aisle)
@@ -1336,12 +1337,12 @@ def merch_compatible(
 
 
 def placement_score(
-    p: Dict[str, Any],
-    aisle: Dict[str, Any],
-    module: Dict[str, Any],
-    shelf: Dict[str, Any],
-    scoring_config: Optional[Dict[str, float]] = None,
-    brand_side_rules: Optional[Dict[str, str]] = None,
+    p: dict[str, Any],
+    aisle: dict[str, Any],
+    module: dict[str, Any],
+    shelf: dict[str, Any],
+    scoring_config: dict[str, float] | None = None,
+    brand_side_rules: dict[str, str] | None = None,
 ) -> float:
     cfg = {**DEFAULT_SCORING_CONFIG, **(scoring_config or {})}
 
@@ -1370,7 +1371,7 @@ def placement_score(
 # CONSTRAINTS
 # =====================================================
 
-def dimension_fit(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
+def dimension_fit(p: dict[str, Any], shelf: dict[str, Any]) -> bool:
     if height(p) > num(shelf.get("shelf_height_cm"), 35):
         return False
     if oriented_depth(p) > num(shelf.get("shelf_depth_cm"), 50):
@@ -1378,14 +1379,14 @@ def dimension_fit(p: Dict[str, Any], shelf: Dict[str, Any]) -> bool:
     return True
 
 
-def weight_fit(p: Dict[str, Any], shelf: Dict[str, Any], facing: Optional[int] = None) -> bool:
+def weight_fit(p: dict[str, Any], shelf: dict[str, Any], facing: int | None = None) -> bool:
     current = num(shelf.get("used_weight_kg"), 0)
     add = weight(p) * (facing or fit_facing(p, shelf))
     limit = num(shelf.get("max_weight_kg"), 45)
     return current + add <= limit
 
 
-def capacity_fit(p: Dict[str, Any], shelf: Dict[str, Any], facing: Optional[int] = None) -> bool:
+def capacity_fit(p: dict[str, Any], shelf: dict[str, Any], facing: int | None = None) -> bool:
     current = num(shelf.get("used_width_cm", shelf.get("used", 0)), 0)
     f = facing or fit_facing(p, shelf)
     if f <= 0:
@@ -1394,12 +1395,12 @@ def capacity_fit(p: Dict[str, Any], shelf: Dict[str, Any], facing: Optional[int]
 
 
 def can_place(
-    p: Dict[str, Any],
-    aisle: Dict[str, Any],
-    module: Dict[str, Any],
-    shelf: Dict[str, Any],
-    aisle_groups: Optional[set] = None,
-) -> Tuple[bool, str]:
+    p: dict[str, Any],
+    aisle: dict[str, Any],
+    module: dict[str, Any],
+    shelf: dict[str, Any],
+    aisle_groups: set | None = None,
+) -> tuple[bool, str]:
     if storage_score(p, aisle, module, shelf) < -1000:
         return False, "storage_not_fit"
 
@@ -1451,7 +1452,7 @@ def can_place(
 # FAST INDEX
 # =====================================================
 
-def build_shelf_index(plan: Dict[str, Any]) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, set]]:
+def build_shelf_index(plan: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, set]]:
     shelf_pool = {"AMBIENT": [], "CHILLED": [], "FROZEN": [], "PALLET": []}
     aisle_groups = {}
 
@@ -1494,13 +1495,13 @@ def build_shelf_index(plan: Dict[str, Any]) -> Tuple[Dict[str, List[Dict[str, An
 
 
 def place_product_fast(
-    plan: Dict[str, Any],
-    p: Dict[str, Any],
-    shelf_pool: Dict[str, List[Dict[str, Any]]],
-    aisle_groups: Dict[str, set],
-    scoring_config: Optional[Dict[str, float]] = None,
-    brand_side_rules: Optional[Dict[str, str]] = None,
-) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    plan: dict[str, Any],
+    p: dict[str, Any],
+    shelf_pool: dict[str, list[dict[str, Any]]],
+    aisle_groups: dict[str, set],
+    scoring_config: dict[str, float] | None = None,
+    brand_side_rules: dict[str, str] | None = None,
+) -> tuple[bool, dict[str, Any] | None, str]:
 
     storage = p.get("_storage") or storage_type(p)
 
@@ -1737,11 +1738,11 @@ def place_product_fast(
 # SUMMARY / DIAGNOSTICS
 # =====================================================
 
-def summarize(plan: Dict[str, Any], total_products: int, unplaced: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize(plan: dict[str, Any], total_products: int, unplaced: list[dict[str, Any]]) -> dict[str, Any]:
     total_width = 0
     used_width = 0
     capacity_warnings = []
-    capacity_by_storage: Dict[str, Dict[str, float]] = {}
+    capacity_by_storage: dict[str, dict[str, float]] = {}
     placed_items = []
 
     for a in plan.get("aisles", []):
@@ -1800,7 +1801,7 @@ def summarize(plan: Dict[str, Any], total_products: int, unplaced: List[Dict[str
     }
 
 
-def validate_planogram(plan: Dict[str, Any]) -> Dict[str, Any]:
+def validate_planogram(plan: dict[str, Any]) -> dict[str, Any]:
     violations = []
     empty_shelves = []
     overfilled_shelves = []
@@ -1939,14 +1940,14 @@ def validate_planogram(plan: Dict[str, Any]) -> Dict[str, Any]:
 # =====================================================
 
 def generate_planogram(
-    products: List[Dict[str, Any]],
-    layout: Optional[Dict[str, Any]],
+    products: list[dict[str, Any]],
+    layout: dict[str, Any] | None,
     mode: str = "HYBRID",
-    brand_side_rules: Optional[Dict[str, str]] = None,
-    scoring_config: Optional[Dict[str, float]] = None,
+    brand_side_rules: dict[str, str] | None = None,
+    scoring_config: dict[str, float] | None = None,
     allow_ai_dimensions: bool = True,
     progress_callback=None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     raw_products = products or []
     plan = prepare_layout(layout or generate_default_layout())
 
@@ -2170,7 +2171,7 @@ def generate_planogram(
 
 
 # Backward compatible alias
-def run_engine(products: List[Dict[str, Any]], layout: Optional[Dict[str, Any]] = None, **kwargs) -> Dict[str, Any]:
+def run_engine(products: list[dict[str, Any]], layout: dict[str, Any] | None = None, **kwargs) -> dict[str, Any]:
     return generate_planogram(products, layout, **kwargs)
 
 
@@ -2178,7 +2179,7 @@ def run_engine(products: List[Dict[str, Any]], layout: Optional[Dict[str, Any]] 
 # EDIT / ACTION HELPERS
 # =====================================================
 
-def find_shelf(plan: Dict[str, Any], aisle_id: str, module_id: int, shelf_no: int):
+def find_shelf(plan: dict[str, Any], aisle_id: str, module_id: int, shelf_no: int):
     for aisle in plan.get("aisles", []):
         if clean_text(aisle.get("aisle_id")) != clean_text(aisle_id):
             continue
@@ -2191,7 +2192,7 @@ def find_shelf(plan: Dict[str, Any], aisle_id: str, module_id: int, shelf_no: in
     return None, None, None
 
 
-def find_product(plan: Dict[str, Any], target_sku: str) -> Optional[Dict[str, Any]]:
+def find_product(plan: dict[str, Any], target_sku: str) -> dict[str, Any] | None:
     for aisle in plan.get("aisles", []):
         for module in aisle.get("modules", []):
             for shelf in module.get("shelves", []):
@@ -2201,7 +2202,7 @@ def find_product(plan: Dict[str, Any], target_sku: str) -> Optional[Dict[str, An
     return None
 
 
-def remove_product_from_plan(plan: Dict[str, Any], target_sku: str) -> Optional[Dict[str, Any]]:
+def remove_product_from_plan(plan: dict[str, Any], target_sku: str) -> dict[str, Any] | None:
     for aisle in plan.get("aisles", []):
         for module in aisle.get("modules", []):
             for shelf in module.get("shelves", []):
@@ -2214,7 +2215,7 @@ def remove_product_from_plan(plan: Dict[str, Any], target_sku: str) -> Optional[
     return None
 
 
-def recalc_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+def recalc_plan(plan: dict[str, Any]) -> dict[str, Any]:
     for aisle in plan.get("aisles", []):
         for module in aisle.get("modules", []):
             for shelf in module.get("shelves", []):
@@ -2247,7 +2248,7 @@ def recalc_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     return plan
 
 
-def add_product_to_shelf(plan: Dict[str, Any], product: Dict[str, Any], aisle_id: str, module_id: int, shelf_no: int, force: bool = False) -> Dict[str, Any]:
+def add_product_to_shelf(plan: dict[str, Any], product: dict[str, Any], aisle_id: str, module_id: int, shelf_no: int, force: bool = False) -> dict[str, Any]:
     next_plan = deepcopy(plan)
     p = enrich_product(product)
 
@@ -2358,7 +2359,7 @@ def add_product_to_shelf(plan: Dict[str, Any], product: Dict[str, Any], aisle_id
     return {"status": "success", "planogram": next_plan, "product": placed}
 
 
-def update_facing(plan: Dict[str, Any], target_sku: str, delta: int) -> Dict[str, Any]:
+def update_facing(plan: dict[str, Any], target_sku: str, delta: int) -> dict[str, Any]:
     next_plan = deepcopy(plan)
     p = find_product(next_plan, target_sku)
 
@@ -2401,7 +2402,7 @@ def update_facing(plan: Dict[str, Any], target_sku: str, delta: int) -> Dict[str
     return {"status": "success", "planogram": next_plan, "product": p}
 
 
-def rotate_product(plan: Dict[str, Any], target_sku: str) -> Dict[str, Any]:
+def rotate_product(plan: dict[str, Any], target_sku: str) -> dict[str, Any]:
     next_plan = deepcopy(plan)
     p = find_product(next_plan, target_sku)
 
@@ -2421,7 +2422,7 @@ def rotate_product(plan: Dict[str, Any], target_sku: str) -> Dict[str, Any]:
     return {"status": "success", "planogram": next_plan, "product": p}
 
 
-def move_product(plan: Dict[str, Any], target_sku: str, aisle_id: str, module_id: int, shelf_no: int, force: bool = False) -> Dict[str, Any]:
+def move_product(plan: dict[str, Any], target_sku: str, aisle_id: str, module_id: int, shelf_no: int, force: bool = False) -> dict[str, Any]:
     next_plan = deepcopy(plan)
     removed = remove_product_from_plan(next_plan, target_sku)
 
@@ -2447,7 +2448,7 @@ def move_product(plan: Dict[str, Any], target_sku: str, aisle_id: str, module_id
     return result
 
 
-def apply_module_rule(layout: Dict[str, Any], aisle_id: str, module_id: int, rule: Dict[str, Any]) -> Dict[str, Any]:
+def apply_module_rule(layout: dict[str, Any], aisle_id: str, module_id: int, rule: dict[str, Any]) -> dict[str, Any]:
     next_layout = deepcopy(layout)
     normalized_rule = deepcopy(rule or {})
 
@@ -2465,7 +2466,7 @@ def apply_module_rule(layout: Dict[str, Any], aisle_id: str, module_id: int, rul
     return next_layout
 
 
-def apply_shelf_rule(layout: Dict[str, Any], aisle_id: str, module_id: int, shelf_no: int, rule: Dict[str, Any]) -> Dict[str, Any]:
+def apply_shelf_rule(layout: dict[str, Any], aisle_id: str, module_id: int, shelf_no: int, rule: dict[str, Any]) -> dict[str, Any]:
     next_layout = deepcopy(layout)
     _, _, shelf = find_shelf(next_layout, aisle_id, module_id, shelf_no)
 
@@ -2482,7 +2483,7 @@ def apply_shelf_rule(layout: Dict[str, Any], aisle_id: str, module_id: int, shel
     return next_layout
 
 
-def suggest_empty_space(plan: Dict[str, Any], products: List[Dict[str, Any]], aisle_id: str, module_id: int, shelf_no: int, limit: int = 30) -> Dict[str, Any]:
+def suggest_empty_space(plan: dict[str, Any], products: list[dict[str, Any]], aisle_id: str, module_id: int, shelf_no: int, limit: int = 30) -> dict[str, Any]:
     aisle, module, shelf = find_shelf(plan, aisle_id, module_id, shelf_no)
     if not shelf:
         return {"status": "error", "message": "shelf_not_found", "suggestions": []}
@@ -2557,7 +2558,7 @@ def suggest_empty_space(plan: Dict[str, Any], products: List[Dict[str, Any]], ai
 # BLOCK STUDIO / SHELF-MODULE OPTIMIZE
 # =====================================================
 
-def commit_block_studio(plan: Dict[str, Any], aisle_id: str, module_id: int, shelf_no: int, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+def commit_block_studio(plan: dict[str, Any], aisle_id: str, module_id: int, shelf_no: int, blocks: list[dict[str, Any]]) -> dict[str, Any]:
     original_plan = deepcopy(plan)
     next_plan = deepcopy(plan)
     aisle, module, shelf = find_shelf(next_plan, aisle_id, module_id, shelf_no)
@@ -2658,7 +2659,7 @@ def commit_block_studio(plan: Dict[str, Any], aisle_id: str, module_id: int, she
     }
 
 
-def optimize_shelf(plan: Dict[str, Any], products: List[Dict[str, Any]], aisle_id: str, module_id: int, shelf_no: int) -> Dict[str, Any]:
+def optimize_shelf(plan: dict[str, Any], products: list[dict[str, Any]], aisle_id: str, module_id: int, shelf_no: int) -> dict[str, Any]:
     next_plan = deepcopy(plan)
     aisle, module, shelf = find_shelf(next_plan, aisle_id, module_id, shelf_no)
 
@@ -2701,7 +2702,7 @@ def optimize_shelf(plan: Dict[str, Any], products: List[Dict[str, Any]], aisle_i
     }
 
 
-def optimize_module(plan: Dict[str, Any], products: List[Dict[str, Any]], aisle_id: str, module_id: int) -> Dict[str, Any]:
+def optimize_module(plan: dict[str, Any], products: list[dict[str, Any]], aisle_id: str, module_id: int) -> dict[str, Any]:
     next_plan = deepcopy(plan)
     aisle, module, _ = find_shelf(next_plan, aisle_id, module_id, 1)
 
@@ -2759,7 +2760,7 @@ def optimize_module(plan: Dict[str, Any], products: List[Dict[str, Any]], aisle_
 # PICKING ROUTE
 # =====================================================
 
-def build_sku_location_map(plan: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def build_sku_location_map(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
     m = {}
 
     for aisle in plan.get("aisles", []):
@@ -2785,7 +2786,7 @@ def build_sku_location_map(plan: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return m
 
 
-def optimize_picking_route(order_skus: List[str], plan: Dict[str, Any]) -> Dict[str, Any]:
+def optimize_picking_route(order_skus: list[str], plan: dict[str, Any]) -> dict[str, Any]:
     sku_map = build_sku_location_map(plan)
     found = []
     missing = []

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from collections import Counter
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
+from collections.abc import Iterable
 import re
 import unicodedata
 
@@ -41,7 +42,7 @@ def _norm(value: Any) -> str:
     )
 
 
-def _first(row: Dict[str, Any], *fields: str) -> Any:
+def _first(row: dict[str, Any], *fields: str) -> Any:
     for field in fields:
         if row.get(field) not in (None, ""):
             return row[field]
@@ -60,7 +61,7 @@ MASS_UNIT_TO_KG = {
 }
 
 
-def normalize_mass_kg(product: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_mass_kg(product: dict[str, Any]) -> dict[str, Any]:
     """Normalize mass without interpreting an unqualified catalog value as kg."""
     if product.get("mass_ambiguous") is True:
         return {
@@ -126,7 +127,7 @@ def normalize_mass_kg(product: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _product_text(product: Dict[str, Any]) -> str:
+def _product_text(product: dict[str, Any]) -> str:
     fields = (
         "product_name",
         "name",
@@ -146,7 +147,7 @@ def _product_text(product: Dict[str, Any]) -> str:
     return _norm(" ".join(_text(_first(product, field)) for field in fields))
 
 
-def authoritative_storage_value(product: Dict[str, Any]) -> str:
+def authoritative_storage_value(product: dict[str, Any]) -> str:
     """Storage supplied by catalog/master, not a later allocator inference."""
     return _text(
         _first(
@@ -159,7 +160,7 @@ def authoritative_storage_value(product: Dict[str, Any]) -> str:
     )
 
 
-def explicit_storage_value(product: Dict[str, Any]) -> str:
+def explicit_storage_value(product: dict[str, Any]) -> str:
     return authoritative_storage_value(product) or _text(
         _first(product, "storage_type", "storage")
     )
@@ -178,11 +179,11 @@ def normalize_temperature_zone(value: Any, default: str = "AMBIENT") -> str:
     return default
 
 
-def product_temperature_zone(product: Dict[str, Any]) -> str:
+def product_temperature_zone(product: dict[str, Any]) -> str:
     return normalize_temperature_zone(explicit_storage_value(product))
 
 
-def parse_pack_metrics(product: Dict[str, Any]) -> Dict[str, Any]:
+def parse_pack_metrics(product: dict[str, Any]) -> dict[str, Any]:
     raw = _product_text(product)
     count, liters, source = 1, None, "missing"
     match = re.search(
@@ -232,7 +233,7 @@ def parse_pack_metrics(product: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def is_beverage(product: Dict[str, Any]) -> bool:
+def is_beverage(product: dict[str, Any]) -> bool:
     raw = _product_text(product)
     if any(
         x in raw
@@ -248,7 +249,7 @@ def is_beverage(product: Dict[str, Any]) -> bool:
     )
 
 
-def is_detergent_or_cleaning(product: Dict[str, Any]) -> bool:
+def is_detergent_or_cleaning(product: dict[str, Any]) -> bool:
     raw = _product_text(product)
     return any(
         x in raw
@@ -266,7 +267,7 @@ def is_detergent_or_cleaning(product: Dict[str, Any]) -> bool:
     )
 
 
-def is_explicit_bulky_pallet_product(product: Dict[str, Any]) -> bool:
+def is_explicit_bulky_pallet_product(product: dict[str, Any]) -> bool:
     raw = _product_text(product)
     return any(
         x in raw
@@ -282,12 +283,12 @@ def is_explicit_bulky_pallet_product(product: Dict[str, Any]) -> bool:
     )
 
 
-def product_weight_kg(product: Dict[str, Any]) -> float:
+def product_weight_kg(product: dict[str, Any]) -> float:
     normalized = normalize_mass_kg(product)
     return float(normalized["value_kg"] or 0.0)
 
 
-def requires_pallet_fixture(product: Dict[str, Any]) -> bool:
+def requires_pallet_fixture(product: dict[str, Any]) -> bool:
     authoritative = _norm(authoritative_storage_value(product))
     if any(x in authoritative for x in ("pallet", "palet", "hdr")):
         return True
@@ -308,14 +309,14 @@ def requires_pallet_fixture(product: Dict[str, Any]) -> bool:
     ) or product_weight_kg(product) >= LARGE_BEVERAGE_PALLET_WEIGHT_KG
 
 
-def required_fixture_class(product: Dict[str, Any]) -> str:
+def required_fixture_class(product: dict[str, Any]) -> str:
     if requires_pallet_fixture(product):
         return "PALLET"
     zone = product_temperature_zone(product)
     return zone if zone in {"CHILLED", "FROZEN"} else "REGULAR_SHELF"
 
 
-def requires_bottom_shelf(product: Dict[str, Any]) -> bool:
+def requires_bottom_shelf(product: dict[str, Any]) -> bool:
     if requires_pallet_fixture(product):
         return False
     weight = product_weight_kg(product)
@@ -324,17 +325,17 @@ def requires_bottom_shelf(product: Dict[str, Any]) -> bool:
     )
 
 
-def is_approved_dimension_product(product: Dict[str, Any]) -> bool:
+def is_approved_dimension_product(product: dict[str, Any]) -> bool:
     return _norm(product.get("dimension_source")) in APPROVED_DIMENSION_SOURCES and all(
         _num(product.get(field)) > 0 for field in ("width_cm", "height_cm", "depth_cm")
     )
 
 
-def physical_scale_eligible(product: Dict[str, Any]) -> bool:
+def physical_scale_eligible(product: dict[str, Any]) -> bool:
     return is_approved_dimension_product(product)
 
 
-def product_truth_report(products: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+def product_truth_report(products: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows = list(products or [])
     total = len(rows)
     approved = sum(is_approved_dimension_product(product) for product in rows)
@@ -406,7 +407,7 @@ def product_truth_report(products: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def iter_product_bearing_shelves(layout: Optional[Dict[str, Any]]):
+def iter_product_bearing_shelves(layout: dict[str, Any] | None):
     for aisle in (layout or {}).get("aisles", []) or []:
         for module in aisle.get("modules", []) or []:
             for shelf in module.get("shelves", []) or []:
@@ -414,7 +415,7 @@ def iter_product_bearing_shelves(layout: Optional[Dict[str, Any]]):
 
 
 def _module_fixture_class(
-    module: Dict[str, Any], shelf: Optional[Dict[str, Any]] = None
+    module: dict[str, Any], shelf: dict[str, Any] | None = None
 ) -> str:
     raw = _norm(
         " ".join(
@@ -438,7 +439,7 @@ def _module_fixture_class(
     return "REGULAR_SHELF"
 
 
-def layout_truth_report(layout: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def layout_truth_report(layout: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(layout, dict) or not layout.get("aisles"):
         return {
             "present": False,
@@ -498,7 +499,7 @@ def layout_truth_report(layout: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _picker_width_m(dna: Dict[str, Any]) -> Optional[float]:
+def _picker_width_m(dna: dict[str, Any]) -> float | None:
     for field in (
         "picker_aisle_width_m",
         "center_aisle_width_m",
@@ -517,7 +518,7 @@ def _picker_width_m(dna: Dict[str, Any]) -> Optional[float]:
     return None
 
 
-def store_dna_truth_report(store_dna: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def store_dna_truth_report(store_dna: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(store_dna, dict) or not store_dna:
         return {
             "present": False,
@@ -596,8 +597,8 @@ def store_dna_truth_report(store_dna: Optional[Dict[str, Any]]) -> Dict[str, Any
 
 
 def required_fixture_gap_report(
-    products: Iterable[Dict[str, Any]], layout: Optional[Dict[str, Any]]
-) -> Dict[str, Any]:
+    products: Iterable[dict[str, Any]], layout: dict[str, Any] | None
+) -> dict[str, Any]:
     required = Counter(required_fixture_class(product) for product in products or [])
     available = Counter(layout_truth_report(layout).get("fixture_class_counts") or {})
     missing = sorted(
@@ -613,8 +614,8 @@ def required_fixture_gap_report(
 
 
 def physical_constraint_reason(
-    product: Dict[str, Any], module: Dict[str, Any], shelf: Dict[str, Any]
-) -> Optional[str]:
+    product: dict[str, Any], module: dict[str, Any], shelf: dict[str, Any]
+) -> str | None:
     required = required_fixture_class(product)
     actual = _module_fixture_class(module, shelf)
     if required != actual:
@@ -625,18 +626,18 @@ def physical_constraint_reason(
 
 
 def production_acceptance_report(
-    products: Iterable[Dict[str, Any]],
-    layout: Optional[Dict[str, Any]],
-    store_dna: Optional[Dict[str, Any]],
+    products: Iterable[dict[str, Any]],
+    layout: dict[str, Any] | None,
+    store_dna: dict[str, Any] | None,
     *,
     require_images: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     rows = list(products or [])
     dataset = product_truth_report(rows)
     layout_report = layout_truth_report(layout)
     dna = store_dna_truth_report(store_dna)
     fixtures = required_fixture_gap_report(rows, layout)
-    blockers: List[str] = []
+    blockers: list[str] = []
     if not dataset["dataset_rows"]:
         blockers.append("product_dataset_empty")
     if dataset["approved_dimension_coverage_pct"] < 100:
@@ -660,7 +661,7 @@ def production_acceptance_report(
     }
 
 
-def clone_with_physical_truth(product: Dict[str, Any]) -> Dict[str, Any]:
+def clone_with_physical_truth(product: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(product)
     pack = parse_pack_metrics(product)
     mass = normalize_mass_kg(product)

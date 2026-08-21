@@ -32,11 +32,23 @@ from app.modules.planogram.repository_execution import (
 )
 from app.modules.planogram.repository_plan_edit import update_plan_draft
 
-router = APIRouter(prefix="/v1/planogram/execution", tags=["planogram-execution"])
+router = APIRouter(
+    prefix="/v1/planogram/execution",
+    tags=["planogram-execution"],
+)
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
-Viewer = Annotated[Principal, Depends(require_permission("module:planogram:view"))]
-Editor = Annotated[Principal, Depends(require_permission("action:planogram:edit"))]
-Approver = Annotated[Principal, Depends(require_permission("action:planogram:approve"))]
+Viewer = Annotated[
+    Principal,
+    Depends(require_permission("module:planogram:view")),
+]
+Editor = Annotated[
+    Principal,
+    Depends(require_permission("action:planogram:edit")),
+]
+Approver = Annotated[
+    Principal,
+    Depends(require_permission("action:planogram:approve")),
+]
 EvidenceConsumer = Annotated[
     Principal,
     Depends(require_permission("action:planogram:acceptFieldEvidence")),
@@ -53,7 +65,10 @@ async def _plan_by_id(
     plan_version_id: UUID,
 ) -> dict[str, Any]:
     plans = await list_plan_versions(session, principal)
-    match = next((row for row in plans if str(row["id"]) == str(plan_version_id)), None)
+    match = next(
+        (row for row in plans if str(row["id"]) == str(plan_version_id)),
+        None,
+    )
     if match is None:
         raise PlanogramExecutionError("plan_version_not_found")
     return match
@@ -65,7 +80,10 @@ async def _assignment_by_id(
     assignment_id: UUID,
 ) -> dict[str, Any]:
     assignments = await list_assignments(session, principal)
-    match = next((row for row in assignments if str(row["id"]) == str(assignment_id)), None)
+    match = next(
+        (row for row in assignments if str(row["id"]) == str(assignment_id)),
+        None,
+    )
     if match is None:
         raise PlanogramExecutionError("execution_assignment_not_found")
     return match
@@ -107,7 +125,11 @@ async def post_execution_plan_draft(
     principal: Editor,
 ) -> dict[str, Any]:
     store_code = payload.store_code.strip().upper()
-    ensure_planogram_store_scope(principal, "action:planogram:edit", store_code)
+    ensure_planogram_store_scope(
+        principal,
+        "action:planogram:edit",
+        store_code,
+    )
     try:
         return await create_plan_draft(
             session,
@@ -131,7 +153,11 @@ async def put_execution_plan_draft(
 ) -> dict[str, Any]:
     try:
         plan = await _plan_by_id(session, principal, plan_version_id)
-        ensure_planogram_store_scope(principal, "action:planogram:edit", str(plan["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:edit",
+            str(plan["store_code"]),
+        )
         return await update_plan_draft(
             session,
             principal,
@@ -151,7 +177,11 @@ async def post_execution_plan_submit(
 ) -> dict[str, Any]:
     try:
         plan = await _plan_by_id(session, principal, plan_version_id)
-        ensure_planogram_store_scope(principal, "action:planogram:edit", str(plan["store_code"]))
+        ensure_planogram_store_scope(
+            principal,
+            "action:planogram:edit",
+            str(plan["store_code"]),
+        )
         return await submit_plan(session, principal, plan_version_id)
     except PlanogramExecutionError as exc:
         raise _conflict(exc) from exc

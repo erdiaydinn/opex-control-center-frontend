@@ -87,9 +87,15 @@ def test_frontend_cannot_generate_dev_tokens() -> None:
 def test_api_identity_is_bearer_only() -> None:
     text = _read("api/client.js")
 
+    # Authentication must be centralized and callers may not supply or
+    # override a browser-authored identity. Do not bind this security contract
+    # to source whitespace/line wrapping.
+    assert "function requireAccessToken()" in text
+    assert "const token = getAccessToken();" in text
+    assert "if (!token) throw new ApiError" in text
     assert (
-        'headers.set(\n'
-        '    "Authorization",'
+        'headers.set("Authorization", '
+        '`Bearer ${requireAccessToken()}`);'
         in text
     )
 
@@ -107,6 +113,15 @@ def test_api_identity_is_bearer_only() -> None:
             f'headers.set("{header}"'
             not in text
         )
+
+    # Candidate/public capability calls must never inherit employee bearer or
+    # cookie identity. This keeps anonymous recruitment links isolated from an
+    # employee session even when both are open in the same browser.
+    assert "function buildPublicHeaders(options = {})" in text
+    assert 'headers.delete("Authorization")' in text
+    assert 'headers.delete("Cookie")' in text
+    assert 'credentials: "omit"' in text
+    assert 'referrerPolicy: "no-referrer"' in text
 
 
 def test_protected_route_has_no_role_bypass() -> None:
@@ -288,7 +303,6 @@ def test_spoofable_identity_headers_are_never_created() -> None:
             )
 
 
-
 def test_budget_intelligence_uses_authenticated_api_client() -> None:
     text = _read(
         "modules/budget-intelligence/"
@@ -321,7 +335,6 @@ def test_budget_intelligence_uses_authenticated_api_client() -> None:
 
     assert "EMPTY_DATA" in text
     assert "setApiError" in text
-
 
 
 def test_dockos_has_no_synthetic_admin_authority() -> None:
@@ -395,7 +408,6 @@ def test_dockos_remaining_tabs_use_exact_db_permissions() -> None:
     assert "getDockOSPermissionSnapshot" not in dashboard
     assert "Port 8000" not in dashboard
     assert "Gateway API" in dashboard
-
 
 
 def test_planogram_legacy_iframe_is_phase1_quarantined() -> None:

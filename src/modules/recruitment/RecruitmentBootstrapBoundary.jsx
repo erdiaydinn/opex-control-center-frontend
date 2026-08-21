@@ -4,6 +4,7 @@ import { usePlatformPreferences } from "../../platform/preferences/PlatformPrefe
 import RecruitmentCandidateDocumentCenter from "./RecruitmentCandidateDocumentCenter.jsx";
 import RecruitmentControl from "./RecruitmentControl.jsx";
 import RecruitmentInterviewCenter from "./RecruitmentInterviewCenter.jsx";
+import RecruitmentLifecycleCenter from "./RecruitmentLifecycleCenter.jsx";
 import RecruitmentOrchestrationCenter from "./RecruitmentOrchestrationCenter.jsx";
 import { loadRecruitment, primeRecruitmentBootstrap } from "./recruitmentApi.js";
 
@@ -63,6 +64,7 @@ export default function RecruitmentBootstrapBoundary() {
       <RecruitmentCandidateDocumentCenter />
       <RecruitmentOrchestrationCenter />
       <RecruitmentInterviewCenter />
+      <RecruitmentLifecycleCenter />
     </section>
   );
 }

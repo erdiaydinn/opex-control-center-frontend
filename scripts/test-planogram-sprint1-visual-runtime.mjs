@@ -22,9 +22,9 @@ for (const [needle, label] of [
   ["new THREE.TextureLoader()", "packshot texture runtime"],
   ["candidate?.asset_manifest", "candidate asset manifest binding"],
   ["assetPlan.targetEnvelopeM", "canonical metric fixture envelope"],
+  ["assetPlan.visualAssetAuthority", "planner-owned GLB visual authority propagation"],
   ["fallback.visible = false", "fallback hidden only after GLB success"],
   ["attested_same_origin_packshot", "attested packshot visual authority"],
-  ["attested_same_origin_glb", "attested GLB visual authority"],
   ["buildFacingInstances(THREE, model, visualPlan)", "real facing transform reuse"],
   ["addTexturedFacingOverlays", "textured facing overlay runtime"],
   ["addGovernedFixtureAssets", "governed fixture replacement runtime"],
@@ -82,6 +82,9 @@ const plan = buildPlanogramVisualQualityPlan(model, manifest);
 if (!plan) fail("Sprint 1 visual quality plan was not generated.");
 if (plan.fixtureInstances.length !== 1 || plan.productTextures.length !== 1) {
   fail("Attested GLB and packshot must both enter the governed render plan.");
+}
+if (plan.fixtureInstances[0].visualAssetAuthority !== "attested_same_origin_glb") {
+  fail("Fixture visual authority must remain planner-owned and attested.");
 }
 if (plan.fixtureInstances[0].targetEnvelopeM.widthM !== 1.25
   || plan.fixtureInstances[0].targetEnvelopeM.depthM !== 0.62

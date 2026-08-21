@@ -319,10 +319,14 @@ async def authorize_video_vision_inference(
     model_proof_verifier: ProductionModelProofVerifier | None = None,
     field_activation_proof_verifier: AuditFieldActivationProofVerifier | None = None,
 ) -> VideoVisionAuthorizationDecision:
-    """Issue one model-execution lease from verified video evidence without Audit truth authority."""
+    """Issue one model-execution lease from verified video evidence without
+    granting Audit truth authority."""
 
     if "audit" not in REQUIRED_CONSUMERS:
-        return VideoVisionAuthorizationDecision("blocked", "audit_not_authorized_ai_substrate_consumer")
+        return VideoVisionAuthorizationDecision(
+            "blocked",
+            "audit_not_authorized_ai_substrate_consumer",
+        )
     if not item_key.strip() or len(item_key) > 180:
         return VideoVisionAuthorizationDecision("blocked", "invalid_audit_item_key")
 
@@ -485,7 +489,9 @@ async def authorize_video_vision_inference(
                     "artifact_sha256": proof.artifact_sha256,
                     "artifact_provenance_fingerprint": proof.artifact_provenance_fingerprint,
                     "production_promotion_fingerprint": proof.production_promotion_fingerprint,
-                    "production_release_proof_fingerprint": proof.production_release_proof_fingerprint,
+                    "production_release_proof_fingerprint": (
+                        proof.production_release_proof_fingerprint
+                    ),
                     "video_manifest_fingerprint": str(context["manifest_fingerprint"]),
                     "decoder_fingerprint": str(context["decoder_fingerprint"]),
                     "field_activation_fingerprint": activation_fingerprint,

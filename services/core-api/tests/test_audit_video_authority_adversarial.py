@@ -198,3 +198,21 @@ def test_public_video_route_cannot_accept_client_model_decoder_or_scanner_author
     assert "decoder" not in create_payload.lower()
     assert "scanner" not in create_payload.lower()
     assert "capabilities" not in create_payload
+
+
+def test_photo_and_video_inference_leases_are_db_immutable_except_one_way_consumption() -> None:
+    migration = Path(
+        "alembic/versions/0059_audit_inference_lease_immutability.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'revision: str = "0059_audit_inference_lease_immutability"' in migration
+    assert 'down_revision: str = "0058_audit_video_replay_fence"' in migration
+    assert '"audit_vision_inference_authorizations"' in migration
+    assert '"audit_video_inference_authorizations"' in migration
+    assert "enforce_audit_inference_lease_consumption_only" in migration
+    assert "to_jsonb(NEW) - 'consumed_at'" in migration
+    assert "to_jsonb(OLD) - 'consumed_at'" in migration
+    assert "OLD.consumed_at IS NOT NULL OR NEW.consumed_at IS NULL" in migration
+    assert "NEW.consumed_at := CURRENT_TIMESTAMP" in migration
+    assert "REVOKE UPDATE ON TABLE" in migration
+    assert "GRANT UPDATE (consumed_at) ON TABLE" in migration

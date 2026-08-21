@@ -9,9 +9,9 @@ from .flexibility import (
     claim_open_shift,
     create_open_shift,
     list_availability,
-    list_open_shifts_for_person,
     upsert_availability,
 )
+from .flexibility_ranking import list_ranked_open_shifts_for_person
 from .flexibility_schemas import (
     AvailabilityUpsertRequest,
     OpenShiftClaimRequest,
@@ -134,7 +134,7 @@ def get_open_shifts(
     x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
 ) -> dict:
     _strict_employee_self(request, person_id, x_opex_role)
-    return {"rows": list_open_shifts_for_person(person_id)}
+    return {"rows": list_ranked_open_shifts_for_person(person_id)}
 
 
 @router.get("/shift-trades")

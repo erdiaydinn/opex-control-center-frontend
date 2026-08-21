@@ -23,39 +23,29 @@ const engineResult = {
     aisles: [
       {
         aisle_id: "A",
-        modules: [
-          {
-            module_id: 1,
-            side: "L",
-            shelves: [
-              {
-                shelf_no: 1,
-                shelf_width_cm: 100,
-                shelf_depth_cm: 50,
-                products: [
-                  { sku: "A-1", facing_count: 2, sales_qty_7d: 10, width_cm: 8, height_cm: 18, depth_cm: 7 },
-                ],
-              },
-            ],
-          },
-        ],
+        modules: [{
+          module_id: 1,
+          side: "L",
+          shelves: [{
+            shelf_no: 1,
+            shelf_width_cm: 100,
+            shelf_depth_cm: 50,
+            products: [{ sku: "A-1", facing_count: 2, sales_qty_7d: 10, width_cm: 8, height_cm: 18, depth_cm: 7 }],
+          }],
+        }],
       },
       {
         aisle_id: "PALLET",
-        modules: [
-          {
-            module_id: 1,
-            fixture_type: "pallet",
-            shelves: [
-              {
-                shelf_no: 1,
-                shelf_width_cm: 120,
-                shelf_depth_cm: 100,
-                products: [{ sku: "WATER", facing_count: 1, sales_qty_7d: 20 }],
-              },
-            ],
-          },
-        ],
+        modules: [{
+          module_id: 1,
+          fixture_type: "pallet",
+          shelves: [{
+            shelf_no: 1,
+            shelf_width_cm: 120,
+            shelf_depth_cm: 100,
+            products: [{ sku: "WATER", facing_count: 1, sales_qty_7d: 20 }],
+          }],
+        }],
       },
     ],
   },
@@ -185,13 +175,13 @@ if (JSON.stringify(locales) !== JSON.stringify(expectedLocales)) fail("Digital t
 const enKeys = Object.keys(PLANOGRAM_DIGITAL_TWIN_MESSAGES.en).sort();
 for (const locale of locales) {
   const keys = Object.keys(PLANOGRAM_DIGITAL_TWIN_MESSAGES[locale] || {}).sort();
-  if (JSON.stringify(keys) !== JSON.stringify(enKeys)) {
-    fail(`Digital twin translation key drift for ${locale}.`);
-  }
+  if (JSON.stringify(keys) !== JSON.stringify(enKeys)) fail(`Digital twin translation key drift for ${locale}.`);
 }
 
 const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
-const renderer = fs.readFileSync("src/modules/planogram/PlanogramDigitalTwin.jsx", "utf8");
+const canonical = fs.readFileSync("src/modules/planogram/PlanogramDigitalTwin.jsx", "utf8");
+const renderer = fs.readFileSync("src/modules/planogram/PlanogramTwinSceneRenderer.jsx", "utf8");
+const runtime = fs.readFileSync("src/modules/planogram/planogramThreeAssetRuntime.js", "utf8");
 const css = fs.readFileSync("src/modules/planogram/planogram-digital-twin.css", "utf8");
 
 for (const [needle, label] of [
@@ -202,47 +192,57 @@ for (const [needle, label] of [
 }
 
 for (const [needle, label] of [
-  ['await import("three")', "dynamic Three.js loading"],
-  ['await import("three/examples/jsm/controls/OrbitControls.js")', "dynamic OrbitControls loading"],
-  ["InstancedMesh", "bounded product instancing"],
-  ["buildFacingInstances", "facing-aware product placement"],
-  ["productFacingCount", "explicit facing-count rendering"],
-  ["addOpenShelfFixture", "open fixture geometry"],
-  ["MeshPhysicalMaterial", "glass/cold-fixture material"],
-  ["setColorAt", "SKU-distinguishable product facings"],
-  ["ACESFilmicToneMapping", "market-grade tone mapping baseline"],
-  ["mesh.rotation.y = (-element.rotationDeg", "arbitrary-angle architecture rotation in 3D"],
-  ["group.rotation.y = (-module.rotationDeg", "arbitrary-angle fixture rotation in 3D"],
-  ["data-coordinate-authority", "coordinate truth rendering"],
+  ["PlanogramTwinSceneRenderer", "shared renderer integration"],
+  ["buildPlanogramUnifiedTwinScene", "unified authored scene"],
+  ["buildPlanogramVisualQualityPlan", "governed visual plan"],
+  ["buildPlanogramVisualDeliveryPlan", "accelerated texture/LOD plan"],
   ["rotatedRectSvgPoints", "true arbitrary-angle polygon projection in 2D"],
+  ["data-coordinate-authority", "coordinate truth rendering"],
   ["data-rotation-deg", "rotation evidence on 2D geometry"],
   ["eay-twin-engineering-dimensions", "engineering floor dimensions"],
   ["eay-twin-scale-bar", "engineering scale bar"],
   ["eay-twin-egress-clearance", "emergency-exit clearance rendering"],
   ["aria-selected", "accessible 2D/3D tabs"],
-  ["tabIndex = 0", "keyboard-focusable 3D canvas"],
-  ["maxProductInstances3d", "3D render cap"],
+  ["PLANOGRAM_DIGITAL_TWIN_LIMITS.maxProductInstances3d", "3D render cap"],
 ]) {
-  if (!renderer.includes(needle)) fail(`Digital twin renderer missing ${label}: ${needle}`);
+  if (!canonical.includes(needle)) fail(`Canonical Digital Twin missing ${label}: ${needle}`);
 }
 
-if (renderer.includes("const width = element.footprintWidthM * scale")) {
-  fail("2D architecture must not regress to arbitrary-angle AABB rendering.");
+for (const [needle, label] of [
+  ['await import("three")', "dynamic Three.js loading"],
+  ['await import("three/examples/jsm/controls/OrbitControls.js")', "dynamic OrbitControls loading"],
+  ["InstancedMesh", "bounded product instancing"],
+  ["buildFacingInstances", "facing-aware product placement"],
+  ["addMetricFixtureFallback", "open metric fixture geometry"],
+  ["MeshPhysicalMaterial", "glass/cold-fixture material"],
+  ["setColorAt", "SKU-distinguishable product facings"],
+  ["ACESFilmicToneMapping", "market-grade tone mapping baseline"],
+  ["mesh.rotation.y = (-Number(element.rotationDeg", "arbitrary-angle architecture rotation in 3D"],
+  ["group.rotation.y = (-Number(fixture.rotationDeg", "arbitrary-angle fixture rotation in 3D"],
+  ["renderer.domElement.tabIndex = 0", "keyboard-focusable 3D canvas"],
+  ["assetRuntime.loadProductTexture", "governed packshot/KTX2/atlas texture runtime"],
+  ["assetRuntime.loadFixtureLod", "governed runtime fixture LOD"],
+]) {
+  if (!renderer.includes(needle)) fail(`Shared Digital Twin renderer missing ${label}: ${needle}`);
 }
-if (renderer.includes("const width = Math.max(module.footprintWidthM * scale, 10)")) {
-  fail("2D fixtures must not regress to arbitrary-angle AABB rendering.");
+
+for (const [needle, label] of [
+  ['import("three/examples/jsm/loaders/GLTFLoader.js")', "dynamic GLB loader"],
+  ['import("three/examples/jsm/loaders/KTX2Loader.js")', "dynamic KTX2 loader"],
+  ["new THREE.LOD()", "camera-aware GLB LOD primitive"],
+  ["canonical_store_scene", "StoreScene geometry authority"],
+]) {
+  if (!runtime.includes(needle)) fail(`Three asset runtime missing ${label}: ${needle}`);
 }
-if (renderer.includes("const perRow = Math.max(1, Math.ceil(Math.sqrt(products.length)))")) {
-  fail("3D product rendering must not regress to square-root debug-grid placement.");
-}
-if (renderer.includes("const frameGeometry = new THREE.BoxGeometry(module.widthM, moduleHeight, module.depthM)")) {
-  fail("3D fixture rendering must not regress to one solid debug box per fixture.");
-}
-if (/from\s+["']three["']/.test(renderer)) {
-  fail("Three.js must remain dynamically loaded rather than entering the eager Planogram chunk.");
-}
-if (studio.includes("production_release_allowed ?") || renderer.includes("production_release_allowed ?")) {
-  fail("Digital twin must never unlock production publication from preview payloads.");
+
+if (canonical.includes("const width = element.footprintWidthM * scale")) fail("2D architecture must not regress to arbitrary-angle AABB rendering.");
+if (canonical.includes("const width = Math.max(module.footprintWidthM * scale, 10)")) fail("2D fixtures must not regress to arbitrary-angle AABB rendering.");
+if (renderer.includes("const perRow = Math.max(1, Math.ceil(Math.sqrt(products.length)))")) fail("3D product rendering must not regress to square-root debug-grid placement.");
+for (const source of [canonical, renderer, runtime]) {
+  if (/from\s+["']three["']/.test(source)) fail("Three.js must remain dynamically loaded rather than entering the eager Planogram chunk.");
+  if (source.includes("production_release_allowed ?") || source.includes("productionReleaseAllowed ?")) {
+    fail("Digital twin must never unlock production publication from preview payloads.");
+  }
 }
 for (const rule of [
   "eay-twin-egress-clearance",
@@ -255,7 +255,6 @@ for (const rule of [
   if (!css.includes(rule)) fail(`Digital twin accessibility/physical-truth CSS missing: ${rule}`);
 }
 
-
 const moduleDimensionContractResult = {
   planogram: {
     aisles: [{
@@ -265,12 +264,7 @@ const moduleDimensionContractResult = {
         module_width_cm: 150,
         module_depth_cm: 65,
         module_height_cm: 210,
-        shelves: [{
-          shelf_no: 1,
-          shelf_width_cm: 100,
-          shelf_depth_cm: 50,
-          products: [],
-        }],
+        shelves: [{ shelf_no: 1, shelf_width_cm: 100, shelf_depth_cm: 50, products: [] }],
       }],
     }],
   },
@@ -302,22 +296,14 @@ const moduleDimensionContractCandidate = {
     },
   },
 };
-const moduleDimensionContract = buildPlanogramDigitalTwinModel(
-  moduleDimensionContractResult,
-  moduleDimensionContractCandidate
-);
+const moduleDimensionContract = buildPlanogramDigitalTwinModel(moduleDimensionContractResult, moduleDimensionContractCandidate);
 const measuredModule = moduleDimensionContract?.modules?.[0];
 if (!measuredModule) fail("module_*_cm regression fixture did not render.");
 if (!closeTo(measuredModule.widthM, 1.5) || !closeTo(measuredModule.depthM, 0.65)) {
   fail("module_*_cm must override shelf fallback geometry in the digital twin.");
 }
-if (!closeTo(measuredModule.heightM, 2.1)) {
-  fail("module_height_cm must drive the physical 3D fixture height.");
-}
-for (const [scale, expectedMeters, expectedPixels] of [
-  [20, 2, 40],
-  [200, 0.2, 40],
-]) {
+if (!closeTo(measuredModule.heightM, 2.1)) fail("module_height_cm must drive the physical 3D fixture height.");
+for (const [scale, expectedMeters, expectedPixels] of [[20, 2, 40], [200, 0.2, 40]]) {
   const grid = metricGridStep({ scale });
   if (!closeTo(grid.meters, expectedMeters) || !closeTo(grid.pixels, expectedPixels)) {
     fail("Metric grid must remain scale-correct across small and large floorplans.");
@@ -326,11 +312,9 @@ for (const [scale, expectedMeters, expectedPixels] of [
 const angle = 17 * Math.PI / 180;
 const expectedFootprintWidth = 1.5 * Math.abs(Math.cos(angle)) + 0.65 * Math.abs(Math.sin(angle));
 const expectedFootprintDepth = 1.5 * Math.abs(Math.sin(angle)) + 0.65 * Math.abs(Math.cos(angle));
-if (
-  !closeTo(measuredModule.footprintWidthM, expectedFootprintWidth) ||
-  !closeTo(measuredModule.footprintDepthM, expectedFootprintDepth)
-) {
+if (!closeTo(measuredModule.footprintWidthM, expectedFootprintWidth)
+  || !closeTo(measuredModule.footprintDepthM, expectedFootprintDepth)) {
   fail("module_*_cm must feed arbitrary-angle physical geometry.");
 }
 
-console.log("Planogram canonical 2D/3D digital twin truth, V2 spatial preview and facing renderer contract: PASS");
+console.log("Planogram canonical 2D/3D unified digital twin truth, V2 spatial preview and governed facing renderer contract: PASS");

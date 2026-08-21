@@ -29,7 +29,7 @@ try {
   for (const label of ["Bordro ve Belgeler", "Eğitimlerim", "Nabız Anketi", "Zimmetlerim"]) {
     assert.match(mobile, new RegExp(label));
   }
-  assert.match(admin, /Privacy-first evidence/);
+  assert.match(admin, /Mahremiyet odaklı kanıt|Privacy-first evidence/);
   assert.doesNotMatch(`${mobile}${admin}`, /Avans|Harcama|Seyahat|Yan Hak|Budget Intelligence/i);
   console.log("Workforce experience render tests passed.");
 } finally {

@@ -9,12 +9,15 @@ on:
       - "services/eay-ai-core/app/context_provider_gateway.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_runtime.py"
+      - "services/eay-ai-core/app/tuik_retail_confidence_adapter.py"
       - "services/eay-ai-core/field_evidence/tuik_portal_probe_v1.json"
+      - "services/eay-ai-core/field_evidence/tuik_retail_confidence_2026_07.json"
       - "services/eay-ai-core/app/continuous_world_understanding.py"
       - "services/eay-ai-core/app/real_world_timeline.py"
       - "services/eay-ai-core/app/world_model.py"
       - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
       - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_retail_confidence_e2e_intelligence.py"
       - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
       - "services/eay-ai-core/tests/test_world_model.py"
       - ".github/workflows/jarvis-company-world-live-ci.yml"
@@ -24,12 +27,15 @@ on:
       - "services/eay-ai-core/app/context_provider_gateway.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_runtime.py"
+      - "services/eay-ai-core/app/tuik_retail_confidence_adapter.py"
       - "services/eay-ai-core/field_evidence/tuik_portal_probe_v1.json"
+      - "services/eay-ai-core/field_evidence/tuik_retail_confidence_2026_07.json"
       - "services/eay-ai-core/app/continuous_world_understanding.py"
       - "services/eay-ai-core/app/real_world_timeline.py"
       - "services/eay-ai-core/app/world_model.py"
       - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
       - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_retail_confidence_e2e_intelligence.py"
       - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
       - "services/eay-ai-core/tests/test_world_model.py"
       - ".github/workflows/jarvis-company-world-live-ci.yml"
@@ -86,6 +92,29 @@ jobs:
           echo "TUIK_PROBE_SHA256=$sha"
           test "$status" = "200"
           test "$bytes" -gt 1000
+      - name: Probe exact TUIK retail confidence release
+        run: |
+          set -euo pipefail
+          url='https://veriportali.tuik.gov.tr/tr/press/58156'
+          headers="${RUNNER_TEMP}/tuik-retail.headers"
+          body="${RUNNER_TEMP}/tuik-retail.body"
+          status="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' --connect-timeout 10 --max-time 20 --header 'Accept: text/html' --header 'User-Agent: EAY-Jarvis-Field-Probe/1.0' "$url")"
+          content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+          bytes="$(wc -c < "$body" | tr -d ' ')"
+          sha="$(sha256sum "$body" | awk '{print $1}')"
+          title_hits="$(grep -Foc 'Perakende ticaret sektörü güven endeksi' "$body" || true)"
+          value_hits="$(grep -Foc '111,0' "$body" || true)"
+          echo "TUIK_RETAIL_URL=$url"
+          echo "TUIK_RETAIL_STATUS=$status"
+          echo "TUIK_RETAIL_CONTENT_TYPE=$content_type"
+          echo "TUIK_RETAIL_BYTES=$bytes"
+          echo "TUIK_RETAIL_SHA256=$sha"
+          echo "TUIK_RETAIL_TITLE_HITS=$title_hits"
+          echo "TUIK_RETAIL_VALUE_111_0_HITS=$value_hits"
+          test "$status" = "200"
+          test "$bytes" -gt 1000
+          test "$title_hits" -gt 0
+          test "$value_hits" -gt 0
       - name: Probe TUIK public JSON candidate without promotion
         run: |
           set -euo pipefail
@@ -101,9 +130,6 @@ jobs:
           echo "TUIK_JSON_CANDIDATE_CONTENT_TYPE=${content_type:-unknown}"
           echo "TUIK_JSON_CANDIDATE_BYTES=${bytes:-0}"
           echo "TUIK_JSON_CANDIDATE_SHA256=${sha:-unavailable}"
-          if [ "$status" = "200" ] && printf '%s' "$content_type" | grep -qi 'application/json'; then
-            python -c 'import json,sys; data=json.load(open(sys.argv[1],"rb")); print("TUIK_JSON_CANDIDATE_KIND=" + type(data).__name__); print("TUIK_JSON_CANDIDATE_TOP_KEYS=" + ",".join(sorted(map(str,data.keys()))[:30]) if isinstance(data,dict) else "TUIK_JSON_CANDIDATE_LENGTH=" + str(len(data)))' "$body"
-          fi
       - name: Ruff Company World live and provider runtime
         run: >-
           ruff check

@@ -12,12 +12,14 @@ const workspacePath = "src/modules/academy/AcademyWorkspace.jsx";
 const hubPath = "src/modules/academy/AcademyExpansionHub.jsx";
 const achievementsPath = "src/modules/academy/AcademyAchievements.jsx";
 const interactionPath = "src/modules/academy/AcademyInteractionTimelineStudio.jsx";
+const localizationPath = "src/modules/academy/AcademyLocalizationGovernance.jsx";
 const skillGapPath = "src/modules/academy/AcademySkillGap.jsx";
 const app = fs.readFileSync(appPath, "utf8");
 const workspace = fs.readFileSync(workspacePath, "utf8");
 const hub = fs.readFileSync(hubPath, "utf8");
 const achievements = fs.readFileSync(achievementsPath, "utf8");
 const interaction = fs.readFileSync(interactionPath, "utf8");
+const localization = fs.readFileSync(localizationPath, "utf8");
 const skillGap = fs.readFileSync(skillGapPath, "utf8");
 
 const appRequirements = [
@@ -107,6 +109,24 @@ if (interaction.includes('"multi_choice"')) {
   process.exit(1);
 }
 
+const localizationRequirements = [
+  ['workspace?.authoring?.content_versions', "all-version localization authoring inventory"],
+  ['item.content_version_id !== selectedSource.content_version_id', "source/target version separation"],
+  ['["draft", "published"].includes(item.version_status)', "target lifecycle allowlist"],
+  ['["draft", "published"].includes(item.content_status)', "content lifecycle allowlist"],
+  ['value={item.content_version_id}', "exact target version identity"],
+];
+for (const [needle, label] of localizationRequirements) {
+  if (!localization.includes(needle)) {
+    console.error(`${localizationPath}: missing ${label}: ${needle}`);
+    process.exit(1);
+  }
+}
+if (localization.includes('workspace?.content || []')) {
+  console.error(`${localizationPath}: translation targets must not regress to latest-content-only inventory.`);
+  process.exit(1);
+}
+
 for (const [name, coverage] of [
   ["expansion", academyExpansionMessageCoverage(UI_LOCALES)],
   ["interaction", academyInteractionMessageCoverage(UI_LOCALES)],
@@ -126,4 +146,4 @@ if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.tes
   process.exit(1);
 }
 
-console.log("Academy experience routing, self-scope, schema parity and locale authority contract: PASS");
+console.log("Academy experience routing, self-scope, schema, version and locale authority contract: PASS");

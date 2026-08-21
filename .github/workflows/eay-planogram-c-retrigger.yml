@@ -1,0 +1,28 @@
+name: EAY Planogram C - Retrigger Governed Visual Quality
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - ".github/workflows/eay-planogram-c-retrigger.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  retrigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: product/planogram-market-leadership-v1
+          fetch-depth: 0
+      - name: Retrigger visual quality seed on latest branch truth
+        run: |
+          git config user.name 'eay-planogram-ci'
+          git config user.email 'eay-planogram-ci@users.noreply.github.com'
+          printf '\n# retrigger-after-asset-manifest-test\n' >> .github/workflows/eay-planogram-c-visual-quality-seed.yml
+          git add .github/workflows/eay-planogram-c-visual-quality-seed.yml
+          git commit -m 'ci(planogram): rerun visual quality seed on latest truth'
+          git push origin HEAD:product/planogram-market-leadership-v1

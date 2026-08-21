@@ -8,8 +8,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from . import flexibility, service
+from . import flexibility, persistence, service
 from .assignment_ranking import evaluate_assignment_ranking
+
+
+def _hydrate_canonical_schedule() -> None:
+    """Refresh the schedule snapshot before computing advisory ranking signals."""
+    if not persistence.ENABLED:
+        return
+    service._hydrate_snapshot(persistence.load_snapshot(service._snapshot_kinds()))
 
 
 def _ranking_for_offer(offer: dict, person_id: str, preference_match: bool | None) -> dict:
@@ -30,6 +37,7 @@ def _ranking_for_offer(offer: dict, person_id: str, preference_match: bool | Non
 
 
 def list_ranked_open_shifts_for_person(person_id: str) -> list[dict]:
+    _hydrate_canonical_schedule()
     availability = flexibility._load_availability()
     rows: list[dict] = []
     for offer in flexibility._load_open_shifts():

@@ -7,6 +7,19 @@ function text(value) {
   return String(value ?? "").trim();
 }
 
+function fixtureCodeFrom(row) {
+  const explicit = text(row?.fixtureCode ?? row?.fixture_code ?? row?.catalogFixtureCode);
+  if (explicit) return explicit.toUpperCase();
+  const fixtureId = text(row?.fixtureId ?? row?.fixture_id);
+  if (!fixtureId) return "";
+  const marker = fixtureId.lastIndexOf("@v");
+  return (marker > 0 ? fixtureId.slice(0, marker) : fixtureId).toUpperCase();
+}
+
+function fixtureIdFrom(row) {
+  return text(row?.fixtureId ?? row?.fixture_id);
+}
+
 function authoredScene(model) {
   if (!model?.floor || !Array.isArray(model?.modules)) return null;
   return Object.freeze({
@@ -31,6 +44,8 @@ function authoredScene(model) {
     }))),
     fixtures: Object.freeze(model.modules.map((row) => Object.freeze({
       id: text(row.key),
+      fixtureId: fixtureIdFrom(row),
+      fixtureCode: fixtureCodeFrom(row),
       fixtureType: text(row.fixtureType).toUpperCase(),
       centerXM: number(row.centerXM),
       centerYM: number(row.centerYM),
@@ -73,6 +88,8 @@ function scannedScene(architecture, recognizedFixtures = []) {
     }))),
     fixtures: Object.freeze((recognizedFixtures || []).map((row, index) => Object.freeze({
       id: text(row.element_id || row.fixture_element_id || `scan-fixture-${index + 1}`),
+      fixtureId: fixtureIdFrom(row),
+      fixtureCode: fixtureCodeFrom(row),
       fixtureType: text(row.fixture_type || row.hinted_storage_type || "UNKNOWN").toUpperCase(),
       centerXM: number(row.center_x_m),
       centerYM: number(row.center_y_m),

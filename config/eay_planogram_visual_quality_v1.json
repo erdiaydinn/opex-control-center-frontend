@@ -1,0 +1,47 @@
+{
+  "contract": "eay.planogram.visual-quality.v1",
+  "status": "repository_target_not_field_proof",
+  "package_b_authority_sha": "7e25827d72c4ebf0db07eb6d32e691578ad28f05",
+  "visual_truth": {
+    "geometry_authority": "canonical_store_scene",
+    "fixture_asset_authority": "attested_same_origin_glb_only",
+    "product_asset_authority": "attested_same_origin_packshot_only",
+    "unattested_asset_policy": "carry_as_preview_data_but_do_not_render_as_high_fidelity_truth",
+    "external_url_policy": "deny",
+    "primitive_fallback_policy": "allowed_only_when_governed_asset_is_missing_or_fails_to_load"
+  },
+  "rendering": {
+    "runtime": "threejs_dynamic_split",
+    "tone_mapping": "ACESFilmicToneMapping",
+    "pbr_environment": "RoomEnvironment_PMREM",
+    "fixture_format": "GLB",
+    "product_packshot_formats": ["png", "jpg", "jpeg", "webp", "avif"],
+    "max_textured_product_skus": 48,
+    "max_textured_product_facings": 320,
+    "fixture_scaling_rule": "visual_asset_must_fit_store_scene_metric_envelope",
+    "fallback_must_remain_metric": true
+  },
+  "quality_gates": [
+    "VQ-ASSET-001_same_origin_only",
+    "VQ-ASSET-002_attested_only_high_fidelity",
+    "VQ-ASSET-003_duplicate_asset_keys_rejected",
+    "VQ-GLB-001_dynamic_gltf_loader",
+    "VQ-GLB-002_primitive_hidden_only_after_load_success",
+    "VQ-PACK-001_packshot_follows_real_facing_transform",
+    "VQ-PERF-001_texture_budget_bounded",
+    "VQ-PBR-001_environment_reflection_enabled",
+    "VQ-TRUTH-001_store_scene_remains_geometry_authority",
+    "VQ-TRUTH-002_visual_quality_never_enables_production_release"
+  ],
+  "next_quality_slices": [
+    "first_person_walkthrough_with_collision",
+    "unified_scanned_and_authored_renderer",
+    "KTX2_Basis_texture_delivery",
+    "fixture_LOD_and_product_texture_atlas",
+    "vendor_asset_catalog_ingestion",
+    "store_scan_to_editable_model_visual_acceptance"
+  ],
+  "production_release_allowed": false,
+  "field_verified": false,
+  "claim_market_leader": false
+}

@@ -13,6 +13,7 @@ from app.modules.audit.field_activation_proof import (
     require_field_activation_for_production,
 )
 
+CORE_API_ROOT = Path(__file__).resolve().parents[1]
 TENANT_ID = str(uuid4())
 RELEASE_SHA = "a" * 40
 
@@ -171,10 +172,12 @@ async def test_video_authorization_rejects_unverified_or_tampered_manifest(
 
 
 def test_video_consume_is_fenced_to_tenant_run_expiry_and_single_use() -> None:
-    routes = Path("app/modules/audit/video_routes.py").read_text(encoding="utf-8")
-    authorization = Path("app/modules/audit/video_vision_authorization.py").read_text(
+    routes = (CORE_API_ROOT / "app/modules/audit/video_routes.py").read_text(
         encoding="utf-8"
     )
+    authorization = (
+        CORE_API_ROOT / "app/modules/audit/video_vision_authorization.py"
+    ).read_text(encoding="utf-8")
 
     assert "tenant_id = CAST(:tenant_id AS UUID)" in routes
     assert "audit_run_id = CAST(:audit_run_id AS UUID)" in routes
@@ -187,7 +190,9 @@ def test_video_consume_is_fenced_to_tenant_run_expiry_and_single_use() -> None:
 
 
 def test_public_video_route_cannot_accept_client_model_decoder_or_scanner_authority() -> None:
-    routes = Path("app/modules/audit/video_routes.py").read_text(encoding="utf-8")
+    routes = (CORE_API_ROOT / "app/modules/audit/video_routes.py").read_text(
+        encoding="utf-8"
+    )
     create_payload = routes.split("class AuditVideoVisionAuthorizationCreate", 1)[1].split(
         "class AuditVideoVisionAuthorizationConsume", 1
     )[0]
@@ -201,8 +206,8 @@ def test_public_video_route_cannot_accept_client_model_decoder_or_scanner_author
 
 
 def test_photo_and_video_inference_leases_are_db_immutable_except_one_way_consumption() -> None:
-    migration = Path(
-        "alembic/versions/0059_audit_inference_lease_immutability.py"
+    migration = (
+        CORE_API_ROOT / "alembic/versions/0059_audit_inference_lease_immutability.py"
     ).read_text(encoding="utf-8")
 
     assert 'revision: str = "0059_audit_inference_lease_immutability"' in migration

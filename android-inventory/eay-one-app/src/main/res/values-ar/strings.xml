@@ -1,0 +1,5 @@
+<resources>
+    <string name="eay_one_session_required">جلسة المؤسسة مطلوبة</string>
+    <string name="eay_one_phone_surface">هاتف شخصي / للعمل</string>
+    <string name="eay_one_authority_required">اربط جلسة المؤسسة المعتمدة لاستخدام هذا الإجراء.</string>
+</resources>

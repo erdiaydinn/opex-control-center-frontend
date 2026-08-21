@@ -1,0 +1,5 @@
+<resources>
+    <string name="eay_one_session_required">Session d’entreprise requise</string>
+    <string name="eay_one_phone_surface">Téléphone personnel / professionnel</string>
+    <string name="eay_one_authority_required">Connectez la session d’entreprise validée pour utiliser cette action.</string>
+</resources>

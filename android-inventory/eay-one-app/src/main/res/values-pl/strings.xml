@@ -1,0 +1,5 @@
+<resources>
+    <string name="eay_one_session_required">Wymagana sesja firmowa</string>
+    <string name="eay_one_phone_surface">Telefon prywatny / służbowy</string>
+    <string name="eay_one_authority_required">Połącz zatwierdzoną sesję firmową, aby użyć tej akcji.</string>
+</resources>

@@ -1,0 +1,5 @@
+<resources>
+    <string name="eay_one_session_required">Sessão corporativa obrigatória</string>
+    <string name="eay_one_phone_surface">Telefone pessoal / de trabalho</string>
+    <string name="eay_one_authority_required">Conecte a sessão corporativa revisada para usar esta ação.</string>
+</resources>

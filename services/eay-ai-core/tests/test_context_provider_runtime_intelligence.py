@@ -7,7 +7,11 @@ import httpx
 import pytest
 
 from app.context_intelligence import ContextKind, ContextSourceClass
-from app.context_provider_gateway import ProviderRequestPlan, RequestPurpose, plan_provider_request
+from app.context_provider_gateway import (
+    ProviderRequestPlan,
+    RequestPurpose,
+    plan_provider_request,
+)
 from app.context_provider_registry import (
     PROVIDERS,
     ContextProviderSpec,

@@ -1,0 +1,73 @@
+name: EAY Production Infrastructure CI
+
+on:
+  pull_request:
+    paths:
+      - "infra/aws/**"
+      - ".github/workflows/eay-production-infra-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-production-infra-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Assert exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          test "$expected" = "$actual"
+
+      - name: Terraform format
+        working-directory: infra/aws/terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init without backend
+        working-directory: infra/aws/terraform
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform validate
+        working-directory: infra/aws/terraform
+        run: terraform validate -no-color
+
+      - name: Guard committed AWS credentials and populated secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nEi '(AKIA[0-9A-Z]{16}|aws_secret_access_key[[:space:]]*=|aws_access_key_id[[:space:]]*=)' -- 'infra/aws/**'; then
+            echo "Potential AWS credential material found in infrastructure files." >&2
+            exit 1
+          fi
+          if git grep -nE 'secret_string[[:space:]]*=[[:space:]]*"[^$]' -- 'infra/aws/**'; then
+            echo "Static Secrets Manager secret_string detected." >&2
+            exit 1
+          fi
+
+      - name: Production truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'origin_certificate_arn == "" ? 0 : 1' infra/aws/terraform/compute.tf
+          grep -q 'edge_ipv4_cidrs' infra/aws/terraform/security.tf
+          grep -q 'publicly_accessible    = false' infra/aws/terraform/data.tf
+          grep -q 'object_lock_enabled = true' infra/aws/terraform/data.tf

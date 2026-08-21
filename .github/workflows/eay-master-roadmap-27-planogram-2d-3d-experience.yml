@@ -29,6 +29,7 @@ on:
       - "scripts/test-planogram-candidate-bundle.mjs"
       - "scripts/test-planogram-visual-quality-model.mjs"
       - "scripts/test-planogram-sprint1-visual-runtime.mjs"
+      - "scripts/test-planogram-sprint2-visual-delivery.mjs"
       - "scripts/test-planogram-economics-ui.mjs"
       - "scripts/test-planogram-scenario-portfolio.mjs"
       - "scripts/test-planogram-store-scan-ui.mjs"
@@ -85,6 +86,8 @@ jobs:
         run: node scripts/test-planogram-visual-quality-model.mjs
       - name: Sprint 1 governed reality renderer boundary
         run: node scripts/test-planogram-sprint1-visual-runtime.mjs
+      - name: Sprint 2 LOD KTX2 atlas delivery boundary
+        run: node scripts/test-planogram-sprint2-visual-delivery.mjs
       - name: Store Scan measured capture review boundary
         run: node scripts/test-planogram-store-scan-ui.mjs
       - name: Fingerprint-bound visual Store Scan annotation
@@ -166,6 +169,10 @@ jobs:
           echo 'MASTER_27_GOVERNED_PACKSHOT_FACING_TEXTURES=IMPLEMENTED'
           echo 'MASTER_27_PBR_ROOM_ENVIRONMENT=IMPLEMENTED'
           echo 'MASTER_27_METRIC_PRIMITIVE_FALLBACK=IMPLEMENTED'
+          echo 'MASTER_27_ASSET_MANIFEST_V2=IMPLEMENTED'
+          echo 'MASTER_27_KTX2_DELIVERY_CONTRACT=IMPLEMENTED_NOT_RUNTIME_BOUND'
+          echo 'MASTER_27_TEXTURE_ATLAS_CONTRACT=IMPLEMENTED_NOT_RUNTIME_BOUND'
+          echo 'MASTER_27_FIXTURE_LOD_CONTRACT=IMPLEMENTED_NOT_RUNTIME_BOUND'
           echo 'MASTER_27_PBR_WALKTHROUGH=IMPLEMENTED'
           echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'

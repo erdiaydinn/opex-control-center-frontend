@@ -17,16 +17,16 @@ class ProductionStartupGuardTests(unittest.TestCase):
             "RECRUITMENT_PUBLIC_CAPABILITY_REDIS_URL": "rediss://redis.example.invalid:6380/0",
         }
 
-    def test_v45_is_rejected_even_when_other_config_is_present(self):
-        with patch.dict(os.environ, self.env(), clear=False), patch.object(guard.persistence, "ENABLED", True), patch.object(guard.persistence, "schema_version", return_value=45):
-            with self.assertRaisesRegex(RecruitmentProductionStartupError, "V46"):
+    def test_v46_is_rejected_even_when_other_config_is_present(self):
+        with patch.dict(os.environ, self.env(), clear=False), patch.object(guard.persistence, "ENABLED", True), patch.object(guard.persistence, "schema_version", return_value=46):
+            with self.assertRaisesRegex(RecruitmentProductionStartupError, "V47"):
                 guard.assert_recruitment_production_ready()
 
     def test_repository_controlled_authorities_can_start_without_e_devlet_contract(self):
         with (
             patch.dict(os.environ, self.env(), clear=False),
             patch.object(guard.persistence, "ENABLED", True),
-            patch.object(guard.persistence, "schema_version", return_value=46),
+            patch.object(guard.persistence, "schema_version", return_value=47),
             patch.object(guard.S3KmsEnvelopeEvidenceStore, "from_environment") as storage,
             patch.object(guard.AwsKmsHmacKeyAuthority, "from_environment") as scanner_kms,
             patch.object(guard, "scanner_db_preflight", return_value={"session_user": "eay_candidate_scanner_runtime"}) as scanner_db,
@@ -40,11 +40,11 @@ class ProductionStartupGuardTests(unittest.TestCase):
 
     def test_plaintext_storage_or_non_postgres_upload_authority_is_rejected(self):
         bad_storage = {**self.env(), "RECRUITMENT_EVIDENCE_STORAGE_MODE": "legacy-local"}
-        with patch.dict(os.environ, bad_storage, clear=False), patch.object(guard.persistence, "ENABLED", True), patch.object(guard.persistence, "schema_version", return_value=46):
+        with patch.dict(os.environ, bad_storage, clear=False), patch.object(guard.persistence, "ENABLED", True), patch.object(guard.persistence, "schema_version", return_value=47):
             with self.assertRaisesRegex(RecruitmentProductionStartupError, "S3/KMS"):
                 guard.assert_recruitment_production_ready()
         bad_upload = {**self.env(), "RECRUITMENT_CANDIDATE_UPLOAD_AUTHORITY_MODE": "legacy-development"}
-        with patch.dict(os.environ, bad_upload, clear=False), patch.object(guard.persistence, "ENABLED", True), patch.object(guard.persistence, "schema_version", return_value=46):
+        with patch.dict(os.environ, bad_upload, clear=False), patch.object(guard.persistence, "ENABLED", True), patch.object(guard.persistence, "schema_version", return_value=47):
             with self.assertRaisesRegex(RecruitmentProductionStartupError, "PostgreSQL modunda"):
                 guard.assert_recruitment_production_ready()
 
@@ -52,7 +52,7 @@ class ProductionStartupGuardTests(unittest.TestCase):
         with (
             patch.dict(os.environ, self.env(), clear=False),
             patch.object(guard.persistence, "ENABLED", True),
-            patch.object(guard.persistence, "schema_version", return_value=46),
+            patch.object(guard.persistence, "schema_version", return_value=47),
             patch.object(guard.S3KmsEnvelopeEvidenceStore, "from_environment"),
             patch.object(guard.AwsKmsHmacKeyAuthority, "from_environment"),
             patch.object(guard, "scanner_db_preflight", return_value={}),

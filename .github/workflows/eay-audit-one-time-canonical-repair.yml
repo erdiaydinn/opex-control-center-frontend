@@ -1,6 +1,10 @@
 name: EAY Audit One-Time Canonical Repair
 
 on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - product/eay-audit-field-truth-v1
@@ -46,10 +50,11 @@ jobs:
               text = target.read_text(encoding="utf-8")
               actual = text.count(old)
               if actual != count:
-                  raise SystemExit(f"{path}: expected {count} occurrences, found {actual}: {old!r}")
+                  raise SystemExit(
+                      f"{path}: expected {count} occurrences, found {actual}: {old!r}"
+                  )
               target.write_text(text.replace(old, new), encoding="utf-8")
 
-          # Canonical Ruff: preserve SQL semantics while splitting long literals/expressions.
           visit_migration = "services/core-api/alembic/versions/0056_audit_visit_manifests.py"
           replace(
               visit_migration,
@@ -151,7 +156,6 @@ jobs:
               '    assert "model_record_id" not in authorization_create_contract',
           )
 
-          # Full-suite tests must be independent of the runner working directory.
           path_contract_files = [
               "services/core-api/tests/test_audit_video_authority_adversarial.py",
               "services/core-api/tests/test_audit_video_authority_integration_contracts.py",
@@ -169,7 +173,10 @@ jobs:
                   )
                   lines = source.splitlines()
                   lines.insert(import_end, "")
-                  lines.insert(import_end + 1, "CORE_API_ROOT = Path(__file__).resolve().parents[1]")
+                  lines.insert(
+                      import_end + 1,
+                      "CORE_API_ROOT = Path(__file__).resolve().parents[1]",
+                  )
                   source = "\n".join(lines) + "\n"
               source = re.sub(
                   r'Path\("((?:app|alembic)/[^"\n]+)"\)',
@@ -178,7 +185,6 @@ jobs:
               )
               target.write_text(source, encoding="utf-8")
 
-          # Fail-closed data-access review: add only the exact new tenant/RLS-bound DB paths.
           sql_guard = ROOT / "services/core-api/tests/test_sql_access_boundary.py"
           source = sql_guard.read_text(encoding="utf-8")
           audit_anchor = (
@@ -214,7 +220,10 @@ jobs:
               raise SystemExit("SQL guard Audit insertion anchor drifted")
           source = source.replace(audit_anchor, audit_review)
 
-          execution_anchor = 'ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | PRIVILEGED_ENGINE_CREATION\n\nEXECUTION_CALLS = {'
+          execution_anchor = (
+              "ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | "
+              "PRIVILEGED_ENGINE_CREATION\n\nEXECUTION_CALLS = {"
+          )
           reviewed_non_sql = '''ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | PRIVILEGED_ENGINE_CREATION
 
 # Exact non-database execution points whose method names collide with SQLAlchemy
@@ -266,8 +275,7 @@ EXECUTION_CALLS = {'''
               raise SystemExit("SQL guard growth anchor drifted")
           source = source.replace(growth_old, growth_new)
 
-          exact_test_anchor = '''def test_raw_sql_text_must_be_static_literal() -> None:
-'''
+          exact_test_anchor = "def test_raw_sql_text_must_be_static_literal() -> None:\n"
           exact_test = '''def test_reviewed_non_sql_execution_points_are_exact() -> None:
     discovered: set[tuple[str, str, str]] = set()
     for path in sorted(APP_ROOT.rglob("*.py")):
@@ -292,13 +300,6 @@ def test_raw_sql_text_must_be_static_literal() -> None:
               raise SystemExit("SQL guard exact non-SQL test anchor drifted")
           source = source.replace(exact_test_anchor, exact_test)
           sql_guard.write_text(source, encoding="utf-8")
-
-          # The dedicated merge gate must enforce the same canonical full Ruff gate as Jarvis.
-          replace(
-              ".github/workflows/eay-audit-main-merge-gate.yml",
-              "        run: ruff check --ignore E501 services/core-api",
-              "        run: ruff check services/core-api --output-format=github",
-          )
           PY
 
       - name: Install Core API test surface
@@ -342,7 +343,6 @@ def test_raw_sql_text_must_be_static_literal() -> None:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
-            .github/workflows/eay-audit-main-merge-gate.yml \
             services/core-api/alembic/versions/0056_audit_visit_manifests.py \
             services/core-api/alembic/versions/0057_audit_video_authority.py \
             services/core-api/app/modules/audit/video_vision_authorization.py \

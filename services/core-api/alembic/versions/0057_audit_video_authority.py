@@ -250,7 +250,10 @@ def upgrade() -> None:
             name="ck_audit_video_auth_decoder_fingerprint",
         ),
         sa.CheckConstraint(
-            "field_activation_fingerprint IS NULL OR field_activation_fingerprint ~ '^[0-9a-f]{64}$'",
+            (
+                "field_activation_fingerprint IS NULL OR "
+                "field_activation_fingerprint ~ '^[0-9a-f]{64}$'"
+            ),
             name="ck_audit_video_auth_field_activation",
         ),
         sa.CheckConstraint(
@@ -279,10 +282,12 @@ def upgrade() -> None:
     )
     _tenant_policy("audit_video_inference_authorizations")
     op.execute(
-        f"GRANT SELECT, INSERT, UPDATE ON TABLE audit_video_inference_authorizations TO {RUNTIME_ROLE}"
+        "GRANT SELECT, INSERT, UPDATE ON TABLE audit_video_inference_authorizations "
+        f"TO {RUNTIME_ROLE}"
     )
     op.execute(
-        f"REVOKE DELETE ON TABLE audit_video_inference_authorizations FROM {RUNTIME_ROLE}"
+        "REVOKE DELETE ON TABLE audit_video_inference_authorizations "
+        f"FROM {RUNTIME_ROLE}"
     )
 
 

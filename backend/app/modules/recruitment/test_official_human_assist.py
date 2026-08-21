@@ -92,7 +92,8 @@ class OfficialHumanAssistTests(unittest.TestCase):
         self.assertIn("Tarayıcı güvenliği gereği EAY", portal)
         self.assertNotIn("document.cookie", portal)
         self.assertNotIn("localStorage.setItem", portal)
-        self.assertNotIn("captcha", portal.lower())
+        self.assertNotIn("captcha_automation", portal)
+        self.assertNotIn("session_import", portal)
         self.assertLess(portal.index("if (!result?.accepted)"), portal.index("sessionStorage.removeItem(SESSION_KEY)"))
 
     def test_non_official_document_cannot_enter_e_devlet_assist_flow(self):

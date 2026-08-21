@@ -1,0 +1,32 @@
+{
+  "contract": "eay-cyber-defense-school-source-registry-v1",
+  "purpose": "Defensive source registry only; runtime fetch remains server-side and non-authoritative for company exposure.",
+  "sources": [
+    {"id":"mitre_attack","authority":"attack_behavior","official_ref":"https://attack.mitre.org/","server_side_only":true},
+    {"id":"mitre_d3fend","authority":"defensive_countermeasure","official_ref":"https://d3fend.mitre.org/","server_side_only":true},
+    {"id":"cisa_kev","authority":"known_exploitation","official_ref":"https://www.cisa.gov/known-exploited-vulnerabilities-catalog","server_side_only":true},
+    {"id":"first_epss","authority":"exploitation_probability","official_ref":"https://www.first.org/epss/","server_side_only":true},
+    {"id":"nvd_cve","authority":"vulnerability_metadata","official_ref":"https://nvd.nist.gov/","server_side_only":true},
+    {"id":"cwe","authority":"weakness_taxonomy","official_ref":"https://cwe.mitre.org/","server_side_only":true},
+    {"id":"capec","authority":"attack_pattern_taxonomy","official_ref":"https://capec.mitre.org/","server_side_only":true},
+    {"id":"owasp_asvs","authority":"application_defense","official_ref":"https://owasp.org/www-project-application-security-verification-standard/","server_side_only":true},
+    {"id":"owasp_api","authority":"application_defense","official_ref":"https://owasp.org/www-project-api-security/","server_side_only":true},
+    {"id":"owasp_mobile","authority":"application_defense","official_ref":"https://mas.owasp.org/","server_side_only":true},
+    {"id":"owasp_genai","authority":"ai_defense","official_ref":"https://genai.owasp.org/","server_side_only":true},
+    {"id":"vendor_advisory","authority":"product_advisory","official_ref":"vendor-specific","server_side_only":true},
+    {"id":"github_security_advisory","authority":"dependency_advisory","official_ref":"https://github.com/advisories","server_side_only":true},
+    {"id":"sigma","authority":"detection_content","official_ref":"https://sigmahq.io/","server_side_only":true},
+    {"id":"yara","authority":"detection_content","official_ref":"https://virustotal.github.io/yara/","server_side_only":true},
+    {"id":"nist_csf","authority":"security_framework","official_ref":"https://www.nist.gov/cyberframework","server_side_only":true}
+  ],
+  "invariants": {
+    "public_source_can_assert_company_exposure": false,
+    "public_source_can_confirm_company_incident": false,
+    "exploit_generation_permitted": false,
+    "credential_capture_permitted": false,
+    "destructive_execution_permitted": false,
+    "production_mutation_permitted": false,
+    "automatic_remediation_permitted": false,
+    "execution_authority_granted": false
+  }
+}

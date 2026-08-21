@@ -28,8 +28,8 @@ from .video_verification_runtime import (
     AuditCanonicalVideoFrame,
     AuditCanonicalVideoManifest,
 )
+from .video_verification_service import VIDEO_VERIFICATION_AUTHORITY_VERSION
 from .video_verification_service import (
-    VIDEO_VERIFICATION_AUTHORITY_VERSION,
     _verification_fingerprint as video_verification_fingerprint,
 )
 from .vision_model_proof import (

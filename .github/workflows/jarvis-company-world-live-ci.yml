@@ -1,0 +1,80 @@
+name: EAY Jarvis Company World Live
+
+on:
+  push:
+    branches:
+      - product/jarvis-company-world-live-v1
+    paths:
+      - "services/eay-ai-core/app/company_world_live_bridge.py"
+      - "services/eay-ai-core/app/continuous_world_understanding.py"
+      - "services/eay-ai-core/app/real_world_timeline.py"
+      - "services/eay-ai-core/app/world_model.py"
+      - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
+      - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
+      - "services/eay-ai-core/tests/test_world_model.py"
+      - ".github/workflows/jarvis-company-world-live-ci.yml"
+  pull_request:
+    paths:
+      - "services/eay-ai-core/app/company_world_live_bridge.py"
+      - "services/eay-ai-core/app/continuous_world_understanding.py"
+      - "services/eay-ai-core/app/real_world_timeline.py"
+      - "services/eay-ai-core/app/world_model.py"
+      - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
+      - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
+      - "services/eay-ai-core/tests/test_world_model.py"
+      - ".github/workflows/jarvis-company-world-live-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-company-world-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  company-world-live:
+    name: Company World external-context authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COMPANY_WORLD_EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal Company World head
+        run: |
+          actual="$(git rev-parse HEAD)"
+          echo "COMPANY_WORLD_EXPECTED_SHA=$COMPANY_WORLD_EXPECTED_SHA"
+          echo "COMPANY_WORLD_ACTUAL_SHA=$actual"
+          test "$actual" = "$COMPANY_WORLD_EXPECTED_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install canonical AI Core runtime and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Ruff Company World live bridge
+        run: >-
+          ruff check
+          app/company_world_live_bridge.py
+          tests/test_company_world_live_bridge_intelligence.py
+      - name: Compile Company World authority surface
+        run: >-
+          python -m compileall -q
+          app/company_world_live_bridge.py
+          app/continuous_world_understanding.py
+          app/real_world_timeline.py
+          app/world_model.py
+          tests/test_company_world_live_bridge_intelligence.py
+      - name: Run Company World adversarial and lineage contracts
+        run: >-
+          pytest -q
+          tests/test_company_world_live_bridge_intelligence.py
+          tests/test_continuous_world_understanding_intelligence.py
+          tests/test_world_model.py

@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  EAY Terraform remote-state bootstrap. Creates only the retained, versioned,
+  private S3 state bucket required by the production Terraform backend.
+
+Parameters:
+  StateBucketName:
+    Type: String
+    Default: eay-tfstate-600219017658-eu-central-1
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    Description: Globally unique S3 bucket name for Terraform state.
+
+Resources:
+  StateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref StateBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Project
+          Value: eay-platform
+        - Key: Environment
+          Value: production-control-plane
+        - Key: Purpose
+          Value: terraform-remote-state
+        - Key: ManagedBy
+          Value: cloudformation-bootstrap
+        - Key: ControlPlane
+          Value: issue-192
+
+  StateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StateBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt StateBucket.Arn
+              - !Sub "${StateBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  StateBucketName:
+    Description: Terraform state bucket name.
+    Value: !Ref StateBucket
+  StateBucketArn:
+    Description: Terraform state bucket ARN.
+    Value: !GetAtt StateBucket.Arn
+  StateRegion:
+    Description: Region contract for the Terraform backend.
+    Value: !Ref AWS::Region

@@ -13,12 +13,20 @@ function requireText(source, text, label) {
 
 const component = read("src/modules/workforce/WorkforceCommandCenter.jsx");
 const boundary = read("src/modules/workforce/WorkforceBootstrapBoundary.jsx");
+const flexibilityAdmin = read("src/modules/workforce/WorkforceFlexibilityAdmin.jsx");
 const api = read("src/modules/workforce/workforceCommandCenterApi.js");
 const router = read("backend/app/modules/workforce/command_center_router.py");
 const service = read("backend/app/modules/workforce/command_center.py");
 const repository = read("backend/app/modules/workforce/command_center_repository.py");
 
-requireText(boundary, "<WorkforceCommandCenter />", "manager surface");
+requireText(boundary, "<WorkforceCommandCenter onLocationChange={setCommandLocationId} />", "manager surface");
+requireText(boundary, "<WorkforceFlexibilityAdmin preferredWarehouseId={commandLocationId} />", "governed flexibility handoff");
+requireText(boundary, 'canAction("workforce", "createShift")', "manager mutation permission");
+requireText(component, "onLocationChange?.(first)", "initial worksite handoff");
+requireText(component, "onLocationChange?.(next)", "selected worksite handoff");
+requireText(flexibilityAdmin, 'isSuperAdmin() || canAction("workforce", "createShift")', "flexibility permission boundary");
+requireText(flexibilityAdmin, "preferredWarehouseId", "preferred worksite contract");
+requireText(flexibilityAdmin, "<WorkforceShiftTradeAdminPanel warehouseId={form.warehouseId} />", "shift-trade manager authority surface");
 requireText(api, "/workforce/command-center/", "frontend authority route");
 requireText(router, "workforce.pressure.read", "read permission");
 requireText(repository, "d.snapshot_fingerprint=p.demand_snapshot_fingerprint", "exact demand lineage");

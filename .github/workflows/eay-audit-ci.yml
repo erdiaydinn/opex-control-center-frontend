@@ -93,6 +93,7 @@ jobs:
           pytest -q
           tests/test_audit_video_verification_runtime.py
           tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
       - name: Compile audit authority
         run: >-
           python -m compileall -q
@@ -110,6 +111,7 @@ jobs:
           alembic/versions/0052_audit_vision_inference_authority.py
           alembic/versions/0057_audit_video_authority.py
           alembic/versions/0058_audit_video_replay_fence.py
+          tests/test_audit_video_authority_adversarial.py
       - name: Ruff application boundaries
         run: >-
           ruff check
@@ -162,6 +164,7 @@ jobs:
           app/modules/field_intelligence/video_object_read.py
           tests/test_audit_video_verification_runtime.py
           tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
       - name: Ruff migrations 0046-0052 and 0057-0058
         run: >-
           ruff check --ignore E501

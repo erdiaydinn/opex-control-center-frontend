@@ -100,7 +100,7 @@ export default function CandidateDocumentPortal() {
           <div><strong>1 · Barkodlu belgeyi e-Devlet'te siz oluşturun</strong><p>e-Devlet ayrı sekmede açılır. Giriş, şifre, OTP, CAPTCHA ve oturum tamamen sizin tarayıcınızda kalır. EAY bu sekmeyi okuyamaz ve yönetmez.</p></div>
           <a className="cand-doc-official-open" href={EDEVLET_HOME} target="_blank" rel="noopener noreferrer" onClick={() => setOfficialFlow("launched")}><ExternalLink size={16}/>e-Devlet'i güvenli sekmede aç</a>
           {officialFlow === "returned" ? <div className="cand-doc-return"><CheckCircle2 size={17}/><span>EAY'a geri döndünüz. İndirdiğiniz barkodlu PDF'yi aşağıdan seçerek devam edin.</span></div> : null}
-          <small>Tarayıcı güvenliği gereği EAY, bilgisayarınızdaki İndirilenler klasörünü otomatik okuyamaz. Dosyayı yalnızca sizin seçmeniz gerekir.</small>
+          <small>EAY'ın güvenli yükleme yetkisi bu sekmede korunur. Tarayıcı güvenliği gereği bilgisayarınızdaki İndirilenler klasörü otomatik okunamaz; indirdiğiniz dosyayı yalnızca sizin seçmeniz gerekir.</small>
         </div> : null}
         {error ? <div className="cand-doc-alert"><CircleAlert size={17}/>{error}</div> : null}
         <label className={`cand-doc-drop ${file ? "has-file" : ""}`}>

@@ -81,6 +81,22 @@ if (remotePlan.fixtureInstances.length !== 0 || remotePlan.productTextures.lengt
   fail("Visual planner must independently fail closed on remote asset paths.");
 }
 
+const wrongNamespace = structuredClone(manifest);
+wrongNamespace.fixture_assets[0].model_path = "/uploads/fixture.glb";
+wrongNamespace.product_assets[0].front_image_path = "/api/files/sku.webp";
+const wrongNamespacePlan = buildPlanogramVisualQualityPlan({ modules: [fixtureModule()] }, wrongNamespace);
+if (wrongNamespacePlan.fixtureInstances.length !== 0 || wrongNamespacePlan.productTextures.length !== 0) {
+  fail("Visual planner must independently reject same-origin assets outside governed namespaces.");
+}
+
+const traversalManifest = structuredClone(manifest);
+traversalManifest.fixture_assets[0].model_path = "/planogram-assets/fixtures/%2e%2e/secret.glb";
+traversalManifest.product_assets[0].front_image_path = "/planogram-assets/products/../fixtures/not-a-packshot.webp";
+const traversalPlan = buildPlanogramVisualQualityPlan({ modules: [fixtureModule()] }, traversalManifest);
+if (traversalPlan.fixtureInstances.length !== 0 || traversalPlan.productTextures.length !== 0) {
+  fail("Visual planner must independently reject encoded or dot-segment traversal.");
+}
+
 const manyProducts = Array.from({ length: 80 }, (_, index) => ({
   sku: `SKU-${index + 100}`,
   facing_count: 10,

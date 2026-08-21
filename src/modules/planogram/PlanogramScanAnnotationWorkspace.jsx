@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Crosshair, ShieldCheck, Trash2 } from "lucide-react";
+import { Crosshair, Ruler, ShieldCheck, Trash2 } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
+import { translatePlanogramAuthoring } from "../../platform/i18n/planogramAuthoringMessages.js";
 import { translatePlanogramScanAnnotation } from "../../platform/i18n/planogramScanAnnotationMessages.js";
 import { rotatedRectSvgPoints, svgPointString } from "./planogramEngineering2D.js";
 import PlanogramFixtureBindingPanel from "./PlanogramFixtureBindingPanel.jsx";
@@ -57,8 +58,10 @@ export default function PlanogramScanAnnotationWorkspace({
   formatNumber,
   canCreate,
   optimizationCandidate,
+  onOpenEditableModel,
 }) {
   const t = useMemo(() => (key) => translatePlanogramScanAnnotation(locale, key), [locale]);
+  const authoringT = useMemo(() => (key) => translatePlanogramAuthoring(locale, key), [locale]);
   const scan = scanResponse?.store_scan || null;
   const architecture = scan?.architecture_v2_preview || null;
   const openings = useMemo(
@@ -273,6 +276,16 @@ export default function PlanogramScanAnnotationWorkspace({
           <div><span>{t("fingerprint")}</span><code>{reviewedResult.reviewed_draft_fingerprint}</code></div>
           {reviewedResult.blockers?.length ? <ul>{reviewedResult.blockers.map((row) => <li key={row}><code>{row}</code></li>)}</ul> : null}
         </div>
+      ) : null}
+
+      {reviewedResult?.reviewed_draft_ready && typeof onOpenEditableModel === "function" ? (
+        <button
+          type="button"
+          className="eay-scan-annotation-run"
+          onClick={() => onOpenEditableModel(reviewedResult)}
+        >
+          <Ruler size={16} aria-hidden="true" />{authoringT("title")}
+        </button>
       ) : null}
 
       {reviewedResult?.reviewed_draft_ready ? (

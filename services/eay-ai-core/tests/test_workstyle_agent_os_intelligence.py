@@ -49,8 +49,10 @@ def _score(value: float = 0.995) -> SpecialistScorecard:
 
 
 def _mastery(domain: SpecialistDomain, *, master: bool = True):
+    specialist_id = f"specialist-{domain.value}"
     evidence = tuple(
         build_specialist_evidence(
+            specialist_id=specialist_id,
             domain=domain,
             benchmark_id=f"{domain.value}-{index}",
             benchmark_version="v1",
@@ -65,7 +67,12 @@ def _mastery(domain: SpecialistDomain, *, master: bool = True):
         )
         for index in range(3)
     )
-    decision = admit_specialist_mastery(domain=domain, evidence=evidence, now=NOW)
+    decision = admit_specialist_mastery(
+        specialist_id=specialist_id,
+        domain=domain,
+        evidence=evidence,
+        now=NOW,
+    )
     assert decision.admitted_tier is (
         MasteryTier.MASTER if master else MasteryTier.EXPERT
     )

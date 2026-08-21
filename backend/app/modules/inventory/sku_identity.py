@@ -28,4 +28,3 @@ def frozen_sku_identity(
         **snapshot_input,
         "snapshot_hash": canonical_payload_hash(snapshot_input),
     }
-

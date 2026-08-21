@@ -14,6 +14,7 @@ from app.specialist_mastery_registry import (
 )
 
 NOW = datetime(2026, 8, 21, 6, 45, tzinfo=UTC)
+SPECIALIST_ID = "jarvis-primary"
 
 
 def _score(
@@ -42,6 +43,7 @@ def _evidence(
     domain: SpecialistDomain,
     benchmark_id: str,
     *,
+    specialist_id: str = SPECIALIST_ID,
     cases: int = 150,
     score: SpecialistScorecard | None = None,
     synthetic: bool = False,
@@ -51,6 +53,7 @@ def _evidence(
     age: timedelta = timedelta(days=1),
 ):
     return build_specialist_evidence(
+        specialist_id=specialist_id,
         domain=domain,
         benchmark_id=benchmark_id,
         benchmark_version="v1",
@@ -65,18 +68,24 @@ def _evidence(
     )
 
 
+def _admit(domain: SpecialistDomain, evidence):
+    return admit_specialist_mastery(
+        specialist_id=SPECIALIST_ID,
+        domain=domain,
+        evidence=evidence,
+        now=NOW,
+    )
+
+
 def test_general_reasoning_master_requires_multi_benchmark_evidence() -> None:
     evidence = tuple(
         _evidence(SpecialistDomain.GENERAL_REASONING, f"reasoning-{index}")
         for index in range(3)
     )
 
-    decision = admit_specialist_mastery(
-        domain=SpecialistDomain.GENERAL_REASONING,
-        evidence=evidence,
-        now=NOW,
-    )
+    decision = _admit(SpecialistDomain.GENERAL_REASONING, evidence)
 
+    assert decision.specialist_id == SPECIALIST_ID
     assert decision.admitted_tier is MasteryTier.MASTER
     assert decision.production_mastery_claim_allowed is True
     assert decision.universal_superiority_claimed is False
@@ -97,11 +106,7 @@ def test_synthetic_only_evidence_cannot_admit_production_mastery() -> None:
         for index in range(3)
     )
 
-    decision = admit_specialist_mastery(
-        domain=SpecialistDomain.DEEP_RESEARCH,
-        evidence=evidence,
-        now=NOW,
-    )
+    decision = _admit(SpecialistDomain.DEEP_RESEARCH, evidence)
 
     assert decision.admitted_tier is MasteryTier.EXPERT
     assert decision.production_mastery_claim_allowed is False
@@ -130,11 +135,7 @@ def test_legal_master_requires_strict_authority_and_adversarial_scores() -> None
         for index in range(3)
     )
 
-    decision = admit_specialist_mastery(
-        domain=SpecialistDomain.LEGAL,
-        evidence=evidence,
-        now=NOW,
-    )
+    decision = _admit(SpecialistDomain.LEGAL, evidence)
 
     assert decision.admitted_tier is MasteryTier.MASTER
     assert decision.aggregate_scorecard is not None
@@ -152,11 +153,7 @@ def test_sensitive_mastery_is_withheld_when_authority_discipline_is_weak() -> No
         for index in range(3)
     )
 
-    decision = admit_specialist_mastery(
-        domain=SpecialistDomain.FINANCE,
-        evidence=evidence,
-        now=NOW,
-    )
+    decision = _admit(SpecialistDomain.FINANCE, evidence)
 
     assert decision.admitted_tier is MasteryTier.EXPERT
     assert "specialist_master_authority_adherence_insufficient" in decision.blockers
@@ -172,11 +169,7 @@ def test_stale_evidence_is_not_counted_as_current_mastery() -> None:
         ),
     )
 
-    decision = admit_specialist_mastery(
-        domain=SpecialistDomain.CURRENT_WORLD,
-        evidence=evidence,
-        now=NOW,
-    )
+    decision = _admit(SpecialistDomain.CURRENT_WORLD, evidence)
 
     assert decision.admitted_tier is MasteryTier.UNADMITTED
     assert decision.evaluated_cases == 0
@@ -187,11 +180,18 @@ def test_cross_domain_evidence_is_rejected() -> None:
     legal = _evidence(SpecialistDomain.LEGAL, "legal-scope")
 
     with pytest.raises(ValueError, match="specialist_evidence_domain_mismatch"):
-        admit_specialist_mastery(
-            domain=SpecialistDomain.HUMAN_RESOURCES,
-            evidence=(legal,),
-            now=NOW,
-        )
+        _admit(SpecialistDomain.HUMAN_RESOURCES, (legal,))
+
+
+def test_cross_specialist_evidence_is_rejected() -> None:
+    other = _evidence(
+        SpecialistDomain.LEGAL,
+        "other-specialist",
+        specialist_id="legal-agent-b",
+    )
+
+    with pytest.raises(ValueError, match="specialist_evidence_identity_mismatch"):
+        _admit(SpecialistDomain.LEGAL, (other,))
 
 
 def test_tampered_benchmark_evidence_is_rejected_before_admission() -> None:
@@ -202,16 +202,13 @@ def test_tampered_benchmark_evidence_is_rejected_before_admission() -> None:
         ValueError,
         match="specialist_evidence_fingerprint_mismatch",
     ):
-        admit_specialist_mastery(
-            domain=SpecialistDomain.CYBER_SECURITY,
-            evidence=(tampered,),
-            now=NOW,
-        )
+        _admit(SpecialistDomain.CYBER_SECURITY, (tampered,))
 
 
 def test_offensive_cyber_evidence_cannot_enter_mastery_registry() -> None:
     with pytest.raises(ValueError, match="cyber_mastery_evidence_must_be_defensive"):
         build_specialist_evidence(
+            specialist_id=SPECIALIST_ID,
             domain=SpecialistDomain.CYBER_SECURITY,
             benchmark_id="offensive-cyber",
             benchmark_version="v1",

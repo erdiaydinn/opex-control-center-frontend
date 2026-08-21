@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - ops/eay-audit-main-compose-runner-20260821
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/eay-audit-release-compose-diagnostic.yml"
 
 permissions:
   contents: read

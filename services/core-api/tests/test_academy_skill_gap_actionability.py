@@ -2,9 +2,6 @@ from uuid import UUID
 
 import pytest
 
-from app.core.security import Principal
-from app.modules.academy.skill_gap_service import get_my_skill_gap_snapshot
-
 
 TENANT = UUID("00000000-0000-0000-0000-00000000a551")
 PATH_ID = UUID("00000000-0000-0000-0000-00000000a552")
@@ -43,7 +40,9 @@ class _Session:
         )
 
 
-def _principal() -> Principal:
+def _principal():
+    from app.core.security import Principal
+
     return Principal(
         subject="academy-learner-1",
         tenant_id=TENANT,
@@ -58,13 +57,15 @@ def _principal() -> Principal:
 async def test_skill_gap_recommendation_binds_self_scoped_enrollment_navigation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.modules.academy import skill_gap_service
+
     async def fake_learning_context(
         _session: object,
-        principal: Principal,
+        principal: object,
         *,
         include_learning_context: bool = False,
     ) -> dict[str, list[dict[str, object]]]:
-        assert principal.subject == "academy-learner-1"
+        assert getattr(principal, "subject") == "academy-learner-1"
         assert include_learning_context is True
         return {
             "requirements": [
@@ -96,13 +97,14 @@ async def test_skill_gap_recommendation_binds_self_scoped_enrollment_navigation(
         }
 
     monkeypatch.setattr(
-        "app.modules.academy.skill_gap_service.list_my_badge_credentials",
+        skill_gap_service,
+        "list_my_badge_credentials",
         fake_learning_context,
     )
     session = _Session()
     principal = _principal()
 
-    snapshot = await get_my_skill_gap_snapshot(session, principal)  # type: ignore[arg-type]
+    snapshot = await skill_gap_service.get_my_skill_gap_snapshot(session, principal)  # type: ignore[arg-type]
 
     assert snapshot["subject"] == principal.subject
     assert snapshot["gap_count"] == 1
@@ -122,9 +124,11 @@ async def test_skill_gap_recommendation_binds_self_scoped_enrollment_navigation(
 async def test_skill_gap_without_recommendations_does_not_query_navigation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.modules.academy import skill_gap_service
+
     async def fake_learning_context(
         _session: object,
-        _principal: Principal,
+        _principal_value: object,
         *,
         include_learning_context: bool = False,
     ) -> dict[str, list[dict[str, object]]]:
@@ -136,12 +140,13 @@ async def test_skill_gap_without_recommendations_does_not_query_navigation(
         }
 
     monkeypatch.setattr(
-        "app.modules.academy.skill_gap_service.list_my_badge_credentials",
+        skill_gap_service,
+        "list_my_badge_credentials",
         fake_learning_context,
     )
     session = _Session()
 
-    snapshot = await get_my_skill_gap_snapshot(session, _principal())  # type: ignore[arg-type]
+    snapshot = await skill_gap_service.get_my_skill_gap_snapshot(session, _principal())  # type: ignore[arg-type]
 
     assert snapshot["gap_count"] == 0
     assert snapshot["recommended_paths"] == []

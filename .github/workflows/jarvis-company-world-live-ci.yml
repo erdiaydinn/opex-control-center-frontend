@@ -9,6 +9,7 @@ on:
       - "services/eay-ai-core/app/context_provider_gateway.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_runtime.py"
+      - "services/eay-ai-core/field_evidence/tuik_portal_probe_v1.json"
       - "services/eay-ai-core/app/continuous_world_understanding.py"
       - "services/eay-ai-core/app/real_world_timeline.py"
       - "services/eay-ai-core/app/world_model.py"
@@ -23,6 +24,7 @@ on:
       - "services/eay-ai-core/app/context_provider_gateway.py"
       - "services/eay-ai-core/app/context_provider_registry.py"
       - "services/eay-ai-core/app/context_provider_runtime.py"
+      - "services/eay-ai-core/field_evidence/tuik_portal_probe_v1.json"
       - "services/eay-ai-core/app/continuous_world_understanding.py"
       - "services/eay-ai-core/app/real_world_timeline.py"
       - "services/eay-ai-core/app/world_model.py"
@@ -67,6 +69,56 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+      - name: One-shot TUIK field acceptance probe
+        run: |
+          set -euo pipefail
+          probe() {
+            name="$1"
+            url="$2"
+            headers="${RUNNER_TEMP}/${name}.headers"
+            body="${RUNNER_TEMP}/${name}.body"
+            status="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' \
+              --connect-timeout 10 --max-time 20 \
+              --header 'Accept: application/json, text/html;q=0.9' \
+              --header 'User-Agent: EAY-Jarvis-Field-Probe/1.0' \
+              "$url")"
+            content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+            bytes="$(wc -c < "$body" | tr -d ' ')"
+            sha="$(sha256sum "$body" | awk '{print $1}')"
+            echo "TUIK_PROBE_NAME=$name"
+            echo "TUIK_PROBE_URL=$url"
+            echo "TUIK_PROBE_STATUS=$status"
+            echo "TUIK_PROBE_CONTENT_TYPE=$content_type"
+            echo "TUIK_PROBE_BYTES=$bytes"
+            echo "TUIK_PROBE_SHA256=$sha"
+            python - "$body" <<'PY'
+import json
+import pathlib
+import sys
+
+raw = pathlib.Path(sys.argv[1]).read_bytes()
+try:
+    data = json.loads(raw)
+except Exception:
+    text = raw.decode("utf-8", errors="replace")
+    print("TUIK_PROBE_JSON=false")
+    print("TUIK_PROBE_SAMPLE=" + " ".join(text[:300].split()))
+else:
+    print("TUIK_PROBE_JSON=true")
+    if isinstance(data, dict):
+        print("TUIK_PROBE_JSON_KEYS=" + ",".join(sorted(map(str, data.keys()))[:30]))
+    elif isinstance(data, list):
+        print(f"TUIK_PROBE_JSON_LIST_LEN={len(data)}")
+        if data and isinstance(data[0], dict):
+            print("TUIK_PROBE_JSON_FIRST_KEYS=" + ",".join(sorted(map(str, data[0].keys()))[:30]))
+PY
+            printf '%s' "$status"
+          }
+
+          portal_status="$(probe portal 'https://veriportali.tuik.gov.tr/tr')"
+          echo "TUIK_PORTAL_FINAL_STATUS=${portal_status##*$'\n'}"
+          test "${portal_status##*$'\n'}" = "200"
+          probe themes 'https://veriportali.tuik.gov.tr/api/tr/data/statistical-themes' || true
       - name: Ruff Company World live and provider runtime
         run: >-
           ruff check

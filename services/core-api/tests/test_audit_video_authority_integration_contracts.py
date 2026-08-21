@@ -33,6 +33,7 @@ from app.modules.field_intelligence.evidence_object_upload import (
 )
 from app.modules.field_intelligence.video_object_read import read_private_video_object
 
+CORE_API_ROOT = Path(__file__).resolve().parents[1]
 TENANT_ID = str(uuid4())
 RECEIPT_ID = str(uuid4())
 BASE_URL = "https://field-evidence-store"
@@ -252,12 +253,12 @@ def test_video_authorization_fingerprint_binds_manifest_decoder_model_and_tenant
 
 
 def test_video_authority_is_production_composed_and_cannot_assert_a_finding() -> None:
-    root = Path("app/modules/audit")
+    root = CORE_API_ROOT / "app/modules/audit"
     binding = (root / "evidence_binding.py").read_text(encoding="utf-8")
     service = (root / "video_verification_service.py").read_text(encoding="utf-8")
     authorization = (root / "video_vision_authorization.py").read_text(encoding="utf-8")
     routes = (root / "video_routes.py").read_text(encoding="utf-8")
-    composition = Path("app/budget_main.py").read_text(encoding="utf-8")
+    composition = (CORE_API_ROOT / "app/budget_main.py").read_text(encoding="utf-8")
 
     assert '"video/mp4": ("video", 0, 0)' in binding
     assert "read_private_video_object" in service
@@ -271,19 +272,20 @@ def test_video_authority_is_production_composed_and_cannot_assert_a_finding() ->
     assert 'getattr(request.app.state, "audit_video_decoder", None)' in routes
     assert 'getattr(request.app.state, "audit_privacy_scanner", None)' in routes
     assert "AuditVideoVisionAuthorizationCreate" in routes
-    assert "model_record_id" not in routes.split("class AuditVideoVisionAuthorizationCreate", 1)[1].split(
-        "class AuditVideoVisionAuthorizationConsume", 1
-    )[0]
+    authorization_create_contract = routes.split(
+        "class AuditVideoVisionAuthorizationCreate", 1
+    )[1].split("class AuditVideoVisionAuthorizationConsume", 1)[0]
+    assert "model_record_id" not in authorization_create_contract
     assert "app.include_router(audit_video_router)" in composition
 
 
 def test_video_authority_migrations_are_rls_append_only_and_replay_fenced() -> None:
-    migration = Path("alembic/versions/0057_audit_video_authority.py").read_text(
-        encoding="utf-8"
-    )
-    replay = Path("alembic/versions/0058_audit_video_replay_fence.py").read_text(
-        encoding="utf-8"
-    )
+    migration = (
+        CORE_API_ROOT / "alembic/versions/0057_audit_video_authority.py"
+    ).read_text(encoding="utf-8")
+    replay = (
+        CORE_API_ROOT / "alembic/versions/0058_audit_video_replay_fence.py"
+    ).read_text(encoding="utf-8")
     assert 'revision: str = "0057_audit_video_authority"' in migration
     assert 'down_revision: str = "0056_audit_visit_manifests"' in migration
     assert '"audit_video_verification_events"' in migration

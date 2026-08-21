@@ -1,18 +1,12 @@
-"""Adaptive epistemic control for Jarvis investigations and live-world sensing.
+"""Sequential epistemic control for Jarvis research and live-world sensing.
 
-The existing research engine deliberately plans bounded evidence missions, while
-Autonomous Investigator evaluates competing hypotheses and Continuous World
-Understanding decides whether prior beliefs remain reusable. This module closes
-the missing sequential-control gap between those contracts.
-
-It never browses, invokes a model/provider, mutates production policy, promotes
-Company World truth, or grants business execution authority. It chooses the
-next *read-only* epistemic move from existing evidence state: pursue the probe
-with the highest expected uncertainty reduction, switch strategy when research
-stalls, expand the hypothesis space for unresolved novel problems, and rank the
-next live-world source to refresh by value, volatility, staleness and conflict
-risk. Grounded calibration can make the controller demand more evidence after
-past mistakes, but cannot self-activate weights or policy.
+This module composes existing Autonomous Investigator, Outcome calibration and
+Continuous World Understanding contracts. It does not browse, call a model,
+change production policy, promote Company World truth or grant execution.
+Instead it chooses the next read-only research move by expected uncertainty
+reduction, changes strategy when research stalls, expands the hypothesis space
+for unresolved novel problems, and ranks which live-world source is worth
+refreshing next.
 """
 
 from __future__ import annotations
@@ -71,7 +65,7 @@ class AdaptiveEpistemicPolicy(BaseModel):
     repeated_probe_penalty: float = Field(default=0.22, ge=0.0, le=0.80)
 
     @model_validator(mode="after")
-    def strategy_switch_precedes_expansion(self) -> "AdaptiveEpistemicPolicy":
+    def switch_before_expansion(self) -> "AdaptiveEpistemicPolicy":
         if self.stall_rounds_before_hypothesis_expansion <= self.stall_rounds_before_switch:
             raise ValueError("epistemic_hypothesis_expansion_must_follow_strategy_switch")
         return self
@@ -103,7 +97,7 @@ class EpistemicProbe(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def probe_is_planning_only(self) -> "EpistemicProbe":
+    def planning_only(self) -> "EpistemicProbe":
         if not self.read_only:
             raise ValueError("epistemic_probe_must_be_read_only")
         if self.automatic_execution_allowed or self.execution_authority_granted:
@@ -137,32 +131,27 @@ class AdaptiveEpistemicDirective(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def directive_is_integral_and_non_authoritative(self) -> "AdaptiveEpistemicDirective":
-        if any(
-            (
-                self.firm_company_claim_authorized,
-                self.production_truth_promoted,
-                self.automatic_model_weight_update_allowed,
-                self.automatic_policy_update_allowed,
-                self.automatic_research_execution_allowed,
-                self.execution_authority_granted,
-                self.direct_provider_call_allowed,
-            )
-        ):
+    def integral_and_non_authoritative(self) -> "AdaptiveEpistemicDirective":
+        authority_flags = (
+            self.firm_company_claim_authorized,
+            self.production_truth_promoted,
+            self.automatic_model_weight_update_allowed,
+            self.automatic_policy_update_allowed,
+            self.automatic_research_execution_allowed,
+            self.execution_authority_granted,
+            self.direct_provider_call_allowed,
+        )
+        if any(authority_flags):
             raise ValueError("adaptive_epistemic_control_never_grants_authority")
-        if self.move_kind in {
+        probe_moves = {
             EpistemicMoveKind.PROBE,
             EpistemicMoveKind.SWITCH_STRATEGY,
-        } and self.selected_probe is None:
+        }
+        if self.move_kind in probe_moves and self.selected_probe is None:
             raise ValueError("epistemic_probe_move_requires_selected_probe")
-        if self.move_kind in {
-            EpistemicMoveKind.STOP_EVIDENCE_SUFFICIENT,
-            EpistemicMoveKind.HOLD_LIMIT_REACHED,
-            EpistemicMoveKind.EXPAND_HYPOTHESIS_SPACE,
-        } and self.selected_probe is not None:
+        if self.move_kind not in probe_moves and self.selected_probe is not None:
             raise ValueError("epistemic_non_probe_move_cannot_select_probe")
-        expected = _fingerprint(_payload(self))
-        if self.fingerprint != expected:
+        if self.fingerprint != _fingerprint(_payload(self)):
             raise ValueError("adaptive_epistemic_control_fingerprint_mismatch")
         return self
 
@@ -187,7 +176,7 @@ class WorldRefreshPriority(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def refresh_priority_is_advisory(self) -> "WorldRefreshPriority":
+    def advisory_only(self) -> "WorldRefreshPriority":
         if not self.read_only:
             raise ValueError("world_refresh_priority_must_be_read_only")
         if self.automatic_refresh_allowed or self.execution_authority_granted:
@@ -213,23 +202,22 @@ def observe_epistemic_round(
     round_index: int,
     selected_probe: EpistemicProbe | None = None,
 ) -> EpistemicRoundObservation:
+    leader_id = None
     confidence = 0.0
-    margin: float | None = None
-    leader_id: str | None = None
+    margin = None
     if report.ranking is not None:
         leader_id = report.ranking.leading_hypothesis_id
         margin = report.ranking.leading_margin
-        if leader_id is not None:
-            leader = next(
-                (
-                    item
-                    for item in report.ranking.assessments
-                    if item.hypothesis_id == leader_id
-                ),
-                None,
-            )
-            if leader is not None:
-                confidence = leader.confidence
+        leader = next(
+            (
+                item
+                for item in report.ranking.assessments
+                if item.hypothesis_id == leader_id
+            ),
+            None,
+        )
+        if leader is not None:
+            confidence = leader.confidence
     evidence_refs = {
         ref
         for state in report.research_states
@@ -243,8 +231,8 @@ def observe_epistemic_round(
         leading_margin=margin,
         evidence_ref_count=len(evidence_refs),
         unresolved_task_count=len(report.next_research_tasks),
-        selected_probe_id=(selected_probe.probe_id if selected_probe else None),
-        selected_strategy=(selected_probe.strategy if selected_probe else None),
+        selected_probe_id=selected_probe.probe_id if selected_probe else None,
+        selected_strategy=selected_probe.strategy if selected_probe else None,
     )
 
 
@@ -257,47 +245,32 @@ def plan_adaptive_epistemic_round(
     calibration: InvestigatorCalibrationProfile | None = None,
     policy: AdaptiveEpistemicPolicy | None = None,
 ) -> AdaptiveEpistemicDirective:
-    """Choose the next evidence-seeking move from the current investigation state."""
+    """Choose one bounded evidence-seeking move from the current state."""
 
     rules = policy or AdaptiveEpistemicPolicy()
-    _validate_problem_report_scope(problem=problem, report=report)
-    if round_index < 0:
-        raise ValueError("epistemic_round_index_negative")
-    if history:
-        if tuple(item.round_index for item in history) != tuple(
-            sorted(item.round_index for item in history)
-        ):
-            raise ValueError("epistemic_history_round_order_invalid")
-        if history[-1].round_index >= round_index:
-            raise ValueError("epistemic_history_must_precede_current_round")
+    _validate_scope(problem, report)
+    _validate_history(round_index, history)
 
-    multiplier = 1.0
-    if calibration is not None:
-        if calibration.tenant_id != problem.tenant_id:
-            raise ValueError("epistemic_calibration_tenant_mismatch")
-        if calibration.company_id != problem.company_id:
-            raise ValueError("epistemic_calibration_company_mismatch")
-        multiplier = min(1.0, calibration.suggested_confidence_multiplier)
-
-    observation = observe_epistemic_round(report=report, round_index=round_index)
-    raw_confidence = observation.leading_confidence
+    multiplier = _calibration_multiplier(problem, calibration)
+    current = observe_epistemic_round(report=report, round_index=round_index)
+    raw_confidence = current.leading_confidence
     effective_confidence = round(raw_confidence * multiplier, 6)
     uncertainty = _ranking_uncertainty(report)
-    stall_count = _consecutive_stall_count(
+    stall_count = _stall_count(
         history=history,
-        current=observation,
+        current=current,
         minimum_confidence_delta=rules.minimum_confidence_delta,
     )
+    margin = current.leading_margin or 0.0
 
-    margin = observation.leading_margin or 0.0
-    evidence_sufficient = (
+    sufficient = (
         report.disposition is InvestigatorDisposition.DECISION_READY
         and report.ranking is not None
         and report.ranking.decisive
         and effective_confidence >= rules.target_effective_confidence
         and margin >= rules.minimum_decisive_margin
     )
-    if evidence_sufficient:
+    if sufficient:
         return _directive(
             problem=problem,
             round_index=round_index,
@@ -308,7 +281,6 @@ def plan_adaptive_epistemic_round(
             multiplier=multiplier,
             stall_count=stall_count,
             reason_codes=("epistemic_evidence_sufficiency_reached",),
-            blockers=(),
         )
 
     if round_index >= rules.maximum_rounds:
@@ -325,10 +297,11 @@ def plan_adaptive_epistemic_round(
             blockers=("epistemic_unresolved_after_bounded_research",),
         )
 
-    if (
+    expansion_due = (
         problem.novelty is ProblemNovelty.NOVEL
         and stall_count >= rules.stall_rounds_before_hypothesis_expansion
-    ):
+    )
+    if expansion_due:
         return _directive(
             problem=problem,
             round_index=round_index,
@@ -355,7 +328,7 @@ def plan_adaptive_epistemic_round(
     )
     if not candidates:
         candidates = (
-            _calibration_or_gap_probe(
+            _residual_probe(
                 problem=problem,
                 report=report,
                 uncertainty=uncertainty,
@@ -364,11 +337,15 @@ def plan_adaptive_epistemic_round(
         )
 
     selected = candidates[0]
-    switch_required = stall_count >= rules.stall_rounds_before_switch
+    switch_due = stall_count >= rules.stall_rounds_before_switch
     low_gain = selected.expected_information_gain < rules.minimum_expected_information_gain
-    if switch_required or low_gain:
-        switched = _select_diverse_probe(candidates=candidates, history=history)
-        selected = switched or selected
+    if switch_due or low_gain:
+        selected = _select_diverse_probe(candidates, history) or selected
+        reasons = ["epistemic_strategy_switch_required"]
+        if low_gain:
+            reasons.append("epistemic_information_gain_below_floor")
+        if switch_due:
+            reasons.append("epistemic_repeated_stall_detected")
         return _directive(
             problem=problem,
             round_index=round_index,
@@ -380,15 +357,7 @@ def plan_adaptive_epistemic_round(
             stall_count=stall_count,
             selected_probe=selected,
             candidates=candidates,
-            reason_codes=tuple(
-                dict.fromkeys(
-                    (
-                        "epistemic_strategy_switch_required",
-                        *("epistemic_information_gain_below_floor",) if low_gain else (),
-                        *("epistemic_repeated_stall_detected",) if switch_required else (),
-                    )
-                )
-            ),
+            reason_codes=tuple(reasons),
             blockers=report.blockers,
         )
 
@@ -414,15 +383,15 @@ def prioritize_world_refresh(
     expectations: tuple[SourceFreshnessExpectation, ...],
     value_signals: tuple[WorldSourceValueSignal, ...] = (),
 ) -> tuple[WorldRefreshPriority, ...]:
-    """Rank the next live-world source to sense without performing the refresh."""
+    """Rank live sources by value of information without refreshing them."""
 
     expectation_map = {item.source_key: item for item in expectations}
+    state_map = {item.source_key: item for item in assessment.source_states}
+    signal_map = {item.source_key: item for item in value_signals}
     if len(expectation_map) != len(expectations):
         raise ValueError("world_refresh_duplicate_expectation")
-    state_map = {item.source_key: item for item in assessment.source_states}
     if set(expectation_map) != set(state_map):
         raise ValueError("world_refresh_expectations_must_match_assessment")
-    signal_map = {item.source_key: item for item in value_signals}
     if len(signal_map) != len(value_signals):
         raise ValueError("world_refresh_duplicate_value_signal")
     if set(signal_map) - set(state_map):
@@ -431,7 +400,9 @@ def prioritize_world_refresh(
     priorities: list[WorldRefreshPriority] = []
     for source_key, state in sorted(state_map.items()):
         expectation = expectation_map[source_key]
-        signal = signal_map.get(source_key) or WorldSourceValueSignal(source_key=source_key)
+        signal = signal_map.get(source_key) or WorldSourceValueSignal(
+            source_key=source_key
+        )
         if state.age_seconds is None:
             age_pressure = 1.0
         else:
@@ -444,7 +415,7 @@ def prioritize_world_refresh(
             1.0 if not state.fresh else 0.0,
             0.90 if not state.authority_accepted else 0.0,
         )
-        world_instability = min(
+        change_pressure = min(
             1.0,
             assessment.world_change.change_ratio
             + min(assessment.world_change.changes_per_hour / 12.0, 1.0) * 0.35,
@@ -455,7 +426,7 @@ def prioritize_world_refresh(
             0.38 * freshness_pressure
             + 0.22 * signal.contradiction_risk
             + 0.18 * signal.volatility
-            + 0.12 * world_instability
+            + 0.12 * change_pressure
             + 0.10 * signal.information_gain_hint,
         )
         score = min(
@@ -467,7 +438,7 @@ def prioritize_world_refresh(
             + 0.10 * signal.contradiction_risk
             + 0.10 * required_pressure,
         )
-        reasons: list[str] = ["world_refresh_value_of_information_ranked"]
+        reasons = ["world_refresh_value_of_information_ranked"]
         if not state.fresh:
             reasons.append("world_refresh_source_not_fresh")
         if not state.authority_accepted:
@@ -490,7 +461,12 @@ def prioritize_world_refresh(
                 evidence_ref=state.evidence_ref,
             )
         )
-    return tuple(sorted(priorities, key=lambda item: (-item.priority_score, item.source_key)))
+    return tuple(
+        sorted(
+            priorities,
+            key=lambda item: (-item.priority_score, item.source_key),
+        )
+    )
 
 
 def score_epistemic_benchmark(
@@ -503,21 +479,23 @@ def score_epistemic_benchmark(
     grounding_integrity: float,
     authority_integrity: float,
 ) -> EpistemicBenchmarkScore:
-    """Score a named acceptance suite without converting it into a universal claim."""
+    """Score a named suite; 100% here is never a universal intelligence claim."""
 
-    dimensions = (
+    values = (
         general_reasoning,
         deep_research,
         live_world_understanding,
         systematic_self_correction,
         novel_problem_solving,
+        grounding_integrity,
+        authority_integrity,
     )
-    if any(value < 0.0 or value > 1.0 for value in (*dimensions, grounding_integrity, authority_integrity)):
+    if any(value < 0.0 or value > 1.0 for value in values):
         raise ValueError("epistemic_benchmark_score_out_of_range")
-    capability_mean = sum(dimensions) / len(dimensions)
+    capability_mean = sum(values[:5]) / 5.0
     integrity_gate = min(grounding_integrity, authority_integrity)
     overall = round(capability_mean * integrity_gate, 6)
-    complete = all(abs(value - 1.0) < 1e-12 for value in (*dimensions, grounding_integrity, authority_integrity))
+    complete = all(abs(value - 1.0) < 1e-12 for value in values)
     return EpistemicBenchmarkScore(
         general_reasoning=general_reasoning,
         deep_research=deep_research,
@@ -540,28 +518,32 @@ def _candidate_probes(
     repeated_probe_penalty: float,
     calibration_multiplier: float,
 ) -> tuple[EpistemicProbe, ...]:
-    assessment_map = {
-        item.hypothesis_id: item
-        for item in (report.ranking.assessments if report.ranking is not None else ())
-    }
-    leader_id = report.ranking.leading_hypothesis_id if report.ranking is not None else None
+    assessments = (
+        report.ranking.assessments if report.ranking is not None else ()
+    )
+    assessment_map = {item.hypothesis_id: item for item in assessments}
+    leader_id = (
+        report.ranking.leading_hypothesis_id if report.ranking is not None else None
+    )
     repeated = {
         item.selected_probe_id
         for item in history
         if item.selected_probe_id is not None
     }
     probes: list[EpistemicProbe] = []
-    for index, task_ref in enumerate(report.next_research_tasks):
+    for task_ref in report.next_research_tasks:
         hypothesis_id = task_ref.split(":", 1)[0] if ":" in task_ref else None
         assessment = assessment_map.get(hypothesis_id or "")
-        hypothesis_uncertainty = 1.0 - (assessment.confidence if assessment else 0.0)
+        hypothesis_uncertainty = 1.0 - (
+            assessment.confidence if assessment is not None else 0.0
+        )
         role, strategy, task_bonus = _task_strategy(task_ref)
         novelty_bonus = {
             ProblemNovelty.FAMILIAR: 0.0,
             ProblemNovelty.ADJACENT: 0.04,
             ProblemNovelty.NOVEL: 0.08,
         }[problem.novelty]
-        leader_bonus = 0.06 if hypothesis_id and hypothesis_id == leader_id else 0.0
+        leader_bonus = 0.06 if hypothesis_id == leader_id else 0.0
         calibration_pressure = max(0.0, 1.0 - calibration_multiplier) * 0.18
         gain = min(
             1.0,
@@ -573,11 +555,7 @@ def _candidate_probes(
             + leader_bonus
             + calibration_pressure,
         )
-        probe_id = _stable_probe_id(
-            problem_id=problem.problem_id,
-            task_ref=task_ref,
-            strategy=strategy,
-        )
+        probe_id = _probe_id(problem.problem_id, task_ref, strategy)
         if probe_id in repeated:
             gain = max(0.0, gain - repeated_probe_penalty)
         probes.append(
@@ -587,12 +565,11 @@ def _candidate_probes(
                 task_ref=task_ref,
                 role=role,
                 strategy=strategy,
-                query_intent=_query_intent(problem=problem, task_ref=task_ref, strategy=strategy),
+                query_intent=_query_intent(problem, task_ref, strategy),
                 expected_information_gain=round(gain, 6),
                 reason_codes=(
                     "epistemic_unresolved_research_gap",
                     f"epistemic_strategy:{strategy.value}",
-                    f"epistemic_candidate_order:{index}",
                 ),
             )
         )
@@ -604,14 +581,16 @@ def _candidate_probes(
     )
 
 
-def _calibration_or_gap_probe(
+def _residual_probe(
     *,
     problem: InvestigatorProblem,
     report: AutonomousInvestigationReport,
     uncertainty: float,
     calibration_multiplier: float,
 ) -> EpistemicProbe:
-    leader_id = report.ranking.leading_hypothesis_id if report.ranking is not None else None
+    leader_id = (
+        report.ranking.leading_hypothesis_id if report.ranking is not None else None
+    )
     if calibration_multiplier < 1.0:
         strategy = EpistemicStrategy.CONTRADICTION_FIRST
         role = ResearchRole.CONTRADICTION
@@ -623,25 +602,28 @@ def _calibration_or_gap_probe(
         task_ref = f"{leader_id or 'global'}:resolve_residual_uncertainty"
         reason = "epistemic_residual_uncertainty_requires_new_angle"
     return EpistemicProbe(
-        probe_id=_stable_probe_id(
-            problem_id=problem.problem_id,
-            task_ref=task_ref,
-            strategy=strategy,
-        ),
+        probe_id=_probe_id(problem.problem_id, task_ref, strategy),
         hypothesis_id=leader_id,
         task_ref=task_ref,
         role=role,
         strategy=strategy,
-        query_intent=_query_intent(problem=problem, task_ref=task_ref, strategy=strategy),
+        query_intent=_query_intent(problem, task_ref, strategy),
         expected_information_gain=round(
-            min(1.0, 0.30 + 0.50 * uncertainty + (1.0 - calibration_multiplier) * 0.20),
+            min(
+                1.0,
+                0.30
+                + 0.50 * uncertainty
+                + (1.0 - calibration_multiplier) * 0.20,
+            ),
             6,
         ),
         reason_codes=(reason,),
     )
 
 
-def _task_strategy(task_ref: str) -> tuple[ResearchRole, EpistemicStrategy, float]:
+def _task_strategy(
+    task_ref: str,
+) -> tuple[ResearchRole, EpistemicStrategy, float]:
     token = task_ref.casefold()
     if "run_falsification" in token:
         return ResearchRole.CONTRADICTION, EpistemicStrategy.FALSIFICATION, 0.24
@@ -650,23 +632,30 @@ def _task_strategy(task_ref: str) -> tuple[ResearchRole, EpistemicStrategy, floa
     if "primary" in token:
         return ResearchRole.PRIMARY_SOURCE, EpistemicStrategy.PRIMARY_TRIANGULATION, 0.18
     if "independent" in token or "corrobor" in token:
-        return ResearchRole.CORROBORATION, EpistemicStrategy.INDEPENDENT_CORROBORATION, 0.17
+        return (
+            ResearchRole.CORROBORATION,
+            EpistemicStrategy.INDEPENDENT_CORROBORATION,
+            0.17,
+        )
     if "refresh" in token or "future_published" in token or "temporal" in token:
         return ResearchRole.TEMPORAL_UPDATE, EpistemicStrategy.TEMPORAL_REFRESH, 0.20
     if "quant" in token or "denominator" in token:
-        return ResearchRole.QUANTITATIVE_CHECK, EpistemicStrategy.QUANTITATIVE_VALIDATION, 0.18
+        return (
+            ResearchRole.QUANTITATIVE_CHECK,
+            EpistemicStrategy.QUANTITATIVE_VALIDATION,
+            0.18,
+        )
     return ResearchRole.DOMAIN_SPECIALIST, EpistemicStrategy.CROSS_DOMAIN_EXPANSION, 0.12
 
 
 def _query_intent(
-    *,
     problem: InvestigatorProblem,
     task_ref: str,
     strategy: EpistemicStrategy,
 ) -> str:
     return (
         f"Resolve '{task_ref}' for '{problem.question}' using {strategy.value}; "
-        "prefer independent, time-valid evidence and actively search for disconfirmation."
+        "prefer independent time-valid evidence and seek disconfirmation."
     )
 
 
@@ -684,25 +673,23 @@ def _ranking_uncertainty(report: AutonomousInvestigationReport) -> float:
     return round(min(1.0, normalized + decisiveness_pressure), 6)
 
 
-def _consecutive_stall_count(
+def _stall_count(
     *,
     history: tuple[EpistemicRoundObservation, ...],
     current: EpistemicRoundObservation,
     minimum_confidence_delta: float,
 ) -> int:
-    if not history:
-        return 0
     count = 0
     newer = current
     for older in reversed(history):
         same_report = older.report_fingerprint == newer.report_fingerprint
         confidence_delta = abs(newer.leading_confidence - older.leading_confidence)
         no_new_evidence = newer.evidence_ref_count <= older.evidence_ref_count
-        unresolved_not_improving = newer.unresolved_task_count >= older.unresolved_task_count
+        tasks_not_improving = newer.unresolved_task_count >= older.unresolved_task_count
         stalled = same_report or (
             confidence_delta < minimum_confidence_delta
             and no_new_evidence
-            and unresolved_not_improving
+            and tasks_not_improving
         )
         if not stalled:
             break
@@ -712,7 +699,6 @@ def _consecutive_stall_count(
 
 
 def _select_diverse_probe(
-    *,
     candidates: tuple[EpistemicProbe, ...],
     history: tuple[EpistemicRoundObservation, ...],
 ) -> EpistemicProbe | None:
@@ -723,8 +709,20 @@ def _select_diverse_probe(
     return candidates[0] if candidates else None
 
 
-def _validate_problem_report_scope(
-    *,
+def _calibration_multiplier(
+    problem: InvestigatorProblem,
+    calibration: InvestigatorCalibrationProfile | None,
+) -> float:
+    if calibration is None:
+        return 1.0
+    if calibration.tenant_id != problem.tenant_id:
+        raise ValueError("epistemic_calibration_tenant_mismatch")
+    if calibration.company_id != problem.company_id:
+        raise ValueError("epistemic_calibration_company_mismatch")
+    return min(1.0, calibration.suggested_confidence_multiplier)
+
+
+def _validate_scope(
     problem: InvestigatorProblem,
     report: AutonomousInvestigationReport,
 ) -> None:
@@ -736,14 +734,26 @@ def _validate_problem_report_scope(
         raise ValueError("epistemic_problem_report_company_mismatch")
 
 
-def _stable_probe_id(
-    *,
+def _validate_history(
+    round_index: int,
+    history: tuple[EpistemicRoundObservation, ...],
+) -> None:
+    if round_index < 0:
+        raise ValueError("epistemic_round_index_negative")
+    indexes = tuple(item.round_index for item in history)
+    if indexes != tuple(sorted(indexes)) or len(indexes) != len(set(indexes)):
+        raise ValueError("epistemic_history_round_order_invalid")
+    if history and history[-1].round_index >= round_index:
+        raise ValueError("epistemic_history_must_precede_current_round")
+
+
+def _probe_id(
     problem_id: str,
     task_ref: str,
     strategy: EpistemicStrategy,
 ) -> str:
-    payload = f"{problem_id}|{task_ref}|{strategy.value}".encode()
-    return f"probe:{hashlib.sha256(payload).hexdigest()[:24]}"
+    raw = f"{problem_id}|{task_ref}|{strategy.value}".encode()
+    return f"probe:{hashlib.sha256(raw).hexdigest()[:24]}"
 
 
 def _directive(
@@ -757,7 +767,7 @@ def _directive(
     multiplier: float,
     stall_count: int,
     reason_codes: tuple[str, ...],
-    blockers: tuple[str, ...],
+    blockers: tuple[str, ...] = (),
     selected_probe: EpistemicProbe | None = None,
     candidates: tuple[EpistemicProbe, ...] = (),
 ) -> AdaptiveEpistemicDirective:
@@ -773,7 +783,9 @@ def _directive(
         "effective_leading_confidence": effective_confidence,
         "calibration_multiplier": multiplier,
         "stall_count": stall_count,
-        "selected_probe": selected_probe.model_dump(mode="json") if selected_probe else None,
+        "selected_probe": (
+            selected_probe.model_dump(mode="json") if selected_probe else None
+        ),
         "candidate_probes": [item.model_dump(mode="json") for item in candidates],
         "reason_codes": list(dict.fromkeys(reason_codes)),
         "blockers": list(dict.fromkeys(blockers)),

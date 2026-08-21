@@ -1,1 +1,0 @@
-Implementation complete; exact-head CI and PR publication remain acceptance gates.

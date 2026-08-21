@@ -21,6 +21,7 @@ on:
       - "src/platform/i18n/planogramFixtureBindingMessages.js"
       - "src/platform/i18n/planogramScannedOptimizerMessages.js"
       - "src/platform/i18n/planogramPickerEyeMessages.js"
+      - "src/platform/i18n/planogramAuthoringMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
       - "scripts/test-planogram-engineering-2d.mjs"
       - "scripts/test-planogram-route-explainability.mjs"
@@ -33,6 +34,7 @@ on:
       - "scripts/test-planogram-fixture-binding.mjs"
       - "scripts/test-planogram-scanned-optimizer-v6.mjs"
       - "scripts/test-planogram-picker-eye-assets.mjs"
+      - "scripts/test-planogram-authoring.mjs"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
 
@@ -85,6 +87,8 @@ jobs:
         run: node scripts/test-planogram-scanned-optimizer-v6.mjs
       - name: Picker Eye same-origin asset fidelity boundary
         run: node scripts/test-planogram-picker-eye-assets.mjs
+      - name: Architectural authoring and immersive walk-through contract
+        run: node scripts/test-planogram-authoring.mjs
       - name: CFO economics UI authority and provenance boundary
         run: node scripts/test-planogram-economics-ui.mjs
       - name: V5 Pareto decision portfolio boundary
@@ -111,7 +115,7 @@ jobs:
           if (mainText.includes('WebGLRenderer') || mainText.includes('OrbitControls')) throw new Error('Three.js leaked into the eager main entry');
           const dynamicThree=entries.filter(([key,row]) => {
             const identity=`${key} ${row.src ?? ''} ${row.name ?? ''} ${row.file ?? ''}`;
-            return row.isDynamicEntry === true && /three\.module|OrbitControls|GLTFLoader|node_modules\/three\//i.test(identity);
+            return row.isDynamicEntry === true && /three\.module|OrbitControls|PointerLockControls|RoomEnvironment|GLTFLoader|node_modules\/three\//i.test(identity);
           });
           if (!dynamicThree.length) throw new Error('No dynamic Three.js manifest entry found');
           for (const [,row] of dynamicThree) {
@@ -132,6 +136,9 @@ jobs:
           echo 'MASTER_27_STORE_SCAN_VISUAL_ANNOTATION=IMPLEMENTED'
           echo 'MASTER_27_STORE_SCAN_ANNOTATION_KEYBOARD_ACCESSIBLE=TRUE'
           echo 'MASTER_27_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCAN_TO_EDITABLE_MODEL=IMPLEMENTED'
+          echo 'MASTER_27_ARCHITECTURAL_AUTHORING=IMPLEMENTED'
+          echo 'MASTER_27_AUTHORING_STORE_DNA_AUTHORITY=FALSE'
           echo 'MASTER_27_SCANNED_DIGITAL_TWIN=IMPLEMENTED'
           echo 'MASTER_27_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED'
           echo 'MASTER_27_SCANNED_FIXTURE_CATALOG_BINDING=IMPLEMENTED'
@@ -142,6 +149,7 @@ jobs:
           echo 'MASTER_27_SCANNED_V6_GLOBAL_OPTIMUM_CLAIM=FALSE'
           echo 'MASTER_27_SCANNED_V6_FIELD_EVIDENCE=FALSE'
           echo 'MASTER_27_PICKER_EYE_ASSET_PREVIEW=IMPLEMENTED'
+          echo 'MASTER_27_PBR_WALKTHROUGH=IMPLEMENTED'
           echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'
           echo 'MASTER_27_CFO_ECONOMICS_UI=IMPLEMENTED'
@@ -155,4 +163,6 @@ jobs:
           echo 'MASTER_27_ROUTE_EXPLAINABILITY=IMPLEMENTED'
           echo 'MASTER_27_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED'
           echo 'MASTER_27_REAL_PRODUCT_ASSET_FIDELITY=FIELD_ASSETS_REQUIRED'
+          echo 'MASTER_27_FULL_CAD_BIM_KERNEL=NOT_CLAIMED'
+          echo 'MASTER_27_RAW_POINT_CLOUD_SLAM=NOT_CLAIMED'
           echo 'MASTER_27_PRODUCTION_READY=FALSE'

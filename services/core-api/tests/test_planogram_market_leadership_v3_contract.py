@@ -129,6 +129,41 @@ def objective_key(row: dict[str, float | int]) -> tuple[float, ...]:
     return tuple(float(row[name]) for name in OBJECTIVE_ORDER)
 
 
+def capacity_safe_planogram() -> dict:
+    """Minimal complete physical evidence for V3/V4 benchmark contract tests."""
+    return {
+        "aisles": [
+            {
+                "aisle_id": "A1",
+                "modules": [
+                    {
+                        "module_id": "M1",
+                        "shelves": [
+                            {
+                                "shelf_no": 1,
+                                "shelf_width_cm": 100,
+                                "shelf_height_cm": 40,
+                                "shelf_depth_cm": 40,
+                                "max_weight_kg": 100,
+                                "products": [
+                                    {
+                                        "sku": "SKU-1",
+                                        "facing_count": 1,
+                                        "width_cm": 10,
+                                        "height_cm": 20,
+                                        "depth_cm": 8,
+                                        "weight_kg": 1,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
 def v2_cad_inputs() -> tuple[dict, dict, dict]:
     layout = {
         "store_code": "TEST",
@@ -256,6 +291,7 @@ def test_v3_v4_adapter_compares_same_evidence_without_promotion(monkeypatch) -> 
 
     def canonical_optimize(*args, **kwargs):
         return {
+            "planogram": capacity_safe_planogram(),
             "picker_tour_optimizer": {
                 "optimizer_version": "physical-plan-optimizer-v3-picker-tour",
                 "allowed": True,
@@ -264,12 +300,13 @@ def test_v3_v4_adapter_compares_same_evidence_without_promotion(monkeypatch) -> 
                 "candidate_count": 8,
                 "selected_objective": v3_objective,
                 "selected_tour": {"p95_m": 30.0, "average_m": 24.0},
-            }
+            },
         }
 
     def market_optimize(*args, **kwargs):
         assert kwargs["max_candidates"] == 24
         return {
+            "planogram": capacity_safe_planogram(),
             "market_search_optimizer": {
                 "optimizer_version": "physical-plan-optimizer-v4-bounded-search",
                 "allowed": True,
@@ -281,7 +318,7 @@ def test_v3_v4_adapter_compares_same_evidence_without_promotion(monkeypatch) -> 
                 "selected_objective": v4_objective,
                 "selected_tour": {"p95_m": 22.0, "average_m": 18.0},
                 "alternatives": [{"strategy": "search::balanced"}],
-            }
+            },
         }
 
     monkeypatch.setattr(

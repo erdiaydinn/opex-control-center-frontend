@@ -14,7 +14,7 @@ class RecruitmentLifecycleContractTests(unittest.TestCase):
         source = Path(lifecycle_authority.__file__).read_text(encoding="utf-8")
         self.assertIn("Offer hazırlayan kişi kendi teklifini onaylayamaz", source)
         self.assertIn("UNIQUE", (Path(__file__).resolve().parents[3] / "migrations" / "031_recruitment_lifecycle_authority.sql").read_text(encoding="utf-8"))
-        self.assertIn("approval_count >= int(required)", source)
+        self.assertIn("approved_count >= int(required)", source)
 
     def test_candidate_communication_outbox_rejects_raw_pii(self):
         for payload in (

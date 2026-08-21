@@ -7,6 +7,7 @@ from app.modules.workforce.authorization import is_action_allowed
 from app.modules.workforce.router import _require_rows_in_scope
 from .lifecycle_authority import (
     RecruitmentLifecycleError,
+    claim_candidate_communications,
     close_offboarding_case,
     offer_approval_summary,
     update_offboarding_task,
@@ -16,7 +17,8 @@ from .lifecycle_projection import (
     list_offer_approval_workflows,
     offboarding_task_authority,
 )
-from .lifecycle_router import OffboardingTaskInput
+from .lifecycle_reminders import plan_due_reminders
+from .lifecycle_router import CommunicationClaimInput, OffboardingTaskInput
 from .orchestration import RecruitmentOrchestrationError, candidate_orchestration_summary
 from .router import _identity, _request_row, _require
 
@@ -30,6 +32,11 @@ def _allowed(role: str, permissions: str, action: str) -> bool:
 
 def _actor(request: Request) -> str:
     return _identity(request)[0]
+
+
+def _require_delivery_worker(role: str, permissions: str) -> None:
+    if not _allowed(role, permissions, "deliverRecruitmentCommunication"):
+        raise HTTPException(status_code=403, detail="Recruitment communication delivery worker yetkisi gerekli.")
 
 
 def _require_offboarding_task_authority(role: str, permissions: str, owner_role: str, target_status: str) -> None:
@@ -100,6 +107,23 @@ def list_communications(
     _require(x_opex_role, x_opex_permissions, "viewRecruitment")
     try:
         return list_communication_outbox(status=status, limit=limit)
+    except RecruitmentLifecycleError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post("/communications/claim")
+def governed_communication_claim(
+    payload: CommunicationClaimInput,
+    request: Request,
+    x_opex_role: str = Header(default="viewer", alias="X-OPEX-Role"),
+    x_opex_permissions: str = Header(default="", alias="X-OPEX-Permissions"),
+) -> dict:
+    """Planner+claim is one governed worker operation; no external scheduler is required."""
+    _require_delivery_worker(x_opex_role, x_opex_permissions)
+    try:
+        planned = plan_due_reminders()
+        messages = claim_candidate_communications(worker=_actor(request), limit=payload.limit)
+        return {"planned": planned, "messages": messages}
     except RecruitmentLifecycleError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

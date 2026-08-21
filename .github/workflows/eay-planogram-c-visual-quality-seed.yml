@@ -1,0 +1,155 @@
+name: EAY Planogram C - Governed Visual Quality Seed
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - ".github/workflows/eay-planogram-c-visual-quality-seed.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  governed-visual-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: product/planogram-market-leadership-v1
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Apply governed PBR asset integration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          renderer_path = Path('src/modules/planogram/PlanogramDigitalTwin.jsx')
+          renderer = renderer_path.read_text()
+
+          replacements = [
+              (
+                  '''import {\n  buildPlanogramDigitalTwinModel,\n  PLANOGRAM_DIGITAL_TWIN_LIMITS,\n} from "./planogramDigitalTwinModel.js";\nimport {\n''',
+                  '''import {\n  buildFixtureAssetIndex,\n  buildProductAssetIndex,\n} from "./planogramAssetManifest.js";\nimport {\n  buildPlanogramDigitalTwinModel,\n  PLANOGRAM_DIGITAL_TWIN_LIMITS,\n} from "./planogramDigitalTwinModel.js";\nimport {\n''',
+                  'asset manifest imports',
+              ),
+              (
+                  '''const PRODUCT_GAP_M = 0.006;\n''',
+                  '''const PRODUCT_GAP_M = 0.006;\nconst MAX_TEXTURED_PRODUCT_SKUS = 48;\nconst MAX_TEXTURED_PRODUCT_FACINGS = 320;\n''',
+                  'visual asset caps',
+              ),
+              (
+                  '''    const frontSign = module.side === "R" ? -1 : 1;\n\n    for (const [shelfIndex, shelf] of shelves.entries()) {\n''',
+                  '''    const frontSign = module.side === "R" ? -1 : 1;\n    const frontQuaternion = quaternion.clone();\n    if (frontSign < 0) {\n      frontQuaternion.multiply(new THREE.Quaternion().setFromAxisAngle(up, Math.PI));\n    }\n\n    for (const [shelfIndex, shelf] of shelves.entries()) {\n''',
+                  'front-facing product quaternion',
+              ),
+              (
+                  '''          const matrix = new THREE.Matrix4();\n          matrix.compose(\n            new THREE.Vector3(worldX, worldY, worldZ),\n            quaternion,\n            new THREE.Vector3(width, productHeight, depth)\n          );\n          instances.push({ matrix, hue: stableHue(sku) });\n          cursorX += width + PRODUCT_GAP_M;\n''',
+                  '''          const matrix = new THREE.Matrix4();\n          matrix.compose(\n            new THREE.Vector3(worldX, worldY, worldZ),\n            quaternion,\n            new THREE.Vector3(width, productHeight, depth)\n          );\n          const frontLocalZ = localZ + frontSign * (depth / 2 + 0.0015);\n          const frontWorldX = module.centerXM + localX * cos - frontLocalZ * sin;\n          const frontWorldZ = module.centerYM + localX * sin + frontLocalZ * cos;\n          const frontMatrix = new THREE.Matrix4();\n          frontMatrix.compose(\n            new THREE.Vector3(frontWorldX, worldY, frontWorldZ),\n            frontQuaternion,\n            new THREE.Vector3(width, productHeight, 1)\n          );\n          instances.push({\n            matrix,\n            frontMatrix,\n            hue: stableHue(sku),\n            sku: sku.trim().toUpperCase(),\n          });\n          cursorX += width + PRODUCT_GAP_M;\n''',
+                  'product front matrices',
+              ),
+              (
+                  '''    return;\n  }\n\n  const postDepth = Math.max(0.04, Math.min(module.depthM * 0.16, 0.08));\n''',
+                  '''    return group;\n  }\n\n  const postDepth = Math.max(0.04, Math.min(module.depthM * 0.16, 0.08));\n''',
+                  'pallet fallback group return',
+              ),
+              (
+                  '''    group.add(glass);\n  }\n}\n\nfunction Twin3D({ model, t, onViewerReady }) {\n''',
+                  '''    group.add(glass);\n  }\n  return group;\n}\n\nfunction trackObjectResources(object, disposables) {\n  object?.traverse?.((node) => {\n    if (node.geometry && !disposables.includes(node.geometry)) disposables.push(node.geometry);\n    const materials = Array.isArray(node.material) ? node.material : node.material ? [node.material] : [];\n    for (const material of materials) {\n      if (!disposables.includes(material)) disposables.push(material);\n      for (const value of Object.values(material)) {\n        if (value?.isTexture && !disposables.includes(value)) disposables.push(value);\n      }\n    }\n  });\n}\n\nfunction fixtureAssetKey(module) {\n  return String(module?.fixtureType || "").trim().toUpperCase();\n}\n\nasync function mountAttestedFixtureAssets({\n  THREE,\n  scene,\n  model,\n  assetManifest,\n  fallbackGroups,\n  disposables,\n  isDisposed,\n}) {\n  const fixtureIndex = buildFixtureAssetIndex(assetManifest);\n  const byPath = new Map();\n  for (const module of model.modules) {\n    const asset = fixtureIndex.get(fixtureAssetKey(module));\n    if (!asset || asset.attested !== true) continue;\n    if (!byPath.has(asset.model_path)) byPath.set(asset.model_path, []);\n    byPath.get(asset.model_path).push({ module, asset });\n  }\n  if (!byPath.size) return;\n\n  const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");\n  if (isDisposed()) return;\n  const loader = new GLTFLoader();\n  await Promise.allSettled([...byPath.entries()].map(async ([path, rows]) => {\n    const gltf = await loader.loadAsync(path);\n    if (isDisposed()) return;\n    trackObjectResources(gltf.scene, disposables);\n    for (const { module, asset } of rows) {\n      if (isDisposed()) return;\n      const root = gltf.scene.clone(true);\n      const bounds = new THREE.Box3().setFromObject(root);\n      const size = bounds.getSize(new THREE.Vector3());\n      if (size.x <= 1e-6 || size.y <= 1e-6 || size.z <= 1e-6) continue;\n      const center = bounds.getCenter(new THREE.Vector3());\n      root.position.sub(center);\n      root.position.y += size.y / 2;\n      root.traverse((node) => {\n        if (!node.isMesh) return;\n        node.castShadow = true;\n        node.receiveShadow = true;\n      });\n      const host = new THREE.Group();\n      host.position.set(module.centerXM, 0, module.centerYM);\n      host.rotation.y = (-module.rotationDeg * Math.PI) / 180;\n      host.scale.set(\n        module.widthM / size.x,\n        moduleHeight(module) / size.y,\n        module.depthM / size.z\n      );\n      host.userData = {\n        assetAuthority: "attested_same_origin",\n        sourceRef: asset.source_ref,\n        fixtureType: fixtureAssetKey(module),\n      };\n      host.add(root);\n      scene.add(host);\n      const fallback = fallbackGroups.get(module.key);\n      if (fallback) fallback.visible = false;\n    }\n  }));\n}\n\nasync function mountAttestedProductFronts({\n  THREE,\n  scene,\n  renderer,\n  facingInstances,\n  assetManifest,\n  disposables,\n  isDisposed,\n}) {\n  const productIndex = buildProductAssetIndex(assetManifest);\n  if (!productIndex.size) return;\n  const grouped = new Map();\n  let acceptedFacings = 0;\n  for (const instance of facingInstances) {\n    if (acceptedFacings >= MAX_TEXTURED_PRODUCT_FACINGS) break;\n    const asset = productIndex.get(instance.sku);\n    if (!asset || asset.attested !== true) continue;\n    if (!grouped.has(instance.sku)) {\n      if (grouped.size >= MAX_TEXTURED_PRODUCT_SKUS) continue;\n      grouped.set(instance.sku, { asset, instances: [] });\n    }\n    grouped.get(instance.sku).instances.push(instance);\n    acceptedFacings += 1;\n  }\n  if (!grouped.size) return;\n\n  const loader = new THREE.TextureLoader();\n  const planeGeometry = new THREE.PlaneGeometry(1, 1);\n  disposables.push(planeGeometry);\n  const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());\n  await Promise.allSettled([...grouped.entries()].map(async ([sku, group]) => {\n    const texture = await loader.loadAsync(group.asset.front_image_path);\n    if (isDisposed()) {\n      texture.dispose();\n      return;\n    }\n    texture.colorSpace = THREE.SRGBColorSpace;\n    texture.anisotropy = maxAnisotropy;\n    const material = new THREE.MeshBasicMaterial({\n      map: texture,\n      transparent: true,\n      alphaTest: 0.03,\n      toneMapped: false,\n      side: THREE.DoubleSide,\n    });\n    disposables.push(texture, material);\n    const mesh = new THREE.InstancedMesh(planeGeometry, material, group.instances.length);\n    group.instances.forEach((instance, index) => mesh.setMatrixAt(index, instance.frontMatrix));\n    mesh.instanceMatrix.needsUpdate = true;\n    mesh.renderOrder = 4;\n    mesh.userData = {\n      assetAuthority: "attested_same_origin",\n      sourceRef: group.asset.source_ref,\n      sku,\n    };\n    scene.add(mesh);\n  }));\n}\n\nfunction Twin3D({ model, t, onViewerReady, assetManifest }) {\n''',
+                  'governed visual asset runtime',
+              ),
+              (
+                  '''        const THREE = await import("three");\n        const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");\n        if (disposed || !mountRef.current) return;\n''',
+                  '''        const THREE = await import("three");\n        const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");\n        const { RoomEnvironment } = await import("three/examples/jsm/environments/RoomEnvironment.js");\n        if (disposed || !mountRef.current) return;\n''',
+                  'room environment dynamic import',
+              ),
+              (
+                  '''        const scene = new THREE.Scene();\n        scene.background = new THREE.Color(0x0a0b10);\n''',
+                  '''        const scene = new THREE.Scene();\n        scene.background = new THREE.Color(0xe7ebf0);\n''',
+                  'brighter twin background',
+              ),
+              (
+                  '''        renderer.toneMapping = THREE.ACESFilmicToneMapping;\n        renderer.toneMappingExposure = 1.05;\n        host.replaceChildren(renderer.domElement);\n''',
+                  '''        renderer.toneMapping = THREE.ACESFilmicToneMapping;\n        renderer.toneMappingExposure = 0.98;\n        const pmrem = new THREE.PMREMGenerator(renderer);\n        const roomEnvironment = new RoomEnvironment();\n        const environmentTarget = pmrem.fromScene(roomEnvironment, 0.04);\n        scene.environment = environmentTarget.texture;\n        roomEnvironment.dispose?.();\n        pmrem.dispose();\n        disposables.push(environmentTarget);\n        host.replaceChildren(renderer.domElement);\n''',
+                  'PBR room environment',
+              ),
+              (
+                  '''        scene.add(new THREE.HemisphereLight(0xffffff, 0x172033, 1.4));\n        const key = new THREE.DirectionalLight(0xffffff, 2.6);\n''',
+                  '''        scene.add(new THREE.HemisphereLight(0xffffff, 0x6b7280, 2));\n        const key = new THREE.DirectionalLight(0xffffff, 3);\n''',
+                  'brighter measured lighting',
+              ),
+              (
+                  '''        const fill = new THREE.DirectionalLight(0xbfd7ff, 0.85);\n''',
+                  '''        const fill = new THREE.DirectionalLight(0xdbeafe, 1.1);\n''',
+                  'fill lighting',
+              ),
+              (
+                  '''        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x171922, roughness: 0.88, metalness: 0.03 });\n''',
+                  '''        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xc8ced6, roughness: 0.76, metalness: 0.04 });\n''',
+                  'floor PBR material',
+              ),
+              (
+                  '''        const grid = new THREE.GridHelper(Math.max(model.floor.widthM, model.floor.depthM), Math.max(10, Math.round(Math.max(model.floor.widthM, model.floor.depthM))), 0x343845, 0x242733);\n''',
+                  '''        const grid = new THREE.GridHelper(Math.max(model.floor.widthM, model.floor.depthM), Math.max(10, Math.round(Math.max(model.floor.widthM, model.floor.depthM))), 0x7c8798, 0xaeb6c2);\n''',
+                  'light engineering grid',
+              ),
+              (
+                  '''        for (const module of model.modules) {\n          addOpenShelfFixture(THREE, scene, module, fixtureMaterials, disposables);\n        }\n\n        const facingModel = buildFacingInstances(THREE, model);\n''',
+                  '''        const fallbackFixtureGroups = new Map();\n        for (const module of model.modules) {\n          const fallbackGroup = addOpenShelfFixture(THREE, scene, module, fixtureMaterials, disposables);\n          fallbackFixtureGroups.set(module.key, fallbackGroup);\n        }\n\n        const facingModel = buildFacingInstances(THREE, model);\n''',
+                  'fixture fallback registry',
+              ),
+              (
+                  '''          scene.add(products);\n        }\n\n        controls = new OrbitControls(camera, renderer.domElement);\n''',
+                  '''          scene.add(products);\n        }\n\n        void mountAttestedFixtureAssets({\n          THREE,\n          scene,\n          model,\n          assetManifest,\n          fallbackGroups: fallbackFixtureGroups,\n          disposables,\n          isDisposed: () => disposed,\n        }).catch(() => {});\n        void mountAttestedProductFronts({\n          THREE,\n          scene,\n          renderer,\n          facingInstances: facingModel.instances,\n          assetManifest,\n          disposables,\n          isDisposed: () => disposed,\n        }).catch(() => {});\n\n        controls = new OrbitControls(camera, renderer.domElement);\n''',
+                  'governed asset mounts',
+              ),
+              (
+                  '''  }, [model, onViewerReady, t]);\n''',
+                  '''  }, [assetManifest, model, onViewerReady, t]);\n''',
+                  'asset manifest effect dependency',
+              ),
+              (
+                  '''      </div><Twin3D model={model} t={t} onViewerReady={bindViewer} /><p className="eay-twin-interaction-hint">{t("interactionHint")}</p></> : null}\n''',
+                  '''      </div><Twin3D model={model} t={t} onViewerReady={bindViewer} assetManifest={candidate?.asset_manifest || null} /><p className="eay-twin-interaction-hint">{t("interactionHint")}</p></> : null}\n''',
+                  'candidate manifest renderer binding',
+              ),
+          ]
+
+          for old, new, label in replacements:
+              count = renderer.count(old)
+              if count != 1:
+                  raise SystemExit(f'Unexpected anchor count for {label}: {count}')
+              renderer = renderer.replace(old, new, 1)
+
+          renderer_path.write_text(renderer)
+
+          test_path = Path('scripts/test-planogram-digital-twin.mjs')
+          test = test_path.read_text()
+          anchor = '''  ["maxProductInstances3d", "3D render cap"],\n]) {\n'''
+          insertion = '''  ["maxProductInstances3d", "3D render cap"],\n  ["buildFixtureAssetIndex", "governed fixture asset index"],\n  ["buildProductAssetIndex", "governed product asset index"],\n  ['three/examples/jsm/loaders/GLTFLoader.js', "dynamic GLB fixture loading"],\n  ['three/examples/jsm/environments/RoomEnvironment.js', "PBR reflection environment"],\n  ["TextureLoader", "governed product pack texture loading"],\n  ["asset.attested !== true", "attested-only high-fidelity visual assets"],\n  ["front_image_path", "product pack front texture contract"],\n  ["model_path", "fixture GLB contract"],\n  ["fallback.visible = false", "primitive fallback replaced only after governed asset success"],\n  ["MAX_TEXTURED_PRODUCT_FACINGS", "bounded texture overlay budget"],\n  ["assetManifest={candidate?.asset_manifest || null}", "candidate asset-manifest binding"],\n]) {\n'''
+          if test.count(anchor) != 1:
+              raise SystemExit('Digital twin static acceptance anchor drifted')
+          test_path.write_text(test.replace(anchor, insertion, 1))
+          PY
+          git diff --check
+          node --check src/modules/planogram/PlanogramDigitalTwin.jsx
+          node --check scripts/test-planogram-digital-twin.mjs
+      - name: Run digital twin authority acceptance
+        run: node scripts/test-planogram-digital-twin.mjs
+      - name: Run candidate asset manifest acceptance
+        run: node scripts/test-planogram-candidate-bundle.mjs
+      - name: Production frontend build
+        run: npm run build
+      - name: Commit quality slice only after acceptance
+        run: |
+          git config user.name 'eay-planogram-ci'
+          git config user.email 'eay-planogram-ci@users.noreply.github.com'
+          git add src/modules/planogram/PlanogramDigitalTwin.jsx scripts/test-planogram-digital-twin.mjs
+          git commit -m 'feat(planogram): render governed PBR product and fixture assets'
+          git push origin HEAD:product/planogram-market-leadership-v1

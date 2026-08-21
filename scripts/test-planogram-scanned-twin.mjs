@@ -25,6 +25,8 @@ for (const needle of [
   "buildPlanogramUnifiedTwinScene",
   "<PlanogramTwinSceneRenderer",
   "sceneModel.geometryAuthority",
+  "PLANOGRAM_THREE_ASSET_RUNTIME",
+  "data-asset-runtime-contract",
 ]) {
   if (!component.includes(needle)) fail(`Scanned Digital Twin shared-scene contract missing: ${needle}`);
 }
@@ -46,9 +48,26 @@ if (/from\s+["']three["']/.test(sharedRenderer)) {
   fail("Shared Twin renderer must preserve dynamic Three.js code splitting.");
 }
 
+const assetRuntime = fs.readFileSync("src/modules/planogram/planogramThreeAssetRuntime.js", "utf8");
+for (const needle of [
+  'import("three/examples/jsm/loaders/KTX2Loader.js")',
+  'import("three/examples/jsm/loaders/GLTFLoader.js")',
+  "setTranscoderPath",
+  "detectSupport(renderer)",
+  "new THREE.LOD()",
+  "canonical_store_scene",
+  "governed_packshot_fallback_missing",
+]) {
+  if (!assetRuntime.includes(needle)) fail(`Governed Three asset runtime missing: ${needle}`);
+}
+if (assetRuntime.includes("https://") || assetRuntime.includes("http://")) {
+  fail("Governed Three asset runtime introduced a hard-coded remote asset URL.");
+}
+
 for (const [source, label] of [
   [component, "scanned component"],
   [sharedRenderer, "shared renderer"],
+  [assetRuntime, "asset runtime"],
 ]) {
   for (const forbidden of [
     "/store-dna/approve",
@@ -68,4 +87,4 @@ if (!workspace.includes("reviewedResult?.reviewed_draft_ready")) {
   fail("Scanned Digital Twin is not gated by reviewed draft readiness.");
 }
 
-console.log("Planogram reviewed Store Scan unified 3D Digital Twin boundary: PASS");
+console.log("Planogram reviewed Store Scan unified 3D Digital Twin and governed asset runtime boundary: PASS");

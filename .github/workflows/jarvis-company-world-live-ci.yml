@@ -6,20 +6,28 @@ on:
       - product/jarvis-company-world-live-v1
     paths:
       - "services/eay-ai-core/app/company_world_live_bridge.py"
+      - "services/eay-ai-core/app/context_provider_gateway.py"
+      - "services/eay-ai-core/app/context_provider_registry.py"
+      - "services/eay-ai-core/app/context_provider_runtime.py"
       - "services/eay-ai-core/app/continuous_world_understanding.py"
       - "services/eay-ai-core/app/real_world_timeline.py"
       - "services/eay-ai-core/app/world_model.py"
       - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
+      - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
       - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
       - "services/eay-ai-core/tests/test_world_model.py"
       - ".github/workflows/jarvis-company-world-live-ci.yml"
   pull_request:
     paths:
       - "services/eay-ai-core/app/company_world_live_bridge.py"
+      - "services/eay-ai-core/app/context_provider_gateway.py"
+      - "services/eay-ai-core/app/context_provider_registry.py"
+      - "services/eay-ai-core/app/context_provider_runtime.py"
       - "services/eay-ai-core/app/continuous_world_understanding.py"
       - "services/eay-ai-core/app/real_world_timeline.py"
       - "services/eay-ai-core/app/world_model.py"
       - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
+      - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
       - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
       - "services/eay-ai-core/tests/test_world_model.py"
       - ".github/workflows/jarvis-company-world-live-ci.yml"
@@ -59,22 +67,31 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-      - name: Ruff Company World live bridge
+      - name: Ruff Company World live and provider runtime
         run: >-
           ruff check
           app/company_world_live_bridge.py
+          app/context_provider_gateway.py
+          app/context_provider_registry.py
+          app/context_provider_runtime.py
           tests/test_company_world_live_bridge_intelligence.py
+          tests/test_context_provider_runtime_intelligence.py
       - name: Compile Company World authority surface
         run: >-
           python -m compileall -q
           app/company_world_live_bridge.py
+          app/context_provider_gateway.py
+          app/context_provider_registry.py
+          app/context_provider_runtime.py
           app/continuous_world_understanding.py
           app/real_world_timeline.py
           app/world_model.py
           tests/test_company_world_live_bridge_intelligence.py
+          tests/test_context_provider_runtime_intelligence.py
       - name: Run Company World adversarial and lineage contracts
         run: >-
           pytest -q
           tests/test_company_world_live_bridge_intelligence.py
+          tests/test_context_provider_runtime_intelligence.py
           tests/test_continuous_world_understanding_intelligence.py
           tests/test_world_model.py

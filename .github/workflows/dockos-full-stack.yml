@@ -22,6 +22,7 @@ on:
       - "src/**/Hiring/**"
       - "src/**/*recruit*"
       - "src/**/Recruitment/**"
+      - "scripts/test-workforce-command-center.mjs"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/dockos-full-stack.yml"
@@ -47,6 +48,7 @@ jobs:
       - run: npm ci
       - run: npm run test:access
       - run: npm run test:workforce
+      - run: node scripts/test-workforce-command-center.mjs
       - run: npm run build
 
   backend:
@@ -77,6 +79,9 @@ jobs:
           app.modules.workforce.test_flexibility
           app.modules.workforce.test_flexibility_router
           app.modules.workforce.test_shift_trading
+          app.modules.workforce.test_shift_trade_views
+          app.modules.workforce.test_assignment_ranking
+          app.modules.workforce.test_command_center
           app.modules.workforce.test_scope_hardening
           app.modules.workforce.test_timeoff_parser
           app.modules.workforce.test_identity_leave_hardening
@@ -131,6 +136,7 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python scripts/setup_workforce_postgres_ci.py
       - run: python -m unittest app.modules.workforce.test_workforce_persistence
+      - run: python -m unittest app.modules.workforce.test_command_center_postgres
       - run: python scripts/workforce_postgres_load_ci.py
       - name: Backup and isolated restore rehearsal
         run: |

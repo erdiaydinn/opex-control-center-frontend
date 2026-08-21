@@ -40,8 +40,8 @@ for (const [needle, label] of hubRequirements) {
   }
 }
 
-if (!achievements.includes('/v1/academy/me/credentials')) {
-  console.error(`${achievementsPath}: learner achievements must use self-scoped credential authority.`);
+if (!achievements.includes('/v1/academy/credentials/me')) {
+  console.error(`${achievementsPath}: learner achievements must use canonical self-scoped credential authority.`);
   process.exit(1);
 }
 

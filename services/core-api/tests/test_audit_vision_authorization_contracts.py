@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -36,6 +37,7 @@ from app.modules.audit.vision_model_proof import (
     UnavailableProductionModelProofVerifier,
 )
 
+CORE_API_ROOT = Path(__file__).resolve().parents[1]
 PROOF_TOKEN = "audit-model-proof-test-token-32-bytes-minimum"
 
 
@@ -280,10 +282,8 @@ def test_authorization_fingerprint_binds_model_contract_privacy_and_evidence() -
 
 
 def test_single_use_consumption_is_tenant_bound_and_atomic() -> None:
-    from pathlib import Path
-
-    source = Path(
-        "app/modules/audit/vision_inference_authorization.py"
+    source = (
+        CORE_API_ROOT / "app/modules/audit/vision_inference_authorization.py"
     ).read_text(encoding="utf-8")
     consume = source.split("async def consume_vision_inference_authorization", 1)[1]
     assert "authorization.tenant_id=CAST(:tenant_id AS UUID)" in consume

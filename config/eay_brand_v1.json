@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "status": "CANONICAL_DESIGN_DIRECTION",
+  "architecture": {
+    "master": {"name": "EAY", "mark": "MONOGRAM", "surfaces": ["corporate", "executive", "company"]},
+    "platform": {"name": "EAY One", "mark": "FLOW_RING", "surfaces": ["web", "platform_shell", "personal_mobile"]},
+    "terminal": {"name": "EAY Terminal", "mark": "SCAN_MARK", "surfaces": ["rugged_android", "inventory", "field_execution"]}
+  },
+  "colors": {
+    "navy": "#07235B",
+    "magenta": "#D20A6D",
+    "electric_blue": "#1F6BFF",
+    "charcoal": "#111827",
+    "white": "#FFFFFF",
+    "surface": "#F8FAFC",
+    "border": "#E5E7EB",
+    "muted": "#6B7280",
+    "body": "#374151"
+  },
+  "typography": {
+    "family": "Manrope",
+    "fallback": ["Avenir Next", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"],
+    "weights": {"body": [400, 500], "label": 600, "heading": [700, 800]},
+    "asset_state": "SELF_HOST_BINARY_PENDING"
+  },
+  "geometry": {
+    "radius_sm": 12,
+    "radius_md": 16,
+    "radius_lg": 20,
+    "touch_target_min": 48,
+    "field_touch_target": 56
+  },
+  "rules": [
+    "NAVY_DOMINANT",
+    "MAGENTA_IS_RESTRAINED_ACCENT",
+    "ELECTRIC_BLUE_IS_OPERATIONAL_TECH_ACCENT",
+    "MONOCHROME_MUST_REMAIN_LEGIBLE",
+    "MARKS_MUST_REMAIN_IDENTIFIABLE_AT_APP_ICON_SIZE",
+    "NO_EXTERNAL_FONT_OR_LOGO_RUNTIME_DEPENDENCY",
+    "EAY_TERMINAL_IS_NOT_EAY_ONE",
+    "SYNTHETIC_PREVIEW_IS_NOT_PRODUCTION_BRAND_EVIDENCE"
+  ]
+}

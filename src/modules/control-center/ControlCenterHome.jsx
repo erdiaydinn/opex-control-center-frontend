@@ -6,19 +6,19 @@ import {
   Moon,
   Search,
   ShieldCheck,
-  Sparkles,
   Sun,
 } from "lucide-react";
 
 import CommandModuleCard from "./CommandModuleCard.jsx";
 import { commandModules } from "./commandCenterModules.js";
 import { useAuth } from "../../auth/AuthContext.jsx";
+import EayBrand from "../../platform/brand/EayBrand.jsx";
 import { translateControlCenter } from "../../platform/i18n/controlCenterMessages.js";
 import { usePlatformPreferences } from "../../platform/preferences/PlatformPreferencesContext.jsx";
 import "./control-center.css";
+import "../../platform/brand/eay-brand.css";
 
-const PRODUCT_NAME = "EAY";
-const PRODUCT_SUITE = "OneOps";
+const PRODUCT_NAME = "EAY One";
 
 function greetingKey() {
   const hour = new Date().getHours();
@@ -54,20 +54,12 @@ export default function ControlCenterHome() {
 
   const visibleModules = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase(locale);
-
     return commandModules
       .filter((module) => can(module.moduleKey, "view"))
       .map((module) => localizeModule(module, locale))
       .filter((module) => {
         if (!normalized) return true;
-
-        return [
-          module.title,
-          module.description,
-          module.group,
-          module.meta,
-          module.moduleKey,
-        ]
+        return [module.title, module.description, module.group, module.meta, module.moduleKey]
           .join(" ")
           .toLocaleLowerCase(locale)
           .includes(normalized);
@@ -87,22 +79,13 @@ export default function ControlCenterHome() {
 
   const topbarMotion = reduceMotion
     ? { initial: false, transition: { duration: 0 } }
-    : {
-        initial: { opacity: 0, y: -18 },
-        transition: { duration: 0.48, ease: [0.16, 0.86, 0.22, 1] },
-      };
+    : { initial: { opacity: 0, y: -18 }, transition: { duration: 0.48, ease: [0.16, 0.86, 0.22, 1] } };
   const heroMotion = reduceMotion
     ? { initial: false, transition: { duration: 0 } }
-    : {
-        initial: { opacity: 0, x: -28, filter: "blur(10px)" },
-        transition: { duration: 0.62, delay: 0.08, ease: [0.16, 0.86, 0.22, 1] },
-      };
+    : { initial: { opacity: 0, x: -28, filter: "blur(10px)" }, transition: { duration: 0.62, delay: 0.08, ease: [0.16, 0.86, 0.22, 1] } };
   const panelMotion = reduceMotion
     ? { initial: false, transition: { duration: 0 } }
-    : {
-        initial: { opacity: 0, x: 28, filter: "blur(10px)" },
-        transition: { duration: 0.62, delay: 0.16, ease: [0.16, 0.86, 0.22, 1] },
-      };
+    : { initial: { opacity: 0, x: 28, filter: "blur(10px)" }, transition: { duration: 0.62, delay: 0.16, ease: [0.16, 0.86, 0.22, 1] } };
 
   return (
     <main className={`ocx-page ${darkMode ? "is-dark" : ""}`}>
@@ -120,13 +103,8 @@ export default function ControlCenterHome() {
           transition={topbarMotion.transition}
         >
           <div className="ocx-brand">
-            <div className="ocx-brand-mark" aria-hidden="true">
-              <Sparkles size={20} />
-            </div>
-
-            <div>
-              <strong>{PRODUCT_NAME}</strong>
-              <span>{PRODUCT_SUITE}</span>
+            <div className="ocx-brand-mark">
+              <EayBrand variant="one" compact />
             </div>
           </div>
 
@@ -160,8 +138,7 @@ export default function ControlCenterHome() {
               {cc(greetingKey())}, {cc("controlReady")}
             </div>
 
-            <h1>{PRODUCT_NAME} {PRODUCT_SUITE}</h1>
-
+            <h1>{PRODUCT_NAME}</h1>
             <p>{cc("tagline")}</p>
 
             <div className="ocx-search">
@@ -182,41 +159,22 @@ export default function ControlCenterHome() {
             transition={panelMotion.transition}
           >
             <div className="ocx-panel-glare" aria-hidden="true" />
-
             <div className="ocx-panel-head">
               <span>{cc("commandStatus")}</span>
               <strong>{formatDate(new Date(), { weekday: "long", day: "2-digit", month: "long" })}</strong>
             </div>
-
             <div className="ocx-metric-row">
-              <div>
-                <small>{cc("visibleModules")}</small>
-                <strong>{visibleModules.length}</strong>
-              </div>
-
-              <div>
-                <small>{cc("activeAccess")}</small>
-                <strong>{readyCount}</strong>
-              </div>
-
-              <div>
-                <small>{cc("preparing")}</small>
-                <strong>{lockedCount}</strong>
-              </div>
+              <div><small>{cc("visibleModules")}</small><strong>{visibleModules.length}</strong></div>
+              <div><small>{cc("activeAccess")}</small><strong>{readyCount}</strong></div>
+              <div><small>{cc("preparing")}</small><strong>{lockedCount}</strong></div>
             </div>
-
             <div className="ocx-live-strip">
               <Clock3 size={16} aria-hidden="true" />
               <span>{cc("roleBasedActive")}</span>
             </div>
-
             <div className="ocx-mini-map" aria-hidden="true">
               {visibleModules.slice(0, 7).map((module) => (
-                <span
-                  key={module.id}
-                  className={module.enabled ? "active" : "soon"}
-                  title={module.title}
-                />
+                <span key={module.id} className={module.enabled ? "active" : "soon"} title={module.title} />
               ))}
             </div>
           </motion.aside>

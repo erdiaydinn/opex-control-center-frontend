@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="eay_navy">#07235B</color>
+    <color name="eay_magenta">#D20A6D</color>
+    <color name="eay_electric_blue">#1F6BFF</color>
+    <color name="eay_charcoal">#111827</color>
+    <color name="eay_white">#FFFFFF</color>
+    <color name="eay_surface">#F8FAFC</color>
+    <color name="eay_border">#E5E7EB</color>
+</resources>

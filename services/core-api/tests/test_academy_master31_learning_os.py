@@ -62,6 +62,8 @@ async def test_skill_gap_snapshot_is_principal_scoped_and_evidence_bound(monkeyp
         permission_assignments=(),
         auth_mode="development",
     )
+    path_id = UUID("00000000-0000-0000-0000-000000003132")
+    enrollment_id = UUID("00000000-0000-0000-0000-000000003133")
 
     async def fake_learning_context(session, supplied_principal, *, include_learning_context=False):
         assert session is session_sentinel
@@ -109,12 +111,26 @@ async def test_skill_gap_snapshot_is_principal_scoped_and_evidence_bound(monkeyp
             ],
         }
 
+    async def fake_enrollments(session, supplied_principal):
+        assert session is session_sentinel
+        assert supplied_principal is principal
+        return [
+            {
+                "id": enrollment_id,
+                "path_id": path_id,
+                "key": "picker-safe-counting",
+                "status": "in_progress",
+                "due_at": None,
+            }
+        ]
+
     session_sentinel = object()
     monkeypatch.setattr(
         skill_gap_service,
         "list_my_badge_credentials",
         fake_learning_context,
     )
+    monkeypatch.setattr(skill_gap_service, "list_enrollments", fake_enrollments)
 
     snapshot = await skill_gap_service.get_my_skill_gap_snapshot(
         session_sentinel,  # type: ignore[arg-type]
@@ -139,6 +155,10 @@ async def test_skill_gap_snapshot_is_principal_scoped_and_evidence_bound(monkeyp
                 {"skill_key": "inventory.count", "target_level": 4},
                 {"skill_key": "safety.haccp", "target_level": 3},
             ],
+            "path_id": path_id,
+            "enrollment_id": enrollment_id,
+            "enrollment_status": "in_progress",
+            "enrollment_due_at": None,
         }
     ]
     assert snapshot["recommendation_policy"] == "deterministic_role_skill_gap_v1"

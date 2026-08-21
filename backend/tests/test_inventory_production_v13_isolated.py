@@ -26,6 +26,17 @@ class InventoryProductionContractTests(_legacy.InventoryProductionContractTests)
 class InventoryPostgresAdversarialTests(_legacy.InventoryPostgresAdversarialTests):
     """Preserve adversarial semantics while isolating durable v13 fixture state."""
 
+    @staticmethod
+    def key_for(principal):
+        # The legacy helper names its concrete class directly. The inherited
+        # setUpClass binds fresh keys to this isolated subclass, so keep signing
+        # authority on the subclass rather than mutating the legacy test class.
+        if principal.employee_id == "EMP-1":
+            return InventoryPostgresAdversarialTests.private_key_one
+        if principal.employee_id == "EMP-2":
+            return InventoryPostgresAdversarialTests.private_key_two
+        raise AssertionError("unknown test principal")
+
     def setUp(self):
         self._close_prior_fixture_authority()
         super().setUp()

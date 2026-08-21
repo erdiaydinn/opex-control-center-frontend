@@ -1,42 +1,64 @@
-name: EAY Audit Release Compose Diagnostic
+name: EAY Audit Release Compose Executor
 
 on:
   push:
     branches:
       - ops/eay-audit-main-compose-runner-20260821
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/eay-audit-release-compose-diagnostic.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  compose:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 9596aef66fa36169b1f998d472cdc822a48a9c72
+          ref: release/eay-audit-main-20260821-v1
           fetch-depth: 0
-      - name: Fetch accepted Audit category head
-        run: git fetch origin 67d98066d7a001e70be8b0974f1171336f91760b
-      - name: Diagnose exact merge conflicts
+      - name: Assert frozen release base and fetch Audit head
         shell: bash
         run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "9596aef66fa36169b1f998d472cdc822a48a9c72"
+          git fetch origin 67d98066d7a001e70be8b0974f1171336f91760b
+      - name: Merge accepted Audit history and resolve proven non-product conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "EAY Release Composition"
+          git config user.email "release-composition@users.noreply.github.com"
           set +e
-          git config user.name "EAY Release Compose Diagnostic"
-          git config user.email "release-compose-diagnostic@users.noreply.github.com"
           git merge --no-commit --no-ff 67d98066d7a001e70be8b0974f1171336f91760b
           status=$?
-          echo "MERGE_EXIT=$status"
-          echo "CONFLICT_COUNT=$(git diff --name-only --diff-filter=U | wc -l)"
-          echo "--- CONFLICT FILES ---"
-          git diff --name-only --diff-filter=U
-          echo "--- UNMERGED INDEX ---"
-          git ls-files -u
-          echo "--- STATUS ---"
-          git status --short
-          exit $status
+          set -e
+          test "$status" -eq 1
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+          printf 'CONFLICT=%s\n' "${conflicts[@]}"
+          test "${#conflicts[@]}" -eq 2
+          test "${conflicts[0]}" = "scripts/test-workforce-experience.mjs"
+          test "${conflicts[1]}" = "services/core-api/app/modules/academy/localization_service.py"
+          git checkout --ours -- scripts/test-workforce-experience.mjs
+          git checkout --ours -- services/core-api/app/modules/academy/localization_service.py
+          git add scripts/test-workforce-experience.mjs services/core-api/app/modules/academy/localization_service.py
+          test -z "$(git diff --name-only --diff-filter=U)"
+          grep -q "Privacy-first evidence" scripts/test-workforce-experience.mjs
+          grep -q "Mahremiyet odaklı kanıt" scripts/test-workforce-experience.mjs
+          test -f services/core-api/app/modules/audit/routes.py
+          test -f services/core-api/app/modules/audit/video_routes.py
+          grep -q "audit" src/App.jsx
+          grep -q "recruit" src/App.jsx
+          git diff --cached --check
+          git commit -m "merge(release): compose accepted Audit field truth into current main"
+      - name: Push exact two-parent release composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent_count=$(git rev-list --parents -n 1 HEAD | awk '{print NF-1}')
+          test "$parent_count" -eq 2
+          parents=$(git rev-list --parents -n 1 HEAD)
+          echo "$parents"
+          echo "$parents" | grep -q "9596aef66fa36169b1f998d472cdc822a48a9c72"
+          echo "$parents" | grep -q "67d98066d7a001e70be8b0974f1171336f91760b"
+          git push origin HEAD:refs/heads/release/eay-audit-main-20260821-v1

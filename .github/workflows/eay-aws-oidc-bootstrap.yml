@@ -28,7 +28,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::600219017658:role/eay-github-infra-bootstrap
           aws-region: eu-central-1
-          role-session-name: eay-github-oidc-proof
+          role-session-name: eay-${{ github.sha }}
 
       - name: Prove exact AWS caller identity
         id: identity
@@ -42,7 +42,7 @@ jobs:
 
           test "${account}" = "600219017658"
           case "${arn}" in
-            arn:aws:sts::600219017658:assumed-role/eay-github-infra-bootstrap/*) ;;
+            arn:aws:sts::600219017658:assumed-role/eay-github-infra-bootstrap/eay-${GITHUB_SHA}) ;;
             *)
               echo "Unexpected OIDC caller ARN: ${arn}" >&2
               exit 1

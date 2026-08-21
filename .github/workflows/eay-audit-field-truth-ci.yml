@@ -12,9 +12,11 @@ on:
       - "services/core-api/tests/test_audit_visit_migration_contract.py"
       - "services/core-api/tests/test_audit_intelligence_score_authority.py"
       - "services/core-api/tests/test_audit_video_authority_integration_contracts.py"
+      - "services/core-api/tests/test_audit_video_authority_adversarial.py"
       - "services/core-api/alembic/versions/0056_audit_visit_manifests.py"
       - "services/core-api/alembic/versions/0057_audit_video_authority.py"
       - "services/core-api/alembic/versions/0058_audit_video_replay_fence.py"
+      - "services/core-api/alembic/versions/0059_audit_inference_lease_immutability.py"
       - "services/core-api/app/budget_main.py"
       - ".github/workflows/eay-audit-field-truth-ci.yml"
   workflow_dispatch:
@@ -67,6 +69,7 @@ jobs:
           alembic/versions/0056_audit_visit_manifests.py
           alembic/versions/0057_audit_video_authority.py
           alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
       - name: Ruff field truth authority
         run: >-
           ruff check --ignore E501
@@ -81,6 +84,7 @@ jobs:
           alembic/versions/0056_audit_visit_manifests.py
           alembic/versions/0057_audit_video_authority.py
           alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
           tests/test_audit_field_truth_contracts.py
           tests/test_audit_visit_contracts.py
           tests/test_audit_visit_migration_contract.py
@@ -91,4 +95,4 @@ jobs:
           heads="$(alembic heads)"
           printf '%s\n' "$heads"
           test "$(printf '%s\n' "$heads" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
-          printf '%s\n' "$heads" | grep -q '^0058_audit_video_replay_fence (head)$'
+          printf '%s\n' "$heads" | grep -q '^0059_audit_inference_lease_immutability (head)$'

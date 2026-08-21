@@ -17,10 +17,11 @@ const COPY = {
 };
 
 const money=(v,locale)=>new Intl.NumberFormat(locale||"tr-TR",{style:"currency",currency:"TRY",maximumFractionDigits:0}).format(Number(v||0));
-const pct=v=>`${Number(v||0).toLocaleString(undefined,{maximumFractionDigits:1})}%`;
+const pct=(v,locale)=>`${Number(v||0).toLocaleString(locale||undefined,{maximumFractionDigits:1})}%`;
 
 export default function BudgetControlTower(){
-  const { locale="tr", dir="ltr" }=usePlatformPreferences();
+  const { locale="tr", localeMeta }=usePlatformPreferences();
+  const dir=localeMeta?.dir||"ltr";
   const c=COPY[locale]||COPY.en;
   const [data,setData]=useState(null); const [error,setError]=useState(false); const [loading,setLoading]=useState(true); const [reload,setReload]=useState(0);
   useEffect(()=>{let alive=true;setLoading(true);setError(false);apiGet("/v1/budget/control-tower").then(x=>{if(alive)setData(x)}).catch(()=>{if(alive)setError(true)}).finally(()=>{if(alive)setLoading(false)});return()=>{alive=false}},[reload]);
@@ -33,7 +34,7 @@ export default function BudgetControlTower(){
   return <main className="bct" dir={dir}>
     <header className="bct-head"><div><span>EAY · FINANCE</span><h1>{c.title}</h1><p>{c.sub}</p></div><button onClick={download}>{c.download}</button></header>
     <section className="bct-kpis">
-      <K l={c.budget} v={money(s.budget,locale)}/><K l={c.actual} v={money(s.actual,locale)}/><K l={c.commitment} v={money(s.commitment,locale)}/><K l={c.forecast} v={money(s.forecast,locale)} hot={Number(s.forecast_variance)<0}/><K l={c.headroom} v={money(s.remaining_headroom,locale)} hot={Number(s.remaining_headroom)<0}/><K l={c.util} v={pct(s.forecast_utilization_pct)} hot={Number(s.forecast_utilization_pct)>100}/>
+      <K l={c.budget} v={money(s.budget,locale)}/><K l={c.actual} v={money(s.actual,locale)}/><K l={c.commitment} v={money(s.commitment,locale)}/><K l={c.forecast} v={money(s.forecast,locale)} hot={Number(s.forecast_variance)<0}/><K l={c.headroom} v={money(s.remaining_headroom,locale)} hot={Number(s.remaining_headroom)<0}/><K l={c.util} v={pct(s.forecast_utilization_pct,locale)} hot={Number(s.forecast_utilization_pct)>100}/>
     </section>
     <section className="bct-grid">
       <Card title={c.cost} wide><div className="bct-bars">{(data.cost_centers||[]).slice(0,12).map(x=><div className="bct-bar" key={x.cost_center}><b>{x.cost_center}</b><div><i style={{width:`${Math.min(100,Number(x.forecast||0)/maxCost*100)}%`}}/></div><span>{money(x.forecast,locale)} / {money(x.budget,locale)}</span></div>)}</div></Card>

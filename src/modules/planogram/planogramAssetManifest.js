@@ -3,16 +3,22 @@ const MAX_FIXTURE_ASSETS = 250;
 const MAX_PATH_LENGTH = 500;
 const PRODUCT_EXTENSIONS = /\.(png|jpe?g|webp|avif)(\?.*)?$/i;
 const FIXTURE_EXTENSIONS = /\.(glb)(\?.*)?$/i;
+const PRODUCT_ASSET_PREFIX = "/planogram-assets/products/";
+const FIXTURE_ASSET_PREFIX = "/planogram-assets/fixtures/";
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function safeSameOriginPath(value, extensionPattern) {
+function safeSameOriginPath(value, extensionPattern, allowedPrefix) {
   const path = String(value ?? "").trim();
   if (!path || path.length > MAX_PATH_LENGTH) return null;
   if (!path.startsWith("/") || path.startsWith("//")) return null;
   if (path.includes("\\") || /[\u0000-\u001f]/.test(path)) return null;
+  if (path.includes("#") || /%(?:2e|2f|5c|00)/i.test(path)) return null;
+  const pathname = path.split("?", 1)[0];
+  if (!pathname.startsWith(allowedPrefix)) return null;
+  if (pathname.split("/").some((segment) => segment === "." || segment === "..")) return null;
   return extensionPattern.test(path) ? path : null;
 }
 
@@ -21,7 +27,7 @@ function normalizeProductAsset(raw) {
   const allowed = new Set(["sku", "front_image_path", "source_ref", "attested"]);
   if (!Object.keys(raw).every((key) => allowed.has(key))) return null;
   const sku = String(raw.sku ?? "").trim().toUpperCase();
-  const frontImagePath = safeSameOriginPath(raw.front_image_path, PRODUCT_EXTENSIONS);
+  const frontImagePath = safeSameOriginPath(raw.front_image_path, PRODUCT_EXTENSIONS, PRODUCT_ASSET_PREFIX);
   const sourceRef = String(raw.source_ref ?? "").trim();
   if (!sku || sku.length > 160 || !frontImagePath || sourceRef.length < 3 || sourceRef.length > 500) return null;
   if (raw.attested !== true && raw.attested !== false) return null;
@@ -33,7 +39,7 @@ function normalizeFixtureAsset(raw) {
   const allowed = new Set(["fixture_type", "model_path", "source_ref", "attested"]);
   if (!Object.keys(raw).every((key) => allowed.has(key))) return null;
   const fixtureType = String(raw.fixture_type ?? "").trim().toUpperCase();
-  const modelPath = safeSameOriginPath(raw.model_path, FIXTURE_EXTENSIONS);
+  const modelPath = safeSameOriginPath(raw.model_path, FIXTURE_EXTENSIONS, FIXTURE_ASSET_PREFIX);
   const sourceRef = String(raw.source_ref ?? "").trim();
   if (!fixtureType || fixtureType.length > 120 || !modelPath || sourceRef.length < 3 || sourceRef.length > 500) return null;
   if (raw.attested !== true && raw.attested !== false) return null;
@@ -80,4 +86,6 @@ export function buildFixtureAssetIndex(manifest) {
 export const PLANOGRAM_ASSET_LIMITS = Object.freeze({
   maxProductAssets: MAX_PRODUCT_ASSETS,
   maxFixtureAssets: MAX_FIXTURE_ASSETS,
+  productAssetPrefix: PRODUCT_ASSET_PREFIX,
+  fixtureAssetPrefix: FIXTURE_ASSET_PREFIX,
 });

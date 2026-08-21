@@ -46,7 +46,7 @@ class ContextProviderSpec(BaseModel):
     notes: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_fail_closed_activation(self) -> "ContextProviderSpec":
+    def validate_fail_closed_activation(self) -> ContextProviderSpec:
         normalized_hosts = [host.casefold().strip().rstrip(".") for host in self.allowed_hosts]
         if any(not host or "://" in host or "/" in host or "@" in host for host in normalized_hosts):
             raise ValueError("context_provider_host_must_be_hostname_only")

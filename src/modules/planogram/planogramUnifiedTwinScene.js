@@ -20,6 +20,31 @@ function fixtureIdFrom(row) {
   return text(row?.fixtureId ?? row?.fixture_id);
 }
 
+function facingCount(product) {
+  return Math.max(1, Math.min(40, Math.round(number(product?.facing_count ?? product?.facing, 1))));
+}
+
+function fixtureProducts(row) {
+  const shelves = Array.isArray(row?.shelves) ? row.shelves : [];
+  const products = [];
+  for (let shelfIndex = 0; shelfIndex < shelves.length; shelfIndex += 1) {
+    const shelfProducts = Array.isArray(shelves[shelfIndex]?.products) ? shelves[shelfIndex].products : [];
+    for (let productIndex = 0; productIndex < shelfProducts.length; productIndex += 1) {
+      const product = shelfProducts[productIndex];
+      products.push(Object.freeze({
+        shelfIndex,
+        productIndex,
+        sku: text(product?.sku ?? product?.SKU).toUpperCase(),
+        facingCount: facingCount(product),
+        widthM: number(product?.width_cm, 8) / 100,
+        heightM: number(product?.height_cm, 18) / 100,
+        depthM: number(product?.depth_cm, 7) / 100,
+      }));
+    }
+  }
+  return Object.freeze(products);
+}
+
 function authoredScene(model) {
   if (!model?.floor || !Array.isArray(model?.modules)) return null;
   return Object.freeze({
@@ -47,14 +72,17 @@ function authoredScene(model) {
       fixtureId: fixtureIdFrom(row),
       fixtureCode: fixtureCodeFrom(row),
       fixtureType: text(row.fixtureType).toUpperCase(),
+      side: text(row.side).toUpperCase(),
       centerXM: number(row.centerXM),
       centerYM: number(row.centerYM),
       widthM: number(row.widthM),
       depthM: number(row.depthM),
       heightM: number(row.heightM),
       rotationDeg: number(row.rotationDeg),
+      shelfCount: Math.max(1, number(row.shelfCount, Array.isArray(row.shelves) ? row.shelves.length : 1)),
       coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
       moduleKey: text(row.key),
+      products: fixtureProducts(row),
     }))),
     route: model.route || null,
     provenance: Object.freeze({
@@ -91,14 +119,17 @@ function scannedScene(architecture, recognizedFixtures = []) {
       fixtureId: fixtureIdFrom(row),
       fixtureCode: fixtureCodeFrom(row),
       fixtureType: text(row.fixture_type || row.hinted_storage_type || "UNKNOWN").toUpperCase(),
+      side: text(row.side).toUpperCase(),
       centerXM: number(row.center_x_m),
       centerYM: number(row.center_y_m),
       widthM: number(row.width_m),
       depthM: number(row.depth_m),
       heightM: number(row.height_m, 1.6),
       rotationDeg: number(row.rotation_deg),
+      shelfCount: Math.max(1, number(row.shelf_count, 1)),
       coordinateAuthority: "reviewed_scan_measurement_preview",
       moduleKey: null,
+      products: Object.freeze([]),
     }))),
     route: null,
     provenance: Object.freeze({

@@ -6,6 +6,9 @@ on:
       - product/jarvis-company-world-live-v1
     paths:
       - ".github/workflows/jarvis-tuik-field-probe.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/jarvis-tuik-field-probe.yml"
   workflow_dispatch:
 
 permissions:

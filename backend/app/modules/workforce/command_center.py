@@ -18,6 +18,7 @@ from .command_center_repository import get_command_center_authority
 ISTANBUL = ZoneInfo("Europe/Istanbul")
 ZERO = Decimal("0")
 TECHNICAL_DRIFT_TOLERANCE_MH = Decimal("0.01")
+SCHEDULE_DRIFT_COMPARISON_BASIS = "GROSS_SCHEDULED_MAN_HOURS"
 
 
 class CommandCenterError(RuntimeError):
@@ -89,14 +90,16 @@ def _shift_expected_minutes(shift: dict) -> int:
     return max(0, gross - int(shift.get("break_minutes") or 0))
 
 
-def _scheduled_overlap_minutes(shift: dict, start: datetime, end: datetime) -> Decimal:
+def _scheduled_gross_overlap_minutes(shift: dict, start: datetime, end: datetime) -> Decimal:
+    """Project canonical schedule on the same gross-hours basis as capacity authority.
+
+    EffectiveCapacitySnapshot.scheduled_man_hours is the pre-deduction schedule
+    quantity; absence, break and unavailable hours are represented separately.
+    Drift detection must therefore compare gross scheduled overlap with gross
+    scheduled authority instead of proportionally subtracting shift breaks here.
+    """
     shift_start, shift_end = _shift_interval_local(shift)
-    overlap = _overlap_minutes(shift_start, shift_end, start, end)
-    if not overlap:
-        return ZERO
-    gross = max(1, int((shift_end - shift_start).total_seconds() // 60))
-    expected = Decimal(_shift_expected_minutes(shift))
-    return (expected * Decimal(overlap)) / Decimal(gross)
+    return Decimal(_overlap_minutes(shift_start, shift_end, start, end))
 
 
 def _attendance_interval(row: dict) -> tuple[datetime | None, datetime | None]:
@@ -206,8 +209,11 @@ def build_command_center(
     ]
     shifts_by_id = {str(row.get("id")): row for row in all_shifts}
     scheduled_people = {str(row.get("person_id")) for row in interval_shifts if row.get("person_id")}
-    operational_scheduled_minutes = sum(
-        (_scheduled_overlap_minutes(row, interval_start, interval_end) for row in interval_shifts),
+    operational_scheduled_gross_minutes = sum(
+        (
+            _scheduled_gross_overlap_minutes(row, interval_start, interval_end)
+            for row in interval_shifts
+        ),
         ZERO,
     )
 
@@ -342,12 +348,15 @@ def build_command_center(
         ))
 
     authority_scheduled = Decimal(str(capacity["scheduled_man_hours"]))
-    operational_scheduled = operational_scheduled_minutes / Decimal("60")
+    operational_scheduled = operational_scheduled_gross_minutes / Decimal("60")
     drift = operational_scheduled - authority_scheduled
     if interval_relation == "CURRENT" and abs(drift) > TECHNICAL_DRIFT_TOLERANCE_MH:
         action_queue.append(_action(
             "SCHEDULE_SNAPSHOT_DRIFT", 15, "blocker",
-            evidence=[str(dpi["capacity_snapshot_fingerprint"])],
+            evidence=[
+                str(dpi["capacity_snapshot_fingerprint"]),
+                f"SCHEDULE_DRIFT_BASIS:{SCHEDULE_DRIFT_COMPARISON_BASIS}",
+            ],
             recommended_action_code="REFRESH_CAPACITY_SNAPSHOT",
             requires_human_approval=False,
         ))
@@ -385,7 +394,9 @@ def build_command_center(
         "capacity": {
             "authority_scheduled_man_hours": _decimal_text(capacity["scheduled_man_hours"]),
             "operational_scheduled_man_hours": _decimal_text(operational_scheduled),
+            "operational_scheduled_gross_man_hours": _decimal_text(operational_scheduled),
             "schedule_snapshot_drift_man_hours": _decimal_text(drift),
+            "schedule_snapshot_comparison_basis": SCHEDULE_DRIFT_COMPARISON_BASIS,
             "absence_man_hours": _decimal_text(capacity["absence_man_hours"]),
             "break_man_hours": _decimal_text(capacity["break_man_hours"]),
             "unavailable_man_hours": _decimal_text(capacity["unavailable_man_hours"]),

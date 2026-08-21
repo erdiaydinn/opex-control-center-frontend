@@ -1,0 +1,132 @@
+name: EAY Planogram B - One Shot Engine Ruff Repair
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - ".github/workflows/eay-planogram-b-engine-ruff-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair-engine-ruff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: product/planogram-market-leadership-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Install PlanAI acceptance dependencies
+        run: |
+          python -m pip install -r apps/planai/backend/requirements.txt
+          python -m pip install ruff pytest
+      - name: Apply bounded Ruff cleanup
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/planai/backend/engine.py')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '''try:\n    from overrides import apply_overrides_to_product\nexcept Exception:\n    def apply_overrides_to_product(p):\n        return p\n''',
+                  '''try:\n    from overrides import apply_overrides_to_product\nexcept ImportError:\n    def apply_overrides_to_product(p):\n        return p\n''',
+                  'override import exception boundary',
+              ),
+              (
+                  '''        return float(str(v).replace(",", ".").replace("%", "").strip())\n    except Exception:\n        return d\n\n\ndef inum''',
+                  '''        return float(str(v).replace(",", ".").replace("%", "").strip())\n    except (TypeError, ValueError):\n        return d\n\n\ndef inum''',
+                  'numeric conversion exception boundary',
+              ),
+              (
+                  '''def inum(v: Any, d: int = 0) -> int:\n    try:\n        return int(float(str(v).replace(",", ".").strip()))\n    except Exception:\n        return d\n''',
+                  '''def inum(v: Any, d: int = 0) -> int:\n    try:\n        return int(float(str(v).replace(",", ".").strip()))\n    except (TypeError, ValueError):\n        return d\n''',
+                  'integer conversion exception boundary',
+              ),
+              (
+                  '''    supplier = as_text_list(rule.get("supplier") or rule.get("supplier_name"))\n    if supplier and not _matches_token(get(p, ["supplier_name", "vendor_name"], ""), supplier):\n        return False\n\n    return True\n''',
+                  '''    supplier = as_text_list(rule.get("supplier") or rule.get("supplier_name"))\n    return not supplier or _matches_token(get(p, ["supplier_name", "vendor_name"], ""), supplier)\n''',
+                  'supplier rule simplification',
+              ),
+              (
+                  '''    aid = key(aisle.get("aisle_id"))\n    groups = cached_groups if cached_groups is not None else existing_groups_on_aisle(aisle)\n\n    if aid == "A" and not is_food(p):\n''',
+                  '''    aid = key(aisle.get("aisle_id"))\n\n    if aid == "A" and not is_food(p):\n''',
+                  'unused aisle groups cache',
+              ),
+              (
+                  '''    if product_group == "NON_FOOD_ODOR" and any(str(g).startswith("FOOD") for g in shelf_groups):\n        return False\n\n    return True\n''',
+                  '''    return not (\n        product_group == "NON_FOOD_ODOR"\n        and any(str(g).startswith("FOOD") for g in shelf_groups)\n    )\n''',
+                  'food odor compatibility simplification',
+              ),
+              (
+                  '''    if oriented_depth(p) > num(shelf.get("shelf_depth_cm"), 50):\n        return False\n    return True\n''',
+                  '''    return oriented_depth(p) <= num(shelf.get("shelf_depth_cm"), 50)\n''',
+                  'dimension depth simplification',
+              ),
+              (
+                  '''        if num(shelf.get("max_weight_kg"), 45) - num(shelf.get("used_weight_kg"), 0) + 1e-9 < product_weight:\n            return False\n        return True\n''',
+                  '''        return (\n            num(shelf.get("max_weight_kg"), 45)\n            - num(shelf.get("used_weight_kg"), 0)\n            + 1e-9\n            >= product_weight\n        )\n''',
+                  'bounded weight viability simplification',
+              ),
+              (
+                  '''        "placement_score": round(best_score, 1),\n''',
+                  '''        "placement_score": best_score,\n''',
+                  'redundant placement score round',
+              ),
+              (
+                  '''        if any(_column_key(column) in INPUT_COLUMN_ALIASES for column in (raw or {}).keys()):\n''',
+                  '''        if any(_column_key(column) in INPUT_COLUMN_ALIASES for column in (raw or {})):\n''',
+                  'dictionary iteration simplification',
+              ),
+              (
+                  '''        ok, reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))\n        if not ok:\n''',
+                  '''        ok, _reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))\n        if not ok:\n''',
+                  'unused suggestion rejection reason',
+              ),
+              (
+                  '''            ok, reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))\n            if not ok:\n''',
+                  '''            ok, _reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))\n            if not ok:\n''',
+                  'unused module optimization rejection reason',
+              ),
+              (
+                  '''    travel_seconds = len(set(x["aisle_id"] for x in route)) * 8\n''',
+                  '''    travel_seconds = len({x["aisle_id"] for x in route}) * 8\n''',
+                  'route aisle set comprehension',
+              ),
+          ]
+
+          for old, new, label in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Unexpected anchor count for {label}: {count}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          git diff --check
+          python -m py_compile apps/planai/backend/engine.py
+      - name: Re-run exact P0 Ruff boundary
+        run: |
+          ruff check --ignore I001,E501 \
+            apps/planai/backend/physical_truth.py \
+            apps/planai/backend/engine.py \
+            apps/planai/backend/tests/test_physical_truth.py \
+            apps/planai/backend/tests/test_physical_engine.py
+      - name: Re-run physical engine acceptance
+        working-directory: apps/planai/backend
+        run: |
+          python -m pytest -q tests/test_physical_truth.py tests/test_physical_engine.py
+      - name: Commit repair only after acceptance
+        run: |
+          git config user.name 'eay-planogram-ci'
+          git config user.email 'eay-planogram-ci@users.noreply.github.com'
+          git add apps/planai/backend/engine.py
+          git commit -m 'style(planogram): close physical engine Ruff debt'
+          git push origin HEAD:product/planogram-market-leadership-v1

@@ -6,333 +6,165 @@ on:
       - product/eay-category-leadership-v1
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: eay-audit-main-merge-repair
-  cancel-in-progress: false
+  group: eay-audit-main-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_ALEMBIC_HEAD: 0059_audit_inference_lease_immutability
+  ACCEPTED_AUDIT_PROVENANCE_SHA: 98bbfbe4899ffab368bebdaf769d5e44c95b6752
 
 jobs:
-  repair-canonical-blockers:
-    if: github.actor != 'github-actions[bot]'
+  lineage-and-conflict:
+    name: Exact head / lineage / conflict scan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      OPEX_ENVIRONMENT: test
-      OPEX_AUTH_MODE: development
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: product/eay-audit-field-truth-v1
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+      - name: Assert exact PR head and canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "${{ github.base_ref }}" = "product/eay-category-leadership-v1"
+          git merge-base --is-ancestor "${{ github.event.pull_request.base.sha }}" HEAD
+          git merge-base --is-ancestor "$ACCEPTED_AUDIT_PROVENANCE_SHA" HEAD
+      - name: Reject unresolved conflict markers in PR delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r file; do
+            test -f "$file" || continue
+            if grep -I -nE '^(<<<<<<< |=======|>>>>>>> )' "$file"; then
+              echo "Conflict marker detected in $file" >&2
+              bad=1
+            fi
+          done < <(git diff --name-only "${{ github.event.pull_request.base.sha }}"...HEAD)
+          test "$bad" -eq 0
+      - name: Reject whitespace errors in PR delta
+        run: git diff --check "${{ github.event.pull_request.base.sha }}"...HEAD
+
+  web-regression:
+    name: Audit / Platform / Workforce / Academy / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Audit regression
+        run: npm run test:audit
+      - name: Academy regression
+        run: |
+          node scripts/test-academy-product-states.mjs
+          node scripts/test-academy-expansion-routing.mjs
+      - name: Workforce regression
+        run: npm run test:workforce
+      - name: Full platform web regression
+        run: npm run test:platform
+      - name: Production web build
+        run: npm run build
+
+  core-regression:
+    name: Core API / Ruff / compile / Alembic / full tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
-          python-version: '3.12'
-      - name: Apply deterministic repair
-        shell: bash
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core API test surface
+        run: python -m pip install -e "./services/core-api[dev,bigquery]"
+      - name: Create non-superuser runtime role
         run: |
-          set -euo pipefail
           python - <<'PY'
-          from __future__ import annotations
-          import ast
-          import re
-          from pathlib import Path
+          import asyncio
+          import asyncpg
 
-          ROOT = Path.cwd()
-
-          def replace(path: str, old: str, new: str, *, count: int = 1) -> None:
-              target = ROOT / path
-              text = target.read_text(encoding="utf-8")
-              actual = text.count(old)
-              if actual != count:
-                  raise SystemExit(
-                      f"{path}: expected {count} occurrences, found {actual}: {old!r}"
-                  )
-              target.write_text(text.replace(old, new), encoding="utf-8")
-
-          visit_migration = "services/core-api/alembic/versions/0056_audit_visit_manifests.py"
-          replace(
-              visit_migration,
-              '            "visit_type IN (\'FULL_AUDIT\',\'QUICK_AUDIT\',\'FOCUS_AUDIT\',\'CUSTOM_AUDIT\',\'PEOPLE_VISIT\',\'SPECIAL_VISIT\')",',
-              '            (\n'
-              '                "visit_type IN (\'FULL_AUDIT\',\'QUICK_AUDIT\',\'FOCUS_AUDIT\',"\n'
-              '                "\'CUSTOM_AUDIT\',\'PEOPLE_VISIT\',\'SPECIAL_VISIT\')"\n'
-              '            ),',
-          )
-          replace(
-              visit_migration,
-              '            "visit_type <> \'PEOPLE_VISIT\' OR (program_key IS NULL AND score_mode = \'NO_SCORE\' AND official_compliance_eligible IS FALSE)",',
-              '            (\n'
-              '                "visit_type <> \'PEOPLE_VISIT\' OR "\n'
-              '                "(program_key IS NULL AND score_mode = \'NO_SCORE\' "\n'
-              '                "AND official_compliance_eligible IS FALSE)"\n'
-              '            ),',
-          )
-          replace(
-              visit_migration,
-              '            "visit_type <> \'FULL_AUDIT\' OR (score_mode = \'OFFICIAL_COMPLIANCE\' AND official_compliance_eligible IS TRUE)",',
-              '            (\n'
-              '                "visit_type <> \'FULL_AUDIT\' OR "\n'
-              '                "(score_mode = \'OFFICIAL_COMPLIANCE\' "\n'
-              '                "AND official_compliance_eligible IS TRUE)"\n'
-              '            ),',
-          )
-          replace(
-              visit_migration,
-              '            "note_type IN (\'HUMAN_CONVERSATION\',\'OPERATION_OBSERVATION\',\'POSITIVE_PRACTICE\',\'FOLLOW_UP\',\'OTHER\')",',
-              '            (\n'
-              '                "note_type IN (\'HUMAN_CONVERSATION\',\'OPERATION_OBSERVATION\',"\n'
-              '                "\'POSITIVE_PRACTICE\',\'FOLLOW_UP\',\'OTHER\')"\n'
-              '            ),',
-          )
-
-          video_migration = "services/core-api/alembic/versions/0057_audit_video_authority.py"
-          replace(
-              video_migration,
-              '            "field_activation_fingerprint IS NULL OR field_activation_fingerprint ~ \'^[0-9a-f]{64}$\'",',
-              '            (\n'
-              '                "field_activation_fingerprint IS NULL OR "\n'
-              '                "field_activation_fingerprint ~ \'^[0-9a-f]{64}$\'"\n'
-              '            ),',
-          )
-          replace(
-              video_migration,
-              '        f"GRANT SELECT, INSERT, UPDATE ON TABLE audit_video_inference_authorizations TO {RUNTIME_ROLE}"',
-              '        "GRANT SELECT, INSERT, UPDATE ON TABLE audit_video_inference_authorizations "\n'
-              '        f"TO {RUNTIME_ROLE}"',
-          )
-          replace(
-              video_migration,
-              '        f"REVOKE DELETE ON TABLE audit_video_inference_authorizations FROM {RUNTIME_ROLE}"',
-              '        "REVOKE DELETE ON TABLE audit_video_inference_authorizations "\n'
-              '        f"FROM {RUNTIME_ROLE}"',
-          )
-
-          video_auth = "services/core-api/app/modules/audit/video_vision_authorization.py"
-          replace(
-              video_auth,
-              '    """Issue one model-execution lease from verified video evidence without Audit truth authority."""',
-              '    """Issue one model-execution lease from verified video evidence without\n'
-              '    granting Audit truth authority."""',
-          )
-          replace(
-              video_auth,
-              '        return VideoVisionAuthorizationDecision("blocked", "audit_not_authorized_ai_substrate_consumer")',
-              '        return VideoVisionAuthorizationDecision(\n'
-              '            "blocked",\n'
-              '            "audit_not_authorized_ai_substrate_consumer",\n'
-              '        )',
-          )
-          replace(
-              video_auth,
-              '                    "production_release_proof_fingerprint": proof.production_release_proof_fingerprint,',
-              '                    "production_release_proof_fingerprint": (\n'
-              '                        proof.production_release_proof_fingerprint\n'
-              '                    ),',
-          )
-
-          replace(
-              "services/core-api/app/modules/audit/visit_routes.py",
-              '        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit location not found")',
-              '        raise HTTPException(\n'
-              '            status_code=status.HTTP_404_NOT_FOUND,\n'
-              '            detail="Audit location not found",\n'
-              '        )',
-          )
-
-          replace(
-              "services/core-api/tests/test_audit_video_authority_integration_contracts.py",
-              '    assert "model_record_id" not in routes.split("class AuditVideoVisionAuthorizationCreate", 1)[1].split(\n'
-              '        "class AuditVideoVisionAuthorizationConsume", 1\n'
-              '    )[0]',
-              '    authorization_create_contract = routes.split(\n'
-              '        "class AuditVideoVisionAuthorizationCreate", 1\n'
-              '    )[1].split("class AuditVideoVisionAuthorizationConsume", 1)[0]\n'
-              '    assert "model_record_id" not in authorization_create_contract',
-          )
-
-          path_contract_files = [
-              "services/core-api/tests/test_audit_video_authority_adversarial.py",
-              "services/core-api/tests/test_audit_video_authority_integration_contracts.py",
-              "services/core-api/tests/test_audit_vision_authorization_contracts.py",
-          ]
-          for relative in path_contract_files:
-              target = ROOT / relative
-              source = target.read_text(encoding="utf-8")
-              if "CORE_API_ROOT = Path(__file__).resolve().parents[1]" not in source:
-                  tree = ast.parse(source)
-                  import_end = max(
-                      node.end_lineno or node.lineno
-                      for node in tree.body
-                      if isinstance(node, (ast.Import, ast.ImportFrom))
-                  )
-                  lines = source.splitlines()
-                  lines.insert(import_end, "")
-                  lines.insert(
-                      import_end + 1,
-                      "CORE_API_ROOT = Path(__file__).resolve().parents[1]",
-                  )
-                  source = "\n".join(lines) + "\n"
-              source = re.sub(
-                  r'Path\("((?:app|alembic)/[^"\n]+)"\)',
-                  r'(CORE_API_ROOT / "\1")',
-                  source,
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
               )
-              target.write_text(source, encoding="utf-8")
+              try:
+                  exists = await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='opex_runtime')"
+                  )
+                  if not exists:
+                      await connection.execute(
+                          """
+                          CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime'
+                          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+                          """
+                      )
+              finally:
+                  await connection.close()
 
-          sql_guard = ROOT / "services/core-api/tests/test_sql_access_boundary.py"
-          source = sql_guard.read_text(encoding="utf-8")
-          audit_anchor = (
-              '    ("modules/audit/vision_inference_authorization.py", '
-              '"consume_vision_inference_authorization"),\n'
-              '}\n\n# Master 24-26/60 security review:'
-          )
-          audit_review = '''    ("modules/audit/vision_inference_authorization.py", "consume_vision_inference_authorization"),
-    # Audit main-merge security review: video and visit SQL is static text() with
-    # bound parameters. Every DB transaction enters canonical tenant context;
-    # Audit/Field authority tables remain tenant/RLS fenced and replay controlled.
-    ("modules/audit/video_routes.py", "_authorization_belongs_to_run"),
-    ("modules/audit/video_verification_service.py", "_load_bound_video_receipt"),
-    ("modules/audit/video_verification_service.py", "verify_bound_video_receipt"),
-    ("modules/audit/video_vision_authorization.py", "_load_context"),
-    ("modules/audit/video_vision_authorization.py", "authorize_video_vision_inference"),
-    ("modules/audit/video_vision_authorization.py", "consume_video_vision_authorization"),
-    ("modules/audit/visit_repository.py", "_set_tenant"),
-    ("modules/audit/visit_repository.py", "_require_active_location"),
-    ("modules/audit/visit_repository.py", "_require_active_program"),
-    ("modules/audit/visit_repository.py", "create_visit_manifest"),
-    ("modules/audit/visit_repository.py", "get_visit_location"),
-    ("modules/audit/visit_repository.py", "get_visit_manifest"),
-    ("modules/audit/visit_repository.py", "list_visit_manifests"),
-    ("modules/audit/visit_repository.py", "append_visit_note"),
-    ("modules/audit/visit_repository.py", "list_visit_notes"),
-    ("modules/audit/visit_repository.py", "start_visit_run"),
-    ("modules/audit/visit_repository.py", "complete_visit_manifest"),
-}
-
-# Master 24-26/60 security review:'''
-          if source.count(audit_anchor) != 1:
-              raise SystemExit("SQL guard Audit insertion anchor drifted")
-          source = source.replace(audit_anchor, audit_review)
-
-          execution_anchor = (
-              "ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | "
-              "PRIVILEGED_ENGINE_CREATION\n\nEXECUTION_CALLS = {"
-          )
-          reviewed_non_sql = '''ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | PRIVILEGED_ENGINE_CREATION
-
-# Exact non-database execution points whose method names collide with SQLAlchemy
-# execution verbs. Private video streaming is constrained by UUID identity,
-# trusted-host/no-redirect policy, immutable byte size and exact media type.
-REVIEWED_NON_SQL_EXECUTION_POINTS = {
-    ("modules/field_intelligence/video_object_read.py", "read_private_video_object", "stream"),
-}
-
-EXECUTION_CALLS = {'''
-          if source.count(execution_anchor) != 1:
-              raise SystemExit("SQL guard non-SQL insertion anchor drifted")
-          source = source.replace(execution_anchor, reviewed_non_sql)
-
-          runtime_old = '''            location = (relative, function)
-            if name in EXECUTION_CALLS and location not in ALLOWED_SQL_EXECUTION_POINTS:
-                violations.append(f"{relative}:{node.lineno} {function} -> {name}")'''
-          runtime_new = '''            location = (relative, function)
-            execution_point = (relative, function, name)
-            if (
-                name in EXECUTION_CALLS
-                and location not in ALLOWED_SQL_EXECUTION_POINTS
-                and execution_point not in REVIEWED_NON_SQL_EXECUTION_POINTS
-            ):
-                violations.append(f"{relative}:{node.lineno} {function} -> {name}")'''
-          if source.count(runtime_old) != 1:
-              raise SystemExit("SQL guard runtime condition anchor drifted")
-          source = source.replace(runtime_old, runtime_new)
-
-          growth_old = '''        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _call_name(node) in EXECUTION_CALLS:
-                current_locations.add((relative, _enclosing_function(tree, node)))
-
-    assert current_locations == ALLOWED_SQL_EXECUTION_POINTS,'''
-          growth_new = '''        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            name = _call_name(node)
-            if name not in EXECUTION_CALLS:
-                continue
-            function = _enclosing_function(tree, node)
-            execution_point = (relative, function, name)
-            if execution_point in REVIEWED_NON_SQL_EXECUTION_POINTS:
-                continue
-            current_locations.add((relative, function))
-
-    assert current_locations == ALLOWED_SQL_EXECUTION_POINTS,'''
-          if source.count(growth_old) != 1:
-              raise SystemExit("SQL guard growth anchor drifted")
-          source = source.replace(growth_old, growth_new)
-
-          exact_test_anchor = "def test_raw_sql_text_must_be_static_literal() -> None:\n"
-          exact_test = '''def test_reviewed_non_sql_execution_points_are_exact() -> None:
-    discovered: set[tuple[str, str, str]] = set()
-    for path in sorted(APP_ROOT.rglob("*.py")):
-        relative = path.relative_to(APP_ROOT).as_posix()
-        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            name = _call_name(node)
-            if name not in EXECUTION_CALLS:
-                continue
-            execution_point = (relative, _enclosing_function(tree, node), name)
-            if execution_point in REVIEWED_NON_SQL_EXECUTION_POINTS:
-                discovered.add(execution_point)
-
-    assert discovered == REVIEWED_NON_SQL_EXECUTION_POINTS
-
-
-def test_raw_sql_text_must_be_static_literal() -> None:
-'''
-          if source.count(exact_test_anchor) != 1:
-              raise SystemExit("SQL guard exact non-SQL test anchor drifted")
-          source = source.replace(exact_test_anchor, exact_test)
-          sql_guard.write_text(source, encoding="utf-8")
+          asyncio.run(main())
           PY
-      - name: Install Core API dev surface
-        run: python -m pip install -e './services/core-api[dev,bigquery]'
-      - name: Format repaired Python surfaces
-        run: |
-          ruff format \
-            services/core-api/alembic/versions/0056_audit_visit_manifests.py \
-            services/core-api/alembic/versions/0057_audit_video_authority.py \
-            services/core-api/app/modules/audit/video_vision_authorization.py \
-            services/core-api/app/modules/audit/visit_routes.py \
-            services/core-api/tests/test_audit_video_authority_adversarial.py \
-            services/core-api/tests/test_audit_video_authority_integration_contracts.py \
-            services/core-api/tests/test_audit_vision_authorization_contracts.py \
-            services/core-api/tests/test_audit_visit_contracts.py \
-            services/core-api/tests/test_audit_visit_migration_contract.py \
-            services/core-api/tests/test_sql_access_boundary.py
-      - name: Prove full canonical Ruff
+      - name: Repository Core Ruff gate
         run: ruff check services/core-api --output-format=github
-      - name: Prove focused repaired contracts
-        run: |
-          pytest -q \
-            services/core-api/tests/test_sql_access_boundary.py \
-            services/core-api/tests/test_audit_video_authority_adversarial.py \
-            services/core-api/tests/test_audit_video_authority_integration_contracts.py \
-            services/core-api/tests/test_audit_vision_authorization_contracts.py \
-            services/core-api/tests/test_audit_visit_contracts.py \
-            services/core-api/tests/test_audit_visit_migration_contract.py
-      - name: Compile and diff-check
-        run: |
-          python -m compileall -q services/core-api/app services/core-api/alembic/versions services/core-api/tests
-          git diff --check
-      - name: Commit and push repair
+      - name: Compile Core API authority
+        run: >-
+          python -m compileall -q
+          services/core-api/app
+          services/core-api/alembic/versions
+          services/core-api/tests
+      - name: Enforce one cumulative Alembic head
+        working-directory: services/core-api
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add services/core-api
-          git diff --cached --quiet && { echo 'No repair changes'; exit 0; }
-          git commit -m 'fix(audit): close canonical merge blockers'
-          git push origin HEAD:product/eay-audit-field-truth-v1
+          mapfile -t heads < <(alembic heads | awk '/\(head\)/ {print $1}')
+          printf 'ALEMBIC_HEAD=%s\n' "${heads[@]}"
+          test "${#heads[@]}" -eq 1
+          test "${heads[0]}" = "$EXPECTED_ALEMBIC_HEAD"
+      - name: Migrate clean database to cumulative head
+        working-directory: services/core-api
+        run: alembic upgrade head
+      - name: Full Core API regression
+        run: pytest -q services/core-api/tests

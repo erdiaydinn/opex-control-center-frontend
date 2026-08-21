@@ -9,6 +9,11 @@ from app.modules.field_intelligence.repository import _set_tenant
 
 from .repository import AuditConflictError, AuditRepositoryError
 
+AUDIT_BINDABLE_MEDIA: dict[str, tuple[str, int, int]] = {
+    "image/jpeg": ("image", 1, 1),
+    "video/mp4": ("video", 0, 0),
+}
+
 
 def _dict(row) -> dict[str, object]:
     return dict(row._mapping)
@@ -26,9 +31,10 @@ async def bind_server_evidence_to_redaction_receipt(
 ) -> dict[str, object]:
     """Bind client provenance to one server-issued private evidence receipt.
 
-    The sanitized object hash/size is server-proven through the existing Field evidence
-    authority. The raw source fingerprint remains client provenance only. Neither fact grants
-    server privacy verification or downstream vision-inference authority.
+    Media kind and coverage state are derived from the immutable Field receipt, never from the
+    client. JPEG is already a single canonical image. MP4 begins with zero canonical frames;
+    frame truth exists only after the server-owned video decoder and privacy scanner run.
+    Neither binding grants server privacy verification or downstream model authority.
     """
 
     async with engine.begin() as connection:
@@ -82,10 +88,14 @@ async def bind_server_evidence_to_redaction_receipt(
             )
         if field_receipt.storage_provider != "private_gateway":
             raise AuditRepositoryError("Audit evidence must come from the private Field gateway")
-        if field_receipt.media_type != "image/jpeg":
+
+        media_contract = AUDIT_BINDABLE_MEDIA.get(str(field_receipt.media_type))
+        if media_contract is None:
             raise AuditRepositoryError(
-                "Audit redaction binding currently accepts sanitized image/jpeg evidence only"
+                "Audit binding accepts only sanitized image/jpeg or governed video/mp4 evidence"
             )
+        media_kind, frame_count, processed_frame_count = media_contract
+
         if not field_receipt.sha256 or len(field_receipt.sha256) != 64:
             raise AuditRepositoryError("private evidence receipt has no valid server hash")
         if not field_receipt.storage_receipt_hash or len(field_receipt.storage_receipt_hash) != 64:
@@ -97,7 +107,7 @@ async def bind_server_evidence_to_redaction_receipt(
         existing_result = await connection.execute(
             text(
                 """
-                SELECT id, field_evidence_receipt_id, source_fingerprint,
+                SELECT id, field_evidence_receipt_id, media_kind, source_fingerprint,
                        redacted_evidence_ref, redacted_object_sha256,
                        redacted_object_byte_size, privacy_policy_version,
                        detector_model_ref, frame_count, processed_frame_count, created_at
@@ -121,9 +131,12 @@ async def bind_server_evidence_to_redaction_receipt(
                     "private evidence receipt is already bound to different source provenance"
                 )
             if (
-                existing.redacted_evidence_ref != canonical_ref
+                existing.media_kind != media_kind
+                or existing.redacted_evidence_ref != canonical_ref
                 or existing.redacted_object_sha256 != field_receipt.sha256
                 or existing.redacted_object_byte_size != field_receipt.byte_size
+                or existing.frame_count != frame_count
+                or existing.processed_frame_count != processed_frame_count
             ):
                 raise AuditConflictError(
                     "private evidence receipt no longer matches immutable Audit binding integrity"
@@ -152,9 +165,9 @@ async def bind_server_evidence_to_redaction_receipt(
                     redacted_object_byte_size
                 ) VALUES (
                     CAST(:tenant_id AS UUID), CAST(:audit_run_id AS UUID),
-                    :location_id, :device_id, 'image', :source_fingerprint,
+                    :location_id, :device_id, :media_kind, :source_fingerprint,
                     :redacted_evidence_ref, :privacy_policy_version,
-                    :detector_model_ref, 1, 1,
+                    :detector_model_ref, :frame_count, :processed_frame_count,
                     CAST(:field_evidence_receipt_id AS UUID), :redacted_object_sha256,
                     :redacted_object_byte_size
                 )
@@ -171,10 +184,13 @@ async def bind_server_evidence_to_redaction_receipt(
                 "audit_run_id": str(audit_run_id),
                 "location_id": run.location_id,
                 "device_id": device_id,
+                "media_kind": media_kind,
                 "source_fingerprint": source_fingerprint,
                 "redacted_evidence_ref": canonical_ref,
                 "privacy_policy_version": privacy_policy_version,
                 "detector_model_ref": detector_model_ref,
+                "frame_count": frame_count,
+                "processed_frame_count": processed_frame_count,
                 "field_evidence_receipt_id": str(field_receipt.receipt_id),
                 "redacted_object_sha256": field_receipt.sha256,
                 "redacted_object_byte_size": field_receipt.byte_size,

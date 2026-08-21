@@ -24,23 +24,35 @@ const manifest = {
   version: 1,
   source_ref: "catalog://asset-release-2026-08",
   product_assets: [
-    { sku: "SKU-1", front_image_path: "/assets/products/SKU-1.webp", source_ref: "catalog://SKU-1", attested: true },
+    {
+      sku: "SKU-1",
+      front_image_path: "/planogram-assets/products/SKU-1.webp",
+      source_ref: "catalog://SKU-1",
+      attested: true,
+    },
   ],
   fixture_assets: [
-    { fixture_type: "CHILLED", model_path: "/assets/fixtures/chilled.glb", source_ref: "fixture://chilled-v1", attested: true },
+    {
+      fixture_type: "CHILLED",
+      model_path: "/planogram-assets/fixtures/chilled.glb",
+      source_ref: "fixture://chilled-v1",
+      attested: true,
+    },
   ],
 };
 const normalized = normalizePlanogramAssetManifest(manifest);
-if (!normalized || normalized.product_assets[0].sku !== "SKU-1") fail("Valid same-origin asset manifest was rejected.");
+if (!normalized || normalized.product_assets[0].sku !== "SKU-1") fail("Valid governed same-origin asset manifest was rejected.");
 
 for (const forged of [
   { ...manifest, product_assets: [{ ...manifest.product_assets[0], front_image_path: "https://tracker.invalid/sku.webp" }] },
   { ...manifest, product_assets: [{ ...manifest.product_assets[0], front_image_path: "data:image/png;base64,AA" }] },
   { ...manifest, fixture_assets: [{ ...manifest.fixture_assets[0], model_path: "//cdn.invalid/chilled.glb" }] },
-  { ...manifest, fixture_assets: [{ ...manifest.fixture_assets[0], model_path: "/assets/fixtures/chilled.fbx" }] },
+  { ...manifest, fixture_assets: [{ ...manifest.fixture_assets[0], model_path: "/planogram-assets/fixtures/chilled.fbx" }] },
+  { ...manifest, product_assets: [{ ...manifest.product_assets[0], front_image_path: "/assets/products/SKU-1.webp" }] },
+  { ...manifest, fixture_assets: [{ ...manifest.fixture_assets[0], model_path: "/assets/fixtures/chilled.glb" }] },
   { ...manifest, product_assets: [manifest.product_assets[0], manifest.product_assets[0]] },
 ]) {
-  if (normalizePlanogramAssetManifest(forged) !== null) fail("Unsafe/ambiguous asset manifest was accepted.");
+  if (normalizePlanogramAssetManifest(forged) !== null) fail("Unsafe, legacy-namespace, or ambiguous asset manifest was accepted.");
 }
 
 const bundle = normalizeCandidateBundle({
@@ -72,4 +84,4 @@ for (const needle of [
 const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf8");
 if (!studio.includes("<PlanogramPickerEyePreview")) fail("Planogram Studio does not expose Picker Eye preview.");
 
-console.log("Planogram Picker Eye same-origin pack and fixture asset boundary: PASS");
+console.log("Planogram Picker Eye governed same-origin pack and fixture asset boundary: PASS");

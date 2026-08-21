@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -84,7 +86,7 @@ class OpenShiftCreateRequest(BaseModel):
         normalized = [str(value).strip() for value in values if str(value).strip()]
         if len(normalized) != len(set(normalized)):
             raise ValueError("Open-shift activity keys must be unique")
-        if any(not __import__("re").fullmatch(_ACTIVITY_KEY, value) for value in normalized):
+        if any(not re.fullmatch(_ACTIVITY_KEY, value) for value in normalized):
             raise ValueError("Open-shift activity keys must use stable snake_case")
         return normalized
 

@@ -7,6 +7,11 @@ on:
       - release/platform-convergence-v0.1
       - product/eay-category-leadership-v1
     paths:
+      - "src/App.jsx"
+      - "src/modules/academy/**"
+      - "src/platform/i18n/academy*Messages.js"
+      - "scripts/test-academy-*.mjs"
+      - "package.json"
       - "services/core-api/app/core/localization.py"
       - "services/core-api/app/modules/academy/**"
       - "services/core-api/alembic/versions/*.py"
@@ -21,6 +26,11 @@ on:
       - release/platform-convergence-v0.1
       - product/eay-product-completion-v1
     paths:
+      - "src/App.jsx"
+      - "src/modules/academy/**"
+      - "src/platform/i18n/academy*Messages.js"
+      - "scripts/test-academy-*.mjs"
+      - "package.json"
       - "services/core-api/app/core/localization.py"
       - "services/core-api/app/modules/academy/**"
       - "services/core-api/alembic/versions/*.py"
@@ -112,9 +122,11 @@ jobs:
         run: >-
           python -m compileall -q
           services/core-api/app/modules/academy
+          services/core-api/tests/test_academy_authoring.py
           services/core-api/tests/test_academy_contracts.py
           services/core-api/tests/test_academy_integration.py
           services/core-api/tests/test_academy_concurrency.py
+          services/core-api/tests/test_academy_credentials.py
           services/core-api/tests/test_academy_localization_governance.py
           services/core-api/tests/test_product_role_provisioning.py
       - name: Assert one cumulative Alembic head before migration
@@ -168,6 +180,8 @@ jobs:
                       'academy_scenario_runs','academy_scenario_run_events',
                       'academy_locale_settings','academy_translation_lineage',
                       'academy_translation_review_events',
+                      'academy_badge_definitions','academy_badge_definition_retirements',
+                      'academy_badge_awards','academy_badge_revocations',
                   }
                   present = {
                       row['tablename'] for row in await connection.fetch(
@@ -176,22 +190,32 @@ jobs:
                       )
                   }
                   assert present == expected_tables, expected_tables - present
-                  authority_view = await connection.fetchval(
-                      "SELECT count(*) FROM information_schema.views "
-                      "WHERE table_schema='public' AND table_name='academy_translation_authority'"
-                  )
-                  assert authority_view == 1
+                  expected_views = {
+                      'academy_translation_authority',
+                      'academy_badge_definition_authority',
+                      'academy_badge_credential_authority',
+                  }
+                  present_views = {
+                      row['table_name'] for row in await connection.fetch(
+                          "SELECT table_name FROM information_schema.views "
+                          "WHERE table_schema='public' AND table_name = ANY($1::text[])",
+                          list(expected_views),
+                      )
+                  }
+                  assert present_views == expected_views, expected_views - present_views
               finally:
                   await connection.close()
 
           asyncio.run(main())
           PY
-      - name: Academy lifecycle localization and product-role gates
+      - name: Academy lifecycle localization credential and product-role gates
         run: >-
           pytest -q
+          services/core-api/tests/test_academy_authoring.py
           services/core-api/tests/test_academy_contracts.py
           services/core-api/tests/test_academy_integration.py
           services/core-api/tests/test_academy_concurrency.py
+          services/core-api/tests/test_academy_credentials.py
           services/core-api/tests/test_academy_localization_governance.py
           services/core-api/tests/test_product_role_provisioning.py
 
@@ -220,7 +244,6 @@ jobs:
         ports:
           - 6379:6379
         options: >-
-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 12
     steps:
@@ -358,6 +381,51 @@ jobs:
             'این مدرک برای آزمون بازیابی چندزبانه است.',1
           FROM academy_content_versions
           WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND locale='fa';
+          INSERT INTO academy_skills(
+            id,tenant_id,skill_key,title_i18n,description_i18n,status,created_by
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d050',
+            '00000000-0000-0000-0000-00000000d001',
+            'dr-safe-picking','{"en":"DR Safe Picking"}','{"en":"DR credential skill"}',
+            'active','academy-dr-ci'
+          );
+          INSERT INTO academy_skill_evidence(
+            id,tenant_id,subject,skill_id,observed_level,evidence_type,evidence_ref,recorded_by
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d051',
+            '00000000-0000-0000-0000-00000000d001',
+            'academy-dr-learner','00000000-0000-0000-0000-00000000d050',4,
+            'assessment','dr:assessment:high','academy-dr-ci'
+          );
+          INSERT INTO academy_badge_definitions(
+            id,tenant_id,badge_key,version_number,skill_id,minimum_level,
+            title_i18n,description_i18n,criteria_i18n,validity_days,created_by
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d052',
+            '00000000-0000-0000-0000-00000000d001',
+            'dr-safe-picking.level-3',1,'00000000-0000-0000-0000-00000000d050',3,
+            '{"en":"DR Safe Picking Level 3"}',
+            '{"en":"Evidence-bound restored credential"}',
+            '{"en":"Requires verified level 3 or higher"}',365,'academy-dr-ci'
+          );
+          INSERT INTO academy_badge_awards(
+            id,tenant_id,badge_definition_id,skill_evidence_id,subject,skill_id,
+            observed_level,evidence_type,evidence_ref,issuer_subject,request_id
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d053',
+            '00000000-0000-0000-0000-00000000d001',
+            '00000000-0000-0000-0000-00000000d052',
+            '00000000-0000-0000-0000-00000000d051',
+            'ignored-by-trigger','00000000-0000-0000-0000-00000000d050',1,
+            'assessment','ignored-by-trigger','academy-dr-ci','academy-dr-award-1'
+          );
+          INSERT INTO academy_badge_revocations(
+            tenant_id,badge_award_id,reason,revoked_by,request_id
+          ) VALUES (
+            '00000000-0000-0000-0000-00000000d001',
+            '00000000-0000-0000-0000-00000000d053',
+            'DR revocation evidence','academy-dr-ci','academy-dr-revoke-1'
+          );
           SQL
           pg_dump -h localhost -U opex_migrator -d opex_test --format=custom --no-owner --no-privileges -f /tmp/academy.dump
           createdb -h localhost -U opex_migrator opex_restore
@@ -368,6 +436,9 @@ jobs:
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_scenario_run_events';" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM academy_locale_settings WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND locale='en' AND is_default IS TRUE;" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='academy_translation_review_events';" | grep -qx 1
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('academy_badge_definitions','academy_badge_definition_retirements','academy_badge_awards','academy_badge_revocations');" | grep -qx 4
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM information_schema.views WHERE table_schema='public' AND table_name IN ('academy_badge_definition_authority','academy_badge_credential_authority');" | grep -qx 2
+          psql -h localhost -U opex_migrator -d opex_restore -Atc "SET app.tenant_id='00000000-0000-0000-0000-00000000d001'; SELECT count(*) FROM academy_badge_credential_authority WHERE badge_award_id='00000000-0000-0000-0000-00000000d053' AND subject='academy-dr-learner' AND observed_level=4 AND evidence_ref='dr:assessment:high' AND revoked IS TRUE AND valid IS FALSE AND signed_portable_credential IS FALSE;" | tail -n 1 | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM roles WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND key IN ('academy_learner','academy_instructor','academy_admin') AND is_system IS TRUE;" | grep -qx 3
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT count(*) FROM roles WHERE tenant_id='00000000-0000-0000-0000-00000000d001' AND key='recruitment_hr' AND is_system IS TRUE;" | grep -qx 1
           psql -h localhost -U opex_migrator -d opex_restore -Atc "SELECT version_num FROM alembic_version;" | grep -qx "$EXPECTED_ALEMBIC_HEAD"

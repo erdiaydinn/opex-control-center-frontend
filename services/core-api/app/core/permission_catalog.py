@@ -92,7 +92,14 @@ FEATURES = MappingProxyType(
             }
         ),
         "insight": frozenset(
-            {"overview", "canonicalMetrics", "trends", "drilldown", "provenance", "exports"}
+            {
+                "overview",
+                "canonicalMetrics",
+                "trends",
+                "drilldown",
+                "provenance",
+                "exports",
+            }
         ),
         "jarvis": frozenset(
             {
@@ -106,7 +113,14 @@ FEATURES = MappingProxyType(
             }
         ),
         "planogram": frozenset(
-            {"layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"}
+            {
+                "layoutView",
+                "layoutEdit",
+                "fixtureEdit",
+                "ruleEdit",
+                "productAssign",
+                "aiRecommend",
+            }
         ),
         "workforce": frozenset(
             {
@@ -147,7 +161,13 @@ ACTIONS = MappingProxyType(
                 "viewAnalytics",
             }
         ),
-        "ai_assistant": frozenset({"executeOpsRead", "executeCatalogRead", "executeLegalRead"}),
+        "ai_assistant": frozenset(
+            {
+                "executeOpsRead",
+                "executeCatalogRead",
+                "executeLegalRead",
+            }
+        ),
         "budget": frozenset(
             {
                 "createPlan",
@@ -168,7 +188,16 @@ ACTIONS = MappingProxyType(
                 "acceptFieldEvidence",
             }
         ),
-        "dockos": frozenset({"view", "create", "edit", "approve", "export", "delete"}),
+        "dockos": frozenset(
+            {
+                "view",
+                "create",
+                "edit",
+                "approve",
+                "export",
+                "delete",
+            }
+        ),
         "field_intelligence": frozenset(
             {
                 "createMission",
@@ -189,13 +218,33 @@ ACTIONS = MappingProxyType(
                 "approveExport",
             }
         ),
-        "insight": frozenset({"view", "drilldown", "export"}),
+        "insight": frozenset(
+            {
+                "view",
+                "drilldown",
+                "export",
+            }
+        ),
         "inventory": frozenset({"acceptFieldEvidence"}),
         "jarvis": frozenset(
-            {"ask", "proposeAction", "approveAction", "viewSources", "viewHistory"}
+            {
+                "ask",
+                "proposeAction",
+                "approveAction",
+                "viewSources",
+                "viewHistory",
+            }
         ),
         "planogram": frozenset(
-            {"view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"}
+            {
+                "view",
+                "create",
+                "edit",
+                "approve",
+                "export",
+                "delete",
+                "acceptFieldEvidence",
+            }
         ),
         "recruitment": frozenset(
             {
@@ -282,6 +331,7 @@ ACADEMY_LEARNER_PERMISSIONS = frozenset(
         feature_permission("academy", "jarvisTutor"),
     }
 )
+
 ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
     set(ACADEMY_LEARNER_PERMISSIONS)
     | {
@@ -294,6 +344,7 @@ ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
         action_permission("academy", "manageLiveLearning"),
     }
 )
+
 ACADEMY_ADMIN_PERMISSIONS = frozenset(
     set(ACADEMY_INSTRUCTOR_PERMISSIONS)
     | {
@@ -315,6 +366,7 @@ FIELD_WORKER_PERMISSIONS = frozenset(
         action_permission("field_intelligence", "submitEvidence"),
     }
 )
+
 FIELD_MANAGER_PERMISSIONS = frozenset(
     set(FIELD_WORKER_PERMISSIONS)
     | {
@@ -357,6 +409,7 @@ PLANOGRAM_EDITOR_PERMISSIONS = frozenset(
         action_permission("planogram", "export"),
     }
 )
+
 PLANOGRAM_ADMIN_PERMISSIONS = frozenset(
     set(PLANOGRAM_EDITOR_PERMISSIONS)
     | {
@@ -376,5 +429,12 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "platform_admin": frozenset({module_permission("admin_access", "view")}),
         "operator": frozenset(),
         "viewer": frozenset(),
+        "academy_learner": ACADEMY_LEARNER_PERMISSIONS,
+        "academy_instructor": ACADEMY_INSTRUCTOR_PERMISSIONS,
+        "academy_admin": ACADEMY_ADMIN_PERMISSIONS,
+        "field_worker": FIELD_WORKER_PERMISSIONS,
+        "field_manager": FIELD_MANAGER_PERMISSIONS,
+        "planogram_editor": PLANOGRAM_EDITOR_PERMISSIONS,
+        "planogram_admin": PLANOGRAM_ADMIN_PERMISSIONS,
     }
 )

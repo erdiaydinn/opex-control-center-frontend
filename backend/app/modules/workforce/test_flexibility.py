@@ -11,6 +11,9 @@ class WorkforceFlexibilityTests(unittest.TestCase):
             "full_name": "Test Employee",
             "warehouse_id": "WH-FULYA",
             "active": True,
+            "skill_keys": [],
+            "certification_keys": [],
+            "equipment_keys": [],
         }
 
     def offer(self):
@@ -22,7 +25,9 @@ class WorkforceFlexibilityTests(unittest.TestCase):
             "start": "09:00",
             "end": "18:00",
             "break_minutes": 60,
-            "role": "Picker",
+            "role": "Worker",
+            "activity_keys": [],
+            "activities": [],
             "capacity": 1,
             "claimed_count": 0,
             "claims": [],
@@ -86,6 +91,135 @@ class WorkforceFlexibilityTests(unittest.TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("OUTSIDE_AVAILABILITY_WINDOW", result["reasons"])
 
+    def test_activity_requirements_fail_closed_when_employee_capability_is_missing(self):
+        offer = {
+            **self.offer(),
+            "activity_keys": ["food_grill_cook", "warmer_sanitation"],
+            "activities": [
+                {
+                    "activity_key": "food_grill_cook",
+                    "required_skill_keys": ["grill_station"],
+                    "required_certification_keys": ["food_safety"],
+                    "required_equipment_keys": [],
+                },
+                {
+                    "activity_key": "warmer_sanitation",
+                    "required_skill_keys": [],
+                    "required_certification_keys": ["food_safety"],
+                    "required_equipment_keys": [],
+                },
+            ],
+        }
+        with (
+            patch.object(flexibility.service, "resolve_person_identity", return_value=self.person()),
+            patch.object(flexibility.service, "person_has_workforce_access", return_value=True),
+            patch.object(flexibility.service, "_day_context", return_value={"on_approved_leave": False}),
+            patch.object(flexibility.service, "list_shifts", return_value=[]),
+        ):
+            result = flexibility.evaluate_open_shift(offer, "EMP-100", [])
+        self.assertFalse(result["eligible"])
+        self.assertIn("SKILL_REQUIREMENT", result["reasons"])
+        self.assertIn("CERTIFICATION_REQUIREMENT", result["reasons"])
+        self.assertEqual(result["missing_skill_keys"], ["grill_station"])
+        self.assertEqual(result["missing_certification_keys"], ["food_safety"])
+
+    def test_same_activity_engine_accepts_qsr_factory_or_retail_capabilities(self):
+        person = {
+            **self.person(),
+            "skill_keys": ["machine_operation", "checkout", "grill_station"],
+            "certification_keys": ["machine_authorization", "food_safety"],
+            "equipment_keys": ["material_handling_equipment"],
+        }
+        offers = [
+            {
+                **self.offer(),
+                "activity_keys": ["food_grill_cook"],
+                "activities": [{
+                    "activity_key": "food_grill_cook",
+                    "required_skill_keys": ["grill_station"],
+                    "required_certification_keys": ["food_safety"],
+                    "required_equipment_keys": [],
+                }],
+            },
+            {
+                **self.offer(),
+                "id": "OPEN-FACTORY",
+                "activity_keys": ["machine_operation"],
+                "activities": [{
+                    "activity_key": "machine_operation",
+                    "required_skill_keys": ["machine_operation"],
+                    "required_certification_keys": ["machine_authorization"],
+                    "required_equipment_keys": [],
+                }],
+            },
+            {
+                **self.offer(),
+                "id": "OPEN-RETAIL",
+                "activity_keys": ["checkout_service"],
+                "activities": [{
+                    "activity_key": "checkout_service",
+                    "required_skill_keys": ["checkout"],
+                    "required_certification_keys": [],
+                    "required_equipment_keys": [],
+                }],
+            },
+        ]
+        with (
+            patch.object(flexibility.service, "resolve_person_identity", return_value=person),
+            patch.object(flexibility.service, "person_has_workforce_access", return_value=True),
+            patch.object(flexibility.service, "_day_context", return_value={"on_approved_leave": False}),
+            patch.object(flexibility.service, "list_shifts", return_value=[]),
+        ):
+            results = [flexibility.evaluate_open_shift(offer, "EMP-100", []) for offer in offers]
+        self.assertTrue(all(result["eligible"] for result in results))
+        self.assertTrue(all(result["activity_match"] for result in results))
+
+    def test_create_open_shift_snapshots_approved_activity_authority(self):
+        approved = [{
+            "id": "ACT-food_grill_cook-V3",
+            "activity_key": "food_grill_cook",
+            "version": 3,
+            "display_name": "Grill cooking",
+            "category": "food_production",
+            "unit_key": "items",
+            "demand_mode": "VOLUME",
+            "required_skill_keys": ["grill_station"],
+            "required_certification_keys": ["food_safety"],
+            "required_equipment_keys": [],
+            "safety_tags": ["hot_surface"],
+            "location_types": ["restaurant"],
+            "source_ref": "ops-standard:grill:v3",
+        }]
+        captured = {}
+        with (
+            patch.object(flexibility, "_warehouse_record", return_value={"id": "WH-FULYA", "name": "Fulya", "location_type": "restaurant"}),
+            patch.object(flexibility, "resolve_activity_bundle", return_value=approved),
+            patch.object(flexibility, "_load_open_shifts", return_value=[]),
+            patch.object(flexibility, "_persist_collection", side_effect=lambda kind, rows, event, actor, **details: captured.update(rows=rows, event=event, details=details)),
+            patch.object(flexibility.service, "_minimum_break_minutes", return_value=60),
+            patch.object(flexibility.service, "_gross_shift_minutes", return_value=540),
+            patch.object(flexibility.service, "_rule_value", return_value=660),
+        ):
+            result = flexibility.create_open_shift(
+                {
+                    "warehouse_id": "WH-FULYA",
+                    "date": "2099-08-21",
+                    "start": "09:00",
+                    "end": "18:00",
+                    "break_minutes": 60,
+                    "role": "Crew",
+                    "activity_keys": ["food_grill_cook"],
+                    "capacity": 2,
+                    "note": "",
+                },
+                "manager@example.test",
+            )
+        self.assertEqual(result["activity_keys"], ["food_grill_cook"])
+        self.assertEqual(result["activities"][0]["activity_version"], 3)
+        self.assertEqual(result["activities"][0]["authority_ref"], "ACT-food_grill_cook-V3")
+        self.assertEqual(captured["event"], "WORKFORCE_OPEN_SHIFT_CREATED")
+        self.assertEqual(captured["details"]["activity_authority_refs"], ["ACT-food_grill_cook-V3"])
+
     def test_claim_commits_marketplace_and_canonical_shift_in_one_snapshot(self):
         open_rows = [self.offer()]
         persisted = {}
@@ -115,6 +249,7 @@ class WorkforceFlexibilityTests(unittest.TestCase):
 
         create_shift.assert_called_once()
         self.assertFalse(create_shift.call_args.kwargs["persist"])
+        self.assertEqual(create_shift.call_args.args[0]["activity_keys"], [])
         self.assertEqual(persisted["event"], "WORKFORCE_OPEN_SHIFT_CLAIMED")
         self.assertEqual(persisted["collections"]["shifts"][0]["id"], "SHIFT-1")
         self.assertEqual(persisted["collections"]["notifications"][0]["shift_id"], "SHIFT-1")

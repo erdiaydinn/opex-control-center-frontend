@@ -24,9 +24,45 @@ class WorkforceFlexibilityRouterTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 403)
 
     def test_matching_verified_employee_passes(self):
+        request = self.request("EMP-100")
         with patch.object(flexibility_router, "_enforce_self") as enforce:
-            flexibility_router._strict_employee_self(self.request("EMP-100"), "EMP-100", "employee")
-        enforce.assert_called_once_with(self.request("EMP-100"), "EMP-100", "employee")
+            flexibility_router._strict_employee_self(request, "EMP-100", "employee")
+        enforce.assert_called_once_with(request, "EMP-100", "employee")
+
+    def test_staffing_norm_manager_can_read_activity_and_labor_catalog_without_create_shift(self):
+        activities = [{"activity_key": "checkout_service"}]
+        standards = [{"activity_key": "checkout_service", "seconds_per_unit": "90"}]
+        with (
+            patch.object(flexibility_router, "list_activity_catalog", return_value=activities),
+            patch.object(flexibility_router, "list_labor_standards", return_value=standards),
+        ):
+            activity_result = flexibility_router.get_activity_catalog(
+                x_opex_role="viewer",
+                x_opex_permissions="manageStaffingNorms",
+            )
+            labor_result = flexibility_router.get_labor_standards(
+                activity_key=None,
+                x_opex_role="viewer",
+                x_opex_permissions="manageStaffingNorms",
+            )
+        self.assertEqual(activity_result["rows"], activities)
+        self.assertEqual(labor_result["rows"], standards)
+
+    def test_system_config_manager_can_read_catalog_without_create_shift(self):
+        with patch.object(flexibility_router, "list_activity_catalog", return_value=[]):
+            result = flexibility_router.get_activity_catalog(
+                x_opex_role="viewer",
+                x_opex_permissions="manageSystemConfig",
+            )
+        self.assertEqual(result, {"rows": []})
+
+    def test_catalog_read_stays_closed_for_unprivileged_viewer(self):
+        with self.assertRaises(HTTPException) as raised:
+            flexibility_router.get_activity_catalog(
+                x_opex_role="viewer",
+                x_opex_permissions="",
+            )
+        self.assertEqual(raised.exception.status_code, 403)
 
 
 if __name__ == "__main__":

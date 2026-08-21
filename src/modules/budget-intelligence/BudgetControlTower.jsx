@@ -26,7 +26,7 @@ export default function BudgetControlTower({data}){
   const c=COPY[locale]||COPY.en;
   const [exporting,setExporting]=useState(false);
   const s=data?.summary||{};
-  const costCenters=useMemo(()=>[...(data?.cost_centers||[])].sort((a,b)=>Number(b.forecast_variance||0)-Number(a.forecast_variance||0)),[data]);
+  const costCenters=useMemo(()=>[...(data?.cost_centers||[])].sort((a,b)=>Number(a.forecast_variance||0)-Number(b.forecast_variance||0)),[data]);
   const findings=useMemo(()=>[...(data?.findings||[])].sort((a,b)=>(severityRank[String(b.severity||"").toLowerCase()]||0)-(severityRank[String(a.severity||"").toLowerCase()]||0)),[data]);
   const suppliers=useMemo(()=>[...(data?.suppliers||[])].sort((a,b)=>Number(b.exposure||0)-Number(a.exposure||0)),[data]);
   const maxCost=useMemo(()=>Math.max(1,...costCenters.map(x=>Math.max(Number(x.budget||0),Number(x.forecast||0)))),[costCenters]);
@@ -62,7 +62,7 @@ export default function BudgetControlTower({data}){
     </section>
 
     <section className="bct-kpis">
-      <K l={c.budget} v={money(s.budget,locale)}/><K l={c.actual} v={money(s.actual,locale)}/><K l={c.commitment} v={money(s.commitment,locale)}/><K l={c.forecast} v={money(s.forecast,locale)} hot={Number(s.forecast_variance)>0}/><K l={c.headroom} v={money(s.remaining_headroom,locale)} hot={headroom<0}/><K l={c.variance} v={money(s.forecast_variance,locale)} hot={Number(s.forecast_variance)>0}/>
+      <K l={c.budget} v={money(s.budget,locale)}/><K l={c.actual} v={money(s.actual,locale)}/><K l={c.commitment} v={money(s.commitment,locale)}/><K l={c.forecast} v={money(s.forecast,locale)} hot={Number(s.forecast_variance)<0}/><K l={c.headroom} v={money(s.remaining_headroom,locale)} hot={headroom<0}/><K l={c.variance} v={money(s.forecast_variance,locale)} hot={Number(s.forecast_variance)<0}/>
     </section>
 
     <section className="bct-grid">
@@ -75,7 +75,7 @@ export default function BudgetControlTower({data}){
       </Card>
 
       <Card title={c.category}>
-        {(data?.categories||[]).length?<div className="bct-table" role="table"><div className="bct-table-head" role="row"><b>{c.category}</b><span>{c.actualCol}</span><span>{c.forecastCol}</span><span>{c.varianceCol}</span></div>{(data.categories||[]).slice(0,10).map(x=><div key={x.category} role="row"><b>{x.category}</b><span>{money(x.actual,locale)}</span><span>{money(x.forecast,locale)}</span><span className={Number(x.forecast_variance)>0?"negative":"positive"}>{money(x.forecast_variance,locale)}</span></div>)}</div>:<Empty text={c.empty}/>} 
+        {(data?.categories||[]).length?<div className="bct-table" role="table"><div className="bct-table-head" role="row"><b>{c.category}</b><span>{c.actualCol}</span><span>{c.forecastCol}</span><span>{c.varianceCol}</span></div>{(data.categories||[]).slice(0,10).map(x=><div key={x.category} role="row"><b>{x.category}</b><span>{money(x.actual,locale)}</span><span>{money(x.forecast,locale)}</span><span className={Number(x.forecast_variance)<0?"negative":"positive"}>{money(x.forecast_variance,locale)}</span></div>)}</div>:<Empty text={c.empty}/>} 
       </Card>
 
       <Card title={c.supplier}>

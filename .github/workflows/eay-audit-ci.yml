@@ -1,0 +1,197 @@
+name: EAY Audit CI
+
+on:
+  pull_request:
+    paths:
+      - "src/modules/audit/**"
+      - "src/App.jsx"
+      - "src/modules/control-center/commandCenterModules.js"
+      - "scripts/test-audit-product-states.mjs"
+      - "services/core-api/app/modules/audit/**"
+      - "services/core-api/app/modules/field_intelligence/evidence_object_read.py"
+      - "services/core-api/app/modules/field_intelligence/video_object_read.py"
+      - "services/core-api/tests/test_audit_*.py"
+      - "services/core-api/app/core/permission_catalog.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/alembic/versions/0046_audit_operating_system.py"
+      - "services/core-api/alembic/versions/0047_audit_privacy_verification.py"
+      - "services/core-api/alembic/versions/0048_audit_assurance_routing.py"
+      - "services/core-api/alembic/versions/0049_audit_location_accountability.py"
+      - "services/core-api/alembic/versions/0050_audit_evidence_binding_integrity.py"
+      - "services/core-api/alembic/versions/0051_audit_server_privacy_authority.py"
+      - "services/core-api/alembic/versions/0052_audit_vision_inference_authority.py"
+      - "services/core-api/alembic/versions/0057_audit_video_authority.py"
+      - "services/core-api/alembic/versions/0058_audit_video_replay_fence.py"
+      - "services/core-api/alembic/versions/0059_audit_inference_lease_immutability.py"
+      - ".github/workflows/eay-audit-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-intelligence-v1"
+      - "product/eay-audit-field-truth-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-web:
+    name: Audit web / contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:audit
+      - run: npm run build
+
+  audit-api-static:
+    name: Audit API / cumulative authority gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Assert exact checked-out head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Scope contracts
+        run: pytest -q tests/test_audit_scope_contracts.py
+      - name: Assurance contracts
+        run: pytest -q tests/test_audit_assurance_contracts.py
+      - name: Accountability contracts
+        run: pytest -q tests/test_audit_accountability_contracts.py
+      - name: Action workspace contracts
+        run: pytest -q tests/test_audit_action_workspace_contracts.py
+      - name: Intelligence contracts
+        run: pytest -q tests/test_audit_intelligence_contracts.py
+      - name: Evidence object contracts
+        run: pytest -q tests/test_audit_evidence_object_contracts.py
+      - name: Evidence binding contracts
+        run: pytest -q tests/test_audit_evidence_binding_contracts.py
+      - name: Privacy authority contracts
+        run: >-
+          pytest -q
+          tests/test_audit_privacy_verification_runtime.py
+          tests/test_audit_private_evidence_read.py
+          tests/test_audit_privacy_authority_contracts.py
+      - name: Vision authorization contracts
+        run: pytest -q tests/test_audit_vision_authorization_contracts.py
+      - name: Video authority contracts
+        run: >-
+          pytest -q
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
+      - name: Compile audit authority
+        run: >-
+          python -m compileall -q
+          app/modules/audit
+          app/modules/field_intelligence/evidence_object_read.py
+          app/modules/field_intelligence/video_object_read.py
+          app/core/permission_catalog.py
+          app/budget_main.py
+          alembic/versions/0046_audit_operating_system.py
+          alembic/versions/0047_audit_privacy_verification.py
+          alembic/versions/0048_audit_assurance_routing.py
+          alembic/versions/0049_audit_location_accountability.py
+          alembic/versions/0050_audit_evidence_binding_integrity.py
+          alembic/versions/0051_audit_server_privacy_authority.py
+          alembic/versions/0052_audit_vision_inference_authority.py
+          alembic/versions/0057_audit_video_authority.py
+          alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
+          tests/test_audit_video_authority_adversarial.py
+      - name: Ruff application boundaries
+        run: >-
+          ruff check
+          app/modules/audit/authorization.py
+          app/modules/audit/control_contracts.py
+          app/modules/audit/evidence_binding_schemas.py
+          app/modules/audit/evidence_object_routes.py
+          app/modules/audit/intelligence_routes.py
+          app/modules/audit/privacy_verification_runtime.py
+          app/modules/audit/routes.py
+          app/modules/audit/resource_scope.py
+          app/modules/audit/run_authority.py
+          app/modules/audit/schemas.py
+          app/modules/audit/vision_model_proof.py
+          app/modules/field_intelligence/evidence_object_read.py
+          tests/test_audit_scope_contracts.py
+          tests/test_audit_assurance_contracts.py
+          tests/test_audit_accountability_contracts.py
+          tests/test_audit_action_workspace_contracts.py
+          tests/test_audit_intelligence_contracts.py
+          tests/test_audit_evidence_object_contracts.py
+          tests/test_audit_evidence_binding_contracts.py
+          tests/test_audit_privacy_verification_runtime.py
+          tests/test_audit_private_evidence_read.py
+          tests/test_audit_privacy_authority_contracts.py
+          tests/test_audit_vision_authorization_contracts.py
+          app/core/permission_catalog.py
+          app/budget_main.py
+      - name: Ruff Audit repository authority
+        run: ruff check --ignore E501 app/modules/audit/repository.py
+      - name: Ruff Audit accountability authority
+        run: ruff check --ignore E501 app/modules/audit/accountability.py
+      - name: Ruff Audit assurance authority
+        run: ruff check --ignore E501 app/modules/audit/assurance.py
+      - name: Ruff Audit intelligence authority
+        run: ruff check --ignore E501 app/modules/audit/intelligence.py
+      - name: Ruff Audit evidence binding authority
+        run: ruff check --ignore E501 app/modules/audit/evidence_binding.py
+      - name: Ruff Audit privacy verification service
+        run: ruff check --ignore E501 app/modules/audit/privacy_verification_service.py
+      - name: Ruff Audit vision authorization authority
+        run: ruff check --ignore E501 app/modules/audit/vision_inference_authorization.py
+      - name: Ruff Audit video authority
+        run: >-
+          ruff check --ignore E501
+          app/modules/audit/video_verification_runtime.py
+          app/modules/audit/video_verification_service.py
+          app/modules/audit/video_vision_authorization.py
+          app/modules/audit/video_routes.py
+          app/modules/field_intelligence/video_object_read.py
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
+          tests/test_audit_video_authority_adversarial.py
+      - name: Ruff migrations 0046-0052 and 0057-0059
+        run: >-
+          ruff check --ignore E501
+          alembic/versions/0046_audit_operating_system.py
+          alembic/versions/0047_audit_privacy_verification.py
+          alembic/versions/0048_audit_assurance_routing.py
+          alembic/versions/0049_audit_location_accountability.py
+          alembic/versions/0050_audit_evidence_binding_integrity.py
+          alembic/versions/0051_audit_server_privacy_authority.py
+          alembic/versions/0052_audit_vision_inference_authority.py
+          alembic/versions/0057_audit_video_authority.py
+          alembic/versions/0058_audit_video_replay_fence.py
+          alembic/versions/0059_audit_inference_lease_immutability.py
+      - name: Single Alembic head
+        run: |
+          set -euo pipefail
+          heads="$(alembic heads)"
+          printf '%s\n' "$heads"
+          test "$(printf '%s\n' "$heads" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
+          printf '%s\n' "$heads" | grep -q '^0059_audit_inference_lease_immutability (head)$'

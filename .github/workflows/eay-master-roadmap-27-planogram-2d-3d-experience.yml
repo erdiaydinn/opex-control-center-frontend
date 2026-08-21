@@ -28,6 +28,7 @@ on:
       - "scripts/test-planogram-candidate-baskets.mjs"
       - "scripts/test-planogram-candidate-bundle.mjs"
       - "scripts/test-planogram-visual-quality-model.mjs"
+      - "scripts/test-planogram-sprint1-visual-runtime.mjs"
       - "scripts/test-planogram-economics-ui.mjs"
       - "scripts/test-planogram-scenario-portfolio.mjs"
       - "scripts/test-planogram-store-scan-ui.mjs"
@@ -82,6 +83,8 @@ jobs:
         run: node scripts/test-planogram-candidate-bundle.mjs
       - name: Governed visual quality planning boundary
         run: node scripts/test-planogram-visual-quality-model.mjs
+      - name: Sprint 1 governed reality renderer boundary
+        run: node scripts/test-planogram-sprint1-visual-runtime.mjs
       - name: Store Scan measured capture review boundary
         run: node scripts/test-planogram-store-scan-ui.mjs
       - name: Fingerprint-bound visual Store Scan annotation
@@ -158,7 +161,11 @@ jobs:
           echo 'MASTER_27_PICKER_EYE_ASSET_PREVIEW=IMPLEMENTED'
           echo 'MASTER_27_GOVERNED_VISUAL_ASSET_MANIFEST=IMPLEMENTED'
           echo 'MASTER_27_GOVERNED_VISUAL_QUALITY_PLAN=IMPLEMENTED'
-          echo 'MASTER_27_HIGH_FIDELITY_RENDERER_ASSET_BINDING=NOT_YET_CLAIMED'
+          echo 'MASTER_27_HIGH_FIDELITY_RENDERER_ASSET_BINDING=IMPLEMENTED'
+          echo 'MASTER_27_GOVERNED_GLTF_FIXTURE_REPLACEMENT=IMPLEMENTED'
+          echo 'MASTER_27_GOVERNED_PACKSHOT_FACING_TEXTURES=IMPLEMENTED'
+          echo 'MASTER_27_PBR_ROOM_ENVIRONMENT=IMPLEMENTED'
+          echo 'MASTER_27_METRIC_PRIMITIVE_FALLBACK=IMPLEMENTED'
           echo 'MASTER_27_PBR_WALKTHROUGH=IMPLEMENTED'
           echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'

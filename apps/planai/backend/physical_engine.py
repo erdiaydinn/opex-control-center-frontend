@@ -23,6 +23,7 @@ from physical_truth import (
     production_acceptance_report,
     required_fixture_class,
 )
+from production_capacity_reconciler import reconcile_full_depth_capacity
 
 
 def _explicit_unplaced(
@@ -212,6 +213,25 @@ def _apply_route_gate(
     return False
 
 
+def _apply_capacity_reconciliation_gate(
+    acceptance: dict[str, Any],
+    capacity: dict[str, Any],
+) -> bool:
+    if capacity.get("valid"):
+        return True
+
+    blockers = list(acceptance.get("blockers") or [])
+    for row in capacity.get("blockers") or []:
+        code = str(row.get("code") or "unknown").strip()
+        blocker = f"production_capacity_reconciliation:{code}"
+        if blocker not in blockers:
+            blockers.append(blocker)
+    acceptance["blockers"] = blockers
+    acceptance["production_ready"] = False
+    acceptance["solver_optimizer_allowed"] = False
+    return False
+
+
 def generate_production_plan(
     products: list[dict[str, Any]],
     layout: dict[str, Any] | None,
@@ -289,6 +309,11 @@ def generate_production_plan(
         progress_callback=progress_callback,
     )
 
+    capacity = reconcile_full_depth_capacity(result.get("planogram") or {})
+    result["planogram"] = capacity.get("planogram") or result.get("planogram")
+    capacity_valid = _apply_capacity_reconciliation_gate(acceptance, capacity)
+    capacity_report = {key: value for key, value in capacity.items() if key != "planogram"}
+
     operational = validate_operational_physical_rules(result.get("planogram") or {})
     route_report = _architecture_route_report(
         result,
@@ -303,27 +328,39 @@ def generate_production_plan(
         .get("strict_rule_violation_count", 0)
         or 0
     )
-    publishable = existing_strict == 0 and operational["valid"] and route_valid
+    publishable = (
+        existing_strict == 0
+        and operational["valid"]
+        and route_valid
+        and capacity_valid
+    )
 
     result["engine_version"] = "physical-truth-gated-deterministic-v1"
     result["foundation_engine_version"] = "deterministic-best-fit-v4.2"
     result["production_ready"] = publishable
     result["publishable"] = publishable
-    result["solver_optimizer_allowed"] = route_valid
+    result["solver_optimizer_allowed"] = route_valid and capacity_valid
     result["physical_truth"] = acceptance
     result["architecture_truth"] = architecture
     result["layout_architecture_validation"] = layout_architecture
     result["architecture_route_objective"] = route_report
+    result["production_capacity_reconciliation"] = capacity_report
     result["operational_physical_validation"] = operational
     result.setdefault("summary", {})["operational_physical_violation_count"] = operational[
         "violation_count"
     ]
+    result.setdefault("summary", {})["capacity_reconciliation_adjustment_count"] = int(
+        capacity.get("adjustment_count") or 0
+    )
     result.setdefault("summary", {})["production_acceptance_blocker_count"] = len(
         acceptance.get("blockers") or []
     )
     result.setdefault("diagnostics", {})[
         "operational_physical_validation"
     ] = operational
+    result.setdefault("diagnostics", {})[
+        "production_capacity_reconciliation"
+    ] = capacity_report
     result.setdefault("diagnostics", {})["architecture_truth"] = architecture
     result.setdefault("diagnostics", {})[
         "layout_architecture_validation"

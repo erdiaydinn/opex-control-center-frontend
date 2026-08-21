@@ -39,11 +39,10 @@ class FakeGateway:
         self.verification_round = 0
 
     def plan(self, task: IntelligenceTask) -> IntelligenceRoutingPlan:
-        critic_ids = ("claude", "gemini")[: self.critics]
         return IntelligenceRoutingPlan(
             task_id=task.task_id,
             primary_engine_id="sol",
-            critic_engine_ids=critic_ids,
+            critic_engine_ids=("claude", "gemini")[: self.critics],
             council_required=True,
             execution_permitted=True,
         )
@@ -123,15 +122,15 @@ def benchmarks(
 @pytest.mark.asyncio
 async def test_three_provider_parity_council_solves_critiques_falsifies_and_verifies() -> None:
     gateway = FakeGateway()
-    request = SupremacyRequest(
-        domain=SupremacyDomain.GENERAL_REASONING,
-        task=task(),
-        problem="Determine the strongest explanation and identify what would falsify it.",
-        benchmarks=benchmarks(SupremacyDomain.GENERAL_REASONING),
+    result = await execute_frontier_supremacy(
+        gateway=gateway,
+        request=SupremacyRequest(
+            domain=SupremacyDomain.GENERAL_REASONING,
+            task=task(),
+            problem="Determine the strongest explanation and identify what would falsify it.",
+            benchmarks=benchmarks(SupremacyDomain.GENERAL_REASONING),
+        ),
     )
-
-    result = await execute_frontier_supremacy(gateway=gateway, request=request)
-
     assert result.decision_ready is True
     assert result.final_answer == "Synthesized evidence-bound answer"
     assert result.provider_diversity == 3
@@ -148,15 +147,15 @@ async def test_three_provider_parity_council_solves_critiques_falsifies_and_veri
 @pytest.mark.asyncio
 async def test_failed_first_verification_triggers_one_bounded_repair_round() -> None:
     gateway = FakeGateway(fail_first_verification=True)
-    request = SupremacyRequest(
-        domain=SupremacyDomain.NOVEL_PROBLEM_SOLVING,
-        task=task(),
-        problem="Solve a novel operational design problem with no known template.",
-        benchmarks=benchmarks(SupremacyDomain.NOVEL_PROBLEM_SOLVING),
+    result = await execute_frontier_supremacy(
+        gateway=gateway,
+        request=SupremacyRequest(
+            domain=SupremacyDomain.NOVEL_PROBLEM_SOLVING,
+            task=task(),
+            problem="Solve a novel operational design problem with no known template.",
+            benchmarks=benchmarks(SupremacyDomain.NOVEL_PROBLEM_SOLVING),
+        ),
     )
-
-    result = await execute_frontier_supremacy(gateway=gateway, request=request)
-
     assert result.decision_ready is True
     assert result.final_answer == "Repaired evidence-bound answer"
     assert result.repair_rounds == 1
@@ -165,15 +164,15 @@ async def test_failed_first_verification_triggers_one_bounded_repair_round() -> 
 @pytest.mark.asyncio
 async def test_two_engine_council_is_rejected_for_frontier_parity_mode() -> None:
     gateway = FakeGateway(critics=1)
-    request = SupremacyRequest(
-        domain=SupremacyDomain.GENERAL_REASONING,
-        task=task(),
-        problem="Hard reasoning problem",
-        benchmarks=benchmarks(SupremacyDomain.GENERAL_REASONING),
+    result = await execute_frontier_supremacy(
+        gateway=gateway,
+        request=SupremacyRequest(
+            domain=SupremacyDomain.GENERAL_REASONING,
+            task=task(),
+            problem="Hard reasoning problem",
+            benchmarks=benchmarks(SupremacyDomain.GENERAL_REASONING),
+        ),
     )
-
-    result = await execute_frontier_supremacy(gateway=gateway, request=request)
-
     assert result.decision_ready is False
     assert "supremacy_three_engine_council_required" in result.blockers
     assert gateway.calls == []
@@ -182,17 +181,18 @@ async def test_two_engine_council_is_rejected_for_frontier_parity_mode() -> None
 @pytest.mark.asyncio
 async def test_099_domain_score_is_not_misrepresented_as_normalized_100_parity() -> None:
     gateway = FakeGateway()
-    request = SupremacyRequest(
-        domain=SupremacyDomain.SOFTWARE_ENGINEERING,
-        task=task(modalities=(Modality.TEXT, Modality.CODE)),
-        problem="Produce a safe repository change",
-        benchmarks=benchmarks(SupremacyDomain.SOFTWARE_ENGINEERING, score=0.99),
+    result = await execute_frontier_supremacy(
+        gateway=gateway,
+        request=SupremacyRequest(
+            domain=SupremacyDomain.SOFTWARE_ENGINEERING,
+            task=task(modalities=(Modality.TEXT, Modality.CODE)),
+            problem="Produce a safe repository change",
+            benchmarks=benchmarks(SupremacyDomain.SOFTWARE_ENGINEERING, score=0.99),
+        ),
     )
-
-    result = await execute_frontier_supremacy(gateway=gateway, request=request)
-
     assert result.decision_ready is False
     assert any(code.startswith("supremacy_frontier_parity_not_met") for code in result.blockers)
+    assert "supremacy_native_multimodal_execution_required" not in result.blockers
     assert gateway.calls == []
 
 
@@ -204,7 +204,6 @@ def test_deep_research_requires_grounding_packet_and_three_evidence_refs() -> No
             problem="Research a current market claim",
             benchmarks=benchmarks(SupremacyDomain.DEEP_RESEARCH),
         )
-
     with pytest.raises(ValueError, match="supremacy_grounded_domain_requires_three_evidence_refs"):
         SupremacyRequest(
             domain=SupremacyDomain.DEEP_RESEARCH,
@@ -217,20 +216,18 @@ def test_deep_research_requires_grounding_packet_and_three_evidence_refs() -> No
 
 
 @pytest.mark.asyncio
-async def test_native_multimodal_is_fail_closed_until_real_media_gateway_is_verified() -> None:
+async def test_generic_supremacy_cannot_fake_native_multimodal_execution_with_boolean() -> None:
     gateway = FakeGateway()
     request = SupremacyRequest(
         domain=SupremacyDomain.MULTIMODAL_WORLD,
-        task=task(modalities=(Modality.TEXT, Modality.IMAGE, Modality.VIDEO)),
-        problem="Understand the observed physical scene over time",
+        task=task(modalities=(Modality.TEXT, Modality.IMAGE)),
+        problem="Understand the physical scene",
         benchmarks=benchmarks(SupremacyDomain.MULTIMODAL_WORLD),
-        native_multimodal_gateway_verified=False,
+        native_multimodal_gateway_verified=True,
     )
-
     result = await execute_frontier_supremacy(gateway=gateway, request=request)
-
     assert result.decision_ready is False
-    assert "supremacy_native_multimodal_gateway_not_verified" in result.blockers
+    assert "supremacy_native_multimodal_execution_required" in result.blockers
     assert gateway.calls == []
 
 
@@ -249,7 +246,6 @@ def test_software_engineering_completion_requires_exact_head_quality_proof() -> 
     accepted = admit_software_engineering_completion(proof)
     assert accepted.completion_ready is True
     assert accepted.blockers == ()
-
     rejected = admit_software_engineering_completion(
         proof.model_copy(update={"exact_head_ci_passed": False})
     )
@@ -259,27 +255,21 @@ def test_software_engineering_completion_requires_exact_head_quality_proof() -> 
 
 @pytest.mark.asyncio
 async def test_parity_evidence_requires_independent_evaluator_and_sample_depth() -> None:
-    request = SupremacyRequest(
-        domain=SupremacyDomain.GENERAL_REASONING,
-        task=task(),
-        problem="Hard reasoning problem",
-        benchmarks=benchmarks(
-            SupremacyDomain.GENERAL_REASONING,
-            sample_count=20,
-            independent=False,
+    gateway = FakeGateway()
+    result = await execute_frontier_supremacy(
+        gateway=gateway,
+        request=SupremacyRequest(
+            domain=SupremacyDomain.GENERAL_REASONING,
+            task=task(),
+            problem="Hard reasoning problem",
+            benchmarks=benchmarks(
+                SupremacyDomain.GENERAL_REASONING,
+                sample_count=20,
+                independent=False,
+            ),
         ),
     )
-    gateway = FakeGateway()
-
-    result = await execute_frontier_supremacy(gateway=gateway, request=request)
-
     assert result.decision_ready is False
-    assert any(
-        code.startswith("supremacy_benchmark_sample_count_insufficient")
-        for code in result.blockers
-    )
-    assert any(
-        code.startswith("supremacy_independent_evaluator_required")
-        for code in result.blockers
-    )
+    assert any(code.startswith("supremacy_benchmark_sample_count_insufficient") for code in result.blockers)
+    assert any(code.startswith("supremacy_independent_evaluator_required") for code in result.blockers)
     assert gateway.calls == []

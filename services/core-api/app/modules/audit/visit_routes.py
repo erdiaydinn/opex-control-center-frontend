@@ -61,7 +61,10 @@ async def _require_location_scope(
 ) -> dict[str, object]:
     location = await get_location(str(principal.tenant_id), location_id)
     if not location or not bool(location.get("active")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit location not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Audit location not found",
+        )
     return _assert_location_scope(scope, location, not_found_detail="Audit location not found")
 
 

@@ -59,11 +59,18 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
   const [busyAction, setBusyAction] = useState("");
 
   const sourceOptions = workspace?.authoring?.published_versions || [];
+  const contentVersions = workspace?.authoring?.content_versions || [];
   const selectedSource = sourceOptions.find((item) => item.content_version_id === sourceVersionId) || sourceOptions[0] || null;
   const targetOptions = useMemo(() => {
     if (!selectedSource) return [];
-    return (workspace?.content || []).filter((item) => item.id === selectedSource.content_id && item.latest_version_id && item.latest_version_id !== selectedSource.content_version_id && item.locale !== selectedSource.locale && ["draft", "published"].includes(item.version_status));
-  }, [selectedSource, workspace]);
+    return contentVersions.filter((item) => (
+      item.content_id === selectedSource.content_id
+      && item.content_version_id !== selectedSource.content_version_id
+      && item.locale !== selectedSource.locale
+      && ["draft", "published"].includes(item.version_status)
+      && ["draft", "published"].includes(item.content_status)
+    ));
+  }, [contentVersions, selectedSource]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,7 +94,7 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
     if (!sourceVersionId && sourceOptions[0]?.content_version_id) setSourceVersionId(sourceOptions[0].content_version_id);
   }, [sourceOptions, sourceVersionId]);
   useEffect(() => {
-    if (!targetOptions.some((item) => item.latest_version_id === targetVersionId)) setTargetVersionId(targetOptions[0]?.latest_version_id || "");
+    if (!targetOptions.some((item) => item.content_version_id === targetVersionId)) setTargetVersionId(targetOptions[0]?.content_version_id || "");
   }, [targetOptions, targetVersionId]);
 
   async function addLocale(event) {
@@ -151,7 +158,7 @@ export default function AcademyLocalizationGovernance({ workspace, locale, t }) 
             <h3>{tx("translations")}</h3>
             <form className="eay-academy-expansion-form" onSubmit={createLineage}>
               <label><span>{tx("sourceVersion")}</span><select value={sourceVersionId} onChange={(event) => setSourceVersionId(event.target.value)}>{sourceOptions.map((item) => <option value={item.content_version_id} key={item.content_version_id}>{item.slug} · {item.version_label} · {item.locale}</option>)}</select></label>
-              <label><span>{tx("targetVersion")}</span><select value={targetVersionId} onChange={(event) => setTargetVersionId(event.target.value)}>{targetOptions.map((item) => <option value={item.latest_version_id} key={item.latest_version_id}>{item.slug} · {item.version_label} · {item.locale}</option>)}</select></label>
+              <label><span>{tx("targetVersion")}</span><select value={targetVersionId} onChange={(event) => setTargetVersionId(event.target.value)}>{targetOptions.map((item) => <option value={item.content_version_id} key={item.content_version_id}>{item.slug} · {item.version_label} · {item.locale} · {item.version_status}</option>)}</select></label>
               <label><span>{tx("translationMethod")}</span><select value={method} onChange={(event) => setMethod(event.target.value)}>{["human", "machine_assisted", "machine_draft"].map((item) => <option value={item} key={item}>{st(item)}</option>)}</select></label>
               <button type="submit" className="eay-academy-secondary" disabled={!sourceVersionId || !targetVersionId || busyAction === "lineage"}><Send size={15} aria-hidden="true" />{tx("translations")}</button>
             </form>

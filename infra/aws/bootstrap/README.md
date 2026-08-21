@@ -44,6 +44,10 @@ The script first proves the AWS account ID, then deploys the CloudFormation temp
 - Never force-push Terraform state unless a documented recovery procedure has first pulled and preserved the current remote state.
 - Never commit `.terraform/`, `*.tfstate`, `*.tfstate.*`, AWS access keys or generated backend credentials.
 
+## Exact-head evidence
+
+Changes under `infra/aws/**` trigger both the production infrastructure validation and the branch-scoped OIDC identity proof. The OIDC workflow updates a single evidence marker on PR #210 with the literal commit SHA, AWS caller ARN, denied S3 authority and an evidence SHA-256 digest. This keeps repository validation and cloud-identity proof bound to the same infrastructure head.
+
 ## Promotion gate
 
 Creating the state bucket is not permission to run the production stack. Before any `terraform plan` or `apply` against AWS, the OIDC identity proof, exact-head infrastructure CI, state-access role, budget guards and the relevant issue #192 activation gates must be independently GREEN.

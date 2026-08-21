@@ -9,6 +9,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.epistemic_rollout_repository import (
@@ -426,7 +427,7 @@ async def test_runtime_cannot_update_or_delete_append_only_receipt_journal() -> 
                 text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
                 {"tenant_id": str(TENANT_A)},
             )
-            with pytest.raises(Exception, match="permission denied"):
+            with pytest.raises(DBAPIError, match="permission denied"):
                 await session.execute(
                     text(
                         """

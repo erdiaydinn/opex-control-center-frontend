@@ -245,7 +245,7 @@ JARVIS_AGENT_SQL_EXECUTION_POINTS = {
     ("epistemic_rollout_repository.py", "list_receipts"),
     ("epistemic_rollout_repository.py", "_insert_receipt"),
     ("epistemic_rollout_repository.py", "append_receipt"),
-    ("epistemic_rollout_repository.py", "transition_snapshot"),
+    ("epistemic_rollout_repository.py", "apply_rollback"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (

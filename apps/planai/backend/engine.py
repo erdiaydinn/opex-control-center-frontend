@@ -16,7 +16,7 @@ from physical_truth import (
 
 try:
     from overrides import apply_overrides_to_product
-except Exception:
+except ImportError:
     def apply_overrides_to_product(p):
         return p
 
@@ -87,14 +87,14 @@ def num(v: Any, d: float = 0) -> float:
         if isinstance(v, float) and math.isnan(v):
             return d
         return float(str(v).replace(",", ".").replace("%", "").strip())
-    except Exception:
+    except (TypeError, ValueError):
         return d
 
 
 def inum(v: Any, d: int = 0) -> int:
     try:
         return int(float(str(v).replace(",", ".").strip()))
-    except Exception:
+    except (TypeError, ValueError):
         return d
 
 
@@ -306,10 +306,7 @@ def rule_matches_product(p: dict[str, Any], rule: dict[str, Any] | None, include
         return False
 
     supplier = as_text_list(rule.get("supplier") or rule.get("supplier_name"))
-    if supplier and not _matches_token(get(p, ["supplier_name", "vendor_name"], ""), supplier):
-        return False
-
-    return True
+    return not supplier or _matches_token(get(p, ["supplier_name", "vendor_name"], ""), supplier)
 
 
 def first_non_empty(*values: Any) -> str:
@@ -1312,7 +1309,6 @@ def merch_compatible(
     shelf: dict[str, Any] | None = None,
 ) -> bool:
     aid = key(aisle.get("aisle_id"))
-    groups = cached_groups if cached_groups is not None else existing_groups_on_aisle(aisle)
 
     if aid == "A" and not is_food(p):
         return False
@@ -1330,10 +1326,10 @@ def merch_compatible(
     if product_group.startswith("FOOD") and "NON_FOOD_ODOR" in shelf_groups:
         return False
 
-    if product_group == "NON_FOOD_ODOR" and any(str(g).startswith("FOOD") for g in shelf_groups):
-        return False
-
-    return True
+    return not (
+        product_group == "NON_FOOD_ODOR"
+        and any(str(g).startswith("FOOD") for g in shelf_groups)
+    )
 
 
 def placement_score(
@@ -1374,9 +1370,7 @@ def placement_score(
 def dimension_fit(p: dict[str, Any], shelf: dict[str, Any]) -> bool:
     if height(p) > num(shelf.get("shelf_height_cm"), 35):
         return False
-    if oriented_depth(p) > num(shelf.get("shelf_depth_cm"), 50):
-        return False
-    return True
+    return oriented_depth(p) <= num(shelf.get("shelf_depth_cm"), 50)
 
 
 def weight_fit(p: dict[str, Any], shelf: dict[str, Any], facing: int | None = None) -> bool:
@@ -1560,9 +1554,12 @@ def place_product_fast(
             return False
         if num(shelf.get("shelf_width_cm"), 100) - num(shelf.get("used_width_cm"), 0) + 1e-9 < product_width_with_buffer:
             return False
-        if num(shelf.get("max_weight_kg"), 45) - num(shelf.get("used_weight_kg"), 0) + 1e-9 < product_weight:
-            return False
-        return True
+        return (
+            num(shelf.get("max_weight_kg"), 45)
+            - num(shelf.get("used_weight_kg"), 0)
+            + 1e-9
+            >= product_weight
+        )
 
     viable = [item for item in candidate_items if physically_viable(item)]
 
@@ -1703,7 +1700,7 @@ def place_product_fast(
         "module_id": module.get("module_id"),
         "shelf_no": shelf.get("shelf_no"),
         "position_order": len(shelf.get("products", [])) + 1,
-        "placement_score": round(best_score, 1),
+        "placement_score": best_score,
         "brand_block_id": brand_block_id,
         "capacity_warning": utilization_after >= 0.90 or f < desired_facing,
         "placement_reason": {
@@ -1999,7 +1996,7 @@ def generate_planogram(
         data_quality["missing_storage"] += int(not quality.get("storage_present"))
         data_quality["missing_dimensions"] += int(not quality.get("dimensions_present"))
         data_quality["ai_estimated_dimensions"] += int(p.get("dimension_source") == "ai_estimated")
-        if any(_column_key(column) in INPUT_COLUMN_ALIASES for column in (raw or {}).keys()):
+        if any(_column_key(column) in INPUT_COLUMN_ALIASES for column in (raw or {})):
             data_quality["localized_rows_normalized"] += 1
 
         if is_approval(p):
@@ -2510,7 +2507,7 @@ def suggest_empty_space(plan: dict[str, Any], products: list[dict[str, Any]], ai
         if sku(p) in placed_skus:
             continue
 
-        ok, reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))
+        ok, _reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))
         if not ok:
             continue
 
@@ -2726,7 +2723,7 @@ def optimize_module(plan: dict[str, Any], products: list[dict[str, Any]], aisle_
         best_score = -10**18
 
         for shelf in module.get("shelves", []):
-            ok, reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))
+            ok, _reason = can_place(p, aisle, module, shelf, existing_groups_on_aisle(aisle))
             if not ok:
                 continue
 
@@ -2827,7 +2824,7 @@ def optimize_picking_route(order_skus: list[str], plan: dict[str, Any]) -> dict[
         h["route_pressure"] += 1 + (1.5 if x["storage_type"] == "FROZEN" else 1 if x["storage_type"] == "CHILLED" else 0)
         h["skus"].append(x["sku"])
 
-    travel_seconds = len(set(x["aisle_id"] for x in route)) * 8
+    travel_seconds = len({x["aisle_id"] for x in route}) * 8
     pick_seconds = len(route) * 12
     total_seconds = travel_seconds + pick_seconds
 

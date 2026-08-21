@@ -16,25 +16,8 @@ function assert(condition, message) {
 const engineResult = {
   planogram: {
     aisles: [
-      {
-        aisle_id: "A",
-        modules: [
-          {
-            module_id: 1,
-            shelves: [{ products: [{ sku: "FAST", facing_count: 2 }] }],
-          },
-        ],
-      },
-      {
-        aisle_id: "PALLET",
-        modules: [
-          {
-            module_id: 1,
-            fixture_type: "pallet",
-            shelves: [{ products: [{ sku: "WATER", facing_count: 1 }] }],
-          },
-        ],
-      },
+      { aisle_id: "A", modules: [{ module_id: 1, shelves: [{ products: [{ sku: "FAST", facing_count: 2 }] }] }] },
+      { aisle_id: "PALLET", modules: [{ module_id: 1, fixture_type: "pallet", shelves: [{ products: [{ sku: "WATER", facing_count: 1 }] }] }] },
     ],
   },
   architecture_route_objective: {
@@ -95,16 +78,20 @@ assert(model.modules.find((row) => row.key === "PALLET::1")?.routeHotspot?.rank 
 assert(model.modules.find((row) => row.key === "A::1")?.routeDistanceM === 2.5, "Module distance did not bind to exact spatial module.");
 assert(PLANOGRAM_DIGITAL_TWIN_LIMITS.maxVisibleRouteHotspots <= 12, "Route hotspot rendering cap is too high.");
 
-const renderer = fs.readFileSync("src/modules/planogram/PlanogramDigitalTwin.jsx", "utf8");
+const canonical = fs.readFileSync("src/modules/planogram/PlanogramDigitalTwin.jsx", "utf8");
+const sharedRenderer = fs.readFileSync("src/modules/planogram/PlanogramTwinSceneRenderer.jsx", "utf8");
 const css = fs.readFileSync("src/modules/planogram/planogram-digital-twin.css", "utf8");
 const routeCss = fs.readFileSync("src/modules/planogram/planogram-digital-twin-routes.css", "utf8");
 
-for (const needle of ["addRouteLines", "eay-twin-route-path", "routeHotspot", "pickerEntryM"]) {
-  assert(renderer.includes(needle), `Renderer route explainability contract missing: ${needle}`);
+for (const needle of ["eay-twin-route-path", "routeHotspot", "pickerEntryM", "RouteHotspots"]) {
+  assert(canonical.includes(needle), `Canonical route explainability contract missing: ${needle}`);
+}
+for (const needle of ["addRouteLines", "sceneModel.route?.hotspots", "hotspot.pathM"]) {
+  assert(sharedRenderer.includes(needle), `Shared 3D route explainability contract missing: ${needle}`);
 }
 assert(css.startsWith('@import "./planogram-digital-twin-routes.css";'), "Canonical twin CSS does not load route overlay styles.");
 for (const needle of ["eay-twin-route-path", "eay-twin-route-origin", "is-route-hotspot", "@media (forced-colors: active)"]) {
   assert(routeCss.includes(needle), `Route overlay style contract missing: ${needle}`);
 }
 
-console.log("Planogram route explainability digital twin flow: PASS");
+console.log("Planogram route explainability unified digital twin flow: PASS");

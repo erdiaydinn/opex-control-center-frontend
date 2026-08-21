@@ -403,28 +403,73 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
     def test_exact_replay_payload_substitution_and_unexpected_sku(self):
         claim = self.claim()
         event_id = uuid4()
-        first = self.record_signed_event(claim, event_id=event_id)
-        self.assertFalse(first["idempotent"])
-        exact = self.record_signed_event(claim, event_id=event_id)
-        self.assertTrue(exact["idempotent"])
-        with self.assertRaises(InventoryRuleError):
-            self.record_signed_event(claim, event_id=event_id, quantity=3)
-        unexpected = self.record_signed_event(claim, barcode="8699999999999")
-        self.assertEqual(unexpected["status"], "UNEXPECTED_SKU")
-
-    def test_exact_replay_requires_fresh_device_proof(self):
-        claim = self.claim()
-        event_id = uuid4()
-        first = self.record_signed_event(claim, event_id=event_id)
-        self.assertFalse(first["idempotent"])
         payload, timestamp, nonce, signature = self.signed_event(claim, event_id=event_id)
         with patch.object(
             mission_event_module,
             "attest_shift_at_event",
             return_value=self.attestation(self.principal_one, self.shift_one),
         ):
-            replay = record_event(self.principal_one, payload, timestamp, nonce, signature)
-        self.assertTrue(replay["idempotent"])
+            first = record_event(self.principal_one, payload, timestamp, nonce, signature)
+        self.assertFalse(first["idempotent_replay"])
+
+        replay_timestamp, replay_nonce, replay_signature = self.sign_hash(
+            self.principal_one,
+            payload["payload_hash"],
+        )
+        exact = record_event(
+            self.principal_one,
+            payload,
+            replay_timestamp,
+            replay_nonce,
+            replay_signature,
+        )
+        self.assertTrue(exact["idempotent_replay"])
+
+        substituted = dict(payload, quantity=3)
+        substituted["payload_hash"] = canonical_payload_hash(terminal_event_hash_input(substituted))
+        changed_timestamp, changed_nonce, changed_signature = self.sign_hash(
+            self.principal_one,
+            substituted["payload_hash"],
+        )
+        with self.assertRaises(InventoryRuleError):
+            record_event(
+                self.principal_one,
+                substituted,
+                changed_timestamp,
+                changed_nonce,
+                changed_signature,
+            )
+
+        unexpected = self.record_signed_event(claim, barcode="8699999999999")
+        self.assertEqual(unexpected["event_type"], "UNEXPECTED_SKU")
+        self.assertEqual(unexpected["sku_identity"]["status"], "UNEXPECTED")
+
+    def test_exact_replay_requires_fresh_device_proof(self):
+        claim = self.claim()
+        payload, timestamp, nonce, signature = self.signed_event(claim)
+        with patch.object(
+            mission_event_module,
+            "attest_shift_at_event",
+            return_value=self.attestation(self.principal_one, self.shift_one),
+        ):
+            first = record_event(self.principal_one, payload, timestamp, nonce, signature)
+        self.assertFalse(first["idempotent_replay"])
+
+        with self.assertRaises(InventoryRuleError):
+            record_event(self.principal_one, payload, timestamp, nonce, signature)
+
+        replay_timestamp, replay_nonce, replay_signature = self.sign_hash(
+            self.principal_one,
+            payload["payload_hash"],
+        )
+        replay = record_event(
+            self.principal_one,
+            payload,
+            replay_timestamp,
+            replay_nonce,
+            replay_signature,
+        )
+        self.assertTrue(replay["idempotent_replay"])
 
     def test_duplicate_sku_requires_explicit_versioned_recount(self):
         claim = self.claim()
@@ -436,7 +481,9 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             recount_of_event_id=first["event_id"],
             recount_reason_code="OPERATOR_CORRECTION",
         )
-        self.assertEqual(recount["status"], "COUNTED")
+        self.assertEqual(recount["event_type"], "RECOUNT")
+        self.assertEqual(recount["count_version"], 2)
+        self.assertEqual(recount["supersedes_event_id"], first["event_id"])
 
     def test_recount_must_supersede_latest_version(self):
         claim = self.claim()
@@ -457,27 +504,47 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             recount_of_event_id=second["event_id"],
             recount_reason_code="SUPERVISOR_REQUEST",
         )
-        self.assertEqual(third["status"], "COUNTED")
+        self.assertEqual(third["event_type"], "RECOUNT")
+        self.assertEqual(third["count_version"], 3)
+        self.assertEqual(third["supersedes_event_id"], second["event_id"])
 
     def test_exact_replay_is_rejected_after_device_replacement(self):
         claim = self.claim()
-        event_id = uuid4()
-        first = self.record_signed_event(claim, event_id=event_id)
-        self.assertFalse(first["idempotent"])
+        payload, timestamp, nonce, signature = self.signed_event(claim)
+        with patch.object(
+            mission_event_module,
+            "attest_shift_at_event",
+            return_value=self.attestation(self.principal_one, self.shift_one),
+        ):
+            first = record_event(self.principal_one, payload, timestamp, nonce, signature)
+        self.assertFalse(first["idempotent_replay"])
+
         with connect() as db:
             db.execute(
                 "UPDATE inventory_devices SET status='REPLACED' WHERE tenant_id=%s AND device_id=%s",
                 (self.tenant, self.principal_one.device_id),
             )
             db.commit()
-        with self.assertRaises(PermissionError):
-            self.record_signed_event(claim, event_id=event_id)
-        with connect() as db:
-            db.execute(
-                "UPDATE inventory_devices SET status='ACTIVE' WHERE tenant_id=%s AND device_id=%s",
-                (self.tenant, self.principal_one.device_id),
+        try:
+            replay_timestamp, replay_nonce, replay_signature = self.sign_hash(
+                self.principal_one,
+                payload["payload_hash"],
             )
-            db.commit()
+            with self.assertRaises(InventoryRuleError):
+                record_event(
+                    self.principal_one,
+                    payload,
+                    replay_timestamp,
+                    replay_nonce,
+                    replay_signature,
+                )
+        finally:
+            with connect() as db:
+                db.execute(
+                    "UPDATE inventory_devices SET status='ACTIVE' WHERE tenant_id=%s AND device_id=%s",
+                    (self.tenant, self.principal_one.device_id),
+                )
+                db.commit()
 
     def test_valid_offline_event_may_upload_after_lease_expiry(self):
         now = datetime.now(UTC)
@@ -494,7 +561,9 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             return_value=self.attestation(self.principal_one, self.shift_one),
         ):
             result = record_event(self.principal_one, payload, timestamp, nonce, signature)
-        self.assertEqual(result["status"], "COUNTED")
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["event_type"], "SCAN")
+        self.assertFalse(result["idempotent_replay"])
 
     def test_renewal_cannot_retroactively_authorize_a_past_gap(self):
         now = datetime.now(UTC)
@@ -528,7 +597,7 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             "attest_shift_at_event",
             return_value=self.attestation(self.principal_one, self.shift_one),
         ):
-            with self.assertRaises(InventoryRuleError):
+            with self.assertRaises(PermissionError):
                 record_event(self.principal_one, payload, timestamp, nonce, signature)
 
     def test_superseded_attempt_evidence_is_excluded_from_reconciliation(self):
@@ -538,43 +607,83 @@ class InventoryPostgresAdversarialTests(unittest.TestCase):
             self.principal_two,
             self.document_id,
             self.location_id,
-            UUID(old_claim["attempt_id"]),
             "SUPERVISOR_RECOUNT",
         )
         new_claim = self.claim()
         self.record_signed_event(new_claim, quantity=5)
         self.record_completion(new_claim)
         result = reconciliation(self.principal_two, self.document_id)
-        line = next(item for item in result["lines"] if item["sku"] == "SKU-1")
+        line = next(item for item in result["rows"] if item["sku"] == "SKU-1")
         self.assertEqual(line["counted_quantity"], 5)
 
     def test_maker_checker_requires_completion_and_reconciliation(self):
         claim = self.claim()
         self.record_signed_event(claim, quantity=10)
         with self.assertRaises(InventoryRuleError):
-            transition(self.principal_two, self.document_id, "SUBMITTED", "submit")
+            transition(self.principal_one, self.document_id, 1, "SUBMITTED", "submit")
+
         self.record_completion(claim)
-        transition(self.principal_two, self.document_id, "SUBMITTED", "submit")
-        with self.assertRaises(InventoryRuleError):
-            transition(self.principal_two, self.document_id, "APPROVED", "approve")
-        reconciliation(self.principal_two, self.document_id)
-        transition(self.principal_two, self.document_id, "APPROVED", "approve")
-        self.assertEqual(
-            transition(self.principal_two, self.document_id, "LOCKED", "lock")["state"],
-            "LOCKED",
+        submitted = transition(
+            self.principal_one,
+            self.document_id,
+            1,
+            "SUBMITTED",
+            "submit after complete",
         )
+        self.assertEqual(submitted["revision"], 2)
+
+        with self.assertRaises(InventoryRuleError):
+            transition(
+                self.principal_two,
+                self.document_id,
+                2,
+                "APPROVED",
+                "approve before reconciling",
+            )
+
+        snapshot = reconciliation(self.principal_two, self.document_id)
+        self.assertEqual(snapshot["wall_to_wall"]["remaining_location_count"], 0)
+        self.assertEqual(snapshot["wall_to_wall"]["active_attempt_count"], 0)
+
+        reconciling = transition(
+            self.principal_two,
+            self.document_id,
+            2,
+            "RECONCILING",
+            "reconciliation reviewed",
+        )
+        self.assertEqual(reconciling["revision"], 3)
+        approved = transition(
+            self.principal_two,
+            self.document_id,
+            3,
+            "APPROVED",
+            "checker approval",
+        )
+        self.assertEqual(approved["revision"], 4)
+        locked = transition(
+            self.principal_two,
+            self.document_id,
+            4,
+            "LOCKED",
+            "final lock",
+        )
+        self.assertEqual(locked["state"], "LOCKED")
+        self.assertEqual(locked["revision"], 5)
 
     def test_load_smoke_preserves_distinct_lease_bound_events(self):
         claim = self.claim()
         started = perf_counter()
         for index in range(50):
+            barcode = f"LOAD-{index:04d}"
             first = self.record_signed_event(
                 claim,
-                barcode=f"LOAD-{index:04d}",
+                barcode=barcode,
                 quantity=1,
             )
             self.record_signed_event(
                 claim,
+                barcode=barcode,
                 recount_of_event_id=first["event_id"],
                 recount_reason_code="SUPERVISOR_REQUEST",
                 quantity=2,

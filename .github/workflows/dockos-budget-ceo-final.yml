@@ -34,6 +34,7 @@ jobs:
           const fs=require('fs');
           const app=fs.readFileSync('src/App.jsx','utf8');
           const dock=fs.readFileSync('src/modules/DockOS/DockOSDashboard.jsx','utf8');
+          const dockTower=fs.readFileSync('src/modules/DockOS/DockOSExecutiveControlTower.jsx','utf8');
           const budget=fs.readFileSync('src/modules/budget-intelligence/BudgetControlTower.jsx','utf8');
           const budgetRoute=fs.readFileSync('src/modules/budget-intelligence/BudgetIntelligence.jsx','utf8');
           if(!app.includes('./modules/budget-intelligence/BudgetIntelligence.jsx')) throw new Error('Canonical Budget lazy route missing');
@@ -43,6 +44,13 @@ jobs:
           if(!budgetRoute.includes('BudgetControlTower')) throw new Error('Canonical Budget route is not the Financial Control Tower');
           if(budgetRoute.includes('setAi(') || budgetRoute.includes('planned_budget:')) throw new Error('Legacy browser finance authority remains exposed');
           for(const marker of ['loading','error','empty','ready']) if(!budgetRoute.includes(`data-eay-product-state="${marker}"`)) throw new Error(`Budget ${marker} product state missing`);
+          for(const localeMarker of ['tr:{','en:{','de:{','ar:{','fr:{','es:{','it:{','nl:{','pl:{','"pt-BR":{']) {
+            if(!budget.includes(localeMarker)) throw new Error(`Budget locale missing: ${localeMarker}`);
+            if(!dockTower.includes(localeMarker)) throw new Error(`DockOS locale missing: ${localeMarker}`);
+          }
+          if(budget.includes('forecast_variance)>0')) throw new Error('Budget risk semantics invert server variance authority');
+          if(!budget.includes('forecast_variance)<0')) throw new Error('Budget over-forecast variance guard missing');
+          if(dockTower.includes('Arrival Compliance')) throw new Error('DockOS must not claim on-time compliance from arrival-presence data');
           console.log('CEO_FINAL_PRODUCT_AUTHORITY=PASS');
           NODE
       - run: npm run test:access

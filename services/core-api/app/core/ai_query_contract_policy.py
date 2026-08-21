@@ -69,7 +69,7 @@ class AiQueryContractPolicy(BaseModel):
     blockers: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_readiness(self) -> "AiQueryContractPolicy":
+    def validate_readiness(self) -> AiQueryContractPolicy:
         if self.production_ready:
             missing = [
                 name
@@ -92,11 +92,10 @@ class AiQueryContractPolicy(BaseModel):
                 raise ValueError(
                     "Production-ready AI query contract cannot have blockers"
                 )
-        else:
-            if not self.blockers:
-                raise ValueError(
-                    "Blocked AI query contract must explain its blockers"
-                )
+        elif not self.blockers:
+            raise ValueError(
+                "Blocked AI query contract must explain its blockers"
+            )
 
         if len(set(self.blockers)) != len(self.blockers):
             raise ValueError(
@@ -153,13 +152,18 @@ def ai_execution_scope_fingerprint(
     *,
     query_contract_fingerprint: str,
     data_scope_fingerprint: str,
+    tenant_query_context_fingerprint: str,
 ) -> str:
-    """Bind downstream query semantics and Platform data scope together."""
+    """Bind query semantics, role data scope, and tenant query identity."""
 
-    for name, value in {
+    fields = {
         "query_contract_fingerprint": query_contract_fingerprint,
         "data_scope_fingerprint": data_scope_fingerprint,
-    }.items():
+        "tenant_query_context_fingerprint": (
+            tenant_query_context_fingerprint
+        ),
+    }
+    for name, value in fields.items():
         if (
             len(value) != 64
             or any(char not in "0123456789abcdef" for char in value)
@@ -167,10 +171,7 @@ def ai_execution_scope_fingerprint(
             raise ValueError(f"{name} must be lowercase SHA-256")
 
     encoded = json.dumps(
-        {
-            "query_contract_fingerprint": query_contract_fingerprint,
-            "data_scope_fingerprint": data_scope_fingerprint,
-        },
+        fields,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")

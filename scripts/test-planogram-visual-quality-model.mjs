@@ -73,6 +73,30 @@ if (plan.productTextures[0].sku !== "SKU-1" || plan.productTextures[0].facingCou
 }
 if (plan.diagnostics.rejectedUnattestedProducts !== 1) fail("Unattested product packshot rejection must remain observable.");
 
+const palletModule = {
+  key: "PALLET:P1",
+  aisleId: "PALLET",
+  moduleId: "P1",
+  fixtureType: "pallet",
+  widthM: 1.2,
+  depthM: 1,
+  shelfCount: 1,
+  shelves: [{ products: [] }],
+};
+const palletManifest = {
+  product_assets: [],
+  fixture_assets: [{
+    fixture_type: "PALLET",
+    model_path: "/planogram-assets/fixtures/pallet.glb",
+    source_ref: "vendor://fixture/pallet/v1",
+    attested: true,
+  }],
+};
+const palletPlan = buildPlanogramVisualQualityPlan({ modules: [palletModule] }, palletManifest);
+if (palletPlan.fixtureInstances[0]?.targetEnvelopeM.heightM !== 0.18) {
+  fail("Pallet GLB fallback height must match the canonical 0.18 m physical renderer contract.");
+}
+
 const remoteManifest = structuredClone(manifest);
 remoteManifest.fixture_assets[0].model_path = "https://cdn.example.com/fixture.glb";
 remoteManifest.product_assets[0].front_image_path = "//cdn.example.com/sku.webp";

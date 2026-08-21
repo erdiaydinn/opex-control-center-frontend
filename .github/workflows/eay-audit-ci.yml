@@ -9,6 +9,7 @@ on:
       - "scripts/test-audit-product-states.mjs"
       - "services/core-api/app/modules/audit/**"
       - "services/core-api/app/modules/field_intelligence/evidence_object_read.py"
+      - "services/core-api/app/modules/field_intelligence/video_object_read.py"
       - "services/core-api/tests/test_audit_*.py"
       - "services/core-api/app/core/permission_catalog.py"
       - "services/core-api/app/budget_main.py"
@@ -19,10 +20,13 @@ on:
       - "services/core-api/alembic/versions/0050_audit_evidence_binding_integrity.py"
       - "services/core-api/alembic/versions/0051_audit_server_privacy_authority.py"
       - "services/core-api/alembic/versions/0052_audit_vision_inference_authority.py"
+      - "services/core-api/alembic/versions/0057_audit_video_authority.py"
+      - "services/core-api/alembic/versions/0058_audit_video_replay_fence.py"
       - ".github/workflows/eay-audit-ci.yml"
   push:
     branches:
       - "product/eay-audit-intelligence-v1"
+      - "product/eay-audit-field-truth-v1"
   workflow_dispatch:
 
 permissions:
@@ -84,11 +88,17 @@ jobs:
           tests/test_audit_privacy_authority_contracts.py
       - name: Vision authorization contracts
         run: pytest -q tests/test_audit_vision_authorization_contracts.py
+      - name: Video authority contracts
+        run: >-
+          pytest -q
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
       - name: Compile audit authority
         run: >-
           python -m compileall -q
           app/modules/audit
           app/modules/field_intelligence/evidence_object_read.py
+          app/modules/field_intelligence/video_object_read.py
           app/core/permission_catalog.py
           app/budget_main.py
           alembic/versions/0046_audit_operating_system.py
@@ -98,6 +108,8 @@ jobs:
           alembic/versions/0050_audit_evidence_binding_integrity.py
           alembic/versions/0051_audit_server_privacy_authority.py
           alembic/versions/0052_audit_vision_inference_authority.py
+          alembic/versions/0057_audit_video_authority.py
+          alembic/versions/0058_audit_video_replay_fence.py
       - name: Ruff application boundaries
         run: >-
           ruff check
@@ -140,7 +152,17 @@ jobs:
         run: ruff check --ignore E501 app/modules/audit/privacy_verification_service.py
       - name: Ruff Audit vision authorization authority
         run: ruff check --ignore E501 app/modules/audit/vision_inference_authorization.py
-      - name: Ruff migrations 0046-0052
+      - name: Ruff Audit video authority
+        run: >-
+          ruff check --ignore E501
+          app/modules/audit/video_verification_runtime.py
+          app/modules/audit/video_verification_service.py
+          app/modules/audit/video_vision_authorization.py
+          app/modules/audit/video_routes.py
+          app/modules/field_intelligence/video_object_read.py
+          tests/test_audit_video_verification_runtime.py
+          tests/test_audit_video_authority_integration_contracts.py
+      - name: Ruff migrations 0046-0052 and 0057-0058
         run: >-
           ruff check --ignore E501
           alembic/versions/0046_audit_operating_system.py
@@ -150,3 +172,5 @@ jobs:
           alembic/versions/0050_audit_evidence_binding_integrity.py
           alembic/versions/0051_audit_server_privacy_authority.py
           alembic/versions/0052_audit_vision_inference_authority.py
+          alembic/versions/0057_audit_video_authority.py
+          alembic/versions/0058_audit_video_replay_fence.py

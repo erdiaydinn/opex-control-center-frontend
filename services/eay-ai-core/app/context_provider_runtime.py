@@ -294,7 +294,7 @@ def execute_provider_request(
     fingerprint_material = (
         f"{CONTEXT_PROVIDER_RUNTIME_CONTRACT}\n{plan.provider_id}\n{policy.adapter_id}\n"
         f"{policy.adapter_version}\n{plan.url}\n{media_type}\n{body_sha256}"
-    ).encode("utf-8")
+    ).encode()
     evidence_fingerprint = hashlib.sha256(fingerprint_material).hexdigest()
 
     return ProviderEvidenceReceipt(

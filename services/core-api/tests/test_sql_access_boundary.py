@@ -163,6 +163,7 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
     ("modules/field_intelligence/evidence_object_upload.py", "_authorize_upload"),
     ("modules/field_intelligence/evidence_object_upload.py", "_existing_receipt"),
     ("modules/field_intelligence/evidence_object_upload.py", "upload_private_evidence_object"),
+    ("modules/field_intelligence/evidence_object_read.py", "read_private_evidence_object"),
     # Items 7-10/60 governance security review: exact functions only. Every SQL
     # statement is a static text() literal with bound parameters, each transaction
     # enters canonical app.tenant_id context, and governed tables are FORCE-RLS.
@@ -197,6 +198,75 @@ FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {
         "modules/field_intelligence/promotion_consumer_session.py",
         "record_consumer_receipt_in_session",
     ),
+}
+
+# Audit security review: exact DB execution functions only. SQLAlchemy text()
+# statements are static literals with bound parameters. Transactions set tenant
+# context before reading/writing RLS-protected Audit/Field tables. Evidence,
+# privacy and vision paths preserve the authority split between storage receipt,
+# privacy verification and model-inference authorization.
+AUDIT_SQL_EXECUTION_POINTS = {
+    ("modules/audit/accountability.py", "_set_tenant"),
+    ("modules/audit/accountability.py", "assign_location_manager"),
+    ("modules/audit/accountability.py", "get_location_manager_assignment"),
+    ("modules/audit/accountability.py", "list_location_manager_assignments"),
+    ("modules/audit/accountability.py", "resolve_location_manager_subject"),
+    ("modules/audit/assurance.py", "_notify"),
+    ("modules/audit/assurance.py", "_set_tenant"),
+    ("modules/audit/assurance.py", "append_auditor_decision_and_route"),
+    ("modules/audit/assurance.py", "auditor_assurance_summary"),
+    ("modules/audit/assurance.py", "get_assurance_case"),
+    ("modules/audit/assurance.py", "list_assurance_cases"),
+    ("modules/audit/assurance.py", "manager_decide_assurance_case"),
+    ("modules/audit/assurance.py", "standards_decide_assurance_case"),
+    ("modules/audit/evidence_binding.py", "bind_server_evidence_to_redaction_receipt"),
+    ("modules/audit/evidence_object_routes.py", "_run_evidence_authority"),
+    ("modules/audit/intelligence.py", "build_audit_intelligence_receipt"),
+    ("modules/audit/privacy_verification_service.py", "_load_bound_receipt"),
+    ("modules/audit/privacy_verification_service.py", "verify_bound_redaction_receipt"),
+    ("modules/audit/repository.py", "_set_tenant"),
+    ("modules/audit/repository.py", "activate_program"),
+    ("modules/audit/repository.py", "append_assurance_review"),
+    ("modules/audit/repository.py", "append_decision_event"),
+    ("modules/audit/repository.py", "append_redaction_receipt"),
+    ("modules/audit/repository.py", "create_action"),
+    ("modules/audit/repository.py", "create_program"),
+    ("modules/audit/repository.py", "get_location"),
+    # Audit action reads are static, tenant-bound SQL. Route authorization first
+    # resolves location/region scope and detail reads re-check DB-resolved scope.
+    ("modules/audit/repository.py", "get_action"),
+    ("modules/audit/repository.py", "list_actions"),
+    ("modules/audit/repository.py", "list_programs"),
+    ("modules/audit/repository.py", "list_runs"),
+    ("modules/audit/repository.py", "start_run"),
+    ("modules/audit/repository.py", "update_action"),
+    ("modules/audit/resource_scope.py", "_set_tenant"),
+    ("modules/audit/resource_scope.py", "get_action_location"),
+    ("modules/audit/resource_scope.py", "get_run_location"),
+    ("modules/audit/run_authority.py", "start_authoritative_run"),
+    ("modules/audit/vision_inference_authorization.py", "_load_context"),
+    ("modules/audit/vision_inference_authorization.py", "authorize_vision_inference"),
+    ("modules/audit/vision_inference_authorization.py", "consume_vision_inference_authorization"),
+    # Audit field-truth/video review: these paths use static SQLAlchemy text()
+    # with bound parameters inside tenant-scoped transactions. Visit/video tables
+    # are FORCE-RLS/replay-fenced and inference leases remain single-use.
+    ("modules/audit/video_routes.py", "_authorization_belongs_to_run"),
+    ("modules/audit/video_verification_service.py", "_load_bound_video_receipt"),
+    ("modules/audit/video_verification_service.py", "verify_bound_video_receipt"),
+    ("modules/audit/video_vision_authorization.py", "_load_context"),
+    ("modules/audit/video_vision_authorization.py", "authorize_video_vision_inference"),
+    ("modules/audit/video_vision_authorization.py", "consume_video_vision_authorization"),
+    ("modules/audit/visit_repository.py", "_set_tenant"),
+    ("modules/audit/visit_repository.py", "_require_active_location"),
+    ("modules/audit/visit_repository.py", "_require_active_program"),
+    ("modules/audit/visit_repository.py", "create_visit_manifest"),
+    ("modules/audit/visit_repository.py", "get_visit_location"),
+    ("modules/audit/visit_repository.py", "get_visit_manifest"),
+    ("modules/audit/visit_repository.py", "list_visit_manifests"),
+    ("modules/audit/visit_repository.py", "append_visit_note"),
+    ("modules/audit/visit_repository.py", "list_visit_notes"),
+    ("modules/audit/visit_repository.py", "start_visit_run"),
+    ("modules/audit/visit_repository.py", "complete_visit_manifest"),
 }
 
 # Master 24-26/60 security review: Planogram SQL is static text() with bound
@@ -236,6 +306,7 @@ ALLOWED_SQL_EXECUTION_POINTS = (
     | BUDGET_SQL_EXECUTION_POINTS
     | ACADEMY_SQL_EXECUTION_POINTS
     | FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS
+    | AUDIT_SQL_EXECUTION_POINTS
     | PLANOGRAM_SQL_EXECUTION_POINTS
 )
 
@@ -250,6 +321,13 @@ PRIVILEGED_ENGINE_CREATION = {
 }
 
 ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | PRIVILEGED_ENGINE_CREATION
+
+# Exact non-database execution points whose method names collide with SQLAlchemy
+# execution verbs. Private video streaming is constrained by UUID identity,
+# trusted-host/no-redirect policy, immutable byte size and exact media type.
+REVIEWED_NON_SQL_EXECUTION_POINTS = {
+    ("modules/field_intelligence/video_object_read.py", "read_private_video_object", "stream"),
+}
 
 EXECUTION_CALLS = {
     "execute",
@@ -314,7 +392,12 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
                 continue
             function = _enclosing_function(tree, node)
             location = (relative, function)
-            if name in EXECUTION_CALLS and location not in ALLOWED_SQL_EXECUTION_POINTS:
+            execution_point = (relative, function, name)
+            if (
+                name in EXECUTION_CALLS
+                and location not in ALLOWED_SQL_EXECUTION_POINTS
+                and execution_point not in REVIEWED_NON_SQL_EXECUTION_POINTS
+            ):
                 violations.append(f"{relative}:{node.lineno} {function} -> {name}")
             if name in ENGINE_CALLS and location not in ALLOWED_ENGINE_CREATION:
                 violations.append(f"{relative}:{node.lineno} {function} -> {name}")
@@ -342,14 +425,40 @@ def test_approved_sql_functions_cannot_grow_silently() -> None:
         relative = path.relative_to(APP_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _call_name(node) in EXECUTION_CALLS:
-                current_locations.add((relative, _enclosing_function(tree, node)))
+            if not isinstance(node, ast.Call):
+                continue
+            name = _call_name(node)
+            if name not in EXECUTION_CALLS:
+                continue
+            function = _enclosing_function(tree, node)
+            execution_point = (relative, function, name)
+            if execution_point in REVIEWED_NON_SQL_EXECUTION_POINTS:
+                continue
+            current_locations.add((relative, function))
 
     assert current_locations == ALLOWED_SQL_EXECUTION_POINTS, (
         "SQL execution allowlist drift detected. "
         f"added={sorted(current_locations - ALLOWED_SQL_EXECUTION_POINTS)} "
         f"removed={sorted(ALLOWED_SQL_EXECUTION_POINTS - current_locations)}"
     )
+
+
+def test_reviewed_non_sql_execution_points_are_exact() -> None:
+    discovered: set[tuple[str, str, str]] = set()
+    for path in sorted(APP_ROOT.rglob("*.py")):
+        relative = path.relative_to(APP_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = _call_name(node)
+            if name not in EXECUTION_CALLS:
+                continue
+            execution_point = (relative, _enclosing_function(tree, node), name)
+            if execution_point in REVIEWED_NON_SQL_EXECUTION_POINTS:
+                discovered.add(execution_point)
+
+    assert discovered == REVIEWED_NON_SQL_EXECUTION_POINTS
 
 
 def test_raw_sql_text_must_be_static_literal() -> None:

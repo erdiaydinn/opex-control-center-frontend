@@ -123,10 +123,14 @@ class WorkTaskSpec(BaseModel):
             self.required_capabilities
         ):
             raise ValueError("work_rpa_mode_requires_rpa_capability")
-        if self.rpa_mode is RPAExecutionMode.EXTERNAL_MUTATION and self.action_class not in {
-            WorkActionClass.EXTERNAL_MUTATION,
-            WorkActionClass.HIGH_IMPACT,
-        }:
+        if (
+            self.rpa_mode is RPAExecutionMode.EXTERNAL_MUTATION
+            and self.action_class
+            not in {
+                WorkActionClass.EXTERNAL_MUTATION,
+                WorkActionClass.HIGH_IMPACT,
+            }
+        ):
             raise ValueError("work_external_rpa_requires_mutation_action_class")
         return self
 
@@ -153,8 +157,7 @@ class WorkPlan(BaseModel):
             raise ValueError("work_plan_task_ids_must_be_unique")
         known = set(task_ids)
         for task in self.tasks:
-            missing = set(task.dependencies) - known
-            if missing:
+            if set(task.dependencies) - known:
                 raise ValueError("work_plan_dependency_unknown")
         _require_acyclic(self.tasks)
         if self.fingerprint != _fingerprint(_payload(self)):
@@ -168,6 +171,7 @@ class WorkApprovalReceipt(BaseModel):
     company_id: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
     plan_revision: int = Field(ge=1)
+    plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     task_id: str = Field(min_length=1)
     action_class: WorkActionClass
     approved_by: str = Field(min_length=1)
@@ -222,6 +226,7 @@ class WorkPlanAdmission(BaseModel):
     company_id: str
     session_id: str
     plan_revision: int
+    plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     evaluated_at: datetime
     task_admissions: tuple[WorkTaskAdmission, ...]
     all_tasks_ready: bool
@@ -367,6 +372,7 @@ def build_work_approval(
         "company_id": plan.company_id,
         "session_id": plan.session_id,
         "plan_revision": plan.revision,
+        "plan_fingerprint": plan.fingerprint,
         "task_id": task_id,
         "action_class": action_class.value,
         "approved_by": approved_by,
@@ -414,6 +420,8 @@ def admit_work_plan(
             raise ValueError("work_approval_scope_mismatch")
         if receipt.plan_revision != validated_plan.revision:
             raise ValueError("work_approval_plan_revision_mismatch")
+        if receipt.plan_fingerprint != validated_plan.fingerprint:
+            raise ValueError("work_approval_plan_fingerprint_mismatch")
         if receipt.task_id in approvals_by_task:
             raise ValueError("work_duplicate_task_approval")
         approvals_by_task[receipt.task_id] = receipt
@@ -482,6 +490,7 @@ def admit_work_plan(
         "company_id": validated_plan.company_id,
         "session_id": validated_plan.session_id,
         "plan_revision": validated_plan.revision,
+        "plan_fingerprint": validated_plan.fingerprint,
         "evaluated_at": now.isoformat().replace("+00:00", "Z"),
         "task_admissions": [item.model_dump(mode="json") for item in admissions],
         "all_tasks_ready": all(
@@ -558,17 +567,17 @@ def steer_work_session(
         previous_plan_fingerprint=current.current_plan.fingerprint,
         new_plan_fingerprint=replacement.fingerprint,
     )
+    replacement_ids = {task.task_id for task in replacement.tasks}
     preserved_progress = tuple(
         item
         for item in current.progress_events
-        if item.task_id not in invalidated
-        and item.task_id in {task.task_id for task in replacement.tasks}
+        if item.task_id not in invalidated and item.task_id in replacement_ids
     )
     preserved_artifacts = tuple(
         item
         for item in current.artifacts
         if item.producer_task_id not in invalidated
-        and item.producer_task_id in {task.task_id for task in replacement.tasks}
+        and item.producer_task_id in replacement_ids
     )
     return build_work_session(
         plan=replacement,
@@ -588,7 +597,8 @@ def _invalidated_tasks(previous: WorkPlan, current: WorkPlan) -> set[str]:
         for task_id in set(old) | set(new)
         if task_id not in old
         or task_id not in new
-        or old[task_id].model_dump(mode="json") != new[task_id].model_dump(mode="json")
+        or old[task_id].model_dump(mode="json")
+        != new[task_id].model_dump(mode="json")
     }
     invalidated = set(changed)
     grew = True

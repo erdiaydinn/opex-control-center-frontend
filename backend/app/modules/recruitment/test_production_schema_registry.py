@@ -24,14 +24,15 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
         for left, right in zip(expected, expected[1:]):
             self.assertLess(names.index(left), names.index(right))
 
-    def test_hiring_production_requires_v46_extension_chain(self):
-        self.assertEqual(production_startup_guard.REQUIRED_RECRUITMENT_SCHEMA_VERSION, 46)
+    def test_hiring_production_requires_v47_extension_chain(self):
+        self.assertEqual(production_startup_guard.REQUIRED_RECRUITMENT_SCHEMA_VERSION, 47)
         migration_dir = Path(__file__).resolve().parents[3] / "migrations"
         expected = {
             43: ("027_recruitment_scanner_role_isolation.sql", "dedicated recruitment scanner database role"),
             44: ("028_recruitment_orchestration.sql", "governed recruitment orchestration"),
             45: ("029_workforce_audit_chain_fencing.sql", "database audit hash chain fencing"),
             46: ("030_recruitment_interview_scheduling.sql", "shared candidate self-service interview scheduling authority"),
+            47: ("031_recruitment_lifecycle_authority.sql", "governed hiring lifecycle authority"),
         }
         for version, (filename, label) in expected.items():
             path = migration_dir / filename
@@ -50,12 +51,25 @@ class ProductionSchemaRegistryTests(unittest.TestCase):
             self.assertIn(table, scheduling)
         self.assertIn("FORCE ROW LEVEL SECURITY", scheduling)
         self.assertIn("interview booking event is append-only", scheduling)
+        lifecycle = (migration_dir / expected[47][0]).read_text(encoding="utf-8")
+        for table in (
+            "offer_approval_workflows", "offer_approval_events", "candidate_communication_outbox",
+            "talent_pool_memberships", "offboarding_cases", "offboarding_tasks", "offboarding_events",
+        ):
+            self.assertIn(table, lifecycle)
+        self.assertIn("required_approvals", lifecycle)
+        self.assertIn("FORCE ROW LEVEL SECURITY", lifecycle)
+        self.assertIn("recruitment lifecycle event is append-only", lifecycle)
 
     def test_main_invokes_hiring_guard_and_priority_orchestration(self):
         main_source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
         self.assertLess(main_source.index("initialize_workforce()"), main_source.index("assert_recruitment_production_ready()"))
         self.assertLess(main_source.index("assert_recruitment_production_ready()"), main_source.index("initialize_recruitment()"))
-        self.assertLess(main_source.index('app.include_router(recruitment_orchestration_router, prefix="/api")'), main_source.index('app.include_router(recruitment_router, prefix="/api")'))
+        lifecycle_mount = 'app.include_router(recruitment_lifecycle_router, prefix="/api")'
+        orchestration_mount = 'app.include_router(recruitment_orchestration_router, prefix="/api")'
+        legacy_mount = 'app.include_router(recruitment_router, prefix="/api")'
+        self.assertLess(main_source.index(lifecycle_mount), main_source.index(orchestration_mount))
+        self.assertLess(main_source.index(orchestration_mount), main_source.index(legacy_mount))
         self.assertIn('app.include_router(recruitment_public_orchestration_router, prefix="/api")', main_source)
         self.assertIn('app.include_router(recruitment_public_interview_router, prefix="/api")', main_source)
         self.assertIn('app.include_router(recruitment_interview_router, prefix="/api")', main_source)

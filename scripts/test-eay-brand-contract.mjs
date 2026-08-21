@@ -17,6 +17,7 @@ const brandComponent = read("src/platform/brand/EayBrand.jsx");
 const fieldTheme = read("android-field-ui/field-ui/src/main/java/com/eay/mobile/fieldui/EayFieldTheme.kt");
 const androidName = read("android-inventory/app/src/main/res/values/eay_mobile_app.xml");
 const manifest = read("android-inventory/app/src/main/AndroidManifest.xml");
+const fontProvenance = read("docs/brand/MANROPE_PROVENANCE.md");
 
 const expected = {
   navy: "#07235B",
@@ -35,6 +36,12 @@ requireCondition(contract.architecture.platform.name === "EAY One", "Platform br
 requireCondition(contract.architecture.terminal.name === "EAY Terminal", "Terminal brand must remain EAY Terminal");
 requireCondition(contract.typography.family === "Manrope", "Canonical brand font must remain Manrope");
 requireCondition(contract.typography.asset_state === "SELF_HOST_BINARY_PENDING", "Font asset truth boundary drifted");
+requireCondition(fontProvenance.includes("23dcf5e05a97f19a3567d40ebb3765580a4325f7"), "Reviewed Manrope upstream blob provenance missing");
+requireCondition(fontProvenance.includes("OFL-1.1"), "Manrope OFL-1.1 provenance missing");
+requireCondition(!fs.existsSync("public/fonts/Manrope-wght.ttf"), "Bundled Manrope exists but asset_state still claims pending");
+for (const forbiddenRemote of ["fonts.googleapis.com", "fonts.gstatic.com", "@import url("]) {
+  requireCondition(!brandCss.toLowerCase().includes(forbiddenRemote), `Remote runtime font dependency forbidden: ${forbiddenRemote}`);
+}
 
 requireCondition(branding.includes('"EAY One"'), "Default platform name must be EAY One");
 requireCondition(branding.includes('"EAY"'), "Default company name must be EAY");

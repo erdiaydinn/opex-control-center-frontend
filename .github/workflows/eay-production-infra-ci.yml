@@ -40,7 +40,7 @@ jobs:
 
       - name: Terraform format
         working-directory: infra/aws/terraform
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -diff -recursive
 
       - name: Terraform init without backend
         working-directory: infra/aws/terraform

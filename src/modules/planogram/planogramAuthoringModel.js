@@ -459,6 +459,17 @@ export function applyStoreSceneCommand(inputScene, rawCommand = {}) {
     };
   }
 
+  if (command.type === "RESTORE_NODES") {
+    const restored = (command.nodes || []).map(createStoreSceneNode);
+    const existing = new Set(scene.nodes.map((node) => node.nodeId));
+    if (restored.some((node) => existing.has(node.nodeId))) throw new Error("StoreScene restore would create duplicate node ids.");
+    return {
+      scene: nextScene(scene, [...scene.nodes, ...restored]),
+      command,
+      inverseCommand: { commandId: `${command.commandId}:undo`, type: "DELETE_NODE", nodeId: restored[0]?.nodeId, force: true },
+    };
+  }
+
   const index = scene.nodes.findIndex((row) => row.nodeId === command.nodeId);
   if (index < 0) throw new Error(`StoreScene node not found: ${command.nodeId}`);
   const current = scene.nodes[index];
@@ -518,16 +529,7 @@ export function applyStoreSceneCommand(inputScene, rawCommand = {}) {
     };
   }
 
-  if (command.type === "RESTORE_NODES") {
-    const restored = (command.nodes || []).map(createStoreSceneNode);
-    const existing = new Set(scene.nodes.map((node) => node.nodeId));
-    if (restored.some((node) => existing.has(node.nodeId))) throw new Error("StoreScene restore would create duplicate node ids.");
-    return {
-      scene: nextScene(scene, [...scene.nodes, ...restored]),
-      command,
-      inverseCommand: { commandId: `${command.commandId}:undo`, type: "DELETE_NODE", nodeId: restored[0]?.nodeId, force: true },
-    };
-  }
+
 
   throw new Error(`Unsupported StoreScene command: ${command.type}`);
 }

@@ -5,7 +5,9 @@ import { translatePlanogramAuthoring } from "../../platform/i18n/planogramAuthor
 import { rotatedRectSvgPoints, svgPointString } from "./planogramEngineering2D.js";
 import {
   buildPlanogramAuthoringDocument,
+  buildStoreScene,
   candidateWithPlanogramAuthoringDocument,
+  projectStoreScene2D,
   createPlanogramAuthoringElement,
   PLANOGRAM_AUTHORING_ELEMENT_TYPES,
   removePlanogramAuthoringElement,
@@ -87,6 +89,26 @@ export default function PlanogramArchitecturalAuthoring({
   }, [architectureKey]);
 
   const projection = useMemo(() => projectionFor(document), [document]);
+  const scene2D = useMemo(() => {
+    if (!document) return null;
+    const scene = buildStoreScene(candidate, document);
+    return scene ? projectStoreScene2D(scene) : null;
+  }, [candidate, document]);
+  const renderedElements = useMemo(() => {
+    const projectedById = new Map((scene2D?.nodes || []).map((node) => [node.nodeId, node]));
+    return (document?.architecture?.elements || []).map((element) => {
+      const projected = projectedById.get(element.element_id);
+      if (!projected) return element;
+      return {
+        ...element,
+        center_x_m: projected.geometry.centerXM,
+        center_y_m: projected.geometry.centerYM,
+        width_m: projected.geometry.widthM,
+        depth_m: projected.geometry.depthM,
+        rotation_deg: projected.geometry.rotationDeg,
+      };
+    });
+  }, [document, scene2D]);
   const selected = useMemo(
     () => document?.architecture?.elements?.find((row) => row.element_id === selectedId) || null,
     [document, selectedId]
@@ -241,7 +263,7 @@ export default function PlanogramArchitecturalAuthoring({
             </defs>
             <rect x={projection.offsetX} y={projection.offsetY} width={document.floor.widthM * projection.scale} height={document.floor.depthM * projection.scale} className="eay-authoring-floor" />
             <rect x={projection.offsetX} y={projection.offsetY} width={document.floor.widthM * projection.scale} height={document.floor.depthM * projection.scale} fill="url(#eay-authoring-grid)" className="eay-authoring-grid" />
-            {document.architecture.elements.map((element) => (
+            {renderedElements.map((element) => (
               <polygon
                 key={element.element_id}
                 points={svgPointString(rotatedRectSvgPoints({

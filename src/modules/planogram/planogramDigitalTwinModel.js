@@ -1,3 +1,5 @@
+import { buildPlanogramAuthoringDocument, buildStoreScene, projectStoreScene3D } from "./planogramAuthoringModel.js";
+
 const DEFAULT_MODULE_WIDTH_M = 1;
 const DEFAULT_MODULE_DEPTH_M = 0.5;
 const DEFAULT_SHELF_HEIGHT_M = 0.36;
@@ -402,8 +404,20 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
 
   if (!modules.length) return null;
 
+  const storeScene = profile
+    ? buildStoreScene(candidate, buildPlanogramAuthoringDocument(candidate))
+    : null;
+  const storeScene3D = storeScene ? projectStoreScene3D(storeScene) : null;
   const elements = profile
-    ? (architecture?.elements || []).map((element) => architectureElement(element, profile)).filter((item) => item.widthM > 0 && item.depthM > 0)
+    ? (storeScene3D?.nodes || []).map((node) => architectureElement({
+        element_id: node.nodeId,
+        element_type: node.nodeType,
+        center_x_m: node.geometry.centerXM,
+        center_y_m: node.geometry.centerYM,
+        width_m: node.geometry.widthM,
+        depth_m: node.geometry.depthM,
+        rotation_deg: node.geometry.rotationDeg,
+      }, profile)).filter((item) => item.widthM > 0 && item.depthM > 0)
     : [];
 
   const inferredMaxX = Math.max(...modules.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;

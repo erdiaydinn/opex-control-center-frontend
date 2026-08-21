@@ -124,6 +124,17 @@ history = redoStoreSceneCommand(history);
 if (history.present.nodes[0].geometry.centerXM !== originalCenter + 0.5) fail("Redo did not deterministically reapply command.");
 pass("UNDO-001", "reversible command history preserves deterministic geometry");
 
+let deleteHistory = createStoreSceneHistory(scene);
+deleteHistory = executeStoreSceneCommand(deleteHistory, {
+  commandId: "CMD-DELETE-1",
+  type: "DELETE_NODE",
+  nodeId: stableNodeId,
+  expectedRevision: deleteHistory.present.revision,
+});
+if (deleteHistory.present.nodes.some((node) => node.nodeId === stableNodeId)) fail("Delete command did not remove the node.");
+deleteHistory = undoStoreSceneCommand(deleteHistory);
+if (!deleteHistory.present.nodes.some((node) => node.nodeId === stableNodeId)) fail("Undo-delete did not restore the node with its stable id.");
+
 const snappedBoundary = snapStoreSceneCoordinate(1.05, [1.1, 2], { thresholdM: 0.05, gridM: 0.25 });
 if (snappedBoundary !== 1.1) fail(`Snap threshold boundary drifted: ${snappedBoundary}`);
 const snappedGrid = snapStoreSceneCoordinate(1.17, [2], { thresholdM: 0.05, gridM: 0.25 });
@@ -201,6 +212,7 @@ const studio = fs.readFileSync("src/modules/planogram/PlanogramStudio.jsx", "utf
 const authoring = fs.readFileSync("src/modules/planogram/PlanogramArchitecturalAuthoring.jsx", "utf8");
 const scanWorkspace = fs.readFileSync("src/modules/planogram/PlanogramScanAnnotationWorkspace.jsx", "utf8");
 const pickerEye = fs.readFileSync("src/modules/planogram/PlanogramPickerEyePreview.jsx", "utf8");
+const digitalTwinModel = fs.readFileSync("src/modules/planogram/planogramDigitalTwinModel.js", "utf8");
 for (const needle of ["PlanogramArchitecturalAuthoring", "onOpenEditableModel", "candidateFromReviewedStoreScan"]) {
   if (!studio.includes(needle)) fail(`Studio scan-to-authoring integration missing: ${needle}`);
 }
@@ -208,6 +220,8 @@ for (const needle of ["onPointerMove", "updatePlanogramAuthoringElement", "resiz
   if (!authoring.includes(needle)) fail(`Architectural editor capability missing: ${needle}`);
 }
 if (!scanWorkspace.includes("onOpenEditableModel(reviewedResult)")) fail("Reviewed scan cannot be opened in editable model.");
+if (!authoring.includes("projectStoreScene2D") || !authoring.includes("renderedElements.map")) fail("2D renderer is not bound to canonical StoreScene projection.");
+if (!digitalTwinModel.includes("projectStoreScene3D") || !digitalTwinModel.includes("storeScene3D?.nodes")) fail("3D renderer model is not bound to canonical StoreScene projection.");
 for (const needle of ["PointerLockControls", "RoomEnvironment", "MeshPhysicalMaterial", "blockedAt", "GLTFLoader", "front_image_path", "model_path"]) {
   if (!pickerEye.includes(needle)) fail(`Immersive digital twin capability missing: ${needle}`);
 }

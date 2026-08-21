@@ -35,6 +35,8 @@ function productFacingCount(product) {
 function moduleHeightM(module) {
   const measured = finitePositive(module?.heightM);
   if (measured != null) return measured;
+  const fixtureType = String(module?.fixtureType ?? module?.fixture_type ?? "").toLowerCase();
+  if (fixtureType.includes("pallet")) return 0.18;
   const shelfCount = Math.max(1, Number(module?.shelfCount || module?.shelves?.length || 1));
   return Math.max(1.5, shelfCount * 0.32);
 }

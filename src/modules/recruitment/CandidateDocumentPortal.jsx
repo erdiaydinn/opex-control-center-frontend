@@ -72,13 +72,6 @@ export default function CandidateDocumentPortal() {
     setFile(next);
   }
 
-  function openEDevlet() {
-    setError("");
-    const opened = window.open(EDEVLET_HOME, "_blank", "noopener,noreferrer");
-    setOfficialFlow(opened ? "launched" : "blocked");
-    if (!opened) setError("Tarayıcı yeni sekmeyi engelledi. Aşağıdaki bağlantıyı yeni sekmede açın ve işlemden sonra EAY'a dönün.");
-  }
-
   async function upload() {
     if (!file || !capability || !documentType) return;
     setState("uploading"); setError("");
@@ -105,9 +98,8 @@ export default function CandidateDocumentPortal() {
         <div className="cand-doc-trust"><ShieldCheck size={19}/><div><strong>Şifreli ve sınırlandırılmış teslim</strong><span>Belge okuma/listeleme yetkisi verilmez · Tek yükleme · Maksimum 10 MB</span></div></div>
         {isOfficial ? <div className="cand-doc-official">
           <div><strong>1 · Barkodlu belgeyi e-Devlet'te siz oluşturun</strong><p>e-Devlet ayrı sekmede açılır. Giriş, şifre, OTP, CAPTCHA ve oturum tamamen sizin tarayıcınızda kalır. EAY bu sekmeyi okuyamaz ve yönetmez.</p></div>
-          <button type="button" className="cand-doc-official-open" disabled={state === "uploading"} onClick={openEDevlet}><ExternalLink size={16}/>e-Devlet'i güvenli sekmede aç</button>
+          <a className="cand-doc-official-open" href={EDEVLET_HOME} target="_blank" rel="noopener noreferrer" onClick={() => setOfficialFlow("launched")}><ExternalLink size={16}/>e-Devlet'i güvenli sekmede aç</a>
           {officialFlow === "returned" ? <div className="cand-doc-return"><CheckCircle2 size={17}/><span>EAY'a geri döndünüz. İndirdiğiniz barkodlu PDF'yi aşağıdan seçerek devam edin.</span></div> : null}
-          {officialFlow === "blocked" ? <a className="cand-doc-official-link" href={EDEVLET_HOME} target="_blank" rel="noopener noreferrer">turkiye.gov.tr adresini yeni sekmede aç</a> : null}
           <small>Tarayıcı güvenliği gereği EAY, bilgisayarınızdaki İndirilenler klasörünü otomatik okuyamaz. Dosyayı yalnızca sizin seçmeniz gerekir.</small>
         </div> : null}
         {error ? <div className="cand-doc-alert"><CircleAlert size={17}/>{error}</div> : null}

@@ -28,6 +28,7 @@ const WorkforcePickerApp = lazy(() => import("./modules/workforce/WorkforcePicke
 const RecruitmentBootstrapBoundary = lazy(() => import("./modules/recruitment/RecruitmentBootstrapBoundary.jsx"));
 const AcademyWorkspace = lazy(() => import("./modules/academy/AcademyWorkspace.jsx"));
 const AcademyPlayer = lazy(() => import("./modules/academy/AcademyPlayer.jsx"));
+const AcademyExpansionHub = lazy(() => import("./modules/academy/AcademyExpansionHub.jsx"));
 const JarvisWorkspace = lazy(() => import("./modules/intelligence/JarvisWorkspace.jsx"));
 const InsightWorkspace = lazy(() => import("./modules/intelligence/InsightWorkspace.jsx"));
 const FieldIntelligenceWorkspace = lazy(() => import("./modules/field-intelligence/FieldIntelligenceWorkspace.jsx"));
@@ -37,7 +38,10 @@ const AuditCommandCenter = lazy(() => import("./modules/audit/AuditCommandCenter
 const PlatformHealth = lazy(() => import("./modules/platform-health/PlatformHealth.jsx"));
 const AuditLog = lazy(() => import("./modules/audit-log/AuditLog.jsx"));
 
-const PLATFORM_ADMIN_ROLES = ["platform_admin", "super_admin"];
+const PLATFORM_ADMIN_ROLES = [
+  "platform_admin",
+  "super_admin",
+];
 
 function RouteLoadingFallback() {
   const { t } = usePlatformPreferences();
@@ -58,64 +62,24 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route
-            path="/"
-            element={(
-              <ProtectedRoute>
-                <ControlCenterHome />
-              </ProtectedRoute>
-            )}
-          />
+          <Route path="/" element={<ProtectedRoute><ControlCenterHome /></ProtectedRoute>} />
           <Route path="/planogram" element={<ProtectedRoute moduleKey="planogram"><PlanogramStudio /></ProtectedRoute>} />
           <Route path="/dockos" element={<ProtectedRoute moduleKey="dockos"><DockOSDashboard /></ProtectedRoute>} />
           <Route path="/budget" element={<ProtectedRoute moduleKey="budget"><BudgetIntelligence /></ProtectedRoute>} />
           <Route path="/academy" element={<ProtectedRoute moduleKey="academy"><AcademyWorkspace /></ProtectedRoute>} />
+          <Route path="/academy/experience" element={<ProtectedRoute moduleKey="academy"><AcademyExpansionHub /></ProtectedRoute>} />
           <Route path="/academy/enrollments/:enrollmentId" element={<ProtectedRoute moduleKey="academy"><AcademyPlayer /></ProtectedRoute>} />
           <Route path="/jarvis" element={<ProtectedRoute moduleKey="jarvis"><JarvisWorkspace /></ProtectedRoute>} />
           <Route path="/insight" element={<ProtectedRoute moduleKey="insight"><InsightWorkspace /></ProtectedRoute>} />
           <Route path="/field-intelligence" element={<ProtectedRoute moduleKey="field_intelligence"><FieldIntelligenceWorkspace /></ProtectedRoute>} />
           <Route path="/field-intelligence/mobile" element={<ProtectedRoute moduleKey="field_intelligence"><FieldMobileCapture /></ProtectedRoute>} />
           <Route path="/field-intelligence/governance" element={<ProtectedRoute moduleKey="field_intelligence"><FieldGovernanceWorkspace /></ProtectedRoute>} />
-          <Route
-            path="/audit"
-            element={(
-              <ProtectedRoute moduleKey="audit">
-                <AuditCommandCenter />
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/inventory"
-            element={(
-              <ProtectedRoute moduleKey="inventory">
-                <InventoryUiProvider>
-                  <InventoryProductionBoundary />
-                </InventoryUiProvider>
-              </ProtectedRoute>
-            )}
-          />
+          <Route path="/audit" element={<ProtectedRoute moduleKey="audit"><AuditCommandCenter /></ProtectedRoute>} />
+          <Route path="/inventory" element={<ProtectedRoute moduleKey="inventory"><InventoryUiProvider><InventoryProductionBoundary /></InventoryUiProvider></ProtectedRoute>} />
           <Route path="/inventory/access-management" element={<ProtectedRoute moduleKey="admin_access" action="admin"><ServerAccounts /></ProtectedRoute>} />
           <Route path="/admin/accounts" element={<Navigate to="/inventory/access-management" replace />} />
-          <Route
-            path="/workforce"
-            element={(
-              <ProtectedRoute moduleKey="workforce">
-                <WorkforceUiProvider>
-                  <WorkforceBootstrapBoundary />
-                </WorkforceUiProvider>
-              </ProtectedRoute>
-            )}
-          />
-          <Route
-            path="/workforce/app"
-            element={(
-              <ProtectedRoute moduleKey="workforce">
-                <WorkforceUiProvider>
-                  <WorkforcePickerApp />
-                </WorkforceUiProvider>
-              </ProtectedRoute>
-            )}
-          />
+          <Route path="/workforce" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforceBootstrapBoundary /></WorkforceUiProvider></ProtectedRoute>} />
+          <Route path="/workforce/app" element={<ProtectedRoute moduleKey="workforce"><WorkforceUiProvider><WorkforcePickerApp /></WorkforceUiProvider></ProtectedRoute>} />
           <Route path="/recruitment" element={<ProtectedRoute moduleKey="recruitment"><RecruitmentBootstrapBoundary /></ProtectedRoute>} />
           <Route path="/access-control" element={<ProtectedRoute moduleKey="admin_access" action="admin"><AccessControl /></ProtectedRoute>} />
           <Route path="/audit-log" element={<ProtectedRoute roles={PLATFORM_ADMIN_ROLES}><AuditLog /></ProtectedRoute>} />

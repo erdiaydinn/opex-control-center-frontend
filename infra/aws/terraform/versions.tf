@@ -18,10 +18,10 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = var.project_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-      Repository  = "erdiaydinn/opex-control-center-frontend"
+      Project      = var.project_name
+      Environment  = var.environment
+      ManagedBy    = "terraform"
+      Repository   = "erdiaydinn/opex-control-center-frontend"
       ControlPlane = "issue-192"
     }
   }

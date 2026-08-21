@@ -66,6 +66,8 @@ jobs:
         run: sh ops/mobile/verify-terminal-recovery.sh
       - name: Preserve canonical Inventory Android hardening
         run: sh ops/inventory/verify-android-production.sh
+      - name: Preserve separate EAY One authority boundary
+        run: node scripts/test-eay-one-host-contract.mjs
 
   mobile-core-authority:
     runs-on: ubuntu-latest
@@ -142,7 +144,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
         with:
           gradle-version: "8.9"
-      - name: Unit, lint, shared Compose compatibility, typed adapter and executable terminal regression
+      - name: Unit, lint, shared Compose compatibility, EAY One and executable terminal regression
         run: >-
           gradle --no-daemon clean
           :mobile-core:testDebugUnitTest
@@ -153,6 +155,8 @@ jobs:
           :field-ui-runtime:testDebugUnitTest
           :field-ui-runtime:lintDebug
           :field-ui-runtime:assembleDebug
+          :eay-one-app:lintDebug
+          :eay-one-app:assembleDebug
           :app:testDebugUnitTest
           :app:lintDebug
           :app:assembleDebug

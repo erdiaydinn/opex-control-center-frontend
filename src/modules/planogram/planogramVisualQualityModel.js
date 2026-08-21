@@ -7,10 +7,17 @@ import {
 const MAX_TEXTURED_PRODUCT_SKUS = 48;
 const MAX_TEXTURED_PRODUCT_FACINGS = 320;
 const MAX_GOVERNED_FIXTURE_INSTANCES = 1000;
+const MEDIUM_LOD_DISTANCE_M = 6;
+const FAR_LOD_DISTANCE_M = 14;
 
 function finitePositive(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function finiteCoordinate(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function normalizeKey(value) {
@@ -88,6 +95,49 @@ function visualAssetEligible(asset, expectedExtension, expectedPrefix) {
   return expectedExtension.test(path);
 }
 
+function visualFocusPoint(model) {
+  const picker = model?.route?.pickerEntryM;
+  if (Array.isArray(picker) && picker.length >= 2) {
+    const xM = finiteCoordinate(picker[0]);
+    const yM = finiteCoordinate(picker[1]);
+    if (xM != null && yM != null) return Object.freeze({ xM, yM, source: "picker_entry" });
+  }
+  const widthM = finitePositive(model?.floor?.widthM);
+  const depthM = finitePositive(model?.floor?.depthM);
+  if (widthM != null && depthM != null) {
+    return Object.freeze({ xM: widthM / 2, yM: depthM / 2, source: "floor_center" });
+  }
+  return Object.freeze({ xM: 0, yM: 0, source: "origin_fallback" });
+}
+
+function moduleDistanceM(module, focus) {
+  const xM = finiteCoordinate(module?.centerXM ?? module?.center_x_m);
+  const yM = finiteCoordinate(module?.centerYM ?? module?.center_y_m);
+  if (xM == null || yM == null) return 0;
+  return Math.hypot(xM - focus.xM, yM - focus.yM);
+}
+
+function governedLodPath(asset, distanceM) {
+  const near = asset?.model_path;
+  const medium = asset?.lod_model_paths?.medium;
+  const far = asset?.lod_model_paths?.far;
+  if (
+    distanceM >= FAR_LOD_DISTANCE_M
+    && safeGovernedPath(far, PLANOGRAM_ASSET_LIMITS.fixtureAssetPrefix)
+    && /\.glb(\?.*)?$/i.test(far)
+  ) {
+    return Object.freeze({ modelPath: far, quality: "far" });
+  }
+  if (
+    distanceM >= MEDIUM_LOD_DISTANCE_M
+    && safeGovernedPath(medium, PLANOGRAM_ASSET_LIMITS.fixtureAssetPrefix)
+    && /\.glb(\?.*)?$/i.test(medium)
+  ) {
+    return Object.freeze({ modelPath: medium, quality: "medium" });
+  }
+  return Object.freeze({ modelPath: near, quality: "near" });
+}
+
 export function buildPlanogramVisualQualityPlan(model, assetManifest) {
   if (!model || !Array.isArray(model.modules)) return null;
 
@@ -96,12 +146,15 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
   const fixtureInstances = [];
   const productTextures = [];
   const textureSkuSet = new Set();
+  const focus = visualFocusPoint(model);
   let acceptedTexturedFacings = 0;
   let rejectedUnattestedFixtures = 0;
   let rejectedUnattestedProducts = 0;
   let skippedFixtureBudget = 0;
   let skippedTextureSkuBudget = 0;
   let skippedFacingBudget = 0;
+  let usedMediumLod = 0;
+  let usedFarLod = 0;
 
   for (let moduleIndex = 0; moduleIndex < model.modules.length; moduleIndex += 1) {
     const module = model.modules[moduleIndex];
@@ -118,15 +171,23 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
       } else if (fixtureInstances.length >= MAX_GOVERNED_FIXTURE_INSTANCES) {
         skippedFixtureBudget += 1;
       } else {
+        const distanceM = moduleDistanceM(module, focus);
+        const lod = governedLodPath(fixtureAsset, distanceM);
+        if (lod.quality === "medium") usedMediumLod += 1;
+        if (lod.quality === "far") usedFarLod += 1;
         fixtureInstances.push(Object.freeze({
           moduleKey,
           fixtureType: fixtureKey,
-          modelPath: fixtureAsset.model_path,
+          modelPath: lod.modelPath,
           sourceRef: fixtureAsset.source_ref,
           targetEnvelopeM: envelope,
           geometryAuthority: "canonical_store_scene",
           visualAssetAuthority: "attested_same_origin_glb",
           fallbackPolicy: "metric_primitive_until_asset_load_success",
+          lodQuality: lod.quality,
+          lodDistanceM: Math.round(distanceM * 100) / 100,
+          lodFocusSource: focus.source,
+          lodPolicy: "deterministic_focus_distance_preview",
         }));
       }
     }
@@ -178,6 +239,11 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
     productionReleaseAllowed: false,
     fixtureInstances: Object.freeze(fixtureInstances),
     productTextures: Object.freeze(productTextures),
+    lod: Object.freeze({
+      focusSource: focus.source,
+      mediumDistanceM: MEDIUM_LOD_DISTANCE_M,
+      farDistanceM: FAR_LOD_DISTANCE_M,
+    }),
     budgets: Object.freeze({
       maxFixtureInstances: MAX_GOVERNED_FIXTURE_INSTANCES,
       maxTexturedProductSkus: MAX_TEXTURED_PRODUCT_SKUS,
@@ -192,6 +258,8 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
       skippedFixtureBudget,
       skippedTextureSkuBudget,
       skippedFacingBudget,
+      usedMediumLod,
+      usedFarLod,
     }),
   });
 }
@@ -200,4 +268,6 @@ export const PLANOGRAM_VISUAL_QUALITY_LIMITS = Object.freeze({
   maxFixtureInstances: MAX_GOVERNED_FIXTURE_INSTANCES,
   maxTexturedProductSkus: MAX_TEXTURED_PRODUCT_SKUS,
   maxTexturedProductFacings: MAX_TEXTURED_PRODUCT_FACINGS,
+  mediumLodDistanceM: MEDIUM_LOD_DISTANCE_M,
+  farLodDistanceM: FAR_LOD_DISTANCE_M,
 });

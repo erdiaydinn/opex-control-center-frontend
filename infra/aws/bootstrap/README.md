@@ -29,13 +29,15 @@ After the bucket exists, create a separate future automation role for Terraform 
 
 ## One-time creation
 
-From an AWS CloudShell session opened while signed in as the MFA-protected `eay-admin` account, run the repository-controlled script:
+Use an **approved literal PR head SHA**, never a mutable branch URL, when downloading the CloudShell bootstrap script. Example:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/erdiaydinn/opex-control-center-frontend/infra/eay-production-launch-v1/infra/aws/bootstrap/cloudshell-create-state.sh | bash
+APPROVED_SHA=<verified-pr-head-sha>
+curl -fsSL "https://raw.githubusercontent.com/erdiaydinn/opex-control-center-frontend/${APPROVED_SHA}/infra/aws/bootstrap/cloudshell-create-state.sh" -o /tmp/eay-state-bootstrap.sh
+bash /tmp/eay-state-bootstrap.sh
 ```
 
-The script first proves the AWS account ID, then deploys the CloudFormation template and verifies versioning, encryption, public-access blocking and bucket-policy status. It does not upgrade the account plan.
+The script proves the AWS account ID before mutation. It then downloads the state template, verifies the template against a pinned SHA-256 digest, deploys the CloudFormation stack and verifies versioning, encryption, public-access blocking and bucket-policy status. It does not upgrade the account plan.
 
 ## Recovery rules
 

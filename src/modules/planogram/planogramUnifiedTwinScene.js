@@ -1,0 +1,117 @@
+function number(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function text(value) {
+  return String(value ?? "").trim();
+}
+
+function authoredScene(model) {
+  if (!model?.floor || !Array.isArray(model?.modules)) return null;
+  return Object.freeze({
+    contract: "eay.planogram.unified-twin-scene.v1",
+    sourceKind: "authored_planogram",
+    geometryAuthority: text(model.geometryAuthority || "topology-preview"),
+    productionReleaseAllowed: false,
+    floor: Object.freeze({
+      widthM: number(model.floor.widthM),
+      depthM: number(model.floor.depthM),
+    }),
+    architecture: Object.freeze((model.elements || []).map((row) => Object.freeze({
+      id: text(row.id),
+      type: text(row.type).toLowerCase(),
+      centerXM: number(row.centerXM),
+      centerYM: number(row.centerYM),
+      widthM: number(row.widthM),
+      depthM: number(row.depthM),
+      rotationDeg: number(row.rotationDeg),
+      clearanceM: number(row.clearanceM),
+      coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
+    }))),
+    fixtures: Object.freeze(model.modules.map((row) => Object.freeze({
+      id: text(row.key),
+      fixtureType: text(row.fixtureType).toUpperCase(),
+      centerXM: number(row.centerXM),
+      centerYM: number(row.centerYM),
+      widthM: number(row.widthM),
+      depthM: number(row.depthM),
+      heightM: number(row.heightM),
+      rotationDeg: number(row.rotationDeg),
+      coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
+      moduleKey: text(row.key),
+    }))),
+    route: model.route || null,
+    provenance: Object.freeze({
+      architectureSourceRef: text(model.architectureSourceRef),
+      sourceContract: text(model.contract),
+    }),
+  });
+}
+
+function scannedScene(architecture, recognizedFixtures = []) {
+  if (!architecture || !Array.isArray(architecture.elements)) return null;
+  return Object.freeze({
+    contract: "eay.planogram.unified-twin-scene.v1",
+    sourceKind: "reviewed_store_scan_preview",
+    geometryAuthority: "reviewed_scan_preview_not_store_dna_authority",
+    productionReleaseAllowed: false,
+    floor: Object.freeze({
+      widthM: number(architecture.floor_width_m),
+      depthM: number(architecture.floor_depth_m),
+    }),
+    architecture: Object.freeze(architecture.elements.map((row) => Object.freeze({
+      id: text(row.element_id),
+      type: text(row.element_type).toLowerCase(),
+      centerXM: number(row.center_x_m),
+      centerYM: number(row.center_y_m),
+      widthM: number(row.width_m),
+      depthM: number(row.depth_m),
+      rotationDeg: number(row.rotation_deg),
+      clearanceM: number(row.clearance_m),
+      coordinateAuthority: "reviewed_scan_measurement_preview",
+    }))),
+    fixtures: Object.freeze((recognizedFixtures || []).map((row, index) => Object.freeze({
+      id: text(row.element_id || row.fixture_element_id || `scan-fixture-${index + 1}`),
+      fixtureType: text(row.fixture_type || row.hinted_storage_type || "UNKNOWN").toUpperCase(),
+      centerXM: number(row.center_x_m),
+      centerYM: number(row.center_y_m),
+      widthM: number(row.width_m),
+      depthM: number(row.depth_m),
+      heightM: number(row.height_m, 1.6),
+      rotationDeg: number(row.rotation_deg),
+      coordinateAuthority: "reviewed_scan_measurement_preview",
+      moduleKey: null,
+    }))),
+    route: null,
+    provenance: Object.freeze({
+      architectureSourceRef: text(architecture.source_ref),
+      sourceContract: text(architecture.contract || architecture.schema_version),
+    }),
+  });
+}
+
+export function buildPlanogramUnifiedTwinScene({ authoredModel = null, reviewedArchitecture = null, recognizedFixtures = [] } = {}) {
+  const authored = authoredScene(authoredModel);
+  const scanned = scannedScene(reviewedArchitecture, recognizedFixtures);
+  if (authored) return authored;
+  if (scanned) return scanned;
+  return null;
+}
+
+export function compareUnifiedTwinGeometry(left, right, toleranceM = 0.02) {
+  if (!left || !right) return Object.freeze({ comparable: false, withinTolerance: false, deltas: [] });
+  const leftById = new Map((left.architecture || []).map((row) => [row.id, row]));
+  const deltas = [];
+  for (const row of right.architecture || []) {
+    const base = leftById.get(row.id);
+    if (!base) continue;
+    const centerDeltaM = Math.hypot(base.centerXM - row.centerXM, base.centerYM - row.centerYM);
+    const sizeDeltaM = Math.max(Math.abs(base.widthM - row.widthM), Math.abs(base.depthM - row.depthM));
+    const rotationDeltaDeg = Math.abs(base.rotationDeg - row.rotationDeg);
+    deltas.push(Object.freeze({ id: row.id, centerDeltaM, sizeDeltaM, rotationDeltaDeg }));
+  }
+  const comparable = deltas.length > 0;
+  const withinTolerance = comparable && deltas.every((row) => row.centerDeltaM <= toleranceM && row.sizeDeltaM <= toleranceM);
+  return Object.freeze({ comparable, withinTolerance, toleranceM, deltas: Object.freeze(deltas) });
+}

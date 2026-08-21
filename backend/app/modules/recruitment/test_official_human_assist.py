@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -74,6 +75,25 @@ class OfficialHumanAssistTests(unittest.TestCase):
         audit.assert_called_once()
         self.assertFalse(audit.call_args.kwargs["credential_capture"])
         self.assertFalse(audit.call_args.kwargs["browser_automation"])
+
+    def test_candidate_portal_uses_user_assisted_official_handoff_without_session_capture(self):
+        portal = (
+            Path(__file__).resolve().parents[4]
+            / "src"
+            / "modules"
+            / "recruitment"
+            / "CandidateDocumentPortal.jsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn('const EDEVLET_HOME = "https://www.turkiye.gov.tr/"', portal)
+        self.assertIn('window.open(EDEVLET_HOME, "_blank", "noopener,noreferrer")', portal)
+        self.assertIn("sessionStorage.setItem(SESSION_KEY, capability)", portal)
+        self.assertIn('window.addEventListener("focus", markReturned)', portal)
+        self.assertIn("EAY bu sekmeyi okuyamaz ve yönetmez", portal)
+        self.assertIn("Tarayıcı güvenliği gereği EAY", portal)
+        self.assertNotIn("document.cookie", portal)
+        self.assertNotIn("localStorage.setItem", portal)
+        self.assertNotIn("captcha", portal.lower())
+        self.assertLess(portal.index("if (!result?.accepted)"), portal.index("sessionStorage.removeItem(SESSION_KEY)"))
 
     def test_non_official_document_cannot_enter_e_devlet_assist_flow(self):
         evidence = {**self.evidence(), "requires_official_verification": False}

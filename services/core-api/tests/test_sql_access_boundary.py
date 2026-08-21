@@ -247,6 +247,26 @@ AUDIT_SQL_EXECUTION_POINTS = {
     ("modules/audit/vision_inference_authorization.py", "_load_context"),
     ("modules/audit/vision_inference_authorization.py", "authorize_vision_inference"),
     ("modules/audit/vision_inference_authorization.py", "consume_vision_inference_authorization"),
+    # Audit field-truth/video review: these paths use static SQLAlchemy text()
+    # with bound parameters inside tenant-scoped transactions. Visit/video tables
+    # are FORCE-RLS/replay-fenced and inference leases remain single-use.
+    ("modules/audit/video_routes.py", "_authorization_belongs_to_run"),
+    ("modules/audit/video_verification_service.py", "_load_bound_video_receipt"),
+    ("modules/audit/video_verification_service.py", "verify_bound_video_receipt"),
+    ("modules/audit/video_vision_authorization.py", "_load_context"),
+    ("modules/audit/video_vision_authorization.py", "authorize_video_vision_inference"),
+    ("modules/audit/video_vision_authorization.py", "consume_video_vision_authorization"),
+    ("modules/audit/visit_repository.py", "_set_tenant"),
+    ("modules/audit/visit_repository.py", "_require_active_location"),
+    ("modules/audit/visit_repository.py", "_require_active_program"),
+    ("modules/audit/visit_repository.py", "create_visit_manifest"),
+    ("modules/audit/visit_repository.py", "get_visit_location"),
+    ("modules/audit/visit_repository.py", "get_visit_manifest"),
+    ("modules/audit/visit_repository.py", "list_visit_manifests"),
+    ("modules/audit/visit_repository.py", "append_visit_note"),
+    ("modules/audit/visit_repository.py", "list_visit_notes"),
+    ("modules/audit/visit_repository.py", "start_visit_run"),
+    ("modules/audit/visit_repository.py", "complete_visit_manifest"),
 }
 
 # Master 24-26/60 security review: Planogram SQL is static text() with bound
@@ -301,6 +321,13 @@ PRIVILEGED_ENGINE_CREATION = {
 }
 
 ALLOWED_ENGINE_CREATION = RUNTIME_ENGINE_CREATION | PRIVILEGED_ENGINE_CREATION
+
+# Exact non-database execution points whose method names collide with SQLAlchemy
+# execution verbs. Private video streaming is constrained by UUID identity,
+# trusted-host/no-redirect policy, immutable byte size and exact media type.
+REVIEWED_NON_SQL_EXECUTION_POINTS = {
+    ("modules/field_intelligence/video_object_read.py", "read_private_video_object", "stream"),
+}
 
 EXECUTION_CALLS = {
     "execute",
@@ -365,7 +392,12 @@ def test_runtime_sql_execution_is_fail_closed() -> None:
                 continue
             function = _enclosing_function(tree, node)
             location = (relative, function)
-            if name in EXECUTION_CALLS and location not in ALLOWED_SQL_EXECUTION_POINTS:
+            execution_point = (relative, function, name)
+            if (
+                name in EXECUTION_CALLS
+                and location not in ALLOWED_SQL_EXECUTION_POINTS
+                and execution_point not in REVIEWED_NON_SQL_EXECUTION_POINTS
+            ):
                 violations.append(f"{relative}:{node.lineno} {function} -> {name}")
             if name in ENGINE_CALLS and location not in ALLOWED_ENGINE_CREATION:
                 violations.append(f"{relative}:{node.lineno} {function} -> {name}")
@@ -393,14 +425,40 @@ def test_approved_sql_functions_cannot_grow_silently() -> None:
         relative = path.relative_to(APP_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _call_name(node) in EXECUTION_CALLS:
-                current_locations.add((relative, _enclosing_function(tree, node)))
+            if not isinstance(node, ast.Call):
+                continue
+            name = _call_name(node)
+            if name not in EXECUTION_CALLS:
+                continue
+            function = _enclosing_function(tree, node)
+            execution_point = (relative, function, name)
+            if execution_point in REVIEWED_NON_SQL_EXECUTION_POINTS:
+                continue
+            current_locations.add((relative, function))
 
     assert current_locations == ALLOWED_SQL_EXECUTION_POINTS, (
         "SQL execution allowlist drift detected. "
         f"added={sorted(current_locations - ALLOWED_SQL_EXECUTION_POINTS)} "
         f"removed={sorted(ALLOWED_SQL_EXECUTION_POINTS - current_locations)}"
     )
+
+
+def test_reviewed_non_sql_execution_points_are_exact() -> None:
+    discovered: set[tuple[str, str, str]] = set()
+    for path in sorted(APP_ROOT.rglob("*.py")):
+        relative = path.relative_to(APP_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="ignore"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = _call_name(node)
+            if name not in EXECUTION_CALLS:
+                continue
+            execution_point = (relative, _enclosing_function(tree, node), name)
+            if execution_point in REVIEWED_NON_SQL_EXECUTION_POINTS:
+                discovered.add(execution_point)
+
+    assert discovered == REVIEWED_NON_SQL_EXECUTION_POINTS
 
 
 def test_raw_sql_text_must_be_static_literal() -> None:

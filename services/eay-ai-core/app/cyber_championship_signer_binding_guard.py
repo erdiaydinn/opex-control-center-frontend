@@ -15,10 +15,10 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.cyber_championship_signature_guard import (
+    _REQUIRED_SUBJECTS,
     DetachedSignatureEnvelope,
     SignerRole,
     TrustedSignerPolicy,
-    _REQUIRED_SUBJECTS,
 )
 
 SUBJECT_BINDING_CONTRACT = "eay-cyber-championship-subject-signer-bindings-v1"

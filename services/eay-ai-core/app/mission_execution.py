@@ -5,8 +5,11 @@ engine gateway and capability handlers. It is intentionally small and strict:
 - reasoning steps use the router-backed EngineGateway;
 - permissioned actions require authorization evidence;
 - live-company-dependent steps require an integrity-valid DecisionTruthReceipt;
+- robot-backed capability execution must retain an exact version/generation pin;
 - side effects are never marked successful without authoritative effect
   verification;
+- robot-backed side effects additionally require a commit-fence receipt bound to
+  the exact robot execution lease;
 - ambiguous write outcomes halt the mission instead of retrying blindly;
 - checkpoints remain the durable source of resume truth.
 
@@ -35,6 +38,7 @@ from .mission_runtime import (
     record_step_result,
     runnable_steps,
 )
+from .robot_execution_pinning import RobotExecutionGuardDecision, RobotExecutionPin
 
 MISSION_EXECUTION_CONTRACT = "eay-mission-execution-fabric-v1"
 
@@ -88,6 +92,7 @@ class CapabilityExecutionOutcome(BaseModel):
     ambiguous_outcome: bool = False
     evidence_refs: tuple[str, ...] = ()
     transaction_ref: str | None = None
+    robot_commit_fence_receipt_ref: str | None = None
     error_code: str | None = None
 
     @model_validator(mode="after")
@@ -96,6 +101,8 @@ class CapabilityExecutionOutcome(BaseModel):
             raise ValueError("capability_outcome_cannot_be_success_and_ambiguous")
         if self.effect_verified and not self.succeeded:
             raise ValueError("failed_capability_cannot_claim_verified_effect")
+        if self.robot_commit_fence_receipt_ref is not None and not self.robot_commit_fence_receipt_ref.strip():
+            raise ValueError("robot_commit_fence_receipt_ref_must_be_non_empty")
         return self
 
 
@@ -113,6 +120,10 @@ AuthorizationChecker = Callable[[MissionDefinition, MissionStep, str], Awaitable
 CapabilityHandler = Callable[
     [MissionDefinition, MissionStep, StepCheckpoint, str],
     Awaitable[CapabilityExecutionOutcome],
+]
+RobotExecutionGuard = Callable[
+    [RobotExecutionPin, str],
+    Awaitable[RobotExecutionGuardDecision],
 ]
 
 
@@ -165,6 +176,16 @@ def _truth_gate_blocker(
     return None, _truth_receipt_ref(receipt)
 
 
+async def _robot_guard(
+    *,
+    pin: RobotExecutionPin,
+    guard: RobotExecutionGuard,
+    phase: str,
+) -> RobotExecutionGuardDecision:
+    decision = await guard(pin, phase)
+    return RobotExecutionGuardDecision.model_validate(decision.model_dump(mode="json"))
+
+
 async def execute_mission_until_blocked(
     *,
     definition: MissionDefinition,
@@ -175,10 +196,22 @@ async def execute_mission_until_blocked(
     capability_handlers: Mapping[str, CapabilityHandler],
     authorization_checker: AuthorizationChecker | None = None,
     decision_truth_receipts: Mapping[str, DecisionTruthReceipt] | None = None,
+    robot_execution_pin: RobotExecutionPin | None = None,
+    robot_execution_guard: RobotExecutionGuard | None = None,
     max_transitions: int = 100,
 ) -> MissionExecutionSummary:
     if max_transitions < 1:
         raise ValueError("mission_execution_max_transitions_must_be_positive")
+    if (robot_execution_pin is None) != (robot_execution_guard is None):
+        raise ValueError("mission_robot_execution_pin_and_guard_must_be_paired")
+    if robot_execution_pin is not None:
+        robot_execution_pin = RobotExecutionPin.model_validate(
+            robot_execution_pin.model_dump(mode="json")
+        )
+        if robot_execution_pin.tenant_id != definition.tenant_id:
+            raise ValueError("mission_robot_execution_pin_tenant_mismatch")
+        if robot_execution_pin.mission_id != definition.mission_id:
+            raise ValueError("mission_robot_execution_pin_mission_mismatch")
 
     spec_map = {item.step_id: item for item in specs}
     if len(spec_map) != len(specs):
@@ -271,7 +304,23 @@ async def execute_mission_until_blocked(
             transitions += 1
             continue
 
-        authorization_evidence: tuple[str, ...] = truth_evidence
+        robot_evidence: tuple[str, ...] = ()
+        if robot_execution_pin is not None and robot_execution_guard is not None:
+            pre_auth = await _robot_guard(
+                pin=robot_execution_pin,
+                guard=robot_execution_guard,
+                phase="pre_authorization",
+            )
+            if not pre_auth.allowed:
+                blockers.append((pre_auth.reason_code or "robot_execution_pin_rejected") + ":" + capability_ref)
+                break
+            robot_evidence = tuple(
+                dict.fromkeys((robot_execution_pin.evidence_ref, pre_auth.evidence_ref))
+            )
+
+        authorization_evidence: tuple[str, ...] = tuple(
+            dict.fromkeys((*truth_evidence, *robot_evidence))
+        )
         if step.required_permission:
             if authorization_checker is None:
                 decision = AuthorizationDecision(
@@ -294,7 +343,24 @@ async def execute_mission_until_blocked(
                 transitions += 1
                 continue
             authorization_evidence = tuple(
-                dict.fromkeys((*truth_evidence, decision.evidence_ref or ""))
+                dict.fromkeys((*authorization_evidence, decision.evidence_ref or ""))
+            )
+
+        if robot_execution_pin is not None and robot_execution_guard is not None:
+            pre_dispatch = await _robot_guard(
+                pin=robot_execution_pin,
+                guard=robot_execution_guard,
+                phase="pre_dispatch",
+            )
+            if not pre_dispatch.allowed:
+                blockers.append(
+                    (pre_dispatch.reason_code or "robot_execution_pin_rejected")
+                    + ":"
+                    + capability_ref
+                )
+                break
+            authorization_evidence = tuple(
+                dict.fromkeys((*authorization_evidence, pre_dispatch.evidence_ref))
             )
 
         try:
@@ -323,9 +389,33 @@ async def execute_mission_until_blocked(
                     *authorization_evidence,
                     *outcome.evidence_refs,
                     *(() if outcome.transaction_ref is None else (outcome.transaction_ref,)),
+                    *(
+                        ()
+                        if outcome.robot_commit_fence_receipt_ref is None
+                        else (outcome.robot_commit_fence_receipt_ref,)
+                    ),
                 )
             )
         )
+
+        if (
+            robot_execution_pin is not None
+            and step.side_effect
+            and outcome.succeeded
+            and outcome.robot_commit_fence_receipt_ref is None
+        ):
+            current = record_step_result(
+                definition,
+                current,
+                step_id=step_id,
+                succeeded=False,
+                evidence_refs=evidence_refs,
+                error="robot_side_effect_missing_commit_fence_receipt",
+                ambiguous_outcome=True,
+            )
+            blockers.append("robot_commit_fence_receipt_missing:" + capability_ref)
+            transitions += 1
+            break
 
         if step.side_effect and outcome.succeeded and not outcome.effect_verified:
             current = record_step_result(

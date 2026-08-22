@@ -13,6 +13,7 @@ on:
       - "services/core-api/app/robot_registry_repository.py"
       - "services/core-api/tests/test_robot_registry_postgres.py"
       - "services/core-api/tests/test_robot_registry_security_postgres.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
       - "services/core-api/alembic/versions/0053_jarvis_robot_registry.py"
       - ".github/workflows/jarvis-adaptive-execution-exact-head.yml"
 
@@ -202,14 +203,17 @@ jobs:
             services/core-api/app/robot_registry_repository.py \
             services/core-api/tests/test_robot_registry_postgres.py \
             services/core-api/tests/test_robot_registry_security_postgres.py \
+            services/core-api/tests/test_sql_access_boundary.py \
             services/core-api/alembic/versions/0053_jarvis_robot_registry.py
           ruff check \
             services/core-api/app/robot_registry_repository.py \
             services/core-api/tests/test_robot_registry_postgres.py \
-            services/core-api/tests/test_robot_registry_security_postgres.py
+            services/core-api/tests/test_robot_registry_security_postgres.py \
+            services/core-api/tests/test_sql_access_boundary.py
 
-      - name: Run Robot Registry PostgreSQL adversarial acceptance
+      - name: Run Robot Registry PostgreSQL and secure SQL boundary acceptance
         run: >-
           pytest -q
           services/core-api/tests/test_robot_registry_postgres.py
           services/core-api/tests/test_robot_registry_security_postgres.py
+          services/core-api/tests/test_sql_access_boundary.py

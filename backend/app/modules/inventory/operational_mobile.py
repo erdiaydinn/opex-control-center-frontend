@@ -1,10 +1,11 @@
 """Read-only mobile discovery projection for operational inventory missions."""
 from __future__ import annotations
 
+from datetime import UTC
 from decimal import Decimal
 from typing import Any
 
-from .operational_mission import DEFINITIONS, _decimal_text
+from .operational_mission import DEFINITIONS, MISSION_PRIORITIES, _decimal_text
 from .production import (
     InventoryPrincipal,
     _assert_active_device,
@@ -64,6 +65,21 @@ def _project_operational_mobile_row(
     if "CONDITION" in canonical_steps and not allowed_conditions:
         return None
 
+    priority = str(row.get("priority") or "NORMAL").strip().upper()
+    if priority not in MISSION_PRIORITIES:
+        return None
+    due_at = row.get("due_at")
+    due_text = None
+    if due_at is not None:
+        if due_at.tzinfo is None:
+            return None
+        due_text = due_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    estimated_seconds = row.get("estimated_seconds")
+    if estimated_seconds is not None:
+        estimated_seconds = int(estimated_seconds)
+        if estimated_seconds < 1 or estimated_seconds > 86_400:
+            return None
+
     return {
         "mission_id": str(row["mission_id"]),
         "warehouse_id": str(row["warehouse_id"]),
@@ -77,6 +93,9 @@ def _project_operational_mobile_row(
         "next_step": next_step,
         "claim_status": claim_status,
         "runtime_profile": "EAY_TERMINAL",
+        "priority": priority,
+        "due_at": due_text,
+        "estimated_seconds": estimated_seconds,
         "sku_id": str(row["sku_id"]),
         "planned_quantity": _decimal_text(planned),
         "source_location_id": row.get("source_location_id"),
@@ -102,7 +121,7 @@ def list_operational_mobile_missions(
                  m.mission_id,m.warehouse_id,m.mission_type,m.operation,
                  m.external_reference,m.steps,m.state,m.sku_id,m.planned_quantity,
                  m.source_location_id,m.destination_location_id,m.container_id,
-                 m.allowed_conditions,m.created_at,
+                 m.allowed_conditions,m.created_at,m.priority,m.due_at,m.estimated_seconds,
                  c.employee_id AS claim_employee_id,
                  c.device_id AS claim_device_id,
                  c.shift_id AS claim_shift_id,
@@ -123,9 +142,13 @@ def list_operational_mobile_missions(
                  m.mission_id,m.warehouse_id,m.mission_type,m.operation,
                  m.external_reference,m.steps,m.state,m.sku_id,m.planned_quantity,
                  m.source_location_id,m.destination_location_id,m.container_id,
-                 m.allowed_conditions,m.created_at,
+                 m.allowed_conditions,m.created_at,m.priority,m.due_at,m.estimated_seconds,
                  c.employee_id,c.device_id,c.shift_id
-               ORDER BY m.created_at,m.mission_id""",
+               ORDER BY
+                 CASE WHEN m.state='CLAIMED' THEN 0 ELSE 1 END,
+                 CASE WHEN m.due_at IS NOT NULL AND m.due_at < now() THEN 0 ELSE 1 END,
+                 CASE m.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END,
+                 m.due_at NULLS LAST,m.created_at,m.mission_id""",
             (principal.tenant_id, list(principal.warehouse_scope)),
         ).fetchall()
     projected = [

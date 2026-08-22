@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "PROBE_GENERATION=2026-08-22-e2e-1"
           probe() {
             name="$1"
             url="$2"

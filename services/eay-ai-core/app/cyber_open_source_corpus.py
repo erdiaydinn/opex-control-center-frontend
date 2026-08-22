@@ -62,7 +62,7 @@ class CorpusSource(BaseModel):
     normal_chat_execution_allowed: bool = False
 
     @model_validator(mode="after")
-    def enforce_boundaries(self) -> "CorpusSource":
+    def enforce_boundaries(self) -> CorpusSource:
         if any(
             (
                 self.company_truth_authority,
@@ -103,7 +103,7 @@ class CorpusRegistry(BaseModel):
     fingerprint: str = Field(pattern=_DIGEST)
 
     @model_validator(mode="after")
-    def integral(self) -> "CorpusRegistry":
+    def integral(self) -> CorpusRegistry:
         ids = [item.source_id for item in self.sources]
         repos = [item.owner_repo.lower() for item in self.sources]
         if len(ids) != len(set(ids)):
@@ -132,7 +132,7 @@ class CorpusSnapshotReceipt(BaseModel):
     production_execution_allowed: bool = False
 
     @model_validator(mode="after")
-    def no_authority(self) -> "CorpusSnapshotReceipt":
+    def no_authority(self) -> CorpusSnapshotReceipt:
         if any(
             (
                 self.company_truth_promoted,
@@ -165,7 +165,7 @@ class CorpusIngestionDecision(BaseModel):
     production_execution_allowed: bool = False
 
     @model_validator(mode="after")
-    def no_authority(self) -> "CorpusIngestionDecision":
+    def no_authority(self) -> CorpusIngestionDecision:
         if any(
             (
                 self.company_truth_promoted,
@@ -196,7 +196,10 @@ def load_corpus_registry(path: str | Path) -> CorpusRegistry:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     source_payload = raw.get("sources", [])
     sources = tuple(CorpusSource.model_validate(item) for item in source_payload)
-    payload = {"contract": CYBER_OPEN_SOURCE_CORPUS_CONTRACT, "sources": [item.model_dump(mode="json") for item in sources]}
+    payload = {
+        "contract": CYBER_OPEN_SOURCE_CORPUS_CONTRACT,
+        "sources": [item.model_dump(mode="json") for item in sources],
+    }
     return CorpusRegistry.model_validate({**payload, "fingerprint": _seal(payload)})
 
 

@@ -124,6 +124,14 @@ def upgrade() -> None:
             CONSTRAINT ck_jarvis_robot_version_kind CHECK (
                 kind IN ('api', 'playwright', 'hybrid')
             ),
+            CONSTRAINT ck_jarvis_robot_manifest_is_secret_free CHECK (
+                jsonb_typeof(manifest_json::jsonb) = 'object' AND
+                NOT (manifest_json::jsonb ?| ARRAY[
+                    'access_token', 'api_key', 'apikey', 'authorization',
+                    'cookie', 'jwt', 'password', 'passwd', 'refresh_token',
+                    'secret', 'token'
+                ])
+            ),
             CONSTRAINT ck_jarvis_robot_version_hashes CHECK (
                 manifest_hash ~ '^[0-9a-f]{64}$' AND
                 expected_outcome_fingerprint ~ '^[0-9a-f]{64}$' AND

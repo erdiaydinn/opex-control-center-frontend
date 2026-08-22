@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import json
-from typing import FrozenSet, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from enum import Enum
 from urllib.parse import urlsplit
 
 
@@ -36,15 +36,22 @@ class ExecutionScope:
     tenant_id: str
     company_id: str
     objective_id: str
-    trusted_origins: FrozenSet[str]
-    trusted_issuers: FrozenSet[str]
-    allowed_scopes: FrozenSet[str]
-    allowed_audiences: FrozenSet[str]
-    allowed_redirect_origins: FrozenSet[str]
+    trusted_origins: frozenset[str]
+    trusted_issuers: frozenset[str]
+    allowed_scopes: frozenset[str]
+    allowed_audiences: frozenset[str]
+    allowed_redirect_origins: frozenset[str]
 
     def __post_init__(self) -> None:
-        if not all((self.tenant_id.strip(), self.company_id.strip(), self.objective_id.strip())):
-            raise ValueError("tenant_id, company_id and objective_id must be non-empty")
+        identities = (
+            self.tenant_id.strip(),
+            self.company_id.strip(),
+            self.objective_id.strip(),
+        )
+        if not all(identities):
+            raise ValueError(
+                "tenant_id, company_id and objective_id must be non-empty"
+            )
 
 
 @dataclass(frozen=True)
@@ -55,9 +62,9 @@ class OidcMetadataSnapshot:
     authorization_endpoint: str
     token_endpoint: str
     jwks_uri: str
-    scopes: FrozenSet[str]
-    audiences: FrozenSet[str]
-    redirect_uris: FrozenSet[str] = frozenset()
+    scopes: frozenset[str]
+    audiences: frozenset[str]
+    redirect_uris: frozenset[str] = frozenset()
     mfa_required: bool = False
     consent_required: bool = False
     policy_fingerprint: str = ""
@@ -71,9 +78,9 @@ class ApiOperationSnapshot:
     method: str
     url: str
     operation_id: str
-    required_scopes: FrozenSet[str]
-    request_required_fields: FrozenSet[str] = frozenset()
-    response_required_fields: FrozenSet[str] = frozenset()
+    required_scopes: frozenset[str]
+    request_required_fields: frozenset[str] = frozenset()
+    response_required_fields: frozenset[str] = frozenset()
     schema_fingerprint: str = ""
 
 
@@ -103,11 +110,13 @@ class AdaptiveRepairProposal:
 
     def __post_init__(self) -> None:
         if self.grants_execution_authority or self.grants_auth_bypass:
-            raise ValueError("adaptive repair cannot grant execution authority or auth bypass")
+            raise ValueError(
+                "adaptive repair cannot grant execution authority or auth bypass"
+            )
 
 
 class AdaptiveExecutionRepairPlanner:
-    """Classify drift and emit repair proposals without granting action authority."""
+    """Classify workflow drift without granting action or auth authority."""
 
     _AUTH_FAILURES = frozenset({401, 403})
 
@@ -121,14 +130,18 @@ class AdaptiveExecutionRepairPlanner:
         *,
         http_status: int | None = None,
     ) -> AdaptiveRepairProposal:
-        self._scope(previous.tenant_id, previous.company_id)
-        self._scope(current.tenant_id, current.company_id)
+        self._require_scope(previous.tenant_id, previous.company_id)
+        self._require_scope(current.tenant_id, current.company_id)
+
         if http_status in self._AUTH_FAILURES:
             return self._hold(
                 DriftKind.AUTHORIZATION_CHANGE,
                 f"OIDC returned {http_status}; auth denial is not repairable drift",
             )
-        if previous.issuer != current.issuer or current.issuer not in self.scope.trusted_issuers:
+
+        issuer_changed = previous.issuer != current.issuer
+        issuer_untrusted = current.issuer not in self.scope.trusted_issuers
+        if issuer_changed or issuer_untrusted:
             return self._hold(
                 DriftKind.SECURITY_BOUNDARY_CHANGE,
                 "OIDC issuer/trust boundary changed",
@@ -140,10 +153,19 @@ class AdaptiveExecutionRepairPlanner:
             "jwks_uri": current.jwks_uri,
         }
         for name, url in endpoints.items():
-            if error := self._url_error(url, self.scope.trusted_origins):
-                return self._hold(DriftKind.SECURITY_BOUNDARY_CHANGE, f"{name} {error}")
-        for url in current.redirect_uris:
-            if error := self._url_error(url, self.scope.allowed_redirect_origins):
+            error = self._url_error(url, self.scope.trusted_origins)
+            if error:
+                return self._hold(
+                    DriftKind.SECURITY_BOUNDARY_CHANGE,
+                    f"{name} {error}",
+                )
+
+        for redirect_uri in current.redirect_uris:
+            error = self._url_error(
+                redirect_uri,
+                self.scope.allowed_redirect_origins,
+            )
+            if error:
                 return self._hold(
                     DriftKind.SECURITY_BOUNDARY_CHANGE,
                     f"redirect_uri {error}",
@@ -165,7 +187,10 @@ class AdaptiveExecutionRepairPlanner:
                 "OIDC scope expansion requires authorization review",
             )
         if current.scopes != previous.scopes:
-            return self._review(DriftKind.AUTHORIZATION_CHANGE, "OIDC scope set changed")
+            return self._review(
+                DriftKind.AUTHORIZATION_CHANGE,
+                "OIDC scope set changed",
+            )
         if current.audiences != previous.audiences:
             return self._hold(
                 DriftKind.AUTHORIZATION_CHANGE,
@@ -181,14 +206,21 @@ class AdaptiveExecutionRepairPlanner:
                 DriftKind.AUTH_POLICY_CHANGE,
                 "new consent requirement must be satisfied normally",
             )
-        if previous.policy_fingerprint and current.policy_fingerprint != previous.policy_fingerprint:
+
+        policy_changed = (
+            previous.policy_fingerprint
+            and current.policy_fingerprint != previous.policy_fingerprint
+        )
+        if policy_changed:
             return self._review(
                 DriftKind.AUTH_POLICY_CHANGE,
                 "authentication policy fingerprint changed",
             )
 
         changed = {
-            name: url for name, url in endpoints.items() if url != getattr(previous, name)
+            name: value
+            for name, value in endpoints.items()
+            if value != getattr(previous, name)
         }
         if not changed:
             return self._proposal(
@@ -199,6 +231,7 @@ class AdaptiveExecutionRepairPlanner:
                 {},
                 outcome=False,
             )
+
         kind = (
             DriftKind.OIDC_KEY_ROTATION
             if set(changed) == {"jwks_uri"}
@@ -207,7 +240,10 @@ class AdaptiveExecutionRepairPlanner:
         return self._proposal(
             kind,
             RepairDisposition.SANDBOX_VERIFY_CANDIDATE,
-            ("trusted OIDC metadata changed without trust or privilege expansion",),
+            (
+                "trusted OIDC metadata changed without trust or privilege "
+                "expansion",
+            ),
             (
                 "re-run OIDC discovery from the exact trusted issuer",
                 "verify HTTPS and trusted origin for discovered endpoints",
@@ -225,25 +261,35 @@ class AdaptiveExecutionRepairPlanner:
         *,
         http_status: int | None = None,
     ) -> AdaptiveRepairProposal:
-        self._scope(previous.tenant_id, previous.company_id)
-        self._scope(current.tenant_id, current.company_id)
+        self._require_scope(previous.tenant_id, previous.company_id)
+        self._require_scope(current.tenant_id, current.company_id)
+
         if http_status in self._AUTH_FAILURES:
             return self._hold(
                 DriftKind.AUTHORIZATION_CHANGE,
                 f"API returned {http_status}; auth denial cannot be routed around",
             )
         if previous.semantic_intent != current.semantic_intent:
-            return self._hold(DriftKind.UNKNOWN, "semantic operation identity changed")
+            return self._hold(
+                DriftKind.UNKNOWN,
+                "semantic operation identity changed",
+            )
         if previous.method.upper() != current.method.upper():
             return self._hold(
                 DriftKind.API_SCHEMA_BREAKING_CHANGE,
                 "HTTP method changed; side-effect semantics may differ",
             )
-        if error := self._url_error(current.url, self.scope.trusted_origins):
+
+        endpoint_error = self._url_error(
+            current.url,
+            self.scope.trusted_origins,
+        )
+        if endpoint_error:
             return self._hold(
                 DriftKind.SECURITY_BOUNDARY_CHANGE,
-                f"API endpoint {error}",
+                f"API endpoint {endpoint_error}",
             )
+
         if not current.required_scopes.issubset(self.scope.allowed_scopes):
             return self._hold(
                 DriftKind.AUTHORIZATION_CHANGE,
@@ -255,27 +301,28 @@ class AdaptiveExecutionRepairPlanner:
                 "API requires additional privileges",
             )
 
-        new_inputs = current.request_required_fields - previous.request_required_fields
-        lost_outputs = previous.response_required_fields - current.response_required_fields
+        new_inputs = (
+            current.request_required_fields - previous.request_required_fields
+        )
+        lost_outputs = (
+            previous.response_required_fields - current.response_required_fields
+        )
         if new_inputs or lost_outputs:
-            reasons = tuple(
-                filter(
-                    None,
-                    (
-                        "new required request fields: " + ", ".join(sorted(new_inputs))
-                        if new_inputs
-                        else "",
-                        "required response fields disappeared: "
-                        + ", ".join(sorted(lost_outputs))
-                        if lost_outputs
-                        else "",
-                    ),
+            reasons = []
+            if new_inputs:
+                reasons.append(
+                    "new required request fields: "
+                    + ", ".join(sorted(new_inputs))
                 )
-            )
+            if lost_outputs:
+                reasons.append(
+                    "required response fields disappeared: "
+                    + ", ".join(sorted(lost_outputs))
+                )
             return self._proposal(
                 DriftKind.API_SCHEMA_BREAKING_CHANGE,
                 RepairDisposition.HOLD,
-                reasons,
+                tuple(reasons),
                 (
                     "obtain a reviewed contract mapping",
                     "run contract and outcome tests before promotion",
@@ -284,9 +331,12 @@ class AdaptiveExecutionRepairPlanner:
             )
 
         endpoint_changed = (
-            previous.url != current.url or previous.operation_id != current.operation_id
+            previous.url != current.url
+            or previous.operation_id != current.operation_id
         )
-        schema_changed = previous.schema_fingerprint != current.schema_fingerprint
+        schema_changed = (
+            previous.schema_fingerprint != current.schema_fingerprint
+        )
         if not endpoint_changed and not schema_changed:
             return self._proposal(
                 DriftKind.NONE,
@@ -296,12 +346,19 @@ class AdaptiveExecutionRepairPlanner:
                 {},
                 outcome=False,
             )
-        return self._proposal(
+
+        kind = (
             DriftKind.API_ENDPOINT_CHANGE
             if endpoint_changed
-            else DriftKind.API_SCHEMA_COMPATIBLE_CHANGE,
+            else DriftKind.API_SCHEMA_COMPATIBLE_CHANGE
+        )
+        return self._proposal(
+            kind,
             RepairDisposition.SANDBOX_VERIFY_CANDIDATE,
-            ("semantic API operation remains compatible inside the approved privilege boundary",),
+            (
+                "semantic API operation remains compatible inside the approved "
+                "privilege boundary",
+            ),
             (
                 "run schema/contract compatibility tests",
                 "run in an authorized sandbox or read-only verification context",
@@ -320,15 +377,20 @@ class AdaptiveExecutionRepairPlanner:
         previous: UiTargetSnapshot,
         current: UiTargetSnapshot,
     ) -> AdaptiveRepairProposal:
-        self._scope(previous.tenant_id, previous.company_id)
-        self._scope(current.tenant_id, current.company_id)
+        self._require_scope(previous.tenant_id, previous.company_id)
+        self._require_scope(current.tenant_id, current.company_id)
+
         if previous.semantic_intent != current.semantic_intent:
             return self._hold(
                 DriftKind.UNKNOWN,
                 "UI semantic intent changed; visual similarity is insufficient",
             )
         if previous.context_fingerprint != current.context_fingerprint:
-            return self._review(DriftKind.UNKNOWN, "UI context changed around target")
+            return self._review(
+                DriftKind.UNKNOWN,
+                "UI context changed around target",
+            )
+
         unchanged = (
             previous.role == current.role
             and previous.label == current.label
@@ -344,10 +406,14 @@ class AdaptiveExecutionRepairPlanner:
                 {},
                 outcome=False,
             )
+
         return self._proposal(
             DriftKind.UI_SEMANTIC_RELOCATION,
             RepairDisposition.SANDBOX_VERIFY_CANDIDATE,
-            ("UI moved/relabelled while semantic intent and context stayed stable",),
+            (
+                "UI moved/relabelled while semantic intent and context stayed "
+                "stable",
+            ),
             (
                 "re-ground with accessibility/DOM semantics before vision/spatial fallback",
                 "avoid coordinate-only repair",
@@ -361,9 +427,15 @@ class AdaptiveExecutionRepairPlanner:
             },
         )
 
-    def _scope(self, tenant_id: str, company_id: str) -> None:
-        if tenant_id != self.scope.tenant_id or company_id != self.scope.company_id:
-            raise ValueError("cross-tenant/company adaptive repair is forbidden")
+    def _require_scope(self, tenant_id: str, company_id: str) -> None:
+        scope_mismatch = (
+            tenant_id != self.scope.tenant_id
+            or company_id != self.scope.company_id
+        )
+        if scope_mismatch:
+            raise ValueError(
+                "cross-tenant/company adaptive repair is forbidden"
+            )
 
     @staticmethod
     def _origin(url: str) -> str:
@@ -374,13 +446,21 @@ class AdaptiveExecutionRepairPlanner:
             return ""
         if not parsed.scheme or not parsed.hostname:
             return ""
-        default = (parsed.scheme == "https" and port in (None, 443)) or (
+        default_port = (
+            parsed.scheme == "https" and port in (None, 443)
+        ) or (
             parsed.scheme == "http" and port in (None, 80)
         )
-        suffix = "" if default or port is None else f":{port}"
-        return f"{parsed.scheme.lower()}://{parsed.hostname.lower()}{suffix}"
+        suffix = "" if default_port or port is None else f":{port}"
+        return (
+            f"{parsed.scheme.lower()}://{parsed.hostname.lower()}{suffix}"
+        )
 
-    def _url_error(self, url: str, allowed: FrozenSet[str]) -> str | None:
+    def _url_error(
+        self,
+        url: str,
+        allowed_origins: frozenset[str],
+    ) -> str | None:
         try:
             parsed = urlsplit(url)
         except ValueError:
@@ -390,20 +470,31 @@ class AdaptiveExecutionRepairPlanner:
         if parsed.username or parsed.password:
             return "must not embed credentials"
         origin = self._origin(url)
-        if not origin or origin not in allowed:
+        if not origin or origin not in allowed_origins:
             return f"origin {origin or '<invalid>'} is not trusted"
         return None
 
-    def _hold(self, kind: DriftKind, reason: str) -> AdaptiveRepairProposal:
+    def _hold(
+        self,
+        kind: DriftKind,
+        reason: str,
+    ) -> AdaptiveRepairProposal:
         return self._proposal(
             kind,
             RepairDisposition.HOLD,
             (reason,),
-            ("stop automatic repair and require explicit security/owner review",),
+            (
+                "stop automatic repair and require explicit security/owner "
+                "review",
+            ),
             {},
         )
 
-    def _review(self, kind: DriftKind, reason: str) -> AdaptiveRepairProposal:
+    def _review(
+        self,
+        kind: DriftKind,
+        reason: str,
+    ) -> AdaptiveRepairProposal:
         return self._proposal(
             kind,
             RepairDisposition.REVIEW_REQUIRED,
@@ -426,31 +517,34 @@ class AdaptiveExecutionRepairPlanner:
         *,
         outcome: bool = True,
     ) -> AdaptiveRepairProposal:
-        reasons_t = tuple(reasons)
-        verification_t = tuple(verification)
-        adapter_d = dict(sorted(adapter.items()))
+        reasons_tuple = tuple(reasons)
+        verification_tuple = tuple(verification)
+        adapter_dict = dict(sorted(adapter.items()))
         payload = {
             "tenant_id": self.scope.tenant_id,
             "company_id": self.scope.company_id,
             "objective_id": self.scope.objective_id,
             "drift_kind": kind.value,
             "disposition": disposition.value,
-            "reasons": reasons_t,
-            "verification": verification_t,
-            "adapter": adapter_d,
+            "reasons": reasons_tuple,
+            "verification": verification_tuple,
+            "adapter": adapter_dict,
             "execution_authority": False,
             "auth_bypass": False,
             "outcome": outcome,
         }
-        fingerprint = hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        serialized = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        fingerprint = hashlib.sha256(serialized).hexdigest()
         return AdaptiveRepairProposal(
             drift_kind=kind,
             disposition=disposition,
-            reasons=reasons_t,
-            verification_requirements=verification_t,
-            proposed_adapter=adapter_d,
+            reasons=reasons_tuple,
+            verification_requirements=verification_tuple,
+            proposed_adapter=adapter_dict,
             grants_execution_authority=False,
             grants_auth_bypass=False,
             requires_outcome_verification=outcome,

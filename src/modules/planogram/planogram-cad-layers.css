@@ -1,0 +1,94 @@
+.eay-cad-layers {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+
+.eay-cad-layers > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.eay-cad-layers > header > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.eay-cad-layers > header span {
+  font-size: 0.75rem;
+  opacity: 0.72;
+}
+
+.eay-cad-layers-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.eay-cad-layer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.5rem;
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 0.55rem;
+}
+
+.eay-cad-layer-row > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.eay-cad-layer-row small {
+  min-width: 1.5rem;
+  text-align: center;
+  opacity: 0.65;
+}
+
+.eay-cad-layer-row button {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+}
+
+.eay-cad-layer-row[data-visible="false"] > span {
+  opacity: 0.48;
+}
+
+.eay-cad-layer-row[data-locked="true"] {
+  border-style: dashed;
+}
+
+.eay-authoring-element.has-host-violation {
+  stroke-dasharray: 5 3;
+  stroke-width: 2.5;
+}
+
+.eay-authoring-element.is-hosted-opening {
+  stroke-width: 2;
+}
+
+.eay-authoring-host-state {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 0.55rem;
+}
+
+.eay-authoring-host-state[data-hosted="false"] {
+  border-style: dashed;
+}
+
+.eay-authoring-host-state code {
+  overflow-wrap: anywhere;
+}

@@ -12,6 +12,7 @@ on:
       - "services/eay-ai-core/tests/test_robot_registry_intelligence.py"
       - "services/core-api/app/robot_registry_repository.py"
       - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/tests/test_robot_registry_security_postgres.py"
       - "services/core-api/alembic/versions/0053_jarvis_robot_registry.py"
       - ".github/workflows/jarvis-adaptive-execution-exact-head.yml"
 
@@ -200,10 +201,15 @@ jobs:
           python -m py_compile \
             services/core-api/app/robot_registry_repository.py \
             services/core-api/tests/test_robot_registry_postgres.py \
+            services/core-api/tests/test_robot_registry_security_postgres.py \
             services/core-api/alembic/versions/0053_jarvis_robot_registry.py
           ruff check \
             services/core-api/app/robot_registry_repository.py \
-            services/core-api/tests/test_robot_registry_postgres.py
+            services/core-api/tests/test_robot_registry_postgres.py \
+            services/core-api/tests/test_robot_registry_security_postgres.py
 
       - name: Run Robot Registry PostgreSQL adversarial acceptance
-        run: pytest -q services/core-api/tests/test_robot_registry_postgres.py
+        run: >-
+          pytest -q
+          services/core-api/tests/test_robot_registry_postgres.py
+          services/core-api/tests/test_robot_registry_security_postgres.py

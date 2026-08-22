@@ -30,7 +30,7 @@ async def post_store_scan_fixture_layout_preview(
     payload: PlanogramStoreScanFixtureLayoutPreviewRequest,
     principal: Creator,
 ) -> dict[str, object]:
-    """Bind recognized scan fixtures to catalog truth without production authority."""
+    """Bind reviewed scan fixtures to catalog truth without production authority."""
     result = build_scanned_fixture_layout_preview(
         scan_payload=payload.scan.model_dump(mode="python"),
         expected_scan_fingerprint=payload.expected_scan_fingerprint,
@@ -42,6 +42,9 @@ async def post_store_scan_fixture_layout_preview(
             row.model_dump(mode="python") for row in payload.fixture_bindings
         ],
         review_note=payload.review_note,
+        uncertainty_resolutions=[
+            row.model_dump(mode="python") for row in payload.uncertainty_resolutions
+        ],
     )
     for key in (
         "physical_layout_authority",
@@ -96,6 +99,9 @@ async def post_store_scan_optimize_preview(
             orders=[row.model_dump(mode="python") for row in payload.order_baskets],
             review_note=payload.review_note,
             max_candidates=max_candidates,
+            uncertainty_resolutions=[
+                row.model_dump(mode="python") for row in payload.uncertainty_resolutions
+            ],
         )
     except Exception as exc:
         from app.modules.planogram.engine_adapter import PlanogramEngineUnavailable

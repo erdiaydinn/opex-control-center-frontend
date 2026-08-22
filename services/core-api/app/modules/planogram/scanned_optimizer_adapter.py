@@ -59,8 +59,6 @@ def _bounded_tour_evidence(raw: dict[str, Any]) -> dict[str, Any]:
             )
         explained.append(
             {
-                # The public V6 API accepts SKU baskets only, so simulator IDs are
-                # deterministic row labels rather than customer/order identifiers.
                 "basket_ref": f"basket:{index + 1}",
                 "sku_count": int(row.get("sku_count") or 0),
                 "unique_stop_count": int(row.get("unique_stop_count") or 0),
@@ -99,8 +97,9 @@ def generate_scanned_store_optimizer_preview(
     orders: list[dict[str, Any]],
     review_note: str | None = None,
     max_candidates: int = 24,
+    uncertainty_resolutions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Rebuild scanned truth server-side, then run the non-authoritative V6 optimizer."""
+    """Rebuild reviewed scanned truth server-side, then run the preview V6 optimizer."""
     scanned_layout = build_scanned_fixture_layout_preview(
         scan_payload=scan_payload,
         expected_scan_fingerprint=expected_scan_fingerprint,
@@ -108,6 +107,7 @@ def generate_scanned_store_optimizer_preview(
         operational_elements=operational_elements,
         fixture_bindings=fixture_bindings,
         review_note=review_note,
+        uncertainty_resolutions=uncertainty_resolutions or [],
     )
     if not scanned_layout.get("available"):
         return {
@@ -198,8 +198,8 @@ def generate_scanned_store_optimizer_preview(
         "global_optimum_claim": False,
         "field_evidence": False,
         "evidence_boundary": (
-            "server recomputed the fingerprint-reviewed scan, human catalog fixture bindings "
-            "and Architecture V2 allocation search; this preview remains outside governed "
-            "Store DNA approval, installation and production authority"
+            "server recomputed the fingerprint-reviewed scan, explicit human uncertainty "
+            "decisions, human catalog fixture bindings and Architecture V2 allocation search; "
+            "this preview remains outside governed Store DNA, installation and production"
         ),
     }

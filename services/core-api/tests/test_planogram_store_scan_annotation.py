@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from uuid import UUID
 
 import pytest
@@ -7,10 +8,12 @@ from pydantic import ValidationError
 
 from app.budget_main import app
 from app.core.security import Principal
-from app.modules.planogram.schemas import PlanogramStoreScanAnnotationPreviewRequest
 from app.modules.planogram.store_scan import normalize_store_scan
 from app.modules.planogram.store_scan_annotation import build_reviewed_store_scan_draft
 from app.modules.planogram.store_scan_review_router import post_store_scan_annotation_preview
+from app.modules.planogram.store_scan_review_schemas import (
+    PlanogramStoreScanAnnotationPreviewRequest,
+)
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -119,9 +122,8 @@ def payload() -> PlanogramStoreScanAnnotationPreviewRequest:
     )
 
 
-def test_reviewed_scan_preserves_angle_and_produces_non_authoritative_v2_draft() -> None:
-    request = payload()
-    result = build_reviewed_store_scan_draft(
+def build(request: PlanogramStoreScanAnnotationPreviewRequest) -> dict[str, object]:
+    return build_reviewed_store_scan_draft(
         scan_payload=request.scan.model_dump(mode="python"),
         expected_scan_fingerprint=request.expected_scan_fingerprint,
         classifications=[row.model_dump(mode="python") for row in request.classifications],
@@ -129,7 +131,14 @@ def test_reviewed_scan_preserves_angle_and_produces_non_authoritative_v2_draft()
             row.model_dump(mode="python") for row in request.operational_elements
         ],
         review_note=request.review_note,
+        uncertainty_resolutions=[
+            row.model_dump(mode="python") for row in request.uncertainty_resolutions
+        ],
     )
+
+
+def test_reviewed_scan_preserves_angle_and_produces_non_authoritative_v2_draft() -> None:
+    result = build(payload())
 
     assert result["available"] is True
     assert result["reviewed_draft_ready"] is True
@@ -138,6 +147,7 @@ def test_reviewed_scan_preserves_angle_and_produces_non_authoritative_v2_draft()
     assert result["production_authority"] is False
     assert result["installation_approval_allowed"] is False
     assert result["auto_store_dna_promotion_allowed"] is False
+    assert result["uncertainty_review"]["total"] == 0
     assert len(result["reviewed_draft_fingerprint"]) == 64
     architecture = result["reviewed_store_dna_v2_preview"]["architecture"]
     wall = next(row for row in architecture["elements"] if row["element_id"] == "wall-1")
@@ -179,7 +189,98 @@ def test_review_requires_opening_classification_and_operational_anchors() -> Non
     assert "scan_dispatch_annotation_required" in result["blockers"]
 
 
-def test_annotation_schema_rejects_client_authority_fields() -> None:
+def test_uncertain_scan_requires_explicit_resolution_and_can_confirm_fixture() -> None:
+    raw = deepcopy(scan())
+    raw["elements"].append(
+        {
+            "element_id": "uncertain-fixture",
+            "element_type": "fixture",
+            "x_m": 9,
+            "y_m": 6,
+            "width_m": 1.0,
+            "depth_m": 0.5,
+            "rotation_deg": 11,
+            "confidence": 0.4,
+        }
+    )
+    fingerprint = normalize_store_scan(raw)["scan_fingerprint"]
+    unresolved = build_reviewed_store_scan_draft(
+        scan_payload=raw,
+        expected_scan_fingerprint=fingerprint,
+        classifications=[{"element_id": "opening-1", "classified_type": "door", "clearance_m": 0}],
+        operational_elements=annotations(),
+    )
+    assert unresolved["reviewed_draft_ready"] is False
+    assert "scan_uncertainty_unresolved:uncertain-fixture" in unresolved["blockers"]
+    assert unresolved["uncertainty_review"]["unresolved"] == 1
+
+    confirmed = build_reviewed_store_scan_draft(
+        scan_payload=raw,
+        expected_scan_fingerprint=fingerprint,
+        classifications=[{"element_id": "opening-1", "classified_type": "door", "clearance_m": 0}],
+        operational_elements=annotations(),
+        uncertainty_resolutions=[
+            {
+                "element_id": "uncertain-fixture",
+                "decision": "confirm",
+                "classified_type": "fixture",
+            }
+        ],
+    )
+    assert confirmed["reviewed_draft_ready"] is True
+    assert confirmed["uncertainty_review"]["confirmed"] == 1
+    fixture = next(
+        row
+        for row in confirmed["reviewed_recognized_fixtures"]
+        if row["element_id"] == "uncertain-fixture"
+    )
+    assert fixture["human_uncertainty_confirmed"] is True
+    assert fixture["confidence"] == pytest.approx(0.4)
+    assert confirmed["store_dna_authority"] is False
+    assert confirmed["production_authority"] is False
+
+
+def test_unknown_uncertainty_confirm_requires_explicit_type_and_reject_is_safe() -> None:
+    raw = deepcopy(scan())
+    raw["elements"].append(
+        {
+            "element_id": "unknown-1",
+            "element_type": "unknown",
+            "x_m": 10,
+            "y_m": 7,
+            "width_m": 0.8,
+            "depth_m": 0.4,
+            "rotation_deg": 0,
+            "confidence": 0.97,
+        }
+    )
+    fingerprint = normalize_store_scan(raw)["scan_fingerprint"]
+    missing_type = build_reviewed_store_scan_draft(
+        scan_payload=raw,
+        expected_scan_fingerprint=fingerprint,
+        classifications=[{"element_id": "opening-1", "classified_type": "door", "clearance_m": 0}],
+        operational_elements=annotations(),
+        uncertainty_resolutions=[{"element_id": "unknown-1", "decision": "confirm"}],
+    )
+    assert missing_type["reviewed_draft_ready"] is False
+    assert "scan_uncertainty_type_required:unknown-1" in missing_type["blockers"]
+
+    rejected = build_reviewed_store_scan_draft(
+        scan_payload=raw,
+        expected_scan_fingerprint=fingerprint,
+        classifications=[{"element_id": "opening-1", "classified_type": "door", "clearance_m": 0}],
+        operational_elements=annotations(),
+        uncertainty_resolutions=[{"element_id": "unknown-1", "decision": "reject"}],
+    )
+    assert rejected["reviewed_draft_ready"] is True
+    assert rejected["uncertainty_review"]["rejected"] == 1
+    assert all(
+        row["element_id"] != "unknown-1"
+        for row in rejected["reviewed_store_dna_v2_preview"]["architecture"]["elements"]
+    )
+
+
+def test_annotation_schema_rejects_duplicate_or_forged_uncertainty_authority() -> None:
     raw = payload().model_dump(mode="python")
     for key in (
         "store_dna_approved",
@@ -189,6 +290,25 @@ def test_annotation_schema_rejects_client_authority_fields() -> None:
     ):
         with pytest.raises(ValidationError):
             PlanogramStoreScanAnnotationPreviewRequest(**{**raw, key: True})
+    with pytest.raises(ValidationError):
+        PlanogramStoreScanAnnotationPreviewRequest(
+            **{
+                **raw,
+                "uncertainty_resolutions": [
+                    {"element_id": "x", "decision": "reject"},
+                    {"element_id": "x", "decision": "reject"},
+                ],
+            }
+        )
+    with pytest.raises(ValidationError):
+        PlanogramStoreScanAnnotationPreviewRequest(
+            **{
+                **raw,
+                "uncertainty_resolutions": [
+                    {"element_id": "x", "decision": "reject", "classified_type": "fixture"}
+                ],
+            }
+        )
 
 
 @pytest.mark.asyncio

@@ -7,9 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.core.authorization import require_permission
 from app.core.security import Principal
 from app.modules.planogram.engine_adapter import PlanogramEngineUnavailable
-from app.modules.planogram.schemas import PlanogramStoreScanAnnotationPreviewRequest
 from app.modules.planogram.store_dna import normalize_store_code
 from app.modules.planogram.store_scan_annotation import build_reviewed_store_scan_draft
+from app.modules.planogram.store_scan_review_schemas import (
+    PlanogramStoreScanAnnotationPreviewRequest,
+)
 
 router = APIRouter(prefix="/v1/planogram", tags=["planogram"])
 Creator = Annotated[
@@ -23,7 +25,7 @@ async def post_store_scan_annotation_preview(
     payload: PlanogramStoreScanAnnotationPreviewRequest,
     principal: Creator,
 ) -> dict[str, object]:
-    """Apply human annotations to a fingerprint-bound measured scan preview."""
+    """Apply human annotations and uncertainty decisions to a fingerprint-bound scan."""
     try:
         result = build_reviewed_store_scan_draft(
             scan_payload=payload.scan.model_dump(mode="python"),
@@ -33,6 +35,9 @@ async def post_store_scan_annotation_preview(
                 row.model_dump(mode="python") for row in payload.operational_elements
             ],
             review_note=payload.review_note,
+            uncertainty_resolutions=[
+                row.model_dump(mode="python") for row in payload.uncertainty_resolutions
+            ],
         )
     except PlanogramEngineUnavailable as exc:
         raise HTTPException(

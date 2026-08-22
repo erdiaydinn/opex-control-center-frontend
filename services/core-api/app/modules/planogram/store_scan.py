@@ -4,6 +4,8 @@ Native clients may use Apple RoomPlan, ARCore Depth, CAD import or another
 measured capture path. Core does not trust raw scans as Store DNA authority.
 This module emits both the legacy orthogonal V1 preview and an oriented V2
 preview so arbitrary scan angles are preserved rather than silently snapped.
+Low-confidence/unknown geometry is retained as fingerprint-bound uncertainty
+rather than disappearing or silently becoming physical truth.
 """
 
 from __future__ import annotations
@@ -75,8 +77,9 @@ def _scan_fingerprint(
     floor_depth_m: float | None,
     v2_elements: list[dict[str, Any]],
     recognized_fixtures: list[dict[str, Any]],
+    uncertain_regions: list[dict[str, Any]],
 ) -> str:
-    """Fingerprint normalized measured evidence without persisting raw media."""
+    """Fingerprint all normalized measured evidence without persisting raw media."""
     payload = {
         "contract": STORE_SCAN_CONTRACT_VERSION,
         "provider": provider,
@@ -91,6 +94,10 @@ def _scan_fingerprint(
             recognized_fixtures,
             key=lambda row: str(row.get("element_id") or ""),
         ),
+        "uncertain_regions": sorted(
+            uncertain_regions,
+            key=lambda row: str(row.get("element_id") or ""),
+        ),
     }
     return hashlib.sha256(
         json.dumps(
@@ -101,6 +108,44 @@ def _scan_fingerprint(
             default=str,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _uncertain_region(
+    *,
+    element_id: str,
+    element_type: str,
+    x_m: float,
+    y_m: float,
+    width_m: float,
+    depth_m: float,
+    rotation: float,
+    confidence: float,
+    threshold: float,
+    label: Any,
+) -> dict[str, Any]:
+    reason = (
+        "unknown_type_requires_classification"
+        if element_type == "unknown"
+        else "below_type_confidence_threshold"
+    )
+    return {
+        "element_id": element_id,
+        "source_element_type": element_type,
+        "center_x_m": x_m + width_m / 2.0,
+        "center_y_m": y_m + depth_m / 2.0,
+        "width_m": width_m,
+        "depth_m": depth_m,
+        "rotation_deg": rotation,
+        "confidence": confidence,
+        "required_confidence": threshold,
+        "label": label,
+        "reason": reason,
+        "review_required": True,
+        "geometry_authority": False,
+        "fixture_authority": False,
+        "store_dna_authority": False,
+        "production_authority": False,
+    }
 
 
 def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -130,6 +175,7 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
     v1_elements: list[dict[str, Any]] = []
     v2_elements: list[dict[str, Any]] = []
     recognized_fixtures: list[dict[str, Any]] = []
+    uncertain_regions: list[dict[str, Any]] = []
     low_confidence_count = 0
     non_orthogonal_count = 0
     unsupported_type_count = 0
@@ -162,9 +208,28 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
             if element_type in STRUCTURAL_TYPES
             else MIN_EQUIPMENT_CONFIDENCE
         )
-        if confidence < threshold:
-            low_confidence_count += 1
-            warnings.append(f"scan_element_low_confidence:{element_id}")
+        requires_uncertainty_review = confidence < threshold or element_type == "unknown"
+        if requires_uncertainty_review:
+            if confidence < threshold:
+                low_confidence_count += 1
+                warnings.append(f"scan_element_low_confidence:{element_id}")
+            if element_type == "unknown":
+                unsupported_type_count += 1
+                warnings.append(f"scan_element_unknown_requires_classification:{element_id}")
+            uncertain_regions.append(
+                _uncertain_region(
+                    element_id=element_id,
+                    element_type=element_type,
+                    x_m=float(x_m),
+                    y_m=float(y_m),
+                    width_m=float(width_m),
+                    depth_m=float(depth_m),
+                    rotation=rotation,
+                    confidence=confidence,
+                    threshold=threshold,
+                    label=raw.get("label"),
+                )
+            )
             continue
 
         if element_type in PRODUCT_BEARING_EQUIPMENT_TYPES:
@@ -183,8 +248,7 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
                 }
             )
             # Generic fixtures are layout evidence only. Chiller/freezer are
-            # dual-role: they remain measured architecture equipment while also
-            # becoming product-bearing fixture-binding cues.
+            # dual-role: architecture equipment plus product-bearing binding cues.
             if element_type == "fixture":
                 continue
 
@@ -240,6 +304,8 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         blockers.append("scan_wall_geometry_missing")
     if non_orthogonal_count:
         blockers.append("store_dna_v1_cannot_promote_non_orthogonal_geometry")
+    if uncertain_regions:
+        blockers.append("scan_uncertain_regions_require_review")
 
     blockers.extend(
         [
@@ -279,6 +345,7 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         floor_depth_m=floor_depth_m,
         v2_elements=v2_elements,
         recognized_fixtures=recognized_fixtures,
+        uncertain_regions=uncertain_regions,
     )
     temperature_fixture_count = sum(
         1
@@ -299,6 +366,9 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "recognized_fixture_count": len(recognized_fixtures),
         "recognized_temperature_fixture_count": temperature_fixture_count,
         "recognized_fixtures": recognized_fixtures,
+        "uncertain_region_count": len(uncertain_regions),
+        "unresolved_uncertainty_count": len(uncertain_regions),
+        "uncertain_regions": uncertain_regions,
         "scan_element_count": len(scan_elements),
         "v1_promoted_element_count": len(v1_elements),
         "v2_preserved_element_count": len(v2_elements),
@@ -308,5 +378,5 @@ def normalize_store_scan(payload: dict[str, Any]) -> dict[str, Any]:
         "promotable_to_store_dna": False,
         "blockers": list(dict.fromkeys(blockers)),
         "warnings": warnings[:200],
-        "next_required_action": "human_review_and_operational_annotation",
+        "next_required_action": "human_review_and_uncertainty_resolution",
     }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from uuid import UUID
 
 import pytest
@@ -84,6 +85,7 @@ def test_store_scan_preserves_truth_boundary_and_separates_fixture_evidence() ->
     assert result["production_evidence"] is False
     assert result["promotable_to_store_dna"] is False
     assert result["recognized_fixture_count"] == 1
+    assert result["uncertain_region_count"] == 0
     assert result["architecture_preview"]["source"] == "lidar_scan"
     assert result["architecture_v2_preview"]["source"] == "lidar_scan"
     assert result["architecture_v2_preview_available"] is True
@@ -107,6 +109,66 @@ def test_store_scan_fingerprint_is_deterministic_and_geometry_bound() -> None:
 
     assert baseline["scan_fingerprint"] == repeated["scan_fingerprint"]
     assert baseline["scan_fingerprint"] != rotated["scan_fingerprint"]
+
+
+def test_low_confidence_geometry_is_retained_as_non_authoritative_uncertainty() -> None:
+    raw = payload().model_dump(mode="python")
+    raw["elements"].append(
+        {
+            "element_id": "uncertain-fixture",
+            "element_type": "fixture",
+            "x_m": 8,
+            "y_m": 4,
+            "width_m": 1.1,
+            "depth_m": 0.55,
+            "rotation_deg": 29,
+            "confidence": 0.42,
+            "label": "possible endcap",
+        }
+    )
+    result = normalize_store_scan(raw)
+    assert result["low_confidence_count"] == 1
+    assert result["uncertain_region_count"] == 1
+    assert result["unresolved_uncertainty_count"] == 1
+    assert "scan_uncertain_regions_require_review" in result["blockers"]
+    region = result["uncertain_regions"][0]
+    assert region["element_id"] == "uncertain-fixture"
+    assert region["source_element_type"] == "fixture"
+    assert region["center_x_m"] == pytest.approx(8.55)
+    assert region["center_y_m"] == pytest.approx(4.275)
+    assert region["reason"] == "below_type_confidence_threshold"
+    assert region["review_required"] is True
+    assert region["geometry_authority"] is False
+    assert region["fixture_authority"] is False
+    assert all(
+        row["element_id"] != "uncertain-fixture"
+        for row in result["recognized_fixtures"]
+    )
+
+    changed = deepcopy(raw)
+    changed["elements"][-1]["width_m"] = 1.3
+    changed_result = normalize_store_scan(changed)
+    assert result["scan_fingerprint"] != changed_result["scan_fingerprint"]
+
+
+def test_unknown_scan_type_is_uncertain_even_with_high_detector_confidence() -> None:
+    raw = payload().model_dump(mode="python")
+    raw["elements"].append(
+        {
+            "element_id": "unknown-1",
+            "element_type": "unknown",
+            "x_m": 6,
+            "y_m": 2,
+            "width_m": 0.9,
+            "depth_m": 0.5,
+            "rotation_deg": 5,
+            "confidence": 0.98,
+        }
+    )
+    result = normalize_store_scan(raw)
+    region = next(row for row in result["uncertain_regions"] if row["element_id"] == "unknown-1")
+    assert region["reason"] == "unknown_type_requires_classification"
+    assert region["store_dna_authority"] is False
 
 
 def test_non_orthogonal_scan_is_preserved_in_v2_without_fake_v1_authority() -> None:
@@ -144,5 +206,5 @@ async def test_store_scan_route_is_preview_only_and_tenant_bound() -> None:
     assert response["production_release_allowed"] is False
     assert len(response["store_scan"]["scan_fingerprint"]) == 64
     assert response["store_scan"]["next_required_action"] == (
-        "human_review_and_operational_annotation"
+        "human_review_and_uncertainty_resolution"
     )

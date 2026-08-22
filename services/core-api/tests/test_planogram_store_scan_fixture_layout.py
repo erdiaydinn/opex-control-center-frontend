@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from uuid import UUID
 
 import pytest
@@ -66,36 +67,9 @@ def scan() -> dict[str, object]:
 
 def operational_elements() -> list[dict[str, object]]:
     return [
-        {
-            "element_id": "picker-entry-1",
-            "element_type": "picker_entry",
-            "center_x_m": 1,
-            "center_y_m": 1,
-            "width_m": 0.4,
-            "depth_m": 0.4,
-            "rotation_deg": 0,
-            "clearance_m": 0,
-        },
-        {
-            "element_id": "inbound-1",
-            "element_type": "inbound",
-            "center_x_m": 2,
-            "center_y_m": 8,
-            "width_m": 2,
-            "depth_m": 1.5,
-            "rotation_deg": 0,
-            "clearance_m": 0,
-        },
-        {
-            "element_id": "dispatch-1",
-            "element_type": "dispatch",
-            "center_x_m": 12,
-            "center_y_m": 2,
-            "width_m": 1.5,
-            "depth_m": 1.5,
-            "rotation_deg": 0,
-            "clearance_m": 0,
-        },
+        {"element_id": "picker-entry-1", "element_type": "picker_entry", "center_x_m": 1, "center_y_m": 1, "width_m": 0.4, "depth_m": 0.4, "rotation_deg": 0, "clearance_m": 0},
+        {"element_id": "inbound-1", "element_type": "inbound", "center_x_m": 2, "center_y_m": 8, "width_m": 2, "depth_m": 1.5, "rotation_deg": 0, "clearance_m": 0},
+        {"element_id": "dispatch-1", "element_type": "dispatch", "center_x_m": 12, "center_y_m": 2, "width_m": 1.5, "depth_m": 1.5, "rotation_deg": 0, "clearance_m": 0},
     ]
 
 
@@ -141,11 +115,12 @@ def build(request: PlanogramStoreScanFixtureLayoutPreviewRequest) -> dict[str, o
         scan_payload=request.scan.model_dump(mode="python"),
         expected_scan_fingerprint=request.expected_scan_fingerprint,
         classifications=[row.model_dump(mode="python") for row in request.classifications],
-        operational_elements=[
-            row.model_dump(mode="python") for row in request.operational_elements
-        ],
+        operational_elements=[row.model_dump(mode="python") for row in request.operational_elements],
         fixture_bindings=[row.model_dump(mode="python") for row in request.fixture_bindings],
         review_note=request.review_note,
+        uncertainty_resolutions=[
+            row.model_dump(mode="python") for row in request.uncertainty_resolutions
+        ],
     )
 
 
@@ -172,15 +147,56 @@ def test_attested_binding_builds_physical_capacity_layout_without_move_authority
     assert module["shelves"][2]["max_weight_kg"] == 45
 
 
+def test_confirmed_uncertain_fixture_flows_into_catalog_binding_without_authority() -> None:
+    raw_scan = deepcopy(scan())
+    raw_scan["elements"][1]["confidence"] = 0.4
+    fingerprint = normalize_store_scan(raw_scan)["scan_fingerprint"]
+    uncertain_request = PlanogramStoreScanFixtureLayoutPreviewRequest(
+        scan=raw_scan,
+        expected_scan_fingerprint=fingerprint,
+        classifications=[],
+        operational_elements=operational_elements(),
+        uncertainty_resolutions=[
+            {
+                "element_id": "fixture-1",
+                "decision": "confirm",
+                "classified_type": "fixture",
+            }
+        ],
+        fixture_bindings=[binding()],
+    )
+    result = build(uncertain_request)
+    assert result["layout_draft_ready"] is True
+    assert result["uncertainty_review"]["confirmed"] == 1
+    module = result["physical_layout_preview"]["aisles"][0]["modules"][0]
+    assert module["scan_uncertainty_human_confirmed"] is True
+    assert module["scan_confidence"] == pytest.approx(0.4)
+    assert result["physical_layout_authority"] is False
+    assert result["store_dna_authority"] is False
+
+
+def test_unresolved_uncertainty_blocks_fixture_layout_reconstruction() -> None:
+    raw_scan = deepcopy(scan())
+    raw_scan["elements"][1]["confidence"] = 0.4
+    fingerprint = normalize_store_scan(raw_scan)["scan_fingerprint"]
+    result = build_scanned_fixture_layout_preview(
+        scan_payload=raw_scan,
+        expected_scan_fingerprint=fingerprint,
+        classifications=[],
+        operational_elements=operational_elements(),
+        fixture_bindings=[binding()],
+    )
+    assert result["layout_draft_ready"] is False
+    assert "scan_uncertainty_unresolved:fixture-1" in result["review_blockers"]
+
+
 def test_missing_or_unattested_fixture_binding_fails_closed() -> None:
     base = request()
     missing = build_scanned_fixture_layout_preview(
         scan_payload=base.scan.model_dump(mode="python"),
         expected_scan_fingerprint=base.expected_scan_fingerprint,
         classifications=[],
-        operational_elements=[
-            row.model_dump(mode="python") for row in base.operational_elements
-        ],
+        operational_elements=[row.model_dump(mode="python") for row in base.operational_elements],
         fixture_bindings=[],
     )
     assert missing["layout_draft_ready"] is False
@@ -219,9 +235,7 @@ async def test_fixture_layout_route_is_mounted_and_never_grants_release_authorit
     response = await post_store_scan_fixture_layout_preview(request(), principal())
     assert response["tenant_id"] == str(TENANT)
     assert response["preview_only"] is True
-    assert response["input_authority"] == (
-        "fingerprint_bound_human_fixture_binding_unattested"
-    )
+    assert response["input_authority"] == "fingerprint_bound_human_fixture_binding_unattested"
     assert response["store_dna_approval_allowed"] is False
     assert response["physical_layout_release_allowed"] is False
     assert response["production_release_allowed"] is False

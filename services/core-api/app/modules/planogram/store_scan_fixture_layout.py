@@ -2,9 +2,8 @@
 
 Every module derives its pose from measured scan evidence and its shelf/capacity
 contract from a human-confirmed, source-referenced catalog binding. Missing,
-ambiguous or dimension-inconsistent bindings fail closed. The result is a
-preview layout contract only; it does not approve Store DNA or grant relocation,
-installation, V4/V5 production, or CAPEX authority.
+ambiguous or dimension-inconsistent bindings fail closed. Confirmed uncertainty
+is included only through fingerprint-bound review. The result remains preview-only.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from app.modules.planogram.store_scan import normalize_store_scan
 from app.modules.planogram.store_scan_annotation import build_reviewed_store_scan_draft
 
 FIXTURE_LAYOUT_CONTRACT_VERSION = "planogram-scanned-fixture-layout-v1"
@@ -74,14 +72,16 @@ def build_scanned_fixture_layout_preview(
     operational_elements: list[dict[str, Any]],
     fixture_bindings: list[dict[str, Any]],
     review_note: str | None = None,
+    uncertainty_resolutions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Recompute review then bind all recognized fixtures to catalog truth."""
+    """Recompute review then bind all reviewed recognized fixtures to catalog truth."""
     reviewed = build_reviewed_store_scan_draft(
         scan_payload=deepcopy(scan_payload),
         expected_scan_fingerprint=expected_scan_fingerprint,
         classifications=deepcopy(classifications),
         operational_elements=deepcopy(operational_elements),
         review_note=review_note,
+        uncertainty_resolutions=deepcopy(uncertainty_resolutions or []),
     )
     scan_fingerprint = str(reviewed.get("scan_fingerprint") or "") or None
     if not reviewed.get("available"):
@@ -95,12 +95,12 @@ def build_scanned_fixture_layout_preview(
             scan_fingerprint=scan_fingerprint,
         )
         result["review_blockers"] = list(reviewed.get("blockers") or [])
+        result["uncertainty_review"] = reviewed.get("uncertainty_review")
         return result
 
-    normalized = normalize_store_scan(deepcopy(scan_payload))
     recognized = {
         str(row.get("element_id") or ""): row
-        for row in normalized.get("recognized_fixtures") or []
+        for row in reviewed.get("reviewed_recognized_fixtures") or []
         if isinstance(row, dict)
     }
     bindings = {
@@ -176,6 +176,9 @@ def build_scanned_fixture_layout_preview(
                     ),
                     "scan_hinted_storage_type": hinted_storage or None,
                     "scan_confidence": float(fixture.get("confidence") or 0.0),
+                    "scan_uncertainty_human_confirmed": bool(
+                        fixture.get("human_uncertainty_confirmed")
+                    ),
                     "catalog_source_ref": source_ref,
                     "catalog_attested": True,
                     "fixture_catalog_geometry": {
@@ -219,13 +222,16 @@ def build_scanned_fixture_layout_preview(
         "scan_fingerprint": scan_fingerprint,
         "reviewed_draft_fingerprint": reviewed.get("reviewed_draft_fingerprint"),
         "recognized_fixture_count": recognized_count,
-        "recognized_temperature_fixture_count": int(
-            normalized.get("recognized_temperature_fixture_count") or 0
+        "recognized_temperature_fixture_count": sum(
+            1
+            for row in recognized.values()
+            if row.get("hinted_storage_type") in {"CHILLED", "FROZEN"}
         ),
         "bound_fixture_count": bound_count,
         "fixture_binding_coverage_pct": coverage_pct,
         "physical_layout_preview": layout,
         "reviewed_store_dna_v2_preview": reviewed.get("reviewed_store_dna_v2_preview"),
+        "uncertainty_review": reviewed.get("uncertainty_review"),
         "blockers": blockers,
         "preview_only": True,
         "physical_layout_authority": False,
@@ -236,9 +242,8 @@ def build_scanned_fixture_layout_preview(
         "installation_approval_allowed": False,
         "capex_approval_allowed": False,
         "evidence_boundary": (
-            "fixture poses come from the fingerprint-bound measured scan and shelf/capacity "
-            "truth comes from human-confirmed catalog bindings; measured chiller/freezer "
-            "equipment remains architecture evidence and its temperature hint must match the "
-            "bound catalog storage class; governed Store DNA approval is still required"
+            "fixture poses come from the fingerprint-bound measured scan after explicit human "
+            "uncertainty resolution and shelf/capacity truth comes from human-confirmed catalog "
+            "bindings; governed Store DNA approval is still required"
         ),
     }

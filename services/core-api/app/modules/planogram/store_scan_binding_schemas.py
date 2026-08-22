@@ -4,8 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.modules.planogram.schemas import (
-    PlanogramOrderBasket,
+from app.modules.planogram.schemas import PlanogramOrderBasket
+from app.modules.planogram.store_scan_review_schemas import (
     PlanogramStoreScanAnnotationPreviewRequest,
 )
 

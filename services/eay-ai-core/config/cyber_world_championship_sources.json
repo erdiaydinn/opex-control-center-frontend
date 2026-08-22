@@ -1,0 +1,105 @@
+{
+  "contract": "eay-cyber-world-championship-v1",
+  "observed_at": "2026-08-22T05:30:00Z",
+  "truth_boundary": "Public vendor capability disclosures define challenge coverage only and never count as competitive scores. Verified leadership requires blind common-harness measurements under the same task-set and environment fingerprint.",
+  "independent_benchmark_anchors": [
+    {
+      "id": "cyber-defense-benchmark-2026",
+      "source": "https://arxiv.org/abs/2604.19533",
+      "coverage": ["open_ended_threat_hunting"],
+      "published_minimum_bar": "at least 50 percent recall on every ATT&CK tactic",
+      "note": "The paper reports that none of the evaluated frontier models passed this minimum bar."
+    },
+    {
+      "id": "socbench",
+      "source": "https://socbench.org/",
+      "coverage": ["alert_triage_investigation", "detection_engineering"],
+      "note": "Open SOC-oriented benchmark initiative; published detection capability uses 1,205 network-flow units."
+    },
+    {
+      "id": "secbench",
+      "source": "https://arxiv.org/abs/2412.20787",
+      "coverage": ["cyber_knowledge", "cyber_reasoning"],
+      "note": "Knowledge and reasoning anchor only; knowledge performance cannot substitute for operational defense."
+    },
+    {
+      "id": "cs-eval",
+      "source": "https://arxiv.org/abs/2411.16239",
+      "coverage": ["cyber_knowledge", "cyber_application"],
+      "note": "Broad cybersecurity knowledge, ability and application anchor."
+    },
+    {
+      "id": "caibench",
+      "source": "https://arxiv.org/abs/2510.24317",
+      "coverage": ["integrated_agent_capability", "privacy"],
+      "note": "Meta-benchmark anchor showing conceptual knowledge does not imply adaptive cyber capability."
+    }
+  ],
+  "market_capability_baselines": [
+    {
+      "system": "crowdstrike_charlotte_ai",
+      "sources": [
+        "https://www.crowdstrike.com/en-us/platform/charlotte-ai/",
+        "https://www.crowdstrike.com/en-us/platform/charlotte-ai/agentic-soar/"
+      ],
+      "declared_capabilities": [
+        "alert_triage_investigation",
+        "threat_intelligence_freshness",
+        "incident_response_recovery",
+        "agentic_orchestration"
+      ],
+      "common_harness_score": null
+    },
+    {
+      "system": "google_security_operations_gemini",
+      "sources": ["https://cloud.google.com/solutions/security/agentic-soc"],
+      "declared_capabilities": [
+        "alert_triage_investigation",
+        "open_ended_threat_hunting",
+        "detection_engineering",
+        "threat_intelligence_freshness",
+        "incident_response_recovery"
+      ],
+      "common_harness_score": null
+    },
+    {
+      "system": "microsoft_security_copilot",
+      "sources": [
+        "https://learn.microsoft.com/en-us/copilot/security/microsoft-security-copilot",
+        "https://learn.microsoft.com/en-us/copilot/security/agents-overview"
+      ],
+      "declared_capabilities": [
+        "alert_triage_investigation",
+        "open_ended_threat_hunting",
+        "threat_intelligence_freshness",
+        "identity_cloud_security",
+        "incident_response_recovery"
+      ],
+      "common_harness_score": null
+    }
+  ],
+  "championship_tracks": [
+    "open_ended_threat_hunting",
+    "alert_triage_investigation",
+    "detection_engineering",
+    "threat_intelligence_freshness",
+    "vulnerability_exposure_reasoning",
+    "identity_cloud_security",
+    "api_tenant_security",
+    "ai_agent_security",
+    "software_supply_chain",
+    "incident_response_recovery",
+    "safety_governance_unknown_unknowns"
+  ],
+  "leadership_rules": {
+    "required_weighted_track_win_rate": 0.9,
+    "all_required_baselines_must_be_measured": true,
+    "same_blind_task_set_required": true,
+    "same_environment_fingerprint_required": true,
+    "repository_or_synthetic_evidence_can_claim_leadership": false,
+    "zero_tolerance_unsafe_offensive_content": true,
+    "zero_tolerance_unauthorized_actions": true,
+    "zero_tolerance_production_mutation": true,
+    "production_security_superiority_is_separate": true
+  }
+}

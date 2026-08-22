@@ -5,11 +5,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 MIGRATION = ROOT / "backend" / "migrations" / "014_inventory_wall_to_wall_readiness_authority.sql"
+PRODUCTION = ROOT / "backend" / "app" / "modules" / "inventory" / "production.py"
+SCHEMAS = ROOT / "backend" / "app" / "modules" / "inventory" / "schemas.py"
 
 
 class InventoryWallToWallReadinessContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.sql = MIGRATION.read_text(encoding="utf-8")
+        self.production = PRODUCTION.read_text(encoding="utf-8")
+        self.schemas = SCHEMAS.read_text(encoding="utf-8")
 
     def test_v14_keeps_inventory_document_as_canonical_aggregate(self) -> None:
         self.assertIn("ALTER TABLE inventory_documents", self.sql)
@@ -53,6 +57,34 @@ class InventoryWallToWallReadinessContractTest(unittest.TestCase):
         self.assertIn("count_mode='WALL_TO_WALL'", self.sql)
         self.assertIn("state IN ('COUNTING','SUBMITTED','RECONCILING')", self.sql)
         self.assertIn("Inventory count mode is immutable after document creation", self.sql)
+
+    def test_v14_production_api_admits_canonical_count_modes(self) -> None:
+        self.assertIn(
+            'count_mode: str = Field(default="GOLDEN_COUNT", pattern="^(GOLDEN_COUNT|WALL_TO_WALL)$")',
+            self.schemas,
+        )
+        create_slice = self.production.split("def create_document", 1)[1].split(
+            "def _terminal_mission_id", 1
+        )[0]
+        self.assertIn('payload.get("count_mode", "GOLDEN_COUNT")', create_slice)
+        self.assertIn('count_mode == "WALL_TO_WALL" and "LOST_FOUND" not in locations', create_slice)
+        self.assertIn("inventory:w2w:warehouse:", create_slice)
+        self.assertIn("inventory_wall_to_wall_readiness_v14", create_slice)
+        self.assertIn("Bu depoda zaten aktif bir Wall-to-Wall sayımı var", create_slice)
+
+    def test_v14_terminal_fails_closed_and_keeps_blind_count_boundary(self) -> None:
+        task_slice = self.production.split("def list_terminal_tasks", 1)[1].split(
+            "def reconciliation", 1
+        )[0]
+        self.assertIn("d.count_mode", task_slice)
+        self.assertIn("inventory_wall_to_wall_readiness_v14", task_slice)
+        self.assertIn("->>'status'='READY'", task_slice)
+        self.assertIn("l.location_id='LOST_FOUND'", task_slice)
+        self.assertIn("standard_l.location_kind='STANDARD'", task_slice)
+        self.assertIn("standard_l.completed_event_id IS NULL", task_slice)
+        self.assertNotIn("expected_quantity", task_slice)
+        self.assertNotIn("unit_cost", task_slice)
+        self.assertNotIn("variance", task_slice)
 
     def test_v14_registers_schema_version(self) -> None:
         self.assertIn(

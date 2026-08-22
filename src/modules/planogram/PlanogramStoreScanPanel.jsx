@@ -5,6 +5,7 @@ import { apiPost } from "../../api/client.js";
 import { translatePlanogramStoreScan } from "../../platform/i18n/planogramStoreScanMessages.js";
 import { rotatedRectSvgPoints, svgPointString } from "./planogramEngineering2D.js";
 import PlanogramScanAnnotationWorkspace from "./PlanogramScanAnnotationWorkspace.jsx";
+import { PlanogramScanUncertaintyLayer } from "./PlanogramScanUncertaintyReview.jsx";
 import {
   normalizePlanogramStoreScanBundle,
   safePlanogramStoreScanPreview,
@@ -15,7 +16,7 @@ const MAX_SCAN_FILE_BYTES = 8 * 1024 * 1024;
 const SVG_WIDTH = 920;
 const SVG_HEIGHT = 520;
 
-function ScanGeometryPreview({ scan, t }) {
+function ScanGeometryPreview({ scan, t, locale }) {
   const architecture = scan?.architecture_v2_preview;
   if (!architecture?.elements?.length) return null;
   const padding = 38;
@@ -37,6 +38,7 @@ function ScanGeometryPreview({ scan, t }) {
         (fixture) => !architectureIds.has(String(fixture.element_id || ""))
       )
     : [];
+  const uncertainRows = Array.isArray(scan.uncertain_regions) ? scan.uncertain_regions : [];
 
   return (
     <div className="eay-store-scan-geometry">
@@ -81,6 +83,12 @@ function ScanGeometryPreview({ scan, t }) {
             <title>{`${fixture.label || fixture.element_id} · ${Math.round(fixture.confidence * 100)}%`}</title>
           </polygon>
         ))}
+        <PlanogramScanUncertaintyLayer
+          regions={uncertainRows}
+          projection={projection}
+          choices={{}}
+          locale={locale}
+        />
       </svg>
     </div>
   );
@@ -185,11 +193,11 @@ export default function PlanogramStoreScanPanel({
             <div><span>{t("provider")}</span><strong>{scan.provider}</strong></div>
             <div><span>{t("elements")}</span><strong>{formatNumber(scan.scan_element_count || 0)}</strong></div>
             <div><span>{t("fixtures")}</span><strong>{formatNumber(scan.recognized_fixture_count || 0)}</strong></div>
-            <div><span>{t("lowConfidence")}</span><strong>{formatNumber(scan.low_confidence_count || 0)}</strong></div>
+            <div><span>{t("lowConfidence")}</span><strong>{formatNumber(scan.unresolved_uncertainty_count || scan.low_confidence_count || 0)}</strong></div>
             <div><span>{t("preservedV2")}</span><strong>{formatNumber(scan.v2_preserved_element_count || 0)}</strong></div>
           </div>
           <div className="eay-store-scan-fingerprint"><span>{t("fingerprint")}</span><code>{scan.scan_fingerprint}</code></div>
-          <ScanGeometryPreview scan={scan} t={t} />
+          <ScanGeometryPreview scan={scan} t={t} locale={locale} />
           <div className="eay-store-scan-review-grid">
             <article>
               <header><TriangleAlert size={17} aria-hidden="true" /><strong>{t("blockers")}</strong></header>

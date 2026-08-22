@@ -77,8 +77,10 @@ function LayoutOverlay({ result, scan, t }) {
 export default function PlanogramFixtureBindingPanel({
   scanBundle,
   scanResponse,
+  reviewedResult,
   classifications,
   operationalElements,
+  uncertaintyResolutions,
   reviewNote,
   locale,
   formatNumber,
@@ -96,7 +98,12 @@ export default function PlanogramFixtureBindingPanel({
     [locale]
   );
   const scan = scanResponse?.store_scan || null;
-  const recognized = Array.isArray(scan?.recognized_fixtures) ? scan.recognized_fixtures : [];
+  const reviewedFixtures = reviewedResult?.reviewed_recognized_fixtures;
+  const recognized = Array.isArray(reviewedFixtures)
+    ? reviewedFixtures
+    : Array.isArray(scan?.recognized_fixtures)
+      ? scan.recognized_fixtures
+      : [];
   const recognizedIds = useMemo(() => recognized.map((row) => row.element_id), [recognized]);
   const [bindings, setBindings] = useState(null);
   const [bindingFileName, setBindingFileName] = useState("");
@@ -207,6 +214,7 @@ export default function PlanogramFixtureBindingPanel({
         expected_scan_fingerprint: scan.scan_fingerprint,
         classifications,
         operational_elements: operationalElements,
+        uncertainty_resolutions: uncertaintyResolutions || [],
         fixture_bindings: effectiveBindings,
         review_note: reviewNote || null,
       });
@@ -218,7 +226,7 @@ export default function PlanogramFixtureBindingPanel({
     } finally {
       setRunning(false);
     }
-  }, [canCreate, classifications, effectiveBindings, operationalElements, reviewNote, running, scan?.scan_fingerprint, scanBundle, t]);
+  }, [canCreate, classifications, effectiveBindings, operationalElements, reviewNote, running, scan?.scan_fingerprint, scanBundle, t, uncertaintyResolutions]);
 
   if (!scan || !recognized.length) return null;
   const result = response?.result || null;
@@ -335,6 +343,7 @@ export default function PlanogramFixtureBindingPanel({
               scanResponse={scanResponse}
               classifications={classifications}
               operationalElements={operationalElements}
+              uncertaintyResolutions={uncertaintyResolutions}
               fixtureBindings={effectiveBindings}
               reviewNote={reviewNote}
               optimizationCandidate={optimizationCandidate}

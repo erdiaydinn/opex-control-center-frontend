@@ -56,6 +56,7 @@ export default function PlanogramScannedOptimizerPanel({
   scanResponse,
   classifications,
   operationalElements,
+  uncertaintyResolutions,
   fixtureBindings,
   reviewNote,
   optimizationCandidate,
@@ -86,6 +87,7 @@ export default function PlanogramScannedOptimizerPanel({
         expected_scan_fingerprint: scan.scan_fingerprint,
         classifications,
         operational_elements: operationalElements,
+        uncertainty_resolutions: uncertaintyResolutions || [],
         fixture_bindings: fixtureBindings,
         products,
         order_baskets: baskets,
@@ -114,6 +116,7 @@ export default function PlanogramScannedOptimizerPanel({
     scan?.scan_fingerprint,
     scanBundle,
     t,
+    uncertaintyResolutions,
   ]);
 
   const result = response?.result || null;

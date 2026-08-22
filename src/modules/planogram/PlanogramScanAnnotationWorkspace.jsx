@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair, Ruler, ShieldCheck, Trash2 } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
@@ -11,6 +11,13 @@ import {
   PLANOGRAM_SCAN_ANNOTATION_TOOLS,
   safePlanogramScanAnnotationPreview,
 } from "./planogramScanAnnotation.js";
+import {
+  buildPlanogramUncertaintyResolutions,
+  isPlanogramUncertaintyReviewComplete,
+} from "./planogramScanUncertainty.js";
+import PlanogramScanUncertaintyReview, {
+  PlanogramScanUncertaintyLayer,
+} from "./PlanogramScanUncertaintyReview.jsx";
 import PlanogramScannedDigitalTwin from "./PlanogramScannedDigitalTwin.jsx";
 import "./planogram-scan-annotation.css";
 
@@ -68,8 +75,13 @@ export default function PlanogramScanAnnotationWorkspace({
     () => (architecture?.elements || []).filter((row) => row.element_type === "opening"),
     [architecture]
   );
+  const uncertainRegions = useMemo(
+    () => (Array.isArray(scan?.uncertain_regions) ? scan.uncertain_regions : []),
+    [scan?.uncertain_regions]
+  );
   const sequenceRef = useRef(0);
   const [classifications, setClassifications] = useState({});
+  const [uncertaintyChoices, setUncertaintyChoices] = useState({});
   const [tool, setTool] = useState("picker_entry");
   const [widthM, setWidthM] = useState(annotationToolDefaults("picker_entry").widthM);
   const [depthM, setDepthM] = useState(annotationToolDefaults("picker_entry").depthM);
@@ -80,6 +92,12 @@ export default function PlanogramScanAnnotationWorkspace({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [reviewed, setReviewed] = useState(null);
+
+  useEffect(() => {
+    setUncertaintyChoices({});
+    setReviewed(null);
+    setError("");
+  }, [scan?.scan_fingerprint]);
 
   const projection = useMemo(
     () => (architecture ? projectionFor(architecture) : null),
@@ -100,6 +118,23 @@ export default function PlanogramScanAnnotationWorkspace({
       .filter(Boolean),
     [classifications, openings]
   );
+  const uncertaintyResolutions = useMemo(
+    () => buildPlanogramUncertaintyResolutions(uncertainRegions, uncertaintyChoices),
+    [uncertainRegions, uncertaintyChoices]
+  );
+  const uncertaintyReady = useMemo(
+    () => isPlanogramUncertaintyReviewComplete(uncertainRegions, uncertaintyChoices),
+    [uncertainRegions, uncertaintyChoices]
+  );
+
+  const updateUncertaintyChoice = useCallback((elementId, patch) => {
+    setUncertaintyChoices((current) => ({
+      ...current,
+      [elementId]: { ...(current[elementId] || {}), ...patch },
+    }));
+    setReviewed(null);
+    setError("");
+  }, []);
 
   const changeTool = useCallback((nextTool) => {
     setTool(nextTool);
@@ -160,7 +195,7 @@ export default function PlanogramScanAnnotationWorkspace({
   }, [addAtPoint, architecture, canCreate, keyboardPoint]);
 
   const runReview = useCallback(async () => {
-    if (!scanBundle || !scan?.scan_fingerprint || running || !canCreate) return;
+    if (!scanBundle || !scan?.scan_fingerprint || running || !canCreate || !uncertaintyReady) return;
     setRunning(true);
     setReviewed(null);
     setError("");
@@ -170,6 +205,7 @@ export default function PlanogramScanAnnotationWorkspace({
         expected_scan_fingerprint: scan.scan_fingerprint,
         classifications: classificationRows,
         operational_elements: annotations,
+        uncertainty_resolutions: uncertaintyResolutions,
         review_note: reviewNote.trim() || null,
       });
       const safe = safePlanogramScanAnnotationPreview(raw, scan.scan_fingerprint);
@@ -180,7 +216,7 @@ export default function PlanogramScanAnnotationWorkspace({
     } finally {
       setRunning(false);
     }
-  }, [annotations, canCreate, classificationRows, reviewNote, running, scan?.scan_fingerprint, scanBundle, t]);
+  }, [annotations, canCreate, classificationRows, reviewNote, running, scan?.scan_fingerprint, scanBundle, t, uncertaintyReady, uncertaintyResolutions]);
 
   if (!scanBundle || !scan || !architecture || !projection) return null;
   const reviewedResult = reviewed?.result || null;
@@ -244,6 +280,12 @@ export default function PlanogramScanAnnotationWorkspace({
             className={`eay-scan-annotation-existing eay-scan-annotation-existing--${element.element_type}`}
           />
         ))}
+        <PlanogramScanUncertaintyLayer
+          regions={uncertainRegions}
+          projection={projection}
+          choices={uncertaintyChoices}
+          locale={locale}
+        />
         {annotations.map((element) => (
           <polygon
             key={element.element_id}
@@ -253,6 +295,14 @@ export default function PlanogramScanAnnotationWorkspace({
         ))}
         {keyboardCircle ? <circle cx={keyboardCircle.cx} cy={keyboardCircle.cy} r="7" className="eay-scan-annotation-cursor" /> : null}
       </svg>
+
+      <PlanogramScanUncertaintyReview
+        regions={uncertainRegions}
+        choices={uncertaintyChoices}
+        onChange={updateUncertaintyChoice}
+        locale={locale}
+        formatNumber={formatNumber}
+      />
 
       <div className="eay-scan-annotation-list">
         <strong>{t("annotations")}</strong>
@@ -265,7 +315,7 @@ export default function PlanogramScanAnnotationWorkspace({
       </div>
 
       <label className="eay-scan-annotation-note"><span>{t("reviewNote")}</span><textarea maxLength={1000} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /></label>
-      <button type="button" className="eay-scan-annotation-run" onClick={runReview} disabled={!canCreate || running}>{running ? t("running") : t("run")}</button>
+      <button type="button" className="eay-scan-annotation-run" onClick={runReview} disabled={!canCreate || running || !uncertaintyReady}>{running ? t("running") : t("run")}</button>
       {!canCreate ? <p>{t("permissionRequired")}</p> : null}
       {error ? <p className="eay-scan-annotation-error" role="alert">{error}</p> : null}
 
@@ -296,8 +346,10 @@ export default function PlanogramScanAnnotationWorkspace({
         <PlanogramFixtureBindingPanel
           scanBundle={scanBundle}
           scanResponse={scanResponse}
+          reviewedResult={reviewedResult}
           classifications={classificationRows}
           operationalElements={annotations}
+          uncertaintyResolutions={uncertaintyResolutions}
           reviewNote={reviewNote.trim()}
           locale={locale}
           formatNumber={formatNumber}

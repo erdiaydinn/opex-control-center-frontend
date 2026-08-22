@@ -160,9 +160,9 @@ def evaluations(
     for scenario in scenarios():
         for index, evaluator in enumerate(("reviewer-one", "reviewer-two"), start=1):
             evidence = (
-                "novel://source",
+                "novel://source"
                 if scenario.scenario_id == stale_evidence
-                else f"transfer://{scenario.scenario_id}/{index}",
+                else f"transfer://{scenario.scenario_id}/{index}"
             )
             items.append(
                 IndependentTransferEvaluation(

@@ -59,12 +59,26 @@ jobs:
               raise SystemExit("TUIK_DATA_NOT_LIST")
 
           total_nodes = 0
-          missing_url = []
-          missing_url_nonleaf = []
-          malformed_children = []
+          max_depth = 0
+          key_missing = collections.Counter()
+          key_null = collections.Counter()
+          key_blank = collections.Counter()
+          key_types = collections.Counter()
+          samples = collections.defaultdict(list)
           url_categories = collections.Counter()
           url_hosts = collections.Counter()
-          rejected_urls = []
+
+          def add_sample(bucket, node, depth):
+              if len(samples[bucket]) >= 10:
+                  return
+              samples[bucket].append(
+                  (
+                      str(node.get("id", "<missing>"))[:160],
+                      str(node.get("name", "<missing>"))[:160],
+                      depth,
+                      ",".join(sorted(map(str, node.keys()))[:50]),
+                  )
+              )
 
           def classify_url(value):
               normalized = value.strip()
@@ -81,76 +95,64 @@ jobs:
                   return "fragment_only"
               return "relative_no_leading_slash"
 
-          def current_parser_accepts(value):
-              normalized = value.strip()
-              if normalized.startswith("/") and not normalized.startswith("//"):
-                  return True
-              parsed = urlparse(normalized)
-              host = (parsed.hostname or "").casefold().rstrip(".")
-              return bool(
-                  parsed.scheme == "https"
-                  and (host == "tuik.gov.tr" or host.endswith(".tuik.gov.tr"))
-                  and not parsed.username
-                  and not parsed.password
-                  and parsed.port in (None, 443)
-                  and not parsed.fragment
-              )
-
-          def walk(nodes, *, depth=0, parent="root"):
-              global total_nodes
-              for index, node in enumerate(nodes):
+          def walk(nodes, *, depth=0):
+              global total_nodes, max_depth
+              for node in nodes:
                   total_nodes += 1
+                  max_depth = max(max_depth, depth)
                   if not isinstance(node, dict):
-                      raise SystemExit(f"TUIK_NODE_NOT_DICT depth={depth} parent={parent} index={index}")
-                  node_id = str(node.get("id", "<missing>"))
-                  name = str(node.get("name", "<missing>"))
-                  children = node.get("children")
-                  if not isinstance(children, list):
-                      malformed_children.append((node_id, name, depth, type(children).__name__))
+                      raise SystemExit(f"TUIK_NODE_NOT_DICT depth={depth}")
+
+                  for key in ("id", "name", "children", "url"):
+                      if key not in node:
+                          key_missing[key] += 1
+                          add_sample(f"missing:{key}", node, depth)
+                          continue
+                      value = node[key]
+                      if value is None:
+                          key_null[key] += 1
+                          add_sample(f"null:{key}", node, depth)
+                      else:
+                          key_types[(key, type(value).__name__)] += 1
+                          if isinstance(value, str) and not value.strip():
+                              key_blank[key] += 1
+                              add_sample(f"blank:{key}", node, depth)
+
+                  children = node.get("children", [])
+                  if children is None:
                       children = []
+                  if not isinstance(children, list):
+                      add_sample("invalid:children", node, depth)
+                      children = []
+
                   url = node.get("url")
-                  has_url = isinstance(url, str) and bool(url.strip())
-                  if not has_url:
-                      sample = (node_id, name[:120], depth, len(children))
-                      missing_url.append(sample)
-                      if children:
-                          missing_url_nonleaf.append(sample)
-                  else:
+                  if isinstance(url, str) and url.strip():
                       normalized = url.strip()
-                      category = classify_url(normalized)
-                      url_categories[category] += 1
+                      url_categories[classify_url(normalized)] += 1
                       parsed = urlparse(normalized)
                       if parsed.hostname:
                           url_hosts[(parsed.scheme.casefold(), parsed.hostname.casefold().rstrip("."))] += 1
-                      if not current_parser_accepts(normalized):
-                          rejected_urls.append(
-                              (
-                                  node_id,
-                                  name[:120],
-                                  depth,
-                                  len(children),
-                                  category,
-                                  normalized[:500],
-                              )
-                          )
-                  walk(children, depth=depth + 1, parent=node_id)
+
+                  walk(children, depth=depth + 1)
 
           walk(payload)
+          print("TUIK_ROOT_COUNT=" + str(len(payload)))
           print("TUIK_TOTAL_NODE_COUNT=" + str(total_nodes))
-          print("TUIK_MISSING_URL_COUNT=" + str(len(missing_url)))
-          print("TUIK_MISSING_URL_NONLEAF_COUNT=" + str(len(missing_url_nonleaf)))
-          print("TUIK_MALFORMED_CHILDREN_COUNT=" + str(len(malformed_children)))
-          print("TUIK_NONEMPTY_URL_COUNT=" + str(sum(url_categories.values())))
-          print("TUIK_REJECTED_NONEMPTY_URL_COUNT=" + str(len(rejected_urls)))
+          print("TUIK_MAX_DEPTH=" + str(max_depth))
+          for key in ("id", "name", "children", "url"):
+              print(f"TUIK_KEY_MISSING={key}|count={key_missing[key]}")
+              print(f"TUIK_KEY_NULL={key}|count={key_null[key]}")
+              print(f"TUIK_KEY_BLANK={key}|count={key_blank[key]}")
+          for (key, type_name), count in sorted(key_types.items()):
+              print(f"TUIK_KEY_TYPE={key}|type={type_name}|count={count}")
           for category, count in sorted(url_categories.items()):
               print(f"TUIK_URL_CATEGORY={category}|count={count}")
           for (scheme, host), count in sorted(url_hosts.items()):
               print(f"TUIK_URL_HOST=scheme={scheme}|host={host}|count={count}")
-          for index, sample in enumerate(rejected_urls[:30]):
-              node_id, name, depth, child_count, category, url = sample
-              print(
-                  f"TUIK_REJECTED_URL_SAMPLE_{index}="
-                  f"id={node_id}|name={name}|depth={depth}|children={child_count}|"
-                  f"category={category}|url={url}"
-              )
+          for bucket, entries in sorted(samples.items()):
+              for index, (node_id, name, depth, keys) in enumerate(entries):
+                  print(
+                      f"TUIK_NODE_SAMPLE={bucket}|index={index}|depth={depth}|"
+                      f"id={node_id}|name={name}|keys={keys}"
+                  )
           PY

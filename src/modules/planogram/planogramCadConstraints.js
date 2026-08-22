@@ -190,6 +190,10 @@ function descendantNodes(scene, parentId) {
   return scene.nodes.filter((node) => ids.has(node.nodeId));
 }
 
+function patchRequestsHost(patch = {}) {
+  return Boolean(text(patch.parentId || patch.parent_id || patch.metadata?.hostWallId));
+}
+
 export function planogramCadLayerForNode(node) {
   const type = text(node?.nodeType || node?.node_type || node?.element_type).toLowerCase();
   for (const layerId of PLANOGRAM_CAD_LAYER_IDS) {
@@ -257,7 +261,11 @@ export function buildPlanogramCadHostOpeningPatch(
   }
   const wall = wallId
     ? wallById(scene, wallId)
-    : nearestWall(scene, opening, Math.max(0.05, finite(options.maxDistanceM, DEFAULT_HOST_DISTANCE_M)));
+    : nearestWall(
+        scene,
+        opening,
+        Math.max(0.05, finite(options.maxDistanceM, DEFAULT_HOST_DISTANCE_M)),
+      );
   if (!wall) throw new Error(`No eligible wall host found for opening: ${nodeId}`);
   return hostPatch(opening, wall);
 }
@@ -281,7 +289,9 @@ function cascadeWallUpdate(scene, wallCurrent, wallPatch, explicitUpdates = new 
   const wallProposed = proposedNode(wallCurrent, wallPatch);
   const updates = new Map();
   updates.set(wallCurrent.nodeId, { nodeId: wallCurrent.nodeId, patch: wallPatch });
-  for (const child of scene.nodes.filter((node) => node.parentId === wallCurrent.nodeId && HOSTED_OPENING_TYPES.has(node.nodeType))) {
+  for (const child of scene.nodes.filter(
+    (node) => node.parentId === wallCurrent.nodeId && HOSTED_OPENING_TYPES.has(node.nodeType),
+  )) {
     if (child.locked) throw new Error(`Hosted opening is locked: ${child.nodeId}`);
     const explicit = explicitUpdates.get(child.nodeId)?.patch || {};
     const proposedChild = proposedNode(child, explicit);
@@ -332,7 +342,10 @@ export function constrainPlanogramCadCommand(inputScene, rawCommand = {}) {
       const cascaded = cascadeWallUpdate(scene, current, command.patch || {});
       return { ...command, type: "UPDATE_NODES", updates: [...cascaded.values()] };
     }
-    if (HOSTED_OPENING_TYPES.has(current.nodeType) && current.parentId) {
+    if (
+      HOSTED_OPENING_TYPES.has(current.nodeType)
+      && (current.parentId || patchRequestsHost(command.patch || {}))
+    ) {
       return {
         ...command,
         patch: constrainedOpeningUpdate(scene, current, command.patch || {}),
@@ -361,12 +374,15 @@ export function constrainPlanogramCadCommand(inputScene, rawCommand = {}) {
       const current = nodeById(scene, row.nodeId);
       if (!current || current.nodeType === "wall") continue;
       let patch = row.patch || {};
-      if (HOSTED_OPENING_TYPES.has(current.nodeType) && current.parentId) {
+      const requestedHost = text(
+        patch.parentId || patch.parent_id || patch.metadata?.hostWallId || current.parentId,
+      );
+      if (HOSTED_OPENING_TYPES.has(current.nodeType) && requestedHost) {
         patch = constrainedOpeningUpdate(
           scene,
           current,
           patch,
-          proposedWalls.get(current.parentId) || null,
+          proposedWalls.get(requestedHost) || null,
         );
       }
       output.set(current.nodeId, { nodeId: current.nodeId, patch });
@@ -395,26 +411,56 @@ export function findPlanogramCadConstraintViolations(inputScene) {
     }
     const wall = wallById(scene, opening.parentId);
     if (!wall) {
-      violations.push({ nodeId: opening.nodeId, reason: "invalid_wall_host", hostWallId: opening.parentId });
+      violations.push({
+        nodeId: opening.nodeId,
+        reason: "invalid_wall_host",
+        hostWallId: opening.parentId,
+      });
       continue;
     }
     if (!openingFitsWall(opening, wall)) {
-      violations.push({ nodeId: opening.nodeId, reason: "host_span_violation", hostWallId: wall.nodeId });
+      violations.push({
+        nodeId: opening.nodeId,
+        reason: "host_span_violation",
+        hostWallId: wall.nodeId,
+      });
       continue;
     }
     const local = localCoordinates(wall, opening.geometry.centerXM, opening.geometry.centerYM);
     const maxOffset = maximumHostOffset(opening, wall);
     if (Math.abs(local.normalM) > HOST_TOLERANCE_M) {
-      violations.push({ nodeId: opening.nodeId, reason: "off_wall_centerline", hostWallId: wall.nodeId });
+      violations.push({
+        nodeId: opening.nodeId,
+        reason: "off_wall_centerline",
+        hostWallId: wall.nodeId,
+      });
     }
     if (Math.abs(local.alongM) > maxOffset + HOST_TOLERANCE_M) {
-      violations.push({ nodeId: opening.nodeId, reason: "host_span_violation", hostWallId: wall.nodeId });
+      violations.push({
+        nodeId: opening.nodeId,
+        reason: "host_span_violation",
+        hostWallId: wall.nodeId,
+      });
     }
-    if (rotationDelta(opening.geometry.rotationDeg, wall.geometry.rotationDeg) > ROTATION_TOLERANCE_DEG) {
-      violations.push({ nodeId: opening.nodeId, reason: "host_rotation_mismatch", hostWallId: wall.nodeId });
+    if (
+      rotationDelta(opening.geometry.rotationDeg, wall.geometry.rotationDeg)
+      > ROTATION_TOLERANCE_DEG
+    ) {
+      violations.push({
+        nodeId: opening.nodeId,
+        reason: "host_rotation_mismatch",
+        hostWallId: wall.nodeId,
+      });
     }
-    if (Math.abs(finite(opening.geometry.depthM) - finite(wall.geometry.depthM)) > HOST_TOLERANCE_M) {
-      violations.push({ nodeId: opening.nodeId, reason: "host_depth_mismatch", hostWallId: wall.nodeId });
+    if (
+      Math.abs(finite(opening.geometry.depthM) - finite(wall.geometry.depthM))
+      > HOST_TOLERANCE_M
+    ) {
+      violations.push({
+        nodeId: opening.nodeId,
+        reason: "host_depth_mismatch",
+        hostWallId: wall.nodeId,
+      });
     }
   }
   return Object.freeze(violations.map((row) => Object.freeze(row)));

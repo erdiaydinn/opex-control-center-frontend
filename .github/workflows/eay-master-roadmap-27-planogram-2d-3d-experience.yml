@@ -32,6 +32,7 @@ on:
       - "scripts/test-planogram-sprint1-visual-runtime.mjs"
       - "scripts/test-planogram-sprint2-visual-delivery.mjs"
       - "scripts/test-planogram-sprint3-cad-walkthrough.mjs"
+      - "scripts/test-planogram-sprint3-cad-twin-projection.mjs"
       - "scripts/test-planogram-economics-ui.mjs"
       - "scripts/test-planogram-scenario-portfolio.mjs"
       - "scripts/test-planogram-store-scan-ui.mjs"
@@ -106,6 +107,8 @@ jobs:
         run: node scripts/test-planogram-authoring.mjs
       - name: Sprint 3 canonical CAD session and collision-aware first-person walk-through
         run: node scripts/test-planogram-sprint3-cad-walkthrough.mjs
+      - name: Sprint 3 CAD overlay to Unified Twin projection
+        run: node scripts/test-planogram-sprint3-cad-twin-projection.mjs
       - name: CFO economics UI authority and provenance boundary
         run: node scripts/test-planogram-economics-ui.mjs
       - name: V5 Pareto decision portfolio boundary
@@ -158,6 +161,10 @@ jobs:
           echo 'MASTER_27_CAD_SESSION_REVISION_UNDO_COLLISION=IMPLEMENTED'
           echo 'MASTER_27_ARCHITECTURAL_AUTHORING=IMPLEMENTED'
           echo 'MASTER_27_AUTHORING_STORE_DNA_AUTHORITY=FALSE'
+          echo 'MASTER_27_CAD_OVERLAY_TO_UNIFIED_TWIN=IMPLEMENTED'
+          echo 'MASTER_27_CAD_OVERLAY_KPI_AUTHORITY_ISOLATED=TRUE'
+          echo 'MASTER_27_CAD_OVERLAY_WALKTHROUGH_COLLISION=IMPLEMENTED'
+          echo 'MASTER_27_CAD_OVERLAY_PRODUCTION_AUTHORITY=FALSE'
           echo 'MASTER_27_SCANNED_DIGITAL_TWIN=IMPLEMENTED'
           echo 'MASTER_27_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED'
           echo 'MASTER_27_SCANNED_FIXTURE_CATALOG_BINDING=IMPLEMENTED'

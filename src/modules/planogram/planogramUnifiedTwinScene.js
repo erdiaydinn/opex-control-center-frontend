@@ -45,8 +45,36 @@ function fixtureProducts(row) {
   return Object.freeze(products);
 }
 
+function authoredFixture(row) {
+  const sourceKind = text(row?.sourceKind || "engine_planogram");
+  const previewOnly = sourceKind === "cad_overlay_preview";
+  return Object.freeze({
+    id: text(row.key),
+    fixtureId: fixtureIdFrom(row),
+    fixtureCode: fixtureCodeFrom(row),
+    fixtureType: text(row.fixtureType).toUpperCase(),
+    side: text(row.side).toUpperCase(),
+    centerXM: number(row.centerXM),
+    centerYM: number(row.centerYM),
+    widthM: number(row.widthM),
+    depthM: number(row.depthM),
+    heightM: number(row.heightM),
+    rotationDeg: number(row.rotationDeg),
+    shelfCount: Math.max(1, number(row.shelfCount, Array.isArray(row.shelves) ? row.shelves.length : 1)),
+    coordinateAuthority: text(row.coordinateAuthority || "topology-preview"),
+    moduleKey: text(row.key),
+    sourceKind,
+    previewOnly,
+    productionReleaseAllowed: false,
+    physicalTruthAttested: previewOnly ? false : null,
+    products: fixtureProducts(row),
+  });
+}
+
 function authoredScene(model) {
   if (!model?.floor || !Array.isArray(model?.modules)) return null;
+  const cadFixtures = Array.isArray(model?.cadFixtures) ? model.cadFixtures : [];
+  const fixtures = [...model.modules, ...cadFixtures];
   return Object.freeze({
     contract: "eay.planogram.unified-twin-scene.v1",
     sourceKind: "authored_planogram",
@@ -67,27 +95,15 @@ function authoredScene(model) {
       clearanceM: number(row.clearanceM),
       coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
     }))),
-    fixtures: Object.freeze(model.modules.map((row) => Object.freeze({
-      id: text(row.key),
-      fixtureId: fixtureIdFrom(row),
-      fixtureCode: fixtureCodeFrom(row),
-      fixtureType: text(row.fixtureType).toUpperCase(),
-      side: text(row.side).toUpperCase(),
-      centerXM: number(row.centerXM),
-      centerYM: number(row.centerYM),
-      widthM: number(row.widthM),
-      depthM: number(row.depthM),
-      heightM: number(row.heightM),
-      rotationDeg: number(row.rotationDeg),
-      shelfCount: Math.max(1, number(row.shelfCount, Array.isArray(row.shelves) ? row.shelves.length : 1)),
-      coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
-      moduleKey: text(row.key),
-      products: fixtureProducts(row),
-    }))),
+    fixtures: Object.freeze(fixtures.map(authoredFixture)),
     route: model.route || null,
     provenance: Object.freeze({
       architectureSourceRef: text(model.architectureSourceRef),
       sourceContract: text(model.contract),
+      engineGeometryAuthority: text(model.engineGeometryAuthority || model.geometryAuthority),
+      cadOverlayContract: text(model?.cadOverlay?.contract),
+      cadOverlayRejected: model?.cadOverlay?.rejected === true,
+      cadOverlayFixtureCount: cadFixtures.length,
     }),
   });
 }

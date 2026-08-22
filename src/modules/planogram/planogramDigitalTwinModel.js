@@ -1,4 +1,13 @@
-import { buildPlanogramAuthoringDocument, buildStoreScene, projectStoreScene3D } from "./planogramAuthoringModel.js";
+import {
+  buildPlanogramAuthoringDocument,
+  buildStoreScene,
+  PLANOGRAM_AUTHORING_ELEMENT_TYPES,
+  projectStoreScene3D,
+} from "./planogramAuthoringModel.js";
+import {
+  hydratePlanogramCadOverlay,
+  PLANOGRAM_CAD_OVERLAY_CONTRACT,
+} from "./planogramCadAdvanced.js";
 
 const DEFAULT_MODULE_WIDTH_M = 1;
 const DEFAULT_MODULE_DEPTH_M = 0.5;
@@ -6,6 +15,7 @@ const DEFAULT_SHELF_HEIGHT_M = 0.36;
 const DEFAULT_AISLE_GAP_M = 1.4;
 const MAX_VISIBLE_ROUTE_HOTSPOTS = 12;
 const ROTATION_EPSILON_DEG = 1e-6;
+const ARCHITECTURE_NODE_TYPES = new Set(PLANOGRAM_AUTHORING_ELEMENT_TYPES);
 
 function number(value, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
@@ -222,6 +232,45 @@ function architectureElement(element, profile) {
   };
 }
 
+function cadFixtureFromNode(node) {
+  const widthM = positive(node?.geometry?.widthM, DEFAULT_MODULE_WIDTH_M);
+  const depthM = positive(node?.geometry?.depthM, DEFAULT_MODULE_DEPTH_M);
+  const heightM = positive(node?.geometry?.heightM, DEFAULT_SHELF_HEIGHT_M);
+  const footprint = arbitraryAngleFootprint(widthM, depthM, node?.geometry?.rotationDeg);
+  const centerXM = number(node?.geometry?.centerXM);
+  const centerYM = number(node?.geometry?.centerYM);
+  const nodeId = text(node?.nodeId);
+  return {
+    key: nodeId,
+    aisleId: "CAD",
+    moduleId: nodeId,
+    side: "",
+    fixtureCode: text(node?.metadata?.fixtureCode).toUpperCase(),
+    fixtureType: text(node?.metadata?.fixtureType || "REGULAR_SHELF").toUpperCase(),
+    widthM,
+    depthM,
+    heightM,
+    ...footprint,
+    hasCoordinates: true,
+    xM: centerXM - footprint.footprintWidthM / 2,
+    yM: centerYM - footprint.footprintDepthM / 2,
+    centerXM,
+    centerYM,
+    coordinateAuthority: "human_cad_preview",
+    shelfCount: Math.max(1, Math.round(number(node?.metadata?.shelfCount, 1))),
+    shelves: [],
+    productCount: 0,
+    facingCount: 0,
+    sales7d: 0,
+    products: [],
+    routeDistanceM: null,
+    routeHotspot: null,
+    sourceKind: "cad_overlay_preview",
+    productionReleaseAllowed: false,
+    physicalTruthAttested: false,
+  };
+}
+
 function inferTopologyPosition(aisleIndex, moduleIndex, moduleWidth, moduleDepth) {
   const aisleStride = Math.max(DEFAULT_AISLE_GAP_M + moduleDepth * 2, 2.4);
   const sideOffset = moduleIndex % 2 === 0 ? moduleDepth + DEFAULT_AISLE_GAP_M : 0;
@@ -404,12 +453,24 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
 
   if (!modules.length) return null;
 
-  const storeScene = profile
+  const baseStoreScene = profile
     ? buildStoreScene(candidate, buildPlanogramAuthoringDocument(candidate))
     : null;
+  const rawOverlay = candidate?.store_dna?.cad_overlay;
+  let cadOverlayRejected = false;
+  let storeScene = baseStoreScene;
+  if (baseStoreScene && rawOverlay != null) {
+    try {
+      storeScene = hydratePlanogramCadOverlay(baseStoreScene, candidate);
+    } catch {
+      cadOverlayRejected = true;
+      storeScene = baseStoreScene;
+    }
+  }
   const storeScene3D = storeScene ? projectStoreScene3D(storeScene) : null;
+  const sceneNodes = storeScene3D?.nodes || [];
   const elements = profile
-    ? (storeScene3D?.nodes || []).map((node) => architectureElement({
+    ? sceneNodes.filter((node) => ARCHITECTURE_NODE_TYPES.has(node.nodeType)).map((node) => architectureElement({
         element_id: node.nodeId,
         element_type: node.nodeType,
         center_x_m: node.geometry.centerXM,
@@ -420,9 +481,15 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
         clearance_m: node.metadata?.clearanceM ?? 0,
       }, profile)).filter((item) => item.widthM > 0 && item.depthM > 0)
     : [];
+  const cadFixtures = profile && !cadOverlayRejected
+    ? sceneNodes
+        .filter((node) => node.nodeType === "fixture" && node.metadata?.cadOverlay === true)
+        .map(cadFixtureFromNode)
+    : [];
 
-  const inferredMaxX = Math.max(...modules.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;
-  const inferredMaxY = Math.max(...modules.map((module) => module.yM + module.footprintDepthM), 1) + 0.5;
+  const spatialFixtures = [...modules, ...cadFixtures];
+  const inferredMaxX = Math.max(...spatialFixtures.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;
+  const inferredMaxY = Math.max(...spatialFixtures.map((module) => module.yM + module.footprintDepthM), 1) + 0.5;
   const floorWidthM = profile ? positive(architecture?.floor_width_m, inferredMaxX) : inferredMaxX;
   const floorDepthM = profile ? positive(architecture?.floor_depth_m, inferredMaxY) : inferredMaxY;
   const route = routeProjection(
@@ -442,9 +509,12 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
   const sales7d = enrichedModules.reduce((sum, module) => sum + module.sales7d, 0);
   const measuredPct = enrichedModules.length ? (measuredCoordinateCount * 100) / enrichedModules.length : 0;
   const fullyMeasured = Boolean(profile) && measuredCoordinateCount === enrichedModules.length;
-  const geometryAuthority = fullyMeasured
+  const engineGeometryAuthority = fullyMeasured
     ? (profile.previewOnly ? "measured-preview-v2" : "measured")
     : "topology-preview";
+  const geometryAuthority = cadFixtures.length
+    ? "mixed-engine-and-human-cad-preview"
+    : engineGeometryAuthority;
 
   return {
     contract: "planogram-digital-twin-v1",
@@ -453,13 +523,27 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
     spatialPreviewOnly: Boolean(profile?.previewOnly),
     arbitraryAngleGeometry: arbitraryAngles,
     geometryAuthority,
+    engineGeometryAuthority,
+    productionReleaseAllowed: false,
     architectureSource: profile ? text(architecture?.source) : "",
     architectureSourceRef: profile ? text(architecture?.source_ref) : "",
     floor: { widthM: floorWidthM, depthM: floorDepthM },
     elements,
     modules: enrichedModules,
+    cadFixtures,
+    cadOverlay: {
+      present: rawOverlay != null,
+      contract: text(rawOverlay?.contract),
+      contractValid: rawOverlay?.contract === PLANOGRAM_CAD_OVERLAY_CONTRACT,
+      previewOnly: rawOverlay?.preview_only === true,
+      productionReleaseAllowed: false,
+      physicalTruthAttested: false,
+      rejected: cadOverlayRejected,
+      fixtureCount: cadFixtures.length,
+    },
     stats: {
       moduleCount: enrichedModules.length,
+      cadFixtureCount: cadFixtures.length,
       measuredCoordinateCount,
       measuredCoordinatePct: Math.round(measuredPct * 100) / 100,
       placedProductCount,

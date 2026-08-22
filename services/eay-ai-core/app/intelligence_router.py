@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 from .frontier3_certification_intelligence import FrontierCertificationDomain
 
 INTELLIGENCE_ROUTER_CONTRACT = "eay-intelligence-router-v1"
+CRITICAL_COUNCIL_PROVIDER_FAMILIES = 3
 
 
 class PrivacyLevel(str, Enum):
@@ -221,6 +222,10 @@ def route_intelligence(
     insufficient. The composition root must supply the exact currently admitted
     engine IDs and a sealed admission receipt reference. Missing admission fails
     closed before any provider or tool invocation can occur.
+
+    Extreme/critical councils require three independent provider families: one
+    primary plus two independent critics. A two-provider quorum is deliberately
+    insufficient for council execution, even when both engines are certified.
     """
 
     if task.requires_fresh_certification:
@@ -266,7 +271,8 @@ def route_intelligence(
         or task.risk is TaskRisk.CRITICAL
     )
     critique_required = (
-        task.requires_independent_critique
+        council_required
+        or task.requires_independent_critique
         or task.risk in {TaskRisk.HIGH, TaskRisk.CRITICAL}
     )
     critic_ids: list[str] = []
@@ -278,6 +284,13 @@ def route_intelligence(
                 == primary.independent_provider_key
             ):
                 continue
+            if any(
+                selected.independent_provider_key
+                == candidate.independent_provider_key
+                for selected in ranked
+                if selected.engine_id in critic_ids
+            ):
+                continue
             critic_ids.append(candidate.engine_id)
             if not council_required or len(critic_ids) >= 2:
                 break
@@ -285,13 +298,19 @@ def route_intelligence(
     blockers: list[str] = []
     if critique_required and not critic_ids:
         blockers.append("independent_critic_unavailable")
+    if council_required and len(critic_ids) < 2:
+        blockers.append("council_independent_critics_insufficient")
+
     selected_provider_keys = {primary.independent_provider_key}
     selected_provider_keys.update(
-        e.independent_provider_key
-        for e in ranked
-        if e.engine_id in critic_ids
+        engine.independent_provider_key
+        for engine in ranked
+        if engine.engine_id in critic_ids
     )
-    if council_required and len(selected_provider_keys) < 2:
+    if (
+        council_required
+        and len(selected_provider_keys) < CRITICAL_COUNCIL_PROVIDER_FAMILIES
+    ):
         blockers.append("council_provider_diversity_insufficient")
 
     return IntelligenceRoutingPlan(

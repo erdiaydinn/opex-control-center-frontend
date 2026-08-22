@@ -1,0 +1,10 @@
+.eay-authoring-canvas--fixture{cursor:crosshair}
+.eay-authoring-element--fixture{fill:color-mix(in srgb,var(--eay-accent,#df1067) 32%,#64748b);fill-opacity:.58;stroke:color-mix(in srgb,var(--eay-accent,#df1067) 72%,#f8fafc)}
+.eay-authoring-snap-guide{pointer-events:none;stroke:var(--eay-accent,#df1067);stroke-width:1.5;stroke-dasharray:7 5;vector-effect:non-scaling-stroke;opacity:.88}
+.eay-authoring-measurement{pointer-events:none}
+.eay-authoring-measurement line{stroke:#f8fafc;stroke-width:1.35;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
+.eay-authoring-measurement text{fill:#f8fafc;font-size:12px;font-weight:700;text-anchor:middle;paint-order:stroke;stroke:#10151d;stroke-width:3px;stroke-linejoin:round}
+.eay-authoring-selection-controls>span{font-size:.72rem;opacity:.78;white-space:nowrap}
+.eay-authoring-fixture-meta{margin:8px 0;padding:7px 8px;border-radius:8px;background:color-mix(in srgb,var(--eay-accent,#df1067) 8%,transparent);font-size:.72rem}
+@media(prefers-reduced-motion:reduce){.eay-authoring-snap-guide{stroke-dasharray:none}}
+@media(forced-colors:active){.eay-authoring-element--fixture,.eay-authoring-snap-guide,.eay-authoring-measurement line{stroke:Highlight}.eay-authoring-measurement text{fill:CanvasText;stroke:Canvas}}

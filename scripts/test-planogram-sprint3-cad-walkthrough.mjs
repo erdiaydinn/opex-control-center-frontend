@@ -156,7 +156,7 @@ const authoring = fs.readFileSync("src/modules/planogram/PlanogramArchitecturalA
 const cad = fs.readFileSync("src/modules/planogram/planogramCadSession.js", "utf8");
 const advanced = fs.readFileSync("src/modules/planogram/planogramCadAdvanced.js", "utf8");
 const walk = fs.readFileSync("src/modules/planogram/PlanogramFirstPersonWalkthrough.jsx", "utf8");
-for (const needle of ['type: "UPDATE_NODES"', "selectedIds", "alignSelection", "nudgeSelection", "shiftKey", "ctrlKey", "metaKey", "drag.deltaX", "drag.deltaY", "session.diagnostics"]) if (!authoring.includes(needle)) fail(`Sprint 3 multi-select CAD UI capability missing: ${needle}`);
+for (const needle of ['type: "UPDATE_NODES"', "selectedIds", "alignSelection", "nudgeSelection", "shiftKey", "ctrlKey", "metaKey", "drag.deltaX", "drag.deltaY", "session.diagnostics", "createPlanogramCadFixtureNode", "createPlanogramCadMeasurementNode", "buildPlanogramCadDistributeUpdates", "snapPlanogramCadSelectionDelta", 'tool === "fixture"', "snapGuides", "measurementRows", "distributeSelection", "createMeasurement", "cad_overlay"]) if (!authoring.includes(needle)) fail(`Sprint 3 advanced CAD UI capability missing: ${needle}`);
 for (const needle of ['command.type === "UPDATE_NODES"', "PLANOGRAM_CAD_BATCH_LIMIT", "changed: false", "updates.length > PLANOGRAM_CAD_BATCH_LIMIT", "hydratePlanogramCadOverlay", "candidateWithPlanogramCadOverlay"]) if (!cad.includes(needle)) fail(`Sprint 3 CAD session capability missing: ${needle}`);
 for (const needle of ["PLANOGRAM_CAD_OVERLAY_CONTRACT", "createPlanogramCadFixtureNode", "createPlanogramCadMeasurementNode", "buildPlanogramCadDistributeUpdates", "snapPlanogramCadSelectionDelta", "production_release_allowed: false"]) if (!advanced.includes(needle)) fail(`Sprint 3 advanced CAD kernel capability missing: ${needle}`);
 for (const forbidden of ["updatePlanogramAuthoringElement(", "removePlanogramAuthoringElement(", "resizePlanogramAuthoringFloor("]) if (authoring.includes(forbidden)) fail(`CAD editor regressed to legacy document mutation: ${forbidden}`);
@@ -171,5 +171,6 @@ console.log("SPRINT3_CAD_FIXTURE_AUTHORING_KERNEL=PASS");
 console.log("SPRINT3_CAD_DIMENSION_MEASUREMENT=PASS");
 console.log("SPRINT3_CAD_SMART_SNAP_GUIDES=PASS");
 console.log("SPRINT3_CAD_DISTRIBUTE_KERNEL=PASS");
+console.log("SPRINT3_CAD_ADVANCED_EDITOR_UI=PASS");
 console.log("SPRINT3_CAD_OVERLAY_PRODUCTION_AUTHORITY=FALSE");
 console.log("SPRINT3_COLLISION_AWARE_FIRST_PERSON_WALKTHROUGH=PASS");

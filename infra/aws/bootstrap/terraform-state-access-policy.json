@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListOnlyEayStatePrefix",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::eay-tfstate-600219017658-eu-central-1",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "eay/production/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadWriteProductionState",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::eay-tfstate-600219017658-eu-central-1/eay/production/platform.tfstate"
+    },
+    {
+      "Sid": "ManageProductionStateLockOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::eay-tfstate-600219017658-eu-central-1/eay/production/platform.tfstate.tflock"
+    }
+  ]
+}

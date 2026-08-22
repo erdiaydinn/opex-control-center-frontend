@@ -1,0 +1,102 @@
+name: EAY AWS OIDC Bootstrap
+
+on:
+  push:
+    branches:
+      - infra/eay-production-launch-v1
+    paths:
+      - ".github/workflows/eay-aws-oidc-bootstrap.yml"
+      - "infra/aws/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  statuses: write
+
+jobs:
+  oidc-identity-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::600219017658:role/eay-github-infra-bootstrap
+          aws-region: eu-central-1
+          role-session-name: eay-${{ github.sha }}
+
+      - name: Prove exact AWS caller identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity --output json >/tmp/eay-caller.json
+          account="$(jq -r '.Account' /tmp/eay-caller.json)"
+          arn="$(jq -r '.Arn' /tmp/eay-caller.json)"
+          user_id="$(jq -r '.UserId' /tmp/eay-caller.json)"
+
+          test "${account}" = "600219017658"
+          case "${arn}" in
+            arn:aws:sts::600219017658:assumed-role/eay-github-infra-bootstrap/eay-${GITHUB_SHA}) ;;
+            *)
+              echo "Unexpected OIDC caller ARN: ${arn}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "account=${account}" >>"${GITHUB_OUTPUT}"
+          echo "arn=${arn}" >>"${GITHUB_OUTPUT}"
+          echo "user_id=${user_id}" >>"${GITHUB_OUTPUT}"
+          cat /tmp/eay-caller.json
+
+      - name: Assert bootstrap role has no AWS service authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          if aws s3api list-buckets >/tmp/eay-s3-list.out 2>/tmp/eay-s3-list.err; then
+            echo "Bootstrap role unexpectedly has S3 authority. Failing closed." >&2
+            exit 1
+          fi
+          grep -Eq "AccessDenied|not authorized|Unauthorized" /tmp/eay-s3-list.err
+          echo "Fail-closed S3 permission boundary confirmed."
+
+      - name: Build exact-head OIDC evidence digest
+        id: evidence
+        shell: bash
+        env:
+          CALLER_ARN: ${{ steps.identity.outputs.arn }}
+          ACCOUNT_ID: ${{ steps.identity.outputs.account }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/eay-oidc-proof.txt <<EOF
+          repository=${GITHUB_REPOSITORY}
+          branch=${GITHUB_REF_NAME}
+          sha=${GITHUB_SHA}
+          account=${ACCOUNT_ID}
+          caller_arn=${CALLER_ARN}
+          bootstrap_s3_authority=DENIED_AS_EXPECTED
+          EOF
+          digest="$(sha256sum /tmp/eay-oidc-proof.txt | awk '{print $1}')"
+          echo "digest=${digest}" >>"${GITHUB_OUTPUT}"
+          cat /tmp/eay-oidc-proof.txt
+          echo "sha256=${digest}"
+
+      - name: Publish exact-head OIDC commit status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_DIGEST: ${{ steps.evidence.outputs.digest }}
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context='EAY AWS OIDC Proof' \
+            -f description='Branch-scoped OIDC assumed; bootstrap S3 authority denied' \
+            -f target_url="${run_url}" >/dev/null
+          echo "Published EAY AWS OIDC Proof status for ${GITHUB_SHA}; evidence=${EVIDENCE_DIGEST}"

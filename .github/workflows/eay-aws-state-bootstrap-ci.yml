@@ -1,0 +1,74 @@
+name: EAY AWS State Bootstrap CI
+
+on:
+  pull_request:
+    paths:
+      - "infra/aws/bootstrap/**"
+      - "infra/aws/terraform/backend.tf"
+      - ".github/workflows/eay-aws-state-bootstrap-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  state-bootstrap-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          test "$expected" = "$actual"
+
+      - name: Validate least-privilege state policy JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool infra/aws/bootstrap/terraform-state-access-policy.json >/dev/null
+          ! grep -q '"Resource"[[:space:]]*:[[:space:]]*"\*"' infra/aws/bootstrap/terraform-state-access-policy.json
+          grep -q 'eay/production/platform.tfstate"' infra/aws/bootstrap/terraform-state-access-policy.json
+          grep -q 'eay/production/platform.tfstate.tflock"' infra/aws/bootstrap/terraform-state-access-policy.json
+
+      - name: Assert free-plan bootstrap boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          template=infra/aws/bootstrap/state-backend.yaml
+          grep -q 'Type: AWS::S3::Bucket' "$template"
+          grep -q 'DeletionPolicy: Retain' "$template"
+          grep -q 'UpdateReplacePolicy: Retain' "$template"
+          grep -q 'Status: Enabled' "$template"
+          grep -q 'SSEAlgorithm: AES256' "$template"
+          grep -q 'BlockPublicAcls: true' "$template"
+          grep -q 'RestrictPublicBuckets: true' "$template"
+          grep -q 'aws:SecureTransport: "false"' "$template"
+          ! grep -q 'AWS::KMS' "$template"
+          ! grep -q 'AWS::DynamoDB' "$template"
+          ! grep -q 'AWS::Organizations' "$template"
+          ! grep -q 'AWS::ControlTower' "$template"
+
+      - name: Assert S3 backend lock contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          backend=infra/aws/terraform/backend.tf
+          grep -q 'bucket       = "eay-tfstate-600219017658-eu-central-1"' "$backend"
+          grep -q 'key          = "eay/production/platform.tfstate"' "$backend"
+          grep -q 'region       = "eu-central-1"' "$backend"
+          grep -q 'encrypt      = true' "$backend"
+          grep -q 'use_lockfile = true' "$backend"
+          ! grep -q 'dynamodb_table' "$backend"
+
+      - name: Validate CloudShell bootstrap script syntax
+        shell: bash
+        run: bash -n infra/aws/bootstrap/cloudshell-create-state.sh

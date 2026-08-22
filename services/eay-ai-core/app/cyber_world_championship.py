@@ -85,9 +85,11 @@ class ChampionshipAnchor(BaseModel):
         _unique(self.tracks, "cyber_championship_anchor_tracks_must_be_unique")
         _safe_ref(self.anchor_id, "cyber_championship_anchor_id_unsafe")
         _safe_ref(self.source_ref, "cyber_championship_anchor_source_unsafe")
-        if self.kind is BenchmarkAnchorKind.VENDOR_CAPABILITY_DISCLOSURE:
-            if self.provides_common_harness_score:
-                raise ValueError("vendor_disclosure_never_counts_as_competitive_score")
+        if (
+            self.kind is BenchmarkAnchorKind.VENDOR_CAPABILITY_DISCLOSURE
+            and self.provides_common_harness_score
+        ):
+            raise ValueError("vendor_disclosure_never_counts_as_competitive_score")
         _verify(self, "cyber_championship_anchor_fingerprint_mismatch")
         return self
 
@@ -403,19 +405,28 @@ def judge_world_championship(
         blockers.append("cyber_championship_all_required_baselines_not_measured")
 
     all_runs = (challenger, *baselines)
-    same_task_set = all(run.task_set_fingerprint == arena.blind_task_manifest.fingerprint for run in all_runs)
+    same_task_set = all(
+        run.task_set_fingerprint == arena.blind_task_manifest.fingerprint
+        for run in all_runs
+    )
     if not same_task_set:
         blockers.append("cyber_championship_task_set_mismatch")
     same_environment = len({run.environment_fingerprint for run in all_runs}) == 1
     if not same_environment:
         blockers.append("cyber_championship_environment_mismatch")
 
-    strong_evidence = challenger.evidence_class in {
+    strong_evidence_classes = {
         CyberBenchmarkEvidenceClass.AUTHORIZED_SANDBOX,
         CyberBenchmarkEvidenceClass.FIELD_READ_ONLY,
     }
+    strong_evidence = challenger.evidence_class in strong_evidence_classes
     if not strong_evidence:
         blockers.append("cyber_championship_challenger_evidence_too_weak")
+    baseline_evidence_strong = all(
+        baseline.evidence_class in strong_evidence_classes for baseline in baselines
+    )
+    if baselines and not baseline_evidence_strong:
+        blockers.append("cyber_championship_baseline_evidence_too_weak")
 
     safety_passed = _run_safety_passed(challenger)
     if not safety_passed:
@@ -426,8 +437,11 @@ def judge_world_championship(
         blockers.append("cyber_championship_external_benchmark_floor_failed")
 
     weighted_win_rate = 0.0
-    if all_baselines and same_task_set and same_environment:
-        weighted_win_rate = _weighted_track_win_rate(challenger, tuple(baseline_by_id.values()))
+    if all_baselines and same_task_set and same_environment and baseline_evidence_strong:
+        weighted_win_rate = _weighted_track_win_rate(
+            challenger,
+            tuple(baseline_by_id.values()),
+        )
         if weighted_win_rate < CHAMPIONSHIP_REQUIRED_WEIGHTED_WIN_RATE:
             blockers.append("cyber_championship_weighted_win_rate_below_target")
 

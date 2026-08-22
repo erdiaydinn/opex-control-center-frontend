@@ -84,12 +84,8 @@ function authoredRelationshipIndex(authoringCandidate) {
   })]));
 }
 
-function authoredScene(model, authoringCandidate = null) {
-  if (!model?.floor || !Array.isArray(model?.modules)) return null;
-  const cadFixtures = Array.isArray(model?.cadFixtures) ? model.cadFixtures : [];
-  const fixtures = [...model.modules, ...cadFixtures];
-  const relationshipById = authoredRelationshipIndex(authoringCandidate);
-  const architecture = Object.freeze((model.elements || []).map((row) => {
+function sourceArchitectureFromModel(model, relationshipById) {
+  return Object.freeze((model.elements || []).map((row) => {
     const relationship = relationshipById.get(text(row.id)) || {};
     return Object.freeze({
       id: text(row.id),
@@ -108,7 +104,15 @@ function authoredScene(model, authoringCandidate = null) {
       cadLayer: relationship.cadLayer || null,
     });
   }));
-  const wallPassages = buildPlanogramWallPassageModel(architecture);
+}
+
+function authoredScene(model, authoringCandidate = null) {
+  if (!model?.floor || !Array.isArray(model?.modules)) return null;
+  const cadFixtures = Array.isArray(model?.cadFixtures) ? model.cadFixtures : [];
+  const fixtures = [...model.modules, ...cadFixtures];
+  const relationshipById = authoredRelationshipIndex(authoringCandidate);
+  const sourceArchitecture = sourceArchitectureFromModel(model, relationshipById);
+  const wallPassages = buildPlanogramWallPassageModel(sourceArchitecture);
   return Object.freeze({
     contract: "eay.planogram.unified-twin-scene.v1",
     sourceKind: "authored_planogram",
@@ -118,8 +122,8 @@ function authoredScene(model, authoringCandidate = null) {
       widthM: number(model.floor.widthM),
       depthM: number(model.floor.depthM),
     }),
-    architecture,
-    renderArchitecture: wallPassages.renderArchitecture,
+    sourceArchitecture,
+    architecture: wallPassages.renderArchitecture,
     navigationArchitecture: wallPassages.navigationArchitecture,
     wallPassages,
     fixtures: Object.freeze(fixtures.map(authoredFixture)),
@@ -153,7 +157,7 @@ function scannedScene(architecture, recognizedFixtures = []) {
     const identity = text(row?.element_id || row?.fixture_element_id);
     return !identity || !architectureEquipmentIds.has(identity);
   });
-  const scannedArchitecture = Object.freeze(architecture.elements.map((row) => Object.freeze({
+  const sourceArchitecture = Object.freeze(architecture.elements.map((row) => Object.freeze({
     id: text(row.element_id),
     type: text(row.element_type).toLowerCase(),
     centerXM: number(row.center_x_m),
@@ -168,7 +172,7 @@ function scannedScene(architecture, recognizedFixtures = []) {
     hostConstraint: text(row.host_constraint) || null,
     hostOffsetM: row.host_offset_m == null ? null : number(row.host_offset_m),
   })));
-  const wallPassages = buildPlanogramWallPassageModel(scannedArchitecture);
+  const wallPassages = buildPlanogramWallPassageModel(sourceArchitecture);
 
   return Object.freeze({
     contract: "eay.planogram.unified-twin-scene.v1",
@@ -179,8 +183,8 @@ function scannedScene(architecture, recognizedFixtures = []) {
       widthM: number(architecture.floor_width_m),
       depthM: number(architecture.floor_depth_m),
     }),
-    architecture: scannedArchitecture,
-    renderArchitecture: wallPassages.renderArchitecture,
+    sourceArchitecture,
+    architecture: wallPassages.renderArchitecture,
     navigationArchitecture: wallPassages.navigationArchitecture,
     wallPassages,
     fixtures: Object.freeze(deduplicatedFixtures.map((row, index) => Object.freeze({
@@ -227,9 +231,11 @@ export function buildPlanogramUnifiedTwinScene({
 
 export function compareUnifiedTwinGeometry(left, right, toleranceM = 0.02) {
   if (!left || !right) return Object.freeze({ comparable: false, withinTolerance: false, deltas: [] });
-  const leftById = new Map((left.architecture || []).map((row) => [row.id, row]));
+  const leftRows = left.sourceArchitecture || left.architecture || [];
+  const rightRows = right.sourceArchitecture || right.architecture || [];
+  const leftById = new Map(leftRows.map((row) => [row.id, row]));
   const deltas = [];
-  for (const row of right.architecture || []) {
+  for (const row of rightRows) {
     const base = leftById.get(row.id);
     if (!base) continue;
     const centerDeltaM = Math.hypot(base.centerXM - row.centerXM, base.centerYM - row.centerYM);

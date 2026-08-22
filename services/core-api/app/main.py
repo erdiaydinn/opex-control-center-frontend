@@ -40,6 +40,7 @@ from app.core.security import (
 )
 from app.field_promotion_routes import router as field_promotion_router
 from app.intelligence_routes import router as intelligence_router
+from app.mobile_fleet_routes import router as mobile_fleet_router
 from app.modules.academy.router import router as academy_router
 
 settings = get_settings()
@@ -81,6 +82,7 @@ app = FastAPI(
 app.include_router(ai_tool_router)
 app.include_router(intelligence_router)
 app.include_router(field_promotion_router)
+app.include_router(mobile_fleet_router)
 
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 app.add_middleware(

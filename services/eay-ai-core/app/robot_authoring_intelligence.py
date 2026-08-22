@@ -76,7 +76,7 @@ class RobotDefinition(BaseModel):
     expected_outcome_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def manifest_is_unambiguous(self) -> "RobotDefinition":
+    def manifest_is_unambiguous(self) -> RobotDefinition:
         keys: list[str] = []
         for key, value in self.manifest:
             if not key.strip() or not value.strip():
@@ -123,7 +123,7 @@ class RobotAuthoringCandidate(BaseModel):
     requires_canonical_registration: bool = True
 
     @model_validator(mode="after")
-    def candidate_is_sealed_and_non_authoritative(self) -> "RobotAuthoringCandidate":
+    def candidate_is_sealed_and_non_authoritative(self) -> RobotAuthoringCandidate:
         if self.grants_auth_bypass or self.grants_execution_authority or self.can_auto_publish:
             raise ValueError("robot_authoring_candidate_cannot_grant_runtime_authority")
         if self.proposed_version != self.source_version + 1:
@@ -170,7 +170,7 @@ class RobotAuthoringResult(BaseModel):
     candidate: RobotAuthoringCandidate | None = None
 
     @model_validator(mode="after")
-    def result_is_consistent(self) -> "RobotAuthoringResult":
+    def result_is_consistent(self) -> RobotAuthoringResult:
         if self.disposition is RobotAuthoringDisposition.HOLD and self.candidate is not None:
             raise ValueError("held_robot_authoring_result_cannot_contain_candidate")
         if (
@@ -206,7 +206,7 @@ class SandboxVerificationReceipt(BaseModel):
     receipt_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_tamper_evident(self) -> "SandboxVerificationReceipt":
+    def receipt_is_tamper_evident(self) -> SandboxVerificationReceipt:
         payload = _sandbox_receipt_payload(
             tenant_id=self.tenant_id,
             company_id=self.company_id,
@@ -253,7 +253,7 @@ class RobotRegistryCandidate(BaseModel):
     can_auto_publish: bool = False
 
     @model_validator(mode="after")
-    def registry_candidate_is_sealed_and_non_executable(self) -> "RobotRegistryCandidate":
+    def registry_candidate_is_sealed_and_non_executable(self) -> RobotRegistryCandidate:
         if (
             not self.approval_required
             or self.executable
@@ -341,12 +341,13 @@ def author_repair_candidate(
 
     manifest = dict(robot.manifest)
     for field, value in adapter.items():
-        if field in _URL_PATCH_FIELDS:
-            if blocker := _trusted_https_url_blocker(
+        if field in _URL_PATCH_FIELDS and (
+            blocker := _trusted_https_url_blocker(
                 str(value),
                 repair_scope.trusted_origins,
-            ):
-                return _hold(blocker)
+            )
+        ):
+            return _hold(blocker)
         if field == "method":
             source_method = manifest.get("method")
             if source_method is None:

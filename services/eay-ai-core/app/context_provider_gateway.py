@@ -2,8 +2,8 @@
 
 This module deliberately does not perform network I/O. It validates the target
 against the provider registry and returns an auditable request plan. Runtime
-adapters may later execute only plans that pass their own adapter verification,
-credential, rate-limit and production-activation gates.
+adapters may execute only plans that satisfy the provider's exact one-shot or
+continuous-use authority.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import ipaddress
 from enum import Enum
 from urllib.parse import parse_qsl, urlparse
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 from .context_provider_registry import ProviderAccessMode, require_provider
 
@@ -46,7 +46,7 @@ class ProviderRequestPlan(BaseModel):
     blockers: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def prohibit_unverified_execution(self) -> "ProviderRequestPlan":
+    def prohibit_unverified_execution(self) -> ProviderRequestPlan:
         if self.execution_permitted and self.blockers:
             raise ValueError("provider_request_execution_cannot_ignore_blockers")
         return self
@@ -96,12 +96,17 @@ def plan_provider_request(
         blockers.append("provider_secret_reference_missing")
     if provider.access_mode is ProviderAccessMode.AUTHORIZATION_REQUIRED and not authorization_evidence_ref:
         blockers.append("provider_authorization_evidence_missing")
-    if purpose is RequestPurpose.CONTINUOUS_INGESTION and not provider.continuous_ingestion_authorized:
-        blockers.append("provider_continuous_ingestion_not_authorized")
     if not provider.exact_adapter_verified:
         blockers.append("provider_exact_adapter_not_verified")
-    if not provider.production_enabled:
-        blockers.append("provider_production_not_enabled")
+
+    if purpose is RequestPurpose.ONE_SHOT_OBSERVATION:
+        if not provider.one_shot_observation_authorized:
+            blockers.append("provider_one_shot_observation_not_authorized")
+    else:
+        if not provider.continuous_ingestion_authorized:
+            blockers.append("provider_continuous_ingestion_not_authorized")
+        if not provider.production_enabled:
+            blockers.append("provider_production_not_enabled")
 
     return ProviderRequestPlan(
         provider_id=provider_id,

@@ -1,0 +1,215 @@
+name: EAY Jarvis Company World Live
+
+on:
+  push:
+    branches:
+      - product/jarvis-company-world-live-v1
+    paths:
+      - "services/eay-ai-core/app/company_world_live_bridge.py"
+      - "services/eay-ai-core/app/context_provider_gateway.py"
+      - "services/eay-ai-core/app/context_provider_registry.py"
+      - "services/eay-ai-core/app/context_provider_runtime.py"
+      - "services/eay-ai-core/app/tuik_theme_catalog_adapter.py"
+      - "services/eay-ai-core/field_evidence/tuik_theme_catalog_probe_v1.json"
+      - "services/eay-ai-core/app/continuous_world_understanding.py"
+      - "services/eay-ai-core/app/real_world_timeline.py"
+      - "services/eay-ai-core/app/world_model.py"
+      - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
+      - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_theme_catalog_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_theme_catalog_field_shape.py"
+      - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
+      - "services/eay-ai-core/tests/test_world_model.py"
+      - ".github/workflows/jarvis-company-world-live-ci.yml"
+  pull_request:
+    paths:
+      - "services/eay-ai-core/app/company_world_live_bridge.py"
+      - "services/eay-ai-core/app/context_provider_gateway.py"
+      - "services/eay-ai-core/app/context_provider_registry.py"
+      - "services/eay-ai-core/app/context_provider_runtime.py"
+      - "services/eay-ai-core/app/tuik_theme_catalog_adapter.py"
+      - "services/eay-ai-core/field_evidence/tuik_theme_catalog_probe_v1.json"
+      - "services/eay-ai-core/app/continuous_world_understanding.py"
+      - "services/eay-ai-core/app/real_world_timeline.py"
+      - "services/eay-ai-core/app/world_model.py"
+      - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
+      - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_theme_catalog_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_theme_catalog_field_shape.py"
+      - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
+      - "services/eay-ai-core/tests/test_world_model.py"
+      - ".github/workflows/jarvis-company-world-live-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-company-world-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  company-world-live:
+    name: Company World external-context authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COMPANY_WORLD_EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal Company World head
+        run: |
+          actual="$(git rev-parse HEAD)"
+          echo "COMPANY_WORLD_EXPECTED_SHA=$COMPANY_WORLD_EXPECTED_SHA"
+          echo "COMPANY_WORLD_ACTUAL_SHA=$actual"
+          test "$actual" = "$COMPANY_WORLD_EXPECTED_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install canonical AI Core runtime and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Verify TUIK portal and session-aware theme discovery
+        run: |
+          set -euo pipefail
+          landing='https://veriportali.tuik.gov.tr/tr/statistical-themes'
+          api='https://veriportali.tuik.gov.tr/api/tr/data/statistical-themes'
+          cookie_jar="${RUNNER_TEMP}/tuik.cookies"
+          landing_headers="${RUNNER_TEMP}/tuik-landing.headers"
+          landing_body="${RUNNER_TEMP}/tuik-landing.body"
+          api_headers="${RUNNER_TEMP}/tuik-api.headers"
+          api_body="${RUNNER_TEMP}/tuik-api.body"
+
+          landing_status="$(curl --silent --show-error --output "$landing_body" --dump-header "$landing_headers" --write-out '%{http_code}' \
+            --cookie-jar "$cookie_jar" --connect-timeout 10 --max-time 20 \
+            --header 'Accept: text/html,application/xhtml+xml' \
+            --header 'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8' \
+            --header 'User-Agent: Mozilla/5.0 EAY-Jarvis-Field-Probe/1.0' \
+            "$landing")"
+          landing_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$landing_headers")"
+          landing_bytes="$(wc -c < "$landing_body" | tr -d ' ')"
+          landing_sha="$(sha256sum "$landing_body" | awk '{print $1}')"
+          echo "TUIK_LANDING_URL=$landing"
+          echo "TUIK_LANDING_STATUS=$landing_status"
+          echo "TUIK_LANDING_CONTENT_TYPE=$landing_type"
+          echo "TUIK_LANDING_BYTES=$landing_bytes"
+          echo "TUIK_LANDING_SHA256=$landing_sha"
+          test "$landing_status" = "200"
+          test "$landing_bytes" -gt 1000
+
+          api_status="$(curl --silent --show-error --output "$api_body" --dump-header "$api_headers" --write-out '%{http_code}' \
+            --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+            --connect-timeout 10 --max-time 20 \
+            --header 'Accept: application/json, text/plain, */*' \
+            --header 'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8' \
+            --header 'User-Agent: Mozilla/5.0 EAY-Jarvis-Field-Probe/1.0' \
+            --header "Referer: $landing" \
+            --header 'Origin: https://veriportali.tuik.gov.tr' \
+            --header 'X-Requested-With: XMLHttpRequest' \
+            "$api")"
+          api_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$api_headers")"
+          api_bytes="$(wc -c < "$api_body" | tr -d ' ')"
+          api_sha="$(sha256sum "$api_body" | awk '{print $1}')"
+          echo "TUIK_THEME_API_URL=$api"
+          echo "TUIK_THEME_API_STATUS=$api_status"
+          echo "TUIK_THEME_API_CONTENT_TYPE=$api_type"
+          echo "TUIK_THEME_API_BYTES=$api_bytes"
+          echo "TUIK_THEME_API_SHA256=$api_sha"
+          test "$api_status" = "200"
+          printf '%s' "$api_type" | grep -qi 'application/json'
+          python -c 'import json,sys; data=json.load(open(sys.argv[1],"rb")); print("TUIK_THEME_JSON_KIND="+type(data).__name__); print("TUIK_THEME_JSON_LENGTH="+str(len(data)) if isinstance(data,list) else "TUIK_THEME_JSON_KEYS="+",".join(sorted(map(str,data.keys()))[:30])); first=(data[0] if isinstance(data,list) and data else data); print("TUIK_THEME_FIRST_KEYS="+",".join(sorted(map(str,first.keys()))[:30]) if isinstance(first,dict) else "TUIK_THEME_FIRST_TYPE="+type(first).__name__)' "$api_body"
+      - name: Execute TUIK runtime to Company World observation end to end
+        run: |
+          python - <<'PY'
+          from app.company_world_live_bridge import ExternalContextDomain, GeographicScopeLevel
+          from app.context_provider_gateway import RequestPurpose, plan_provider_request
+          from app.context_provider_registry import require_provider
+          from app.real_world_timeline import TimelineAuthorityClass
+          from app.tuik_theme_catalog_adapter import (
+              TUIK_THEME_API_URL,
+              TUIK_THEME_PROVIDER_ID,
+              read_tuik_theme_catalog_observation,
+          )
+
+          provider = require_provider(TUIK_THEME_PROVIDER_ID)
+          assert provider.one_shot_observation_authorized is True
+          assert provider.continuous_ingestion_authorized is False
+          assert provider.production_enabled is False
+
+          continuous = plan_provider_request(
+              provider_id=TUIK_THEME_PROVIDER_ID,
+              url=TUIK_THEME_API_URL,
+              purpose=RequestPurpose.CONTINUOUS_INGESTION,
+          )
+          assert continuous.execution_permitted is False
+          assert "provider_continuous_ingestion_not_authorized" in continuous.blockers
+          assert "provider_production_not_enabled" in continuous.blockers
+
+          result = read_tuik_theme_catalog_observation(
+              tenant_id="field-probe:company-world",
+          )
+          assert result.provider_receipt.status_code == 200
+          assert result.provider_receipt.media_type == "application/json"
+          assert result.provider_receipt.bootstrap_body_sha256 is not None
+          assert result.catalog_receipt.root_theme_count > 0
+          assert result.catalog_receipt.total_node_count >= result.catalog_receipt.root_theme_count
+          assert result.catalog_receipt.context_only is True
+          assert result.catalog_receipt.company_truth_granted is False
+          assert result.catalog_receipt.causal_claim_proven is False
+          assert result.catalog_receipt.execution_authority_granted is False
+          assert result.observation.domain is ExternalContextDomain.MACROECONOMIC
+          assert result.observation.authority_class is TimelineAuthorityClass.VERIFIED_EXTERNAL
+          assert result.observation.geographic_scope.level is GeographicScopeLevel.COUNTRY
+          assert result.observation.geographic_scope.country_code == "TR"
+          assert result.observation.context_only is True
+          assert result.observation.company_truth_granted is False
+          assert result.observation.causal_claim_proven is False
+          assert result.observation.execution_authority_granted is False
+          print("TUIK_E2E_PROVIDER_SHA256=" + result.provider_receipt.body_sha256)
+          print("TUIK_E2E_CATALOG_FINGERPRINT=" + result.catalog_receipt.fingerprint)
+          print("TUIK_E2E_ROOT_THEME_COUNT=" + str(result.catalog_receipt.root_theme_count))
+          print("TUIK_E2E_TOTAL_NODE_COUNT=" + str(result.catalog_receipt.total_node_count))
+          print("TUIK_E2E_OBSERVATION_ID=" + result.observation.observation_id)
+          PY
+      - name: Ruff Company World live and provider runtime
+        run: >-
+          ruff check
+          app/company_world_live_bridge.py
+          app/context_provider_gateway.py
+          app/context_provider_registry.py
+          app/context_provider_runtime.py
+          app/tuik_theme_catalog_adapter.py
+          tests/test_company_world_live_bridge_intelligence.py
+          tests/test_context_provider_runtime_intelligence.py
+          tests/test_tuik_theme_catalog_intelligence.py
+          tests/test_tuik_theme_catalog_field_shape.py
+      - name: Compile Company World authority surface
+        run: >-
+          python -m compileall -q
+          app/company_world_live_bridge.py
+          app/context_provider_gateway.py
+          app/context_provider_registry.py
+          app/context_provider_runtime.py
+          app/tuik_theme_catalog_adapter.py
+          app/continuous_world_understanding.py
+          app/real_world_timeline.py
+          app/world_model.py
+          tests/test_company_world_live_bridge_intelligence.py
+          tests/test_context_provider_runtime_intelligence.py
+          tests/test_tuik_theme_catalog_intelligence.py
+          tests/test_tuik_theme_catalog_field_shape.py
+      - name: Run Company World adversarial and lineage contracts
+        run: >-
+          pytest -q
+          tests/test_company_world_live_bridge_intelligence.py
+          tests/test_context_provider_runtime_intelligence.py
+          tests/test_tuik_theme_catalog_intelligence.py
+          tests/test_tuik_theme_catalog_field_shape.py
+          tests/test_continuous_world_understanding_intelligence.py
+          tests/test_world_model.py

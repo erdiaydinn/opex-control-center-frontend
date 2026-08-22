@@ -1,0 +1,197 @@
+name: EAY Jarvis TUIK Field Probe
+
+on:
+  push:
+    branches:
+      - product/jarvis-company-world-live-v1
+    paths:
+      - ".github/workflows/jarvis-tuik-field-probe.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/jarvis-tuik-field-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: TUIK one-shot field probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe official TUIK portal and public JSON candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PROBE_GENERATION=2026-08-23-node-shape-2"
+          landing='https://veriportali.tuik.gov.tr/tr/statistical-themes'
+          api='https://veriportali.tuik.gov.tr/api/tr/data/statistical-themes'
+          cookie_jar="${RUNNER_TEMP}/tuik.cookies"
+          body="${RUNNER_TEMP}/tuik-themes.json"
+          headers="${RUNNER_TEMP}/tuik-themes.headers"
+
+          landing_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --cookie-jar "$cookie_jar" --connect-timeout 10 --max-time 20 \
+            --header 'Accept: text/html,application/xhtml+xml' \
+            --header 'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8' \
+            --header 'User-Agent: Mozilla/5.0 EAY-Jarvis-Field-Probe/1.0' \
+            "$landing")"
+          test "$landing_status" = "200"
+
+          status="$(curl --silent --show-error --output "$body" --dump-header "$headers" --write-out '%{http_code}' \
+            --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+            --connect-timeout 10 --max-time 20 \
+            --header 'Accept: application/json, text/plain, */*' \
+            --header 'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8' \
+            --header 'User-Agent: Mozilla/5.0 EAY-Jarvis-Field-Probe/1.0' \
+            --header "Referer: $landing" \
+            --header 'Origin: https://veriportali.tuik.gov.tr' \
+            --header 'X-Requested-With: XMLHttpRequest' \
+            "$api")"
+          content_type="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+          bytes="$(wc -c < "$body" | tr -d ' ')"
+          sha="$(sha256sum "$body" | awk '{print $1}')"
+          echo "TUIK_STATUS=$status"
+          echo "TUIK_CONTENT_TYPE=$content_type"
+          echo "TUIK_BYTES=$bytes"
+          echo "TUIK_SHA256=$sha"
+          test "$status" = "200"
+          printf '%s' "$content_type" | grep -qi 'application/json'
+
+          python - "$body" <<'PY'
+import collections
+import json
+import pathlib
+import sys
+from urllib.parse import urlparse
+
+raw = pathlib.Path(sys.argv[1]).read_bytes()
+doc = json.loads(raw)
+if not isinstance(doc, dict):
+    raise SystemExit("TUIK_TOP_NOT_DICT")
+if set(("data", "isError", "message")) - set(doc):
+    raise SystemExit("TUIK_ENVELOPE_KEYS_MISSING")
+if doc.get("isError") is not False:
+    raise SystemExit("TUIK_UPSTREAM_ERROR")
+payload = doc.get("data")
+if not isinstance(payload, list) or not payload:
+    raise SystemExit("TUIK_DATA_NOT_NONEMPTY_LIST")
+
+required = ("id", "name", "children")
+key_missing = collections.Counter()
+key_null = collections.Counter()
+key_type = collections.Counter()
+url_presence = collections.Counter()
+url_categories = collections.Counter()
+url_hosts = collections.Counter()
+samples = collections.defaultdict(list)
+total_nodes = 0
+max_depth = 0
+
+
+def classify_url(value):
+    normalized = value.strip()
+    if normalized.startswith("//"):
+        return "protocol_relative"
+    if normalized.startswith("/"):
+        return "root_relative"
+    parsed = urlparse(normalized)
+    if parsed.scheme:
+        return f"scheme:{parsed.scheme.casefold()}"
+    if normalized.startswith("?"):
+        return "query_only"
+    if normalized.startswith("#"):
+        return "fragment_only"
+    return "relative_no_leading_slash"
+
+
+def note_sample(bucket, *, node, depth):
+    if len(samples[bucket]) >= 5:
+        return
+    samples[bucket].append(
+        {
+            "id": str(node.get("id", "<missing>"))[:120],
+            "name": str(node.get("name", "<missing>"))[:120],
+            "depth": depth,
+            "keys": sorted(map(str, node.keys()))[:40],
+        }
+    )
+
+
+def walk(nodes, *, depth=0):
+    global total_nodes, max_depth
+    for node in nodes:
+        total_nodes += 1
+        max_depth = max(max_depth, depth)
+        if not isinstance(node, dict):
+            raise SystemExit(f"TUIK_NODE_NOT_DICT depth={depth}")
+
+        for key in required:
+            if key not in node:
+                key_missing[key] += 1
+                note_sample(f"missing:{key}", node=node, depth=depth)
+            elif node[key] is None:
+                key_null[key] += 1
+                note_sample(f"null:{key}", node=node, depth=depth)
+            else:
+                key_type[(key, type(node[key]).__name__)] += 1
+
+        if "url" not in node:
+            url_presence["missing_key"] += 1
+            note_sample("url:missing_key", node=node, depth=depth)
+        else:
+            url = node["url"]
+            if url is None:
+                url_presence["null"] += 1
+                note_sample("url:null", node=node, depth=depth)
+            elif not isinstance(url, str):
+                url_presence[f"type:{type(url).__name__}"] += 1
+                note_sample("url:non_string", node=node, depth=depth)
+            elif not url.strip():
+                url_presence["blank"] += 1
+                note_sample("url:blank", node=node, depth=depth)
+            else:
+                url_presence["nonempty"] += 1
+                normalized = url.strip()
+                url_categories[classify_url(normalized)] += 1
+                parsed = urlparse(normalized)
+                if parsed.hostname:
+                    url_hosts[(parsed.scheme.casefold(), parsed.hostname.casefold().rstrip("."))] += 1
+
+        children = node.get("children", [])
+        if "children" in node and not isinstance(children, list):
+            raise SystemExit(
+                f"TUIK_CHILDREN_NOT_LIST id={node.get('id')} type={type(children).__name__}"
+            )
+        if isinstance(children, list):
+            walk(children, depth=depth + 1)
+
+
+walk(payload)
+print("TUIK_ROOT_COUNT=" + str(len(payload)))
+print("TUIK_TOTAL_NODE_COUNT=" + str(total_nodes))
+print("TUIK_MAX_DEPTH=" + str(max_depth))
+for key in required:
+    print(f"TUIK_KEY_MISSING={key}|count={key_missing[key]}")
+    print(f"TUIK_KEY_NULL={key}|count={key_null[key]}")
+for (key, type_name), count in sorted(key_type.items()):
+    print(f"TUIK_KEY_TYPE={key}|type={type_name}|count={count}")
+for state, count in sorted(url_presence.items()):
+    print(f"TUIK_URL_PRESENCE={state}|count={count}")
+for category, count in sorted(url_categories.items()):
+    print(f"TUIK_URL_CATEGORY={category}|count={count}")
+for (scheme, host), count in sorted(url_hosts.items()):
+    print(f"TUIK_URL_HOST=scheme={scheme}|host={host}|count={count}")
+for bucket, bucket_samples in sorted(samples.items()):
+    for index, sample in enumerate(bucket_samples):
+        print(
+            f"TUIK_NODE_SAMPLE={bucket}|index={index}|depth={sample['depth']}|"
+            f"id={sample['id']}|name={sample['name']}|keys={','.join(sample['keys'])}"
+        )
+
+if key_missing["id"] or key_missing["name"] or key_missing["children"]:
+    raise SystemExit("TUIK_CORE_NODE_SHAPE_DRIFT")
+if key_null["id"] or key_null["name"] or key_null["children"]:
+    raise SystemExit("TUIK_CORE_NODE_NULL_DRIFT")
+PY

@@ -1,0 +1,92 @@
+name: EAY Jarvis Adaptive Execution Exact Head
+
+on:
+  pull_request:
+    paths:
+      - "services/eay-ai-core/app/adaptive_execution_intelligence.py"
+      - "services/eay-ai-core/tests/test_adaptive_execution_intelligence.py"
+      - ".github/workflows/jarvis-adaptive-execution-exact-head.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  adaptive-execution-exact-head:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout literal PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Assert literal PR head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          echo "expected=$EXPECTED_HEAD"
+          echo "actual=$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Install canonical AI Core runtime and dev dependencies
+        working-directory: services/eay-ai-core
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile adaptive execution surface
+        working-directory: services/eay-ai-core
+        run: |
+          python -m py_compile \
+            app/adaptive_execution_intelligence.py \
+            tests/test_adaptive_execution_intelligence.py
+
+      - name: Lint adaptive execution surface
+        working-directory: services/eay-ai-core
+        run: |
+          python -m ruff check \
+            app/adaptive_execution_intelligence.py \
+            tests/test_adaptive_execution_intelligence.py
+
+      - name: Run focused adaptive execution adversarial tests
+        working-directory: services/eay-ai-core
+        run: python -m pytest -q tests/test_adaptive_execution_intelligence.py
+
+      - name: Run cumulative Jarvis intelligence and execution regression cohort
+        working-directory: services/eay-ai-core
+        run: |
+          python -m pytest -q \
+            tests/test_*intelligence.py \
+            tests/test_browser_api_observer.py \
+            tests/test_playwright_computer_runtime.py \
+            tests/test_playwright_mission_adapter.py \
+            tests/test_engine_gateway.py \
+            tests/test_benchmark_promotion.py \
+            tests/test_intelligence_router.py \
+            tests/test_mission_runtime.py \
+            tests/test_mission_execution.py \
+            tests/test_world_model.py \
+            tests/test_jarvis_benchmark.py \
+            tests/test_procedural_memory.py \
+            tests/test_effect_attribution.py \
+            tests/test_research_engine.py \
+            tests/test_digital_twin.py \
+            tests/test_multimodal_context.py \
+            tests/test_outcome_learning.py \
+            tests/test_council_runtime.py \
+            tests/test_episodic_memory.py \
+            tests/test_voice_session.py \
+            tests/test_context_taxonomy.py \
+            tests/test_context_provider_registry.py \
+            tests/test_context_provider_gateway.py \
+            tests/test_source_governance.py \
+            tests/test_enterprise_domain_registry.py \
+            tests/test_enterprise_economics_domain.py \
+            tests/test_repository_intelligence_legal_sources.py \
+            tests/test_repository_intelligence_api_discovery_sources.py

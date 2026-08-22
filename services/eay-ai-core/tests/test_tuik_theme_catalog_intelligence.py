@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
@@ -15,7 +16,7 @@ from app.company_world_live_bridge import (
     build_company_location_binding,
 )
 from app.context_provider_gateway import RequestPurpose, plan_provider_request
-from app.context_provider_runtime import ProviderRuntimeBlocked
+from app.context_provider_runtime import ProviderRuntimeBlocked, execute_provider_request
 from app.real_world_timeline import TimelineAuthorityClass
 from app.tuik_theme_catalog_adapter import (
     TUIK_THEME_API_URL,
@@ -36,8 +37,13 @@ TENANT = "tenant-a"
 LOCATION = "store:fulya"
 
 
-def theme_document(*, is_error: bool = False, duplicate_id: bool = False, unsafe_url: bool = False):
-    child_id = 1 if duplicate_id else "1.1"
+def theme_document(
+    *,
+    is_error: bool = False,
+    duplicate_id: bool = False,
+    unsafe_url: bool = False,
+) -> dict[str, Any]:
+    child_id: int | str = 1 if duplicate_id else "1.1"
     child_url = "https://evil.example/theme" if unsafe_url else "/tr/statistical-themes/child"
     return {
         "data": [
@@ -63,7 +69,11 @@ def theme_document(*, is_error: bool = False, duplicate_id: bool = False, unsafe
     }
 
 
-def transport_for(document, *, bootstrap_status: int = 200):
+def transport_for(
+    document: dict[str, Any],
+    *,
+    bootstrap_status: int = 200,
+) -> tuple[httpx.MockTransport, list[httpx.Request]]:
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -225,16 +235,11 @@ def test_bootstrap_redirect_is_blocked_before_theme_api_read() -> None:
         (theme_document(unsafe_url=True), "url_unsafe"),
     ],
 )
-def test_malformed_or_unsafe_tuik_catalog_fails_closed(document, error: str) -> None:
+def test_malformed_or_unsafe_tuik_catalog_fails_closed(
+    document: dict[str, Any],
+    error: str,
+) -> None:
     transport, _ = transport_for(document)
-    result = read_tuik_theme_catalog_observation(
-        tenant_id=TENANT,
-        transport=transport,
-        now=NOW,
-    ) if False else None
-
-    from app.context_provider_runtime import execute_provider_request
-
     plan = plan_provider_request(
         provider_id=TUIK_THEME_PROVIDER_ID,
         url=TUIK_THEME_API_URL,
@@ -243,4 +248,3 @@ def test_malformed_or_unsafe_tuik_catalog_fails_closed(document, error: str) -> 
     provider_receipt = execute_provider_request(plan, transport=transport, now=NOW)
     with pytest.raises(ValueError, match=error):
         parse_tuik_theme_catalog(provider_receipt)
-    assert result is None

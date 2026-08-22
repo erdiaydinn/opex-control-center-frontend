@@ -15,6 +15,12 @@ import {
   candidateWithPlanogramCadOverlay,
   hydratePlanogramCadOverlay,
 } from "./planogramCadAdvanced.js";
+import {
+  constrainPlanogramCadCommand,
+  findPlanogramCadConstraintViolations,
+  hydratePlanogramCadRelationships,
+  planogramCadLayerForNode,
+} from "./planogramCadConstraints.js";
 
 export const PLANOGRAM_CAD_SESSION_CONTRACT = "eay.planogram.cad-session.v1";
 export const PLANOGRAM_CAD_BATCH_LIMIT = 100;
@@ -66,36 +72,55 @@ function findBoundaryViolations(scene) {
       bottomM: rounded(Math.max(0, -minY), 4),
       topM: rounded(Math.max(0, maxY - normalized.floor.depthM), 4),
     };
-    const outsideM = rounded(Math.max(overflow.leftM, overflow.rightM, overflow.bottomM, overflow.topM), 4);
-    if (outsideM > EPSILON) violations.push(Object.freeze({ nodeId: node.nodeId, outsideM, overflow: Object.freeze(overflow) }));
+    const outsideM = rounded(
+      Math.max(overflow.leftM, overflow.rightM, overflow.bottomM, overflow.topM),
+      4,
+    );
+    if (outsideM > EPSILON) {
+      violations.push(Object.freeze({
+        nodeId: node.nodeId,
+        outsideM,
+        overflow: Object.freeze(overflow),
+      }));
+    }
   }
   return Object.freeze(violations);
 }
 
 function diagnostics(scene, minimumAisleM) {
-  const collisions = findStoreSceneCollisions(scene, ["fixture", "wall", "column", "no_go", "technical"]);
+  const collisions = findStoreSceneCollisions(
+    scene,
+    ["fixture", "wall", "column", "no_go", "technical"],
+  );
   const aisleViolations = findStoreSceneAisleViolations(scene, minimumAisleM, ["fixture"]);
   const boundaryViolations = findBoundaryViolations(scene);
+  const constraintViolations = findPlanogramCadConstraintViolations(scene);
   return Object.freeze({
     collisionCount: collisions.length,
     aisleViolationCount: aisleViolations.length,
     boundaryViolationCount: boundaryViolations.length,
+    constraintViolationCount: constraintViolations.length,
     lockedNodeCount: scene.nodes.filter((node) => node.locked).length,
     collisions: Object.freeze(collisions),
     aisleViolations: Object.freeze(aisleViolations),
     boundaryViolations,
+    constraintViolations,
   });
 }
 
 function sourceRowForNode(baseDocument, nodeId) {
-  return (baseDocument?.architecture?.elements || []).find((row) => row.element_id === nodeId) || null;
+  return (baseDocument?.architecture?.elements || [])
+    .find((row) => row.element_id === nodeId) || null;
 }
 
 function authoringElementFromNode(baseDocument, node) {
   const source = sourceRowForNode(baseDocument, node.nodeId) || {};
   const provenance = node.provenance || {};
-  const clearanceM = Math.max(0, finite(node.metadata?.clearanceM, source.clearance_m || 0));
-  const scanSourceElementId = source.scan_source_element_id || (provenance.source === "reviewed-scan" ? provenance.sourceRef : null);
+  const metadata = node.metadata || {};
+  const clearanceM = Math.max(0, finite(metadata.clearanceM, source.clearance_m || 0));
+  const scanSourceElementId = source.scan_source_element_id
+    || (provenance.source === "reviewed-scan" ? provenance.sourceRef : null);
+  const parentId = node.parentId || null;
   return {
     ...source,
     element_id: node.nodeId,
@@ -110,6 +135,13 @@ function authoringElementFromNode(baseDocument, node) {
     locked: Boolean(node.locked),
     human_authored: Boolean(source.human_authored || provenance.source === "human"),
     scan_source_element_id: scanSourceElementId || undefined,
+    parent_id: parentId || undefined,
+    host_wall_id: parentId || undefined,
+    cad_layer: metadata.cadLayer || source.cad_layer || planogramCadLayerForNode(node),
+    host_constraint: metadata.hostConstraint || source.host_constraint || undefined,
+    host_offset_m: Number.isFinite(Number(metadata.hostOffsetM))
+      ? rounded(metadata.hostOffsetM, 4)
+      : source.host_offset_m,
   };
 }
 
@@ -135,8 +167,13 @@ function normalizedFloorDimension(value, fallback) {
 
 function requireCadCommand(scene, command) {
   if (!command.commandId) throw new Error("StoreScene commandId is required.");
-  if (command.expectedRevision != null && Math.trunc(finite(command.expectedRevision, -1)) !== scene.revision) {
-    throw new Error(`StoreScene revision conflict: expected ${command.expectedRevision}, found ${scene.revision}`);
+  if (
+    command.expectedRevision != null
+    && Math.trunc(finite(command.expectedRevision, -1)) !== scene.revision
+  ) {
+    throw new Error(
+      `StoreScene revision conflict: expected ${command.expectedRevision}, found ${scene.revision}`,
+    );
   }
 }
 
@@ -169,15 +206,21 @@ function applyBatchUpdate(scene, command) {
   requireCadCommand(scene, command);
   const updates = Array.isArray(command.updates) ? command.updates : [];
   if (!updates.length) return { scene, command, inverseCommand: null, changed: false };
-  if (updates.length > PLANOGRAM_CAD_BATCH_LIMIT) throw new Error(`CAD batch limit exceeded: ${updates.length}`);
+  if (updates.length > PLANOGRAM_CAD_BATCH_LIMIT) {
+    throw new Error(`CAD batch limit exceeded: ${updates.length}`);
+  }
   const ids = updates.map((row) => String(row?.nodeId || ""));
-  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) throw new Error("CAD batch node ids must be unique and non-empty.");
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) {
+    throw new Error("CAD batch node ids must be unique and non-empty.");
+  }
   const currentById = new Map(scene.nodes.map((node) => [node.nodeId, node]));
   const changed = [];
   for (const update of updates) {
     const current = currentById.get(update.nodeId);
     if (!current) throw new Error(`StoreScene node not found: ${update.nodeId}`);
-    if (current.locked && command.force !== true) throw new Error(`StoreScene node is locked: ${current.nodeId}`);
+    if (current.locked && command.force !== true) {
+      throw new Error(`StoreScene node is locked: ${current.nodeId}`);
+    }
     const next = patchedNode(current, update.patch || {});
     if (!nodesEqual(current, next)) changed.push({ current, next });
   }
@@ -190,11 +233,20 @@ function applyBatchUpdate(scene, command) {
   });
   return {
     scene: next,
-    command: { ...command, updates: changed.map((row) => ({ nodeId: row.next.nodeId, patch: updatePatchForNode(row.next) })) },
+    command: {
+      ...command,
+      updates: changed.map((row) => ({
+        nodeId: row.next.nodeId,
+        patch: updatePatchForNode(row.next),
+      })),
+    },
     inverseCommand: {
       commandId: `${command.commandId}:undo`,
       type: "UPDATE_NODES",
-      updates: changed.map((row) => ({ nodeId: row.current.nodeId, patch: updatePatchForNode(row.current) })),
+      updates: changed.map((row) => ({
+        nodeId: row.current.nodeId,
+        patch: updatePatchForNode(row.current),
+      })),
       force: true,
     },
     changed: true,
@@ -203,20 +255,36 @@ function applyBatchUpdate(scene, command) {
 
 function applyCadCommand(inputScene, rawCommand = {}) {
   const scene = normalizeStoreScene(inputScene);
-  const command = { ...rawCommand, type: String(rawCommand.type || "").toUpperCase() };
-  requireCadCommand(scene, command);
+  const normalized = {
+    ...rawCommand,
+    type: String(rawCommand.type || "").toUpperCase(),
+  };
+  requireCadCommand(scene, normalized);
+  const command = constrainPlanogramCadCommand(scene, normalized);
 
   if (command.type === "UPDATE_NODES") return applyBatchUpdate(scene, command);
 
   if (command.type === "RESIZE_FLOOR") {
     const widthM = normalizedFloorDimension(command.widthM, scene.floor.widthM);
     const depthM = normalizedFloorDimension(command.depthM, scene.floor.depthM);
-    if (widthM === scene.floor.widthM && depthM === scene.floor.depthM) return { scene, command, inverseCommand: null, changed: false };
-    const next = normalizeStoreScene({ ...scene, revision: scene.revision + 1, floor: { widthM, depthM } });
+    if (widthM === scene.floor.widthM && depthM === scene.floor.depthM) {
+      return { scene, command, inverseCommand: null, changed: false };
+    }
+    const next = normalizeStoreScene({
+      ...scene,
+      revision: scene.revision + 1,
+      floor: { widthM, depthM },
+    });
     return {
       scene: next,
       command: { ...command, widthM, depthM },
-      inverseCommand: { commandId: `${command.commandId}:undo`, type: "RESIZE_FLOOR", widthM: scene.floor.widthM, depthM: scene.floor.depthM, force: true },
+      inverseCommand: {
+        commandId: `${command.commandId}:undo`,
+        type: "RESIZE_FLOOR",
+        widthM: scene.floor.widthM,
+        depthM: scene.floor.depthM,
+        force: true,
+      },
       changed: true,
     };
   }
@@ -224,14 +292,20 @@ function applyCadCommand(inputScene, rawCommand = {}) {
   if (command.type === "UPDATE_NODE") {
     const current = scene.nodes.find((node) => node.nodeId === command.nodeId);
     if (!current) throw new Error(`StoreScene node not found: ${command.nodeId}`);
-    if (current.locked && command.force !== true) throw new Error(`StoreScene node is locked: ${current.nodeId}`);
-    if (nodesEqual(current, patchedNode(current, command.patch || {}))) return { scene, command, inverseCommand: null, changed: false };
+    if (current.locked && command.force !== true) {
+      throw new Error(`StoreScene node is locked: ${current.nodeId}`);
+    }
+    if (nodesEqual(current, patchedNode(current, command.patch || {}))) {
+      return { scene, command, inverseCommand: null, changed: false };
+    }
   }
 
   if (command.type === "SET_LOCK") {
     const current = scene.nodes.find((node) => node.nodeId === command.nodeId);
     if (!current) throw new Error(`StoreScene node not found: ${command.nodeId}`);
-    if (current.locked === Boolean(command.locked)) return { scene, command, inverseCommand: null, changed: false };
+    if (current.locked === Boolean(command.locked)) {
+      return { scene, command, inverseCommand: null, changed: false };
+    }
   }
 
   const applied = applyStoreSceneCommand(scene, command);
@@ -255,14 +329,26 @@ function sessionFromHistory(base, history) {
   });
 }
 
-export function createPlanogramCadSession({ candidate = null, reviewedResult = null, minimumAisleM = 1, sceneId = null } = {}) {
-  const editableCandidate = reviewedResult ? candidateFromReviewedStoreScan(candidate, reviewedResult) : candidate;
+export function createPlanogramCadSession({
+  candidate = null,
+  reviewedResult = null,
+  minimumAisleM = 1,
+  sceneId = null,
+} = {}) {
+  const editableCandidate = reviewedResult
+    ? candidateFromReviewedStoreScan(candidate, reviewedResult)
+    : candidate;
   if (!editableCandidate) return null;
   const document = buildPlanogramAuthoringDocument(editableCandidate);
   if (!document) return null;
-  const baseScene = buildStoreScene(editableCandidate, document, sceneId ? { sceneId } : {});
+  const baseScene = buildStoreScene(
+    editableCandidate,
+    document,
+    sceneId ? { sceneId } : {},
+  );
   if (!baseScene) return null;
-  const scene = hydratePlanogramCadOverlay(baseScene, editableCandidate);
+  const relationshipScene = hydratePlanogramCadRelationships(baseScene, document);
+  const scene = hydratePlanogramCadOverlay(relationshipScene, editableCandidate);
   const sourceKind = reviewedResult ? "human_reviewed_store_scan" : "authored_store_scene";
   const base = Object.freeze({
     contract: PLANOGRAM_CAD_SESSION_CONTRACT,
@@ -271,7 +357,9 @@ export function createPlanogramCadSession({ candidate = null, reviewedResult = n
     document,
     minimumAisleM: Math.max(0.8, Number(minimumAisleM) || 1),
     previewOnly: Boolean(scene.previewOnly),
-    geometryAuthority: scene.previewOnly ? "editable_preview_not_store_dna_authority" : "editable_store_scene",
+    geometryAuthority: scene.previewOnly
+      ? "editable_preview_not_store_dna_authority"
+      : "editable_store_scene",
     productionReleaseAllowed: false,
     physicalTruthAttested: false,
     reviewFingerprint: scene.provenance?.reviewFingerprint || null,
@@ -284,16 +372,27 @@ export function executePlanogramCadSessionCommand(session, command) {
   const applied = applyCadCommand(session.history.present, command);
   if (applied.changed === false) return session;
   return sessionFromHistory(session, {
-    past: [...session.history.past, { command: applied.command, inverseCommand: applied.inverseCommand }],
+    past: [
+      ...session.history.past,
+      { command: applied.command, inverseCommand: applied.inverseCommand },
+    ],
     present: applied.scene,
     future: [],
   });
 }
 
 export function undoPlanogramCadSession(session) {
-  if (!session?.history || session.contract !== PLANOGRAM_CAD_SESSION_CONTRACT || !session.history.past.length) return session;
+  if (
+    !session?.history
+    || session.contract !== PLANOGRAM_CAD_SESSION_CONTRACT
+    || !session.history.past.length
+  ) return session;
   const entry = session.history.past[session.history.past.length - 1];
-  const undone = applyCadCommand(session.history.present, { ...entry.inverseCommand, expectedRevision: undefined, force: true });
+  const undone = applyCadCommand(session.history.present, {
+    ...entry.inverseCommand,
+    expectedRevision: undefined,
+    force: true,
+  });
   if (undone.changed === false) return session;
   return sessionFromHistory(session, {
     past: session.history.past.slice(0, -1),
@@ -303,12 +402,23 @@ export function undoPlanogramCadSession(session) {
 }
 
 export function redoPlanogramCadSession(session) {
-  if (!session?.history || session.contract !== PLANOGRAM_CAD_SESSION_CONTRACT || !session.history.future.length) return session;
+  if (
+    !session?.history
+    || session.contract !== PLANOGRAM_CAD_SESSION_CONTRACT
+    || !session.history.future.length
+  ) return session;
   const [entry, ...future] = session.history.future;
-  const redone = applyCadCommand(session.history.present, { ...entry.command, expectedRevision: undefined, force: true });
+  const redone = applyCadCommand(session.history.present, {
+    ...entry.command,
+    expectedRevision: undefined,
+    force: true,
+  });
   if (redone.changed === false) return session;
   return sessionFromHistory(session, {
-    past: [...session.history.past, { command: redone.command, inverseCommand: redone.inverseCommand }],
+    past: [
+      ...session.history.past,
+      { command: redone.command, inverseCommand: redone.inverseCommand },
+    ],
     present: redone.scene,
     future,
   });

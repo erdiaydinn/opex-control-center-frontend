@@ -1,3 +1,5 @@
+import { buildPlanogramWallPassageModel } from "./planogramWallPassages.js";
+
 function number(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -71,10 +73,42 @@ function authoredFixture(row) {
   });
 }
 
-function authoredScene(model) {
+function authoredRelationshipIndex(authoringCandidate) {
+  const rows = authoringCandidate?.store_dna?.architecture?.elements;
+  if (!Array.isArray(rows)) return new Map();
+  return new Map(rows.map((row) => [text(row?.element_id), Object.freeze({
+    parentId: text(row?.parent_id || row?.host_wall_id) || null,
+    hostConstraint: text(row?.host_constraint) || null,
+    hostOffsetM: row?.host_offset_m == null ? null : number(row.host_offset_m),
+    cadLayer: text(row?.cad_layer) || null,
+  })]));
+}
+
+function authoredScene(model, authoringCandidate = null) {
   if (!model?.floor || !Array.isArray(model?.modules)) return null;
   const cadFixtures = Array.isArray(model?.cadFixtures) ? model.cadFixtures : [];
   const fixtures = [...model.modules, ...cadFixtures];
+  const relationshipById = authoredRelationshipIndex(authoringCandidate);
+  const architecture = Object.freeze((model.elements || []).map((row) => {
+    const relationship = relationshipById.get(text(row.id)) || {};
+    return Object.freeze({
+      id: text(row.id),
+      type: text(row.type).toLowerCase(),
+      centerXM: number(row.centerXM),
+      centerYM: number(row.centerYM),
+      widthM: number(row.widthM),
+      depthM: number(row.depthM),
+      heightM: number(row.heightM, 0),
+      rotationDeg: number(row.rotationDeg),
+      clearanceM: number(row.clearanceM),
+      coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
+      parentId: relationship.parentId || null,
+      hostConstraint: relationship.hostConstraint || null,
+      hostOffsetM: relationship.hostOffsetM ?? null,
+      cadLayer: relationship.cadLayer || null,
+    });
+  }));
+  const wallPassages = buildPlanogramWallPassageModel(architecture);
   return Object.freeze({
     contract: "eay.planogram.unified-twin-scene.v1",
     sourceKind: "authored_planogram",
@@ -84,17 +118,10 @@ function authoredScene(model) {
       widthM: number(model.floor.widthM),
       depthM: number(model.floor.depthM),
     }),
-    architecture: Object.freeze((model.elements || []).map((row) => Object.freeze({
-      id: text(row.id),
-      type: text(row.type).toLowerCase(),
-      centerXM: number(row.centerXM),
-      centerYM: number(row.centerYM),
-      widthM: number(row.widthM),
-      depthM: number(row.depthM),
-      rotationDeg: number(row.rotationDeg),
-      clearanceM: number(row.clearanceM),
-      coordinateAuthority: text(row.coordinateAuthority || model.geometryAuthority),
-    }))),
+    architecture,
+    renderArchitecture: wallPassages.renderArchitecture,
+    navigationArchitecture: wallPassages.navigationArchitecture,
+    wallPassages,
     fixtures: Object.freeze(fixtures.map(authoredFixture)),
     route: model.route || null,
     provenance: Object.freeze({
@@ -104,6 +131,9 @@ function authoredScene(model) {
       cadOverlayContract: text(model?.cadOverlay?.contract),
       cadOverlayRejected: model?.cadOverlay?.rejected === true,
       cadOverlayFixtureCount: cadFixtures.length,
+      wallPassageContract: wallPassages.contract,
+      passableOpeningCount: wallPassages.passageCount,
+      invalidPassageCount: wallPassages.invalidPassageCount,
     }),
   });
 }
@@ -123,6 +153,22 @@ function scannedScene(architecture, recognizedFixtures = []) {
     const identity = text(row?.element_id || row?.fixture_element_id);
     return !identity || !architectureEquipmentIds.has(identity);
   });
+  const scannedArchitecture = Object.freeze(architecture.elements.map((row) => Object.freeze({
+    id: text(row.element_id),
+    type: text(row.element_type).toLowerCase(),
+    centerXM: number(row.center_x_m),
+    centerYM: number(row.center_y_m),
+    widthM: number(row.width_m),
+    depthM: number(row.depth_m),
+    heightM: number(row.height_m, 0),
+    rotationDeg: number(row.rotation_deg),
+    clearanceM: number(row.clearance_m),
+    coordinateAuthority: "reviewed_scan_measurement_preview",
+    parentId: text(row.parent_id || row.host_wall_id) || null,
+    hostConstraint: text(row.host_constraint) || null,
+    hostOffsetM: row.host_offset_m == null ? null : number(row.host_offset_m),
+  })));
+  const wallPassages = buildPlanogramWallPassageModel(scannedArchitecture);
 
   return Object.freeze({
     contract: "eay.planogram.unified-twin-scene.v1",
@@ -133,17 +179,10 @@ function scannedScene(architecture, recognizedFixtures = []) {
       widthM: number(architecture.floor_width_m),
       depthM: number(architecture.floor_depth_m),
     }),
-    architecture: Object.freeze(architecture.elements.map((row) => Object.freeze({
-      id: text(row.element_id),
-      type: text(row.element_type).toLowerCase(),
-      centerXM: number(row.center_x_m),
-      centerYM: number(row.center_y_m),
-      widthM: number(row.width_m),
-      depthM: number(row.depth_m),
-      rotationDeg: number(row.rotation_deg),
-      clearanceM: number(row.clearance_m),
-      coordinateAuthority: "reviewed_scan_measurement_preview",
-    }))),
+    architecture: scannedArchitecture,
+    renderArchitecture: wallPassages.renderArchitecture,
+    navigationArchitecture: wallPassages.navigationArchitecture,
+    wallPassages,
     fixtures: Object.freeze(deduplicatedFixtures.map((row, index) => Object.freeze({
       id: text(row.element_id || row.fixture_element_id || `scan-fixture-${index + 1}`),
       fixtureId: fixtureIdFrom(row),
@@ -166,12 +205,20 @@ function scannedScene(architecture, recognizedFixtures = []) {
       architectureSourceRef: text(architecture.source_ref),
       sourceContract: text(architecture.contract || architecture.schema_version),
       deduplicatedColdEquipmentCount: Math.max(0, (Array.isArray(recognizedFixtures) ? recognizedFixtures.length : 0) - deduplicatedFixtures.length),
+      wallPassageContract: wallPassages.contract,
+      passableOpeningCount: wallPassages.passageCount,
+      invalidPassageCount: wallPassages.invalidPassageCount,
     }),
   });
 }
 
-export function buildPlanogramUnifiedTwinScene({ authoredModel = null, reviewedArchitecture = null, recognizedFixtures = [] } = {}) {
-  const authored = authoredScene(authoredModel);
+export function buildPlanogramUnifiedTwinScene({
+  authoredModel = null,
+  authoringCandidate = null,
+  reviewedArchitecture = null,
+  recognizedFixtures = [],
+} = {}) {
+  const authored = authoredScene(authoredModel, authoringCandidate);
   const scanned = scannedScene(reviewedArchitecture, recognizedFixtures);
   if (authored) return authored;
   if (scanned) return scanned;

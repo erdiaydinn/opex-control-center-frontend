@@ -53,7 +53,7 @@ jobs:
         working-directory: services/core-api
         run: >-
           python -c "from app.main import app;
-          paths={route.path for route in app.routes};
+          paths={getattr(route,'path',None) for route in app.routes};
           required={'/v1/mobile/fleet/credentials','/v1/mobile/fleet/health'};
           assert required.issubset(paths), paths"
 

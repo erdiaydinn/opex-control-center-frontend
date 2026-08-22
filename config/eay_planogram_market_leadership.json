@@ -1,0 +1,123 @@
+{
+  "contract": "eay-planogram-market-leadership-v1",
+  "status": "ACTIVE_DEVELOPMENT",
+  "claim_market_leader": false,
+  "product_truth": "user_visible_output_and_field_results",
+  "canonical_branch": "product/planogram-market-leadership-v1",
+  "base_branch": "product/eay-category-leadership-v1",
+  "workstreams": [
+    {
+      "id": "engine",
+      "name": "Engine and multi-objective optimization",
+      "mission": "Generate and compare materially different feasible plans instead of selecting only from a small fixed heuristic portfolio.",
+      "acceptance": [
+        "hard_constraints_never_relaxed",
+        "observed_baskets_supported",
+        "baseline_never_regressed",
+        "alternative_plans_explained",
+        "field_kpi_backtest_required"
+      ]
+    },
+    {
+      "id": "spatial",
+      "name": "Store Scan, CAD and spatial truth",
+      "mission": "Convert measured camera, LiDAR, AR depth and CAD evidence into reviewable Store DNA without silently inventing geometry or operational semantics.",
+      "acceptance": [
+        "arbitrary_rotation_preserved",
+        "scan_confidence_exposed",
+        "human_operational_annotation_required",
+        "measured_source_provenance_preserved",
+        "real_device_scan_uat_required"
+      ]
+    },
+    {
+      "id": "digital_twin",
+      "name": "2D CAD and high-fidelity 3D Digital Twin",
+      "mission": "Make the generated result visually and dimensionally useful for real store design, installation and review rather than a debug visualization.",
+      "acceptance": [
+        "dimensionally_consistent_2d",
+        "open_fixture_geometry",
+        "facing_aware_products",
+        "real_fixture_asset_library_required",
+        "real_product_asset_fidelity_required",
+        "walkthrough_and_picker_view_required"
+      ]
+    },
+    {
+      "id": "picker_simulation",
+      "name": "Picker, congestion and replenishment simulation",
+      "mission": "Score plans against observed order baskets, route distance, congestion, replenishment and operational flow.",
+      "acceptance": [
+        "observed_basket_coverage_reported",
+        "p50_p90_p95_route_metrics",
+        "multi_picker_congestion_required",
+        "replenishment_interference_required",
+        "real_shift_backtest_required"
+      ]
+    },
+    {
+      "id": "computer_vision",
+      "name": "Shelf Scan and compliance vision",
+      "mission": "Compare field shelf evidence with the approved plan and explain SKU, facing, gap and placement differences.",
+      "acceptance": [
+        "sku_recognition_required",
+        "facing_count_required",
+        "empty_gap_detection_required",
+        "planogram_diff_required",
+        "confidence_and_manual_review_required",
+        "real_shelf_dataset_required"
+      ]
+    },
+    {
+      "id": "physical_truth",
+      "name": "SKU, fixture and Store DNA authority",
+      "mission": "Prevent optimization or rendering from manufacturing missing dimensions, fixture capacity, images or measured store facts.",
+      "acceptance": [
+        "approved_dimensions",
+        "fixture_capacity",
+        "store_dna_provenance",
+        "temperature_and_fixture_compatibility",
+        "production_fail_closed"
+      ]
+    },
+    {
+      "id": "red_team",
+      "name": "Blind benchmark and adversarial product critique",
+      "mission": "Judge the generated output against expert manual layouts and market baselines instead of repository activity.",
+      "acceptance": [
+        "blind_expert_comparison_required",
+        "real_store_ground_truth_required",
+        "visual_quality_score_required",
+        "operational_kpi_score_required",
+        "no_market_leadership_claim_without_evidence"
+      ]
+    }
+  ],
+  "leadership_gates": {
+    "repository": {
+      "required": true,
+      "sufficient": false
+    },
+    "real_store_scan": {
+      "required": true,
+      "sufficient": false
+    },
+    "real_product_and_fixture_assets": {
+      "required": true,
+      "sufficient": false
+    },
+    "blind_expert_benchmark": {
+      "required": true,
+      "sufficient": false
+    },
+    "field_kpi_validation": {
+      "required": true,
+      "sufficient": false
+    },
+    "market_baseline_comparison": {
+      "required": true,
+      "sufficient": false
+    }
+  },
+  "definition_of_done": "Market leadership may be claimed only after real-store scans, measured Store DNA, real assets, blind expert comparison, field KPI evidence and external market baseline evidence all pass. CI or synthetic fixtures alone are never sufficient."
+}

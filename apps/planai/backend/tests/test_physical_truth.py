@@ -2,6 +2,7 @@ import unittest
 
 from physical_truth import (
     clone_with_physical_truth,
+    normalize_mass_kg,
     parse_pack_metrics,
     physical_constraint_reason,
     physical_scale_eligible,
@@ -158,6 +159,33 @@ def measured_dna(width=1.2):
 
 
 class PhysicalTruthTests(unittest.TestCase):
+    def test_mass_units_normalize_without_grams_as_kilograms(self):
+        self.assertEqual(
+            normalize_mass_kg(
+                {
+                    "product_weight_value": 500,
+                    "product_weight_unit": "g",
+                }
+            )["value_kg"],
+            0.5,
+        )
+        self.assertEqual(normalize_mass_kg({"weight_g": 500})["value_kg"], 0.5)
+        self.assertEqual(normalize_mass_kg({"weight_kg": 0.5})["value_kg"], 0.5)
+        ambiguous = normalize_mass_kg({"product_weight_value": 500})
+        self.assertFalse(ambiguous["valid"])
+        self.assertTrue(ambiguous["ambiguous"])
+
+    def test_ambiguous_mass_blocks_production_truth(self):
+        row = product("AMB", "Ambiguous Product")
+        row.pop("weight_kg")
+        row["product_weight_value"] = 500
+        report = production_acceptance_report(
+            [row],
+            physical_layout(),
+            measured_dna(),
+        )
+        self.assertIn("ambiguous_mass_unit_present", report["blockers"])
+
     def test_large_beverage_multipacks_require_pallet(self):
         cases = [
             ("Water 6 x 1.5 L", 9.0),

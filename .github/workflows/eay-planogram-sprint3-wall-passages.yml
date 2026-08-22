@@ -1,0 +1,60 @@
+name: EAY Planogram Sprint 3 - Wall Passages
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "src/modules/planogram/planogramWallPassages.js"
+      - "src/modules/planogram/planogramUnifiedTwinScene.js"
+      - "src/modules/planogram/PlanogramDigitalTwin.jsx"
+      - "src/modules/planogram/PlanogramTwinSceneRenderer.jsx"
+      - "src/modules/planogram/PlanogramFirstPersonWalkthrough.jsx"
+      - "src/modules/planogram/planogramWalkthroughNavigation.js"
+      - "scripts/test-planogram-sprint3-wall-passages.mjs"
+      - ".github/workflows/eay-planogram-sprint3-wall-passages.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-sprint3-wall-passages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wall-passages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Reject new hard-coded Planogram UI strings
+        run: node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Hosted wall passage and walk-through passability
+        run: node scripts/test-planogram-sprint3-wall-passages.mjs
+      - name: Preserve hosted-opening CAD constraints
+        run: node scripts/test-planogram-sprint3-cad-constraints.mjs
+      - name: Production build
+        run: npm run build -- --manifest
+      - name: Preserve accessibility and localization
+        run: npm run test:inclusion
+      - name: Truth boundary
+        run: |
+          echo 'SPRINT3_WALL_PASSAGE_PROJECTION=IMPLEMENTED'
+          echo 'SPRINT3_DOOR_PASSABILITY=IMPLEMENTED'
+          echo 'SPRINT3_EMERGENCY_EXIT_PASSABILITY=IMPLEMENTED'
+          echo 'SPRINT3_WINDOW_PASSABILITY=FALSE'
+          echo 'SPRINT3_INVALID_HOST_FAIL_CLOSED=TRUE'
+          echo 'SPRINT3_WALL_PASSAGE_STORE_DNA_AUTHORITY=FALSE'
+          echo 'SPRINT3_WALL_PASSAGE_PRODUCTION_READY=FALSE'

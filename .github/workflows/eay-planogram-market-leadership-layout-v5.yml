@@ -1,0 +1,154 @@
+name: EAY Planogram Market Leadership - Physical Layout V5
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/physical_layout_candidate_preview.py"
+      - "apps/planai/backend/physical_layout_candidate_economics.py"
+      - "apps/planai/backend/physical_economics.py"
+      - "apps/planai/backend/tests/test_physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/tests/test_physical_layout_candidate_preview.py"
+      - "apps/planai/backend/tests/test_physical_layout_candidate_economics.py"
+      - "apps/planai/backend/tests/test_physical_economics.py"
+      - "apps/planai/backend/physical_optimizer_v4.py"
+      - "apps/planai/backend/physical_optimizer_v3.py"
+      - "apps/planai/backend/architecture_truth.py"
+      - "services/core-api/app/modules/planogram/physical_layout_adapter.py"
+      - "services/core-api/app/modules/planogram/scenario_adapter.py"
+      - "services/core-api/app/modules/planogram/scenario_router.py"
+      - "services/core-api/app/modules/planogram/scenario_schemas.py"
+      - "services/core-api/app/modules/planogram/economics_adapter.py"
+      - "services/core-api/app/modules/planogram/economics_router.py"
+      - "services/core-api/app/modules/planogram/economics_schemas.py"
+      - "services/core-api/app/modules/planogram/optimizer_router.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_physical_layout_v5_contract.py"
+      - "services/core-api/tests/test_planogram_scenario_replay_api.py"
+      - "services/core-api/tests/test_planogram_candidate_economics_api.py"
+      - ".github/workflows/eay-planogram-market-leadership-layout-v5.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/physical_layout_candidate_preview.py"
+      - "apps/planai/backend/physical_layout_candidate_economics.py"
+      - "apps/planai/backend/physical_economics.py"
+      - "apps/planai/backend/tests/test_physical_layout_optimizer_v5.py"
+      - "apps/planai/backend/tests/test_physical_layout_candidate_preview.py"
+      - "apps/planai/backend/tests/test_physical_layout_candidate_economics.py"
+      - "apps/planai/backend/tests/test_physical_economics.py"
+      - "services/core-api/app/modules/planogram/physical_layout_adapter.py"
+      - "services/core-api/app/modules/planogram/scenario_adapter.py"
+      - "services/core-api/app/modules/planogram/scenario_router.py"
+      - "services/core-api/app/modules/planogram/scenario_schemas.py"
+      - "services/core-api/app/modules/planogram/economics_adapter.py"
+      - "services/core-api/app/modules/planogram/economics_router.py"
+      - "services/core-api/app/modules/planogram/economics_schemas.py"
+      - "services/core-api/app/modules/planogram/optimizer_router.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_physical_layout_v5_contract.py"
+      - "services/core-api/tests/test_planogram_scenario_replay_api.py"
+      - "services/core-api/tests/test_planogram_candidate_economics_api.py"
+      - ".github/workflows/eay-planogram-market-leadership-layout-v5.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-market-leadership-layout-v5-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bounded-physical-layout-search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
+      - name: Install PlanAI and Core test surfaces
+        run: |
+          python -m pip install -r apps/planai/backend/requirements.txt
+          python -m pip install -e "./services/core-api[dev]"
+      - name: Compile and lint physical-layout search replay and economics
+        run: |
+          python -m py_compile \
+            apps/planai/backend/physical_layout_optimizer_v5.py \
+            apps/planai/backend/physical_layout_candidate_preview.py \
+            apps/planai/backend/physical_layout_candidate_economics.py \
+            apps/planai/backend/physical_economics.py
+          ruff check \
+            apps/planai/backend/physical_layout_optimizer_v5.py \
+            apps/planai/backend/physical_layout_candidate_preview.py \
+            apps/planai/backend/physical_layout_candidate_economics.py \
+            apps/planai/backend/physical_economics.py \
+            apps/planai/backend/tests/test_physical_layout_optimizer_v5.py \
+            apps/planai/backend/tests/test_physical_layout_candidate_preview.py \
+            apps/planai/backend/tests/test_physical_layout_candidate_economics.py \
+            apps/planai/backend/tests/test_physical_economics.py \
+            services/core-api/app/modules/planogram/physical_layout_adapter.py \
+            services/core-api/app/modules/planogram/scenario_adapter.py \
+            services/core-api/app/modules/planogram/scenario_router.py \
+            services/core-api/app/modules/planogram/scenario_schemas.py \
+            services/core-api/app/modules/planogram/economics_adapter.py \
+            services/core-api/app/modules/planogram/economics_router.py \
+            services/core-api/app/modules/planogram/economics_schemas.py \
+            services/core-api/app/modules/planogram/optimizer_router.py \
+            services/core-api/tests/test_planogram_physical_layout_v5_contract.py \
+            services/core-api/tests/test_planogram_scenario_replay_api.py \
+            services/core-api/tests/test_planogram_candidate_economics_api.py
+      - name: V5 relocation red-team acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_physical_layout_optimizer_v5.py
+      - name: V5 fingerprint-only candidate replay acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_physical_layout_candidate_preview.py
+      - name: Fingerprint-bound candidate economics acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_physical_layout_candidate_economics.py
+      - name: Evidence-bound CFO economics acceptance
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_physical_economics.py
+      - name: Preserve V4 allocation and V3 basket truth
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_physical_optimizer_v4.py
+          tests/test_physical_optimizer_v3.py
+          tests/test_picker_tour_simulation.py
+      - name: Core V5 proposal replay and scenario economics authority acceptance
+        working-directory: services/core-api
+        run: >-
+          python -m pytest -q
+          tests/test_planogram_physical_layout_v5_contract.py
+          tests/test_planogram_scenario_replay_api.py
+          tests/test_planogram_candidate_economics_api.py
+      - name: Prove bounded relocation and authority boundary
+        working-directory: apps/planai/backend
+        run: |
+          python - <<'PY'
+          import physical_layout_candidate_preview as replay
+          import physical_layout_optimizer_v5 as v5
+          assert v5.MAX_LAYOUT_CANDIDATES == 32
+          assert v5.MAX_ALLOCATION_CANDIDATES == 24
+          assert replay.FINGERPRINT_RE.fullmatch('a' * 64)
+          print('PLANOGRAM_V5_LAYOUT_SEARCH_BOUNDED=PASS')
+          print('PLANOGRAM_V5_EXPLICIT_RELOCATABLE_ONLY=PASS')
+          print('PLANOGRAM_V5_CANDIDATE_REPLAY_FINGERPRINT_ONLY=PASS')
+          print('PLANOGRAM_V5_CANDIDATE_ECONOMICS_FINGERPRINT_BOUND=PASS')
+          print('PLANOGRAM_V5_PHYSICAL_RELOCATION_AUTHORITY=FALSE')
+          print('PLANOGRAM_V5_INSTALLATION_APPROVAL=FALSE')
+          print('PLANOGRAM_V5_CAPEX_ATTESTATION=REQUIRED')
+          print('PLANOGRAM_V5_FINANCE_APPROVAL=FALSE')
+          print('PLANOGRAM_V5_REALIZED_SAVINGS_PROVEN=FALSE')
+          PY

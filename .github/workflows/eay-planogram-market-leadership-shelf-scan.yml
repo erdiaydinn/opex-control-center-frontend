@@ -1,0 +1,95 @@
+name: EAY Planogram Market Leadership - Shelf Scan
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "services/core-api/app/modules/planogram/shelf_scan.py"
+      - "services/core-api/app/modules/planogram/shelf_scan_schemas.py"
+      - "services/core-api/app/modules/planogram/shelf_scan_router.py"
+      - "services/core-api/app/modules/planogram/execution.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_shelf_scan.py"
+      - "services/core-api/tests/test_planogram_shelf_scan_api.py"
+      - "services/core-api/tests/test_planogram_master26_execution.py"
+      - ".github/workflows/eay-planogram-market-leadership-shelf-scan.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "services/core-api/app/modules/planogram/shelf_scan.py"
+      - "services/core-api/app/modules/planogram/shelf_scan_schemas.py"
+      - "services/core-api/app/modules/planogram/shelf_scan_router.py"
+      - "services/core-api/app/modules/planogram/execution.py"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram_shelf_scan.py"
+      - "services/core-api/tests/test_planogram_shelf_scan_api.py"
+      - "services/core-api/tests/test_planogram_master26_execution.py"
+      - ".github/workflows/eay-planogram-market-leadership-shelf-scan.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-market-leadership-shelf-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shelf-scan-truth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/core-api/pyproject.toml
+      - name: Install Core test surface
+        run: python -m pip install -e "./services/core-api[dev]"
+      - name: Compile and lint shelf scan evaluator and runtime boundary
+        run: |
+          python -m py_compile \
+            services/core-api/app/modules/planogram/shelf_scan.py \
+            services/core-api/app/modules/planogram/shelf_scan_schemas.py \
+            services/core-api/app/modules/planogram/shelf_scan_router.py
+          ruff check \
+            services/core-api/app/modules/planogram/shelf_scan.py \
+            services/core-api/app/modules/planogram/shelf_scan_schemas.py \
+            services/core-api/app/modules/planogram/shelf_scan_router.py \
+            services/core-api/app/budget_main.py \
+            services/core-api/tests/test_planogram_shelf_scan.py \
+            services/core-api/tests/test_planogram_shelf_scan_api.py \
+            services/core-api/tests/test_planogram_master26_execution.py
+      - name: Shelf Scan uncertainty and absence acceptance
+        working-directory: services/core-api
+        run: python -m pytest -q tests/test_planogram_shelf_scan.py
+      - name: Shelf Scan production ASGI and authority acceptance
+        working-directory: services/core-api
+        run: python -m pytest -q tests/test_planogram_shelf_scan_api.py
+      - name: Preserve canonical execution compliance contract
+        working-directory: services/core-api
+        run: python -m pytest -q tests/test_planogram_master26_execution.py
+      - name: Prove no auto-truth from computer vision
+        working-directory: services/core-api
+        run: |
+          python - <<'PY'
+          from app.budget_main import app
+          from app.modules.planogram.shelf_scan import (
+              DEFAULT_MIN_DETECTION_CONFIDENCE,
+              DEFAULT_MIN_IMAGE_QUALITY,
+              DEFAULT_MAX_OCCLUSION_PCT,
+          )
+          paths = app.openapi()['paths']
+          assert '/v1/planogram/shelf-scan-preview' in paths
+          assert DEFAULT_MIN_DETECTION_CONFIDENCE >= 0.8
+          assert DEFAULT_MIN_IMAGE_QUALITY >= 0.7
+          assert DEFAULT_MAX_OCCLUSION_PCT <= 35
+          print('PLANOGRAM_SHELF_SCAN_PRODUCTION_ASGI_MOUNT=PASS')
+          print('PLANOGRAM_SHELF_SCAN_LOW_CONFIDENCE_AUTO_TRUTH=FALSE')
+          print('PLANOGRAM_SHELF_SCAN_INCOMPLETE_COVERAGE_ABSENCE=UNPROVEN')
+          print('PLANOGRAM_SHELF_SCAN_AUTO_ACCEPT=FALSE')
+          print('PLANOGRAM_SHELF_SCAN_AUTO_CORRECT=FALSE')
+          PY

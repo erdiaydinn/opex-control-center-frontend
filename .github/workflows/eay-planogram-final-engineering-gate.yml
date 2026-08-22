@@ -1,0 +1,104 @@
+name: EAY Planogram Final Engineering Gate
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_engine.py"
+      - "apps/planai/backend/production_capacity_reconciler.py"
+      - "apps/planai/backend/physical_capacity_v2.py"
+      - "apps/planai/backend/tests/test_physical_engine.py"
+      - "apps/planai/backend/tests/test_production_capacity_reconciler.py"
+      - "apps/planai/backend/tests/test_physical_capacity_v2.py"
+      - "apps/planai/backend/tests/test_commercial_physical_convergence.py"
+      - "services/core-api/tests/test_planogram_capacity_v2_adapter.py"
+      - ".github/workflows/eay-planogram-final-engineering-gate.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_engine.py"
+      - "apps/planai/backend/production_capacity_reconciler.py"
+      - "apps/planai/backend/physical_capacity_v2.py"
+      - "apps/planai/backend/tests/test_physical_engine.py"
+      - "apps/planai/backend/tests/test_production_capacity_reconciler.py"
+      - "apps/planai/backend/tests/test_physical_capacity_v2.py"
+      - "apps/planai/backend/tests/test_commercial_physical_convergence.py"
+      - "services/core-api/tests/test_planogram_capacity_v2_adapter.py"
+      - ".github/workflows/eay-planogram-final-engineering-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-final-engineering-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  final-engineering:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
+      - name: Install Planogram and Core test surfaces
+        run: |
+          python -m pip install -r apps/planai/backend/requirements.txt
+          python -m pip install -e "./services/core-api[dev]"
+      - name: Compile final capacity surface
+        run: >-
+          python -m py_compile
+          apps/planai/backend/physical_engine.py
+          apps/planai/backend/production_capacity_reconciler.py
+          apps/planai/backend/physical_capacity_v2.py
+      - name: Strict lint final capacity surface
+        run: >-
+          ruff check
+          apps/planai/backend/production_capacity_reconciler.py
+          apps/planai/backend/tests/test_production_capacity_reconciler.py
+          services/core-api/tests/test_planogram_capacity_v2_adapter.py
+      - name: Preserve documented legacy physical-engine style boundary
+        run: >-
+          ruff check --ignore I001,E501
+          apps/planai/backend/physical_engine.py
+          apps/planai/backend/tests/test_physical_engine.py
+          apps/planai/backend/physical_capacity_v2.py
+          apps/planai/backend/tests/test_physical_capacity_v2.py
+          apps/planai/backend/tests/test_commercial_physical_convergence.py
+      - name: Full-depth capacity and merchandising regression
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_production_capacity_reconciler.py
+          tests/test_physical_capacity_v2.py
+          tests/test_physical_truth.py
+          tests/test_physical_engine.py
+          tests/test_commercial_physical_convergence.py
+      - name: Core capacity veto regression
+        run: python -m pytest -q services/core-api/tests/test_planogram_capacity_v2_adapter.py
+      - name: Prove final engineering truth boundary
+        working-directory: apps/planai/backend
+        run: |
+          python - <<'PY'
+          from production_capacity_reconciler import RECONCILER_VERSION
+          from physical_capacity_v2 import CAPACITY_V2_VERSION
+          assert RECONCILER_VERSION == 'planogram-production-capacity-reconciler-v1'
+          assert CAPACITY_V2_VERSION == 'planogram-physical-capacity-v2-full-depth-stack'
+          print('PLANOGRAM_FULL_DEPTH_PRODUCTION_RECONCILIATION=PASS')
+          print('PLANOGRAM_LAST_FACING_AUTO_DROP=FALSE')
+          print('PLANOGRAM_MISSING_CAPACITY_EVIDENCE_FAIL_CLOSED=PASS')
+          print('PLANOGRAM_INSTALLATION_AUTHORITY=FALSE')
+          print('PLANOGRAM_MARKET_LEADERSHIP_FIELD_PROOF=REQUIRED')
+          PY

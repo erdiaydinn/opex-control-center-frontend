@@ -1,0 +1,93 @@
+name: EAY Planogram Market Leadership - Scanned Cold Chain
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "apps/planai/backend/requirements.txt"
+      - "apps/planai/backend/architecture_truth_v2.py"
+      - "services/core-api/app/modules/planogram/store_scan.py"
+      - "services/core-api/app/modules/planogram/store_scan_annotation.py"
+      - "services/core-api/app/modules/planogram/store_scan_fixture_layout.py"
+      - "services/core-api/tests/test_planogram_store_scan_cold_chain.py"
+      - "src/modules/planogram/PlanogramStoreScanPanel.jsx"
+      - "src/modules/planogram/PlanogramScannedDigitalTwin.jsx"
+      - "src/modules/planogram/planogramFixtureBindings.js"
+      - "scripts/test-planogram-fixture-binding.mjs"
+      - "scripts/test-planogram-scanned-cold-chain.mjs"
+      - ".github/workflows/eay-planogram-scanned-cold-chain.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/requirements.txt"
+      - "apps/planai/backend/architecture_truth_v2.py"
+      - "services/core-api/app/modules/planogram/store_scan.py"
+      - "services/core-api/app/modules/planogram/store_scan_annotation.py"
+      - "services/core-api/app/modules/planogram/store_scan_fixture_layout.py"
+      - "services/core-api/tests/test_planogram_store_scan_cold_chain.py"
+      - "src/modules/planogram/PlanogramStoreScanPanel.jsx"
+      - "src/modules/planogram/PlanogramScannedDigitalTwin.jsx"
+      - "src/modules/planogram/planogramFixtureBindings.js"
+      - "scripts/test-planogram-fixture-binding.mjs"
+      - "scripts/test-planogram-scanned-cold-chain.mjs"
+      - ".github/workflows/eay-planogram-scanned-cold-chain.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-scanned-cold-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scanned-cold-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install PlanAI and Core test surface
+        run: |
+          python -m pip install -r apps/planai/backend/requirements.txt
+          python -m pip install -e "./services/core-api[dev]"
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Strict lint scanned cold-chain backend
+        run: >-
+          ruff check
+          services/core-api/app/modules/planogram/store_scan.py
+          services/core-api/app/modules/planogram/store_scan_annotation.py
+          services/core-api/app/modules/planogram/store_scan_fixture_layout.py
+          services/core-api/tests/test_planogram_store_scan_cold_chain.py
+      - name: Prove cold-chain scan and binding truth
+        run: python -m pytest -q services/core-api/tests/test_planogram_store_scan_cold_chain.py
+      - name: Prove catalog and render cold-chain boundaries
+        run: |
+          node scripts/test-planogram-fixture-binding.mjs
+          node scripts/test-planogram-scanned-cold-chain.mjs
+      - name: Truth boundary
+        run: |
+          echo 'PLANOGRAM_SCANNED_COLD_CHAIN_DUAL_ROLE=PASS'
+          echo 'PLANOGRAM_SCANNED_COLD_CHAIN_WRONG_STORAGE_BIND=BLOCKED'
+          echo 'PLANOGRAM_SCANNED_COLD_CHAIN_DUPLICATE_RENDER=FALSE'
+          echo 'PLANOGRAM_SCANNED_COLD_CHAIN_FIELD_EVIDENCE=REQUIRED'
+          echo 'PLANOGRAM_SCANNED_COLD_CHAIN_PRODUCTION_AUTHORITY=FALSE'

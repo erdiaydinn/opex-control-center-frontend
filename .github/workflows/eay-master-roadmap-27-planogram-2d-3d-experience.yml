@@ -5,6 +5,7 @@ on:
     branches:
       - agent/master-roadmap-27-exact-head-gate
       - product/eay-category-leadership-v1
+      - product/planogram-market-leadership-v1
   pull_request:
     branches:
       - product/eay-product-completion-v1
@@ -12,8 +13,38 @@ on:
     paths:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
+      - "src/platform/i18n/planogramWalkthroughMessages.js"
+      - "src/platform/i18n/planogramEconomicsMessages.js"
+      - "src/platform/i18n/planogramScenarioMessages.js"
+      - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramScanAnnotationMessages.js"
+      - "src/platform/i18n/planogramScannedTwinMessages.js"
+      - "src/platform/i18n/planogramFixtureBindingMessages.js"
+      - "src/platform/i18n/planogramScannedOptimizerMessages.js"
+      - "src/platform/i18n/planogramPickerEyeMessages.js"
+      - "src/platform/i18n/planogramAuthoringMessages.js"
       - "scripts/test-planogram-digital-twin.mjs"
+      - "scripts/test-planogram-engineering-2d.mjs"
       - "scripts/test-planogram-route-explainability.mjs"
+      - "scripts/test-planogram-candidate-baskets.mjs"
+      - "scripts/test-planogram-candidate-bundle.mjs"
+      - "scripts/test-planogram-visual-quality-model.mjs"
+      - "scripts/test-planogram-sprint1-visual-runtime.mjs"
+      - "scripts/test-planogram-sprint2-visual-delivery.mjs"
+      - "scripts/test-planogram-sprint3-cad-walkthrough.mjs"
+      - "scripts/test-planogram-sprint3-cad-twin-projection.mjs"
+      - "scripts/test-planogram-sprint3-cad-asset-parity.mjs"
+      - "scripts/test-planogram-sprint3-cad-constraints.mjs"
+      - "scripts/test-planogram-economics-ui.mjs"
+      - "scripts/test-planogram-scenario-portfolio.mjs"
+      - "scripts/test-planogram-store-scan-ui.mjs"
+      - "scripts/test-planogram-scan-annotation.mjs"
+      - "scripts/test-planogram-scanned-twin.mjs"
+      - "scripts/test-planogram-fixture-binding.mjs"
+      - "scripts/test-planogram-scanned-optimizer-v6.mjs"
+      - "scripts/test-planogram-picker-eye-assets.mjs"
+      - "scripts/test-planogram-authoring.mjs"
+      - "config/eay_planogram_visual_quality_v1.json"
       - "package.json"
       - ".github/workflows/eay-master-roadmap-27-planogram-2d-3d-experience.yml"
 
@@ -52,8 +83,46 @@ jobs:
           console.log('MASTER_27_AUTHORITY=PASS');
           console.log('MASTER_27_EXTERNAL_EVIDENCE=REQUIRED');
           NODE
-      - name: Digital twin truth and renderer contract
+      - name: Anonymous basket Studio evidence boundary
+        run: node scripts/test-planogram-candidate-baskets.mjs
+      - name: Governed candidate asset manifest boundary
+        run: node scripts/test-planogram-candidate-bundle.mjs
+      - name: Governed visual quality planning boundary
+        run: node scripts/test-planogram-visual-quality-model.mjs
+      - name: Sprint 1 governed reality renderer boundary
+        run: node scripts/test-planogram-sprint1-visual-runtime.mjs
+      - name: Sprint 2 LOD KTX2 atlas delivery boundary
+        run: node scripts/test-planogram-sprint2-visual-delivery.mjs
+      - name: Store Scan measured capture review boundary
+        run: node scripts/test-planogram-store-scan-ui.mjs
+      - name: Fingerprint-bound visual Store Scan annotation
+        run: node scripts/test-planogram-scan-annotation.mjs
+      - name: Reviewed Store Scan 3D Digital Twin
+        run: node scripts/test-planogram-scanned-twin.mjs
+      - name: Scanned fixture catalog binding boundary
+        run: node scripts/test-planogram-fixture-binding.mjs
+      - name: Scanned V6 end-to-end Studio chain
+        run: node scripts/test-planogram-scanned-optimizer-v6.mjs
+      - name: Picker Eye same-origin asset fidelity boundary
+        run: node scripts/test-planogram-picker-eye-assets.mjs
+      - name: Architectural authoring and immersive walk-through contract
+        run: node scripts/test-planogram-authoring.mjs
+      - name: Sprint 3 canonical CAD session and collision-aware first-person walk-through
+        run: node scripts/test-planogram-sprint3-cad-walkthrough.mjs
+      - name: Sprint 3 CAD overlay to Unified Twin projection
+        run: node scripts/test-planogram-sprint3-cad-twin-projection.mjs
+      - name: Sprint 3 governed CAD fixture visual asset parity
+        run: node scripts/test-planogram-sprint3-cad-asset-parity.mjs
+      - name: Sprint 3 CAD layers and hosted-opening constraints
+        run: node scripts/test-planogram-sprint3-cad-constraints.mjs
+      - name: CFO economics UI authority and provenance boundary
+        run: node scripts/test-planogram-economics-ui.mjs
+      - name: V5 Pareto decision portfolio boundary
+        run: node scripts/test-planogram-scenario-portfolio.mjs
+      - name: Digital twin truth and market-quality renderer contract
         run: node scripts/test-planogram-digital-twin.mjs
+      - name: Engineering 2D arbitrary-angle and scale contract
+        run: node scripts/test-planogram-engineering-2d.mjs
       - name: Route explainability backend-to-twin contract
         run: node scripts/test-planogram-route-explainability.mjs
       - name: Preserve canonical Planogram product-state boundary
@@ -69,12 +138,10 @@ jobs:
           const main=manifest['index.html'] ?? entries.map(([,row])=>row).find((row)=>row.isEntry === true);
           if (!main?.file) throw new Error('Vite application entry missing');
           const mainText=fs.readFileSync(`dist/${main.file}`,'utf8');
-          if (mainText.includes('WebGLRenderer') || mainText.includes('OrbitControls')) {
-            throw new Error('Three.js leaked into the eager main entry');
-          }
+          if (mainText.includes('WebGLRenderer') || mainText.includes('OrbitControls')) throw new Error('Three.js leaked into the eager main entry');
           const dynamicThree=entries.filter(([key,row]) => {
             const identity=`${key} ${row.src ?? ''} ${row.name ?? ''} ${row.file ?? ''}`;
-            return row.isDynamicEntry === true && /three\.module|OrbitControls|node_modules\/three\//i.test(identity);
+            return row.isDynamicEntry === true && /three\.module|OrbitControls|PointerLockControls|RoomEnvironment|GLTFLoader|node_modules\/three\//i.test(identity);
           });
           if (!dynamicThree.length) throw new Error('No dynamic Three.js manifest entry found');
           for (const [,row] of dynamicThree) {
@@ -89,6 +156,66 @@ jobs:
       - name: Truth boundary
         run: |
           echo 'MASTER_27_REPOSITORY_RENDERER=IMPLEMENTED'
+          echo 'MASTER_27_STORE_SCAN_REVIEW=IMPLEMENTED'
+          echo 'MASTER_27_STORE_SCAN_RAW_MEDIA_PERSISTED=FALSE'
+          echo 'MASTER_27_STORE_SCAN_AUTO_STORE_DNA_PROMOTION=FALSE'
+          echo 'MASTER_27_STORE_SCAN_VISUAL_ANNOTATION=IMPLEMENTED'
+          echo 'MASTER_27_STORE_SCAN_ANNOTATION_KEYBOARD_ACCESSIBLE=TRUE'
+          echo 'MASTER_27_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCAN_TO_EDITABLE_MODEL=IMPLEMENTED'
+          echo 'MASTER_27_CANONICAL_SCAN_TO_STORE_SCENE=IMPLEMENTED'
+          echo 'MASTER_27_CAD_SESSION_REVISION_UNDO_COLLISION=IMPLEMENTED'
+          echo 'MASTER_27_ARCHITECTURAL_AUTHORING=IMPLEMENTED'
+          echo 'MASTER_27_AUTHORING_STORE_DNA_AUTHORITY=FALSE'
+          echo 'MASTER_27_CAD_LAYER_WORKSPACE=IMPLEMENTED'
+          echo 'MASTER_27_HOSTED_OPENING_CONSTRAINTS=IMPLEMENTED'
+          echo 'MASTER_27_HOSTED_OPENING_STORE_DNA_AUTHORITY=FALSE'
+          echo 'MASTER_27_CAD_OVERLAY_TO_UNIFIED_TWIN=IMPLEMENTED'
+          echo 'MASTER_27_CAD_OVERLAY_KPI_AUTHORITY_ISOLATED=TRUE'
+          echo 'MASTER_27_CAD_OVERLAY_WALKTHROUGH_COLLISION=IMPLEMENTED'
+          echo 'MASTER_27_CAD_OVERLAY_PRODUCTION_AUTHORITY=FALSE'
+          echo 'MASTER_27_CAD_OVERLAY_GOVERNED_GLTF_VISUAL_PARITY=IMPLEMENTED'
+          echo 'MASTER_27_CAD_OVERLAY_GLTF_GEOMETRY_AUTHORITY=FALSE'
+          echo 'MASTER_27_CAD_OVERLAY_PRODUCT_EVIDENCE_INVENTED=FALSE'
+          echo 'MASTER_27_CAD_OVERLAY_VISUAL_ASSET_PRODUCTION_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_DIGITAL_TWIN=IMPLEMENTED'
+          echo 'MASTER_27_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED'
+          echo 'MASTER_27_SCANNED_FIXTURE_CATALOG_BINDING=IMPLEMENTED'
+          echo 'MASTER_27_SCANNED_FIXTURE_LAYOUT_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_V6_OPTIMIZER=IMPLEMENTED'
+          echo 'MASTER_27_SCANNED_V6_CLIENT_LAYOUT_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_V6_STORE_DNA_AUTHORITY=FALSE'
+          echo 'MASTER_27_SCANNED_V6_GLOBAL_OPTIMUM_CLAIM=FALSE'
+          echo 'MASTER_27_SCANNED_V6_FIELD_EVIDENCE=FALSE'
+          echo 'MASTER_27_PICKER_EYE_ASSET_PREVIEW=IMPLEMENTED'
+          echo 'MASTER_27_GOVERNED_VISUAL_ASSET_MANIFEST=IMPLEMENTED'
+          echo 'MASTER_27_GOVERNED_VISUAL_QUALITY_PLAN=IMPLEMENTED'
+          echo 'MASTER_27_HIGH_FIDELITY_RENDERER_ASSET_BINDING=IMPLEMENTED'
+          echo 'MASTER_27_GOVERNED_GLTF_FIXTURE_REPLACEMENT=IMPLEMENTED'
+          echo 'MASTER_27_GOVERNED_PACKSHOT_FACING_TEXTURES=IMPLEMENTED'
+          echo 'MASTER_27_PBR_ROOM_ENVIRONMENT=IMPLEMENTED'
+          echo 'MASTER_27_METRIC_PRIMITIVE_FALLBACK=IMPLEMENTED'
+          echo 'MASTER_27_ASSET_MANIFEST_V2=IMPLEMENTED'
+          echo 'MASTER_27_KTX2_DELIVERY_CONTRACT=IMPLEMENTED_RUNTIME_BOUND'
+          echo 'MASTER_27_TEXTURE_ATLAS_CONTRACT=IMPLEMENTED_RUNTIME_BOUND'
+          echo 'MASTER_27_FIXTURE_LOD_CONTRACT=IMPLEMENTED_RUNTIME_BOUND'
+          echo 'MASTER_27_PBR_WALKTHROUGH=IMPLEMENTED'
+          echo 'MASTER_27_COLLISION_AWARE_FIRST_PERSON_WALKTHROUGH=IMPLEMENTED'
+          echo 'MASTER_27_POINTER_LOCK_MOUSE_LOOK=IMPLEMENTED'
+          echo 'MASTER_27_KEYBOARD_WALKTHROUGH=IMPLEMENTED'
+          echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
+          echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'
+          echo 'MASTER_27_CFO_ECONOMICS_UI=IMPLEMENTED'
+          echo 'MASTER_27_CFO_ECONOMICS_REALIZED_SAVINGS=FALSE'
+          echo 'MASTER_27_V5_OPERATIONAL_PARETO_PORTFOLIO=IMPLEMENTED'
+          echo 'MASTER_27_V5_GLOBAL_OPTIMUM_CLAIM=FALSE'
+          echo 'MASTER_27_V5_PORTFOLIO_CAPEX_COMPARED=FALSE'
+          echo 'MASTER_27_ARBITRARY_ANGLE_2D_GEOMETRY=IMPLEMENTED'
+          echo 'MASTER_27_ENGINEERING_DIMENSION_SCALE_LAYER=IMPLEMENTED'
+          echo 'MASTER_27_FACING_AWARE_OPEN_FIXTURE_RENDERER=IMPLEMENTED'
           echo 'MASTER_27_ROUTE_EXPLAINABILITY=IMPLEMENTED'
           echo 'MASTER_27_MEASURED_STORE_CAD_FIELD_UAT=REQUIRED'
+          echo 'MASTER_27_REAL_PRODUCT_ASSET_FIDELITY=FIELD_ASSETS_REQUIRED'
+          echo 'MASTER_27_FULL_CAD_BIM_KERNEL=NOT_CLAIMED'
+          echo 'MASTER_27_RAW_POINT_CLOUD_SLAM=NOT_CLAIMED'
           echo 'MASTER_27_PRODUCTION_READY=FALSE'

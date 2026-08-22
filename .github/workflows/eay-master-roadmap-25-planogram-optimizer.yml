@@ -5,6 +5,7 @@ on:
     branches:
       - agent/master-roadmap-25-planogram-optimizer
       - product/eay-category-leadership-v1
+      - product/planogram-market-leadership-v1
   pull_request:
     branches:
       - product/eay-category-leadership-v1
@@ -61,12 +62,14 @@ jobs:
           assert item['title']=='Planogram optimizer', item
           print('MASTER_25_AUTHORITY=PASS')
           PY
-      - name: Compile architecture optimizer without changing foundation allocator
+      - name: Compile architecture and basket-aware optimizer without changing foundation allocator
         working-directory: apps/planai/backend
         run: >-
           python -m compileall -q
           physical_optimizer.py
           physical_optimizer_v2.py
+          physical_optimizer_v3.py
+          picker_tour_simulation.py
           architecture_truth.py
           physical_engine.py
           physical_truth.py
@@ -87,40 +90,65 @@ jobs:
       - name: Master 25 optimizer adversarial acceptance
         working-directory: apps/planai/backend
         run: python -m unittest tests.test_physical_optimizer
-      - name: Prove V2 hard-first and baseline-preserving contract
+      - name: Basket-aware picker-tour optimizer acceptance
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_physical_optimizer_v3.py
+          tests/test_picker_tour_simulation.py
+      - name: Prove V3 hard-first basket-aware contract with V2 fallback
         working-directory: apps/planai/backend
         run: |
           python - <<'PY'
           from physical_optimizer import OBJECTIVE_ORDER, STRATEGIES as V1_STRATEGIES
-          from physical_optimizer_v2 import OPTIMIZER_VERSION, STRATEGIES as V2_STRATEGIES
+          from physical_optimizer_v2 import OPTIMIZER_VERSION as V2_VERSION, STRATEGIES as V2_STRATEGIES
+          from physical_optimizer_v3 import OPTIMIZER_VERSION as V3_VERSION, TOUR_OBJECTIVE_ORDER
           assert OBJECTIVE_ORDER[0]=='hard_violation_count'
+          assert TOUR_OBJECTIVE_ORDER[:3]==(
+              'hard_violation_count',
+              'weighted_unplaced_sales',
+              'unplaced_sku_count',
+          )
           assert V1_STRATEGIES[0]==('baseline', None)
           assert V2_STRATEGIES[0]==('baseline', None)
-          assert OPTIMIZER_VERSION=='physical-plan-optimizer-v2'
+          assert V2_VERSION=='physical-plan-optimizer-v2'
+          assert V3_VERSION=='physical-plan-optimizer-v3-picker-tour'
           assert len(V2_STRATEGIES)==8
           assert len({name for name, _ in V2_STRATEGIES})==len(V2_STRATEGIES)
           print('MASTER_25_HARD_FIRST=PASS')
           print('MASTER_25_BASELINE_ALWAYS_CANDIDATE=PASS')
-          print('MASTER_25_ARCHITECTURE_OPTIMIZER_V2=PASS')
+          print('MASTER_25_BASKET_AWARE_OPTIMIZER_V3=PASS')
+          print('MASTER_25_V2_SAFE_FALLBACK=PASS')
           PY
-      - name: Lint optimizer V2 and Core boundary
+      - name: Lint optimizer V3, Store Scan and Core boundary
         run: >-
           ruff check
           apps/planai/backend/physical_optimizer.py
           apps/planai/backend/physical_optimizer_v2.py
+          apps/planai/backend/physical_optimizer_v3.py
+          apps/planai/backend/picker_tour_simulation.py
           apps/planai/backend/architecture_truth.py
           apps/planai/backend/physical_engine.py
           apps/planai/backend/tests/test_physical_optimizer.py
+          apps/planai/backend/tests/test_physical_optimizer_v3.py
+          apps/planai/backend/tests/test_picker_tour_simulation.py
           apps/planai/backend/tests/test_architecture_truth.py
           apps/planai/backend/tests/test_architecture_route_gate.py
           services/core-api/app/modules/planogram/engine_adapter.py
           services/core-api/app/modules/planogram/optimizer_router.py
+          services/core-api/app/modules/planogram/router.py
+          services/core-api/app/modules/planogram/schemas.py
+          services/core-api/app/modules/planogram/store_scan.py
           services/core-api/app/budget_main.py
           services/core-api/tests/test_planogram_master25_optimizer_core.py
-      - name: Core optimizer preview and Master 24 native regression
+          services/core-api/tests/test_planogram_market_leadership_v3_contract.py
+          services/core-api/tests/test_planogram_store_scan_contract.py
+      - name: Core optimizer, Store Scan and Master 24 native regression
         run: >-
           python -m pytest -q
           services/core-api/tests/test_planogram_master25_optimizer_core.py
+          services/core-api/tests/test_planogram_market_leadership_v3_contract.py
+          services/core-api/tests/test_planogram_store_scan_contract.py
           services/core-api/tests/test_planogram_native_core.py
           services/core-api/tests/test_planogram_master24_store_dna.py
       - name: Prove Core route cannot become production release authority
@@ -129,13 +157,17 @@ jobs:
           from app.budget_main import app
           schema=app.openapi()
           assert '/v1/planogram/optimize-preview' in schema['paths']
+          assert '/v1/planogram/store-scan/normalize-preview' in schema['paths']
           from app.modules.planogram.engine_adapter import engine_status
           status=engine_status()
           assert status['optimizer']['available'] is True
           assert status['optimizer']['production_authority'] is False
-          assert status['optimizer']['contract']=='physical-plan-optimizer-v2'
-          assert status['optimizer']['route_objective']=='architecture-grid-astar-v1'
+          assert status['optimizer']['contract']=='physical-plan-optimizer-v3-picker-tour'
+          assert status['optimizer']['fallback_contract']=='physical-plan-optimizer-v2'
+          assert status['optimizer']['route_objective']=='measured-basket-picker-tour-v1'
+          assert status['optimizer']['requires_observed_baskets'] is True
           print('MASTER_25_CORE_OPTIMIZER_PREVIEW=PASS')
-          print('MASTER_25_ARCHITECTURE_ROUTE_GATE=PASS')
+          print('MASTER_25_BASKET_AWARE_ROUTE_GATE=PASS')
+          print('MASTER_25_STORE_SCAN_PREVIEW=PASS')
           print('MASTER_25_EXTERNAL_PHYSICAL_EVIDENCE=REQUIRED')
           PY

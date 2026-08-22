@@ -1,0 +1,141 @@
+.eay-planogram-retail {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+  border-radius: 16px;
+}
+
+.eay-planogram-retail > header,
+.eay-planogram-retail > header > div,
+.eay-planogram-retail-boundary,
+.eay-planogram-retail-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eay-planogram-retail > header {
+  justify-content: space-between;
+}
+
+.eay-planogram-retail > header h3,
+.eay-planogram-retail > header p,
+.eay-planogram-retail-action-queue header h4,
+.eay-planogram-retail-action-queue header p {
+  margin: 0;
+}
+
+.eay-planogram-retail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.eay-planogram-retail-grid article,
+.eay-planogram-retail-action-queue {
+  padding: 14px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.22));
+  border-radius: 12px;
+}
+
+.eay-planogram-retail-grid h4 {
+  margin: 0 0 10px;
+}
+
+.eay-planogram-retail-grid dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.eay-planogram-retail-grid dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.eay-planogram-retail-action-queue {
+  display: grid;
+  gap: 12px;
+}
+
+.eay-planogram-retail-action-queue > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.eay-planogram-retail-action-queue ol {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.eay-planogram-retail-action-queue li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.18));
+  border-radius: 10px;
+}
+
+.eay-planogram-retail-action-queue li > div {
+  display: grid;
+  gap: 2px;
+}
+
+.eay-planogram-retail-action-queue li code {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eay-planogram-retail-priority {
+  min-width: 34px;
+  padding: 4px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.eay-planogram-retail-action-queue li[data-priority="P0"] {
+  border-width: 2px;
+}
+
+.eay-planogram-retail-action-queue li[data-priority="P1"] {
+  border-style: dashed;
+}
+
+.eay-planogram-retail-empty {
+  margin: 0;
+}
+
+.eay-planogram-retail-boundary {
+  padding-top: 12px;
+  border-top: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+}
+
+.eay-planogram-retail-error {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .eay-planogram-retail-action-queue li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .eay-planogram-retail-action-queue li code {
+    grid-column: 1 / -1;
+    max-width: 100%;
+  }
+}

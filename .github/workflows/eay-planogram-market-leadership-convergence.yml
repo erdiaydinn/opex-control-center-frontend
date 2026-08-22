@@ -1,0 +1,311 @@
+name: EAY Planogram Market Leadership - Convergence
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "apps/planai/**"
+      - "services/core-api/app/modules/planogram/**"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram*.py"
+      - "src/modules/planogram/**"
+      - "src/platform/i18n/planogramDigitalTwinMessages.js"
+      - "src/platform/i18n/planogramCadMessages.js"
+      - "src/platform/i18n/planogramEconomicsMessages.js"
+      - "src/platform/i18n/planogramScenarioMessages.js"
+      - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramScanAnnotationMessages.js"
+      - "src/platform/i18n/planogramScannedTwinMessages.js"
+      - "src/platform/i18n/planogramFixtureBindingMessages.js"
+      - "src/platform/i18n/planogramScannedOptimizerMessages.js"
+      - "src/platform/i18n/planogramPickerEyeMessages.js"
+      - "scripts/test-planogram*.mjs"
+      - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/**"
+      - "services/core-api/app/modules/planogram/**"
+      - "services/core-api/app/budget_main.py"
+      - "services/core-api/tests/test_planogram*.py"
+      - "src/modules/planogram/**"
+      - "src/platform/i18n/planogramDigitalTwinMessages.js"
+      - "src/platform/i18n/planogramCadMessages.js"
+      - "src/platform/i18n/planogramEconomicsMessages.js"
+      - "src/platform/i18n/planogramScenarioMessages.js"
+      - "src/platform/i18n/planogramStoreScanMessages.js"
+      - "src/platform/i18n/planogramScanAnnotationMessages.js"
+      - "src/platform/i18n/planogramScannedTwinMessages.js"
+      - "src/platform/i18n/planogramFixtureBindingMessages.js"
+      - "src/platform/i18n/planogramScannedOptimizerMessages.js"
+      - "src/platform/i18n/planogramPickerEyeMessages.js"
+      - "scripts/test-planogram*.mjs"
+      - ".github/workflows/eay-planogram-market-leadership-convergence.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-market-leadership-convergence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  market-leadership-convergence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install PlanAI and Core test surfaces
+        run: |
+          python -m pip install -r apps/planai/backend/requirements.txt
+          python -m pip install -e "./services/core-api[dev]"
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Compile legacy convergence engines
+        run: >-
+          python -m py_compile
+          apps/planai/backend/blind_benchmark.py
+          apps/planai/backend/blind_benchmark_v2.py
+          apps/planai/backend/cad_drawing.py
+          apps/planai/backend/cad_dxf.py
+          apps/planai/backend/picker_tour_simulation_v2.py
+          services/core-api/app/modules/planogram/cad_adapter.py
+      - name: Lint legacy convergence engines excluding documented style debt
+        run: >-
+          ruff check --ignore I001,F841,E501
+          apps/planai/backend/blind_benchmark.py
+          apps/planai/backend/blind_benchmark_v2.py
+          apps/planai/backend/cad_drawing.py
+          apps/planai/backend/cad_dxf.py
+          apps/planai/backend/picker_tour_simulation_v2.py
+          services/core-api/app/modules/planogram/cad_adapter.py
+      - name: Strict lint converged market-leadership surface
+        run: >-
+          ruff check
+          apps/planai/backend/architecture_truth_v2.py
+          apps/planai/backend/physical_economics.py
+          apps/planai/backend/physical_layout_candidate_economics.py
+          apps/planai/backend/physical_layout_candidate_preview.py
+          apps/planai/backend/physical_layout_optimizer_v5.py
+          apps/planai/backend/physical_optimizer_v4.py
+          apps/planai/backend/physical_optimizer_v6_scanned.py
+          apps/planai/backend/tests/test_architecture_truth_v2.py
+          apps/planai/backend/tests/test_blind_benchmark_engine.py
+          apps/planai/backend/tests/test_physical_economics.py
+          apps/planai/backend/tests/test_physical_layout_candidate_economics.py
+          apps/planai/backend/tests/test_physical_layout_candidate_preview.py
+          apps/planai/backend/tests/test_physical_layout_optimizer_v5.py
+          apps/planai/backend/tests/test_physical_optimizer_v4.py
+          apps/planai/backend/tests/test_physical_optimizer_v6_scanned.py
+          services/core-api/app/modules/planogram/benchmark_schemas.py
+          services/core-api/app/modules/planogram/blind_benchmark_adapter.py
+          services/core-api/app/modules/planogram/economics_adapter.py
+          services/core-api/app/modules/planogram/economics_router.py
+          services/core-api/app/modules/planogram/economics_schemas.py
+          services/core-api/app/modules/planogram/engine_adapter.py
+          services/core-api/app/modules/planogram/optimizer_router.py
+          services/core-api/app/modules/planogram/physical_layout_adapter.py
+          services/core-api/app/modules/planogram/scanned_optimizer_adapter.py
+          services/core-api/app/modules/planogram/scenario_adapter.py
+          services/core-api/app/modules/planogram/scenario_router.py
+          services/core-api/app/modules/planogram/scenario_schemas.py
+          services/core-api/app/modules/planogram/schemas.py
+          services/core-api/app/modules/planogram/shelf_scan.py
+          services/core-api/app/modules/planogram/shelf_scan_router.py
+          services/core-api/app/modules/planogram/shelf_scan_schemas.py
+          services/core-api/app/modules/planogram/store_scan.py
+          services/core-api/app/modules/planogram/store_scan_annotation.py
+          services/core-api/app/modules/planogram/store_scan_binding_schemas.py
+          services/core-api/app/modules/planogram/store_scan_fixture_layout.py
+          services/core-api/app/modules/planogram/store_scan_fixture_router.py
+          services/core-api/app/modules/planogram/store_scan_review_router.py
+          services/core-api/tests/test_planogram_cad_authorization.py
+          services/core-api/tests/test_planogram_candidate_economics_api.py
+          services/core-api/tests/test_planogram_economics_api.py
+          services/core-api/tests/test_planogram_market_leadership_v3_contract.py
+          services/core-api/tests/test_planogram_market_leadership_v4_benchmark.py
+          services/core-api/tests/test_planogram_physical_layout_v5_contract.py
+          services/core-api/tests/test_planogram_scanned_optimizer_v6.py
+          services/core-api/tests/test_planogram_scenario_replay_api.py
+          services/core-api/tests/test_planogram_shelf_scan.py
+          services/core-api/tests/test_planogram_shelf_scan_api.py
+          services/core-api/tests/test_planogram_store_scan_contract.py
+          services/core-api/tests/test_planogram_store_scan_annotation.py
+          services/core-api/tests/test_planogram_store_scan_fixture_layout.py
+      - name: P0 physical truth and Planogram store-scope lint
+        run: >-
+          ruff check --ignore I001,E501
+          apps/planai/backend/physical_truth.py
+          apps/planai/backend/engine.py
+          apps/planai/backend/tests/test_physical_truth.py
+          apps/planai/backend/tests/test_physical_engine.py
+          services/core-api/app/modules/planogram/access.py
+          services/core-api/app/modules/planogram/execution_router.py
+          services/core-api/app/modules/planogram/router.py
+          services/core-api/tests/test_planogram_store_scope.py
+      - name: Physical truth allocation and mass normalization convergence
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_physical_truth.py
+          tests/test_physical_engine.py
+      - name: Planogram store-scope authorization convergence
+        run: python -m pytest -q services/core-api/tests/test_planogram_store_scope.py
+      - name: Spatial V2 and V1 truth convergence
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_architecture_truth_v2.py
+          tests/test_architecture_truth.py
+          tests/test_architecture_route_gate.py
+          tests/test_physical_optimizer_v3.py
+      - name: Blind A B real simulator red-team convergence
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_blind_benchmark_engine.py
+      - name: V4 bounded search convergence
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_physical_optimizer_v4.py
+          tests/test_physical_optimizer_v3.py
+          tests/test_picker_tour_simulation.py
+      - name: V5 replay fingerprint economics and baseline economics convergence
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_physical_layout_optimizer_v5.py
+          tests/test_physical_layout_candidate_preview.py
+          tests/test_physical_layout_candidate_economics.py
+          tests/test_physical_economics.py
+      - name: V6 scanned Architecture V2 optimizer red-team convergence
+        working-directory: apps/planai/backend
+        run: python -m pytest -q tests/test_physical_optimizer_v6_scanned.py
+      - name: Core V3 V4 CAD blind V5 V6 replay economics and Store Scan authority convergence
+        run: >-
+          python -m pytest -q
+          services/core-api/tests/test_planogram_cad_authorization.py
+          services/core-api/tests/test_planogram_candidate_economics_api.py
+          services/core-api/tests/test_planogram_economics_api.py
+          services/core-api/tests/test_planogram_market_leadership_v3_contract.py
+          services/core-api/tests/test_planogram_market_leadership_v4_benchmark.py
+          services/core-api/tests/test_planogram_physical_layout_v5_contract.py
+          services/core-api/tests/test_planogram_scanned_optimizer_v6.py
+          services/core-api/tests/test_planogram_scenario_replay_api.py
+          services/core-api/tests/test_planogram_store_scan_contract.py
+          services/core-api/tests/test_planogram_store_scan_annotation.py
+          services/core-api/tests/test_planogram_store_scan_fixture_layout.py
+      - name: Shelf Scan uncertainty runtime and execution truth convergence
+        run: >-
+          python -m pytest -q
+          services/core-api/tests/test_planogram_shelf_scan.py
+          services/core-api/tests/test_planogram_shelf_scan_api.py
+          services/core-api/tests/test_planogram_master26_execution.py
+      - name: Interactive engineering CFO Pareto basket Store Scan V6 Picker Eye and route convergence
+        run: |
+          node scripts/test-planogram-candidate-baskets.mjs
+          node scripts/test-planogram-store-scan-ui.mjs
+          node scripts/test-planogram-scan-annotation.mjs
+          node scripts/test-planogram-scanned-twin.mjs
+          node scripts/test-planogram-fixture-binding.mjs
+          node scripts/test-planogram-scanned-optimizer-v6.mjs
+          node scripts/test-planogram-picker-eye-assets.mjs
+          node scripts/test-planogram-economics-ui.mjs
+          node scripts/test-planogram-scenario-portfolio.mjs
+          node scripts/test-planogram-digital-twin.mjs
+          node scripts/test-planogram-engineering-2d.mjs
+          node scripts/test-planogram-route-explainability.mjs
+          node scripts/test-planogram-product-states.mjs
+          node scripts/test-no-new-hardcoded-ui-strings.mjs
+      - name: Production frontend build
+        run: npm run build -- --manifest
+      - name: Preserve accessibility and localization product gate
+        run: npm run test:inclusion
+      - name: Prove converged truth boundaries
+        run: |
+          python - <<'PY'
+          from app.budget_main import app
+          from app.modules.planogram.benchmark_schemas import PlanogramBlindBenchmarkRequest
+          from app.modules.planogram.shelf_scan import DEFAULT_MIN_DETECTION_CONFIDENCE
+          paths = app.openapi()['paths']
+          required = {
+              '/v1/planogram/optimize-preview',
+              '/v1/planogram/market-benchmark-preview',
+              '/v1/planogram/blind-benchmark-preview',
+              '/v1/planogram/cad-preview',
+              '/v1/planogram/store-scan/normalize-preview',
+              '/v1/planogram/store-scan/annotate-preview',
+              '/v1/planogram/store-scan/fixture-layout-preview',
+              '/v1/planogram/store-scan/optimize-preview',
+              '/v1/planogram/physical-layout-search-preview',
+              '/v1/planogram/physical-layout-candidate-preview',
+              '/v1/planogram/physical-layout-economics-preview',
+              '/v1/planogram/physical-layout-candidate-economics-preview',
+              '/v1/planogram/shelf-scan-preview',
+          }
+          assert required <= set(paths), sorted(required - set(paths))
+          properties = PlanogramBlindBenchmarkRequest.model_json_schema()['properties']
+          for forbidden in ('expert', 'ai', 'owner', 'label', 'production_authority'):
+              assert forbidden not in properties
+          assert DEFAULT_MIN_DETECTION_CONFIDENCE >= 0.8
+          print('PLANOGRAM_MARKET_LEADERSHIP_CONVERGENCE_REPOSITORY=PASS')
+          print('PLANOGRAM_STORE_SCAN_REVIEW_UI=PASS')
+          print('PLANOGRAM_STORE_SCAN_RAW_MEDIA_PERSISTED=FALSE')
+          print('PLANOGRAM_STORE_SCAN_AUTO_STORE_DNA_PROMOTION=FALSE')
+          print('PLANOGRAM_STORE_SCAN_VISUAL_ANNOTATION=PASS')
+          print('PLANOGRAM_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE')
+          print('PLANOGRAM_SCANNED_DIGITAL_TWIN=PASS')
+          print('PLANOGRAM_SCANNED_TWIN_FIELD_ACCURACY=REQUIRED')
+          print('PLANOGRAM_SCANNED_FIXTURE_CATALOG_BINDING=PASS')
+          print('PLANOGRAM_SCANNED_V6_ARCHITECTURE_OPTIMIZER=PASS')
+          print('PLANOGRAM_SCANNED_V6_BOUNDED_CANDIDATES=24')
+          print('PLANOGRAM_SCANNED_V6_CLIENT_LAYOUT_AUTHORITY=FALSE')
+          print('PLANOGRAM_SCANNED_V6_STORE_DNA_AUTHORITY=FALSE')
+          print('PLANOGRAM_SCANNED_V6_INSTALLATION_AUTHORITY=FALSE')
+          print('PLANOGRAM_SCANNED_V6_CAPEX_AUTHORITY=FALSE')
+          print('PLANOGRAM_SCANNED_V6_GLOBAL_OPTIMUM_CLAIM=FALSE')
+          print('PLANOGRAM_SCANNED_V6_FIELD_EVIDENCE=FALSE')
+          print('PLANOGRAM_PICKER_EYE_ASSET_PREVIEW=PASS')
+          print('PLANOGRAM_REMOTE_PREVIEW_ASSET_URLS=BLOCKED')
+          print('PLANOGRAM_ANONYMOUS_BASKET_UI_BOUNDARY=PASS')
+          print('PLANOGRAM_CFO_ECONOMICS_UI_AUTHORITY_PROVENANCE=PASS')
+          print('PLANOGRAM_V5_OPERATIONAL_PARETO_PORTFOLIO=PASS')
+          print('PLANOGRAM_V5_CANDIDATE_REPLAY_FINGERPRINT_ONLY=PASS')
+          print('PLANOGRAM_V5_CANDIDATE_ECONOMICS_FINGERPRINT_BOUND=PASS')
+          print('PLANOGRAM_V5_GLOBAL_OPTIMUM_CLAIM=FALSE')
+          print('PLANOGRAM_V5_PORTFOLIO_CAPEX_COMPARED=FALSE')
+          print('PLANOGRAM_BLIND_ENGINE_REAL_SIMULATOR_RED_TEAM=PASS')
+          print('PLANOGRAM_CAD_CREATE_EXPORT_DUAL_AUTHORITY=PASS')
+          print('PLANOGRAM_ECONOMICS_CREATE_APPROVE_DUAL_AUTHORITY=PASS')
+          print('PLANOGRAM_ECONOMICS_REALIZED_SAVINGS_PROVEN=FALSE')
+          print('PLANOGRAM_LEGACY_STYLE_DEBT=I001,F841,E501_ONLY')
+          print('PLANOGRAM_SPATIAL_V2_PRODUCTION_AUTHORITY=FALSE')
+          print('PLANOGRAM_V4_PRODUCTION_AUTHORITY=FALSE')
+          print('PLANOGRAM_V5_MOVE_INSTALL_CAPEX_AUTHORITY=FALSE')
+          print('PLANOGRAM_CAD_INSTALLATION_AUTHORITY=FALSE')
+          print('PLANOGRAM_BLIND_BENCHMARK_IDENTITY_REVEAL=EXTERNAL_AFTER_SCORING')
+          print('PLANOGRAM_SHELF_SCAN_AUTO_TRUTH=FALSE')
+          print('PLANOGRAM_MARKET_LEADERSHIP_PROVEN=FALSE')
+          print('PLANOGRAM_REAL_STORE_FIELD_EVIDENCE=REQUIRED')
+          print('PLANOGRAM_BLIND_EXPERT_FIELD_BENCHMARK=REQUIRED')
+          print('PLANOGRAM_PRODUCTION_AUTHORITY=FALSE')
+          PY

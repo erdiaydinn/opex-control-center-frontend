@@ -42,6 +42,7 @@ export default function AcademyAchievements({ locale, t, formatDate }) {
     <section className="eay-academy-expansion-card" aria-busy={loading ? "true" : "false"}>
       <header className="eay-academy-expansion-head">
         <div>
+          {/* i18n-brand-literal: canonical EAY Academy product name is locale-invariant. */}
           <span><ShieldCheck size={16} aria-hidden="true" /> EAY Academy</span>
           <h2>{tx("achievements")}</h2>
           <p>{tx("achievementsHint")}</p>

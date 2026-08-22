@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import require_permission
 from app.core.security import Principal
 from app.db.session import get_tenant_session
+from app.modules.planogram.access import ensure_planogram_store_scope
 from app.modules.planogram.engine_adapter import (
     PlanogramEngineUnavailable,
     engine_status,
@@ -30,6 +31,7 @@ from app.modules.planogram.schemas import (
     PlanogramStoreDnaDraftRequest,
     PlanogramStoreDnaRejectRequest,
     PlanogramStoreDnaRevisionRequest,
+    PlanogramStoreScanPreviewRequest,
 )
 from app.modules.planogram.store_dna import (
     DEFAULT_AISLE_COUNT,
@@ -40,9 +42,9 @@ from app.modules.planogram.store_dna import (
     build_store_dna_configuration,
     configuration_fingerprint,
     geometry_attested,
-    normalize_store_code,
     summarize_store_dna,
 )
+from app.modules.planogram.store_scan import normalize_store_scan
 
 router = APIRouter(prefix="/v1/planogram", tags=["planogram"])
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
@@ -136,6 +138,29 @@ async def post_planogram_preview(
     }
 
 
+@router.post("/store-scan/normalize-preview")
+async def post_store_scan_normalize_preview(
+    payload: PlanogramStoreScanPreviewRequest,
+    principal: Creator,
+) -> dict[str, object]:
+    """Normalize measured camera/LiDAR/AR geometry without granting Store DNA truth."""
+    store_code = ensure_planogram_store_scope(
+        principal,
+        "action:planogram:create",
+        payload.store_code,
+    )
+    result = normalize_store_scan(payload.model_dump(mode="python"))
+    return {
+        "tenant_id": str(principal.tenant_id),
+        "subject": principal.subject,
+        "store_code": store_code,
+        "preview_only": True,
+        "input_authority": "request_supplied_measured_scan_unattested",
+        "production_release_allowed": False,
+        "store_scan": result,
+    }
+
+
 @router.get("/store-dna/workspace")
 async def get_store_dna_workspace(
     session: TenantSession,
@@ -180,11 +205,16 @@ async def post_store_dna_bootstrap(
     principal: Creator,
 ) -> dict[str, object]:
     try:
+        store_code = ensure_planogram_store_scope(
+            principal,
+            "action:planogram:create",
+            payload.store_code,
+        )
         configuration = build_store_dna_configuration(payload)
         result = await create_store_dna_draft(
             session,
             principal,
-            store_code=normalize_store_code(payload.store_code),
+            store_code=store_code,
             store_name=payload.store_name,
             source=payload.source,
             configuration=configuration,
@@ -207,12 +237,17 @@ async def put_store_dna_draft(
     principal: Editor,
 ) -> dict[str, object]:
     try:
+        store_code = ensure_planogram_store_scope(
+            principal,
+            "action:planogram:edit",
+            payload.store_code,
+        )
         configuration = build_store_dna_configuration(payload)
         result = await update_store_dna_draft(
             session,
             principal,
             version_id,
-            store_code=normalize_store_code(payload.store_code),
+            store_code=store_code,
             store_name=payload.store_name,
             source=payload.source,
             configuration=configuration,
@@ -299,10 +334,16 @@ async def get_store_dna_readiness(
     session: TenantSession,
     principal: Viewer,
 ) -> dict[str, object]:
+    canonical_store_code = ensure_planogram_store_scope(
+        principal,
+        "module:planogram:view",
+        store_code,
+        conceal=True,
+    )
     approved = await get_approved_store_dna(
         session,
         principal,
-        normalize_store_code(store_code),
+        canonical_store_code,
     )
     store_dna_attested = approved is not None
     fixture_geometry_attested = bool(approved and approved["geometry_attested"])
@@ -316,7 +357,7 @@ async def get_store_dna_readiness(
     }
     return {
         "tenant_id": str(principal.tenant_id),
-        "store_code": normalize_store_code(store_code),
+        "store_code": canonical_store_code,
         "approved_store_dna": approved,
         "evidence": evidence,
         "production_ready": all(evidence.values()),

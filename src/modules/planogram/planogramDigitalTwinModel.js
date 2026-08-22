@@ -1,8 +1,21 @@
+import {
+  buildPlanogramAuthoringDocument,
+  buildStoreScene,
+  PLANOGRAM_AUTHORING_ELEMENT_TYPES,
+  projectStoreScene3D,
+} from "./planogramAuthoringModel.js";
+import {
+  hydratePlanogramCadOverlay,
+  PLANOGRAM_CAD_OVERLAY_CONTRACT,
+} from "./planogramCadAdvanced.js";
+
 const DEFAULT_MODULE_WIDTH_M = 1;
 const DEFAULT_MODULE_DEPTH_M = 0.5;
 const DEFAULT_SHELF_HEIGHT_M = 0.36;
 const DEFAULT_AISLE_GAP_M = 1.4;
 const MAX_VISIBLE_ROUTE_HOTSPOTS = 12;
+const ROTATION_EPSILON_DEG = 1e-6;
+const ARCHITECTURE_NODE_TYPES = new Set(PLANOGRAM_AUTHORING_ELEMENT_TYPES);
 
 function number(value, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
@@ -23,8 +36,13 @@ function hasFiniteCoordinate(value) {
   return Number.isFinite(Number(value));
 }
 
-function normalizedOrthogonalRotation(value) {
+function normalizedRotation(value) {
   const raw = ((number(value, 0) % 360) + 360) % 360;
+  return Math.abs(raw - 360) <= ROTATION_EPSILON_DEG ? 0 : raw;
+}
+
+function normalizedOrthogonalRotation(value) {
+  const raw = normalizedRotation(value);
   const candidates = [0, 90, 180, 270, 360];
   const closest = candidates.reduce((best, candidate) =>
     Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best
@@ -32,7 +50,7 @@ function normalizedOrthogonalRotation(value) {
   return closest === 360 ? 0 : closest;
 }
 
-function orthogonalFootprint(widthM, depthM, rotationDeg) {
+function legacyOrthogonalFootprint(widthM, depthM, rotationDeg) {
   const rotation = normalizedOrthogonalRotation(rotationDeg);
   const swapsAxes = rotation === 90 || rotation === 270;
   return {
@@ -40,6 +58,24 @@ function orthogonalFootprint(widthM, depthM, rotationDeg) {
     footprintWidthM: swapsAxes ? depthM : widthM,
     footprintDepthM: swapsAxes ? widthM : depthM,
   };
+}
+
+function arbitraryAngleFootprint(widthM, depthM, rotationDeg) {
+  const rotation = normalizedRotation(rotationDeg);
+  const radians = (rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(radians));
+  const sin = Math.abs(Math.sin(radians));
+  return {
+    rotationDeg: rotation,
+    footprintWidthM: widthM * cos + depthM * sin,
+    footprintDepthM: widthM * sin + depthM * cos,
+  };
+}
+
+function spatialFootprint(widthM, depthM, rotationDeg, arbitraryAngles) {
+  return arbitraryAngles
+    ? arbitraryAngleFootprint(widthM, depthM, rotationDeg)
+    : legacyOrthogonalFootprint(widthM, depthM, rotationDeg);
 }
 
 function moduleKey(aisleId, moduleId) {
@@ -50,14 +86,25 @@ function moduleKey(aisleId, moduleId) {
 
 function shelfGeometry(module) {
   const first = Array.isArray(module?.shelves) ? module.shelves[0] || {} : {};
+  const shelfCount = Math.max(1, Array.isArray(module?.shelves) ? module.shelves.length : 1);
   return {
     widthM: positive(
       module?.width_m,
-      positive(module?.width_cm, 0) / 100 || positive(first?.shelf_width_cm, DEFAULT_MODULE_WIDTH_M * 100) / 100
+      positive(module?.module_width_cm, 0) / 100 ||
+        positive(module?.width_cm, 0) / 100 ||
+        positive(first?.shelf_width_cm, DEFAULT_MODULE_WIDTH_M * 100) / 100
     ),
     depthM: positive(
       module?.depth_m,
-      positive(module?.depth_cm, 0) / 100 || positive(first?.shelf_depth_cm, DEFAULT_MODULE_DEPTH_M * 100) / 100
+      positive(module?.module_depth_cm, 0) / 100 ||
+        positive(module?.depth_cm, 0) / 100 ||
+        positive(first?.shelf_depth_cm, DEFAULT_MODULE_DEPTH_M * 100) / 100
+    ),
+    heightM: positive(
+      module?.height_m,
+      positive(module?.module_height_cm, 0) / 100 ||
+        positive(module?.height_cm, 0) / 100 ||
+        shelfCount * DEFAULT_SHELF_HEIGHT_M
     ),
   };
 }
@@ -72,23 +119,155 @@ function buildInputModuleIndex(candidate) {
   return index;
 }
 
-function architectureElement(element) {
+function architectureProfile(candidate) {
+  const architecture = candidate?.store_dna?.architecture;
+  if (!architecture || typeof architecture !== "object" || Array.isArray(architecture)) return null;
+
+  const schemaVersion = Math.round(number(architecture?.schema_version, 0));
+  const coordinateSystem = text(architecture?.coordinate_system);
+  const validCoordinateSystem = schemaVersion === 1
+    ? coordinateSystem === "cartesian_m"
+    : schemaVersion === 2 && ["cartesian_m", "cartesian_m_centered_rect"].includes(coordinateSystem);
+
+  if (
+    !validCoordinateSystem ||
+    positive(architecture?.floor_width_m, 0) <= 0 ||
+    positive(architecture?.floor_depth_m, 0) <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    architecture,
+    schemaVersion,
+    arbitraryAngles: schemaVersion === 2,
+    previewOnly: schemaVersion === 2,
+    spatialContract: schemaVersion === 2
+      ? "store-architecture-v2-oriented-polygons"
+      : "store-architecture-v1",
+  };
+}
+
+function resolveSpatialPlacement(raw, widthM, depthM, footprint, arbitraryAngles, fallback = null) {
+  const hasXY = hasFiniteCoordinate(raw?.x_m) && hasFiniteCoordinate(raw?.y_m);
+  const hasCenter = hasFiniteCoordinate(raw?.center_x_m) && hasFiniteCoordinate(raw?.center_y_m);
+
+  if (arbitraryAngles && hasCenter) {
+    const centerXM = number(raw?.center_x_m);
+    const centerYM = number(raw?.center_y_m);
+    return {
+      hasCoordinates: true,
+      xM: centerXM - footprint.footprintWidthM / 2,
+      yM: centerYM - footprint.footprintDepthM / 2,
+      centerXM,
+      centerYM,
+    };
+  }
+
+  if (hasXY) {
+    const sourceXM = number(raw?.x_m);
+    const sourceYM = number(raw?.y_m);
+    if (arbitraryAngles) {
+      const centerXM = sourceXM + widthM / 2;
+      const centerYM = sourceYM + depthM / 2;
+      return {
+        hasCoordinates: true,
+        xM: centerXM - footprint.footprintWidthM / 2,
+        yM: centerYM - footprint.footprintDepthM / 2,
+        centerXM,
+        centerYM,
+      };
+    }
+    return {
+      hasCoordinates: true,
+      xM: sourceXM,
+      yM: sourceYM,
+      centerXM: sourceXM + footprint.footprintWidthM / 2,
+      centerYM: sourceYM + footprint.footprintDepthM / 2,
+    };
+  }
+
+  const fallbackXM = fallback?.xM ?? 0;
+  const fallbackYM = fallback?.yM ?? 0;
+  if (arbitraryAngles) {
+    const centerXM = fallbackXM + widthM / 2;
+    const centerYM = fallbackYM + depthM / 2;
+    return {
+      hasCoordinates: false,
+      xM: centerXM - footprint.footprintWidthM / 2,
+      yM: centerYM - footprint.footprintDepthM / 2,
+      centerXM,
+      centerYM,
+    };
+  }
+  return {
+    hasCoordinates: false,
+    xM: fallbackXM,
+    yM: fallbackYM,
+    centerXM: fallbackXM + footprint.footprintWidthM / 2,
+    centerYM: fallbackYM + footprint.footprintDepthM / 2,
+  };
+}
+
+function architectureElement(element, profile) {
   const widthM = positive(element?.width_m, 0);
   const depthM = positive(element?.depth_m, 0);
-  const footprint = orthogonalFootprint(widthM, depthM, element?.rotation_deg);
-  const xM = number(element?.x_m);
-  const yM = number(element?.y_m);
+  const footprint = spatialFootprint(widthM, depthM, element?.rotation_deg, profile.arbitraryAngles);
+  const placement = resolveSpatialPlacement(
+    element,
+    widthM,
+    depthM,
+    footprint,
+    profile.arbitraryAngles
+  );
   return {
     id: text(element?.element_id),
     type: text(element?.element_type).toLowerCase(),
-    xM,
-    yM,
     widthM,
     depthM,
     ...footprint,
-    centerXM: xM + footprint.footprintWidthM / 2,
-    centerYM: yM + footprint.footprintDepthM / 2,
+    ...placement,
     clearanceM: positive(element?.clearance_m, 0),
+    coordinateAuthority: "measured",
+  };
+}
+
+function cadFixtureFromNode(node) {
+  const widthM = positive(node?.geometry?.widthM, DEFAULT_MODULE_WIDTH_M);
+  const depthM = positive(node?.geometry?.depthM, DEFAULT_MODULE_DEPTH_M);
+  const heightM = positive(node?.geometry?.heightM, DEFAULT_SHELF_HEIGHT_M);
+  const footprint = arbitraryAngleFootprint(widthM, depthM, node?.geometry?.rotationDeg);
+  const centerXM = number(node?.geometry?.centerXM);
+  const centerYM = number(node?.geometry?.centerYM);
+  const nodeId = text(node?.nodeId);
+  return {
+    key: nodeId,
+    aisleId: "CAD",
+    moduleId: nodeId,
+    side: "",
+    fixtureCode: text(node?.metadata?.fixtureCode).toUpperCase(),
+    fixtureType: text(node?.metadata?.fixtureType || "REGULAR_SHELF").toUpperCase(),
+    widthM,
+    depthM,
+    heightM,
+    ...footprint,
+    hasCoordinates: true,
+    xM: centerXM - footprint.footprintWidthM / 2,
+    yM: centerYM - footprint.footprintDepthM / 2,
+    centerXM,
+    centerYM,
+    coordinateAuthority: "human_cad_preview",
+    shelfCount: Math.max(1, Math.round(number(node?.metadata?.shelfCount, 1))),
+    shelves: [],
+    productCount: 0,
+    facingCount: 0,
+    sales7d: 0,
+    products: [],
+    routeDistanceM: null,
+    routeHotspot: null,
+    sourceKind: "cad_overlay_preview",
+    productionReleaseAllowed: false,
+    physicalTruthAttested: false,
   };
 }
 
@@ -136,22 +315,9 @@ function productSummary(shelves) {
   return { productCount, facingCount, sales7d, products };
 }
 
-function measuredArchitecture(candidate) {
-  const architecture = candidate?.store_dna?.architecture;
-  return Boolean(
-    architecture &&
-      typeof architecture === "object" &&
-      !Array.isArray(architecture) &&
-      number(architecture?.schema_version) === 1 &&
-      text(architecture?.coordinate_system) === "cartesian_m" &&
-      positive(architecture?.floor_width_m, 0) > 0 &&
-      positive(architecture?.floor_depth_m, 0) > 0
-  );
-}
-
 function normalizeRoutePath(path) {
   if (!Array.isArray(path)) return [];
-  return path.slice(0, 64).flatMap((point) => {
+  return path.slice(0, 160).flatMap((point) => {
     if (!Array.isArray(point) || point.length < 2) return [];
     const xM = number(point[0], Number.NaN);
     const yM = number(point[1], Number.NaN);
@@ -161,6 +327,31 @@ function normalizeRoutePath(path) {
 
 function routeProjection(rawRoute) {
   if (!rawRoute || typeof rawRoute !== "object") return null;
+
+  if (rawRoute?.contract === "architecture-polygon-astar-v2") {
+    return {
+      available: Boolean(rawRoute?.available),
+      metric: "point_to_point_walk_m",
+      value: number(rawRoute?.distance_m, 0),
+      basis: text(rawRoute?.contract),
+      previewOnly: true,
+      unreachableModuleIds: [],
+      pickerEntryM: null,
+      moduleDistancesM: {},
+      hotspots: rawRoute?.available && Array.isArray(rawRoute?.path_m)
+        ? [{
+            rank: 1,
+            moduleId: "architecture-v2-target",
+            distanceM: number(rawRoute?.distance_m, 0),
+            salesWeight: 0,
+            placedProductCount: 0,
+            weightedCost: number(rawRoute?.distance_m, 0),
+            pathM: normalizeRoutePath(rawRoute?.path_m),
+          }]
+        : [],
+    };
+  }
+
   const moduleDistances = rawRoute?.module_distances_m && typeof rawRoute.module_distances_m === "object"
     ? Object.fromEntries(Object.entries(rawRoute.module_distances_m).map(([key, value]) => [text(key), number(value, 0)]))
     : {};
@@ -184,6 +375,7 @@ function routeProjection(rawRoute) {
     metric: text(rawRoute?.metric),
     value: number(rawRoute?.value, 0),
     basis: text(rawRoute?.basis),
+    previewOnly: false,
     unreachableModuleIds: Array.isArray(rawRoute?.unreachable_module_ids)
       ? rawRoute.unreachable_module_ids.map(text)
       : [],
@@ -198,8 +390,9 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
   if (!planogram || !Array.isArray(planogram?.aisles)) return null;
 
   const inputModules = buildInputModuleIndex(candidate);
-  const architecture = candidate?.store_dna?.architecture || null;
-  const hasMeasuredArchitecture = measuredArchitecture(candidate);
+  const profile = architectureProfile(candidate);
+  const architecture = profile?.architecture || null;
+  const arbitraryAngles = Boolean(profile?.arbitraryAngles);
   const modules = [];
   let measuredCoordinateCount = 0;
 
@@ -210,19 +403,34 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
       const key = moduleKey(aisleId, moduleId);
       const sourceModule = inputModules.get(key) || {};
       const merged = { ...sourceModule, ...outputModule };
-      for (const field of ["x_m", "y_m", "width_m", "depth_m", "rotation_deg"]) {
+      for (const field of ["x_m", "y_m", "center_x_m", "center_y_m", "width_m", "depth_m", "rotation_deg"]) {
         if ((merged[field] === null || merged[field] === undefined || merged[field] === "") && sourceModule[field] != null && sourceModule[field] !== "") {
           merged[field] = sourceModule[field];
         }
       }
       const geometry = shelfGeometry(merged);
-      const rotation = orthogonalFootprint(geometry.widthM, geometry.depthM, merged?.rotation_deg);
-      const hasCoordinates = hasFiniteCoordinate(merged?.x_m) && hasFiniteCoordinate(merged?.y_m);
-      const fallback = inferTopologyPosition(aisleIndex, moduleIndex, rotation.footprintWidthM, rotation.footprintDepthM);
-      const xM = hasCoordinates ? number(merged?.x_m) : fallback.xM;
-      const yM = hasCoordinates ? number(merged?.y_m) : fallback.yM;
+      const footprint = spatialFootprint(
+        geometry.widthM,
+        geometry.depthM,
+        merged?.rotation_deg,
+        arbitraryAngles
+      );
+      const fallback = inferTopologyPosition(
+        aisleIndex,
+        moduleIndex,
+        footprint.footprintWidthM,
+        footprint.footprintDepthM
+      );
+      const placement = resolveSpatialPlacement(
+        merged,
+        geometry.widthM,
+        geometry.depthM,
+        footprint,
+        arbitraryAngles,
+        fallback
+      );
       const summary = productSummary(outputModule?.shelves || []);
-      if (hasCoordinates) measuredCoordinateCount += 1;
+      if (placement.hasCoordinates) measuredCoordinateCount += 1;
 
       modules.push({
         key,
@@ -230,14 +438,12 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
         moduleId,
         side: text(merged?.side).toUpperCase(),
         fixtureType: text(merged?.fixture_class ?? merged?.fixture_type ?? merged?.module_type ?? merged?.storage_type).toUpperCase(),
-        xM,
-        yM,
         widthM: geometry.widthM,
         depthM: geometry.depthM,
-        ...rotation,
-        centerXM: xM + rotation.footprintWidthM / 2,
-        centerYM: yM + rotation.footprintDepthM / 2,
-        coordinateAuthority: hasCoordinates ? "measured" : "topology",
+        heightM: geometry.heightM,
+        ...footprint,
+        ...placement,
+        coordinateAuthority: placement.hasCoordinates ? "measured" : "topology",
         shelfCount: Array.isArray(outputModule?.shelves) ? outputModule.shelves.length : 0,
         shelves: outputModule?.shelves || [],
         ...summary,
@@ -247,15 +453,50 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
 
   if (!modules.length) return null;
 
-  const elements = hasMeasuredArchitecture
-    ? (architecture?.elements || []).map(architectureElement).filter((item) => item.widthM > 0 && item.depthM > 0)
+  const baseStoreScene = profile
+    ? buildStoreScene(candidate, buildPlanogramAuthoringDocument(candidate))
+    : null;
+  const rawOverlay = candidate?.store_dna?.cad_overlay;
+  let cadOverlayRejected = false;
+  let storeScene = baseStoreScene;
+  if (baseStoreScene && rawOverlay != null) {
+    try {
+      storeScene = hydratePlanogramCadOverlay(baseStoreScene, candidate);
+    } catch {
+      cadOverlayRejected = true;
+      storeScene = baseStoreScene;
+    }
+  }
+  const storeScene3D = storeScene ? projectStoreScene3D(storeScene) : null;
+  const sceneNodes = storeScene3D?.nodes || [];
+  const elements = profile
+    ? sceneNodes.filter((node) => ARCHITECTURE_NODE_TYPES.has(node.nodeType)).map((node) => architectureElement({
+        element_id: node.nodeId,
+        element_type: node.nodeType,
+        center_x_m: node.geometry.centerXM,
+        center_y_m: node.geometry.centerYM,
+        width_m: node.geometry.widthM,
+        depth_m: node.geometry.depthM,
+        rotation_deg: node.geometry.rotationDeg,
+        clearance_m: node.metadata?.clearanceM ?? 0,
+      }, profile)).filter((item) => item.widthM > 0 && item.depthM > 0)
+    : [];
+  const cadFixtures = profile && !cadOverlayRejected
+    ? sceneNodes
+        .filter((node) => node.nodeType === "fixture" && node.metadata?.cadOverlay === true)
+        .map(cadFixtureFromNode)
     : [];
 
-  const inferredMaxX = Math.max(...modules.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;
-  const inferredMaxY = Math.max(...modules.map((module) => module.yM + module.footprintDepthM), 1) + 0.5;
-  const floorWidthM = hasMeasuredArchitecture ? positive(architecture?.floor_width_m, inferredMaxX) : inferredMaxX;
-  const floorDepthM = hasMeasuredArchitecture ? positive(architecture?.floor_depth_m, inferredMaxY) : inferredMaxY;
-  const route = routeProjection(engineResult?.architecture_route_objective || null);
+  const spatialFixtures = [...modules, ...cadFixtures];
+  const inferredMaxX = Math.max(...spatialFixtures.map((module) => module.xM + module.footprintWidthM), 1) + 0.5;
+  const inferredMaxY = Math.max(...spatialFixtures.map((module) => module.yM + module.footprintDepthM), 1) + 0.5;
+  const floorWidthM = profile ? positive(architecture?.floor_width_m, inferredMaxX) : inferredMaxX;
+  const floorDepthM = profile ? positive(architecture?.floor_depth_m, inferredMaxY) : inferredMaxY;
+  const route = routeProjection(
+    engineResult?.architecture_route_objective_v2 ||
+    engineResult?.architecture_route_objective ||
+    null
+  );
   const hotspotByModule = new Map((route?.hotspots || []).map((row) => [row.moduleId, row]));
   const enrichedModules = modules.map((module) => ({
     ...module,
@@ -267,17 +508,42 @@ export function buildPlanogramDigitalTwinModel(engineResult, candidate) {
   const facingCount = enrichedModules.reduce((sum, module) => sum + module.facingCount, 0);
   const sales7d = enrichedModules.reduce((sum, module) => sum + module.sales7d, 0);
   const measuredPct = enrichedModules.length ? (measuredCoordinateCount * 100) / enrichedModules.length : 0;
+  const fullyMeasured = Boolean(profile) && measuredCoordinateCount === enrichedModules.length;
+  const engineGeometryAuthority = fullyMeasured
+    ? (profile.previewOnly ? "measured-preview-v2" : "measured")
+    : "topology-preview";
+  const geometryAuthority = cadFixtures.length
+    ? "mixed-engine-and-human-cad-preview"
+    : engineGeometryAuthority;
 
   return {
     contract: "planogram-digital-twin-v1",
-    geometryAuthority: hasMeasuredArchitecture && measuredCoordinateCount === enrichedModules.length ? "measured" : "topology-preview",
-    architectureSource: hasMeasuredArchitecture ? text(architecture?.source) : "",
-    architectureSourceRef: hasMeasuredArchitecture ? text(architecture?.source_ref) : "",
+    spatialContract: profile?.spatialContract || "topology-preview",
+    architectureSchemaVersion: profile?.schemaVersion || null,
+    spatialPreviewOnly: Boolean(profile?.previewOnly),
+    arbitraryAngleGeometry: arbitraryAngles,
+    geometryAuthority,
+    engineGeometryAuthority,
+    productionReleaseAllowed: false,
+    architectureSource: profile ? text(architecture?.source) : "",
+    architectureSourceRef: profile ? text(architecture?.source_ref) : "",
     floor: { widthM: floorWidthM, depthM: floorDepthM },
     elements,
     modules: enrichedModules,
+    cadFixtures,
+    cadOverlay: {
+      present: rawOverlay != null,
+      contract: text(rawOverlay?.contract),
+      contractValid: rawOverlay?.contract === PLANOGRAM_CAD_OVERLAY_CONTRACT,
+      previewOnly: rawOverlay?.preview_only === true,
+      productionReleaseAllowed: false,
+      physicalTruthAttested: false,
+      rejected: cadOverlayRejected,
+      fixtureCount: cadFixtures.length,
+    },
     stats: {
       moduleCount: enrichedModules.length,
+      cadFixtureCount: cadFixtures.length,
       measuredCoordinateCount,
       measuredCoordinatePct: Math.round(measuredPct * 100) / 100,
       placedProductCount,

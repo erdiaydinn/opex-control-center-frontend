@@ -1,0 +1,172 @@
+name: EAY Planogram - Retail Intelligence V3 Physical Truth
+
+on:
+  push:
+    branches:
+      - product/planogram-market-leadership-v1
+    paths:
+      - "apps/planai/backend/physical_capacity_v2.py"
+      - "apps/planai/backend/commercial_physical_convergence.py"
+      - "apps/planai/backend/shadow_backtest.py"
+      - "apps/planai/backend/tests/test_physical_capacity_v2.py"
+      - "apps/planai/backend/tests/test_commercial_physical_convergence.py"
+      - "apps/planai/backend/tests/test_shadow_backtest.py"
+      - "services/core-api/app/modules/planogram/engine_adapter.py"
+      - "services/core-api/app/modules/planogram/commercial_physical_adapter.py"
+      - "services/core-api/app/modules/planogram/shadow_backtest_adapter.py"
+      - "services/core-api/app/modules/planogram/retail_intelligence_guard.py"
+      - "services/core-api/app/modules/planogram/realogram_v2.py"
+      - "services/core-api/app/modules/planogram/market_evidence_gate.py"
+      - "services/core-api/app/modules/planogram/retail_intelligence_router.py"
+      - "services/core-api/tests/test_planogram_capacity_v2_adapter.py"
+      - "services/core-api/tests/test_planogram_retail_intelligence_guard.py"
+      - "services/core-api/tests/test_planogram_realogram_v2.py"
+      - "services/core-api/tests/test_planogram_market_evidence_gate.py"
+      - "services/core-api/tests/test_planogram_retail_intelligence_contract.py"
+      - "src/modules/planogram/PlanogramRetailIntelligencePanel.jsx"
+      - "src/modules/planogram/planogram-retail-intelligence.css"
+      - "src/modules/planogram/planogramCandidateBundle.js"
+      - "src/platform/i18n/planogramRetailIntelligenceMessages.js"
+      - "scripts/test-planogram-retail-intelligence.mjs"
+      - "config/eay_planogram_market_evidence_v3.json"
+      - ".github/workflows/eay-planogram-retail-intelligence-v2.yml"
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "apps/planai/backend/**"
+      - "services/core-api/app/modules/planogram/**"
+      - "services/core-api/tests/test_planogram*.py"
+      - "src/modules/planogram/**"
+      - "src/platform/i18n/planogramRetailIntelligenceMessages.js"
+      - "scripts/test-planogram-retail-intelligence.mjs"
+      - "config/eay_planogram_market_evidence_v3.json"
+      - ".github/workflows/eay-planogram-retail-intelligence-v2.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-planogram-retail-intelligence-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retail-intelligence-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Prove exact checkout
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/planai/backend/requirements.txt
+            services/core-api/pyproject.toml
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r apps/planai/backend/requirements.txt
+          python -m pip install -e "./services/core-api[dev]"
+          npm ci
+      - name: Strict lint Retail Intelligence V3 surfaces
+        run: >-
+          ruff check
+          apps/planai/backend/physical_capacity_v2.py
+          apps/planai/backend/commercial_physical_convergence.py
+          apps/planai/backend/shadow_backtest.py
+          apps/planai/backend/tests/test_physical_capacity_v2.py
+          apps/planai/backend/tests/test_commercial_physical_convergence.py
+          apps/planai/backend/tests/test_shadow_backtest.py
+          services/core-api/app/modules/planogram/engine_adapter.py
+          services/core-api/app/modules/planogram/commercial_physical_adapter.py
+          services/core-api/app/modules/planogram/shadow_backtest_adapter.py
+          services/core-api/app/modules/planogram/retail_intelligence_guard.py
+          services/core-api/app/modules/planogram/realogram_v2.py
+          services/core-api/app/modules/planogram/market_evidence_gate.py
+          services/core-api/app/modules/planogram/retail_intelligence_router.py
+          services/core-api/tests/test_planogram_capacity_v2_adapter.py
+          services/core-api/tests/test_planogram_retail_intelligence_guard.py
+          services/core-api/tests/test_planogram_realogram_v2.py
+          services/core-api/tests/test_planogram_market_evidence_gate.py
+          services/core-api/tests/test_planogram_retail_intelligence_contract.py
+      - name: Physical Capacity V2 commercial and paired KPI convergence
+        working-directory: apps/planai/backend
+        run: >-
+          python -m pytest -q
+          tests/test_physical_capacity_v2.py
+          tests/test_commercial_physical_convergence.py
+          tests/test_shadow_backtest.py
+          tests/test_blind_benchmark_engine.py
+      - name: Core capacity privacy realogram evidence and API convergence
+        run: >-
+          python -m pytest -q
+          services/core-api/tests/test_planogram_capacity_v2_adapter.py
+          services/core-api/tests/test_planogram_retail_intelligence_guard.py
+          services/core-api/tests/test_planogram_realogram_v2.py
+          services/core-api/tests/test_planogram_market_evidence_gate.py
+          services/core-api/tests/test_planogram_retail_intelligence_contract.py
+          services/core-api/tests/test_planogram_shelf_scan.py
+          services/core-api/tests/test_planogram_shelf_scan_api.py
+      - name: Retail Intelligence UI privacy, blind and shelf-scan boundary
+        run: node scripts/test-planogram-retail-intelligence.mjs
+      - name: Production frontend build
+        run: npm run build -- --manifest
+      - name: Preserve accessibility and localization gates
+        run: npm run test:inclusion
+      - name: Prove V3 market-evidence truth boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from app.budget_main import app
+          from app.modules.planogram.market_evidence_gate import evaluate_market_evidence_gate
+
+          assert "/v1/planogram/retail-intelligence-preview" in app.openapi()["paths"]
+          result = evaluate_market_evidence_gate(
+              convergence={
+                  "repository_converged": True,
+                  "physical_capacity_v2": {"valid": True},
+              },
+              shadow_backtest={
+                  "available": True,
+                  "evidence_complete": True,
+                  "minimum_pair_gate_passed": True,
+              },
+              blind_benchmark={"available": True, "blind": True},
+              realogram={
+                  "available": True,
+                  "provenance_fields_complete": True,
+                  "action_state_contract": "stable-id-dedup-open-resolved-v1",
+              },
+              shelf_scan={"candidate_ready_for_human_review": True},
+              preview_context=True,
+          )
+          assert result["repository_ready_for_independent_review"] is True
+          assert result["market_leadership_claim_allowed"] is False
+          assert result["production_promotion_allowed"] is False
+
+          contract = json.loads(
+              Path("config/eay_planogram_market_evidence_v3.json").read_text()
+          )
+          assert contract["claim_market_leader"] is False
+          assert contract["external_field_proof_required"] is True
+          assert (
+              contract["internal_migrations"]["github_actions_exact_sha_evidence"]
+              == "runtime_observation_required"
+          )
+          print("PLANOGRAM_RETAIL_INTELLIGENCE_V3=PASS")
+          print("PLANOGRAM_PHYSICAL_CAPACITY_V2=PASS")
+          print("PLANOGRAM_PREVIEW_PROMOTION=FALSE")
+          print("PLANOGRAM_MARKET_LEADERSHIP_CLAIM=FALSE")
+          PY

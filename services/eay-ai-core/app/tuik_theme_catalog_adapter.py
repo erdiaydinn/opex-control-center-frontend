@@ -12,7 +12,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -41,6 +41,8 @@ TUIK_THEME_API_URL = "https://veriportali.tuik.gov.tr/api/tr/data/statistical-th
 TUIK_THEME_HOST = "veriportali.tuik.gov.tr"
 MAX_THEME_DEPTH = 12
 MAX_THEME_NODES = 5_000
+TUIK_CROSS_OFFICIAL_REFERENCE_HOSTS = frozenset({"evds3.tcmb.gov.tr"})
+TUIK_LEGACY_INSECURE_REFERENCE_HOSTS = frozenset({"biruni.tuik.gov.tr"})
 
 
 class TUIKThemeNode(BaseModel):
@@ -49,8 +51,8 @@ class TUIKThemeNode(BaseModel):
     theme_id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=500)
     # Field evidence shows structural/group nodes legitimately carry null/blank URLs.
-    # The source key remains mandatory in _parse_node; any non-empty URL is still
-    # constrained to a safe relative path or HTTPS under the official TÜİK domain.
+    # The source key remains mandatory in _parse_node. Safe official HTTPS references
+    # are retained; verified legacy HTTP references are deliberately not promoted.
     url: str | None = Field(max_length=2_000)
     icon: str | None = Field(default=None, max_length=2_000)
     metadata_url: str | None = Field(default=None, max_length=2_000)
@@ -108,22 +110,41 @@ class TUIKThemeCatalogRead(BaseModel):
     observation: ExternalContextObservation
 
 
+def _is_tuik_host(host: str) -> bool:
+    return host == "tuik.gov.tr" or host.endswith(".tuik.gov.tr")
+
+
 def _safe_catalog_url(value: Any, *, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"tuik_theme_catalog_{field_name}_required")
     normalized = value.strip()
+    if "\\" in normalized or any(ord(char) < 32 or ord(char) == 127 for char in normalized):
+        raise ValueError(f"tuik_theme_catalog_{field_name}_unsafe")
+
     if normalized.startswith("/") and not normalized.startswith("//"):
+        parsed_relative = urlparse(normalized)
+        decoded_path = unquote(parsed_relative.path)
+        if any(part == ".." for part in decoded_path.split("/")):
+            raise ValueError(f"tuik_theme_catalog_{field_name}_unsafe")
         return normalized
+
     parsed = urlparse(normalized)
     host = (parsed.hostname or "").casefold().rstrip(".")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"tuik_theme_catalog_{field_name}_unsafe") from exc
+    trusted_host = _is_tuik_host(host) or host in TUIK_CROSS_OFFICIAL_REFERENCE_HOSTS
     if (
         parsed.scheme == "https"
-        and (host == "tuik.gov.tr" or host.endswith(".tuik.gov.tr"))
+        and trusted_host
         and not parsed.username
         and not parsed.password
-        and parsed.port in (None, 443)
-        and not parsed.fragment
+        and port in (None, 443)
     ):
+        # Fragment-bearing SPA links are catalog metadata only; they are never used
+        # as provider fetch targets. Field evidence shows databrowser2.tuik.gov.tr
+        # intentionally encodes dataset navigation in the fragment.
         return normalized
     raise ValueError(f"tuik_theme_catalog_{field_name}_unsafe")
 
@@ -153,6 +174,24 @@ def _optional_catalog_url(value: Any, *, field_name: str) -> str | None:
         raise ValueError(f"tuik_theme_catalog_{field_name}_invalid")
     normalized = value.strip()
     if not normalized:
+        return None
+
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"tuik_theme_catalog_{field_name}_unsafe") from exc
+    if (
+        parsed.scheme == "http"
+        and host in TUIK_LEGACY_INSECURE_REFERENCE_HOSTS
+        and not parsed.username
+        and not parsed.password
+        and port in (None, 80)
+    ):
+        # The official catalog still carries legacy Biruni HTTP links. Preserve the
+        # raw value only in the sealed provider receipt; never promote it as a safe
+        # clickable/executable URL in the normalized Company World catalog.
         return None
     return _safe_catalog_url(normalized, field_name=field_name)
 

@@ -4,21 +4,40 @@ on:
   push:
     branches:
       - product/jarvis-context-intelligence-v1
+      - product/jarvis-general-intelligence-v1
     paths:
       - "services/eay-ai-core/app/cyber_*.py"
       - "services/eay-ai-core/app/company_detection_coverage_intelligence.py"
       - "services/eay-ai-core/tests/test_cyber_*.py"
       - "services/eay-ai-core/tests/test_company_detection_coverage_intelligence.py"
+      - "services/eay-ai-core/config/cyber_*.json"
+      - "services/eay-ai-core/config/eay_cyber_*.json"
+      - "services/eay-ai-core/scripts/run_live_cyber_defense_smoke.py"
+      - "services/eay-ai-core/scripts/run_cyber_world_championship_readiness.py"
+      - "services/eay-ai-core/scripts/run_cyber_championship_execution_readiness.py"
+      - "services/eay-ai-core/scripts/run_cyber_championship_external_preflight.py"
       - "services/eay-ai-core/pyproject.toml"
+      - "docs/security/EAY_JARVIS_CYBER_*.md"
       - ".github/workflows/jarvis-cyber-defense-ci.yml"
+      - ".github/workflows/jarvis-cyber-championship-run.yml"
   pull_request:
     paths:
       - "services/eay-ai-core/app/cyber_*.py"
       - "services/eay-ai-core/app/company_detection_coverage_intelligence.py"
       - "services/eay-ai-core/tests/test_cyber_*.py"
       - "services/eay-ai-core/tests/test_company_detection_coverage_intelligence.py"
+      - "services/eay-ai-core/config/cyber_*.json"
+      - "services/eay-ai-core/config/eay_cyber_*.json"
+      - "services/eay-ai-core/scripts/run_live_cyber_defense_smoke.py"
+      - "services/eay-ai-core/scripts/run_cyber_world_championship_readiness.py"
+      - "services/eay-ai-core/scripts/run_cyber_championship_execution_readiness.py"
+      - "services/eay-ai-core/scripts/run_cyber_championship_external_preflight.py"
       - "services/eay-ai-core/pyproject.toml"
+      - "docs/security/EAY_JARVIS_CYBER_*.md"
       - ".github/workflows/jarvis-cyber-defense-ci.yml"
+      - ".github/workflows/jarvis-cyber-championship-run.yml"
+  schedule:
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -38,6 +57,15 @@ jobs:
         working-directory: services/eay-ai-core
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal cyber defense head
+        run: |
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_EXPECTED_SHA=$expected"
+          echo "CYBER_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
@@ -53,6 +81,10 @@ jobs:
             app/company_detection_coverage_intelligence.py \
             tests/test_cyber_*.py \
             tests/test_company_detection_coverage_intelligence.py \
+            scripts/run_live_cyber_defense_smoke.py \
+            scripts/run_cyber_world_championship_readiness.py \
+            scripts/run_cyber_championship_execution_readiness.py \
+            scripts/run_cyber_championship_external_preflight.py \
             --output-format=json > /tmp/cyber-ruff.json
           ruff_status=$?
           python - <<'PY'
@@ -65,12 +97,19 @@ jobs:
           by_code = collections.Counter(item['code'] for item in findings)
           by_file = collections.Counter(item['filename'] for item in findings)
           print(f'CYBER_RUFF_TOTAL={len(findings)}')
-          print('CYBER_RUFF_BY_CODE=' + ','.join(f'{code}:{count}' for code, count in sorted(by_code.items())))
-          print('CYBER_RUFF_BY_FILE=' + ','.join(f'{path}:{count}' for path, count in sorted(by_file.items())))
+          print(
+              'CYBER_RUFF_BY_CODE='
+              + ','.join(f'{code}:{count}' for code, count in sorted(by_code.items()))
+          )
+          print(
+              'CYBER_RUFF_BY_FILE='
+              + ','.join(f'{path}:{count}' for path, count in sorted(by_file.items()))
+          )
           for item in findings:
               location = item['location']
               print(
-                  f"CYBER_RUFF_FINDING {item['filename']}:{location['row']}:{location['column']} "
+                  f"CYBER_RUFF_FINDING {item['filename']}:"
+                  f"{location['row']}:{location['column']} "
                   f"{item['code']} {item['message']}"
               )
           PY
@@ -81,9 +120,166 @@ jobs:
             app/cyber_*.py \
             app/company_detection_coverage_intelligence.py \
             tests/test_cyber_*.py \
-            tests/test_company_detection_coverage_intelligence.py
+            tests/test_company_detection_coverage_intelligence.py \
+            scripts/run_live_cyber_defense_smoke.py \
+            scripts/run_cyber_world_championship_readiness.py \
+            scripts/run_cyber_championship_execution_readiness.py \
+            scripts/run_cyber_championship_external_preflight.py
       - name: Run cyber defense adversarial and end-to-end acceptance
         run: |
           python -m pytest -q \
             tests/test_cyber_*.py \
             tests/test_company_detection_coverage_intelligence.py
+
+  continuous-cyber-benchmark:
+    name: Continuous cyber benchmark safety floors
+    needs: cyber-defense-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal benchmark head
+        run: |
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_BENCH_EXPECTED_SHA=$expected"
+          echo "CYBER_BENCH_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install benchmark runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Run canonical cyber benchmark contract and safety floors
+        run: |
+          python -m pytest -q \
+            tests/test_cyber_benchmark_intelligence.py \
+            tests/test_cyber_continuous_defense_pipeline.py \
+            -k "benchmark or full_continuous_cycle"
+
+  cyber-world-championship-readiness:
+    name: Cyber world championship blind-arena readiness
+    needs: cyber-defense-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal championship head
+        run: |
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_CHAMP_EXPECTED_SHA=$expected"
+          echo "CYBER_CHAMP_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install championship runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Enforce world championship truth gates
+        run: python -m pytest -q tests/test_cyber_world_championship.py
+      - name: Prove challenge-ready but not self-declared leader
+        run: python scripts/run_cyber_world_championship_readiness.py
+
+  championship-execution-protocol:
+    name: Sealed bank, sandbox, scoring, learning, external authority and rerace protocol
+    needs: cyber-defense-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal championship execution head
+        run: |
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_EXEC_EXPECTED_SHA=$expected"
+          echo "CYBER_EXEC_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install championship execution runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Prove sealed execution, external authority and anti-overfit learning contracts
+        run: |
+          python -m pytest -q \
+            tests/test_cyber_championship_execution.py \
+            tests/test_cyber_championship_external_authority.py \
+            tests/test_cyber_championship_learning.py
+      - name: Prove missing execution authority stays fail-closed
+        run: |
+          python scripts/run_cyber_championship_execution_readiness.py > /tmp/championship-exec.json
+          cat /tmp/championship-exec.json
+          python - <<'PY'
+          import json
+          with open('/tmp/championship-exec.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'bank_authority_required'
+          assert report['verified_leader_claim_allowed'] is False
+          assert report['production_security_superiority_claim_allowed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Prove missing external evaluator and vendor authority stays fail-closed
+        run: |
+          python scripts/run_cyber_championship_external_preflight.py > /tmp/championship-external.json
+          cat /tmp/championship-external.json
+          python - <<'PY'
+          import json
+          with open('/tmp/championship-external.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'external_authority_required'
+          assert report['real_race_executed'] is False
+          assert report['verified_leader_claim_allowed'] is False
+          assert report['production_security_superiority_claim_allowed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+
+  live-public-threat-intelligence:
+    name: Live CISA KEV, NVD and EPSS read-only observation
+    needs: cyber-defense-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal live-observation head
+        run: |
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_LIVE_EXPECTED_SHA=$expected"
+          echo "CYBER_LIVE_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install minimal cyber runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Observe current public threat intelligence without credentials or writes
+        run: python scripts/run_live_cyber_defense_smoke.py

@@ -1,0 +1,366 @@
+{
+  "contract": "eay-cyber-open-source-registry-v1",
+  "registry_id": "eay-jarvis-cyber-open-source-2026-08",
+  "repositories": [
+    {
+      "repo": "SigmaHQ/sigma",
+      "canonical_url": "https://github.com/SigmaHQ/sigma",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "read_only_corpus",
+      "risk_class": "passive_defense",
+      "rationale": "Vendor-neutral detection-rule corpus for ATT&CK-mapped detection engineering and coverage analysis."
+    },
+    {
+      "repo": "SigmaHQ/pySigma",
+      "canonical_url": "https://github.com/SigmaHQ/pySigma",
+      "trust_tier": "primary_project",
+      "domains": ["incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Canonical Sigma parsing and conversion library candidate for isolated detection-rule validation."
+    },
+    {
+      "repo": "wazuh/wazuh",
+      "canonical_url": "https://github.com/wazuh/wazuh",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "cloud_container", "incident_response_detection"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "Open XDR and SIEM reference architecture for endpoint telemetry, rules, inventory and response design."
+    },
+    {
+      "repo": "Velocidex/velociraptor",
+      "canonical_url": "https://github.com/Velocidex/velociraptor",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "active_validation",
+      "rationale": "High-value endpoint collection and DFIR capability; execution is restricted to authorized isolated labs."
+    },
+    {
+      "repo": "zeek/zeek",
+      "canonical_url": "https://github.com/zeek/zeek",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Passive network-security telemetry and protocol-analysis engine for detection and investigation validation."
+    },
+    {
+      "repo": "OISF/suricata",
+      "canonical_url": "https://github.com/OISF/suricata",
+      "trust_tier": "foundation",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "IDS/IPS and network security monitoring engine for offline packet and rule acceptance testing."
+    },
+    {
+      "repo": "osquery/osquery",
+      "canonical_url": "https://github.com/osquery/osquery",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Queryable endpoint telemetry engine useful for inventory, detection hypotheses and forensic evidence collection."
+    },
+    {
+      "repo": "VirusTotal/yara",
+      "canonical_url": "https://github.com/VirusTotal/yara",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Malware-pattern matching engine suitable for isolated sample classification and defensive rule validation."
+    },
+    {
+      "repo": "falcosecurity/falco",
+      "canonical_url": "https://github.com/falcosecurity/falco",
+      "trust_tier": "foundation",
+      "domains": ["cloud_container", "endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "CNCF runtime-detection engine for container and Linux behavior telemetry and detection-rule testing."
+    },
+    {
+      "repo": "cilium/tetragon",
+      "canonical_url": "https://github.com/cilium/tetragon",
+      "trust_tier": "foundation",
+      "domains": ["cloud_container", "endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "eBPF-based runtime observability and enforcement reference for Kubernetes and Linux security architecture."
+    },
+    {
+      "repo": "OpenCTI-Platform/opencti",
+      "canonical_url": "https://github.com/OpenCTI-Platform/opencti",
+      "trust_tier": "primary_project",
+      "domains": ["incident_response_detection", "software_supply_chain"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "Threat-intelligence knowledge graph reference for STIX-oriented ingestion, correlation and provenance design."
+    },
+    {
+      "repo": "MISP/MISP",
+      "canonical_url": "https://github.com/MISP/MISP",
+      "trust_tier": "primary_project",
+      "domains": ["incident_response_detection"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "Threat-sharing and indicator-management reference for structured intelligence exchange and provenance."
+    },
+    {
+      "repo": "volatilityfoundation/volatility3",
+      "canonical_url": "https://github.com/volatilityfoundation/volatility3",
+      "trust_tier": "primary_project",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Memory-forensics framework for offline incident analysis and evidence-driven endpoint investigation."
+    },
+    {
+      "repo": "google/timesketch",
+      "canonical_url": "https://github.com/google/timesketch",
+      "trust_tier": "primary_project",
+      "domains": ["incident_response_detection"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "Collaborative forensic timeline analysis reference for incident chronology and evidence review workflows."
+    },
+    {
+      "repo": "log2timeline/plaso",
+      "canonical_url": "https://github.com/log2timeline/plaso",
+      "trust_tier": "primary_project",
+      "domains": ["incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Forensic event extraction engine for controlled timeline-building and incident reconstruction."
+    },
+    {
+      "repo": "Yamato-Security/hayabusa",
+      "canonical_url": "https://github.com/Yamato-Security/hayabusa",
+      "trust_tier": "high_signal_community",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Fast Windows event-log hunting and timeline analysis with Sigma-oriented defensive detection workflows."
+    },
+    {
+      "repo": "WithSecureLabs/chainsaw",
+      "canonical_url": "https://github.com/WithSecureLabs/chainsaw",
+      "trust_tier": "high_signal_community",
+      "domains": ["endpoint_network", "incident_response_detection"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Offline forensic artifact hunting and Sigma-based event analysis for rapid incident triage."
+    },
+    {
+      "repo": "semgrep/semgrep",
+      "canonical_url": "https://github.com/semgrep/semgrep",
+      "trust_tier": "primary_project",
+      "domains": ["web_api", "software_supply_chain", "data_security"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Static analysis engine candidate for isolated secure-code checks and custom EAY AppSec policy validation."
+    },
+    {
+      "repo": "zaproxy/zaproxy",
+      "canonical_url": "https://github.com/zaproxy/zaproxy",
+      "trust_tier": "foundation",
+      "domains": ["web_api"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "active_validation",
+      "rationale": "OWASP web application security testing engine; active scans require explicitly authorized test targets."
+    },
+    {
+      "repo": "aquasecurity/trivy",
+      "canonical_url": "https://github.com/aquasecurity/trivy",
+      "trust_tier": "primary_project",
+      "domains": ["software_supply_chain", "cloud_container", "data_security"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Vulnerability, misconfiguration, secret and SBOM scanner candidate for pinned isolated CI execution."
+    },
+    {
+      "repo": "google/osv-scanner",
+      "canonical_url": "https://github.com/google/osv-scanner",
+      "trust_tier": "primary_project",
+      "domains": ["software_supply_chain"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "OSV-backed dependency vulnerability scanner supporting precise package-version vulnerability matching."
+    },
+    {
+      "repo": "anchore/syft",
+      "canonical_url": "https://github.com/anchore/syft",
+      "trust_tier": "primary_project",
+      "domains": ["software_supply_chain", "cloud_container"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "SBOM generator candidate for SPDX/CycloneDX inventory and signed provenance workflows."
+    },
+    {
+      "repo": "anchore/grype",
+      "canonical_url": "https://github.com/anchore/grype",
+      "trust_tier": "primary_project",
+      "domains": ["software_supply_chain", "cloud_container"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "SBOM and container vulnerability scanner candidate for isolated software-supply-chain acceptance."
+    },
+    {
+      "repo": "sigstore/cosign",
+      "canonical_url": "https://github.com/sigstore/cosign",
+      "trust_tier": "foundation",
+      "domains": ["software_supply_chain"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Artifact signature and attestation verification candidate for immutable release and provenance checks."
+    },
+    {
+      "repo": "in-toto/in-toto",
+      "canonical_url": "https://github.com/in-toto/in-toto",
+      "trust_tier": "foundation",
+      "domains": ["software_supply_chain"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Software supply-chain provenance framework for signed layout and artifact-step verification patterns."
+    },
+    {
+      "repo": "ossf/scorecard",
+      "canonical_url": "https://github.com/ossf/scorecard",
+      "trust_tier": "foundation",
+      "domains": ["software_supply_chain"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "OpenSSF repository-security posture checks for dependency and upstream governance assessment."
+    },
+    {
+      "repo": "ossf/allstar",
+      "canonical_url": "https://github.com/ossf/allstar",
+      "trust_tier": "foundation",
+      "domains": ["software_supply_chain"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "GitHub organization policy-enforcement reference for repository hardening and governance design."
+    },
+    {
+      "repo": "gitleaks/gitleaks",
+      "canonical_url": "https://github.com/gitleaks/gitleaks",
+      "trust_tier": "primary_project",
+      "domains": ["software_supply_chain", "data_security"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Secret detection candidate for repository and history scanning within isolated CI boundaries."
+    },
+    {
+      "repo": "trufflesecurity/trufflehog",
+      "canonical_url": "https://github.com/trufflesecurity/trufflehog",
+      "trust_tier": "primary_project",
+      "domains": ["software_supply_chain", "data_security"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Deep secret-scanning reference and candidate, restricted from credential validation or external network use."
+    },
+    {
+      "repo": "kyverno/kyverno",
+      "canonical_url": "https://github.com/kyverno/kyverno",
+      "trust_tier": "foundation",
+      "domains": ["cloud_container", "software_supply_chain"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "Kubernetes-native policy-as-code reference for admission, image verification and governance controls."
+    },
+    {
+      "repo": "open-policy-agent/gatekeeper",
+      "canonical_url": "https://github.com/open-policy-agent/gatekeeper",
+      "trust_tier": "foundation",
+      "domains": ["cloud_container"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "OPA-based Kubernetes admission-policy reference for declarative security constraints and audit."
+    },
+    {
+      "repo": "kubescape/kubescape",
+      "canonical_url": "https://github.com/kubescape/kubescape",
+      "trust_tier": "foundation",
+      "domains": ["cloud_container", "software_supply_chain"],
+      "use_mode": "ci_isolated",
+      "risk_class": "passive_defense",
+      "rationale": "Kubernetes risk, compliance and misconfiguration scanner candidate for isolated pre-deploy acceptance."
+    },
+    {
+      "repo": "NVIDIA/garak",
+      "canonical_url": "https://github.com/NVIDIA/garak",
+      "trust_tier": "primary_project",
+      "domains": ["ai_agentic"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "LLM vulnerability scanner and probe corpus for authorized AI-security evaluation only."
+    },
+    {
+      "repo": "Azure/PyRIT",
+      "canonical_url": "https://github.com/Azure/PyRIT",
+      "trust_tier": "primary_project",
+      "domains": ["ai_agentic"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "AI red-team evaluation framework admitted solely inside Security Guardian-authorized model sandboxes."
+    },
+    {
+      "repo": "promptfoo/promptfoo",
+      "canonical_url": "https://github.com/promptfoo/promptfoo",
+      "trust_tier": "high_signal_community",
+      "domains": ["ai_agentic"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "LLM evaluation and security test harness; provider calls and adversarial tests require isolated authorization."
+    },
+    {
+      "repo": "NVIDIA/NeMo-Guardrails",
+      "canonical_url": "https://github.com/NVIDIA/NeMo-Guardrails",
+      "trust_tier": "primary_project",
+      "domains": ["ai_agentic", "data_security"],
+      "use_mode": "reference_only",
+      "risk_class": "passive_defense",
+      "rationale": "Programmable guardrail reference for model input, output, retrieval and tool-safety architecture."
+    },
+    {
+      "repo": "mitre/caldera",
+      "canonical_url": "https://github.com/mitre/caldera",
+      "trust_tier": "dual_use_research",
+      "domains": ["endpoint_network", "identity", "incident_response_detection"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "Adversary-emulation framework used only to validate defenses inside explicitly authorized isolated labs."
+    },
+    {
+      "repo": "redcanaryco/atomic-red-team",
+      "canonical_url": "https://github.com/redcanaryco/atomic-red-team",
+      "trust_tier": "dual_use_research",
+      "domains": ["endpoint_network", "identity", "incident_response_detection"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "ATT&CK-mapped adversary test corpus reserved for bounded defensive control validation in test systems."
+    },
+    {
+      "repo": "projectdiscovery/nuclei",
+      "canonical_url": "https://github.com/projectdiscovery/nuclei",
+      "trust_tier": "dual_use_research",
+      "domains": ["web_api", "cloud_container"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "Template-driven security scanner restricted to allowlisted non-production targets and authorized sandboxes."
+    },
+    {
+      "repo": "projectdiscovery/nuclei-templates",
+      "canonical_url": "https://github.com/projectdiscovery/nuclei-templates",
+      "trust_tier": "dual_use_research",
+      "domains": ["web_api", "cloud_container"],
+      "use_mode": "authorized_sandbox_only",
+      "risk_class": "dual_use",
+      "rationale": "Large vulnerability-test corpus usable only for defensive validation against explicitly authorized targets."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "contract": "eay-cyber-defense-wall-scenarios-v1",
+  "purpose": "Defensive-only combined threat coverage. No exploit procedures or payloads.",
+  "scenarios": [
+    {
+      "id": "account-takeover-api-tenant-exfiltration",
+      "attack_families": ["credential_abuse", "session_replay", "object_authorization_abuse", "cross_tenant_data_access"],
+      "required_walls": ["edge", "identity", "application_api", "data_tenant", "runtime_detection", "recovery"]
+    },
+    {
+      "id": "supply-chain-runtime-persistence",
+      "attack_families": ["dependency_compromise", "ci_cd_secret_exposure", "artifact_tampering", "runtime_persistence"],
+      "required_walls": ["supply_chain", "identity", "runtime_detection", "data_tenant", "recovery"]
+    },
+    {
+      "id": "malicious-upload-parser-runtime",
+      "attack_families": ["malicious_file", "content_type_confusion", "parser_abuse", "runtime_escape_attempt"],
+      "required_walls": ["edge", "application_api", "runtime_detection", "data_tenant", "recovery"]
+    },
+    {
+      "id": "ai-prompt-tool-data-leakage",
+      "attack_families": ["prompt_injection", "indirect_prompt_injection", "tool_authority_abuse", "sensitive_data_exposure"],
+      "required_walls": ["edge", "identity", "ai_agent", "application_api", "data_tenant", "runtime_detection"]
+    },
+    {
+      "id": "insider-privilege-data-abuse",
+      "attack_families": ["privilege_misuse", "bulk_export", "audit_evasion", "sensitive_data_access"],
+      "required_walls": ["identity", "application_api", "data_tenant", "runtime_detection", "recovery"]
+    },
+    {
+      "id": "cloud-service-identity-lateral-movement",
+      "attack_families": ["service_identity_compromise", "secret_exposure", "lateral_movement", "privilege_escalation"],
+      "required_walls": ["identity", "data_tenant", "runtime_detection", "supply_chain", "recovery"]
+    },
+    {
+      "id": "ransomware-impact-recovery",
+      "attack_families": ["initial_access", "credential_abuse", "lateral_movement", "destructive_impact", "backup_pressure"],
+      "required_walls": ["edge", "identity", "runtime_detection", "data_tenant", "recovery"]
+    },
+    {
+      "id": "detection-evasion-audit-pressure",
+      "attack_families": ["telemetry_degradation", "audit_tampering_attempt", "persistence", "recovery_pressure"],
+      "required_walls": ["runtime_detection", "data_tenant", "identity", "recovery"]
+    }
+  ],
+  "invariants": {
+    "minimum_independent_walls_per_scenario": 4,
+    "exploit_generation_permitted": false,
+    "credential_capture_permitted": false,
+    "destructive_execution_permitted": false,
+    "automatic_remediation_permitted": false,
+    "production_mutation_permitted": false
+  }
+}

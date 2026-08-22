@@ -1,0 +1,133 @@
+name: EAY Jarvis Cyber Championship Authorized Run Admission
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-cyber-championship-authorized-run
+  cancel-in-progress: false
+
+jobs:
+  external-authority-admission:
+    name: Verify signed bank, sandbox and vendor authorities
+    runs-on: [self-hosted, eay-championship]
+    environment: cyber-championship
+    timeout-minutes: 15
+    env:
+      EAY_CHAMPIONSHIP_EVIDENCE_DIR: ${{ vars.EAY_CHAMPIONSHIP_EVIDENCE_DIR }}
+      EAY_CHAMPIONSHIP_TRUST_DIR: ${{ vars.EAY_CHAMPIONSHIP_TRUST_DIR }}
+      EAY_CHAMPIONSHIP_PYTHON_BIN: ${{ vars.EAY_CHAMPIONSHIP_PYTHON_BIN }}
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prove literal manually dispatched head
+        run: |
+          expected='${{ github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_AUTHORIZED_EXPECTED_SHA=$expected"
+          echo "CYBER_AUTHORIZED_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - name: Require pre-provisioned offline verifier runtime
+        run: |
+          test -n "$EAY_CHAMPIONSHIP_PYTHON_BIN"
+          case "$EAY_CHAMPIONSHIP_PYTHON_BIN" in
+            /*) ;;
+            *) echo "CHAMPIONSHIP_RUNTIME=BLOCKED_NON_ABSOLUTE_PATH"; exit 1 ;;
+          esac
+          test -x "$EAY_CHAMPIONSHIP_PYTHON_BIN"
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import sys
+          if sys.version_info[:2] != (3, 12):
+              raise SystemExit("championship_verifier_requires_python_3_12")
+          import cryptography
+          import pydantic
+          print("CHAMPIONSHIP_VERIFIER_RUNTIME=PREPROVISIONED")
+          print("CHAMPIONSHIP_VERIFIER_PYTHON=3.12")
+          print("CHAMPIONSHIP_RUNTIME_NETWORK_INSTALL=false")
+          PY
+      - name: Require externally mounted evidence and protected trust roots
+        run: |
+          test -n "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
+          test -d "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
+          test -n "$EAY_CHAMPIONSHIP_TRUST_DIR"
+          test -d "$EAY_CHAMPIONSHIP_TRUST_DIR"
+          test -f "$EAY_CHAMPIONSHIP_TRUST_DIR/trusted_signers.json"
+          test -f "$EAY_CHAMPIONSHIP_TRUST_DIR/subject_signer_bindings.json"
+      - name: Bind every receipt subject to its exact trusted signer key
+        run: |
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_signer_binding_guard \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --trust-dir "$EAY_CHAMPIONSHIP_TRUST_DIR" \
+            --strict > /tmp/eay-championship-signer-bindings.json
+          cat /tmp/eay-championship-signer-bindings.json
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import json
+          with open('/tmp/eay-championship-signer-bindings.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'verified'
+          assert report['verified_subject_count'] == report['required_subject_count']
+          assert report['raw_receipt_contents_printed'] is False
+          assert report['raw_keys_or_signatures_printed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Verify detached Ed25519 signatures for every consumed receipt
+        run: |
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_signature_guard \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --trust-dir "$EAY_CHAMPIONSHIP_TRUST_DIR" \
+            --strict > /tmp/eay-championship-signatures.json
+          cat /tmp/eay-championship-signatures.json
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import json
+          with open('/tmp/eay-championship-signatures.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'verified'
+          assert report['verified_subject_count'] == report['required_subject_count']
+          assert report['raw_receipt_contents_printed'] is False
+          assert report['raw_keys_or_signatures_printed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Enforce exact vendor tenant resource identity and operation scope
+        run: |
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_tenant_scope_guard \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --strict > /tmp/eay-championship-scope.json
+          cat /tmp/eay-championship-scope.json
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import json
+          with open('/tmp/eay-championship-scope.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'ready'
+          assert report['raw_credentials_observed'] is False
+          assert report['production_mutation_authority'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Verify external admission without printing secrets or ground truth
+        run: |
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" scripts/run_cyber_championship_external_preflight.py \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --strict > /tmp/eay-championship-admission.json
+          cat /tmp/eay-championship-admission.json
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import json
+          with open('/tmp/eay-championship-admission.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'ready_for_real_runs'
+          assert report['real_race_executed'] is False
+          assert report['verified_leader_claim_allowed'] is False
+          assert report['production_security_superiority_claim_allowed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Preserve execution truth boundary
+        run: |
+          echo "CHAMPIONSHIP_EXTERNAL_ADMISSION=READY_FOR_REAL_RUNS"
+          echo "CHAMPIONSHIP_REAL_RACE_EXECUTED=false"
+          echo "Repository admission does not execute or score vendor systems."

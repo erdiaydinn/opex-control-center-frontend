@@ -8,6 +8,7 @@ class DocumentCreate(BaseModel):
     name: str = Field(min_length=3, max_length=200)
     locations: list[str] = Field(min_length=1)
     products: list[dict] = Field(min_length=1)
+    count_mode: str = Field(default="GOLDEN_COUNT", pattern="^(GOLDEN_COUNT|WALL_TO_WALL)$")
     thresholds: dict = Field(default_factory=lambda: {"quantity": 5, "value_try": 1000})
 
 

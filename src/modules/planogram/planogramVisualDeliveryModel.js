@@ -16,6 +16,13 @@ function normalizeFixtureType(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function cadVisualFixtureEligible(module) {
+  return module?.sourceKind === "cad_overlay_preview"
+    && module?.coordinateAuthority === "human_cad_preview"
+    && module?.productionReleaseAllowed === false
+    && module?.physicalTruthAttested === false;
+}
+
 function collectModelSkus(model) {
   const skus = new Set();
   for (const module of model?.modules || []) {
@@ -35,7 +42,17 @@ function collectFixtureTypes(model) {
     const fixtureType = normalizeFixtureType(module?.fixtureType ?? module?.fixture_type);
     if (fixtureType) fixtureTypes.add(fixtureType);
   }
-  return fixtureTypes;
+  const cadFixtures = Array.isArray(model?.cadFixtures) ? model.cadFixtures : [];
+  let rejectedCadFixtureAuthority = 0;
+  for (const module of cadFixtures) {
+    if (!cadVisualFixtureEligible(module)) {
+      rejectedCadFixtureAuthority += 1;
+      continue;
+    }
+    const fixtureType = normalizeFixtureType(module?.fixtureType ?? module?.fixture_type);
+    if (fixtureType) fixtureTypes.add(fixtureType);
+  }
+  return { fixtureTypes, rejectedCadFixtureAuthority };
 }
 
 function productDelivery(asset, capabilities, counters) {
@@ -106,7 +123,7 @@ export function buildPlanogramVisualDeliveryPlan(model, assetManifest, capabilit
   const productIndex = buildProductAssetIndex(assetManifest);
   const fixtureIndex = buildFixtureAssetIndex(assetManifest);
   const skus = collectModelSkus(model);
-  const fixtureTypes = collectFixtureTypes(model);
+  const { fixtureTypes, rejectedCadFixtureAuthority } = collectFixtureTypes(model);
   const counters = { ktx2Skus: 0, atlasSkus: 0 };
   const products = [];
   const fixtures = [];
@@ -150,6 +167,7 @@ export function buildPlanogramVisualDeliveryPlan(model, assetManifest, capabilit
     diagnostics: Object.freeze({
       missingProductAsset,
       missingFixtureAsset,
+      rejectedCadFixtureAuthority,
     }),
   });
 }

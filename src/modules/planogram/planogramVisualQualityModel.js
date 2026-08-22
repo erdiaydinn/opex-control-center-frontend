@@ -95,6 +95,13 @@ function visualAssetEligible(asset, expectedExtension, expectedPrefix) {
   return expectedExtension.test(path);
 }
 
+function cadVisualFixtureEligible(module) {
+  return module?.sourceKind === "cad_overlay_preview"
+    && module?.coordinateAuthority === "human_cad_preview"
+    && module?.productionReleaseAllowed === false
+    && module?.physicalTruthAttested === false;
+}
+
 function visualFocusPoint(model) {
   const picker = model?.route?.pickerEntryM;
   if (Array.isArray(picker) && picker.length >= 2) {
@@ -147,51 +154,61 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
   const productTextures = [];
   const textureSkuSet = new Set();
   const focus = visualFocusPoint(model);
+  const cadFixtures = Array.isArray(model.cadFixtures) ? model.cadFixtures : [];
+  const visualFixtures = [...model.modules, ...cadFixtures.filter(cadVisualFixtureEligible)];
   let acceptedTexturedFacings = 0;
   let rejectedUnattestedFixtures = 0;
   let rejectedUnattestedProducts = 0;
+  let rejectedCadFixtureAuthority = cadFixtures.length - visualFixtures.length + model.modules.length;
   let skippedFixtureBudget = 0;
   let skippedTextureSkuBudget = 0;
   let skippedFacingBudget = 0;
   let usedMediumLod = 0;
   let usedFarLod = 0;
 
-  for (let moduleIndex = 0; moduleIndex < model.modules.length; moduleIndex += 1) {
-    const module = model.modules[moduleIndex];
+  for (let moduleIndex = 0; moduleIndex < visualFixtures.length; moduleIndex += 1) {
+    const module = visualFixtures[moduleIndex];
     const moduleKey = moduleStableKey(module, moduleIndex);
     const fixtureKey = moduleFixtureKey(module);
     const envelope = moduleEnvelope(module);
     const fixtureAsset = fixtureIndex.get(fixtureKey);
 
-    if (fixtureAsset) {
-      if (!visualAssetEligible(fixtureAsset, /\.glb(\?.*)?$/i, PLANOGRAM_ASSET_LIMITS.fixtureAssetPrefix)) {
-        rejectedUnattestedFixtures += 1;
-      } else if (!envelope) {
-        rejectedUnattestedFixtures += 1;
-      } else if (fixtureInstances.length >= MAX_GOVERNED_FIXTURE_INSTANCES) {
-        skippedFixtureBudget += 1;
-      } else {
-        const distanceM = moduleDistanceM(module, focus);
-        const lod = governedLodPath(fixtureAsset, distanceM);
-        if (lod.quality === "medium") usedMediumLod += 1;
-        if (lod.quality === "far") usedFarLod += 1;
-        fixtureInstances.push(Object.freeze({
-          moduleKey,
-          fixtureType: fixtureKey,
-          modelPath: lod.modelPath,
-          sourceRef: fixtureAsset.source_ref,
-          targetEnvelopeM: envelope,
-          geometryAuthority: "canonical_store_scene",
-          visualAssetAuthority: "attested_same_origin_glb",
-          fallbackPolicy: "metric_primitive_until_asset_load_success",
-          lodQuality: lod.quality,
-          lodDistanceM: Math.round(distanceM * 100) / 100,
-          lodFocusSource: focus.source,
-          lodPolicy: "deterministic_focus_distance_preview",
-        }));
-      }
+    if (!fixtureAsset) continue;
+    if (!visualAssetEligible(fixtureAsset, /\.glb(\?.*)?$/i, PLANOGRAM_ASSET_LIMITS.fixtureAssetPrefix)) {
+      rejectedUnattestedFixtures += 1;
+    } else if (!envelope) {
+      rejectedUnattestedFixtures += 1;
+    } else if (fixtureInstances.length >= MAX_GOVERNED_FIXTURE_INSTANCES) {
+      skippedFixtureBudget += 1;
+    } else {
+      const distanceM = moduleDistanceM(module, focus);
+      const lod = governedLodPath(fixtureAsset, distanceM);
+      if (lod.quality === "medium") usedMediumLod += 1;
+      if (lod.quality === "far") usedFarLod += 1;
+      fixtureInstances.push(Object.freeze({
+        moduleKey,
+        fixtureType: fixtureKey,
+        modelPath: lod.modelPath,
+        sourceRef: fixtureAsset.source_ref,
+        targetEnvelopeM: envelope,
+        sourceKind: String(module?.sourceKind || "engine_planogram"),
+        coordinateAuthority: String(module?.coordinateAuthority || "canonical_store_scene"),
+        previewOnly: module?.sourceKind === "cad_overlay_preview",
+        productionReleaseAllowed: false,
+        geometryAuthority: "canonical_store_scene",
+        visualAssetAuthority: "attested_same_origin_glb",
+        fallbackPolicy: "metric_primitive_until_asset_load_success",
+        lodQuality: lod.quality,
+        lodDistanceM: Math.round(distanceM * 100) / 100,
+        lodFocusSource: focus.source,
+        lodPolicy: "deterministic_focus_distance_preview",
+      }));
     }
+  }
 
+  for (let moduleIndex = 0; moduleIndex < model.modules.length; moduleIndex += 1) {
+    const module = model.modules[moduleIndex];
+    const moduleKey = moduleStableKey(module, moduleIndex);
     for (const row of collectModuleProducts(module)) {
       const sku = productSku(row.product);
       if (!sku) continue;
@@ -255,6 +272,7 @@ export function buildPlanogramVisualQualityPlan(model, assetManifest) {
     diagnostics: Object.freeze({
       rejectedUnattestedFixtures,
       rejectedUnattestedProducts,
+      rejectedCadFixtureAuthority,
       skippedFixtureBudget,
       skippedTextureSkuBudget,
       skippedFacingBudget,

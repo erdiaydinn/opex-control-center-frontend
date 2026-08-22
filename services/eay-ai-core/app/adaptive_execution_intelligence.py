@@ -241,8 +241,10 @@ class AdaptiveExecutionRepairPlanner:
             kind,
             RepairDisposition.SANDBOX_VERIFY_CANDIDATE,
             (
-                "trusted OIDC metadata changed without trust or privilege "
-                "expansion",
+                (
+                    "trusted OIDC metadata changed without trust or privilege "
+                    "expansion"
+                ),
             ),
             (
                 "re-run OIDC discovery from the exact trusted issuer",
@@ -356,8 +358,10 @@ class AdaptiveExecutionRepairPlanner:
             kind,
             RepairDisposition.SANDBOX_VERIFY_CANDIDATE,
             (
-                "semantic API operation remains compatible inside the approved "
-                "privilege boundary",
+                (
+                    "semantic API operation remains compatible inside the "
+                    "approved privilege boundary"
+                ),
             ),
             (
                 "run schema/contract compatibility tests",
@@ -411,8 +415,10 @@ class AdaptiveExecutionRepairPlanner:
             DriftKind.UI_SEMANTIC_RELOCATION,
             RepairDisposition.SANDBOX_VERIFY_CANDIDATE,
             (
-                "UI moved/relabelled while semantic intent and context stayed "
-                "stable",
+                (
+                    "UI moved/relabelled while semantic intent and context "
+                    "stayed stable"
+                ),
             ),
             (
                 "re-ground with accessibility/DOM semantics before vision/spatial fallback",
@@ -484,8 +490,10 @@ class AdaptiveExecutionRepairPlanner:
             RepairDisposition.HOLD,
             (reason,),
             (
-                "stop automatic repair and require explicit security/owner "
-                "review",
+                (
+                    "stop automatic repair and require explicit "
+                    "security/owner review"
+                ),
             ),
             {},
         )

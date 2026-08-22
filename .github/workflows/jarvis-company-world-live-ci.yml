@@ -17,6 +17,7 @@ on:
       - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
       - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
       - "services/eay-ai-core/tests/test_tuik_theme_catalog_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_theme_catalog_field_shape.py"
       - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
       - "services/eay-ai-core/tests/test_world_model.py"
       - ".github/workflows/jarvis-company-world-live-ci.yml"
@@ -34,6 +35,7 @@ on:
       - "services/eay-ai-core/tests/test_company_world_live_bridge_intelligence.py"
       - "services/eay-ai-core/tests/test_context_provider_runtime_intelligence.py"
       - "services/eay-ai-core/tests/test_tuik_theme_catalog_intelligence.py"
+      - "services/eay-ai-core/tests/test_tuik_theme_catalog_field_shape.py"
       - "services/eay-ai-core/tests/test_continuous_world_understanding_intelligence.py"
       - "services/eay-ai-core/tests/test_world_model.py"
       - ".github/workflows/jarvis-company-world-live-ci.yml"
@@ -186,6 +188,7 @@ jobs:
           tests/test_company_world_live_bridge_intelligence.py
           tests/test_context_provider_runtime_intelligence.py
           tests/test_tuik_theme_catalog_intelligence.py
+          tests/test_tuik_theme_catalog_field_shape.py
       - name: Compile Company World authority surface
         run: >-
           python -m compileall -q
@@ -200,11 +203,13 @@ jobs:
           tests/test_company_world_live_bridge_intelligence.py
           tests/test_context_provider_runtime_intelligence.py
           tests/test_tuik_theme_catalog_intelligence.py
+          tests/test_tuik_theme_catalog_field_shape.py
       - name: Run Company World adversarial and lineage contracts
         run: >-
           pytest -q
           tests/test_company_world_live_bridge_intelligence.py
           tests/test_context_provider_runtime_intelligence.py
           tests/test_tuik_theme_catalog_intelligence.py
+          tests/test_tuik_theme_catalog_field_shape.py
           tests/test_continuous_world_understanding_intelligence.py
           tests/test_world_model.py

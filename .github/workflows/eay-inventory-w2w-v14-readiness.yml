@@ -5,6 +5,8 @@ on:
     branches:
       - product/eay-category-leadership-v1
     paths:
+      - "backend/app/modules/inventory/production.py"
+      - "backend/app/modules/inventory/schemas.py"
       - "backend/migrations/*inventory*.sql"
       - "backend/tests/test_inventory_wall_to_wall_readiness_contract.py"
       - ".github/workflows/eay-inventory-w2w-v14-readiness.yml"
@@ -12,6 +14,8 @@ on:
     branches:
       - agent/eay-mobile-platform-foundation-v1
     paths:
+      - "backend/app/modules/inventory/production.py"
+      - "backend/app/modules/inventory/schemas.py"
       - "backend/migrations/*inventory*.sql"
       - "backend/tests/test_inventory_wall_to_wall_readiness_contract.py"
       - ".github/workflows/eay-inventory-w2w-v14-readiness.yml"
@@ -165,7 +169,7 @@ jobs:
           SQL
 
           test "$(psql "$DB" -Atc "SELECT readiness_snapshot->>'status' FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND document_id='14141414-1414-1414-1414-141414141402'")" = "READY"
-          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND document_id='14141414-1414-1414-1414-141414141402'")" = "1"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND document_id='14141414-1414-1414-141414141402'")" = "1"
 
           if psql "$DB" -v ON_ERROR_STOP=1 -c "
             UPDATE inventory_w2w_start_evidence

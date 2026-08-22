@@ -89,6 +89,10 @@ class InventoryWallToWallReadinessContractTest(unittest.TestCase):
         self.assertNotIn("unit_cost", executable_task_slice)
         self.assertNotIn("variance", executable_task_slice)
 
+    def test_v14_terminal_quantity_uses_decimal_precision(self) -> None:
+        self.assertIn("from decimal import Decimal", self.schemas)
+        self.assertIn("quantity: Decimal = Field(ge=0, le=1_000_000)", self.schemas)
+
     def test_v14_registers_schema_version(self) -> None:
         self.assertIn(
             "VALUES (14,'inventory wall-to-wall readiness and warehouse quiescence authority')",

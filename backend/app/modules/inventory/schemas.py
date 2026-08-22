@@ -68,7 +68,9 @@ class TerminalEventCreate(BaseModel):
     device_sequence: int = Field(gt=0)
     location_id: str = Field(min_length=1, max_length=120)
     barcode: str = Field(min_length=1, max_length=120)
-    quantity: float = Field(ge=0, le=1_000_000)
+    # Preserve weightable-SKU precision through validation/signing instead of
+    # round-tripping through binary floating point before PostgreSQL numeric.
+    quantity: Decimal = Field(ge=0, le=1_000_000)
     symbology: str = Field(min_length=1, max_length=80)
     occurred_at: str = Field(min_length=20, max_length=50)
     # A second count is never an accidental additive scan. It explicitly links

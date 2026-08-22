@@ -59,6 +59,25 @@ jobs:
           test -d "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
           test -n "$EAY_CHAMPIONSHIP_TRUST_DIR"
           test -d "$EAY_CHAMPIONSHIP_TRUST_DIR"
+          test -f "$EAY_CHAMPIONSHIP_TRUST_DIR/trusted_signers.json"
+          test -f "$EAY_CHAMPIONSHIP_TRUST_DIR/subject_signer_bindings.json"
+      - name: Bind every receipt subject to its exact trusted signer key
+        run: |
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_signer_binding_guard \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --trust-dir "$EAY_CHAMPIONSHIP_TRUST_DIR" \
+            --strict > /tmp/eay-championship-signer-bindings.json
+          cat /tmp/eay-championship-signer-bindings.json
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import json
+          with open('/tmp/eay-championship-signer-bindings.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'verified'
+          assert report['verified_subject_count'] == report['required_subject_count']
+          assert report['raw_receipt_contents_printed'] is False
+          assert report['raw_keys_or_signatures_printed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
       - name: Verify detached Ed25519 signatures for every consumed receipt
         run: |
           "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_signature_guard \

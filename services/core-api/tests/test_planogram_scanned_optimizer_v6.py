@@ -58,9 +58,30 @@ def request() -> PlanogramStoreScanOptimizePreviewRequest:
         expected_scan_fingerprint=fingerprint,
         classifications=[],
         operational_elements=[
-            {"element_id": "picker-entry", "element_type": "picker_entry", "center_x_m": 0.8, "center_y_m": 0.8, "width_m": 0.4, "depth_m": 0.4},
-            {"element_id": "inbound", "element_type": "inbound", "center_x_m": 1, "center_y_m": 7, "width_m": 1.5, "depth_m": 1},
-            {"element_id": "dispatch", "element_type": "dispatch", "center_x_m": 10, "center_y_m": 1, "width_m": 1.5, "depth_m": 1},
+            {
+                "element_id": "picker-entry",
+                "element_type": "picker_entry",
+                "center_x_m": 0.8,
+                "center_y_m": 0.8,
+                "width_m": 0.4,
+                "depth_m": 0.4,
+            },
+            {
+                "element_id": "inbound",
+                "element_type": "inbound",
+                "center_x_m": 1,
+                "center_y_m": 7,
+                "width_m": 1.5,
+                "depth_m": 1,
+            },
+            {
+                "element_id": "dispatch",
+                "element_type": "dispatch",
+                "center_x_m": 10,
+                "center_y_m": 1,
+                "width_m": 1.5,
+                "depth_m": 1,
+            },
         ],
         fixture_bindings=[
             {
@@ -84,7 +105,17 @@ def request() -> PlanogramStoreScanOptimizePreviewRequest:
                 "attested": True,
             }
         ],
-        products=[{"sku": "SKU-1", "storage_type": "AMBIENT", "width_cm": 40, "height_cm": 30, "depth_cm": 20, "weight_g": 500, "weekly_sales": 100}],
+        products=[
+            {
+                "sku": "SKU-1",
+                "storage_type": "AMBIENT",
+                "width_cm": 40,
+                "height_cm": 30,
+                "depth_cm": 20,
+                "weight_g": 500,
+                "weekly_sales": 100,
+            }
+        ],
         order_baskets=[{"skus": ["SKU-1"]}],
         mode="HYBRID",
     )
@@ -109,7 +140,9 @@ def test_scanned_v6_schema_rejects_client_layout_store_dna_or_authority() -> Non
 
 
 @pytest.mark.asyncio
-async def test_scanned_v6_router_passes_only_recomputed_scan_binding_and_baskets(monkeypatch) -> None:
+async def test_scanned_v6_router_passes_only_recomputed_scan_binding_and_baskets(
+    monkeypatch,
+) -> None:
     captured: dict[str, object] = {}
 
     def fake_preview(**kwargs):
@@ -129,16 +162,26 @@ async def test_scanned_v6_router_passes_only_recomputed_scan_binding_and_baskets
             "optimizer": {"allowed": True, "production_authority": False},
         }
 
-    monkeypatch.setattr(fixture_router, "generate_scanned_store_optimizer_preview", fake_preview)
+    monkeypatch.setattr(
+        fixture_router,
+        "generate_scanned_store_optimizer_preview",
+        fake_preview,
+    )
     payload = request()
-    response = await fixture_router.post_store_scan_optimize_preview(payload, principal(), 24)
+    response = await fixture_router.post_store_scan_optimize_preview(
+        payload,
+        principal(),
+        24,
+    )
     assert captured["orders"] == [{"skus": ["SKU-1"]}]
     assert captured["products"][0]["sku"] == "SKU-1"
     assert captured["uncertainty_resolutions"] == []
     assert "layout" not in captured
     assert "store_dna" not in captured
     assert response["preview_only"] is True
-    assert response["input_authority"] == "fingerprint_bound_scanned_v2_optimizer_unattested"
+    assert response["input_authority"] == (
+        "fingerprint_bound_scanned_v2_optimizer_unattested"
+    )
     assert response["production_release_allowed"] is False
     assert response["installation_approval_allowed"] is False
     assert response["relocation_execution_allowed"] is False
@@ -147,12 +190,15 @@ async def test_scanned_v6_router_passes_only_recomputed_scan_binding_and_baskets
     assert response["field_evidence"] is False
 
 
-def test_scanned_v6_adapter_propagates_uncertainty_resolution_to_layout(monkeypatch) -> None:
+def test_scanned_v6_adapter_propagates_uncertainty_resolution_to_layout(
+    monkeypatch,
+) -> None:
     captured: dict[str, object] = {}
     monkeypatch.setattr(
         scanned_adapter,
         "build_scanned_fixture_layout_preview",
-        lambda **kwargs: captured.update(kwargs) or {
+        lambda **kwargs: captured.update(kwargs)
+        or {
             "available": False,
             "layout_draft_ready": False,
         },

@@ -1,0 +1,78 @@
+{
+  "contract": "eay-cyber-public-intelligence-registry-v1",
+  "registry_id": "eay-jarvis-public-cyber-intelligence-2026-08",
+  "sources": [
+    {
+      "source_id": "osv_dev",
+      "official_ref": "https://osv.dev/",
+      "authority": "vulnerability",
+      "auth_mode": "none",
+      "maximum_observation_age_seconds": 21600,
+      "terms_review_required": false
+    },
+    {
+      "source_id": "cisa_vulnrichment",
+      "official_ref": "https://github.com/cisagov/vulnrichment",
+      "authority": "vulnerability_enrichment",
+      "auth_mode": "none",
+      "maximum_observation_age_seconds": 21600,
+      "terms_review_required": false
+    },
+    {
+      "source_id": "cert_cc_vulnerability_notes",
+      "official_ref": "https://www.kb.cert.org/vuls/",
+      "authority": "coordinated_disclosure",
+      "auth_mode": "none",
+      "maximum_observation_age_seconds": 21600,
+      "terms_review_required": false
+    },
+    {
+      "source_id": "enisa_euvd",
+      "official_ref": "https://euvd.enisa.europa.eu/apidoc",
+      "authority": "known_exploitation_corroboration",
+      "auth_mode": "none",
+      "maximum_observation_age_seconds": 21600,
+      "terms_review_required": false
+    },
+    {
+      "source_id": "github_advisory_database",
+      "official_ref": "https://github.com/advisories",
+      "authority": "advisory",
+      "auth_mode": "none",
+      "maximum_observation_age_seconds": 21600,
+      "terms_review_required": false
+    },
+    {
+      "source_id": "cisa_cybersecurity_advisories",
+      "official_ref": "https://www.cisa.gov/news-events/cybersecurity-advisories",
+      "authority": "advisory",
+      "auth_mode": "none",
+      "maximum_observation_age_seconds": 21600,
+      "terms_review_required": false
+    },
+    {
+      "source_id": "abusech_threatfox",
+      "official_ref": "https://threatfox.abuse.ch/api/",
+      "authority": "ioc",
+      "auth_mode": "protected_server_secret",
+      "maximum_observation_age_seconds": 10800,
+      "terms_review_required": true
+    },
+    {
+      "source_id": "abusech_urlhaus",
+      "official_ref": "https://urlhaus.abuse.ch/api/",
+      "authority": "ioc",
+      "auth_mode": "protected_server_secret",
+      "maximum_observation_age_seconds": 10800,
+      "terms_review_required": true
+    },
+    {
+      "source_id": "abusech_malwarebazaar_metadata",
+      "official_ref": "https://bazaar.abuse.ch/api/",
+      "authority": "malware_metadata",
+      "auth_mode": "protected_server_secret",
+      "maximum_observation_age_seconds": 10800,
+      "terms_review_required": true
+    }
+  ]
+}

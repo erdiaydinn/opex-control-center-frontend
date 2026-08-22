@@ -16,7 +16,10 @@ from app.company_world_live_bridge import (
     build_company_location_binding,
 )
 from app.context_provider_gateway import RequestPurpose, plan_provider_request
-from app.context_provider_runtime import ProviderRuntimeBlocked, execute_provider_request
+from app.context_provider_runtime import (
+    ProviderRuntimeBlocked,
+    execute_provider_request,
+)
 from app.real_world_timeline import TimelineAuthorityClass
 from app.tuik_theme_catalog_adapter import (
     TUIK_THEME_API_URL,

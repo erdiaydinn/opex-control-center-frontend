@@ -149,7 +149,7 @@ def _safe_catalog_url(value: Any, *, field_name: str) -> str:
 
 def _normalize_theme_id(value: Any) -> str:
     if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise ValueError("tuik_theme_catalog_theme_id_invalid")
+        raise TypeError("tuik_theme_catalog_theme_id_invalid")
     normalized = str(value).strip()
     if not normalized or len(normalized) > 200:
         raise ValueError("tuik_theme_catalog_theme_id_invalid")
@@ -160,7 +160,7 @@ def _optional_text(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ValueError(f"tuik_theme_catalog_{field_name}_invalid")
+        raise TypeError(f"tuik_theme_catalog_{field_name}_invalid")
     normalized = value.strip()
     return normalized or None
 
@@ -169,7 +169,7 @@ def _optional_catalog_url(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ValueError(f"tuik_theme_catalog_{field_name}_invalid")
+        raise TypeError(f"tuik_theme_catalog_{field_name}_invalid")
     normalized = value.strip()
     if not normalized:
         return None
@@ -201,7 +201,7 @@ def _parse_node(
     if depth > MAX_THEME_DEPTH:
         raise ValueError("tuik_theme_catalog_depth_exceeded")
     if not isinstance(raw, dict):
-        raise ValueError("tuik_theme_catalog_node_must_be_object")
+        raise TypeError("tuik_theme_catalog_node_must_be_object")
     required = {"id", "children"}
     if not required.issubset(raw):
         raise ValueError("tuik_theme_catalog_node_required_field_missing")
@@ -223,7 +223,7 @@ def _parse_node(
 
     children_raw = raw["children"]
     if not isinstance(children_raw, list):
-        raise ValueError("tuik_theme_catalog_children_must_be_list")
+        raise TypeError("tuik_theme_catalog_children_must_be_list")
 
     node_counter[0] += 1
     if node_counter[0] > MAX_THEME_NODES:
@@ -262,7 +262,7 @@ def _count_nodes(nodes: tuple[TUIKThemeNode, ...]) -> int:
 def _canonical_fingerprint_payload(payload: dict[str, Any]) -> dict[str, Any]:
     fetched_at = payload["fetched_at"]
     if isinstance(fetched_at, str):
-        fetched_at = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+        fetched_at = datetime.fromisoformat(fetched_at)
     if not isinstance(fetched_at, datetime) or fetched_at.tzinfo is None:
         raise ValueError("tuik_theme_catalog_fetched_at_timezone_required")
     themes = [
@@ -337,7 +337,7 @@ def parse_tuik_theme_catalog(
     except (TypeError, json.JSONDecodeError) as exc:
         raise ValueError("tuik_theme_catalog_invalid_json") from exc
     if not isinstance(document, dict):
-        raise ValueError("tuik_theme_catalog_document_must_be_object")
+        raise TypeError("tuik_theme_catalog_document_must_be_object")
     if not {"data", "isError", "message"}.issubset(document):
         raise ValueError("tuik_theme_catalog_envelope_contract_mismatch")
     if document["isError"] is not False:

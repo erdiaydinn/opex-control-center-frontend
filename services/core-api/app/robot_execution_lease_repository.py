@@ -116,7 +116,11 @@ class PostgresRobotExecutionLeaseRepository:
         baseline_version: int | None = None,
         baseline_version_fingerprint: str | None = None,
     ) -> tuple[RobotExecutionLeaseRecord, RobotExecutionLeaseReceiptRecord, bool]:
-        if not mission_id.strip() or not approval_evidence_ref.strip() or not idempotency_key.strip():
+        if (
+            not mission_id.strip()
+            or not approval_evidence_ref.strip()
+            or not idempotency_key.strip()
+        ):
             raise ValueError("robot_execution_lease_required_field_missing")
         if expires_at <= issued_at:
             raise ValueError("robot_execution_lease_expiry_must_follow_issue")

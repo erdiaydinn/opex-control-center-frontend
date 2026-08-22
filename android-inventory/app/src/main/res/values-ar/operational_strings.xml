@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">اختر حالة المنتج</string>
+    <string name="terminal_scan_container">امسح الحاوية</string>
+    <string name="terminal_complete_operation">إكمال العملية</string>
+    <string name="terminal_confirm_operation">تأكيد العملية</string>
+    <string name="terminal_operation_saving">جارٍ حفظ العملية بأمان دون اتصال…</string>
+    <string name="terminal_operation_saved">تم حفظ خطوة العملية بأمان</string>
+</resources>

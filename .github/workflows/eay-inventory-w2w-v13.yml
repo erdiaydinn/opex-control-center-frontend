@@ -1,0 +1,225 @@
+name: EAY Inventory W2W V13 Authority
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "backend/migrations/*inventory*.sql"
+      - "backend/tests/test_inventory_wall_to_wall_closeout_contract.py"
+      - ".github/workflows/eay-inventory-w2w-v13.yml"
+  push:
+    branches:
+      - agent/eay-mobile-platform-foundation-v1
+    paths:
+      - "backend/migrations/*inventory*.sql"
+      - "backend/tests/test_inventory_wall_to_wall_closeout_contract.py"
+      - ".github/workflows/eay-inventory-w2w-v13.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  w2w-v13-postgres:
+    name: One operator, one location and Lost & Found last
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_inventory_w2w_v13
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_inventory_w2w_v13"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DB: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_w2w_v13
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+      - name: Assert literal exact head
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - name: Apply authoritative Inventory migration chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            psql "$DB" -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Verify W2W v13 source contract
+        run: python -m unittest backend.tests.test_inventory_wall_to_wall_closeout_contract -v
+      - name: Verify installed v13 database authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=13")" = "1"
+          test "$(psql "$DB" -Atc "SELECT is_generated FROM information_schema.columns WHERE table_schema='public' AND table_name='inventory_document_locations' AND column_name='location_kind'")" = "ALWAYS"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_trigger WHERE tgname IN ('inventory_guard_w2w_lost_found_attempt_v13_trigger','inventory_guard_w2w_operator_lease_v13_trigger') AND NOT tgisinternal")" = "2"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_document_one_lost_found_v13_idx'")" = "1"
+      - name: Adversarial W2W v13 authority acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_documents(tenant_id,id,warehouse_id,name,state,created_by)
+          VALUES(
+            'wall-v13','13131313-1313-1313-1313-131313131313',
+            'WH-W13','Wall-to-wall v13 adversarial','COUNTING','ci'
+          );
+          INSERT INTO inventory_document_locations(tenant_id,document_id,location_id)
+          VALUES
+            ('wall-v13','13131313-1313-1313-1313-131313131313','A01'),
+            ('wall-v13','13131313-1313-1313-1313-131313131313','A02'),
+            ('wall-v13','13131313-1313-1313-1313-131313131313','LOST_FOUND');
+          INSERT INTO inventory_devices(
+            tenant_id,device_id,employee_id,public_key_pem,mdm_enrollment_hash,status
+          ) VALUES
+            ('wall-v13','13131313-0000-0000-0000-000000000001','EMP-1','ci-key-1','ci-mdm-1','ACTIVE'),
+            ('wall-v13','13131313-0000-0000-0000-000000000002','EMP-2','ci-key-2','ci-mdm-2','ACTIVE');
+          SQL
+
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_mission_attempts(
+              tenant_id,attempt_id,document_id,warehouse_id,location_id,
+              created_by_subject,created_by_employee_id
+            ) VALUES(
+              'wall-v13','13131313-0000-0000-0000-000000000099',
+              '13131313-1313-1313-1313-131313131313','WH-W13','LOST_FOUND','ci','EMP-1'
+            )"; then
+            echo "ERROR: Lost & Found opened before standard locations completed"
+            exit 1
+          fi
+
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_mission_attempts(
+            tenant_id,attempt_id,document_id,warehouse_id,location_id,
+            created_by_subject,created_by_employee_id
+          ) VALUES
+            (
+              'wall-v13','13131313-0000-0000-0000-000000000011',
+              '13131313-1313-1313-1313-131313131313','WH-W13','A01','ci','EMP-1'
+            ),
+            (
+              'wall-v13','13131313-0000-0000-0000-000000000012',
+              '13131313-1313-1313-1313-131313131313','WH-W13','A02','ci','EMP-2'
+            );
+          INSERT INTO inventory_mission_leases(
+            tenant_id,lease_id,attempt_id,employee_id,device_id,shift_id,
+            warehouse_id,valid_from,valid_until
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000021',
+            '13131313-0000-0000-0000-000000000011','EMP-1',
+            '13131313-0000-0000-0000-000000000001','SHIFT-1','WH-W13',
+            now()-interval '1 minute',now()+interval '15 minutes'
+          );
+          SQL
+
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_mission_leases(
+              tenant_id,lease_id,attempt_id,employee_id,device_id,shift_id,
+              warehouse_id,valid_from,valid_until
+            ) VALUES(
+              'wall-v13','13131313-0000-0000-0000-000000000022',
+              '13131313-0000-0000-0000-000000000012','EMP-1',
+              '13131313-0000-0000-0000-000000000001','SHIFT-1','WH-W13',
+              now()-interval '1 minute',now()+interval '15 minutes'
+            )"; then
+            echo "ERROR: one operator acquired two active W2W locations"
+            exit 1
+          fi
+
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_mission_leases(
+            tenant_id,lease_id,attempt_id,employee_id,device_id,shift_id,
+            warehouse_id,valid_from,valid_until
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000023',
+            '13131313-0000-0000-0000-000000000012','EMP-2',
+            '13131313-0000-0000-0000-000000000002','SHIFT-2','WH-W13',
+            now()-interval '1 minute',now()+interval '15 minutes'
+          );
+
+          BEGIN;
+          INSERT INTO inventory_events(
+            tenant_id,event_id,device_id,device_sequence,document_id,warehouse_id,
+            employee_id,event_type,location_id,barcode,quantity,symbology,payload_hash,
+            occurred_at,attempt_id,lease_id,active_shift_id
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000031',
+            '13131313-0000-0000-0000-000000000001',1,
+            '13131313-1313-1313-1313-131313131313','WH-W13','EMP-1',
+            'LOCATION_COMPLETE','A01',NULL,NULL,NULL,
+            repeat('a',64),now(),
+            '13131313-0000-0000-0000-000000000011',
+            '13131313-0000-0000-0000-000000000021','SHIFT-1'
+          );
+          INSERT INTO inventory_mission_lease_closures(
+            tenant_id,lease_id,state,reason,closed_at,closed_by_subject
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000021',
+            'COMPLETED','ci location complete',now(),'ci'
+          );
+          UPDATE inventory_mission_attempts
+             SET state='COMPLETED',closed_at=now(),close_reason='ci location complete'
+           WHERE tenant_id='wall-v13'
+             AND attempt_id='13131313-0000-0000-0000-000000000011';
+
+          INSERT INTO inventory_events(
+            tenant_id,event_id,device_id,device_sequence,document_id,warehouse_id,
+            employee_id,event_type,location_id,barcode,quantity,symbology,payload_hash,
+            occurred_at,attempt_id,lease_id,active_shift_id
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000032',
+            '13131313-0000-0000-0000-000000000002',1,
+            '13131313-1313-1313-1313-131313131313','WH-W13','EMP-2',
+            'LOCATION_COMPLETE','A02',NULL,NULL,NULL,
+            repeat('b',64),now(),
+            '13131313-0000-0000-0000-000000000012',
+            '13131313-0000-0000-0000-000000000023','SHIFT-2'
+          );
+          INSERT INTO inventory_mission_lease_closures(
+            tenant_id,lease_id,state,reason,closed_at,closed_by_subject
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000023',
+            'COMPLETED','ci location complete',now(),'ci'
+          );
+          UPDATE inventory_mission_attempts
+             SET state='COMPLETED',closed_at=now(),close_reason='ci location complete'
+           WHERE tenant_id='wall-v13'
+             AND attempt_id='13131313-0000-0000-0000-000000000012';
+          COMMIT;
+
+          INSERT INTO inventory_mission_attempts(
+            tenant_id,attempt_id,document_id,warehouse_id,location_id,
+            created_by_subject,created_by_employee_id
+          ) VALUES(
+            'wall-v13','13131313-0000-0000-0000-000000000099',
+            '13131313-1313-1313-1313-131313131313','WH-W13','LOST_FOUND','ci','EMP-1'
+          );
+          SQL
+      - name: Replay v13 migration idempotently after authority evidence
+        run: psql "$DB" -v ON_ERROR_STOP=1 -f backend/migrations/013_inventory_wall_to_wall_operator_location_ordering.sql
+      - name: Reject malformed diff
+        run: git diff --check

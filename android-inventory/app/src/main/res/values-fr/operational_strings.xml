@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Sélectionner l’état de l’article</string>
+    <string name="terminal_scan_container">Scanner le conteneur</string>
+    <string name="terminal_complete_operation">Terminer l’opération</string>
+    <string name="terminal_confirm_operation">Confirmer l’opération</string>
+    <string name="terminal_operation_saving">Sécurisation de l’opération hors ligne…</string>
+    <string name="terminal_operation_saved">Étape de l’opération enregistrée en sécurité</string>
+</resources>

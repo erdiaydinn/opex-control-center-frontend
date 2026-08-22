@@ -7,7 +7,8 @@ on:
       - release/platform-convergence-v0.1
     paths:
       - "backend/app/modules/inventory/**"
-      - "backend/migrations/003_inventory_production.sql"
+      - "backend/migrations/*inventory*.sql"
+      - "backend/tests/test_inventory_production_v13_isolated.py"
       - "android-inventory/**"
       - "src/modules/inventory/**"
       - "src/App.jsx"
@@ -80,9 +81,63 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r backend/requirements.txt
-      - run: psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/migrations/003_inventory_production.sql
+      - name: Apply authoritative Inventory production migration series
         env:
-          INVENTORY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          applied=0
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              printf 'legacy_inventory_migration_frozen=%s\n' "$migration"
+              continue
+            fi
+            printf 'production_inventory_migration=%s\n' "$migration"
+            psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test \
+              -v ON_ERROR_STOP=1 -f "$migration"
+            applied=$((applied + 1))
+          done
+          test "$applied" -ge 1
+      - name: Prove installed production migration authority
+        env:
+          PGPASSWORD: postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            count="$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=${version}")"
+            test "$count" = "1"
+          done
+          if test -f backend/migrations/004_inventory_location_completion.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_location_event_v4_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_location_completion_once_idx'")" = "1"
+          fi
+          if test -f backend/migrations/005_inventory_mission_attempt_lease.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_mission_event_v5_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_mission_leases_immutable' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_mission_attempt_one_active_idx'")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('inventory_mission_attempts','inventory_mission_leases','inventory_mission_lease_closures') AND c.relrowsecurity AND c.relforcerowsecurity")" = "3"
+          fi
+          if test -f backend/migrations/006_inventory_recount_chain.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_recount_v6_trigger' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_indexes WHERE indexname IN ('inventory_recount_one_successor_v6_idx','inventory_count_line_version_v6_idx')")" = "2"
+          fi
+          if test -f backend/migrations/007_inventory_operational_missions.sql; then
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_operational_events_immutable' AND NOT tgisinternal")" = "1"
+            test "$(psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('inventory_operational_missions','inventory_operational_claims','inventory_operational_events','inventory_operational_event_responses') AND c.relrowsecurity AND c.relforcerowsecurity")" = "4"
+          fi
       - name: Create least-privilege tenant-bound runtime role
         env:
           PGPASSWORD: postgres
@@ -93,12 +148,17 @@ jobs:
           GRANT USAGE ON SCHEMA public TO inventory_runtime;
           GRANT SELECT ON inventory_schema_migrations TO inventory_runtime;
           GRANT SELECT,INSERT,UPDATE ON inventory_devices,inventory_device_activation_codes,inventory_device_nonces,inventory_documents,inventory_document_locations,inventory_expected_stock,inventory_events,inventory_event_responses,inventory_revisions,inventory_audit,inventory_outbox TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_mission_attempts TO inventory_runtime;
+          GRANT SELECT,INSERT ON inventory_mission_leases,inventory_mission_lease_closures TO inventory_runtime;
+          GRANT UPDATE (lease_id) ON inventory_mission_leases TO inventory_runtime;
+          GRANT SELECT,INSERT,UPDATE ON inventory_operational_missions,inventory_operational_claims TO inventory_runtime;
+          GRANT SELECT,INSERT ON inventory_operational_events,inventory_operational_event_responses TO inventory_runtime;
           GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO inventory_runtime;
           GRANT EXECUTE ON FUNCTION inventory_current_tenant() TO inventory_runtime;
           INSERT INTO inventory_tenant_bindings(role_name,tenant_id) VALUES('inventory_runtime','eay-inventory-ci');
           SQL
       - name: Inventory PostgreSQL adversarial acceptance
-        run: python -m unittest backend.app.modules.inventory.test_inventory_production -v
+        run: python -m unittest backend.tests.test_inventory_production_v13_isolated -v
       - name: Inventory-owned backend regression
         env:
           DOCKOS_ENV: test
@@ -113,12 +173,28 @@ jobs:
           python -m unittest -v \
             backend.app.modules.inventory.test_inventory \
             backend.app.modules.inventory.test_inventory_scope \
-            backend.app.modules.inventory.test_inventory_production
+            backend.app.modules.inventory.test_inventory_sku_identity \
+            backend.app.modules.inventory.test_operational_mission \
+            backend.tests.test_inventory_production_v13_isolated
       - name: Database restart durability
+        shell: bash
         run: |
+          set -euo pipefail
           docker restart ${{ job.services.postgres.id }}
-          for attempt in {1..30}; do pg_isready -d "$INVENTORY_DATABASE_URL" && break; sleep 1; done
-          psql "$INVENTORY_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_schema_migrations WHERE version=3"
+          for attempt in {1..30}; do
+            pg_isready -d "$INVENTORY_DATABASE_URL" && break
+            sleep 1
+          done
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            test "$(psql "$INVENTORY_DATABASE_URL" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=${version}")" = "1"
+          done
       - name: Backup and isolated restore acceptance
         run: |
           PG_CONTAINER="${{ job.services.postgres.id }}"
@@ -127,10 +203,26 @@ jobs:
           docker exec -i "$PG_CONTAINER" pg_restore -U postgres -d eay_inventory_restore --no-owner < /tmp/eay-inventory.dump
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_events"
           docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_audit"
-      - name: Migration replay
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_mission_attempts"
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM inventory_mission_leases"
+          docker exec "$PG_CONTAINER" psql -U postgres -d eay_inventory_restore -v ON_ERROR_STOP=1 -c "SELECT max(version) FROM inventory_schema_migrations"
+      - name: Replay authoritative production migration series
         env:
           PGPASSWORD: postgres
-        run: psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test -v ON_ERROR_STOP=1 -f backend/migrations/003_inventory_production.sql
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            psql postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_test \
+              -v ON_ERROR_STOP=1 -f "$migration"
+          done
 
   android-debug-verification:
     runs-on: ubuntu-latest

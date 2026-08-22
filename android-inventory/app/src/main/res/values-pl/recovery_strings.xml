@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">Synchronizacja jest chroniona</string>
+    <string name="terminal_recovery_title_blocking">Wymagane działanie</string>
+    <string name="terminal_recovery_title_security">Wymagana kontrola bezpieczeństwa</string>
+    <string name="terminal_recovery_wait_auto">%1$d zapisanych operacji pozostaje na tym urządzeniu. EAY ponowi próbę automatycznie; nie twórz ich ponownie.</string>
+    <string name="terminal_recovery_device">%1$d zapisanych operacji nie może być kontynuowanych na tym zarządzanym urządzeniu. Dowody są zachowane; wymagane jest odzyskanie urządzenia.</string>
+    <string name="terminal_recovery_supervisor">%1$d zapisanych operacji wymaga przeglądu przełożonego. Dowody są zachowane i nie zostaną automatycznie wysłane ponownie.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d operacji w kwarantannie oczekuje na przegląd przełożonego. Oryginalny dowód inwentaryzacji pozostaje zachowany.</string>
+    <string name="terminal_recovery_request_supervisor">Poproś o przegląd przełożonego</string>
+    <string name="terminal_recovery_security">%1$d zapisanych operacji wymaga kontroli bezpieczeństwa. Dowody są zachowane i nie zostaną ponownie powiązane ani przepisane.</string>
+    <string name="terminal_recovery_integrity">%1$d zapisanych operacji nie przeszło lokalnych kontroli integralności. Zatrzymaj nowe operacje i poproś o pomoc; dowody są zachowane.</string>
+    <string name="terminal_recovery_reload">Odśwież misje</string>
+    <string name="terminal_recovery_sign_in">Zaloguj się ponownie</string>
+</resources>

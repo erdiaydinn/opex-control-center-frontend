@@ -1,0 +1,6 @@
+<resources>
+    <string name="eay_one_session_required">Se requiere sesión corporativa</string>
+    <string name="eay_one_phone_surface">Teléfono personal / de trabajo</string>
+    <string name="eay_one_authority_required">Conecta la sesión corporativa revisada para usar esta acción.</string>
+    <string name="eay_one_sign_in_again">Volver a iniciar sesión</string>
+</resources>

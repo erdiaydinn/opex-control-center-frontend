@@ -1,0 +1,91 @@
+name: EAY Brand and One Host Contract
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "config/eay_brand_v1.json"
+      - "src/platform/brand/**"
+      - "src/config/branding.js"
+      - "src/modules/control-center/ControlCenterHome.jsx"
+      - "src/pages/Login.jsx"
+      - "public/fonts/**"
+      - "scripts/test-eay-brand-contract.mjs"
+      - "scripts/test-login-localization.mjs"
+      - "scripts/test-eay-one-host-contract.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "android-field-ui/**"
+      - "mobile-presentation-contracts/**"
+      - "android-inventory/settings.gradle.kts"
+      - "android-inventory/field-ui-runtime/**"
+      - "android-inventory/eay-one-app/**"
+      - ".github/workflows/eay-brand-one-host.yml"
+  push:
+    branches:
+      - agent/eay-mobile-platform-foundation-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  web-brand-contract:
+    name: Web brand, login, locale and production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+      - name: Assert literal exact head
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - name: Require supported Node runtime
+        run: node -e "const m=Number(process.versions.node.split('.')[0]); if(m<20) process.exit(1); console.log(process.version)"
+      - name: Install locked web dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Verify EAY cross-platform brand and EAY One host contracts
+        run: npm run test:brand
+      - name: Build production web shell
+        run: npm run build
+
+  eay-one-android-host:
+    name: Separate fail-closed EAY One Android host
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android-inventory
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+      - name: Assert literal exact head
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: "8.9"
+      - name: Compile and lint separate EAY One binary
+        run: gradle --no-daemon :eay-one-app:assembleDebug :eay-one-app:lintDebug
+      - name: Verify host APK exists
+        run: test -f eay-one-app/build/outputs/apk/debug/eay-one-app-debug.apk
+      - name: Retain EAY One repository evidence APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: EAY-One-Debug-APK
+          path: android-inventory/eay-one-app/build/outputs/apk/debug/eay-one-app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

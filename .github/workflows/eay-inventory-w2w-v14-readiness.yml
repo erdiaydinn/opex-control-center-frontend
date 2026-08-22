@@ -1,0 +1,263 @@
+name: EAY Inventory W2W V14 Readiness
+
+on:
+  pull_request:
+    branches:
+      - product/eay-category-leadership-v1
+    paths:
+      - "backend/app/modules/inventory/production.py"
+      - "backend/app/modules/inventory/schemas.py"
+      - "backend/migrations/*inventory*.sql"
+      - "backend/tests/test_inventory_wall_to_wall_readiness_contract.py"
+      - ".github/workflows/eay-inventory-w2w-v14-readiness.yml"
+  push:
+    branches:
+      - agent/eay-mobile-platform-foundation-v1
+    paths:
+      - "backend/app/modules/inventory/production.py"
+      - "backend/app/modules/inventory/schemas.py"
+      - "backend/migrations/*inventory*.sql"
+      - "backend/tests/test_inventory_wall_to_wall_readiness_contract.py"
+      - ".github/workflows/eay-inventory-w2w-v14-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EAY_EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  w2w-v14-postgres:
+    name: Machine readiness and warehouse quiescence authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eay_inventory_w2w_v14
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eay_inventory_w2w_v14"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DB: postgresql://postgres:postgres@127.0.0.1:5432/eay_inventory_w2w_v14
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.EAY_EXACT_HEAD }}
+      - name: Assert literal exact head
+        run: test "$(git rev-parse HEAD)" = "$EAY_EXACT_HEAD"
+      - name: Apply authoritative Inventory migration chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t production < <(find backend/migrations -maxdepth 1 -type f -name '[0-9][0-9][0-9]_inventory_*.sql' | sort)
+          for migration in "${production[@]}"; do
+            base="$(basename "$migration")"
+            version_text="${base%%_*}"
+            version=$((10#$version_text))
+            if (( version < 3 )); then
+              continue
+            fi
+            psql "$DB" -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Verify W2W v14 source contract
+        run: python -m unittest backend.tests.test_inventory_wall_to_wall_readiness_contract -v
+      - name: Verify installed v14 database authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=14")" = "1"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='inventory_documents' AND column_name='count_mode'")" = "1"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_trigger WHERE tgname IN ('inventory_guard_count_mode_v14_trigger','inventory_guard_w2w_readiness_v14_trigger','inventory_guard_operational_during_w2w_v14_trigger') AND NOT tgisinternal")" = "3"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_one_active_w2w_per_warehouse_v14'")" = "1"
+      - name: Adversarial W2W v14 readiness acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_documents(
+            tenant_id,id,warehouse_id,name,state,created_by,count_mode
+          ) VALUES(
+            'wall-v14','14141414-1414-1414-1414-141414141401',
+            'WH-W14','W2W unknown scope','COUNTING','ci','WALL_TO_WALL'
+          );
+          SQL
+
+          test "$(psql "$DB" -Atc "SELECT inventory_wall_to_wall_readiness_v14('wall-v14','14141414-1414-1414-1414-141414141401')->>'status'")" = "UNKNOWN"
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_mission_attempts(
+              tenant_id,attempt_id,document_id,warehouse_id,location_id,
+              created_by_subject,created_by_employee_id
+            ) VALUES(
+              'wall-v14','14141414-0000-0000-0000-000000000001',
+              '14141414-1414-1414-1414-141414141401','WH-W14','A01','ci','EMP-1'
+            )"; then
+            echo "ERROR: UNKNOWN W2W readiness admitted a first attempt"
+            exit 1
+          fi
+
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          DELETE FROM inventory_documents
+           WHERE tenant_id='wall-v14'
+             AND id='14141414-1414-1414-1414-141414141401';
+
+          INSERT INTO inventory_documents(
+            tenant_id,id,warehouse_id,name,state,created_by,count_mode
+          ) VALUES(
+            'wall-v14','14141414-1414-1414-1414-141414141402',
+            'WH-W14','W2W governed readiness','COUNTING','ci','WALL_TO_WALL'
+          );
+          INSERT INTO inventory_document_locations(tenant_id,document_id,location_id)
+          VALUES
+            ('wall-v14','14141414-1414-1414-1414-141414141402','A01'),
+            ('wall-v14','14141414-1414-1414-1414-141414141402','LOST_FOUND');
+          INSERT INTO inventory_expected_stock(
+            tenant_id,document_id,sku,barcode,expected_quantity,unit_cost
+          ) VALUES(
+            'wall-v14','14141414-1414-1414-1414-141414141402',
+            'SKU-W14','8690000000014',3.250,10.00
+          );
+          INSERT INTO inventory_operational_missions(
+            tenant_id,mission_id,warehouse_id,mission_type,operation,
+            external_reference,steps,state,created_by
+          ) VALUES(
+            'wall-v14','14141414-0000-0000-0000-000000000010','WH-W14',
+            'PUTAWAY','inventory.putaway','PUTAWAY-W14',
+            '[{"kind":"ITEM"},{"kind":"COMPLETE"}]'::jsonb,'OPEN','ci'
+          );
+          SQL
+
+          test "$(psql "$DB" -Atc "SELECT inventory_wall_to_wall_readiness_v14('wall-v14','14141414-1414-1414-1414-141414141402')->>'status'")" = "BLOCKED"
+          test "$(psql "$DB" -Atc "SELECT (inventory_wall_to_wall_readiness_v14('wall-v14','14141414-1414-1414-1414-141414141402')->'blockers') ? 'OPERATIONAL_MISSIONS_ACTIVE'")" = "t"
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_mission_attempts(
+              tenant_id,attempt_id,document_id,warehouse_id,location_id,
+              created_by_subject,created_by_employee_id
+            ) VALUES(
+              'wall-v14','14141414-0000-0000-0000-000000000011',
+              '14141414-1414-1414-1414-141414141402','WH-W14','A01','ci','EMP-1'
+            )"; then
+            echo "ERROR: active operational mission did not block W2W start"
+            exit 1
+          fi
+
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          UPDATE inventory_operational_missions
+             SET state='COMPLETED',completed_at=now()
+           WHERE tenant_id='wall-v14'
+             AND mission_id='14141414-0000-0000-0000-000000000010';
+
+          INSERT INTO inventory_mission_attempts(
+            tenant_id,attempt_id,document_id,warehouse_id,location_id,
+            created_by_subject,created_by_employee_id
+          ) VALUES(
+            'wall-v14','14141414-0000-0000-0000-000000000011',
+            '14141414-1414-1414-1414-141414141402','WH-W14','A01','ci','EMP-1'
+          );
+          SQL
+
+          # Start-evidence is already tenant + warehouse bound. Selecting it by
+          # those native columns avoids a shell/SQL UUID-literal dependency while
+          # still proving the exact physical W2W admission row and its immutability.
+          test "$(psql "$DB" -Atc "SELECT readiness_snapshot->>'status' FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND warehouse_id='WH-W14'")" = "READY"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND warehouse_id='WH-W14'")" = "1"
+
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            UPDATE inventory_w2w_start_evidence
+               SET warehouse_id='WH-TAMPER'
+             WHERE tenant_id='wall-v14'
+               AND warehouse_id='WH-W14'"; then
+            echo "ERROR: immutable W2W start evidence was mutated"
+            exit 1
+          fi
+
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_operational_missions(
+              tenant_id,mission_id,warehouse_id,mission_type,operation,
+              external_reference,steps,state,created_by
+            ) VALUES(
+              'wall-v14','14141414-0000-0000-0000-000000000020','WH-W14',
+              'RECEIVING','inventory.receiving','RECEIVING-W14',
+              '[{\"kind\":\"ITEM\"},{\"kind\":\"COMPLETE\"}]'::jsonb,'OPEN','ci'
+            )"; then
+            echo "ERROR: operational work opened after W2W physical start"
+            exit 1
+          fi
+
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_documents(
+              tenant_id,id,warehouse_id,name,state,created_by,count_mode
+            ) VALUES(
+              'wall-v14','14141414-1414-1414-1414-141414141403',
+              'WH-W14','Competing W2W','COUNTING','ci','WALL_TO_WALL'
+            )"; then
+            echo "ERROR: second active W2W admitted in same warehouse"
+            exit 1
+          fi
+
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_documents(
+            tenant_id,id,warehouse_id,name,state,created_by,count_mode
+          ) VALUES(
+            'wall-v14','14141414-1414-1414-1414-141414141404',
+            'WH-W14-B','W2W missing Lost Found','COUNTING','ci','WALL_TO_WALL'
+          );
+          INSERT INTO inventory_document_locations(tenant_id,document_id,location_id)
+          VALUES('wall-v14','14141414-1414-1414-1414-141414141404','B01');
+          INSERT INTO inventory_expected_stock(
+            tenant_id,document_id,sku,barcode,expected_quantity,unit_cost
+          ) VALUES(
+            'wall-v14','14141414-1414-1414-1414-141414141404',
+            'SKU-W14-B','8690000000015',1.000,5.00
+          );
+          SQL
+
+          test "$(psql "$DB" -Atc "SELECT (inventory_wall_to_wall_readiness_v14('wall-v14','14141414-1414-1414-1414-141414141404')->'blockers') ? 'LOST_FOUND_REQUIRED'")" = "t"
+          if psql "$DB" -v ON_ERROR_STOP=1 -c "
+            INSERT INTO inventory_mission_attempts(
+              tenant_id,attempt_id,document_id,warehouse_id,location_id,
+              created_by_subject,created_by_employee_id
+            ) VALUES(
+              'wall-v14','14141414-0000-0000-0000-000000000041',
+              '14141414-1414-1414-1414-141414141404','WH-W14-B','B01','ci','EMP-2'
+            )"; then
+            echo "ERROR: missing Lost & Found did not block W2W start"
+            exit 1
+          fi
+
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_documents(
+            tenant_id,id,warehouse_id,name,state,created_by
+          ) VALUES(
+            'wall-v14','14141414-1414-1414-1414-141414141405',
+            'WH-W14','Golden Count compatibility','COUNTING','ci'
+          );
+          INSERT INTO inventory_document_locations(tenant_id,document_id,location_id)
+          VALUES('wall-v14','14141414-1414-1414-1414-141414141405','G01');
+          INSERT INTO inventory_mission_attempts(
+            tenant_id,attempt_id,document_id,warehouse_id,location_id,
+            created_by_subject,created_by_employee_id
+          ) VALUES(
+            'wall-v14','14141414-0000-0000-0000-000000000051',
+            '14141414-1414-1414-1414-141414141405','WH-W14','G01','ci','EMP-GOLD'
+          );
+          SQL
+
+          test "$(psql "$DB" -Atc "SELECT count_mode FROM inventory_documents WHERE tenant_id='wall-v14' AND id='14141414-1414-1414-1414-141414141405'")" = "GOLDEN_COUNT"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_mission_attempts WHERE tenant_id='wall-v14' AND attempt_id='14141414-0000-0000-0000-000000000051'")" = "1"
+      - name: Replay v14 migration idempotently after authority evidence
+        run: psql "$DB" -v ON_ERROR_STOP=1 -f backend/migrations/014_inventory_wall_to_wall_readiness_authority.sql
+      - name: Reject malformed diff
+        run: git diff --check

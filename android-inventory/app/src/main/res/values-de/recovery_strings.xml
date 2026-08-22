@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">Synchronisierung ist geschützt</string>
+    <string name="terminal_recovery_title_blocking">Aktion erforderlich</string>
+    <string name="terminal_recovery_title_security">Sicherheitsprüfung erforderlich</string>
+    <string name="terminal_recovery_wait_auto">%1$d gespeicherte Vorgänge warten auf diesem Gerät. EAY versucht die Synchronisierung automatisch erneut; nicht neu erfassen.</string>
+    <string name="terminal_recovery_device">%1$d gespeicherte Vorgänge können auf diesem verwalteten Gerät nicht fortgesetzt werden. Der Nachweis bleibt erhalten; Gerätewiederherstellung ist erforderlich.</string>
+    <string name="terminal_recovery_supervisor">%1$d gespeicherte Vorgänge erfordern eine Prüfung durch die Führungskraft. Der Nachweis bleibt erhalten und wird nicht automatisch erneut gesendet.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d quarantänisierte Vorgänge warten auf die Prüfung durch die Führungskraft. Der ursprüngliche Zählnachweis bleibt erhalten.</string>
+    <string name="terminal_recovery_request_supervisor">Prüfung durch Führungskraft anfordern</string>
+    <string name="terminal_recovery_security">%1$d gespeicherte Vorgänge erfordern eine Sicherheitsprüfung. Der Nachweis bleibt erhalten und wird weder neu gebunden noch umgeschrieben.</string>
+    <string name="terminal_recovery_integrity">%1$d gespeicherte Vorgänge haben die lokalen Integritätsprüfungen nicht bestanden. Keine neuen Vorgänge starten und Support anfordern; der Nachweis bleibt erhalten.</string>
+    <string name="terminal_recovery_reload">Aufträge neu laden</string>
+    <string name="terminal_recovery_sign_in">Erneut anmelden</string>
+</resources>

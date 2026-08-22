@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.EayOne" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F8FAFC</item>
+        <item name="android:navigationBarColor">#F8FAFC</item>
+        <item name="android:colorAccent">#1F6BFF</item>
+        <item name="colorPrimary">#07235B</item>
+        <item name="colorPrimaryVariant">#041A46</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+</resources>

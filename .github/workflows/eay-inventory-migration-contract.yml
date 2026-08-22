@@ -106,5 +106,61 @@ jobs:
             test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM pg_trigger WHERE tgname='inventory_guard_location_event_v4_trigger' AND NOT tgisinternal")" = "1"
             test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_location_completion_once_idx'")" = "1"
           fi
+      - name: Prove v11 wall-to-wall fail-closed authority when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! test -f backend/migrations/011_inventory_wall_to_wall_closeout_authority.sql; then
+            exit 0
+          fi
+          test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=11")" = "1"
+          test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM pg_class WHERE relname='inventory_document_closeouts' AND relkind='r'")" = "1"
+          test "$(psql "$MIGRATION_DATABASE_URL" -Atc "SELECT count(*) FROM pg_trigger WHERE tgname IN ('inventory_wall_to_wall_location_scope_v11','inventory_wall_to_wall_sku_scope_v11','inventory_location_completion_anchor_v11','inventory_wall_to_wall_submit_guard_v11','inventory_wall_to_wall_closeout_v11') AND NOT tgisinternal")" = "5"
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_documents(tenant_id,id,warehouse_id,name,state,created_by)
+          VALUES('wall-v11','11111111-1111-1111-1111-111111111111','WH-WALL','Wall-to-wall v11 adversarial','COUNTING','ci');
+          INSERT INTO inventory_document_locations(tenant_id,document_id,location_id)
+          VALUES
+            ('wall-v11','11111111-1111-1111-1111-111111111111','A01'),
+            ('wall-v11','11111111-1111-1111-1111-111111111111','A02');
+          INSERT INTO inventory_expected_stock(tenant_id,document_id,sku,barcode,expected_quantity,unit_cost)
+          VALUES('wall-v11','11111111-1111-1111-1111-111111111111','SKU-1','8690000000001',1,1);
+          SQL
+
+          if psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c "UPDATE inventory_documents SET state='SUBMITTED',revision=2,submitted_by='ci' WHERE tenant_id='wall-v11' AND id='11111111-1111-1111-1111-111111111111'"; then
+            echo 'ERROR: incomplete wall-to-wall submission was accepted'
+            exit 1
+          fi
+
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO inventory_mission_attempts(
+            tenant_id,attempt_id,document_id,warehouse_id,location_id,
+            created_by_subject,created_by_employee_id
+          ) VALUES(
+            'wall-v11','22222222-2222-2222-2222-222222222222',
+            '11111111-1111-1111-1111-111111111111','WH-WALL','A01','ci','EMP-CI'
+          );
+          SQL
+
+          if psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c "DELETE FROM inventory_document_locations WHERE tenant_id='wall-v11' AND document_id='11111111-1111-1111-1111-111111111111' AND location_id='A02'"; then
+            echo 'ERROR: location scope changed after counting authority started'
+            exit 1
+          fi
+
+          if psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c "UPDATE inventory_expected_stock SET expected_quantity=99 WHERE tenant_id='wall-v11' AND document_id='11111111-1111-1111-1111-111111111111'"; then
+            echo 'ERROR: SKU/expected-stock scope changed after counting authority started'
+            exit 1
+          fi
+
+          if psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c "UPDATE inventory_document_locations SET completed_event_id='33333333-3333-3333-3333-333333333333',completed_at=now() WHERE tenant_id='wall-v11' AND document_id='11111111-1111-1111-1111-111111111111' AND location_id='A01'"; then
+            echo 'ERROR: forged location-completion anchor was accepted'
+            exit 1
+          fi
+      - name: Wall-to-wall source contract
+        run: python -m unittest backend.tests.test_inventory_wall_to_wall_closeout_contract -v
       - name: Reject malformed diff
         run: git diff --check

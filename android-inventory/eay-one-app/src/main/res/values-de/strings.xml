@@ -1,0 +1,6 @@
+<resources>
+    <string name="eay_one_session_required">Unternehmenssitzung erforderlich</string>
+    <string name="eay_one_phone_surface">Privates / geschäftliches Telefon</string>
+    <string name="eay_one_authority_required">Verbinden Sie die geprüfte Unternehmenssitzung, um diese Aktion zu verwenden.</string>
+    <string name="eay_one_sign_in_again">Erneut anmelden</string>
+</resources>

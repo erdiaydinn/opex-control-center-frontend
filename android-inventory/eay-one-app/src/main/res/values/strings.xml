@@ -1,0 +1,7 @@
+<resources>
+    <string name="eay_one_app_name" translatable="false">EAY One</string>
+    <string name="eay_one_session_required">Corporate session required</string>
+    <string name="eay_one_phone_surface">Personal / work phone</string>
+    <string name="eay_one_authority_required">Connect the reviewed corporate session to use this action.</string>
+    <string name="eay_one_sign_in_again">Sign in again</string>
+</resources>

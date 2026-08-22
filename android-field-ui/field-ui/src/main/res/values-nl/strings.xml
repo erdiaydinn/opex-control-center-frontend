@@ -1,0 +1,23 @@
+<resources>
+    <string name="eay_one_today">Vandaag</string>
+    <string name="eay_one_missions">Missies</string>
+    <string name="eay_one_scan">Scannen</string>
+    <string name="eay_one_jarvis">Jarvis</string>
+    <string name="eay_one_me">Ik</string>
+    <string name="field_next_missions">Volgende missies</string>
+    <string name="field_sync_synced">Gesynchroniseerd</string>
+    <string name="field_sync_offline">Offline</string>
+    <plurals name="field_sync_pending">
+        <item quantity="one">%1$d wachtend item</item>
+        <item quantity="other">%1$d wachtende items</item>
+    </plurals>
+    <string name="field_sync_quarantined">Controle vereist</string>
+    <string name="field_sync_description">Synchronisatiestatus: %1$s</string>
+    <string name="blind_count_observed_quantity">Getelde hoeveelheid</string>
+    <plurals name="blind_count_completed_lines">
+        <item quantity="one">%1$d regel voltooid</item>
+        <item quantity="other">%1$d regels voltooid</item>
+    </plurals>
+    <string name="blind_count_progress">%1$d / %2$d</string>
+    <string name="blind_count_confirm">Hoeveelheid bevestigen</string>
+</resources>

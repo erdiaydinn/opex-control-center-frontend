@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">Senkron güvenli</string>
+    <string name="terminal_recovery_title_blocking">İşlem gerekli</string>
+    <string name="terminal_recovery_title_security">Güvenlik incelemesi gerekli</string>
+    <string name="terminal_recovery_wait_auto">%1$d kayıtlı işlem bu cihazda bekliyor. EAY otomatik olarak yeniden deneyecek; işlemleri yeniden oluşturmayın.</string>
+    <string name="terminal_recovery_device">%1$d kayıtlı işlem bu yönetilen cihazda devam edemiyor. Kanıt korunuyor; yönetilen cihaz kurtarma süreci gerekli.</string>
+    <string name="terminal_recovery_supervisor">%1$d kayıtlı işlem yönetici incelemesi gerektiriyor. Kanıt korunuyor ve otomatik olarak yeniden denenmeyecek.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d karantinadaki işlem yönetici incelemesini bekliyor. Orijinal sayım kanıtı korunuyor.</string>
+    <string name="terminal_recovery_request_supervisor">Yönetici incelemesi iste</string>
+    <string name="terminal_recovery_security">%1$d kayıtlı işlem güvenlik incelemesi gerektiriyor. Kanıt korunuyor; başka oturuma bağlanmayacak ve yeniden yazılmayacak.</string>
+    <string name="terminal_recovery_integrity">%1$d kayıtlı işlem yerel bütünlük kontrollerini geçemedi. Yeni işlem başlatmayın ve destek isteyin; kanıt korunuyor.</string>
+    <string name="terminal_recovery_reload">Görevleri yenile</string>
+    <string name="terminal_recovery_sign_in">Yeniden giriş yap</string>
+</resources>

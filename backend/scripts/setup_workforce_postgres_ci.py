@@ -2,16 +2,34 @@
 
 from pathlib import Path
 import os
+import re
 
 import psycopg
 
 
 admin_url = os.environ["WORKFORCE_MIGRATION_DATABASE_URL"]
 tenant_id = os.environ["WORKFORCE_TENANT_ID"]
-v29_migration = Path(__file__).resolve().parents[1] / "migrations" / "002_workforce_v29.sql"
-v30_migration = Path(__file__).resolve().parents[1] / "migrations" / "003_workforce_v30_acceptance.sql"
-v31_migration = Path(__file__).resolve().parents[1] / "migrations" / "004_workforce_v31_lifecycle_acceptance.sql"
-v32_migration = Path(__file__).resolve().parents[1] / "migrations" / "005_workforce_v32_identity_revocation.sql"
+migration_dir = Path(__file__).resolve().parents[1] / "migrations"
+v29_migration = migration_dir / "002_workforce_v29.sql"
+v30_migration = migration_dir / "003_workforce_v30_acceptance.sql"
+v31_migration = migration_dir / "004_workforce_v31_lifecycle_acceptance.sql"
+v32_migration = migration_dir / "005_workforce_v32_identity_revocation.sql"
+
+
+def workforce_version(path: Path) -> int | None:
+    match = re.search(r"_workforce_v(\d+)_", path.name)
+    return int(match.group(1)) if match else None
+
+
+post_v32_migrations = sorted(
+    (
+        path
+        for path in migration_dir.glob("*_workforce_v*.sql")
+        if (workforce_version(path) or 0) > 32
+    ),
+    key=lambda path: workforce_version(path) or 0,
+)
+expected_post_v32_versions = [workforce_version(path) for path in post_v32_migrations]
 
 with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     cursor.execute("SELECT set_config('app.workforce_tenant', %s, true)", (tenant_id,))
@@ -68,6 +86,14 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     )
     cursor.execute(v31_migration.read_text(encoding="utf-8"))
     cursor.execute(v32_migration.read_text(encoding="utf-8"))
+
+    # V33+ Workforce authority is intentionally discovered from the versioned
+    # migration series instead of freezing CI at one roadmap checkpoint. This
+    # keeps PostgreSQL acceptance aligned with the current repository schema
+    # while preserving the special V29 -> V32 upgrade rehearsal above.
+    for migration in post_v32_migrations:
+        cursor.execute(migration.read_text(encoding="utf-8"))
+
     cursor.execute(
         """SELECT tenant_id FROM recruitment_settings
            WHERE id='v29-upgrade-fixture'"""
@@ -82,6 +108,19 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     )
     if cursor.fetchone() != ("7", "8", "2026-09-30"):
         raise RuntimeError("V30 -> V31 temporary +1 norm preservation failed")
+
+    if expected_post_v32_versions:
+        cursor.execute(
+            "SELECT version FROM workforce_schema_migrations WHERE version = ANY(%s) ORDER BY version",
+            (expected_post_v32_versions,),
+        )
+        installed_versions = [row[0] for row in cursor.fetchall()]
+        if installed_versions != expected_post_v32_versions:
+            raise RuntimeError(
+                "Workforce authority migration bootstrap incomplete: "
+                f"expected={expected_post_v32_versions} installed={installed_versions}"
+            )
+
     cursor.execute(
         """
         DO $$
@@ -115,6 +154,31 @@ with psycopg.connect(admin_url) as database, database.cursor() as cursor:
     )
     cursor.execute("GRANT SELECT, INSERT ON workforce_audit TO workforce_runtime")
     cursor.execute("GRANT SELECT ON workforce_schema_migrations TO workforce_runtime")
+
+    # Derived authority evidence is append-only. Runtime can read and append
+    # snapshots/proposals/receipts, but cannot mutate or delete them. Approval
+    # authority tables remain read-only for this least-privilege runtime role.
+    cursor.execute(
+        """GRANT SELECT, INSERT ON
+           workforce_demand_snapshots,
+           workforce_capacity_snapshots,
+           workforce_dpi_snapshots,
+           workforce_optimizer_proposals,
+           workforce_replan_scenarios,
+           workforce_replan_proposals,
+           workforce_manager_overrides,
+           workforce_override_outcomes,
+           workforce_override_learning_drafts,
+           workforce_optimizer_learning_receipts
+           TO workforce_runtime"""
+    )
+    cursor.execute(
+        """GRANT SELECT ON
+           workforce_labor_standard_versions,
+           workforce_replan_model_versions,
+           workforce_override_learning_versions
+           TO workforce_runtime"""
+    )
     cursor.execute("GRANT EXECUTE ON FUNCTION workforce_current_tenant() TO workforce_runtime")
     cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO workforce_runtime")
     database.commit()

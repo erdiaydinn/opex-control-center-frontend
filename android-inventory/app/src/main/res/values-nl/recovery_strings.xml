@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">Synchronisatie is beveiligd</string>
+    <string name="terminal_recovery_title_blocking">Actie vereist</string>
+    <string name="terminal_recovery_title_security">Beveiligingscontrole vereist</string>
+    <string name="terminal_recovery_wait_auto">%1$d opgeslagen bewerkingen staan nog op dit apparaat. EAY probeert automatisch opnieuw; maak ze niet opnieuw aan.</string>
+    <string name="terminal_recovery_device">%1$d opgeslagen bewerkingen kunnen niet doorgaan op dit beheerde apparaat. Bewijs blijft behouden; apparaatherstel is vereist.</string>
+    <string name="terminal_recovery_supervisor">%1$d opgeslagen bewerkingen vereisen beoordeling door een supervisor. Bewijs blijft behouden en wordt niet automatisch opnieuw verzonden.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d bewerkingen in quarantaine wachten op beoordeling door een supervisor. Het oorspronkelijke telbewijs blijft behouden.</string>
+    <string name="terminal_recovery_request_supervisor">Supervisorbeoordeling aanvragen</string>
+    <string name="terminal_recovery_security">%1$d opgeslagen bewerkingen vereisen een beveiligingscontrole. Bewijs blijft behouden en wordt niet opnieuw gekoppeld of herschreven.</string>
+    <string name="terminal_recovery_integrity">%1$d opgeslagen bewerkingen zijn niet door de lokale integriteitscontroles gekomen. Start geen nieuwe bewerkingen en vraag ondersteuning; bewijs blijft behouden.</string>
+    <string name="terminal_recovery_reload">Missies opnieuw laden</string>
+    <string name="terminal_recovery_sign_in">Opnieuw aanmelden</string>
+</resources>

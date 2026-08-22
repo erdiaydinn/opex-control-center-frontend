@@ -48,8 +48,10 @@ jobs:
           python ../scripts/security/gradle_dependency_report_to_cyclonedx.py \
             --input app/build/reports/security/releaseRuntimeClasspath.txt \
             --output app/build/reports/security/eay-inventory-android-prebuild.cdx.json
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/OPEX-Inventory-V24.apk
+      - name: Rename APKs
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/OPEX-Inventory-V24.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/EAY-Mobile-Preview.apk
       - name: Retain Android pre-build dependency evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -59,10 +61,17 @@ jobs:
             android-inventory/app/build/reports/security/eay-inventory-android-prebuild.cdx.json
           if-no-files-found: error
           retention-days: 14
-      - name: Retain debug APK
+      - name: Retain legacy terminal debug APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: OPEX-Inventory-V24-APK
           path: android-inventory/app/build/outputs/apk/debug/OPEX-Inventory-V24.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain EAY Mobile preview APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: EAY-Mobile-Preview-APK
+          path: android-inventory/app/build/outputs/apk/debug/EAY-Mobile-Preview.apk
           if-no-files-found: error
           retention-days: 30

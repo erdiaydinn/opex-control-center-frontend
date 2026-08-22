@@ -1,0 +1,66 @@
+{
+  "program": "EAY_MOBILE_P0",
+  "architecture_version": 2,
+  "canonical_parent": {
+    "branch": "product/eay-category-leadership-v1",
+    "sha": "0816e1f50d89684f367efd126ac94679f0aaa072"
+  },
+  "runtime_surfaces": {
+    "eay_one": {
+      "purpose": "employee and manager personal/work phone execution surface",
+      "state": "foundation"
+    },
+    "eay_terminal": {
+      "purpose": "managed rugged/Zebra warehouse execution surface",
+      "state": "scanner-and-blind-count-foundation"
+    }
+  },
+  "localization": {
+    "contract": "config/eay_localization.json",
+    "authority": "platform_core",
+    "mandatory_locale_parity": true,
+    "english_first_production_exception": false,
+    "rtl_locale_driven": true,
+    "plural_rules": "cldr_cardinal_categories_plus_android_lint"
+  },
+  "authority": {
+    "identity": "platform_core",
+    "authorization": "server_authoritative",
+    "tenant_scope": "server_authoritative",
+    "device_trust": "server_verified",
+    "offline_authority": "bounded_signed_server_policy_snapshot",
+    "inventory_state": "backend_authoritative"
+  },
+  "hard_security_invariants": [
+    "deny_without_server_policy",
+    "exact_tenant_actor_device_location_auth_binding",
+    "high_risk_requires_integrity_pass",
+    "medium_or_higher_requires_managed_device",
+    "critical_operations_online_only",
+    "offline_operations_explicit_allowlist_only",
+    "event_payload_hash_and_replay_collision_guard",
+    "business_conflict_never_last_write_wins",
+    "old_auth_or_reinstalled_device_cannot_silently_inherit_queue",
+    "datawedge_output_bound_to_package_and_app_signature",
+    "no_raw_tokens_barcodes_biometrics_or_precise_location_in_telemetry",
+    "no_client_owned_permission_truth",
+    "no_webview_as_warehouse_execution_substitute"
+  ],
+  "external_acceptance_required": [
+    "corporate_oidc_claim_mapping",
+    "real_play_integrity_verdicts_and_replay_tests",
+    "managed_signing_and_mdm_distribution",
+    "datawedge_controlled_api_access_package_signature_whitelist",
+    "physical_zebra_datawedge_matrix",
+    "gps_geofence_field_walk",
+    "offline_online_field_chaos",
+    "device_reinstall_sequence_rebind_or_new_server_identity",
+    "production_endpoint_certificate_pinning_and_rotation",
+    "kms_hsm_mobile_policy_signing_and_rotation",
+    "operator_uat",
+    "production_shape_mobile_fleet_observability"
+  ],
+  "production_ready": false,
+  "production_activation_permitted": false,
+  "main_merge_permitted": false
+}

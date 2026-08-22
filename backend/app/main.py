@@ -36,6 +36,7 @@ from app.modules.dockos.router import router as dockos_router
 from app.modules.dockos.runtime_db import pool as dockos_db_pool
 from app.modules.identity.router import router as identity_router
 from app.modules.identity.service import bootstrap_admin, initialize as initialize_identity
+from app.modules.inventory.recovery_router import router as inventory_recovery_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.inventory.service import initialize as initialize_inventory
 from app.modules.recruitment.router import router as recruitment_router
@@ -133,7 +134,7 @@ def _replace_verified_dockos_headers(request: Request, email: str, role: str) ->
 
     DockOS route signatures still accept historical X-OPEX arguments. In production
     those values are never taken from the client: this middleware replaces them
-    after both gateway HMAC verification and OIDC token verification succeed.
+    after both gateway HMAC verification and OIDC checks.
     The legacy simple gateway header is also generated internally only so the
     RC7.5 router dependency cannot become an alternate client-authentication path.
     """
@@ -298,6 +299,7 @@ app.include_router(workforce_flexibility_router, prefix="/api")
 app.include_router(workforce_timeoff_router, prefix="/api")
 app.include_router(recruitment_router, prefix="/api")
 app.include_router(inventory_router, prefix="/api")
+app.include_router(inventory_recovery_router, prefix="/api")
 app.include_router(identity_router, prefix="/api")
 app.mount("/metrics", make_asgi_app())
 

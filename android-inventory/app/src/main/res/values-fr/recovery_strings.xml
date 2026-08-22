@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">La synchronisation est protégée</string>
+    <string name="terminal_recovery_title_blocking">Action requise</string>
+    <string name="terminal_recovery_title_security">Revue de sécurité requise</string>
+    <string name="terminal_recovery_wait_auto">%1$d opérations enregistrées restent sur cet appareil. EAY réessaiera automatiquement ; ne les recréez pas.</string>
+    <string name="terminal_recovery_device">%1$d opérations enregistrées ne peuvent pas continuer sur cet appareil géré. Les preuves sont conservées ; une récupération de l’appareil est requise.</string>
+    <string name="terminal_recovery_supervisor">%1$d opérations enregistrées nécessitent une revue du superviseur. Les preuves sont conservées et aucun nouvel essai automatique ne sera effectué.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d opérations en quarantaine attendent la revue du superviseur. La preuve de comptage d’origine est conservée.</string>
+    <string name="terminal_recovery_request_supervisor">Demander une revue du superviseur</string>
+    <string name="terminal_recovery_security">%1$d opérations enregistrées nécessitent une revue de sécurité. Les preuves sont conservées et ne seront ni réassociées ni réécrites.</string>
+    <string name="terminal_recovery_integrity">%1$d opérations enregistrées ont échoué aux contrôles locaux d’intégrité. Arrêtez toute nouvelle exécution et demandez de l’aide ; les preuves sont conservées.</string>
+    <string name="terminal_recovery_reload">Recharger les missions</string>
+    <string name="terminal_recovery_sign_in">Se reconnecter</string>
+</resources>

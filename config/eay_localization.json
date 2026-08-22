@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "capability": "LOC",
+  "authority": "platform_core",
+  "scope": "all_modules_and_mobile_surfaces",
+  "contract": "10-language-plus-rtl",
+  "required_locales": [
+    "tr-TR",
+    "en",
+    "de",
+    "ar",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "pl",
+    "pt-BR"
+  ],
+  "default_locale": "en",
+  "fallback_locale": "en",
+  "rtl_locales": ["ar"],
+  "english_only_production_exception_allowed": false,
+  "android_resource_qualifiers": {
+    "tr-TR": "values-tr",
+    "en": "values",
+    "de": "values-de",
+    "ar": "values-ar",
+    "fr": "values-fr",
+    "es": "values-es",
+    "it": "values-it",
+    "nl": "values-nl",
+    "pl": "values-pl",
+    "pt-BR": "values-pt-rBR"
+  },
+  "plural_categories": {
+    "tr-TR": ["one", "other"],
+    "en": ["one", "other"],
+    "de": ["one", "other"],
+    "ar": ["zero", "one", "two", "few", "many", "other"],
+    "fr": ["one", "many", "other"],
+    "es": ["one", "many", "other"],
+    "it": ["one", "many", "other"],
+    "nl": ["one", "other"],
+    "pl": ["one", "few", "many", "other"],
+    "pt-BR": ["one", "many", "other"]
+  },
+  "invariants": [
+    "shared_platform_core_contract",
+    "no_per_module_locale_fork",
+    "production_locale_key_parity_required",
+    "no_english_first_production_exception",
+    "rtl_is_locale_driven",
+    "plural_categories_follow_cldr_cardinal_rules",
+    "android_lint_is_required_for_resource_compatibility",
+    "operational_terms_use_shared_glossary_keys"
+  ]
+}

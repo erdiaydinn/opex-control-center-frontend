@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">المزامنة محمية</string>
+    <string name="terminal_recovery_title_blocking">إجراء مطلوب</string>
+    <string name="terminal_recovery_title_security">مراجعة أمنية مطلوبة</string>
+    <string name="terminal_recovery_wait_auto">توجد %1$d عملية محفوظة على هذا الجهاز. سيعيد EAY المحاولة تلقائيًا؛ لا تُنشئ العمليات من جديد.</string>
+    <string name="terminal_recovery_device">لا يمكن متابعة %1$d عملية محفوظة على هذا الجهاز المُدار. الأدلة محفوظة؛ يلزم استرداد الجهاز المُدار.</string>
+    <string name="terminal_recovery_supervisor">تتطلب %1$d عملية محفوظة مراجعة المشرف. الأدلة محفوظة ولن تتم إعادة المحاولة تلقائيًا.</string>
+    <string name="terminal_recovery_wait_supervisor">هناك %1$d عملية معزولة بانتظار مراجعة المشرف. يتم الاحتفاظ بدليل العد الأصلي.</string>
+    <string name="terminal_recovery_request_supervisor">طلب مراجعة المشرف</string>
+    <string name="terminal_recovery_security">تتطلب %1$d عملية محفوظة مراجعة أمنية. الأدلة محفوظة ولن يُعاد ربطها أو كتابتها.</string>
+    <string name="terminal_recovery_integrity">فشلت %1$d عملية محفوظة في فحوصات التكامل المحلية. أوقف التنفيذ الجديد واطلب الدعم؛ الأدلة محفوظة.</string>
+    <string name="terminal_recovery_reload">إعادة تحميل المهام</string>
+    <string name="terminal_recovery_sign_in">تسجيل الدخول مجددًا</string>
+</resources>

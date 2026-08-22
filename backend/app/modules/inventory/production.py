@@ -21,6 +21,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
+from ..workforce.active_shift import ActiveShiftAuthorityError, attest_shift_at_event
 from .service import InventoryRuleError
 
 
@@ -61,6 +62,7 @@ def canonical_payload_hash(payload: dict[str, Any]) -> str:
 def terminal_event_hash_input(payload: dict[str, Any]) -> dict[str, Any]:
     quantity = Decimal(str(payload["quantity"])).normalize()
     return {
+        "active_shift_id": str(payload["active_shift_id"]).strip(),
         "barcode": str(payload["barcode"]).strip(),
         "device_sequence": int(payload["device_sequence"]),
         "document_id": str(UUID(str(payload["document_id"]))),
@@ -287,12 +289,17 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
     warehouse_id = str(payload["warehouse_id"]).strip()
     if warehouse_id not in principal.warehouse_scope:
         raise PermissionError("Sayım deposu yetki kapsamı dışında.")
+    count_mode = str(payload.get("count_mode", "GOLDEN_COUNT")).strip().upper()
+    if count_mode not in {"GOLDEN_COUNT", "WALL_TO_WALL"}:
+        raise InventoryRuleError("Geçersiz sayım modu.")
     locations = sorted({str(value).strip().upper() for value in payload["locations"] if str(value).strip()})
     products = payload["products"]
     if not locations or not products:
         raise InventoryRuleError("Lokasyon ve ürün listesi zorunludur.")
     if len(locations) != len(payload["locations"]):
         raise InventoryRuleError("Lokasyon listesinde boş veya mükerrer kayıt var.")
+    if count_mode == "WALL_TO_WALL" and "LOST_FOUND" not in locations:
+        locations = sorted([*locations, "LOST_FOUND"])
     document_id = uuid4()
     seen_skus: set[str] = set()
     seen_barcodes: set[str] = set()
@@ -300,15 +307,39 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
         try:
             db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
             _assert_runtime_tenant(db, principal)
+            if count_mode == "WALL_TO_WALL":
+                db.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    (f"inventory:w2w:warehouse:{principal.tenant_id}:{warehouse_id}",),
+                )
+                competing = db.execute(
+                    """SELECT id FROM inventory_documents
+                       WHERE tenant_id=%s AND warehouse_id=%s
+                         AND count_mode='WALL_TO_WALL'
+                         AND state IN ('COUNTING','SUBMITTED','RECONCILING')
+                       LIMIT 1""",
+                    (principal.tenant_id, warehouse_id),
+                ).fetchone()
+                if competing:
+                    raise InventoryRuleError("Bu depoda zaten aktif bir Wall-to-Wall sayımı var.")
             db.execute(
                 """INSERT INTO inventory_documents(
-                     tenant_id,id,warehouse_id,name,state,created_by
-                   ) VALUES(%s,%s,%s,%s,'COUNTING',%s)""",
-                (principal.tenant_id, document_id, warehouse_id, payload["name"], principal.subject),
+                     tenant_id,id,warehouse_id,name,state,created_by,count_mode
+                   ) VALUES(%s,%s,%s,%s,'COUNTING',%s,%s)""",
+                (
+                    principal.tenant_id,
+                    document_id,
+                    warehouse_id,
+                    payload["name"],
+                    principal.subject,
+                    count_mode,
+                ),
             )
             for location in locations:
                 db.execute(
-                    "INSERT INTO inventory_document_locations VALUES(%s,%s,%s)",
+                    """INSERT INTO inventory_document_locations(
+                         tenant_id,document_id,location_id
+                       ) VALUES(%s,%s,%s)""",
                     (principal.tenant_id, document_id, location),
                 )
             for product in products:
@@ -323,9 +354,20 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
                        ) VALUES(%s,%s,%s,%s,%s,%s)""",
                     (principal.tenant_id, document_id, sku, barcode, product.get("expected", 0), product.get("cost", 0)),
                 )
+            readiness_snapshot: dict[str, Any] | None = None
+            if count_mode == "WALL_TO_WALL":
+                readiness_row = db.execute(
+                    "SELECT inventory_wall_to_wall_readiness_v14(%s,%s) AS readiness",
+                    (principal.tenant_id, document_id),
+                ).fetchone()
+                if not readiness_row or not readiness_row.get("readiness"):
+                    raise RuntimeError("Wall-to-Wall readiness authority yanıt vermedi.")
+                readiness_snapshot = dict(readiness_row["readiness"])
+                if readiness_snapshot.get("status") not in {"READY", "BLOCKED"}:
+                    raise InventoryRuleError("Wall-to-Wall kapsamı doğrulanamadı; sayım oluşturulmadı.")
             snapshot = canonical_payload_hash({
                 "document_id": str(document_id), "warehouse_id": warehouse_id,
-                "locations": locations, "sku_count": len(products), "revision": 1,
+                "locations": locations, "sku_count": len(products), "count_mode": count_mode, "revision": 1,
             })
             db.execute(
                 """INSERT INTO inventory_revisions(
@@ -334,13 +376,32 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
                 (principal.tenant_id, document_id, principal.subject, principal.employee_id, snapshot),
             )
             _audit(db, principal, "DOCUMENT_CREATED", document_id, warehouse_id, {
-                "location_count": len(locations), "sku_count": len(products), "revision": 1,
+                "location_count": len(locations),
+                "sku_count": len(products),
+                "count_mode": count_mode,
+                "readiness_status": readiness_snapshot.get("status") if readiness_snapshot else "READY",
+                "revision": 1,
             })
             db.commit()
-            return {"id": str(document_id), "warehouse_id": warehouse_id, "state": "COUNTING", "revision": 1}
+            response: dict[str, Any] = {
+                "id": str(document_id),
+                "warehouse_id": warehouse_id,
+                "state": "COUNTING",
+                "revision": 1,
+                "count_mode": count_mode,
+            }
+            if readiness_snapshot is not None:
+                response["readiness"] = readiness_snapshot
+            return response
         except Exception:
             db.rollback()
             raise
+
+
+def _terminal_mission_id(tenant_id: str, document_id: UUID, location_id: str) -> str:
+    location = str(location_id).strip().upper()
+    digest = hashlib.sha256(f"{tenant_id}:{document_id}:{location}".encode("utf-8")).hexdigest()[:32]
+    return f"inventory.count:{digest}"
 
 
 def list_terminal_tasks(principal: InventoryPrincipal) -> list[dict[str, Any]]:
@@ -349,17 +410,49 @@ def list_terminal_tasks(principal: InventoryPrincipal) -> list[dict[str, Any]]:
         _assert_runtime_tenant(db, principal)
         _assert_active_device(db, principal)
         rows = db.execute(
-            """SELECT d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at,
-                      count(l.location_id)::integer AS location_count
+            """SELECT d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at,d.count_mode,
+                      l.location_id,
+                      (SELECT count(*)::integer
+                         FROM inventory_document_locations scope_l
+                        WHERE scope_l.tenant_id=d.tenant_id
+                          AND scope_l.document_id=d.id) AS location_count
                FROM inventory_documents d
-               JOIN inventory_document_locations l ON l.tenant_id=d.tenant_id AND l.document_id=d.id
-               WHERE d.tenant_id=%s AND d.state='COUNTING' AND d.warehouse_id=ANY(%s)
-               GROUP BY d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at
-               ORDER BY d.updated_at DESC""",
+               JOIN inventory_document_locations l
+                 ON l.tenant_id=d.tenant_id AND l.document_id=d.id
+               WHERE d.tenant_id=%s
+                 AND d.state='COUNTING'
+                 AND d.warehouse_id=ANY(%s)
+                 AND (
+                   d.count_mode<>'WALL_TO_WALL'
+                   OR inventory_wall_to_wall_readiness_v14(d.tenant_id,d.id)->>'status'='READY'
+                 )
+                 AND NOT (
+                   d.count_mode='WALL_TO_WALL'
+                   AND l.location_id='LOST_FOUND'
+                   AND EXISTS (
+                     SELECT 1
+                       FROM inventory_document_locations standard_l
+                      WHERE standard_l.tenant_id=d.tenant_id
+                        AND standard_l.document_id=d.id
+                        AND standard_l.location_kind='STANDARD'
+                        AND standard_l.completed_event_id IS NULL
+                   )
+                 )
+               ORDER BY d.updated_at DESC,l.location_id""",
             (principal.tenant_id, list(principal.warehouse_scope)),
         ).fetchall()
-    # Expected quantities, costs, SKU universe and variance never cross this boundary.
-    return [dict(row) for row in rows]
+    tasks: list[dict[str, Any]] = []
+    for row in rows:
+        task = dict(row)
+        location_id = str(task["location_id"]).strip().upper()
+        task["location_id"] = location_id
+        task["mission_id"] = _terminal_mission_id(principal.tenant_id, task["id"], location_id)
+        task["operation"] = "inventory.count"
+        task["runtime_profile"] = "EAY_TERMINAL"
+        tasks.append(task)
+    # Expected quantities, costs, SKU universe, readiness blockers and variance
+    # never cross this terminal boundary. W2W BLOCKED/UNKNOWN documents are hidden.
+    return tasks
 
 
 def reconciliation(principal: InventoryPrincipal, document_id: UUID) -> dict[str, Any]:
@@ -373,9 +466,18 @@ def reconciliation(principal: InventoryPrincipal, document_id: UUID) -> dict[str
         if not document or document["warehouse_id"] not in principal.warehouse_scope:
             raise PermissionError("Sayım bulunamadı veya depo kapsamı dışında.")
         rows = db.execute(
-            """WITH counted AS (
+            """WITH versioned AS (
+                 SELECT *,row_number() OVER (
+                   PARTITION BY attempt_id,location_id,barcode
+                   ORDER BY count_version DESC
+                 ) AS count_version_rank
+                 FROM inventory_events
+                 WHERE tenant_id=%s AND document_id=%s
+                   AND event_type IN ('SCAN','UNEXPECTED_SKU','RECOUNT')
+                   AND barcode IS NOT NULL
+               ), counted AS (
                  SELECT barcode,sum(quantity) AS counted_quantity
-                 FROM inventory_events WHERE tenant_id=%s AND document_id=%s
+                 FROM versioned WHERE count_version_rank=1
                  GROUP BY barcode
                )
                SELECT COALESCE(s.sku,'UNEXPECTED') AS sku,COALESCE(s.barcode,c.barcode) AS barcode,
@@ -407,6 +509,7 @@ def record_event(
     principal.validate()
     event_id = UUID(str(payload["event_id"]))
     document_id = UUID(str(payload["document_id"]))
+    active_shift_id = str(payload["active_shift_id"]).strip()
     claimed_hash = str(payload["payload_hash"])
     hash_input = terminal_event_hash_input(payload)
     actual_hash = canonical_payload_hash(hash_input)
@@ -419,10 +522,6 @@ def record_event(
 
     with connect() as db:
         try:
-            # Event identity is serialized by the transaction advisory lock.
-            # READ COMMITTED is intentional: a waiter must see the winner's
-            # committed response after acquiring that lock. SERIALIZABLE would
-            # retain the pre-wait snapshot and incorrectly retry the nonce/event.
             db.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             _assert_runtime_tenant(db, principal)
             db.execute("SELECT pg_advisory_xact_lock(%s)", (_advisory_key(f"event:{principal.tenant_id}:{event_id}"),))
@@ -453,6 +552,22 @@ def record_event(
                 raise PermissionError("Sayım görevi depo kapsamı dışında.")
             if document["state"] != "COUNTING":
                 raise InventoryRuleError("Kilitli veya gönderilmiş sayıma event eklenemez.")
+
+            try:
+                shift_attestation = attest_shift_at_event(
+                    principal.tenant_id,
+                    principal.employee_id,
+                    document["warehouse_id"],
+                    active_shift_id,
+                    str(payload["occurred_at"]),
+                )
+            except ActiveShiftAuthorityError as error:
+                raise RuntimeError(
+                    "Workforce event vardiya authority kullanılamıyor."
+                ) from error
+            if shift_attestation is None:
+                raise PermissionError("Event aktif vardiya penceresi dışında üretildi.")
+
             location = str(payload["location_id"]).strip().upper()
             allowed = db.execute(
                 """SELECT 1 FROM inventory_document_locations
@@ -486,6 +601,7 @@ def record_event(
                 "accepted": True,
                 "event_type": event_type,
                 "document_revision": document["revision"],
+                "active_shift_id": shift_attestation.shift_id,
                 "idempotent_replay": False,
             }
             db.execute(
@@ -505,6 +621,30 @@ def record_event(
             raise
 
 
+def _assert_all_locations_completed(db: Any, tenant_id: str, document_id: UUID) -> None:
+    status = db.execute(
+        """SELECT
+             (SELECT count(*)::integer
+                FROM inventory_document_locations
+               WHERE tenant_id=%s AND document_id=%s) AS required_location_count,
+             (SELECT count(DISTINCT location_id)::integer
+                FROM inventory_events
+               WHERE tenant_id=%s AND document_id=%s
+                 AND event_type='LOCATION_COMPLETE') AS completed_location_count""",
+        (tenant_id, document_id, tenant_id, document_id),
+    ).fetchone()
+    if not status:
+        raise InventoryRuleError("Sayım lokasyon tamamlama kanıtı okunamadı.")
+    required_location_count = int(status["required_location_count"])
+    completed_location_count = int(status["completed_location_count"])
+    if required_location_count <= 0:
+        raise InventoryRuleError("Lokasyonsuz sayım gönderilemez.")
+    if completed_location_count != required_location_count:
+        raise InventoryRuleError(
+            "Tüm sayım lokasyonları server tarafından tamamlanmadan sayım gönderilemez."
+        )
+
+
 def transition(
     principal: InventoryPrincipal,
     document_id: UUID,
@@ -514,9 +654,11 @@ def transition(
 ) -> dict[str, Any]:
     principal.validate()
     allowed = {
-        ("COUNTING", "SUBMITTED"), ("SUBMITTED", "RECONCILING"),
-        ("SUBMITTED", "APPROVED"), ("RECONCILING", "APPROVED"),
-        ("APPROVED", "LOCKED"), ("SUBMITTED", "REJECTED"),
+        ("COUNTING", "SUBMITTED"),
+        ("SUBMITTED", "RECONCILING"),
+        ("RECONCILING", "APPROVED"),
+        ("APPROVED", "LOCKED"),
+        ("SUBMITTED", "REJECTED"),
     }
     with connect() as db:
         try:
@@ -532,6 +674,8 @@ def transition(
                 raise InventoryRuleError("Sayım başka bir yönetici tarafından değiştirildi; ekranı yenileyin.")
             if (row["state"], target_state) not in allowed:
                 raise InventoryRuleError("Geçersiz sayım durum geçişi.")
+            if row["state"] == "COUNTING" and target_state == "SUBMITTED":
+                _assert_all_locations_completed(db, principal.tenant_id, document_id)
             if target_state in {"APPROVED", "LOCKED"} and row["submitted_by"] == principal.subject:
                 raise InventoryRuleError("Sayımı gönderen kişi aynı sayımı onaylayamaz veya kilitleyemez.")
             next_revision = expected_revision + 1

@@ -9,6 +9,7 @@ import SkipToMainContent from "./platform/accessibility/SkipToMainContent.jsx";
 import AccessibilityControl from "./platform/preferences/AccessibilityControl.jsx";
 import { PlatformPreferencesProvider } from "./platform/preferences/PlatformPreferencesContext.jsx";
 import "./styles.css";
+import "./platform/brand/eay-brand.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>

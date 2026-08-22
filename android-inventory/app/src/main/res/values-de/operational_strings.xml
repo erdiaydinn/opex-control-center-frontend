@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Artikelzustand auswählen</string>
+    <string name="terminal_scan_container">Behälter scannen</string>
+    <string name="terminal_complete_operation">Vorgang abschließen</string>
+    <string name="terminal_confirm_operation">Vorgang bestätigen</string>
+    <string name="terminal_operation_saving">Vorgang wird sicher offline gespeichert…</string>
+    <string name="terminal_operation_saved">Vorgangsschritt sicher gespeichert</string>
+</resources>

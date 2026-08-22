@@ -1,0 +1,31 @@
+<resources>
+    <string name="eay_one_today">اليوم</string>
+    <string name="eay_one_missions">المهام</string>
+    <string name="eay_one_scan">مسح</string>
+    <string name="eay_one_jarvis">جارفيس</string>
+    <string name="eay_one_me">أنا</string>
+    <string name="field_next_missions">المهام التالية</string>
+    <string name="field_sync_synced">تمت المزامنة</string>
+    <string name="field_sync_offline">دون اتصال</string>
+    <plurals name="field_sync_pending">
+        <item quantity="zero">%1$d عناصر قيد الانتظار</item>
+        <item quantity="one">%1$d عنصر قيد الانتظار</item>
+        <item quantity="two">%1$d عنصران قيد الانتظار</item>
+        <item quantity="few">%1$d عناصر قيد الانتظار</item>
+        <item quantity="many">%1$d عنصرًا قيد الانتظار</item>
+        <item quantity="other">%1$d عنصر قيد الانتظار</item>
+    </plurals>
+    <string name="field_sync_quarantined">تتطلب المراجعة</string>
+    <string name="field_sync_description">حالة المزامنة: %1$s</string>
+    <string name="blind_count_observed_quantity">الكمية المعدودة</string>
+    <plurals name="blind_count_completed_lines">
+        <item quantity="zero">تم إكمال %1$d بنود</item>
+        <item quantity="one">تم إكمال %1$d بند</item>
+        <item quantity="two">تم إكمال %1$d بندين</item>
+        <item quantity="few">تم إكمال %1$d بنود</item>
+        <item quantity="many">تم إكمال %1$d بندًا</item>
+        <item quantity="other">تم إكمال %1$d بند</item>
+    </plurals>
+    <string name="blind_count_progress">%1$d / %2$d</string>
+    <string name="blind_count_confirm">تأكيد الكمية</string>
+</resources>

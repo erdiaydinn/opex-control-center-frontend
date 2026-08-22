@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">La sincronización está protegida</string>
+    <string name="terminal_recovery_title_blocking">Se requiere una acción</string>
+    <string name="terminal_recovery_title_security">Se requiere revisión de seguridad</string>
+    <string name="terminal_recovery_wait_auto">Hay %1$d operaciones guardadas en este dispositivo. EAY volverá a intentarlo automáticamente; no las vuelva a crear.</string>
+    <string name="terminal_recovery_device">%1$d operaciones guardadas no pueden continuar en este dispositivo administrado. La evidencia se conserva; se requiere recuperación del dispositivo.</string>
+    <string name="terminal_recovery_supervisor">%1$d operaciones guardadas requieren revisión del supervisor. La evidencia se conserva y no se reintentará automáticamente.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d operaciones en cuarentena esperan la revisión del supervisor. Se conserva la evidencia original del conteo.</string>
+    <string name="terminal_recovery_request_supervisor">Solicitar revisión del supervisor</string>
+    <string name="terminal_recovery_security">%1$d operaciones guardadas requieren revisión de seguridad. La evidencia se conserva y no se volverá a vincular ni reescribir.</string>
+    <string name="terminal_recovery_integrity">%1$d operaciones guardadas no superaron las comprobaciones locales de integridad. Detenga nuevas operaciones y solicite soporte; la evidencia se conserva.</string>
+    <string name="terminal_recovery_reload">Recargar misiones</string>
+    <string name="terminal_recovery_sign_in">Iniciar sesión de nuevo</string>
+</resources>

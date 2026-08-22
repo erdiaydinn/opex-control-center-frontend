@@ -1,0 +1,25 @@
+<resources>
+    <string name="eay_one_today">Hoy</string>
+    <string name="eay_one_missions">Misiones</string>
+    <string name="eay_one_scan">Escanear</string>
+    <string name="eay_one_jarvis">Jarvis</string>
+    <string name="eay_one_me">Yo</string>
+    <string name="field_next_missions">Próximas misiones</string>
+    <string name="field_sync_synced">Sincronizado</string>
+    <string name="field_sync_offline">Sin conexión</string>
+    <plurals name="field_sync_pending">
+        <item quantity="one">%1$d elemento pendiente</item>
+        <item quantity="many">%1$d elementos pendientes</item>
+        <item quantity="other">%1$d elementos pendientes</item>
+    </plurals>
+    <string name="field_sync_quarantined">Revisión requerida</string>
+    <string name="field_sync_description">Estado de sincronización: %1$s</string>
+    <string name="blind_count_observed_quantity">Cantidad contada</string>
+    <plurals name="blind_count_completed_lines">
+        <item quantity="one">%1$d línea completada</item>
+        <item quantity="many">%1$d líneas completadas</item>
+        <item quantity="other">%1$d líneas completadas</item>
+    </plurals>
+    <string name="blind_count_progress">%1$d / %2$d</string>
+    <string name="blind_count_confirm">Confirmar cantidad</string>
+</resources>

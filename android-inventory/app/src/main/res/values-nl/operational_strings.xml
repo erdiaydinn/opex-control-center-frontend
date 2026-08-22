@@ -1,0 +1,8 @@
+<resources>
+    <string name="terminal_select_condition">Artikelconditie selecteren</string>
+    <string name="terminal_scan_container">Container scannen</string>
+    <string name="terminal_complete_operation">Bewerking afronden</string>
+    <string name="terminal_confirm_operation">Bewerking bevestigen</string>
+    <string name="terminal_operation_saving">Bewerking wordt veilig offline opgeslagen…</string>
+    <string name="terminal_operation_saved">Bewerkingsstap veilig opgeslagen</string>
+</resources>

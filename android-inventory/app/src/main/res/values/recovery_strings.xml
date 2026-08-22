@@ -1,0 +1,14 @@
+<resources>
+    <string name="terminal_recovery_title_info">Sync is protected</string>
+    <string name="terminal_recovery_title_blocking">Action required</string>
+    <string name="terminal_recovery_title_security">Security review required</string>
+    <string name="terminal_recovery_wait_auto">%1$d saved operation(s) remain on this device. EAY will retry automatically; do not recreate them.</string>
+    <string name="terminal_recovery_device">%1$d saved operation(s) cannot continue on this managed device. Evidence is preserved; managed-device recovery is required.</string>
+    <string name="terminal_recovery_supervisor">%1$d saved operation(s) require supervisor review. Evidence is preserved and will not be retried automatically.</string>
+    <string name="terminal_recovery_wait_supervisor">%1$d quarantined operation(s) are waiting for supervisor review. Original count evidence is preserved.</string>
+    <string name="terminal_recovery_request_supervisor">Request supervisor review</string>
+    <string name="terminal_recovery_security">%1$d saved operation(s) require security review. Evidence is preserved and will not be rebound or rewritten.</string>
+    <string name="terminal_recovery_integrity">%1$d saved operation(s) failed local integrity checks. Stop new execution and request support; evidence is preserved.</string>
+    <string name="terminal_recovery_reload">Reload missions</string>
+    <string name="terminal_recovery_sign_in">Sign in again</string>
+</resources>

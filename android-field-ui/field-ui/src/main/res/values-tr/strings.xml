@@ -1,0 +1,23 @@
+<resources>
+    <string name="eay_one_today">Bugün</string>
+    <string name="eay_one_missions">Görevler</string>
+    <string name="eay_one_scan">Tara</string>
+    <string name="eay_one_jarvis">Jarvis</string>
+    <string name="eay_one_me">Ben</string>
+    <string name="field_next_missions">Sıradaki görevler</string>
+    <string name="field_sync_synced">Senkron</string>
+    <string name="field_sync_offline">Çevrimdışı</string>
+    <plurals name="field_sync_pending">
+        <item quantity="one">%1$d bekleyen işlem</item>
+        <item quantity="other">%1$d bekleyen işlem</item>
+    </plurals>
+    <string name="field_sync_quarantined">İnceleme gerekli</string>
+    <string name="field_sync_description">Senkron durumu: %1$s</string>
+    <string name="blind_count_observed_quantity">Gözlenen adet</string>
+    <plurals name="blind_count_completed_lines">
+        <item quantity="one">%1$d satır tamamlandı</item>
+        <item quantity="other">%1$d satır tamamlandı</item>
+    </plurals>
+    <string name="blind_count_progress">%1$d / %2$d</string>
+    <string name="blind_count_confirm">Adedi doğrula</string>
+</resources>

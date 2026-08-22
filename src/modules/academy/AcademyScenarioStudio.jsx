@@ -129,8 +129,7 @@ export default function AcademyScenarioStudio({ workspace, locale, t, refresh })
   function removeNode(index) {
     const node = nodes[index];
     if (!node) return;
-    const terminalNodes = nodes.filter((item) => item.terminal);
-    if (node.terminal && terminalNodes.length === 1) {
+    if (node.terminal && nodes.filter((item) => item.terminal).length <= 1) {
       setError(gx("cannotRemoveTerminal"));
       return;
     }

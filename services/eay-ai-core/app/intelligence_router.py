@@ -223,9 +223,11 @@ def route_intelligence(
     engine IDs and a sealed admission receipt reference. Missing admission fails
     closed before any provider or tool invocation can occur.
 
-    Extreme/critical councils require three independent provider families: one
-    primary plus two independent critics. A two-provider quorum is deliberately
-    insufficient for council execution, even when both engines are certified.
+    A fresh-certified extreme/critical frontier council requires three
+    independent provider families: one primary plus two independent critics.
+    Non-certified local/human-review councils preserve their separate safety
+    contract and do not get forced into paid frontier escalation merely to meet a
+    benchmark-certification quorum.
     """
 
     if task.requires_fresh_certification:
@@ -270,6 +272,9 @@ def route_intelligence(
         task.complexity is TaskComplexity.EXTREME
         or task.risk is TaskRisk.CRITICAL
     )
+    certified_frontier_council = (
+        council_required and task.requires_fresh_certification
+    )
     critique_required = (
         council_required
         or task.requires_independent_critique
@@ -298,7 +303,7 @@ def route_intelligence(
     blockers: list[str] = []
     if critique_required and not critic_ids:
         blockers.append("independent_critic_unavailable")
-    if council_required and len(critic_ids) < 2:
+    if certified_frontier_council and len(critic_ids) < 2:
         blockers.append("council_independent_critics_insufficient")
 
     selected_provider_keys = {primary.independent_provider_key}
@@ -307,9 +312,14 @@ def route_intelligence(
         for engine in ranked
         if engine.engine_id in critic_ids
     )
+    minimum_council_provider_families = (
+        CRITICAL_COUNCIL_PROVIDER_FAMILIES
+        if certified_frontier_council
+        else 2
+    )
     if (
         council_required
-        and len(selected_provider_keys) < CRITICAL_COUNCIL_PROVIDER_FAMILIES
+        and len(selected_provider_keys) < minimum_council_provider_families
     ):
         blockers.append("council_provider_diversity_insufficient")
 

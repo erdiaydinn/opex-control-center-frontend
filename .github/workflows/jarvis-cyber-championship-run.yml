@@ -19,6 +19,7 @@ jobs:
     env:
       EAY_CHAMPIONSHIP_EVIDENCE_DIR: ${{ vars.EAY_CHAMPIONSHIP_EVIDENCE_DIR }}
       EAY_CHAMPIONSHIP_TRUST_DIR: ${{ vars.EAY_CHAMPIONSHIP_TRUST_DIR }}
+      EAY_CHAMPIONSHIP_PYTHON_BIN: ${{ vars.EAY_CHAMPIONSHIP_PYTHON_BIN }}
     defaults:
       run:
         working-directory: services/eay-ai-core
@@ -34,13 +35,24 @@ jobs:
           echo "CYBER_AUTHORIZED_EXPECTED_SHA=$expected"
           echo "CYBER_AUTHORIZED_ACTUAL_SHA=$actual"
           test "$actual" = "$expected"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: "3.12"
-      - name: Install championship verifier only
+      - name: Require pre-provisioned offline verifier runtime
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
+          test -n "$EAY_CHAMPIONSHIP_PYTHON_BIN"
+          case "$EAY_CHAMPIONSHIP_PYTHON_BIN" in
+            /*) ;;
+            *) echo "CHAMPIONSHIP_RUNTIME=BLOCKED_NON_ABSOLUTE_PATH"; exit 1 ;;
+          esac
+          test -x "$EAY_CHAMPIONSHIP_PYTHON_BIN"
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
+          import sys
+          if sys.version_info[:2] != (3, 12):
+              raise SystemExit("championship_verifier_requires_python_3_12")
+          import cryptography
+          import pydantic
+          print("CHAMPIONSHIP_VERIFIER_RUNTIME=PREPROVISIONED")
+          print("CHAMPIONSHIP_VERIFIER_PYTHON=3.12")
+          print("CHAMPIONSHIP_RUNTIME_NETWORK_INSTALL=false")
+          PY
       - name: Require externally mounted evidence and protected trust roots
         run: |
           test -n "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
@@ -49,12 +61,12 @@ jobs:
           test -d "$EAY_CHAMPIONSHIP_TRUST_DIR"
       - name: Verify detached Ed25519 signatures for every consumed receipt
         run: |
-          python -m app.cyber_championship_signature_guard \
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_signature_guard \
             --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
             --trust-dir "$EAY_CHAMPIONSHIP_TRUST_DIR" \
             --strict > /tmp/eay-championship-signatures.json
           cat /tmp/eay-championship-signatures.json
-          python - <<'PY'
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
           import json
           with open('/tmp/eay-championship-signatures.json', encoding='utf-8') as handle:
               report = json.load(handle)
@@ -66,11 +78,11 @@ jobs:
           PY
       - name: Enforce exact vendor tenant resource identity and operation scope
         run: |
-          python -m app.cyber_championship_tenant_scope_guard \
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_tenant_scope_guard \
             --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
             --strict > /tmp/eay-championship-scope.json
           cat /tmp/eay-championship-scope.json
-          python - <<'PY'
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
           import json
           with open('/tmp/eay-championship-scope.json', encoding='utf-8') as handle:
               report = json.load(handle)
@@ -81,11 +93,11 @@ jobs:
           PY
       - name: Verify external admission without printing secrets or ground truth
         run: |
-          python scripts/run_cyber_championship_external_preflight.py \
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" scripts/run_cyber_championship_external_preflight.py \
             --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
             --strict > /tmp/eay-championship-admission.json
           cat /tmp/eay-championship-admission.json
-          python - <<'PY'
+          "$EAY_CHAMPIONSHIP_PYTHON_BIN" - <<'PY'
           import json
           with open('/tmp/eay-championship-admission.json', encoding='utf-8') as handle:
               report = json.load(handle)

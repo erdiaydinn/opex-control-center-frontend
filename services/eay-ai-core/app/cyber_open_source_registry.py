@@ -56,7 +56,9 @@ class CyberOpenSourceRepository(BaseModel):
 
     contract: str = CYBER_OPEN_SOURCE_REGISTRY_CONTRACT
     repo: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-    canonical_url: str = Field(pattern=r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    canonical_url: str = Field(
+        pattern=r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    )
     trust_tier: OpenSourceTrustTier
     domains: tuple[CyberDefenseDomain, ...] = Field(min_length=1)
     use_mode: OpenSourceUseMode
@@ -66,6 +68,9 @@ class CyberOpenSourceRepository(BaseModel):
     license_review_required: bool = True
     security_review_required: bool = True
     server_side_only: bool = True
+    archived: bool = False
+    linked_sources_auto_trusted: bool = False
+    current_eay_truth_permitted: bool = False
     content_vendoring_permitted: bool = False
     production_execution_permitted: bool = False
     production_mutation_permitted: bool = False
@@ -88,6 +93,8 @@ class CyberOpenSourceRepository(BaseModel):
             raise ValueError("cyber_open_source_governance_controls_mandatory")
         if any(
             (
+                self.linked_sources_auto_trusted,
+                self.current_eay_truth_permitted,
                 self.content_vendoring_permitted,
                 self.production_execution_permitted,
                 self.production_mutation_permitted,
@@ -97,15 +104,19 @@ class CyberOpenSourceRepository(BaseModel):
             )
         ):
             raise ValueError("cyber_open_source_never_grants_privileged_authority")
-        if (
+
+        dual_use_outside_sandbox = (
             self.risk_class is OpenSourceRiskClass.DUAL_USE
             and self.use_mode is not OpenSourceUseMode.AUTHORIZED_SANDBOX_ONLY
-        ):
+        )
+        if dual_use_outside_sandbox:
             raise ValueError("cyber_open_source_dual_use_must_be_sandbox_only")
-        if (
+
+        passive_marked_sandbox_only = (
             self.use_mode is OpenSourceUseMode.AUTHORIZED_SANDBOX_ONLY
             and self.risk_class is OpenSourceRiskClass.PASSIVE_DEFENSE
-        ):
+        )
+        if passive_marked_sandbox_only:
             raise ValueError("cyber_open_source_passive_source_not_sandbox_only")
         return self
 
@@ -187,7 +198,12 @@ def assess_repository_admission(
         blockers.append("security_review_required")
 
     if repository.use_mode is OpenSourceUseMode.REFERENCE_ONLY:
-        return _decision(repository, OpenSourceAdmission.REFERENCE_ADMITTED, pinned_commit_sha, ())
+        return _decision(
+            repository,
+            OpenSourceAdmission.REFERENCE_ADMITTED,
+            pinned_commit_sha,
+            (),
+        )
 
     if blockers:
         requested = (
@@ -200,17 +216,31 @@ def assess_repository_admission(
         return _decision(repository, requested, pinned_commit_sha, tuple(blockers))
 
     if repository.use_mode is OpenSourceUseMode.READ_ONLY_CORPUS:
-        return _decision(repository, OpenSourceAdmission.ADMITTED_READ_ONLY, pinned_commit_sha, ())
+        return _decision(
+            repository,
+            OpenSourceAdmission.ADMITTED_READ_ONLY,
+            pinned_commit_sha,
+            (),
+        )
 
+    ci_runner_missing = (
+        repository.use_mode is OpenSourceUseMode.CI_ISOLATED
+        and not isolated_runner_verified
+    )
+    if ci_runner_missing:
+        return _decision(
+            repository,
+            OpenSourceAdmission.CI_REVIEW_REQUIRED,
+            pinned_commit_sha,
+            ("isolated_runner_verification_required",),
+        )
     if repository.use_mode is OpenSourceUseMode.CI_ISOLATED:
-        if not isolated_runner_verified:
-            return _decision(
-                repository,
-                OpenSourceAdmission.CI_REVIEW_REQUIRED,
-                pinned_commit_sha,
-                ("isolated_runner_verification_required",),
-            )
-        return _decision(repository, OpenSourceAdmission.ADMITTED_CI_ISOLATED, pinned_commit_sha, ())
+        return _decision(
+            repository,
+            OpenSourceAdmission.ADMITTED_CI_ISOLATED,
+            pinned_commit_sha,
+            (),
+        )
 
     if not isolated_runner_verified:
         blockers.append("isolated_runner_verification_required")
@@ -223,7 +253,12 @@ def assess_repository_admission(
             pinned_commit_sha,
             tuple(blockers),
         )
-    return _decision(repository, OpenSourceAdmission.ADMITTED_SANDBOX, pinned_commit_sha, ())
+    return _decision(
+        repository,
+        OpenSourceAdmission.ADMITTED_SANDBOX,
+        pinned_commit_sha,
+        (),
+    )
 
 
 def _decision(
@@ -236,7 +271,9 @@ def _decision(
         repo=repository.repo,
         admission=admission,
         repository_fingerprint=repository.fingerprint,
-        pinned_commit_sha=pinned_commit_sha if _is_commit_sha(pinned_commit_sha) else None,
+        pinned_commit_sha=(
+            pinned_commit_sha if _is_commit_sha(pinned_commit_sha) else None
+        ),
         blockers=blockers,
     )
 

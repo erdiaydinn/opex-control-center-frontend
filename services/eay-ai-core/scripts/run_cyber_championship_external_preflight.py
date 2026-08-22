@@ -45,7 +45,7 @@ def _load(path: Path) -> dict[str, object]:
     with path.open(encoding="utf-8") as handle:
         value = json.load(handle)
     if not isinstance(value, dict):
-        raise ValueError("championship_receipt_must_be_json_object")
+        raise TypeError("championship_receipt_must_be_json_object")
     return value
 
 

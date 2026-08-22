@@ -65,7 +65,7 @@ class TrustedEvaluatorPolicy(BaseModel):
     forbidden_competitor_org_refs: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def policy_is_safe(self) -> "TrustedEvaluatorPolicy":
+    def policy_is_safe(self) -> TrustedEvaluatorPolicy:
         _unique(self.trusted_issuer_refs, "evaluator_policy_issuer_refs_duplicate")
         _unique(
             self.trusted_key_fingerprints,
@@ -108,7 +108,7 @@ class ExternalEvaluatorAuthorityReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def evaluator_authority_is_sealed(self) -> "ExternalEvaluatorAuthorityReceipt":
+    def evaluator_authority_is_sealed(self) -> ExternalEvaluatorAuthorityReceipt:
         _aware(self.issued_at, "evaluator_authority_issued_at_requires_timezone")
         _aware(self.expires_at, "evaluator_authority_expires_at_requires_timezone")
         if self.expires_at <= self.issued_at:
@@ -149,7 +149,7 @@ class ExternalEvaluatorVerificationReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def verification_is_integral(self) -> "ExternalEvaluatorVerificationReceipt":
+    def verification_is_integral(self) -> ExternalEvaluatorVerificationReceipt:
         _aware(self.verified_at, "evaluator_verification_time_requires_timezone")
         if (
             not self.issuer_trusted
@@ -187,7 +187,7 @@ class VendorCredentialBindingReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def vendor_binding_is_bounded(self) -> "VendorCredentialBindingReceipt":
+    def vendor_binding_is_bounded(self) -> VendorCredentialBindingReceipt:
         _aware(self.authorized_at, "vendor_binding_time_requires_timezone")
         _aware(self.expires_at, "vendor_binding_expiry_requires_timezone")
         if self.expires_at <= self.authorized_at:
@@ -238,7 +238,7 @@ class VendorPreflightReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def preflight_is_consistent(self) -> "VendorPreflightReceipt":
+    def preflight_is_consistent(self) -> VendorPreflightReceipt:
         _aware(self.checked_at, "vendor_preflight_time_requires_timezone")
         if self.raw_credentials_observed or self.production_mutation_authority:
             raise ValueError("vendor_preflight_forbidden_authority")
@@ -269,7 +269,7 @@ class ExternalChampionshipAdmissionReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def admission_is_truthful(self) -> "ExternalChampionshipAdmissionReceipt":
+    def admission_is_truthful(self) -> ExternalChampionshipAdmissionReceipt:
         if (
             self.real_race_executed
             or self.verified_leader_claim_allowed

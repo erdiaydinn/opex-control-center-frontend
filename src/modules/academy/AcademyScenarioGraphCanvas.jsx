@@ -47,6 +47,35 @@ export default function AcademyScenarioGraphCanvas({ nodes, edges, locale, selec
     [nodes],
   );
 
+  const diagnostics = useMemo(() => {
+    const issues = [];
+    const nodeKeys = nodes.map((node) => String(node.node_key || "").trim());
+    const knownKeys = new Set(nodeKeys.filter(Boolean));
+    const seenNodeKeys = new Set();
+
+    if (nodeKeys.some((key) => !key)) issues.push(gx("missingNodeKey"));
+    for (const key of nodeKeys) {
+      if (!key) continue;
+      if (seenNodeKeys.has(key)) issues.push(gx("duplicateNodeKey"));
+      seenNodeKeys.add(key);
+    }
+    if (!nodes.some((node) => node.terminal)) issues.push(gx("missingTerminal"));
+
+    const seenChoices = new Set();
+    for (const edge of edges) {
+      if (!knownKeys.has(edge.from_node_key) || !knownKeys.has(edge.to_node_key)) {
+        issues.push(gx("brokenEdgeReference"));
+      }
+      const choiceIdentity = `${edge.from_node_key || ""}::${edge.choice_key || ""}`;
+      if (seenChoices.has(choiceIdentity)) issues.push(gx("duplicateChoice"));
+      seenChoices.add(choiceIdentity);
+      const localizedLabel = edge?.label_i18n?.[locale] || edge?.label_i18n?.en || edge?.label_i18n?.tr || "";
+      if (!String(localizedLabel).trim()) issues.push(gx("blankEdgeLabel"));
+    }
+
+    return [...new Set(issues)];
+  }, [edges, locale, nodes]);
+
   function move(nodeKey, x, y) {
     onMove(nodeKey, {
       x: Math.round(clamp(x, 0, CANVAS_WIDTH - NODE_WIDTH)),
@@ -134,6 +163,12 @@ export default function AcademyScenarioGraphCanvas({ nodes, edges, locale, selec
         </div>
         {selectedKey ? <span>{gx("selectedNode")}: {selectedKey}</span> : null}
       </header>
+
+      <div className={`eay-academy-graph-preflight ${diagnostics.length ? "has-issues" : "is-ready"}`} role="status" aria-live="polite">
+        <strong>{gx("preflight")}</strong>
+        {diagnostics.length ? <ul>{diagnostics.map((issue) => <li key={issue}>{issue}</li>)}</ul> : <span>{gx("preflightReady")}</span>}
+      </div>
+
       <div className="eay-academy-graph-scroll" ref={scrollRef}>
         <div className="eay-academy-graph-viewport" style={{ width: CANVAS_WIDTH * zoom, height: CANVAS_HEIGHT * zoom }}>
           <div className="eay-academy-graph-canvas" style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, transform: `scale(${zoom})` }}>

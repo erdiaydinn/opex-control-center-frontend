@@ -1,4 +1,6 @@
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -170,3 +172,22 @@ def test_production_security_claim_cannot_be_inferred_from_repository_evidence()
     assert result.offensive_simulation_permitted is False
     assert result.production_mutation_permitted is False
     assert result.execution_authority_granted is False
+
+
+def test_combined_scenario_catalog_has_multiple_independent_walls_and_no_offensive_authority():
+    config_path = Path(__file__).parents[1] / "config" / "cyber_defense_wall_scenarios.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    minimum = payload["invariants"]["minimum_independent_walls_per_scenario"]
+    assert minimum >= 4
+    assert len(payload["scenarios"]) >= 8
+    known_walls = {wall.value for wall in DefenseWall}
+    for scenario in payload["scenarios"]:
+        assert scenario["attack_families"]
+        assert len(set(scenario["required_walls"])) >= minimum
+        assert set(scenario["required_walls"]) <= known_walls
+    invariants = payload["invariants"]
+    assert invariants["exploit_generation_permitted"] is False
+    assert invariants["credential_capture_permitted"] is False
+    assert invariants["destructive_execution_permitted"] is False
+    assert invariants["automatic_remediation_permitted"] is False
+    assert invariants["production_mutation_permitted"] is False

@@ -56,30 +56,51 @@ jobs:
           print("TUIK_TOP_KEYS=" + ",".join(sorted(map(str, doc.keys()))))
           payload = doc.get("data")
           print("TUIK_DATA_TYPE=" + type(payload).__name__)
-          if isinstance(payload, list):
-              print("TUIK_DATA_LEN=" + str(len(payload)))
-              if payload:
-                  first = payload[0]
-                  print("TUIK_DATA_FIRST_TYPE=" + type(first).__name__)
-                  if isinstance(first, dict):
-                      print("TUIK_DATA_FIRST_KEYS=" + ",".join(sorted(map(str, first.keys()))))
-                      for key, value in first.items():
-                          if isinstance(value, (dict, list)):
-                              print(f"TUIK_FIRST_{key}_TYPE={type(value).__name__}")
-                              if isinstance(value, list):
-                                  print(f"TUIK_FIRST_{key}_LEN={len(value)}")
-                                  if value and isinstance(value[0], dict):
-                                      print(f"TUIK_FIRST_{key}_FIRST_KEYS=" + ",".join(sorted(map(str, value[0].keys()))))
-                              elif isinstance(value, dict):
-                                  print(f"TUIK_FIRST_{key}_KEYS=" + ",".join(sorted(map(str, value.keys()))))
-          elif isinstance(payload, dict):
-              print("TUIK_DATA_KEYS=" + ",".join(sorted(map(str, payload.keys()))))
-              for key, value in payload.items():
-                  print(f"TUIK_DATA_{key}_TYPE={type(value).__name__}")
-                  if isinstance(value, list):
-                      print(f"TUIK_DATA_{key}_LEN={len(value)}")
-                      if value and isinstance(value[0], dict):
-                          print(f"TUIK_DATA_{key}_FIRST_KEYS=" + ",".join(sorted(map(str, value[0].keys()))))
-                  elif isinstance(value, dict):
-                      print(f"TUIK_DATA_{key}_KEYS=" + ",".join(sorted(map(str, value.keys()))))
+          if not isinstance(payload, list):
+              raise SystemExit("TUIK_DATA_NOT_LIST")
+          print("TUIK_DATA_LEN=" + str(len(payload)))
+
+          total_nodes = 0
+          missing_url = []
+          missing_url_nonleaf = []
+          malformed_children = []
+
+          def walk(nodes, *, depth=0, parent="root"):
+              global total_nodes
+              for index, node in enumerate(nodes):
+                  total_nodes += 1
+                  if not isinstance(node, dict):
+                      raise SystemExit(f"TUIK_NODE_NOT_DICT depth={depth} parent={parent} index={index}")
+                  node_id = str(node.get("id", "<missing>"))
+                  name = str(node.get("name", "<missing>"))
+                  children = node.get("children")
+                  if not isinstance(children, list):
+                      malformed_children.append((node_id, name, depth, type(children).__name__))
+                      children = []
+                  url = node.get("url")
+                  has_url = isinstance(url, str) and bool(url.strip())
+                  if not has_url:
+                      sample = (node_id, name[:120], depth, len(children))
+                      missing_url.append(sample)
+                      if children:
+                          missing_url_nonleaf.append(sample)
+                  walk(children, depth=depth + 1, parent=node_id)
+
+          walk(payload)
+          print("TUIK_TOTAL_NODE_COUNT=" + str(total_nodes))
+          print("TUIK_MISSING_URL_COUNT=" + str(len(missing_url)))
+          print("TUIK_MISSING_URL_NONLEAF_COUNT=" + str(len(missing_url_nonleaf)))
+          print("TUIK_MALFORMED_CHILDREN_COUNT=" + str(len(malformed_children)))
+          for index, sample in enumerate(missing_url[:20]):
+              node_id, name, depth, child_count = sample
+              print(
+                  f"TUIK_MISSING_URL_SAMPLE_{index}="
+                  f"id={node_id}|name={name}|depth={depth}|children={child_count}"
+              )
+          for index, sample in enumerate(missing_url_nonleaf[:10]):
+              node_id, name, depth, child_count = sample
+              print(
+                  f"TUIK_MISSING_URL_NONLEAF_SAMPLE_{index}="
+                  f"id={node_id}|name={name}|depth={depth}|children={child_count}"
+              )
           PY

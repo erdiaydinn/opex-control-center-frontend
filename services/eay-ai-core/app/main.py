@@ -800,7 +800,9 @@ def export_learning_dataset():
 from .model_promotion_gate import PromotionRecord  # noqa: E402
 from .model_promotion_routes import (  # noqa: E402
     PromotionApiRequest,
+    ProductionModelProofEnvelope,
     get_current_production_promotion as governed_get_current_production_promotion,
+    issue_current_production_model_proof,
     promote_model as governed_promote_model,
 )
 
@@ -819,6 +821,22 @@ def promote_model(
 )
 def get_current_production_promotion(model_record_id: str):
     return governed_get_current_production_promotion(model_record_id)
+
+
+@app.get(
+    "/v1/internal/model-production-proofs/{model_record_id}",
+    response_model=ProductionModelProofEnvelope,
+)
+def get_internal_current_production_model_proof(
+    model_record_id: str,
+    challenge: str = Header(alias="X-EAY-Model-Proof-Challenge"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    return issue_current_production_model_proof(
+        model_record_id,
+        challenge=challenge,
+        authorization=authorization,
+    )
 
 
 @app.get("/v1/learning/candidates")

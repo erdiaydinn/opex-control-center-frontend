@@ -1,0 +1,64 @@
+name: EAY Audit Vision Authorization CI
+
+on:
+  pull_request:
+    paths:
+      - "services/core-api/app/modules/audit/control_contracts.py"
+      - "services/core-api/app/modules/audit/schemas.py"
+      - "services/core-api/app/modules/audit/vision_model_proof.py"
+      - "services/core-api/app/modules/audit/vision_inference_authorization.py"
+      - "services/core-api/alembic/versions/0052_audit_vision_inference_authority.py"
+      - "services/core-api/tests/test_audit_vision_authorization_contracts.py"
+      - ".github/workflows/eay-audit-vision-authorization-ci.yml"
+  push:
+    branches:
+      - "product/eay-audit-intelligence-v1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-vision-authorization-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vision-authorization:
+    name: Contract / privacy / production proof / single-use lease
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/core-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e '.[dev]'
+      - name: Vision authorization contracts
+        run: pytest -q tests/test_audit_vision_authorization_contracts.py
+      - name: Ruff typed contracts and proof boundary
+        run: >-
+          ruff check
+          app/modules/audit/control_contracts.py
+          app/modules/audit/schemas.py
+          app/modules/audit/vision_model_proof.py
+          tests/test_audit_vision_authorization_contracts.py
+      - name: Ruff SQL-heavy authorization
+        run: ruff check --ignore E501 app/modules/audit/vision_inference_authorization.py
+      - name: Ruff vision authorization migration
+        run: ruff check --ignore E501 alembic/versions/0052_audit_vision_inference_authority.py
+      - name: Compile vision authorization authority
+        run: >-
+          python -m compileall -q
+          app/modules/audit/control_contracts.py
+          app/modules/audit/schemas.py
+          app/modules/audit/vision_model_proof.py
+          app/modules/audit/vision_inference_authorization.py
+          alembic/versions/0052_audit_vision_inference_authority.py
+      - name: Verify migration lineage and authority boundary
+        run: >-
+          python -c "from pathlib import Path; p=Path('alembic/versions/0052_audit_vision_inference_authority.py').read_text(); a=Path('app/modules/audit/vision_inference_authorization.py').read_text(); assert 'down_revision: str = \"0051_audit_server_privacy_authority\"' in p; assert 'authorization_fingerprint' in p and 'consumed_at' in p; assert 'server_privacy_v2' not in a or 'SERVER_PRIVACY_AUTHORITY_VERSION' in a; assert 'finding_authorized: bool = False' in a; assert 'action_authorized: bool = False' in a; print('Audit vision inference authority boundary: PASS')"

@@ -4,6 +4,7 @@ ROUTE_MODULES = frozenset(
     {
         "admin_access",
         "academy",
+        "audit",
         "budget",
         "dockos",
         "field_intelligence",
@@ -16,16 +17,15 @@ ROUTE_MODULES = frozenset(
     }
 )
 
-
 MODULE_ADMIN = frozenset(
     {
         "admin_access",
         "academy",
+        "audit",
         "field_intelligence",
         "planogram",
     }
 )
-
 
 FEATURES = MappingProxyType(
     {
@@ -43,6 +43,21 @@ FEATURES = MappingProxyType(
                 "audiences",
                 "analytics",
                 "liveLearning",
+            }
+        ),
+        "audit": frozenset(
+            {
+                "commandCenter",
+                "audits",
+                "capture",
+                "standards",
+                "actions",
+                "scheduling",
+                "analytics",
+                "assurance",
+                "locations",
+                "reports",
+                "jarvis",
             }
         ),
         "budget": frozenset(
@@ -92,14 +107,7 @@ FEATURES = MappingProxyType(
             }
         ),
         "insight": frozenset(
-            {
-                "overview",
-                "canonicalMetrics",
-                "trends",
-                "drilldown",
-                "provenance",
-                "exports",
-            }
+            {"overview", "canonicalMetrics", "trends", "drilldown", "provenance", "exports"}
         ),
         "jarvis": frozenset(
             {
@@ -113,14 +121,7 @@ FEATURES = MappingProxyType(
             }
         ),
         "planogram": frozenset(
-            {
-                "layoutView",
-                "layoutEdit",
-                "fixtureEdit",
-                "ruleEdit",
-                "productAssign",
-                "aiRecommend",
-            }
+            {"layoutView", "layoutEdit", "fixtureEdit", "ruleEdit", "productAssign", "aiRecommend"}
         ),
         "workforce": frozenset(
             {
@@ -145,7 +146,6 @@ FEATURES = MappingProxyType(
     }
 )
 
-
 ACTIONS = MappingProxyType(
     {
         "academy": frozenset(
@@ -161,11 +161,21 @@ ACTIONS = MappingProxyType(
                 "viewAnalytics",
             }
         ),
-        "ai_assistant": frozenset(
+        "ai_assistant": frozenset({"executeOpsRead", "executeCatalogRead", "executeLegalRead"}),
+        "audit": frozenset(
             {
-                "executeOpsRead",
-                "executeCatalogRead",
-                "executeLegalRead",
+                "startAudit",
+                "submitEvidence",
+                "decideItem",
+                "createAction",
+                "updateAction",
+                "submitVerification",
+                "verifyAction",
+                "reviewDisagreement",
+                "manageStandards",
+                "manageScheduling",
+                "manageLocations",
+                "exportResults",
             }
         ),
         "budget": frozenset(
@@ -188,16 +198,7 @@ ACTIONS = MappingProxyType(
                 "acceptFieldEvidence",
             }
         ),
-        "dockos": frozenset(
-            {
-                "view",
-                "create",
-                "edit",
-                "approve",
-                "export",
-                "delete",
-            }
-        ),
+        "dockos": frozenset({"view", "create", "edit", "approve", "export", "delete"}),
         "field_intelligence": frozenset(
             {
                 "createMission",
@@ -218,33 +219,13 @@ ACTIONS = MappingProxyType(
                 "approveExport",
             }
         ),
-        "insight": frozenset(
-            {
-                "view",
-                "drilldown",
-                "export",
-            }
-        ),
+        "insight": frozenset({"view", "drilldown", "export"}),
         "inventory": frozenset({"acceptFieldEvidence"}),
         "jarvis": frozenset(
-            {
-                "ask",
-                "proposeAction",
-                "approveAction",
-                "viewSources",
-                "viewHistory",
-            }
+            {"ask", "proposeAction", "approveAction", "viewSources", "viewHistory"}
         ),
         "planogram": frozenset(
-            {
-                "view",
-                "create",
-                "edit",
-                "approve",
-                "export",
-                "delete",
-                "acceptFieldEvidence",
-            }
+            {"view", "create", "edit", "approve", "export", "delete", "acceptFieldEvidence"}
         ),
         "recruitment": frozenset(
             {
@@ -331,7 +312,6 @@ ACADEMY_LEARNER_PERMISSIONS = frozenset(
         feature_permission("academy", "jarvisTutor"),
     }
 )
-
 ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
     set(ACADEMY_LEARNER_PERMISSIONS)
     | {
@@ -344,7 +324,6 @@ ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
         action_permission("academy", "manageLiveLearning"),
     }
 )
-
 ACADEMY_ADMIN_PERMISSIONS = frozenset(
     set(ACADEMY_INSTRUCTOR_PERMISSIONS)
     | {
@@ -358,6 +337,58 @@ ACADEMY_ADMIN_PERMISSIONS = frozenset(
     }
 )
 
+AUDIT_AUDITOR_PERMISSIONS = frozenset(
+    {
+        module_permission("audit"),
+        feature_permission("audit", "audits"),
+        feature_permission("audit", "capture"),
+        feature_permission("audit", "actions"),
+        action_permission("audit", "startAudit"),
+        action_permission("audit", "submitEvidence"),
+        action_permission("audit", "decideItem"),
+        action_permission("audit", "createAction"),
+        action_permission("audit", "updateAction"),
+        action_permission("audit", "submitVerification"),
+    }
+)
+AUDIT_MANAGER_PERMISSIONS = frozenset(
+    set(AUDIT_AUDITOR_PERMISSIONS)
+    | {
+        feature_permission("audit", "commandCenter"),
+        feature_permission("audit", "scheduling"),
+        feature_permission("audit", "analytics"),
+        feature_permission("audit", "assurance"),
+        feature_permission("audit", "locations"),
+        feature_permission("audit", "reports"),
+        feature_permission("audit", "jarvis"),
+        action_permission("audit", "verifyAction"),
+        action_permission("audit", "reviewDisagreement"),
+        action_permission("audit", "manageScheduling"),
+        action_permission("audit", "exportResults"),
+    }
+)
+AUDIT_STANDARDS_PERMISSIONS = frozenset(
+    set(AUDIT_MANAGER_PERMISSIONS)
+    | {
+        module_permission("audit", "admin"),
+        feature_permission("audit", "standards"),
+        action_permission("audit", "manageStandards"),
+        action_permission("audit", "manageLocations"),
+    }
+)
+AUDIT_EXECUTIVE_PERMISSIONS = frozenset(
+    {
+        module_permission("audit"),
+        feature_permission("audit", "commandCenter"),
+        feature_permission("audit", "audits"),
+        feature_permission("audit", "actions"),
+        feature_permission("audit", "analytics"),
+        feature_permission("audit", "reports"),
+        feature_permission("audit", "jarvis"),
+        action_permission("audit", "exportResults"),
+    }
+)
+
 FIELD_WORKER_PERMISSIONS = frozenset(
     {
         module_permission("field_intelligence"),
@@ -366,7 +397,6 @@ FIELD_WORKER_PERMISSIONS = frozenset(
         action_permission("field_intelligence", "submitEvidence"),
     }
 )
-
 FIELD_MANAGER_PERMISSIONS = frozenset(
     set(FIELD_WORKER_PERMISSIONS)
     | {
@@ -409,7 +439,6 @@ PLANOGRAM_EDITOR_PERMISSIONS = frozenset(
         action_permission("planogram", "export"),
     }
 )
-
 PLANOGRAM_ADMIN_PERMISSIONS = frozenset(
     set(PLANOGRAM_EDITOR_PERMISSIONS)
     | {
@@ -436,5 +465,9 @@ SYSTEM_ROLE_PERMISSIONS = MappingProxyType(
         "field_manager": FIELD_MANAGER_PERMISSIONS,
         "planogram_editor": PLANOGRAM_EDITOR_PERMISSIONS,
         "planogram_admin": PLANOGRAM_ADMIN_PERMISSIONS,
+        "audit_auditor": AUDIT_AUDITOR_PERMISSIONS,
+        "audit_manager": AUDIT_MANAGER_PERMISSIONS,
+        "audit_standards": AUDIT_STANDARDS_PERMISSIONS,
+        "audit_executive": AUDIT_EXECUTIVE_PERMISSIONS,
     }
 )

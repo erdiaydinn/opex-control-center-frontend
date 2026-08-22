@@ -1,4 +1,5 @@
 import { translateField } from "../field-intelligence/fieldMessages.js";
+import { localizeAuditModule } from "../audit/auditMessages.js";
 
 export const commandModules = [
   {
@@ -11,6 +12,10 @@ export const commandModules = [
       description: translateField(locale, "moduleDescription"),
       meta: translateField(locale, "capture"),
     }),
+  },
+  {
+    id: "audit", moduleKey: "audit", titleKey: null, descriptionKey: null, route: "/audit", enabled: true, health: "governed", healthLabelKey: "governed", groupKey: "groupStoreIntelligence", shortcut: "U", icon: "ai", tone: "cyan", metaKey: null, lastUsedKey: "eay_last_audit_intelligence",
+    localize: localizeAuditModule,
   },
   {
     id: "dockos", moduleKey: "dockos", titleKey: "moduleDockosTitle", descriptionKey: "moduleDockosDescription", route: "/dockos", enabled: true, health: "healthy", healthLabelKey: "ready", groupKey: "groupInboundControl", shortcut: "D", icon: "dock", tone: "cyan", metaKey: "moduleDockosMeta", lastUsedKey: "opex_last_dockos",

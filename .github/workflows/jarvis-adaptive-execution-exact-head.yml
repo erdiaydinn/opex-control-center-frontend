@@ -7,6 +7,7 @@ on:
       - "services/eay-ai-core/app/robot_authoring_intelligence.py"
       - "services/eay-ai-core/tests/test_adaptive_execution_intelligence.py"
       - "services/eay-ai-core/tests/test_robot_authoring_intelligence.py"
+      - "services/eay-ai-core/tests/test_robot_authoring_security_intelligence.py"
       - ".github/workflows/jarvis-adaptive-execution-exact-head.yml"
 
 permissions:
@@ -49,7 +50,8 @@ jobs:
             app/adaptive_execution_intelligence.py \
             app/robot_authoring_intelligence.py \
             tests/test_adaptive_execution_intelligence.py \
-            tests/test_robot_authoring_intelligence.py
+            tests/test_robot_authoring_intelligence.py \
+            tests/test_robot_authoring_security_intelligence.py
 
       - name: Lint adaptive execution and robot authoring surface
         working-directory: services/eay-ai-core
@@ -58,14 +60,16 @@ jobs:
             app/adaptive_execution_intelligence.py \
             app/robot_authoring_intelligence.py \
             tests/test_adaptive_execution_intelligence.py \
-            tests/test_robot_authoring_intelligence.py
+            tests/test_robot_authoring_intelligence.py \
+            tests/test_robot_authoring_security_intelligence.py
 
       - name: Run focused adaptive execution and robot authoring adversarial tests
         working-directory: services/eay-ai-core
         run: |
           python -m pytest -q \
             tests/test_adaptive_execution_intelligence.py \
-            tests/test_robot_authoring_intelligence.py
+            tests/test_robot_authoring_intelligence.py \
+            tests/test_robot_authoring_security_intelligence.py
 
       - name: Run cumulative Jarvis intelligence and execution regression cohort
         working-directory: services/eay-ai-core

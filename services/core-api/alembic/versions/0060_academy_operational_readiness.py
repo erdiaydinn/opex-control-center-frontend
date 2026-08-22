@@ -43,8 +43,8 @@ def _append_only(table_name: str) -> None:
         $$"""
     )
     op.execute(
-        f"CREATE TRIGGER trg_{table_name}_append_only BEFORE UPDATE OR DELETE ON {table_name} "
-        f"FOR EACH ROW EXECUTE FUNCTION {table_name}_append_only()"
+        f"CREATE TRIGGER trg_{table_name}_append_only BEFORE UPDATE OR DELETE ON "
+        f"{table_name} FOR EACH ROW EXECUTE FUNCTION {table_name}_append_only()"
     )
 
 
@@ -72,17 +72,22 @@ def upgrade() -> None:
             CONSTRAINT fk_academy_operational_mapping_path
                 FOREIGN KEY (tenant_id, recommended_path_id)
                 REFERENCES academy_learning_paths(tenant_id, id) ON DELETE RESTRICT,
-            CONSTRAINT uq_academy_operational_mapping_tenant_id UNIQUE (tenant_id, id),
+            CONSTRAINT uq_academy_operational_mapping_tenant_id
+                UNIQUE (tenant_id, id),
             CONSTRAINT uq_academy_operational_mapping_version UNIQUE (
-                tenant_id, source_subject, source_domain, signal_type, skill_id, mapping_version
+                tenant_id, source_subject, source_domain, signal_type,
+                skill_id, mapping_version
             ),
             CONSTRAINT ck_academy_operational_mapping_domain CHECK (
                 source_domain IN ('audit','inventory','dockos','planogram','workforce',
                                   'field_intelligence','fraud','safety')
             ),
-            CONSTRAINT ck_academy_operational_mapping_level CHECK (required_level BETWEEN 1 AND 5),
-            CONSTRAINT ck_academy_operational_mapping_severity CHECK (minimum_severity BETWEEN 1 AND 5),
-            CONSTRAINT ck_academy_operational_mapping_version CHECK (mapping_version > 0),
+            CONSTRAINT ck_academy_operational_mapping_level
+                CHECK (required_level BETWEEN 1 AND 5),
+            CONSTRAINT ck_academy_operational_mapping_severity
+                CHECK (minimum_severity BETWEEN 1 AND 5),
+            CONSTRAINT ck_academy_operational_mapping_version
+                CHECK (mapping_version > 0),
             CONSTRAINT ck_academy_operational_metric_direction CHECK (
                 metric_direction IN ('higher_better','lower_better')
             )
@@ -90,7 +95,8 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX ix_academy_operational_mapping_lookup ON academy_operational_signal_mappings "
+        "CREATE INDEX ix_academy_operational_mapping_lookup ON "
+        "academy_operational_signal_mappings "
         "(tenant_id, source_subject, source_domain, signal_type, minimum_severity)"
     )
 
@@ -106,8 +112,10 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_academy_operational_mapping_retirement
                 FOREIGN KEY (tenant_id, mapping_id)
-                REFERENCES academy_operational_signal_mappings(tenant_id, id) ON DELETE RESTRICT,
-            CONSTRAINT uq_academy_operational_mapping_retirement UNIQUE (tenant_id, mapping_id)
+                REFERENCES academy_operational_signal_mappings(tenant_id, id)
+                ON DELETE RESTRICT,
+            CONSTRAINT uq_academy_operational_mapping_retirement
+                UNIQUE (tenant_id, mapping_id)
         )
         """
     )
@@ -136,7 +144,8 @@ def upgrade() -> None:
                 source_domain IN ('audit','inventory','dockos','planogram','workforce',
                                   'field_intelligence','fraud','safety')
             ),
-            CONSTRAINT ck_academy_operational_signal_severity CHECK (severity BETWEEN 1 AND 5),
+            CONSTRAINT ck_academy_operational_signal_severity
+                CHECK (severity BETWEEN 1 AND 5),
             CONSTRAINT ck_academy_operational_signal_fingerprint CHECK (
                 source_fingerprint ~ '^[0-9a-f]{64}$'
             )
@@ -144,8 +153,8 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX ix_academy_operational_signal_subject ON academy_operational_signal_events "
-        "(tenant_id, subject, occurred_at DESC)"
+        "CREATE INDEX ix_academy_operational_signal_subject ON "
+        "academy_operational_signal_events (tenant_id, subject, occurred_at DESC)"
     )
 
     op.execute(
@@ -164,29 +173,35 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_academy_operational_remediation_signal
                 FOREIGN KEY (tenant_id, signal_event_id)
-                REFERENCES academy_operational_signal_events(tenant_id, id) ON DELETE RESTRICT,
+                REFERENCES academy_operational_signal_events(tenant_id, id)
+                ON DELETE RESTRICT,
             CONSTRAINT fk_academy_operational_remediation_mapping
                 FOREIGN KEY (tenant_id, mapping_id)
-                REFERENCES academy_operational_signal_mappings(tenant_id, id) ON DELETE RESTRICT,
+                REFERENCES academy_operational_signal_mappings(tenant_id, id)
+                ON DELETE RESTRICT,
             CONSTRAINT fk_academy_operational_remediation_skill
                 FOREIGN KEY (tenant_id, skill_id)
                 REFERENCES academy_skills(tenant_id, id) ON DELETE RESTRICT,
             CONSTRAINT fk_academy_operational_remediation_path
                 FOREIGN KEY (tenant_id, recommended_path_id)
                 REFERENCES academy_learning_paths(tenant_id, id) ON DELETE RESTRICT,
-            CONSTRAINT uq_academy_operational_remediation_tenant_id UNIQUE (tenant_id, id),
+            CONSTRAINT uq_academy_operational_remediation_tenant_id
+                UNIQUE (tenant_id, id),
             CONSTRAINT uq_academy_operational_remediation_signal_mapping UNIQUE (
                 tenant_id, signal_event_id, mapping_id
             ),
-            CONSTRAINT ck_academy_operational_remediation_current CHECK (current_level BETWEEN 0 AND 5),
-            CONSTRAINT ck_academy_operational_remediation_required CHECK (required_level BETWEEN 1 AND 5),
-            CONSTRAINT ck_academy_operational_remediation_gap CHECK (current_level < required_level)
+            CONSTRAINT ck_academy_operational_remediation_current
+                CHECK (current_level BETWEEN 0 AND 5),
+            CONSTRAINT ck_academy_operational_remediation_required
+                CHECK (required_level BETWEEN 1 AND 5),
+            CONSTRAINT ck_academy_operational_remediation_gap
+                CHECK (current_level < required_level)
         )
         """
     )
     op.execute(
-        "CREATE INDEX ix_academy_operational_remediation_subject ON academy_operational_remediations "
-        "(tenant_id, subject, created_at DESC)"
+        "CREATE INDEX ix_academy_operational_remediation_subject ON "
+        "academy_operational_remediations (tenant_id, subject, created_at DESC)"
     )
 
     op.execute(
@@ -212,7 +227,8 @@ def upgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT fk_academy_operational_observation_remediation
                 FOREIGN KEY (tenant_id, remediation_id)
-                REFERENCES academy_operational_remediations(tenant_id, id) ON DELETE RESTRICT,
+                REFERENCES academy_operational_remediations(tenant_id, id)
+                ON DELETE RESTRICT,
             CONSTRAINT uq_academy_operational_observation_source UNIQUE (
                 tenant_id, remediation_id, source_ref, source_version
             ),
@@ -226,7 +242,8 @@ def upgrade() -> None:
             CONSTRAINT ck_academy_operational_observation_direction CHECK (
                 metric_direction IN ('higher_better','lower_better')
             ),
-            CONSTRAINT ck_academy_operational_observation_window CHECK (window_end >= window_start)
+            CONSTRAINT ck_academy_operational_observation_window
+                CHECK (window_end >= window_start)
         )
         """
     )
@@ -297,14 +314,18 @@ def upgrade() -> None:
         RETURNS trigger LANGUAGE plpgsql AS $$
         DECLARE ev record; mp record;
         BEGIN
-            SELECT event.*, mapping.metric_key, mapping.metric_direction, mapping.source_subject AS mapping_subject
+            SELECT event.*, mapping.metric_key, mapping.metric_direction,
+                   mapping.source_subject AS mapping_subject
               INTO ev
               FROM academy_operational_remediations remediation
               JOIN academy_operational_signal_events event
-                ON event.tenant_id=remediation.tenant_id AND event.id=remediation.signal_event_id
+                ON event.tenant_id=remediation.tenant_id
+               AND event.id=remediation.signal_event_id
               JOIN academy_operational_signal_mappings mapping
-                ON mapping.tenant_id=remediation.tenant_id AND mapping.id=remediation.mapping_id
-             WHERE remediation.tenant_id=NEW.tenant_id AND remediation.id=NEW.remediation_id;
+                ON mapping.tenant_id=remediation.tenant_id
+               AND mapping.id=remediation.mapping_id
+             WHERE remediation.tenant_id=NEW.tenant_id
+               AND remediation.id=NEW.remediation_id;
             IF ev.id IS NULL
                OR NEW.source_subject IS DISTINCT FROM ev.mapping_subject
                OR NEW.recorded_by IS DISTINCT FROM ev.mapping_subject
@@ -356,7 +377,8 @@ def upgrade() -> None:
             observation.baseline_value,
             observation.observed_value,
             CASE WHEN observation.id IS NULL THEN NULL
-                 ELSE observation.observed_value-observation.baseline_value END AS observed_delta,
+                 ELSE observation.observed_value-observation.baseline_value
+            END AS observed_delta,
             observation.window_start,
             observation.window_end,
             observation.observed_at,
@@ -365,11 +387,14 @@ def upgrade() -> None:
             remediation.created_at
         FROM academy_operational_remediations remediation
         JOIN academy_operational_signal_events event
-          ON event.tenant_id=remediation.tenant_id AND event.id=remediation.signal_event_id
+          ON event.tenant_id=remediation.tenant_id
+         AND event.id=remediation.signal_event_id
         JOIN academy_skills skill
-          ON skill.tenant_id=remediation.tenant_id AND skill.id=remediation.skill_id
+          ON skill.tenant_id=remediation.tenant_id
+         AND skill.id=remediation.skill_id
         JOIN academy_learning_paths path
-          ON path.tenant_id=remediation.tenant_id AND path.id=remediation.recommended_path_id
+          ON path.tenant_id=remediation.tenant_id
+         AND path.id=remediation.recommended_path_id
         LEFT JOIN LATERAL (
             SELECT id, status FROM academy_enrollments e
              WHERE e.tenant_id=remediation.tenant_id
@@ -379,7 +404,8 @@ def upgrade() -> None:
         ) enrollment ON TRUE
         LEFT JOIN LATERAL (
             SELECT o.* FROM academy_operational_outcome_observations o
-             WHERE o.tenant_id=remediation.tenant_id AND o.remediation_id=remediation.id
+             WHERE o.tenant_id=remediation.tenant_id
+               AND o.remediation_id=remediation.id
              ORDER BY o.observed_at DESC, o.id DESC LIMIT 1
         ) observation ON TRUE
         """
@@ -391,7 +417,9 @@ def upgrade() -> None:
 
     op.execute(f"GRANT SELECT, INSERT ON {', '.join(TABLES)} TO {RUNTIME_ROLE}")
     op.execute(f"REVOKE UPDATE, DELETE ON {', '.join(TABLES)} FROM {RUNTIME_ROLE}")
-    op.execute(f"GRANT SELECT ON academy_operational_readiness_authority TO {RUNTIME_ROLE}")
+    op.execute(
+        f"GRANT SELECT ON academy_operational_readiness_authority TO {RUNTIME_ROLE}"
+    )
 
     op.execute(
         """
@@ -407,24 +435,118 @@ def upgrade() -> None:
             ('super_admin','action:academy:recordOperationalOutcomes')
         )
         INSERT INTO role_permissions (tenant_id, role_id, permission_key, scope)
-        SELECT roles.tenant_id, roles.id, desired.permission_key, '{"type":"all"}'::jsonb
+        SELECT roles.tenant_id, roles.id, desired.permission_key,
+               '{"type":"all"}'::jsonb
           FROM roles JOIN desired ON desired.role_key=roles.key
          WHERE roles.is_system=true
         ON CONFLICT (tenant_id, role_id, permission_key) DO NOTHING
         """
     )
 
+    op.execute(
+        """
+        CREATE OR REPLACE FUNCTION
+        eay_provision_academy_operational_permissions_for_new_tenant()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $body$
+        BEGIN
+            IF (
+                SELECT count(*)
+                  FROM roles
+                 WHERE tenant_id=NEW.id
+                   AND is_system=true
+                   AND key IN ('academy_learner','academy_instructor','academy_admin')
+            ) <> 3 THEN
+                RAISE EXCEPTION
+                    'Academy product roles must exist before operational permissions';
+            END IF;
+
+            WITH desired(role_key, permission_key) AS (
+                VALUES
+                ('academy_learner','feature:academy:operationalReadiness'),
+                ('academy_instructor','feature:academy:operationalReadiness'),
+                ('academy_admin','feature:academy:operationalReadiness'),
+                ('academy_admin','action:academy:manageOperationalReadiness')
+            )
+            INSERT INTO role_permissions (tenant_id, role_id, permission_key, scope)
+            SELECT roles.tenant_id, roles.id, desired.permission_key,
+                   '{"type":"all"}'::jsonb
+              FROM roles
+              JOIN desired ON desired.role_key=roles.key
+             WHERE roles.tenant_id=NEW.id
+               AND roles.is_system=true
+            ON CONFLICT (tenant_id, role_id, permission_key) DO NOTHING;
+
+            RETURN NEW;
+        END;
+        $body$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER zz_tenants_academy_operational_permissions
+        AFTER INSERT ON tenants
+        FOR EACH ROW
+        EXECUTE FUNCTION eay_provision_academy_operational_permissions_for_new_tenant()
+        """
+    )
+
 
 def downgrade() -> None:
+    op.execute(
+        "DROP TRIGGER IF EXISTS zz_tenants_academy_operational_permissions ON tenants"
+    )
+    op.execute(
+        "DROP FUNCTION IF EXISTS "
+        "eay_provision_academy_operational_permissions_for_new_tenant()"
+    )
+    op.execute(
+        """
+        DELETE FROM role_permissions AS rp
+        USING roles AS r
+        WHERE rp.tenant_id=r.tenant_id
+          AND rp.role_id=r.id
+          AND (
+              (r.key='academy_learner'
+               AND rp.permission_key='feature:academy:operationalReadiness')
+           OR (r.key='academy_instructor'
+               AND rp.permission_key='feature:academy:operationalReadiness')
+           OR (r.key='academy_admin'
+               AND rp.permission_key IN (
+                   'feature:academy:operationalReadiness',
+                   'action:academy:manageOperationalReadiness'
+               ))
+           OR (r.key='super_admin'
+               AND rp.permission_key IN (
+                   'feature:academy:operationalReadiness',
+                   'action:academy:manageOperationalReadiness',
+                   'action:academy:ingestOperationalSignals',
+                   'action:academy:recordOperationalOutcomes'
+               ))
+          )
+        """
+    )
     op.execute("DROP VIEW IF EXISTS academy_operational_readiness_authority")
     for table_name in reversed(TABLES):
-        op.execute(f"DROP TRIGGER IF EXISTS trg_{table_name}_append_only ON {table_name}")
+        op.execute(
+            f"DROP TRIGGER IF EXISTS trg_{table_name}_append_only ON {table_name}"
+        )
         op.execute(f"DROP FUNCTION IF EXISTS {table_name}_append_only()")
-    op.execute("DROP TRIGGER IF EXISTS trg_academy_validate_operational_observation ON academy_operational_outcome_observations")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_academy_validate_operational_observation "
+        "ON academy_operational_outcome_observations"
+    )
     op.execute("DROP FUNCTION IF EXISTS academy_validate_operational_observation()")
-    op.execute("DROP TRIGGER IF EXISTS trg_academy_validate_operational_remediation ON academy_operational_remediations")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_academy_validate_operational_remediation "
+        "ON academy_operational_remediations"
+    )
     op.execute("DROP FUNCTION IF EXISTS academy_validate_operational_remediation()")
-    op.execute("DROP TRIGGER IF EXISTS trg_academy_validate_operational_mapping ON academy_operational_signal_mappings")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_academy_validate_operational_mapping "
+        "ON academy_operational_signal_mappings"
+    )
     op.execute("DROP FUNCTION IF EXISTS academy_validate_operational_mapping()")
     for table_name in reversed(TABLES):
         op.execute(f'DROP TABLE IF EXISTS "{table_name}"')

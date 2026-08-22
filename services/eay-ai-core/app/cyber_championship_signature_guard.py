@@ -269,7 +269,7 @@ def _load_public_key(*, trust_dir: Path, key_id: str) -> Ed25519PublicKey:
     data = key_path.read_bytes()
     key = serialization.load_pem_public_key(data)
     if not isinstance(key, Ed25519PublicKey):
-        raise ValueError("signature_key_algorithm_not_ed25519")
+        raise TypeError("signature_key_algorithm_not_ed25519")
     return key
 
 

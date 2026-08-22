@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -39,13 +40,37 @@ class SealedModel(BaseModel):
 
 
 def _seal(value: object) -> str:
-    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-                     allow_nan=False, default=str)
+    raw = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+        default=str,
+    )
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _payload(item: BaseModel) -> dict[str, object]:
     return item.model_dump(mode="json", exclude={"fingerprint"})
+
+
+_SealedT = TypeVar("_SealedT", bound=BaseModel)
+
+
+def _fingerprint_for(model_type: type[_SealedT], values: dict[str, object]) -> str:
+    """Seal the exact payload Pydantic will later validate.
+
+    Constructors may omit fields that have model defaults and may pass Enum,
+    datetime or nested-model instances. Sealing the raw constructor dictionary
+    therefore produces a different digest from ``model_dump(mode='json')`` and
+    makes a freshly created artifact fail its own integrity validator. Building a
+    validation-free probe first applies model defaults and canonical JSON
+    serialization without weakening final validation.
+    """
+
+    probe = model_type.model_construct(**values, fingerprint="0" * 64)
+    return _seal(_payload(probe))
 
 
 class AdmissionStatus(str, Enum):
@@ -88,7 +113,9 @@ class EngineCapabilityEvidence(SealedModel):
     def integral(self) -> "EngineCapabilityEvidence":
         if self.measured_at.tzinfo is None or self.measured_at.utcoffset() is None:
             raise ValueError("capability_evidence_requires_timezone")
-        if len(set(self.independent_evaluator_refs)) != len(self.independent_evaluator_refs):
+        if len(set(self.independent_evaluator_refs)) != len(
+            self.independent_evaluator_refs
+        ):
             raise ValueError("capability_evaluators_must_be_unique")
         if len(set(self.evidence_refs)) != len(self.evidence_refs):
             raise ValueError("capability_evidence_refs_must_be_unique")
@@ -169,14 +196,24 @@ class CertifiedCapabilitySnapshot(SealedModel):
         if self.disposition is AdmissionDisposition.READY:
             if self.blockers or self.valid_until <= self.checked_at:
                 raise ValueError("capability_ready_snapshot_invalid")
-            if not any(x.status is AdmissionStatus.ADMITTED for x in self.admissions):
+            if not any(
+                x.status is AdmissionStatus.ADMITTED for x in self.admissions
+            ):
                 raise ValueError("capability_ready_snapshot_requires_admission")
         elif not self.blockers:
             raise ValueError("capability_nonready_snapshot_requires_blocker")
-        if any((self.provider_authority_granted, self.company_truth_promoted,
-                self.paid_token_authority_granted, self.automatic_training_allowed,
-                self.automatic_model_weight_update_allowed, self.automatic_policy_update_allowed,
-                self.execution_authority_granted, self.side_effect_authority_granted)):
+        if any(
+            (
+                self.provider_authority_granted,
+                self.company_truth_promoted,
+                self.paid_token_authority_granted,
+                self.automatic_training_allowed,
+                self.automatic_model_weight_update_allowed,
+                self.automatic_policy_update_allowed,
+                self.execution_authority_granted,
+                self.side_effect_authority_granted,
+            )
+        ):
             raise ValueError("capability_snapshot_never_mints_authority")
         keys = [(x.engine_id, x.domain) for x in self.admissions]
         if len(keys) != len(set(keys)):
@@ -188,11 +225,16 @@ class CertifiedCapabilitySnapshot(SealedModel):
 
 def seal_engine_capability_evidence(**values: object) -> EngineCapabilityEvidence:
     payload = dict(values)
-    payload["fingerprint"] = _seal(payload)
+    payload["fingerprint"] = _fingerprint_for(
+        EngineCapabilityEvidence, payload
+    )
     return EngineCapabilityEvidence.model_validate(payload)
 
 
-def _domain(source: Frontier3CertificationArtifact, domain: FrontierCertificationDomain):
+def _domain(
+    source: Frontier3CertificationArtifact,
+    domain: FrontierCertificationDomain,
+):
     rows = [x for x in source.domain_certifications if x.domain is domain]
     if len(rows) != 1:
         raise ValueError("capability_source_domain_not_unique")
@@ -201,17 +243,24 @@ def _domain(source: Frontier3CertificationArtifact, domain: FrontierCertificatio
 
 def _admission(**values: object) -> EngineAdmission:
     payload = dict(values)
-    payload["fingerprint"] = _seal(payload)
+    payload["fingerprint"] = _fingerprint_for(EngineAdmission, payload)
     return EngineAdmission.model_validate(payload)
 
 
 def build_certified_capability_snapshot(
-    *, source: Frontier3CertificationArtifact, integrity: FrontierBenchmarkIntegrityArtifact,
-    checked_at: datetime, engine_evidence: tuple[EngineCapabilityEvidence, ...],
+    *,
+    source: Frontier3CertificationArtifact,
+    integrity: FrontierBenchmarkIntegrityArtifact,
+    checked_at: datetime,
+    engine_evidence: tuple[EngineCapabilityEvidence, ...],
     policy: CertifiedCapabilityPolicy | None = None,
 ) -> CertifiedCapabilitySnapshot:
-    source = Frontier3CertificationArtifact.model_validate(source.model_dump(mode="json"))
-    integrity = FrontierBenchmarkIntegrityArtifact.model_validate(integrity.model_dump(mode="json"))
+    source = Frontier3CertificationArtifact.model_validate(
+        source.model_dump(mode="json")
+    )
+    integrity = FrontierBenchmarkIntegrityArtifact.model_validate(
+        integrity.model_dump(mode="json")
+    )
     if checked_at.tzinfo is None or checked_at.utcoffset() is None:
         raise ValueError("capability_snapshot_check_requires_timezone")
     if integrity.tenant_id != source.tenant_id or integrity.company_id != source.company_id:
@@ -232,7 +281,9 @@ def build_certified_capability_snapshot(
     elif integrity.validity is not FrontierBenchmarkValidity.VALID:
         blockers.append("benchmark_integrity_not_valid")
         disposition = AdmissionDisposition.HOLD
-    integrity_until = integrity.checked_at + timedelta(hours=rules.maximum_integrity_age_hours)
+    integrity_until = integrity.checked_at + timedelta(
+        hours=rules.maximum_integrity_age_hours
+    )
     if checked_at > integrity_until:
         blockers.append("benchmark_integrity_stale")
         if disposition is AdmissionDisposition.READY:
@@ -254,29 +305,53 @@ def build_certified_capability_snapshot(
         row = _domain(source, item.domain)
         status = AdmissionStatus.ADMITTED
         reasons: list[str] = []
-        item_until = item.measured_at + timedelta(days=rules.maximum_measurement_age_days)
+        item_until = item.measured_at + timedelta(
+            days=rules.maximum_measurement_age_days
+        )
         checks = (
             (item.measured_at > checked_at, "future_measurement"),
             (checked_at > item_until, "measurement_stale"),
-            (item.sample_count < rules.minimum_sample_count, "sample_count_insufficient"),
-            (item.confidence_level < rules.minimum_confidence_level, "confidence_insufficient"),
-            (rules.require_complete_scenarios and not item.scenario_coverage.complete, "scenario_coverage_incomplete"),
-            (len(item.independent_evaluator_refs) < rules.minimum_evaluators, "evaluator_quorum_missing"),
+            (
+                item.sample_count < rules.minimum_sample_count,
+                "sample_count_insufficient",
+            ),
+            (
+                item.confidence_level < rules.minimum_confidence_level,
+                "confidence_insufficient",
+            ),
+            (
+                rules.require_complete_scenarios
+                and not item.scenario_coverage.complete,
+                "scenario_coverage_incomplete",
+            ),
+            (
+                len(item.independent_evaluator_refs) < rules.minimum_evaluators,
+                "evaluator_quorum_missing",
+            ),
             (not item.exact_adapter_verified, "exact_adapter_not_verified"),
         )
         for failed, reason in checks:
             if failed:
                 reasons.append(reason)
                 status = AdmissionStatus.HOLD
-        if item.critical_safety_regression or item.contamination_detected or item.prompt_answer_leakage_detected:
+        if (
+            item.critical_safety_regression
+            or item.contamination_detected
+            or item.prompt_answer_leakage_detected
+        ):
             reasons.append("safety_or_contamination_revocation")
             status = AdmissionStatus.REVOKED
-        if row.status not in {FrontierCertificationStatus.FRONTIER_PARITY,
-                              FrontierCertificationStatus.STATISTICALLY_SUPERIOR}:
+        if row.status not in {
+            FrontierCertificationStatus.FRONTIER_PARITY,
+            FrontierCertificationStatus.STATISTICALLY_SUPERIOR,
+        }:
             reasons.append("source_domain_not_frontier_parity")
             if status is AdmissionStatus.ADMITTED:
                 status = AdmissionStatus.HOLD
-        floor = min(1.0, row.strongest_frontier_score * rules.minimum_frontier_ratio)
+        floor = min(
+            1.0,
+            row.strongest_frontier_score * rules.minimum_frontier_ratio,
+        )
         if item.normalized_score < floor:
             reasons.append("engine_below_strongest_frontier")
             if status is AdmissionStatus.ADMITTED:
@@ -284,30 +359,63 @@ def build_certified_capability_snapshot(
         if disposition is AdmissionDisposition.REVOKED:
             reasons.append("global_integrity_revoked")
             status = AdmissionStatus.REVOKED
-        elif disposition is not AdmissionDisposition.READY and status is AdmissionStatus.ADMITTED:
+        elif (
+            disposition is not AdmissionDisposition.READY
+            and status is AdmissionStatus.ADMITTED
+        ):
             reasons.append("global_integrity_hold")
             status = AdmissionStatus.HOLD
-        item_refs = tuple(dict.fromkeys((*item.evidence_refs,
-            f"frontier3-cert://{source.fingerprint}", f"frontier-integrity://{integrity.fingerprint}")))
+        item_refs = tuple(
+            dict.fromkeys(
+                (
+                    *item.evidence_refs,
+                    f"frontier3-cert://{source.fingerprint}",
+                    f"frontier-integrity://{integrity.fingerprint}",
+                )
+            )
+        )
         refs.update(item_refs)
-        admissions.append(_admission(engine_id=item.engine_id, model_id=item.model_id,
-            provider_family=item.provider_family, domain=item.domain, status=status,
-            normalized_score=item.normalized_score, strongest_frontier_score=row.strongest_frontier_score,
-            valid_until=min(integrity_until, item_until), blockers=tuple(dict.fromkeys(reasons)),
-            evidence_refs=item_refs))
+        admissions.append(
+            _admission(
+                engine_id=item.engine_id,
+                model_id=item.model_id,
+                provider_family=item.provider_family,
+                domain=item.domain,
+                status=status,
+                normalized_score=item.normalized_score,
+                strongest_frontier_score=row.strongest_frontier_score,
+                valid_until=min(integrity_until, item_until),
+                blockers=tuple(dict.fromkeys(reasons)),
+                evidence_refs=item_refs,
+            )
+        )
 
-    admitted = [x for x in admissions if x.status is AdmissionStatus.ADMITTED]
+    admitted = [
+        x for x in admissions if x.status is AdmissionStatus.ADMITTED
+    ]
     if disposition is AdmissionDisposition.READY and not admitted:
         blockers.append("no_engine_meets_frontier_floor")
         disposition = AdmissionDisposition.HOLD
-    valid_until = min((x.valid_until for x in admitted), default=integrity_until)
-    payload = dict(tenant_id=source.tenant_id, company_id=source.company_id,
-        jarvis_system_version=source.jarvis_system_version, checked_at=checked_at,
-        valid_until=valid_until, source_certification_fingerprint=source.fingerprint,
-        source_integrity_fingerprint=integrity.fingerprint, admissions=tuple(admissions),
-        disposition=disposition, blockers=tuple(dict.fromkeys(blockers)),
-        evidence_refs=tuple(sorted(refs)))
-    payload["fingerprint"] = _seal(payload)
+    valid_until = min(
+        (x.valid_until for x in admitted),
+        default=integrity_until,
+    )
+    payload: dict[str, object] = dict(
+        tenant_id=source.tenant_id,
+        company_id=source.company_id,
+        jarvis_system_version=source.jarvis_system_version,
+        checked_at=checked_at,
+        valid_until=valid_until,
+        source_certification_fingerprint=source.fingerprint,
+        source_integrity_fingerprint=integrity.fingerprint,
+        admissions=tuple(admissions),
+        disposition=disposition,
+        blockers=tuple(dict.fromkeys(blockers)),
+        evidence_refs=tuple(sorted(refs)),
+    )
+    payload["fingerprint"] = _fingerprint_for(
+        CertifiedCapabilitySnapshot, payload
+    )
     return CertifiedCapabilitySnapshot.model_validate(payload)
 
 
@@ -315,13 +423,22 @@ def build_certified_capability_snapshot(
 class CertifiedEngineCandidateAdmission:
     snapshot: CertifiedCapabilitySnapshot
 
-    def receipt_ref(self, *, task: IntelligenceTask, requested_at: datetime,
-                    tenant_ref: str, company_ref: str | None) -> str | None:
+    def receipt_ref(
+        self,
+        *,
+        task: IntelligenceTask,
+        requested_at: datetime,
+        tenant_ref: str,
+        company_ref: str | None,
+    ) -> str | None:
         if not task.requires_fresh_certification:
             return None
         if requested_at.tzinfo is None or requested_at.utcoffset() is None:
             return None
-        if tenant_ref != self.snapshot.tenant_id or company_ref != self.snapshot.company_id:
+        if (
+            tenant_ref != self.snapshot.tenant_id
+            or company_ref != self.snapshot.company_id
+        ):
             return None
         if self.snapshot.disposition is not AdmissionDisposition.READY:
             return None
@@ -329,17 +446,37 @@ class CertifiedEngineCandidateAdmission:
             return None
         return f"capability-cert://{self.snapshot.fingerprint}"
 
-    def is_admitted(self, *, task: IntelligenceTask, registration: RegisteredEngine,
-                    requested_at: datetime, tenant_ref: str, company_ref: str | None) -> bool:
+    def is_admitted(
+        self,
+        *,
+        task: IntelligenceTask,
+        registration: RegisteredEngine,
+        requested_at: datetime,
+        tenant_ref: str,
+        company_ref: str | None,
+    ) -> bool:
         if not task.requires_fresh_certification:
             return True
-        if task.certification_domain is None or self.receipt_ref(task=task,
-            requested_at=requested_at, tenant_ref=tenant_ref, company_ref=company_ref) is None:
+        if (
+            task.certification_domain is None
+            or self.receipt_ref(
+                task=task,
+                requested_at=requested_at,
+                tenant_ref=tenant_ref,
+                company_ref=company_ref,
+            )
+            is None
+        ):
             return False
-        matches = [x for x in self.snapshot.admissions
-            if x.status is AdmissionStatus.ADMITTED and x.domain is task.certification_domain
+        matches = [
+            x
+            for x in self.snapshot.admissions
+            if x.status is AdmissionStatus.ADMITTED
+            and x.domain is task.certification_domain
             and x.engine_id == registration.profile.engine_id
             and x.model_id == registration.endpoint.model_id
-            and x.provider_family == registration.profile.independent_provider_key
-            and requested_at <= x.valid_until]
+            and x.provider_family
+            == registration.profile.independent_provider_key
+            and requested_at <= x.valid_until
+        ]
         return len(matches) == 1

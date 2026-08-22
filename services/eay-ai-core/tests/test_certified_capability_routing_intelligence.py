@@ -3,8 +3,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.certified_capability_routing_intelligence import (
-    AdmissionDisposition, AdmissionStatus, CertifiedEngineCandidateAdmission,
-    build_certified_capability_snapshot, seal_engine_capability_evidence,
+    AdmissionDisposition, AdmissionStatus, CapabilityRouteTrack,
+    CertifiedEngineCandidateAdmission, build_certified_capability_snapshot,
+    seal_engine_capability_evidence,
 )
 from app.engine_gateway import EngineEndpoint, EngineProvider, RegisteredEngine
 from app.frontier3_certification_intelligence import (
@@ -25,6 +26,7 @@ NOW = datetime(2026, 8, 22, 12, tzinfo=UTC)
 CHECKED = NOW + timedelta(days=1)
 DOMAIN = FrontierCertificationDomain.GENERAL_REASONING
 VERSION = "jarvis-v-next"
+RELEASE = "release://provider-a/model-a/2026-08-22"
 
 
 def protocol():
@@ -84,10 +86,12 @@ def source_and_integrity():
     return source, integrity
 
 
-def evidence(source, integrity, *, score=.96, contamination=False, company="company-a"):
+def evidence(source, integrity, *, score=.96, contamination=False, company="company-a",
+             track=CapabilityRouteTrack.RAW_ENGINE, release=RELEASE):
     return seal_engine_capability_evidence(evidence_id="engine-evidence-1", tenant_id="tenant-a",
         company_id=company, domain=DOMAIN, engine_id="engine-a", model_id="model-a",
-        provider_family="provider-a", normalized_score=score, sample_count=240,
+        provider_family="provider-a", provider_release_ref=release, route_track=track,
+        normalized_score=score, sample_count=240,
         measured_at=CHECKED-timedelta(hours=1), scenario_coverage=coverage(),
         independent_evaluator_refs=("eval-x", "eval-y"), exact_adapter_verified=True,
         contamination_detected=contamination,
@@ -96,12 +100,12 @@ def evidence(source, integrity, *, score=.96, contamination=False, company="comp
         evidence_refs=("cap://run", "cap://review"))
 
 
-def registration():
+def registration(*, release=RELEASE):
     return RegisteredEngine(profile=IntelligenceEngine(engine_id="engine-a",
         engine_class=EngineClass.FRONTIER, production_enabled=True, exact_adapter_verified=True,
         maximum_privacy=PrivacyLevel.PUBLIC, maximum_risk=TaskRisk.CRITICAL,
         benchmark_score=1.0, benchmark_evidence_ref="legacy://score",
-        independent_provider_key="provider-a"),
+        independent_provider_key="provider-a", runtime_release_ref=release),
         endpoint=EngineEndpoint(engine_id="engine-a", provider=EngineProvider.OPENAI_RESPONSES,
         model_id="model-a", base_url="https://api.openai.com", secret_ref="env:OPENAI_API_KEY"))
 
@@ -118,6 +122,8 @@ def test_valid_frontier_evidence_creates_exact_runtime_admission():
         checked_at=CHECKED, engine_evidence=(evidence(source, integrity),))
     assert snap.disposition is AdmissionDisposition.READY
     assert snap.admissions[0].status is AdmissionStatus.ADMITTED
+    assert snap.admissions[0].route_track is CapabilityRouteTrack.RAW_ENGINE
+    assert snap.admissions[0].provider_release_ref == RELEASE
     gate = CertifiedEngineCandidateAdmission(snap)
     assert gate.is_admitted(task=task(), registration=registration(), requested_at=CHECKED,
         tenant_ref="tenant-a", company_ref="company-a")
@@ -149,6 +155,31 @@ def test_scope_and_tamper_are_rejected():
     with pytest.raises(ValueError, match="fingerprint"):
         build_certified_capability_snapshot(source=source, integrity=integrity, checked_at=CHECKED,
             engine_evidence=(tampered,))
+
+
+def test_full_jarvis_system_track_cannot_authorize_raw_provider_engine():
+    source, integrity = source_and_integrity()
+    snap = build_certified_capability_snapshot(source=source, integrity=integrity,
+        checked_at=CHECKED, engine_evidence=(evidence(source, integrity,
+            track=CapabilityRouteTrack.FULL_JARVIS_SYSTEM),))
+    assert snap.disposition is AdmissionDisposition.HOLD
+    assert snap.admissions[0].status is AdmissionStatus.HOLD
+    assert "full_system_track_cannot_admit_raw_engine" in snap.admissions[0].blockers
+    gate = CertifiedEngineCandidateAdmission(snap)
+    assert not gate.is_admitted(task=task(), registration=registration(), requested_at=CHECKED,
+        tenant_ref="tenant-a", company_ref="company-a")
+
+
+def test_runtime_release_drift_invalidates_old_engine_admission():
+    source, integrity = source_and_integrity()
+    snap = build_certified_capability_snapshot(source=source, integrity=integrity,
+        checked_at=CHECKED, engine_evidence=(evidence(source, integrity),))
+    gate = CertifiedEngineCandidateAdmission(snap)
+    changed_release = "release://provider-a/model-a/2026-08-23"
+    assert not gate.is_admitted(task=task(), registration=registration(release=changed_release),
+        requested_at=CHECKED, tenant_ref="tenant-a", company_ref="company-a")
+    assert not gate.is_admitted(task=task(), registration=registration(release=None),
+        requested_at=CHECKED, tenant_ref="tenant-a", company_ref="company-a")
 
 
 def test_admission_is_exact_company_domain_model_provider_and_time_bound():

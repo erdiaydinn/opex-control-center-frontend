@@ -10,9 +10,13 @@ Routing is local-first before model selection. If the canonical intelligence
 router can produce an executable plan from local engines alone, frontier grants,
 ledgers and provider candidates are not consulted. Only when local execution is
 insufficient may frontier engines enter the candidate set, and each such engine
-must pass paid-token authorization before canonical routing can select it. This
-prevents a higher benchmark score from turning an otherwise serviceable local
-request into an unauthorized/over-budget frontier failure.
+must pass paid-token authorization before canonical routing can select it.
+
+For tasks that explicitly require fresh capability certification, candidate
+admission happens *before* local selection, ledger reads, paid authorization and
+provider network execution. A stale/revoked/unbound engine therefore cannot
+consume budget or enter a reasoning council merely because it remains
+``production_enabled``.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from typing import Callable
 
 from pydantic import BaseModel, Field, model_validator
 
+from .engine_candidate_admission import EngineCandidateAdmission
 from .engine_gateway import (
     EngineGateway,
     EngineGatewayError,
@@ -29,7 +34,11 @@ from .engine_gateway import (
     EngineProvider,
     RegisteredEngine,
 )
-from .intelligence_router import IntelligenceRoutingPlan, IntelligenceTask, route_intelligence
+from .intelligence_router import (
+    IntelligenceRoutingPlan,
+    IntelligenceTask,
+    route_intelligence,
+)
 from .paid_token_governance import (
     PaidTokenAuthorization,
     PaidTokenDecision,
@@ -48,6 +57,7 @@ PAID_TOKEN_ENGINE_GATEWAY_CONTRACT = "eay-paid-token-engine-gateway-v1"
 class PaidTokenExecutionContext(BaseModel):
     subject_user_ref: str = Field(min_length=1)
     tenant_ref: str = Field(min_length=1)
+    company_ref: str | None = Field(default=None, min_length=1)
     billing_cycle_ref: str = Field(min_length=1)
     requested_at: datetime
 
@@ -74,7 +84,9 @@ class GovernedEngineInvocationReceipt(BaseModel):
         return self
 
 
-LedgerReader = Callable[[PaidTokenExecutionContext, str], PaidTokenLedgerSnapshot | None]
+LedgerReader = Callable[
+    [PaidTokenExecutionContext, str], PaidTokenLedgerSnapshot | None
+]
 UsageWriter = Callable[[PaidTokenUsageReceipt], None]
 
 
@@ -88,22 +100,23 @@ class AdminGovernedEngineGateway:
         rate_cards: tuple[ProviderRateCard, ...],
         ledger_reader: LedgerReader,
         usage_writer: UsageWriter,
+        candidate_admission: EngineCandidateAdmission | None = None,
     ) -> None:
         ids = [item.profile.engine_id for item in registrations]
         if len(ids) != len(set(ids)):
             raise ValueError("paid_token_gateway_duplicate_engine_registration")
         self._engine_gateway = engine_gateway
-        self._registrations = {item.profile.engine_id: item for item in registrations}
+        self._registrations = {
+            item.profile.engine_id: item for item in registrations
+        }
         self._grants = grants
         self._rate_cards = rate_cards
         self._ledger_reader = ledger_reader
         self._usage_writer = usage_writer
+        self._candidate_admission = candidate_admission
 
     @staticmethod
     def _conservative_input_token_reservation(prompt: str) -> int:
-        # Frontier tokenizers operate over encoded text. UTF-8 byte length is a
-        # deliberately conservative provider-independent reservation quantity;
-        # actual provider usage remains the billing truth after execution.
         return max(1, len(prompt.encode("utf-8")))
 
     def _matching_grant(self, grant_id: str) -> PaidTokenGrant:
@@ -113,24 +126,76 @@ class AdminGovernedEngineGateway:
         return matches[0]
 
     def _matching_rate_card(self, rate_card_ref: str) -> ProviderRateCard:
-        matches = [item for item in self._rate_cards if item.rate_card_ref == rate_card_ref]
+        matches = [
+            item for item in self._rate_cards
+            if item.rate_card_ref == rate_card_ref
+        ]
         if len(matches) != 1:
             raise EngineGatewayError("paid_token_settlement_rate_card_not_unique")
         return matches[0]
+
+    def _certification_state(
+        self,
+        *,
+        task: IntelligenceTask,
+        engine_ids: tuple[str, ...],
+        context: PaidTokenExecutionContext,
+    ) -> tuple[frozenset[str] | None, str | None]:
+        if not task.requires_fresh_certification:
+            return None, None
+        if self._candidate_admission is None:
+            return None, None
+        admitted = frozenset(
+            engine_id
+            for engine_id in engine_ids
+            if self._candidate_admission.is_admitted(
+                task=task,
+                registration=self._registrations[engine_id],
+                requested_at=context.requested_at,
+                tenant_ref=context.tenant_ref,
+                company_ref=context.company_ref,
+            )
+        )
+        receipt_ref = self._candidate_admission.receipt_ref(
+            task=task,
+            requested_at=context.requested_at,
+            tenant_ref=context.tenant_ref,
+            company_ref=context.company_ref,
+        )
+        return admitted, receipt_ref
 
     def _plan_for_engine_ids(
         self,
         *,
         task: IntelligenceTask,
         engine_ids: tuple[str, ...],
+        context: PaidTokenExecutionContext,
+        certified_engine_ids: frozenset[str] | None = None,
+        certification_admission_ref: str | None = None,
     ) -> IntelligenceRoutingPlan:
         unknown = set(engine_ids) - set(self._registrations)
         if unknown:
             raise EngineGatewayError(
-                "paid_token_candidate_engine_not_registered:" + ",".join(sorted(unknown))
+                "paid_token_candidate_engine_not_registered:"
+                + ",".join(sorted(unknown))
             )
-        profiles = [self._registrations[engine_id].profile for engine_id in engine_ids]
-        return route_intelligence(task, profiles)
+        profiles = [
+            self._registrations[engine_id].profile for engine_id in engine_ids
+        ]
+        if task.requires_fresh_certification and certified_engine_ids is None:
+            certified_engine_ids, certification_admission_ref = (
+                self._certification_state(
+                    task=task,
+                    engine_ids=engine_ids,
+                    context=context,
+                )
+            )
+        return route_intelligence(
+            task,
+            profiles,
+            certified_engine_ids=certified_engine_ids,
+            certification_admission_ref=certification_admission_ref,
+        )
 
     def _authorization_request(
         self,
@@ -145,7 +210,9 @@ class AdminGovernedEngineGateway:
             tenant_ref=context.tenant_ref,
             provider=endpoint.provider.value,
             model_id=endpoint.model_id,
-            estimated_input_tokens=self._conservative_input_token_reservation(prompt),
+            estimated_input_tokens=self._conservative_input_token_reservation(
+                prompt
+            ),
             requested_max_output_tokens=endpoint.max_output_tokens,
             billing_cycle_ref=context.billing_cycle_ref,
             requested_at=context.requested_at,
@@ -160,7 +227,9 @@ class AdminGovernedEngineGateway:
     ) -> PaidTokenAuthorization:
         endpoint = registration.endpoint
         if endpoint.provider is EngineProvider.OLLAMA:
-            raise ValueError("paid_token_local_engine_does_not_require_authorization")
+            raise ValueError(
+                "paid_token_local_engine_does_not_require_authorization"
+            )
         ledger = self._ledger_reader(context, endpoint.engine_id)
         return authorize_paid_token_invocation(
             request=self._authorization_request(
@@ -183,10 +252,9 @@ class AdminGovernedEngineGateway:
         engine_id = plan.primary_engine_id or ""
         registration = self._registrations.get(engine_id)
         if registration is None:
-            raise EngineGatewayError("paid_token_gateway_selected_engine_not_registered")
-        # The governed wrapper has already restricted the candidate set and the
-        # canonical router produced `plan`. Invoke that exact registration so a
-        # second unrestricted route cannot drift to an unauthorized frontier.
+            raise EngineGatewayError(
+                "paid_token_gateway_selected_engine_not_registered"
+            )
         return await self._engine_gateway._invoke_registered(
             task=task,
             prompt=prompt,
@@ -195,7 +263,9 @@ class AdminGovernedEngineGateway:
         )
 
     @staticmethod
-    def _routing_error(plan: IntelligenceRoutingPlan) -> EngineGatewayError:
+    def _routing_error(
+        plan: IntelligenceRoutingPlan,
+    ) -> EngineGatewayError:
         return EngineGatewayError(
             "engine_routing_plan_not_executable:" + ",".join(plan.blockers)
         )
@@ -217,7 +287,18 @@ class AdminGovernedEngineGateway:
                 if registration.endpoint.provider is EngineProvider.OLLAMA
             )
         )
-        local_plan = self._plan_for_engine_ids(task=task, engine_ids=local_ids)
+        local_certified_ids, local_cert_ref = self._certification_state(
+            task=task,
+            engine_ids=local_ids,
+            context=context,
+        )
+        local_plan = self._plan_for_engine_ids(
+            task=task,
+            engine_ids=local_ids,
+            context=context,
+            certified_engine_ids=local_certified_ids,
+            certification_admission_ref=local_cert_ref,
+        )
         if local_plan.execution_permitted and local_plan.primary_engine_id:
             receipt = await self._invoke_exact_plan_primary(
                 task=task,
@@ -225,7 +306,9 @@ class AdminGovernedEngineGateway:
                 plan=local_plan,
             )
             if receipt.external_processing:
-                raise EngineGatewayError("paid_token_local_plan_resolved_external_engine")
+                raise EngineGatewayError(
+                    "paid_token_local_plan_resolved_external_engine"
+                )
             return GovernedEngineInvocationReceipt(
                 engine_receipt=receipt,
                 local_free_execution=True,
@@ -240,7 +323,20 @@ class AdminGovernedEngineGateway:
                 if registration.endpoint.provider is not EngineProvider.OLLAMA
             )
         )
+        frontier_certified_ids, frontier_cert_ref = self._certification_state(
+            task=task,
+            engine_ids=frontier_ids,
+            context=context,
+        )
         for engine_id in frontier_ids:
+            if (
+                task.requires_fresh_certification
+                and (
+                    frontier_certified_ids is None
+                    or engine_id not in frontier_certified_ids
+                )
+            ):
+                continue
             authorization = self._authorize_frontier_candidate(
                 registration=self._registrations[engine_id],
                 prompt=prompt,
@@ -251,13 +347,34 @@ class AdminGovernedEngineGateway:
             else:
                 denied_blockers.extend(authorization.blockers)
 
-        governed_candidate_ids = tuple((*local_ids, *sorted(authorizations)))
+        governed_candidate_ids = tuple(
+            (*local_ids, *sorted(authorizations))
+        )
+        combined_certified_ids: frozenset[str] | None = None
+        combined_cert_ref: str | None = None
+        if task.requires_fresh_certification:
+            if local_certified_ids is not None and frontier_certified_ids is not None:
+                combined_certified_ids = frozenset(
+                    set(local_certified_ids) | set(frontier_certified_ids)
+                )
+            combined_cert_ref = local_cert_ref or frontier_cert_ref
+
         governed_plan = self._plan_for_engine_ids(
             task=task,
             engine_ids=governed_candidate_ids,
+            context=context,
+            certified_engine_ids=combined_certified_ids,
+            certification_admission_ref=combined_cert_ref,
         )
-        if not governed_plan.execution_permitted or not governed_plan.primary_engine_id:
-            if not authorizations and denied_blockers:
+        if (
+            not governed_plan.execution_permitted
+            or not governed_plan.primary_engine_id
+        ):
+            if (
+                not task.requires_fresh_certification
+                and not authorizations
+                and denied_blockers
+            ):
                 raise EngineGatewayError(
                     "paid_token_not_authorized:"
                     + ",".join(dict.fromkeys(denied_blockers))
@@ -266,7 +383,9 @@ class AdminGovernedEngineGateway:
 
         selected = self._registrations.get(governed_plan.primary_engine_id)
         if selected is None:
-            raise EngineGatewayError("paid_token_gateway_selected_engine_not_registered")
+            raise EngineGatewayError(
+                "paid_token_gateway_selected_engine_not_registered"
+            )
         endpoint = selected.endpoint
         if endpoint.provider is EngineProvider.OLLAMA:
             receipt = await self._invoke_exact_plan_primary(
@@ -275,32 +394,51 @@ class AdminGovernedEngineGateway:
                 plan=governed_plan,
             )
             if receipt.external_processing:
-                raise EngineGatewayError("paid_token_local_plan_resolved_external_engine")
+                raise EngineGatewayError(
+                    "paid_token_local_plan_resolved_external_engine"
+                )
             return GovernedEngineInvocationReceipt(
                 engine_receipt=receipt,
                 local_free_execution=True,
             )
 
         authorization = authorizations.get(endpoint.engine_id)
-        if authorization is None or authorization.decision is not PaidTokenDecision.ALLOW:
-            raise EngineGatewayError("paid_token_selected_frontier_missing_pre_authorization")
+        if (
+            authorization is None
+            or authorization.decision is not PaidTokenDecision.ALLOW
+        ):
+            raise EngineGatewayError(
+                "paid_token_selected_frontier_missing_pre_authorization"
+            )
 
         receipt = await self._invoke_exact_plan_primary(
             task=task,
             prompt=prompt,
             plan=governed_plan,
         )
-        if receipt.engine_id != endpoint.engine_id or receipt.provider is not endpoint.provider:
-            raise EngineGatewayError("paid_token_engine_changed_after_authorization")
+        if (
+            receipt.engine_id != endpoint.engine_id
+            or receipt.provider is not endpoint.provider
+        ):
+            raise EngineGatewayError(
+                "paid_token_engine_changed_after_authorization"
+            )
         if receipt.input_tokens is None or receipt.output_tokens is None:
             raise EngineGatewayError("paid_token_provider_usage_missing")
-        if receipt.input_tokens + receipt.output_tokens > self._matching_grant(
-            authorization.grant_id or ""
-        ).max_total_tokens_per_request:
-            raise EngineGatewayError("paid_token_actual_total_tokens_exceeded_authorized_limit")
+        if (
+            receipt.input_tokens + receipt.output_tokens
+            > self._matching_grant(
+                authorization.grant_id or ""
+            ).max_total_tokens_per_request
+        ):
+            raise EngineGatewayError(
+                "paid_token_actual_total_tokens_exceeded_authorized_limit"
+            )
 
         grant = self._matching_grant(authorization.grant_id or "")
-        rate_card = self._matching_rate_card(authorization.rate_card_ref or "")
+        rate_card = self._matching_rate_card(
+            authorization.rate_card_ref or ""
+        )
         usage = settle_paid_token_usage(
             authorization=authorization,
             grant=grant,

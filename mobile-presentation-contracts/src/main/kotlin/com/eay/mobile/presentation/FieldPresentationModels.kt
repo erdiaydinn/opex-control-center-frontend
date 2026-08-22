@@ -26,6 +26,7 @@ enum class FieldMissionVisualKind {
 }
 
 enum class FieldMissionVisualPriority { LOW, NORMAL, HIGH, URGENT }
+enum class FieldMissionDeadlineVisualState { NONE, ON_TRACK, DUE_SOON, OVERDUE }
 enum class FieldSyncVisualState { SYNCED, OFFLINE, PENDING, QUARANTINED }
 enum class FieldRecoveryVisualSeverity { INFO, ATTENTION, BLOCKING, SECURITY }
 
@@ -110,6 +111,10 @@ data class FieldMissionCardModel(
     val priority: FieldMissionVisualPriority,
     val progressCurrent: Int? = null,
     val progressTotal: Int? = null,
+    /** Signed minutes until due; negative means overdue. Raw due timestamps never enter UI models. */
+    val deadlineMinutes: Int? = null,
+    val deadlineState: FieldMissionDeadlineVisualState = FieldMissionDeadlineVisualState.NONE,
+    val estimatedMinutes: Int? = null,
     val primaryActionLabel: String,
     val enabled: Boolean,
 ) {
@@ -120,6 +125,16 @@ data class FieldMissionCardModel(
         require(progressCurrent == null || progressCurrent >= 0)
         require(progressTotal == null || progressTotal > 0)
         require(progressCurrent == null || progressTotal == null || progressCurrent <= progressTotal)
+        require(estimatedMinutes == null || estimatedMinutes > 0)
+        require((deadlineMinutes == null) == (deadlineState == FieldMissionDeadlineVisualState.NONE)) {
+            "Deadline minutes and visual state must be projected together"
+        }
+        when (deadlineState) {
+            FieldMissionDeadlineVisualState.NONE -> Unit
+            FieldMissionDeadlineVisualState.ON_TRACK -> require(requireNotNull(deadlineMinutes) > 15)
+            FieldMissionDeadlineVisualState.DUE_SOON -> require(requireNotNull(deadlineMinutes) in 0..15)
+            FieldMissionDeadlineVisualState.OVERDUE -> require(requireNotNull(deadlineMinutes) < 0)
+        }
     }
 }
 

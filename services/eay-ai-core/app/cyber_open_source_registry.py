@@ -97,12 +97,16 @@ class CyberOpenSourceRepository(BaseModel):
             )
         ):
             raise ValueError("cyber_open_source_never_grants_privileged_authority")
-        if self.risk_class is OpenSourceRiskClass.DUAL_USE:
-            if self.use_mode is not OpenSourceUseMode.AUTHORIZED_SANDBOX_ONLY:
-                raise ValueError("cyber_open_source_dual_use_must_be_sandbox_only")
-        if self.use_mode is OpenSourceUseMode.AUTHORIZED_SANDBOX_ONLY:
-            if self.risk_class is OpenSourceRiskClass.PASSIVE_DEFENSE:
-                raise ValueError("cyber_open_source_passive_source_not_sandbox_only")
+        if (
+            self.risk_class is OpenSourceRiskClass.DUAL_USE
+            and self.use_mode is not OpenSourceUseMode.AUTHORIZED_SANDBOX_ONLY
+        ):
+            raise ValueError("cyber_open_source_dual_use_must_be_sandbox_only")
+        if (
+            self.use_mode is OpenSourceUseMode.AUTHORIZED_SANDBOX_ONLY
+            and self.risk_class is OpenSourceRiskClass.PASSIVE_DEFENSE
+        ):
+            raise ValueError("cyber_open_source_passive_source_not_sandbox_only")
         return self
 
     @property

@@ -80,7 +80,12 @@ async def test_operational_readiness_is_source_bound_self_scoped_and_append_only
                 text(
                     """
                     INSERT INTO tenants (id, slug, display_name, status)
-                    VALUES (:tenant_id, 'academy-operational-ci', 'Academy Operational CI', 'active')
+                    VALUES (
+                        :tenant_id,
+                        'academy-operational-ci',
+                        'Academy Operational CI',
+                        'active'
+                    )
                     """
                 ),
                 {"tenant_id": TENANT},
@@ -120,7 +125,8 @@ async def test_operational_readiness_is_source_bound_self_scoped_and_append_only
                     ) VALUES (
                         :path_id, :tenant_id, 'safe-inbound-remediation',
                         '{"en":"Safe inbound remediation"}'::jsonb,
-                        '{}'::jsonb, true, '{}'::jsonb, 'published', 'academy-operational-ci'
+                        '{}'::jsonb, true, '{}'::jsonb, 'published',
+                        'academy-operational-ci'
                     )
                     """
                 ),

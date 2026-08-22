@@ -80,7 +80,7 @@ class RobotExecutionPin(BaseModel):
     pin_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def pin_is_integral(self) -> "RobotExecutionPin":
+    def pin_is_integral(self) -> RobotExecutionPin:
         _aware(self.issued_at, "robot_execution_pin_issued_at_requires_timezone")
         _aware(self.expires_at, "robot_execution_pin_expires_at_requires_timezone")
         if self.expires_at <= self.issued_at:
@@ -150,7 +150,7 @@ class RobotExecutionGuardDecision(BaseModel):
     execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def decision_is_non_authoritative(self) -> "RobotExecutionGuardDecision":
+    def decision_is_non_authoritative(self) -> RobotExecutionGuardDecision:
         _aware(self.checked_at, "robot_execution_guard_checked_at_requires_timezone")
         if self.execution_authority_granted:
             raise ValueError("robot_execution_guard_never_grants_execution_authority")
@@ -177,7 +177,7 @@ class RobotCanaryHealthSample(BaseModel):
     evidence_refs: tuple[str, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def sample_is_consistent(self) -> "RobotCanaryHealthSample":
+    def sample_is_consistent(self) -> RobotCanaryHealthSample:
         _aware(self.sampled_at, "robot_canary_sample_requires_timezone")
         if self.verified_successes > self.attempts:
             raise ValueError("robot_canary_successes_exceed_attempts")
@@ -214,7 +214,7 @@ class RobotCanaryDecision(BaseModel):
     automatic_registry_mutation_authorized: bool = False
 
     @model_validator(mode="after")
-    def canary_decision_never_mutates_registry(self) -> "RobotCanaryDecision":
+    def canary_decision_never_mutates_registry(self) -> RobotCanaryDecision:
         if self.automatic_registry_mutation_authorized:
             raise ValueError("robot_canary_decision_cannot_mutate_registry")
         rollback = self.disposition is RobotCanaryDisposition.ROLLBACK_REQUIRED

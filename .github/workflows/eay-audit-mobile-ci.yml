@@ -1,0 +1,94 @@
+name: EAY Audit Mobile CI
+
+on:
+  pull_request:
+    paths:
+      - "android-field-ui/**"
+      - ".github/workflows/eay-audit-mobile-ci.yml"
+  push:
+    branches:
+      - "agent/eay-mobile-audit-v1"
+    paths:
+      - "android-field-ui/**"
+      - ".github/workflows/eay-audit-mobile-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eay-audit-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-mobile:
+    name: Native audit compile / unit / lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Install Android API 37
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! sdkmanager --install "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"; then
+            echo "Android API 37.0 installation failed. Available API/build-tools packages:" >&2
+            sdkmanager --list | grep -E 'platforms;android-|build-tools;' | tail -n 120 >&2 || true
+            exit 1
+          fi
+
+      - name: Set up reviewed Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.4.1"
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Verify no dynamic Android dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          bad = []
+          root = Path("android-field-ui")
+          paths = sorted({*root.rglob("*.gradle"), *root.rglob("*.gradle.kts")})
+          dynamic_version = re.compile(r'''["'][^"'\n]*:[^"'\n]*\+["']''')
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              for line_no, line in enumerate(text.splitlines(), 1):
+                  if "latest.release" in line or dynamic_version.search(line):
+                      bad.append(f"{path}:{line_no}:{line.strip()}")
+          if bad:
+              print("\n".join(bad))
+              raise SystemExit("Dynamic Android dependency detected; exact versions are required.")
+          print("Android dependency pinning: PASS")
+          PY
+
+      - name: Compile native audit surface
+        run: gradle -p android-field-ui :field-ui:compileDebugKotlin --stacktrace
+
+      - name: Run native audit unit tests
+        run: gradle -p android-field-ui :field-ui:testDebugUnitTest --stacktrace
+
+      - name: Run Android lint
+        run: gradle -p android-field-ui :field-ui:lintDebug --stacktrace

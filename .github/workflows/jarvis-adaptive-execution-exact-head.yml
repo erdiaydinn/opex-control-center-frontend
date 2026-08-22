@@ -5,9 +5,14 @@ on:
     paths:
       - "services/eay-ai-core/app/adaptive_execution_intelligence.py"
       - "services/eay-ai-core/app/robot_authoring_intelligence.py"
+      - "services/eay-ai-core/app/robot_registry_intelligence.py"
       - "services/eay-ai-core/tests/test_adaptive_execution_intelligence.py"
       - "services/eay-ai-core/tests/test_robot_authoring_intelligence.py"
       - "services/eay-ai-core/tests/test_robot_authoring_security_intelligence.py"
+      - "services/eay-ai-core/tests/test_robot_registry_intelligence.py"
+      - "services/core-api/app/robot_registry_repository.py"
+      - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/alembic/versions/0053_jarvis_robot_registry.py"
       - ".github/workflows/jarvis-adaptive-execution-exact-head.yml"
 
 permissions:
@@ -43,33 +48,38 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
 
-      - name: Compile adaptive execution and robot authoring surface
+      - name: Compile adaptive execution, authoring and registry compiler
         working-directory: services/eay-ai-core
         run: |
           python -m py_compile \
             app/adaptive_execution_intelligence.py \
             app/robot_authoring_intelligence.py \
+            app/robot_registry_intelligence.py \
             tests/test_adaptive_execution_intelligence.py \
             tests/test_robot_authoring_intelligence.py \
-            tests/test_robot_authoring_security_intelligence.py
+            tests/test_robot_authoring_security_intelligence.py \
+            tests/test_robot_registry_intelligence.py
 
-      - name: Lint adaptive execution and robot authoring surface
+      - name: Lint adaptive execution, authoring and registry compiler
         working-directory: services/eay-ai-core
         run: |
           python -m ruff check \
             app/adaptive_execution_intelligence.py \
             app/robot_authoring_intelligence.py \
+            app/robot_registry_intelligence.py \
             tests/test_adaptive_execution_intelligence.py \
             tests/test_robot_authoring_intelligence.py \
-            tests/test_robot_authoring_security_intelligence.py
+            tests/test_robot_authoring_security_intelligence.py \
+            tests/test_robot_registry_intelligence.py
 
-      - name: Run focused adaptive execution and robot authoring adversarial tests
+      - name: Run focused adaptive execution and registry adversarial tests
         working-directory: services/eay-ai-core
         run: |
           python -m pytest -q \
             tests/test_adaptive_execution_intelligence.py \
             tests/test_robot_authoring_intelligence.py \
-            tests/test_robot_authoring_security_intelligence.py
+            tests/test_robot_authoring_security_intelligence.py \
+            tests/test_robot_registry_intelligence.py
 
       - name: Run cumulative Jarvis intelligence and execution regression cohort
         working-directory: services/eay-ai-core
@@ -103,3 +113,97 @@ jobs:
             tests/test_enterprise_economics_domain.py \
             tests/test_repository_intelligence_legal_sources.py \
             tests/test_repository_intelligence_api_discovery_sources.py
+
+  robot-registry-postgres-exact-head:
+    name: Persistent Robot Registry PostgreSQL exact-head authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout literal PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Assert literal PR head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          echo "expected=$EXPECTED_HEAD"
+          echo "actual=$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Install Core API
+        run: python -m pip install -e './services/core-api[dev,bigquery]'
+
+      - name: Create least-privilege runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  if not await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  ):
+                      await connection.execute(
+                          "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' "
+                          "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Enforce one migration head and replay PostgreSQL schema
+        working-directory: services/core-api
+        run: |
+          test "$(alembic heads | grep -c '(head)')" -eq 1
+          alembic upgrade head
+
+      - name: Compile and lint Robot Registry persistence surface
+        run: |
+          python -m py_compile \
+            services/core-api/app/robot_registry_repository.py \
+            services/core-api/tests/test_robot_registry_postgres.py \
+            services/core-api/alembic/versions/0053_jarvis_robot_registry.py
+          ruff check \
+            services/core-api/app/robot_registry_repository.py \
+            services/core-api/tests/test_robot_registry_postgres.py
+
+      - name: Run Robot Registry PostgreSQL adversarial acceptance
+        run: pytest -q services/core-api/tests/test_robot_registry_postgres.py

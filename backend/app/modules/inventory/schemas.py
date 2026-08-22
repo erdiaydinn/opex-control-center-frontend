@@ -186,6 +186,11 @@ class OperationalMissionCreate(BaseModel):
         min_length=1,
         max_length=16,
     )
+    # Service metadata is server-owned scheduling truth. It is never accepted
+    # from the field terminal and never grants execution authority by itself.
+    priority: str = Field(default="NORMAL", pattern="^(LOW|NORMAL|HIGH|URGENT)$")
+    due_at: str | None = Field(default=None, min_length=20, max_length=50)
+    estimated_seconds: int | None = Field(default=None, ge=1, le=86_400)
 
 
 class OperationalEventCreate(BaseModel):

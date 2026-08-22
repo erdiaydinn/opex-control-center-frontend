@@ -40,12 +40,12 @@ async def create_operational_mapping(
                     CAST(:source_domain AS varchar(40)),
                     CAST(:signal_type AS varchar(160)),
                     skill.id,
-                    :required_level,
+                    CAST(:required_level AS smallint),
                     path.id,
-                    :minimum_severity,
+                    CAST(:minimum_severity AS smallint),
                     CAST(:metric_key AS varchar(160)),
                     CAST(:metric_direction AS varchar(20)),
-                    :mapping_version,
+                    CAST(:mapping_version AS integer),
                     CAST(:actor AS varchar(255))
                 FROM academy_skills AS skill
                 JOIN academy_learning_paths AS path
@@ -182,9 +182,10 @@ async def ingest_operational_signal(
                 )
                 SELECT DISTINCT membership.tenant_id, CAST(:source_subject AS varchar(255)),
                        CAST(:source_domain AS varchar(40)), CAST(:signal_type AS varchar(160)),
-                       membership.external_subject, :severity,
+                       membership.external_subject, CAST(:severity AS smallint),
                        CAST(:source_ref AS varchar(255)), CAST(:source_version AS varchar(120)),
-                       CAST(:source_fingerprint AS char(64)), :occurred_at,
+                       CAST(:source_fingerprint AS char(64)),
+                       CAST(:occurred_at AS timestamptz),
                        CAST(:request_id AS varchar(128))
                 FROM memberships AS membership
                 JOIN academy_operational_signal_mappings AS mapping
@@ -192,7 +193,7 @@ async def ingest_operational_signal(
                  AND mapping.source_subject=CAST(:source_subject AS varchar(255))
                  AND mapping.source_domain=CAST(:source_domain AS varchar(40))
                  AND mapping.signal_type=CAST(:signal_type AS varchar(160))
-                 AND :severity >= mapping.minimum_severity
+                 AND CAST(:severity AS smallint) >= mapping.minimum_severity
                 LEFT JOIN academy_operational_signal_mapping_retirements AS retirement
                   ON retirement.tenant_id=mapping.tenant_id
                  AND retirement.mapping_id=mapping.id
@@ -232,7 +233,7 @@ async def ingest_operational_signal(
                     skill_id, current_level, required_level,
                     recommended_path_id, policy_version
                 )
-                SELECT mapping.tenant_id, :signal_event_id, mapping.id,
+                SELECT mapping.tenant_id, CAST(:signal_event_id AS uuid), mapping.id,
                        CAST(:subject AS varchar(255)), mapping.skill_id,
                        COALESCE(proficiency.observed_level, 0)::smallint,
                        mapping.required_level, mapping.recommended_path_id,
@@ -249,7 +250,7 @@ async def ingest_operational_signal(
                   AND mapping.source_subject=CAST(:source_subject AS varchar(255))
                   AND mapping.source_domain=CAST(:source_domain AS varchar(40))
                   AND mapping.signal_type=CAST(:signal_type AS varchar(160))
-                  AND :severity >= mapping.minimum_severity
+                  AND CAST(:severity AS smallint) >= mapping.minimum_severity
                   AND retirement.id IS NULL
                   AND COALESCE(proficiency.observed_level, 0) < mapping.required_level
                 RETURNING id, signal_event_id, mapping_id, subject, skill_id,
@@ -301,8 +302,12 @@ async def record_operational_outcome(
                        mapping.source_subject, event.source_domain,
                        CAST(:source_ref AS varchar(255)), CAST(:source_version AS varchar(120)),
                        CAST(:source_fingerprint AS char(64)), mapping.metric_key,
-                       mapping.metric_direction, :baseline_value, :observed_value,
-                       :window_start, :window_end, :observed_at,
+                       mapping.metric_direction,
+                       CAST(:baseline_value AS numeric(20,6)),
+                       CAST(:observed_value AS numeric(20,6)),
+                       CAST(:window_start AS timestamptz),
+                       CAST(:window_end AS timestamptz),
+                       CAST(:observed_at AS timestamptz),
                        CAST(:actor AS varchar(255)), CAST(:request_id AS varchar(128))
                 FROM academy_operational_remediations AS remediation
                 JOIN academy_operational_signal_events AS event

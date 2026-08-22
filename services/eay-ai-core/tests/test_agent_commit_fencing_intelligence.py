@@ -8,12 +8,30 @@ from app.agent_commit_fencing import (
     CommitFenceDisposition,
     CommitFenceError,
     CommitFenceRequest,
+    RobotExecutionCommitBinding,
     derive_commit_identity,
     execute_fenced_commit,
 )
 
 NOW = datetime(2026, 8, 20, 15, 0, tzinfo=UTC)
 AUTH = "a" * 64
+
+
+def robot_binding(**changes):
+    values = {
+        "tenant_id": "YS_TR",
+        "company_id": "company-a",
+        "objective_id": "daily-report",
+        "robot_id": "daily-report-download",
+        "robot_version": 9,
+        "registry_generation": 7,
+        "version_fingerprint": "b" * 64,
+        "execution_lease_id": "c" * 64,
+        "execution_lease_generation": 2,
+        "pin_fingerprint": "d" * 64,
+    }
+    values.update(changes)
+    return RobotExecutionCommitBinding(**values)
 
 
 def request(**changes):
@@ -49,6 +67,7 @@ def permit(req, **changes):
         "resource_ref": req.identity.resource_ref,
         "idempotency_key": req.identity.idempotency_key,
         "authorization_fingerprint": req.authorization_fingerprint,
+        "robot_execution": req.robot_execution,
         "issued_at": NOW,
     }
     values.update(changes)
@@ -103,13 +122,71 @@ async def test_verified_commit_returns_integrity_bound_releasable_receipt():
 
 
 @pytest.mark.asyncio
+async def test_verified_robot_commit_retains_exact_registry_and_execution_lease_binding():
+    binding = robot_binding()
+    req = request(robot_execution=binding)
+    receipt = await execute_fenced_commit(
+        request=req,
+        authority=Authority(),
+        commit=lambda _: BackendCommitOutcome(
+            transaction_ref="tx-robot-1",
+            committed=True,
+            effect_verified=True,
+            evidence_refs=("evidence://robot/readback",),
+        ),
+        recorded_at=NOW,
+    )
+    assert receipt.disposition is CommitFenceDisposition.VERIFIED_COMMIT
+    assert receipt.robot_execution == binding
+    assert receipt.robot_execution.registry_generation == 7
+    assert receipt.robot_execution.robot_version == 9
+    assert receipt.evidence_ref.endswith(receipt.fingerprint)
+
+
+@pytest.mark.asyncio
+async def test_atomic_permit_cannot_drop_or_swap_robot_execution_binding():
+    req = request(robot_execution=robot_binding())
+    called = False
+
+    def backend(_):
+        nonlocal called
+        called = True
+        return BackendCommitOutcome(committed=False)
+
+    dropped = permit(req, robot_execution=None)
+    with pytest.raises(CommitFenceError, match="robot_execution_binding_mismatch"):
+        await execute_fenced_commit(
+            request=req,
+            authority=Authority(response=dropped),
+            commit=backend,
+            recorded_at=NOW,
+        )
+    assert called is False
+
+    swapped = permit(
+        req,
+        robot_execution=robot_binding(registry_generation=8),
+    )
+    with pytest.raises(CommitFenceError, match="robot_execution_binding_mismatch"):
+        await execute_fenced_commit(
+            request=req,
+            authority=Authority(response=swapped),
+            commit=backend,
+            recorded_at=NOW,
+        )
+    assert called is False
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "error", [
+    "error",
+    [
         "agent_commit_stale_fencing_token",
         "agent_commit_cancelled_epoch",
         "agent_commit_stale_lease_generation",
         "agent_commit_idempotency_replay",
-    ]
+        "agent_commit_stale_robot_registry_generation",
+    ],
 )
 async def test_atomic_authority_rejects_stale_cancelled_and_replayed_commit_before_dispatch(error):
     called = False
@@ -180,3 +257,5 @@ def test_model_cannot_claim_business_authority_or_cross_tenant_identity():
     )
     with pytest.raises(ValueError, match="identity_tenant_mismatch"):
         request(identity=foreign)
+    with pytest.raises(ValueError, match="robot_execution_tenant_mismatch"):
+        request(robot_execution=robot_binding(tenant_id="OTHER"))

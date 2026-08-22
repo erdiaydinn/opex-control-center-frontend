@@ -145,6 +145,15 @@ const graphRequirements = [
   ['gx("zoomIn")', "localized zoom-in control"],
   ['gx("fitView")', "localized fit-view control"],
   ['gx("resetView")', "localized reset-view control"],
+  ['const diagnostics = useMemo(() => {', "live graph preflight diagnostics"],
+  ['seenNodeKeys.has(key)', "duplicate node-key diagnostic"],
+  ['!nodes.some((node) => node.terminal)', "missing terminal diagnostic"],
+  ['!knownKeys.has(edge.from_node_key) || !knownKeys.has(edge.to_node_key)', "broken edge-reference diagnostic"],
+  ['seenChoices.has(choiceIdentity)', "duplicate source-choice diagnostic"],
+  ['!String(localizedLabel).trim()', "blank edge-label diagnostic"],
+  ['className={`eay-academy-graph-preflight ${diagnostics.length ? "has-issues" : "is-ready"}`}', "preflight product-state surface"],
+  ['role="status" aria-live="polite"', "accessible live preflight announcement"],
+  ['gx("preflightReady")', "localized clean preflight state"],
 ];
 for (const [needle, label] of graphRequirements) {
   if (!graph.includes(needle)) {
@@ -226,4 +235,4 @@ if (/localStorage|sessionStorage/.test(hub) || /localStorage|sessionStorage/.tes
   process.exit(1);
 }
 
-console.log("Academy experience routing, actionable self-scope, graph viewport authoring, localization telemetry, schema, version and locale authority contract: PASS");
+console.log("Academy experience routing, actionable self-scope, graph preflight and viewport authoring, localization telemetry, schema, version and locale authority contract: PASS");

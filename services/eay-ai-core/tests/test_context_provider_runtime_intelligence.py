@@ -37,7 +37,10 @@ def provider_spec(
     host: str = "api.example.test",
     production_enabled: bool = True,
     requires_secret: bool = False,
+    one_shot_authorized: bool | None = None,
 ) -> ContextProviderSpec:
+    if one_shot_authorized is None:
+        one_shot_authorized = production_enabled
     return ContextProviderSpec(
         provider_id=provider_id,
         display_name="Test official weather",
@@ -46,7 +49,8 @@ def provider_spec(
         access_mode=ProviderAccessMode.DOCUMENTED_WEB_SERVICE,
         context_kinds=(ContextKind.WEATHER,),
         requires_secret=requires_secret,
-        continuous_ingestion_authorized=True,
+        one_shot_observation_authorized=one_shot_authorized,
+        continuous_ingestion_authorized=production_enabled,
         exact_adapter_verified=True,
         production_enabled=production_enabled,
         readiness=(
@@ -119,6 +123,8 @@ def test_verified_read_returns_external_evidence_receipt_without_company_claims(
     assert receipt.body_sha256 == hashlib.sha256(body).hexdigest()
     assert receipt.byte_size == len(body)
     assert receipt.fetched_at == NOW
+    assert receipt.bootstrap_url is None
+    assert receipt.bootstrap_body_sha256 is None
     fields = set(receipt.model_dump())
     assert "company_metric" not in fields
     assert "causal_claim" not in fields
@@ -138,7 +144,9 @@ def test_evidence_fingerprint_is_stable_for_same_exact_external_payload() -> Non
     assert first.body_sha256 == second.body_sha256
 
 
-def test_production_disabled_provider_is_blocked_before_network(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_one_shot_disabled_provider_is_blocked_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setitem(PROVIDERS, PROVIDER_ID, provider_spec(production_enabled=False))
     calls = 0
 
@@ -149,7 +157,7 @@ def test_production_disabled_provider_is_blocked_before_network(monkeypatch: pyt
 
     blocked_plan = plan()
     assert blocked_plan.execution_permitted is False
-    assert "provider_production_not_enabled" in blocked_plan.blockers
+    assert "provider_one_shot_observation_not_authorized" in blocked_plan.blockers
 
     with pytest.raises(ProviderRuntimeBlocked, match="request_plan_not_executable"):
         execute_provider_request(blocked_plan, transport=httpx.MockTransport(handler), now=NOW)

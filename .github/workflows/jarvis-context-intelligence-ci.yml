@@ -4,11 +4,19 @@ on:
   push:
     branches:
       - product/jarvis-context-intelligence-v1
+      - product/jarvis-general-intelligence-v1
     paths:
       - "services/eay-ai-core/app/**"
       - "services/eay-ai-core/tests/**"
       - "services/eay-ai-core/pyproject.toml"
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
+      - "services/core-api/app/agent_job_*.py"
+      - "services/core-api/app/epistemic_rollout_repository.py"
+      - "services/core-api/app/main.py"
+      - "services/core-api/tests/test_agent_job_control_plane.py"
+      - "services/core-api/tests/test_epistemic_rollout_postgres.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/*jarvis*.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
   pull_request:
     paths:
@@ -16,6 +24,13 @@ on:
       - "services/eay-ai-core/tests/**"
       - "services/eay-ai-core/pyproject.toml"
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
+      - "services/core-api/app/agent_job_*.py"
+      - "services/core-api/app/epistemic_rollout_repository.py"
+      - "services/core-api/app/main.py"
+      - "services/core-api/tests/test_agent_job_control_plane.py"
+      - "services/core-api/tests/test_epistemic_rollout_postgres.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/*jarvis*.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
   workflow_dispatch:
 
@@ -27,6 +42,80 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  control-plane:
+    name: Authenticated agent control plane and PostgreSQL authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install Core API
+        run: python -m pip install -e './services/core-api[dev,bigquery]'
+      - name: Create least-privilege runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  if not await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  ):
+                      await connection.execute(
+                          "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' "
+                          "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+      - name: Enforce one migration head and replay PostgreSQL schema
+        working-directory: services/core-api
+        run: |
+          test "$(alembic heads | grep -c '(head)')" -eq 1
+          alembic upgrade head
+      - name: Verify authenticated API, durable canary authority, tenant isolation and SQL boundary
+        run: >-
+          pytest -q
+          services/core-api/tests/test_agent_job_control_plane.py
+          services/core-api/tests/test_epistemic_rollout_postgres.py
+          services/core-api/tests/test_sql_access_boundary.py
+      - name: Lint and compile control plane
+        run: |
+          ruff check services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/tests/test_agent_job_control_plane.py services/core-api/tests/test_epistemic_rollout_postgres.py
+          python -m compileall -q services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py
+
   contract:
     name: Jarvis intelligence, autonomy, memory, API learning and decision contracts
     runs-on: ubuntu-latest

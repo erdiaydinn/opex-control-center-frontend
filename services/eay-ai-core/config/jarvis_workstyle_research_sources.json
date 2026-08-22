@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "updated_at": "2026-08-21",
+  "purpose": "Pin external research patterns for Jarvis Work-style general intelligence without introducing duplicate runtime authority.",
+  "policy": {
+    "pattern_adoption_is_not_runtime_admission": true,
+    "external_code_requires_license_and_security_review": true,
+    "no_second_scheduler": true,
+    "no_second_execution_authority": true,
+    "no_second_company_memory_authority": true,
+    "no_live_self_modification": true,
+    "benchmark_and_promotion_required_before_behavior_change": true
+  },
+  "sources": [
+    {
+      "id": "langgraph",
+      "identity": "langchain-ai/langgraph",
+      "ref": "main",
+      "commit": "f09cfe8ffc1eeffd68f4b628ed69c30f7cad229f",
+      "license": "MIT",
+      "decision": "reference-pattern-adoption",
+      "patterns": [
+        "durable-execution",
+        "checkpointing",
+        "resume-after-interruption",
+        "deterministic-replay",
+        "human-in-the-loop"
+      ],
+      "jarvis_mapping": [
+        "workstyle_agent_os",
+        "workstyle_control_plane_bridge",
+        "agent_job_lifecycle",
+        "agent_job_repository"
+      ],
+      "prohibited_overlap": [
+        "alternate-scheduler",
+        "alternate-agent-authority",
+        "alternate-business-execution-authority"
+      ]
+    },
+    {
+      "id": "dspy",
+      "identity": "stanfordnlp/dspy",
+      "ref": "main",
+      "commit": "e0400fd32feac35cf8e19f18640d6a36f71724b7",
+      "license": "MIT",
+      "decision": "adopt-offline-evaluation-pattern",
+      "patterns": [
+        "metric-driven-evaluation",
+        "program-optimization",
+        "candidate-search",
+        "explicit-objective-scoring"
+      ],
+      "jarvis_mapping": [
+        "jarvis-bench",
+        "epistemic-benchmark",
+        "offline-improvement-candidates",
+        "promotion-gates"
+      ],
+      "prohibited_overlap": [
+        "live-production-prompt-rewrite",
+        "automatic-model-weight-update",
+        "automatic-business-policy-update"
+      ]
+    },
+    {
+      "id": "gpt-researcher",
+      "identity": "assafelovic/gpt-researcher",
+      "ref": "master",
+      "commit": "5cdad9cb434754188b78bd998df18dd8d502cf7e",
+      "license": "Apache-2.0",
+      "decision": "adapt-research-pattern",
+      "patterns": [
+        "breadth-depth-research",
+        "recursive-query-expansion",
+        "parallel-research-fanout",
+        "context-aggregation",
+        "research-progress-tracking"
+      ],
+      "jarvis_mapping": [
+        "autonomous_investigator",
+        "adaptive_epistemic_control",
+        "research_engine",
+        "colony-runtime"
+      ],
+      "prohibited_overlap": [
+        "external-evidence-promoted-to-company-truth",
+        "unbounded-recursion",
+        "provider-call-without-governance"
+      ]
+    },
+    {
+      "id": "microsoft-agent-framework",
+      "identity": "microsoft/agent-framework",
+      "ref": "main",
+      "commit": "eccf47154f7b7172c616f8f45e4d60e00a01f077",
+      "license": "MIT",
+      "decision": "reference-pattern-adoption",
+      "patterns": [
+        "multi-agent-orchestration",
+        "session-resume",
+        "multi-provider-abstraction",
+        "a2a-interoperability",
+        "mcp-interoperability"
+      ],
+      "jarvis_mapping": [
+        "hierarchical_agent_delegation",
+        "specialist_mastery_registry",
+        "workstyle_control_plane_bridge",
+        "capability-registry"
+      ],
+      "prohibited_overlap": [
+        "alternate-runtime-authority",
+        "alternate-provider-billing-authority",
+        "implicit-tool-admission"
+      ]
+    },
+    {
+      "id": "microsoft-autogen",
+      "identity": "microsoft/autogen",
+      "ref": "main",
+      "commit": "027ecf0a379bcc1d09956d46d12d44a3ad9cee14",
+      "license": "MIT",
+      "decision": "legacy-reference-only",
+      "status": "maintenance-mode",
+      "patterns": [
+        "historical-multi-agent-runtime",
+        "message-passing",
+        "group-agent-patterns"
+      ],
+      "jarvis_mapping": [
+        "architecture-reference-only"
+      ],
+      "prohibited_overlap": [
+        "new-runtime-dependency",
+        "new-production-adoption"
+      ]
+    }
+  ]
+}

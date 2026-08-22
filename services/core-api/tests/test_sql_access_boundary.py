@@ -136,6 +136,16 @@ ACADEMY_SQL_EXECUTION_POINTS = {
     ("modules/academy/repository_credentials.py", "revoke_badge_award"),
     ("modules/academy/repository_credentials.py", "list_my_badge_credentials"),
     ("modules/academy/repository_credentials.py", "get_my_badge_credential"),
+    # Academy Operational Readiness security review: exact functions only.
+    # SQL is static text() with bound parameters, tenant context is canonical,
+    # 0060 FORCE-RLS protects every operational table, service subject is bound
+    # by governed mappings, and events/remediations/outcomes are append-only.
+    ("modules/academy/repository_operational.py", "create_operational_mapping"),
+    ("modules/academy/repository_operational.py", "retire_operational_mapping"),
+    ("modules/academy/repository_operational.py", "list_operational_mappings"),
+    ("modules/academy/repository_operational.py", "ingest_operational_signal"),
+    ("modules/academy/repository_operational.py", "record_operational_outcome"),
+    ("modules/academy/repository_operational.py", "list_my_operational_readiness"),
 }
 
 FIELD_INTELLIGENCE_SQL_EXECUTION_POINTS = {

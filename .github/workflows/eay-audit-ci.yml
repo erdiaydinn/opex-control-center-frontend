@@ -188,10 +188,10 @@ jobs:
           alembic/versions/0057_audit_video_authority.py
           alembic/versions/0058_audit_video_replay_fence.py
           alembic/versions/0059_audit_inference_lease_immutability.py
-      - name: Single Alembic head
+      - name: Single Alembic head with Audit ancestry
         run: |
           set -euo pipefail
           heads="$(alembic heads)"
           printf '%s\n' "$heads"
           test "$(printf '%s\n' "$heads" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
-          printf '%s\n' "$heads" | grep -q '^0059_audit_inference_lease_immutability (head)$'
+          alembic history | grep -q '0059_audit_inference_lease_immutability'

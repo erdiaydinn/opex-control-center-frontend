@@ -11,6 +11,7 @@ from app.modules.academy.learning_os import (
     recommend_learning_paths,
 )
 from app.modules.academy.repository_credentials import list_my_badge_credentials
+from app.modules.academy.repository_enrollment import list_enrollments
 
 
 async def get_my_skill_gap_snapshot(
@@ -52,6 +53,8 @@ async def get_my_skill_gap_snapshot(
 
     gaps = compute_skill_gaps(requirements, proficiencies)
     recommended_keys = recommend_learning_paths(gaps, outcomes)
+    enrollments = await list_enrollments(session, principal) if recommended_keys else []
+    enrollment_by_path = {str(item["key"]): item for item in enrollments}
 
     requirement_by_key = {
         str(item["skill_key"]): item for item in context["requirements"]
@@ -96,14 +99,20 @@ async def get_my_skill_gap_snapshot(
             }
         )
 
-    recommendations = [
-        {
-            "path_key": path_key,
-            "title_i18n": path_title_by_key.get(path_key, {}),
-            "outcomes": outcome_by_path.get(path_key, []),
-        }
-        for path_key in recommended_keys
-    ]
+    recommendations = []
+    for path_key in recommended_keys:
+        enrollment = enrollment_by_path.get(path_key)
+        recommendations.append(
+            {
+                "path_key": path_key,
+                "title_i18n": path_title_by_key.get(path_key, {}),
+                "outcomes": outcome_by_path.get(path_key, []),
+                "path_id": enrollment["path_id"] if enrollment else None,
+                "enrollment_id": enrollment["id"] if enrollment else None,
+                "enrollment_status": enrollment["status"] if enrollment else None,
+                "enrollment_due_at": enrollment["due_at"] if enrollment else None,
+            }
+        )
 
     return {
         "subject": principal.subject,

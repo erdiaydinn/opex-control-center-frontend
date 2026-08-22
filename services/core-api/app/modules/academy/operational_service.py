@@ -31,7 +31,9 @@ async def create_mapping(
     except IntegrityError as exc:
         raise ValueError("Operational readiness mapping already exists") from exc
     if row is None:
-        raise ValueError("Operational mapping requires active skill and published learning path")
+        raise ValueError(
+            "Operational mapping requires active skill and published learning path"
+        )
     return row
 
 
@@ -83,7 +85,8 @@ async def ingest_signal(
         raise ValueError("Operational signal source event was already ingested") from exc
     if result is None:
         raise ValueError(
-            "Operational signal is not authorized by an active source mapping and active tenant member"
+            "Operational signal is not authorized by an active source mapping "
+            "and active tenant member"
         )
     return result
 
@@ -107,7 +110,9 @@ async def record_outcome(
     except IntegrityError as exc:
         raise ValueError("Operational outcome observation already exists") from exc
     if row is None:
-        raise ValueError("Operational outcome source is not authoritative for this remediation")
+        raise ValueError(
+            "Operational outcome source is not authoritative for this remediation"
+        )
     return row
 
 

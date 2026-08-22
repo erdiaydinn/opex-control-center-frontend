@@ -30,6 +30,8 @@ DEFINITIONS = {
 
 CODE_STEPS = {"SOURCE_LOCATION", "DESTINATION_LOCATION", "CONDITION", "CONTAINER", "COMPLETE"}
 MAX_OPERATIONAL_QUANTITY = Decimal("1000000")
+MISSION_PRIORITIES = {"LOW", "NORMAL", "HIGH", "URGENT"}
+MAX_ESTIMATED_SECONDS = 86_400
 
 
 def _decimal_text(value: Any) -> str:
@@ -98,6 +100,41 @@ def _optional_code(payload: dict[str, Any], key: str) -> str | None:
     return normalized or None
 
 
+def _service_level(payload: dict[str, Any]) -> dict[str, Any]:
+    priority = str(payload.get("priority") or "NORMAL").strip().upper()
+    if priority not in MISSION_PRIORITIES:
+        raise InventoryRuleError("Operasyon mission priority geçersiz.")
+
+    due_at: datetime | None = None
+    raw_due = payload.get("due_at")
+    if raw_due is not None:
+        try:
+            due_at = datetime.fromisoformat(str(raw_due).replace("Z", "+00:00"))
+        except (TypeError, ValueError) as error:
+            raise InventoryRuleError("Operasyon SLA zamanı geçersiz.") from error
+        if due_at.tzinfo is None:
+            raise InventoryRuleError("Operasyon SLA zamanı timezone içermelidir.")
+        due_at = due_at.astimezone(UTC)
+        if due_at <= datetime.now(UTC):
+            raise InventoryRuleError("Yeni operasyon mission SLA zamanı gelecekte olmalıdır.")
+
+    estimated_seconds: int | None = None
+    raw_estimate = payload.get("estimated_seconds")
+    if raw_estimate is not None:
+        try:
+            estimated_seconds = int(raw_estimate)
+        except (TypeError, ValueError) as error:
+            raise InventoryRuleError("Operasyon tahmini süresi geçersiz.") from error
+        if estimated_seconds < 1 or estimated_seconds > MAX_ESTIMATED_SECONDS:
+            raise InventoryRuleError("Operasyon tahmini süresi geçersiz.")
+
+    return {
+        "priority": priority,
+        "due_at": due_at,
+        "estimated_seconds": estimated_seconds,
+    }
+
+
 def build_operational_intent(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     mission_type = kind.strip().upper()
     sku_id = str(payload.get("sku_id", "")).strip()
@@ -158,6 +195,7 @@ def create_operational_mission(principal: InventoryPrincipal, payload: dict[str,
         raise PermissionError("Mission deposu kimlik kapsamında değil.")
     operation, steps = DEFINITIONS[kind]
     intent = build_operational_intent(kind, payload)
+    service = _service_level(payload)
     mission_id = uuid4()
     with connect() as db:
         _assert_runtime_tenant(db, principal)
@@ -166,8 +204,8 @@ def create_operational_mission(principal: InventoryPrincipal, payload: dict[str,
             """INSERT INTO inventory_operational_missions(
                  tenant_id,mission_id,warehouse_id,mission_type,operation,external_reference,steps,created_by,
                  intent_version,sku_id,item_value_hash,planned_quantity,source_location_id,
-                 destination_location_id,container_id,allowed_conditions
-               ) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
+                 destination_location_id,container_id,allowed_conditions,priority,due_at,estimated_seconds
+               ) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)""",
             (
                 principal.tenant_id,
                 mission_id,
@@ -185,6 +223,9 @@ def create_operational_mission(principal: InventoryPrincipal, payload: dict[str,
                 intent["destination_location_id"],
                 intent["container_id"],
                 json.dumps(intent["allowed_conditions"]),
+                service["priority"],
+                service["due_at"],
+                service["estimated_seconds"],
             ),
         )
         db.commit()
@@ -194,6 +235,11 @@ def create_operational_mission(principal: InventoryPrincipal, payload: dict[str,
         "operation": operation,
         "steps": steps,
         "state": "OPEN",
+        "service": {
+            "priority": service["priority"],
+            "due_at": service["due_at"].isoformat().replace("+00:00", "Z") if service["due_at"] else None,
+            "estimated_seconds": service["estimated_seconds"],
+        },
         "intent": {
             "sku_id": intent["sku_id"],
             "planned_quantity": _decimal_text(intent["planned_quantity"]),

@@ -48,7 +48,10 @@ class TUIKThemeNode(BaseModel):
 
     theme_id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=500)
-    url: str = Field(min_length=1, max_length=2_000)
+    # Field evidence shows structural/group nodes legitimately carry null/blank URLs.
+    # The source key remains mandatory in _parse_node; any non-empty URL is still
+    # constrained to a safe relative path or HTTPS under the official TÜİK domain.
+    url: str | None = Field(max_length=2_000)
     icon: str | None = Field(default=None, max_length=2_000)
     metadata_url: str | None = Field(default=None, max_length=2_000)
     children: tuple[TUIKThemeNode, ...] = ()
@@ -143,6 +146,17 @@ def _optional_text(value: Any, *, field_name: str) -> str | None:
     return normalized or None
 
 
+def _optional_catalog_url(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"tuik_theme_catalog_{field_name}_invalid")
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return _safe_catalog_url(normalized, field_name=field_name)
+
+
 def _parse_node(
     raw: Any,
     *,
@@ -197,7 +211,7 @@ def _parse_node(
     return TUIKThemeNode(
         theme_id=theme_id,
         name=normalized_name,
-        url=_safe_catalog_url(raw["url"], field_name="url"),
+        url=_optional_catalog_url(raw["url"], field_name="url"),
         icon=icon,
         metadata_url=metadata_url,
         children=children,

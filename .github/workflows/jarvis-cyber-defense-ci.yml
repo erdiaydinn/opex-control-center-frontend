@@ -13,6 +13,7 @@ on:
       - "services/eay-ai-core/config/cyber_*.json"
       - "services/eay-ai-core/config/eay_cyber_*.json"
       - "services/eay-ai-core/scripts/run_live_cyber_defense_smoke.py"
+      - "services/eay-ai-core/scripts/run_cyber_world_championship_readiness.py"
       - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/jarvis-cyber-defense-ci.yml"
   pull_request:
@@ -24,6 +25,7 @@ on:
       - "services/eay-ai-core/config/cyber_*.json"
       - "services/eay-ai-core/config/eay_cyber_*.json"
       - "services/eay-ai-core/scripts/run_live_cyber_defense_smoke.py"
+      - "services/eay-ai-core/scripts/run_cyber_world_championship_readiness.py"
       - "services/eay-ai-core/pyproject.toml"
       - ".github/workflows/jarvis-cyber-defense-ci.yml"
   schedule:
@@ -72,6 +74,7 @@ jobs:
             tests/test_cyber_*.py \
             tests/test_company_detection_coverage_intelligence.py \
             scripts/run_live_cyber_defense_smoke.py \
+            scripts/run_cyber_world_championship_readiness.py \
             --output-format=json > /tmp/cyber-ruff.json
           ruff_status=$?
           python - <<'PY'
@@ -108,7 +111,8 @@ jobs:
             app/company_detection_coverage_intelligence.py \
             tests/test_cyber_*.py \
             tests/test_company_detection_coverage_intelligence.py \
-            scripts/run_live_cyber_defense_smoke.py
+            scripts/run_live_cyber_defense_smoke.py \
+            scripts/run_cyber_world_championship_readiness.py
       - name: Run cyber defense adversarial and end-to-end acceptance
         run: |
           python -m pytest -q \
@@ -147,6 +151,37 @@ jobs:
             tests/test_cyber_benchmark_intelligence.py \
             tests/test_cyber_continuous_defense_pipeline.py \
             -k "benchmark or full_continuous_cycle"
+
+  cyber-world-championship-readiness:
+    name: Cyber world championship blind-arena readiness
+    needs: cyber-defense-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prove literal championship head
+        run: |
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_CHAMP_EXPECTED_SHA=$expected"
+          echo "CYBER_CHAMP_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install championship runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Enforce world championship truth gates
+        run: python -m pytest -q tests/test_cyber_world_championship.py
+      - name: Prove challenge-ready but not self-declared leader
+        run: python scripts/run_cyber_world_championship_readiness.py
 
   live-public-threat-intelligence:
     name: Live CISA KEV, NVD and EPSS read-only observation

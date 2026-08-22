@@ -75,9 +75,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_schema_migrations WHERE version=14")" = "1"
-          test "$(psql "$DB" -Atc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='inventory_documents' AND column_name='count_mode')" = "1"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='inventory_documents' AND column_name='count_mode'")" = "1"
           test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_trigger WHERE tgname IN ('inventory_guard_count_mode_v14_trigger','inventory_guard_w2w_readiness_v14_trigger','inventory_guard_operational_during_w2w_v14_trigger') AND NOT tgisinternal")" = "3"
-          test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_one_active_w2w_per_warehouse_v14')" = "1"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM pg_indexes WHERE indexname='inventory_one_active_w2w_per_warehouse_v14'")" = "1"
       - name: Adversarial W2W v14 readiness acceptance
         shell: bash
         run: |

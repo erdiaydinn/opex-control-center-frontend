@@ -27,11 +27,7 @@ async def create_mapping(
     payload: OperationalMappingCreateRequest,
 ) -> dict[str, object]:
     try:
-        row = await create_operational_mapping(
-            session,
-            principal,
-            **payload.model_dump(),
-        )
+        row = await create_operational_mapping(session, principal, **payload.model_dump())
     except IntegrityError as exc:
         raise ValueError("Operational readiness mapping already exists") from exc
     if row is None:
@@ -86,7 +82,9 @@ async def ingest_signal(
     except IntegrityError as exc:
         raise ValueError("Operational signal source event was already ingested") from exc
     if result is None:
-        raise ValueError("Operational signal subject is not an active tenant member")
+        raise ValueError(
+            "Operational signal is not authorized by an active source mapping and active tenant member"
+        )
     return result
 
 

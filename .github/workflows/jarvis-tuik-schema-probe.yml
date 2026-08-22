@@ -45,25 +45,56 @@ jobs:
           test "$api_status" = "200"
 
           python - "$body" <<'PY'
+          import collections
           import json
           import pathlib
           import sys
+          from urllib.parse import urlparse
 
           doc = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
-          print("TUIK_TOP_TYPE=" + type(doc).__name__)
           if not isinstance(doc, dict):
               raise SystemExit("TUIK_TOP_NOT_DICT")
-          print("TUIK_TOP_KEYS=" + ",".join(sorted(map(str, doc.keys()))))
           payload = doc.get("data")
-          print("TUIK_DATA_TYPE=" + type(payload).__name__)
           if not isinstance(payload, list):
               raise SystemExit("TUIK_DATA_NOT_LIST")
-          print("TUIK_DATA_LEN=" + str(len(payload)))
 
           total_nodes = 0
           missing_url = []
           missing_url_nonleaf = []
           malformed_children = []
+          url_categories = collections.Counter()
+          url_hosts = collections.Counter()
+          rejected_urls = []
+
+          def classify_url(value):
+              normalized = value.strip()
+              if normalized.startswith("//"):
+                  return "protocol_relative"
+              if normalized.startswith("/"):
+                  return "root_relative"
+              parsed = urlparse(normalized)
+              if parsed.scheme:
+                  return f"scheme:{parsed.scheme.casefold()}"
+              if normalized.startswith("?"):
+                  return "query_only"
+              if normalized.startswith("#"):
+                  return "fragment_only"
+              return "relative_no_leading_slash"
+
+          def current_parser_accepts(value):
+              normalized = value.strip()
+              if normalized.startswith("/") and not normalized.startswith("//"):
+                  return True
+              parsed = urlparse(normalized)
+              host = (parsed.hostname or "").casefold().rstrip(".")
+              return bool(
+                  parsed.scheme == "https"
+                  and (host == "tuik.gov.tr" or host.endswith(".tuik.gov.tr"))
+                  and not parsed.username
+                  and not parsed.password
+                  and parsed.port in (None, 443)
+                  and not parsed.fragment
+              )
 
           def walk(nodes, *, depth=0, parent="root"):
               global total_nodes
@@ -84,6 +115,24 @@ jobs:
                       missing_url.append(sample)
                       if children:
                           missing_url_nonleaf.append(sample)
+                  else:
+                      normalized = url.strip()
+                      category = classify_url(normalized)
+                      url_categories[category] += 1
+                      parsed = urlparse(normalized)
+                      if parsed.hostname:
+                          url_hosts[(parsed.scheme.casefold(), parsed.hostname.casefold().rstrip("."))] += 1
+                      if not current_parser_accepts(normalized):
+                          rejected_urls.append(
+                              (
+                                  node_id,
+                                  name[:120],
+                                  depth,
+                                  len(children),
+                                  category,
+                                  normalized[:500],
+                              )
+                          )
                   walk(children, depth=depth + 1, parent=node_id)
 
           walk(payload)
@@ -91,16 +140,17 @@ jobs:
           print("TUIK_MISSING_URL_COUNT=" + str(len(missing_url)))
           print("TUIK_MISSING_URL_NONLEAF_COUNT=" + str(len(missing_url_nonleaf)))
           print("TUIK_MALFORMED_CHILDREN_COUNT=" + str(len(malformed_children)))
-          for index, sample in enumerate(missing_url[:20]):
-              node_id, name, depth, child_count = sample
+          print("TUIK_NONEMPTY_URL_COUNT=" + str(sum(url_categories.values())))
+          print("TUIK_REJECTED_NONEMPTY_URL_COUNT=" + str(len(rejected_urls)))
+          for category, count in sorted(url_categories.items()):
+              print(f"TUIK_URL_CATEGORY={category}|count={count}")
+          for (scheme, host), count in sorted(url_hosts.items()):
+              print(f"TUIK_URL_HOST=scheme={scheme}|host={host}|count={count}")
+          for index, sample in enumerate(rejected_urls[:30]):
+              node_id, name, depth, child_count, category, url = sample
               print(
-                  f"TUIK_MISSING_URL_SAMPLE_{index}="
-                  f"id={node_id}|name={name}|depth={depth}|children={child_count}"
-              )
-          for index, sample in enumerate(missing_url_nonleaf[:10]):
-              node_id, name, depth, child_count = sample
-              print(
-                  f"TUIK_MISSING_URL_NONLEAF_SAMPLE_{index}="
-                  f"id={node_id}|name={name}|depth={depth}|children={child_count}"
+                  f"TUIK_REJECTED_URL_SAMPLE_{index}="
+                  f"id={node_id}|name={name}|depth={depth}|children={child_count}|"
+                  f"category={category}|url={url}"
               )
           PY

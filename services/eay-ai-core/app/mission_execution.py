@@ -20,8 +20,8 @@ effect verification and audit evidence.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum
-from typing import Awaitable, Callable, Mapping
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -58,7 +58,7 @@ class MissionExecutionSpec(BaseModel):
     requires_firm_company_truth: bool = False
 
     @model_validator(mode="after")
-    def kind_contract(self) -> "MissionExecutionSpec":
+    def kind_contract(self) -> MissionExecutionSpec:
         if self.kind is MissionExecutionKind.REASONING:
             if self.intelligence_task is None or not (self.prompt or "").strip():
                 raise ValueError("reasoning_step_requires_task_and_prompt")
@@ -80,7 +80,7 @@ class AuthorizationDecision(BaseModel):
     reason_code: str | None = None
 
     @model_validator(mode="after")
-    def allowed_requires_evidence(self) -> "AuthorizationDecision":
+    def allowed_requires_evidence(self) -> AuthorizationDecision:
         if self.allowed and not self.evidence_ref:
             raise ValueError("authorization_allow_requires_evidence_ref")
         return self
@@ -96,12 +96,15 @@ class CapabilityExecutionOutcome(BaseModel):
     error_code: str | None = None
 
     @model_validator(mode="after")
-    def outcome_is_consistent(self) -> "CapabilityExecutionOutcome":
+    def outcome_is_consistent(self) -> CapabilityExecutionOutcome:
         if self.succeeded and self.ambiguous_outcome:
             raise ValueError("capability_outcome_cannot_be_success_and_ambiguous")
         if self.effect_verified and not self.succeeded:
             raise ValueError("failed_capability_cannot_claim_verified_effect")
-        if self.robot_commit_fence_receipt_ref is not None and not self.robot_commit_fence_receipt_ref.strip():
+        if (
+            self.robot_commit_fence_receipt_ref is not None
+            and not self.robot_commit_fence_receipt_ref.strip()
+        ):
             raise ValueError("robot_commit_fence_receipt_ref_must_be_non_empty")
         return self
 
@@ -116,7 +119,9 @@ class MissionExecutionSummary(BaseModel):
 
 
 ReasoningEvidenceWriter = Callable[[EngineInvocationReceipt], str]
-AuthorizationChecker = Callable[[MissionDefinition, MissionStep, str], Awaitable[AuthorizationDecision]]
+AuthorizationChecker = Callable[
+    [MissionDefinition, MissionStep, str], Awaitable[AuthorizationDecision]
+]
 CapabilityHandler = Callable[
     [MissionDefinition, MissionStep, StepCheckpoint, str],
     Awaitable[CapabilityExecutionOutcome],
@@ -267,7 +272,7 @@ async def execute_mission_until_blocked(
                 evidence_ref = reasoning_evidence_writer(receipt)
                 if not evidence_ref.strip():
                     raise ValueError("reasoning_evidence_writer_returned_empty_ref")
-            except Exception as exc:  # sanitized at the mission boundary
+            except Exception as exc:  # noqa: BLE001 - sanitize provider boundary
                 error_code = f"reasoning_execution_failed:{type(exc).__name__}"
                 current = record_step_result(
                     definition,
@@ -312,7 +317,11 @@ async def execute_mission_until_blocked(
                 phase="pre_authorization",
             )
             if not pre_auth.allowed:
-                blockers.append((pre_auth.reason_code or "robot_execution_pin_rejected") + ":" + capability_ref)
+                blockers.append(
+                    (pre_auth.reason_code or "robot_execution_pin_rejected")
+                    + ":"
+                    + capability_ref
+                )
                 break
             robot_evidence = tuple(
                 dict.fromkeys((robot_execution_pin.evidence_ref, pre_auth.evidence_ref))
@@ -338,7 +347,9 @@ async def execute_mission_until_blocked(
                     error=decision.reason_code or "capability_authorization_denied",
                 )
                 blockers.append(
-                    (decision.reason_code or "capability_authorization_denied") + ":" + capability_ref
+                    (decision.reason_code or "capability_authorization_denied")
+                    + ":"
+                    + capability_ref
                 )
                 transitions += 1
                 continue
@@ -370,7 +381,7 @@ async def execute_mission_until_blocked(
                 state,
                 step.idempotency_key or "",
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - sanitize capability boundary
             error_code = f"capability_execution_failed:{type(exc).__name__}"
             current = record_step_result(
                 definition,

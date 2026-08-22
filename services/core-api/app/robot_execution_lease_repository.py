@@ -373,14 +373,28 @@ class PostgresRobotExecutionLeaseRepository:
         *,
         for_update: bool = False,
     ) -> RobotExecutionLeaseRecord | None:
-        suffix = " FOR UPDATE" if for_update else ""
-        result = await self.session.execute(
-            text(
-                "SELECT * FROM jarvis_robot_execution_leases "
-                "WHERE tenant_id = :tenant_id AND lease_id = :lease_id" + suffix
-            ),
-            {"tenant_id": tenant_id, "lease_id": lease_id},
-        )
+        params = {"tenant_id": tenant_id, "lease_id": lease_id}
+        if for_update:
+            result = await self.session.execute(
+                text(
+                    """
+                    SELECT * FROM jarvis_robot_execution_leases
+                    WHERE tenant_id = :tenant_id AND lease_id = :lease_id
+                    FOR UPDATE
+                    """
+                ),
+                params,
+            )
+        else:
+            result = await self.session.execute(
+                text(
+                    """
+                    SELECT * FROM jarvis_robot_execution_leases
+                    WHERE tenant_id = :tenant_id AND lease_id = :lease_id
+                    """
+                ),
+                params,
+            )
         row = result.mappings().first()
         return None if row is None else self._record(row)
 

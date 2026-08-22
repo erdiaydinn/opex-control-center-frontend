@@ -1,15 +1,12 @@
 """Governed Robot Authoring for Jarvis Adaptive Execution.
 
-This module turns a previously classified Adaptive Execution repair proposal into
-an immutable, structured robot revision candidate. It deliberately stops before
-execution or publication:
+The authoring chain is deliberately non-executable:
 
 adaptive repair -> structured candidate -> sandbox receipts -> registry candidate
 
-Only the canonical mission execution / capability / approval / commit-fence
-layers may execute or activate a robot revision. Robot Authoring cannot bypass
-authentication, widen authorization, mint execution authority, write to
-production during verification, or auto-publish a candidate.
+Only canonical mission execution, capability, approval and commit-fence layers
+may execute or activate a robot revision. This module never bypasses auth,
+widens authorization, writes to production during verification or auto-publishes.
 """
 
 from __future__ import annotations
@@ -19,6 +16,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from enum import Enum
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -48,6 +46,16 @@ class SandboxEffectStatus(str, Enum):
     VERIFIED_EQUIVALENT = "VERIFIED_EQUIVALENT"
     VERIFIED_NOT_EQUIVALENT = "VERIFIED_NOT_EQUIVALENT"
     UNKNOWN = "UNKNOWN"
+
+
+def _fingerprint(payload: Mapping[str, object]) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class RobotDefinition(BaseModel):
@@ -115,11 +123,41 @@ class RobotAuthoringCandidate(BaseModel):
     requires_canonical_registration: bool = True
 
     @model_validator(mode="after")
-    def candidate_never_self_authorizes(self) -> "RobotAuthoringCandidate":
+    def candidate_is_sealed_and_non_authoritative(self) -> "RobotAuthoringCandidate":
         if self.grants_auth_bypass or self.grants_execution_authority or self.can_auto_publish:
             raise ValueError("robot_authoring_candidate_cannot_grant_runtime_authority")
         if self.proposed_version != self.source_version + 1:
             raise ValueError("robot_authoring_candidate_version_must_increment_exactly_once")
+
+        manifest_keys = [key for key, _ in self.candidate_manifest]
+        patch_fields = [item.field for item in self.patches]
+        if len(manifest_keys) != len(set(manifest_keys)):
+            raise ValueError("robot_authoring_candidate_manifest_keys_must_be_unique")
+        if len(patch_fields) != len(set(patch_fields)):
+            raise ValueError("robot_authoring_candidate_patch_fields_must_be_unique")
+
+        manifest = dict(self.candidate_manifest)
+        if any(manifest.get(item.field) != item.after for item in self.patches):
+            raise ValueError("robot_authoring_candidate_patch_manifest_mismatch")
+
+        payload = _candidate_payload(
+            tenant_id=self.tenant_id,
+            company_id=self.company_id,
+            objective_id=self.objective_id,
+            robot_id=self.robot_id,
+            source_version=self.source_version,
+            proposed_version=self.proposed_version,
+            kind=self.kind,
+            semantic_intent=self.semantic_intent,
+            capability_ref=self.capability_ref,
+            repair_proposal_fingerprint=self.repair_proposal_fingerprint,
+            source_robot_fingerprint=self.source_robot_fingerprint,
+            patches=self.patches,
+            candidate_manifest=self.candidate_manifest,
+            expected_outcome_fingerprint=self.expected_outcome_fingerprint,
+        )
+        if _fingerprint(payload) != self.candidate_fingerprint:
+            raise ValueError("robot_authoring_candidate_fingerprint_mismatch")
         return self
 
 
@@ -169,21 +207,21 @@ class SandboxVerificationReceipt(BaseModel):
 
     @model_validator(mode="after")
     def receipt_is_tamper_evident(self) -> "SandboxVerificationReceipt":
-        payload = {
-            "tenant_id": self.tenant_id,
-            "company_id": self.company_id,
-            "objective_id": self.objective_id,
-            "candidate_fingerprint": self.candidate_fingerprint,
-            "environment_fingerprint": self.environment_fingerprint,
-            "verifier_id": self.verifier_id,
-            "network_policy": self.network_policy,
-            "production_write_count": self.production_write_count,
-            "auth_bypass_observed": self.auth_bypass_observed,
-            "execution_authority_minted": self.execution_authority_minted,
-            "effect_status": self.effect_status.value,
-            "observed_outcome_fingerprint": self.observed_outcome_fingerprint,
-            "evidence_refs": self.evidence_refs,
-        }
+        payload = _sandbox_receipt_payload(
+            tenant_id=self.tenant_id,
+            company_id=self.company_id,
+            objective_id=self.objective_id,
+            candidate_fingerprint=self.candidate_fingerprint,
+            environment_fingerprint=self.environment_fingerprint,
+            verifier_id=self.verifier_id,
+            network_policy=self.network_policy,
+            production_write_count=self.production_write_count,
+            auth_bypass_observed=self.auth_bypass_observed,
+            execution_authority_minted=self.execution_authority_minted,
+            effect_status=self.effect_status,
+            observed_outcome_fingerprint=self.observed_outcome_fingerprint,
+            evidence_refs=self.evidence_refs,
+        )
         if _fingerprint(payload) != self.receipt_fingerprint:
             raise ValueError("sandbox_verification_receipt_fingerprint_mismatch")
         if (
@@ -215,7 +253,7 @@ class RobotRegistryCandidate(BaseModel):
     can_auto_publish: bool = False
 
     @model_validator(mode="after")
-    def registry_candidate_is_non_executable(self) -> "RobotRegistryCandidate":
+    def registry_candidate_is_sealed_and_non_executable(self) -> "RobotRegistryCandidate":
         if (
             not self.approval_required
             or self.executable
@@ -225,6 +263,21 @@ class RobotRegistryCandidate(BaseModel):
             raise ValueError("robot_registry_candidate_cannot_self_activate")
         if len(set(self.independent_verifier_ids)) < 2:
             raise ValueError("robot_registry_candidate_requires_two_independent_verifiers")
+        if len(set(self.sandbox_receipt_fingerprints)) < 2:
+            raise ValueError("robot_registry_candidate_requires_two_distinct_receipts")
+
+        payload = _registry_candidate_payload(
+            tenant_id=self.tenant_id,
+            company_id=self.company_id,
+            objective_id=self.objective_id,
+            robot_id=self.robot_id,
+            proposed_version=self.proposed_version,
+            candidate_fingerprint=self.candidate_fingerprint,
+            sandbox_receipt_fingerprints=self.sandbox_receipt_fingerprints,
+            independent_verifier_ids=self.independent_verifier_ids,
+        )
+        if _fingerprint(payload) != self.registry_candidate_fingerprint:
+            raise ValueError("robot_registry_candidate_fingerprint_mismatch")
         return self
 
 
@@ -239,16 +292,9 @@ _ALLOWED_PATCH_FIELDS: dict[DriftKind, frozenset[str]] = {
     ),
     DriftKind.UI_SEMANTIC_RELOCATION: frozenset({"role", "label", "spatial_hint"}),
 }
-
-
-def _fingerprint(payload: Mapping[str, object]) -> str:
-    canonical = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+_URL_PATCH_FIELDS = frozenset(
+    {"authorization_endpoint", "token_endpoint", "jwks_uri", "url"}
+)
 
 
 def robot_definition_fingerprint(robot: RobotDefinition) -> str:
@@ -294,6 +340,20 @@ def author_repair_candidate(
         return _hold("adaptive_repair_contains_empty_patch_value")
 
     manifest = dict(robot.manifest)
+    for field, value in adapter.items():
+        if field in _URL_PATCH_FIELDS:
+            if blocker := _trusted_https_url_blocker(
+                str(value),
+                repair_scope.trusted_origins,
+            ):
+                return _hold(blocker)
+        if field == "method":
+            source_method = manifest.get("method")
+            if source_method is None:
+                return _hold("adaptive_repair_patch_field_missing_from_robot_manifest")
+            if str(value).upper() != source_method.upper():
+                return _hold("adaptive_repair_http_method_change_forbidden")
+
     patches: list[StructuredRobotPatch] = []
     for field in sorted(adapter):
         after = str(adapter[field])
@@ -309,26 +369,23 @@ def author_repair_candidate(
         return _hold("adaptive_repair_produced_no_robot_change")
 
     source_fingerprint = robot_definition_fingerprint(robot)
-    candidate_payload = {
-        "tenant_id": robot.tenant_id,
-        "company_id": robot.company_id,
-        "objective_id": robot.objective_id,
-        "robot_id": robot.robot_id,
-        "source_version": robot.version,
-        "proposed_version": robot.version + 1,
-        "kind": robot.kind.value,
-        "semantic_intent": robot.semantic_intent,
-        "capability_ref": robot.capability_ref,
-        "repair_proposal_fingerprint": proposal.proposal_fingerprint,
-        "source_robot_fingerprint": source_fingerprint,
-        "patches": tuple((item.field, item.before, item.after) for item in patches),
-        "candidate_manifest": tuple(sorted(manifest.items())),
-        "expected_outcome_fingerprint": robot.expected_outcome_fingerprint,
-        "grants_auth_bypass": False,
-        "grants_execution_authority": False,
-        "can_auto_publish": False,
-    }
-    candidate_fingerprint = _fingerprint(candidate_payload)
+    candidate_manifest = tuple(sorted(manifest.items()))
+    candidate_payload = _candidate_payload(
+        tenant_id=robot.tenant_id,
+        company_id=robot.company_id,
+        objective_id=robot.objective_id,
+        robot_id=robot.robot_id,
+        source_version=robot.version,
+        proposed_version=robot.version + 1,
+        kind=robot.kind,
+        semantic_intent=robot.semantic_intent,
+        capability_ref=robot.capability_ref,
+        repair_proposal_fingerprint=proposal.proposal_fingerprint,
+        source_robot_fingerprint=source_fingerprint,
+        patches=tuple(patches),
+        candidate_manifest=candidate_manifest,
+        expected_outcome_fingerprint=robot.expected_outcome_fingerprint,
+    )
     candidate = RobotAuthoringCandidate(
         tenant_id=robot.tenant_id,
         company_id=robot.company_id,
@@ -342,9 +399,9 @@ def author_repair_candidate(
         repair_proposal_fingerprint=proposal.proposal_fingerprint,
         source_robot_fingerprint=source_fingerprint,
         patches=tuple(patches),
-        candidate_manifest=tuple(sorted(manifest.items())),
+        candidate_manifest=candidate_manifest,
         expected_outcome_fingerprint=robot.expected_outcome_fingerprint,
-        candidate_fingerprint=candidate_fingerprint,
+        candidate_fingerprint=_fingerprint(candidate_payload),
     )
     return RobotAuthoringResult(
         disposition=RobotAuthoringDisposition.STRUCTURED_CANDIDATE,
@@ -377,21 +434,21 @@ def issue_sandbox_receipt(
     if not evidence:
         raise ValueError("sandbox_verification_requires_evidence")
 
-    payload = {
-        "tenant_id": candidate.tenant_id,
-        "company_id": candidate.company_id,
-        "objective_id": candidate.objective_id,
-        "candidate_fingerprint": candidate.candidate_fingerprint,
-        "environment_fingerprint": environment_fingerprint,
-        "verifier_id": verifier_id,
-        "network_policy": network_policy,
-        "production_write_count": production_write_count,
-        "auth_bypass_observed": auth_bypass_observed,
-        "execution_authority_minted": execution_authority_minted,
-        "effect_status": effect_status.value,
-        "observed_outcome_fingerprint": observed_outcome_fingerprint,
-        "evidence_refs": evidence,
-    }
+    payload = _sandbox_receipt_payload(
+        tenant_id=candidate.tenant_id,
+        company_id=candidate.company_id,
+        objective_id=candidate.objective_id,
+        candidate_fingerprint=candidate.candidate_fingerprint,
+        environment_fingerprint=environment_fingerprint,
+        verifier_id=verifier_id,
+        network_policy=network_policy,
+        production_write_count=production_write_count,
+        auth_bypass_observed=auth_bypass_observed,
+        execution_authority_minted=execution_authority_minted,
+        effect_status=effect_status,
+        observed_outcome_fingerprint=observed_outcome_fingerprint,
+        evidence_refs=evidence,
+    )
     return SandboxVerificationReceipt(
         tenant_id=candidate.tenant_id,
         company_id=candidate.company_id,
@@ -425,25 +482,24 @@ def build_registry_candidate(
         _validate_sandbox_receipt(candidate, receipt)
         verifier_ids.append(receipt.verifier_id)
         receipt_fingerprints.append(receipt.receipt_fingerprint)
+
     if len(set(verifier_ids)) < 2:
         raise ValueError("robot_registry_requires_two_independent_sandbox_verifiers")
 
     unique_receipts = tuple(sorted(set(receipt_fingerprints)))
+    if len(unique_receipts) < 2:
+        raise ValueError("robot_registry_requires_two_distinct_sandbox_receipts")
     unique_verifiers = tuple(sorted(set(verifier_ids)))
-    payload = {
-        "tenant_id": candidate.tenant_id,
-        "company_id": candidate.company_id,
-        "objective_id": candidate.objective_id,
-        "robot_id": candidate.robot_id,
-        "proposed_version": candidate.proposed_version,
-        "candidate_fingerprint": candidate.candidate_fingerprint,
-        "sandbox_receipt_fingerprints": unique_receipts,
-        "independent_verifier_ids": unique_verifiers,
-        "approval_required": True,
-        "executable": False,
-        "production_activated": False,
-        "can_auto_publish": False,
-    }
+    payload = _registry_candidate_payload(
+        tenant_id=candidate.tenant_id,
+        company_id=candidate.company_id,
+        objective_id=candidate.objective_id,
+        robot_id=candidate.robot_id,
+        proposed_version=candidate.proposed_version,
+        candidate_fingerprint=candidate.candidate_fingerprint,
+        sandbox_receipt_fingerprints=unique_receipts,
+        independent_verifier_ids=unique_verifiers,
+    )
     return RobotRegistryCandidate(
         tenant_id=candidate.tenant_id,
         company_id=candidate.company_id,
@@ -455,6 +511,128 @@ def build_registry_candidate(
         independent_verifier_ids=unique_verifiers,
         registry_candidate_fingerprint=_fingerprint(payload),
     )
+
+
+def _candidate_payload(
+    *,
+    tenant_id: str,
+    company_id: str,
+    objective_id: str,
+    robot_id: str,
+    source_version: int,
+    proposed_version: int,
+    kind: RobotKind,
+    semantic_intent: str,
+    capability_ref: str,
+    repair_proposal_fingerprint: str,
+    source_robot_fingerprint: str,
+    patches: Sequence[StructuredRobotPatch],
+    candidate_manifest: Sequence[tuple[str, str]],
+    expected_outcome_fingerprint: str,
+) -> dict[str, object]:
+    return {
+        "tenant_id": tenant_id,
+        "company_id": company_id,
+        "objective_id": objective_id,
+        "robot_id": robot_id,
+        "source_version": source_version,
+        "proposed_version": proposed_version,
+        "kind": kind.value,
+        "semantic_intent": semantic_intent,
+        "capability_ref": capability_ref,
+        "repair_proposal_fingerprint": repair_proposal_fingerprint,
+        "source_robot_fingerprint": source_robot_fingerprint,
+        "patches": tuple((item.field, item.before, item.after) for item in patches),
+        "candidate_manifest": tuple(candidate_manifest),
+        "expected_outcome_fingerprint": expected_outcome_fingerprint,
+        "grants_auth_bypass": False,
+        "grants_execution_authority": False,
+        "can_auto_publish": False,
+    }
+
+
+def _sandbox_receipt_payload(
+    *,
+    tenant_id: str,
+    company_id: str,
+    objective_id: str,
+    candidate_fingerprint: str,
+    environment_fingerprint: str,
+    verifier_id: str,
+    network_policy: str,
+    production_write_count: int,
+    auth_bypass_observed: bool,
+    execution_authority_minted: bool,
+    effect_status: SandboxEffectStatus,
+    observed_outcome_fingerprint: str | None,
+    evidence_refs: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "tenant_id": tenant_id,
+        "company_id": company_id,
+        "objective_id": objective_id,
+        "candidate_fingerprint": candidate_fingerprint,
+        "environment_fingerprint": environment_fingerprint,
+        "verifier_id": verifier_id,
+        "network_policy": network_policy,
+        "production_write_count": production_write_count,
+        "auth_bypass_observed": auth_bypass_observed,
+        "execution_authority_minted": execution_authority_minted,
+        "effect_status": effect_status.value,
+        "observed_outcome_fingerprint": observed_outcome_fingerprint,
+        "evidence_refs": tuple(evidence_refs),
+    }
+
+
+def _registry_candidate_payload(
+    *,
+    tenant_id: str,
+    company_id: str,
+    objective_id: str,
+    robot_id: str,
+    proposed_version: int,
+    candidate_fingerprint: str,
+    sandbox_receipt_fingerprints: Sequence[str],
+    independent_verifier_ids: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "tenant_id": tenant_id,
+        "company_id": company_id,
+        "objective_id": objective_id,
+        "robot_id": robot_id,
+        "proposed_version": proposed_version,
+        "candidate_fingerprint": candidate_fingerprint,
+        "sandbox_receipt_fingerprints": tuple(sandbox_receipt_fingerprints),
+        "independent_verifier_ids": tuple(independent_verifier_ids),
+        "approval_required": True,
+        "executable": False,
+        "production_activated": False,
+        "can_auto_publish": False,
+    }
+
+
+def _trusted_https_url_blocker(
+    url: str,
+    trusted_origins: frozenset[str],
+) -> str | None:
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return "adaptive_repair_url_malformed"
+    if parsed.scheme.lower() != "https":
+        return "adaptive_repair_url_requires_https"
+    if parsed.username or parsed.password:
+        return "adaptive_repair_url_embedded_credentials_forbidden"
+    if not parsed.hostname:
+        return "adaptive_repair_url_malformed"
+
+    suffix = "" if port in (None, 443) else f":{port}"
+    origin = f"https://{parsed.hostname.lower()}{suffix}"
+    normalized_trusted = {item.casefold().rstrip("/") for item in trusted_origins}
+    if origin not in normalized_trusted:
+        return "adaptive_repair_url_not_trusted"
+    return None
 
 
 def _scope_blocker(robot: RobotDefinition, repair_scope: ExecutionScope) -> str | None:

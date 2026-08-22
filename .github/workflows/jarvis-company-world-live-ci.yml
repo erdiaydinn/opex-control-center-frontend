@@ -122,6 +122,59 @@ jobs:
           test "$api_status" = "200"
           printf '%s' "$api_type" | grep -qi 'application/json'
           python -c 'import json,sys; data=json.load(open(sys.argv[1],"rb")); print("TUIK_THEME_JSON_KIND="+type(data).__name__); print("TUIK_THEME_JSON_LENGTH="+str(len(data)) if isinstance(data,list) else "TUIK_THEME_JSON_KEYS="+",".join(sorted(map(str,data.keys()))[:30])); first=(data[0] if isinstance(data,list) and data else data); print("TUIK_THEME_FIRST_KEYS="+",".join(sorted(map(str,first.keys()))[:30]) if isinstance(first,dict) else "TUIK_THEME_FIRST_TYPE="+type(first).__name__)' "$api_body"
+      - name: Execute TUIK runtime to Company World observation end to end
+        run: |
+          python - <<'PY'
+          from app.company_world_live_bridge import ExternalContextDomain, GeographicScopeLevel
+          from app.context_provider_gateway import RequestPurpose, plan_provider_request
+          from app.context_provider_registry import require_provider
+          from app.real_world_timeline import TimelineAuthorityClass
+          from app.tuik_theme_catalog_adapter import (
+              TUIK_THEME_API_URL,
+              TUIK_THEME_PROVIDER_ID,
+              read_tuik_theme_catalog_observation,
+          )
+
+          provider = require_provider(TUIK_THEME_PROVIDER_ID)
+          assert provider.one_shot_observation_authorized is True
+          assert provider.continuous_ingestion_authorized is False
+          assert provider.production_enabled is False
+
+          continuous = plan_provider_request(
+              provider_id=TUIK_THEME_PROVIDER_ID,
+              url=TUIK_THEME_API_URL,
+              purpose=RequestPurpose.CONTINUOUS_INGESTION,
+          )
+          assert continuous.execution_permitted is False
+          assert "provider_continuous_ingestion_not_authorized" in continuous.blockers
+          assert "provider_production_not_enabled" in continuous.blockers
+
+          result = read_tuik_theme_catalog_observation(
+              tenant_id="field-probe:company-world",
+          )
+          assert result.provider_receipt.status_code == 200
+          assert result.provider_receipt.media_type == "application/json"
+          assert result.provider_receipt.bootstrap_body_sha256 is not None
+          assert result.catalog_receipt.root_theme_count > 0
+          assert result.catalog_receipt.total_node_count >= result.catalog_receipt.root_theme_count
+          assert result.catalog_receipt.context_only is True
+          assert result.catalog_receipt.company_truth_granted is False
+          assert result.catalog_receipt.causal_claim_proven is False
+          assert result.catalog_receipt.execution_authority_granted is False
+          assert result.observation.domain is ExternalContextDomain.MACROECONOMIC
+          assert result.observation.authority_class is TimelineAuthorityClass.VERIFIED_EXTERNAL
+          assert result.observation.geographic_scope.level is GeographicScopeLevel.COUNTRY
+          assert result.observation.geographic_scope.country_code == "TR"
+          assert result.observation.context_only is True
+          assert result.observation.company_truth_granted is False
+          assert result.observation.causal_claim_proven is False
+          assert result.observation.execution_authority_granted is False
+          print("TUIK_E2E_PROVIDER_SHA256=" + result.provider_receipt.body_sha256)
+          print("TUIK_E2E_CATALOG_FINGERPRINT=" + result.catalog_receipt.fingerprint)
+          print("TUIK_E2E_ROOT_THEME_COUNT=" + str(result.catalog_receipt.root_theme_count))
+          print("TUIK_E2E_TOTAL_NODE_COUNT=" + str(result.catalog_receipt.total_node_count))
+          print("TUIK_E2E_OBSERVATION_ID=" + result.observation.observation_id)
+          PY
       - name: Ruff Company World live and provider runtime
         run: >-
           ruff check
@@ -129,8 +182,10 @@ jobs:
           app/context_provider_gateway.py
           app/context_provider_registry.py
           app/context_provider_runtime.py
+          app/tuik_theme_catalog_adapter.py
           tests/test_company_world_live_bridge_intelligence.py
           tests/test_context_provider_runtime_intelligence.py
+          tests/test_tuik_theme_catalog_intelligence.py
       - name: Compile Company World authority surface
         run: >-
           python -m compileall -q
@@ -138,15 +193,18 @@ jobs:
           app/context_provider_gateway.py
           app/context_provider_registry.py
           app/context_provider_runtime.py
+          app/tuik_theme_catalog_adapter.py
           app/continuous_world_understanding.py
           app/real_world_timeline.py
           app/world_model.py
           tests/test_company_world_live_bridge_intelligence.py
           tests/test_context_provider_runtime_intelligence.py
+          tests/test_tuik_theme_catalog_intelligence.py
       - name: Run Company World adversarial and lineage contracts
         run: >-
           pytest -q
           tests/test_company_world_live_bridge_intelligence.py
           tests/test_context_provider_runtime_intelligence.py
+          tests/test_tuik_theme_catalog_intelligence.py
           tests/test_continuous_world_understanding_intelligence.py
           tests/test_world_model.py

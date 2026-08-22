@@ -289,12 +289,17 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
     warehouse_id = str(payload["warehouse_id"]).strip()
     if warehouse_id not in principal.warehouse_scope:
         raise PermissionError("Sayım deposu yetki kapsamı dışında.")
+    count_mode = str(payload.get("count_mode", "GOLDEN_COUNT")).strip().upper()
+    if count_mode not in {"GOLDEN_COUNT", "WALL_TO_WALL"}:
+        raise InventoryRuleError("Geçersiz sayım modu.")
     locations = sorted({str(value).strip().upper() for value in payload["locations"] if str(value).strip()})
     products = payload["products"]
     if not locations or not products:
         raise InventoryRuleError("Lokasyon ve ürün listesi zorunludur.")
     if len(locations) != len(payload["locations"]):
         raise InventoryRuleError("Lokasyon listesinde boş veya mükerrer kayıt var.")
+    if count_mode == "WALL_TO_WALL" and "LOST_FOUND" not in locations:
+        locations = sorted([*locations, "LOST_FOUND"])
     document_id = uuid4()
     seen_skus: set[str] = set()
     seen_barcodes: set[str] = set()
@@ -302,15 +307,39 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
         try:
             db.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
             _assert_runtime_tenant(db, principal)
+            if count_mode == "WALL_TO_WALL":
+                db.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                    (f"inventory:w2w:warehouse:{principal.tenant_id}:{warehouse_id}",),
+                )
+                competing = db.execute(
+                    """SELECT id FROM inventory_documents
+                       WHERE tenant_id=%s AND warehouse_id=%s
+                         AND count_mode='WALL_TO_WALL'
+                         AND state IN ('COUNTING','SUBMITTED','RECONCILING')
+                       LIMIT 1""",
+                    (principal.tenant_id, warehouse_id),
+                ).fetchone()
+                if competing:
+                    raise InventoryRuleError("Bu depoda zaten aktif bir Wall-to-Wall sayımı var.")
             db.execute(
                 """INSERT INTO inventory_documents(
-                     tenant_id,id,warehouse_id,name,state,created_by
-                   ) VALUES(%s,%s,%s,%s,'COUNTING',%s)""",
-                (principal.tenant_id, document_id, warehouse_id, payload["name"], principal.subject),
+                     tenant_id,id,warehouse_id,name,state,created_by,count_mode
+                   ) VALUES(%s,%s,%s,%s,'COUNTING',%s,%s)""",
+                (
+                    principal.tenant_id,
+                    document_id,
+                    warehouse_id,
+                    payload["name"],
+                    principal.subject,
+                    count_mode,
+                ),
             )
             for location in locations:
                 db.execute(
-                    "INSERT INTO inventory_document_locations VALUES(%s,%s,%s)",
+                    """INSERT INTO inventory_document_locations(
+                         tenant_id,document_id,location_id
+                       ) VALUES(%s,%s,%s)""",
                     (principal.tenant_id, document_id, location),
                 )
             for product in products:
@@ -325,9 +354,20 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
                        ) VALUES(%s,%s,%s,%s,%s,%s)""",
                     (principal.tenant_id, document_id, sku, barcode, product.get("expected", 0), product.get("cost", 0)),
                 )
+            readiness_snapshot: dict[str, Any] | None = None
+            if count_mode == "WALL_TO_WALL":
+                readiness_row = db.execute(
+                    "SELECT inventory_wall_to_wall_readiness_v14(%s,%s) AS readiness",
+                    (principal.tenant_id, document_id),
+                ).fetchone()
+                if not readiness_row or not readiness_row.get("readiness"):
+                    raise RuntimeError("Wall-to-Wall readiness authority yanıt vermedi.")
+                readiness_snapshot = dict(readiness_row["readiness"])
+                if readiness_snapshot.get("status") not in {"READY", "BLOCKED"}:
+                    raise InventoryRuleError("Wall-to-Wall kapsamı doğrulanamadı; sayım oluşturulmadı.")
             snapshot = canonical_payload_hash({
                 "document_id": str(document_id), "warehouse_id": warehouse_id,
-                "locations": locations, "sku_count": len(products), "revision": 1,
+                "locations": locations, "sku_count": len(products), "count_mode": count_mode, "revision": 1,
             })
             db.execute(
                 """INSERT INTO inventory_revisions(
@@ -336,10 +376,23 @@ def create_document(principal: InventoryPrincipal, payload: dict[str, Any]) -> d
                 (principal.tenant_id, document_id, principal.subject, principal.employee_id, snapshot),
             )
             _audit(db, principal, "DOCUMENT_CREATED", document_id, warehouse_id, {
-                "location_count": len(locations), "sku_count": len(products), "revision": 1,
+                "location_count": len(locations),
+                "sku_count": len(products),
+                "count_mode": count_mode,
+                "readiness_status": readiness_snapshot.get("status") if readiness_snapshot else "READY",
+                "revision": 1,
             })
             db.commit()
-            return {"id": str(document_id), "warehouse_id": warehouse_id, "state": "COUNTING", "revision": 1}
+            response: dict[str, Any] = {
+                "id": str(document_id),
+                "warehouse_id": warehouse_id,
+                "state": "COUNTING",
+                "revision": 1,
+                "count_mode": count_mode,
+            }
+            if readiness_snapshot is not None:
+                response["readiness"] = readiness_snapshot
+            return response
         except Exception:
             db.rollback()
             raise
@@ -357,12 +410,34 @@ def list_terminal_tasks(principal: InventoryPrincipal) -> list[dict[str, Any]]:
         _assert_runtime_tenant(db, principal)
         _assert_active_device(db, principal)
         rows = db.execute(
-            """SELECT d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at,
+            """SELECT d.id,d.warehouse_id,d.name,d.state,d.revision,d.updated_at,d.count_mode,
                       l.location_id,
-                      count(*) OVER (PARTITION BY d.id)::integer AS location_count
+                      (SELECT count(*)::integer
+                         FROM inventory_document_locations scope_l
+                        WHERE scope_l.tenant_id=d.tenant_id
+                          AND scope_l.document_id=d.id) AS location_count
                FROM inventory_documents d
-               JOIN inventory_document_locations l ON l.tenant_id=d.tenant_id AND l.document_id=d.id
-               WHERE d.tenant_id=%s AND d.state='COUNTING' AND d.warehouse_id=ANY(%s)
+               JOIN inventory_document_locations l
+                 ON l.tenant_id=d.tenant_id AND l.document_id=d.id
+               WHERE d.tenant_id=%s
+                 AND d.state='COUNTING'
+                 AND d.warehouse_id=ANY(%s)
+                 AND (
+                   d.count_mode<>'WALL_TO_WALL'
+                   OR inventory_wall_to_wall_readiness_v14(d.tenant_id,d.id)->>'status'='READY'
+                 )
+                 AND NOT (
+                   d.count_mode='WALL_TO_WALL'
+                   AND l.location_id='LOST_FOUND'
+                   AND EXISTS (
+                     SELECT 1
+                       FROM inventory_document_locations standard_l
+                      WHERE standard_l.tenant_id=d.tenant_id
+                        AND standard_l.document_id=d.id
+                        AND standard_l.location_kind='STANDARD'
+                        AND standard_l.completed_event_id IS NULL
+                   )
+                 )
                ORDER BY d.updated_at DESC,l.location_id""",
             (principal.tenant_id, list(principal.warehouse_scope)),
         ).fetchall()
@@ -375,7 +450,8 @@ def list_terminal_tasks(principal: InventoryPrincipal) -> list[dict[str, Any]]:
         task["operation"] = "inventory.count"
         task["runtime_profile"] = "EAY_TERMINAL"
         tasks.append(task)
-    # Expected quantities, costs, SKU universe and variance never cross this boundary.
+    # Expected quantities, costs, SKU universe, readiness blockers and variance
+    # never cross this terminal boundary. W2W BLOCKED/UNKNOWN documents are hidden.
     return tasks
 
 

@@ -11,6 +11,10 @@ import {
   PLANOGRAM_AUTHORING_ELEMENT_TYPES,
   serializeStoreScene,
 } from "./planogramAuthoringModel.js";
+import {
+  candidateWithPlanogramCadOverlay,
+  hydratePlanogramCadOverlay,
+} from "./planogramCadAdvanced.js";
 
 export const PLANOGRAM_CAD_SESSION_CONTRACT = "eay.planogram.cad-session.v1";
 export const PLANOGRAM_CAD_BATCH_LIMIT = 100;
@@ -110,7 +114,9 @@ function authoringElementFromNode(baseDocument, node) {
 }
 
 function documentFromScene(baseDocument, scene) {
-  const elements = scene.nodes.filter((node) => AUTHORING_TYPES.has(node.nodeType)).map((node) => authoringElementFromNode(baseDocument, node));
+  const elements = scene.nodes
+    .filter((node) => AUTHORING_TYPES.has(node.nodeType))
+    .map((node) => authoringElementFromNode(baseDocument, node));
   return {
     ...baseDocument,
     floor: { widthM: scene.floor.widthM, depthM: scene.floor.depthM },
@@ -148,6 +154,17 @@ function nodesEqual(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function updatePatchForNode(node) {
+  return {
+    nodeType: node.nodeType,
+    parentId: node.parentId,
+    geometry: { ...node.geometry },
+    locked: node.locked,
+    provenance: node.provenance,
+    metadata: node.metadata,
+  };
+}
+
 function applyBatchUpdate(scene, command) {
   requireCadCommand(scene, command);
   const updates = Array.isArray(command.updates) ? command.updates : [];
@@ -181,17 +198,6 @@ function applyBatchUpdate(scene, command) {
       force: true,
     },
     changed: true,
-  };
-}
-
-function updatePatchForNode(node) {
-  return {
-    nodeType: node.nodeType,
-    parentId: node.parentId,
-    geometry: { ...node.geometry },
-    locked: node.locked,
-    provenance: node.provenance,
-    metadata: node.metadata,
   };
 }
 
@@ -234,7 +240,8 @@ function applyCadCommand(inputScene, rawCommand = {}) {
 
 function sessionFromHistory(base, history) {
   const document = documentFromScene(base.document, history.present);
-  const candidate = candidateWithPlanogramAuthoringDocument(base.candidate, document);
+  const authoredCandidate = candidateWithPlanogramAuthoringDocument(base.candidate, document);
+  const candidate = candidateWithPlanogramCadOverlay(authoredCandidate, history.present);
   return Object.freeze({
     ...base,
     candidate,
@@ -253,8 +260,9 @@ export function createPlanogramCadSession({ candidate = null, reviewedResult = n
   if (!editableCandidate) return null;
   const document = buildPlanogramAuthoringDocument(editableCandidate);
   if (!document) return null;
-  const scene = buildStoreScene(editableCandidate, document, sceneId ? { sceneId } : {});
-  if (!scene) return null;
+  const baseScene = buildStoreScene(editableCandidate, document, sceneId ? { sceneId } : {});
+  if (!baseScene) return null;
+  const scene = hydratePlanogramCadOverlay(baseScene, editableCandidate);
   const sourceKind = reviewedResult ? "human_reviewed_store_scan" : "authored_store_scene";
   const base = Object.freeze({
     contract: PLANOGRAM_CAD_SESSION_CONTRACT,

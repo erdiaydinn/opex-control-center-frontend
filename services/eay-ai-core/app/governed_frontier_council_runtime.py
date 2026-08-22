@@ -8,7 +8,8 @@ One immutable routing plan is bound for the deliberation. Before the first
 external provider call, the maximum supported deliberation envelope is reserved
 atomically in the canonical budget ledger. Every invocation is revalidated
 against current certification, registration, credential, admin-grant and
-rate-card state. Actual provider usage is settled through the existing paid
+rate-card state. Routed waves preflight every selected engine before the first
+provider call. Actual provider usage is settled through the existing paid
 ledger and consumed from the reservation. Unused budget is released; uncertain
 external effects keep the remainder conservatively held.
 """
@@ -54,10 +55,6 @@ from .paid_token_governance import (
 
 GOVERNED_FRONTIER_COUNCIL_CONTRACT = "eay-governed-frontier-council-runtime-v1"
 _SCOPE = r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$"
-
-# Current frontier_supremacy_intelligence maximum: solver+synthesis+repair and
-# attack+verify+second-verify. Runtime counters fail closed if that protocol
-# expands without deliberately expanding this reservation envelope.
 _MAX_DIRECT_PRIMARY_CALLS = 3
 _MAX_ROUTED_WAVES = 3
 
@@ -108,6 +105,7 @@ class GovernedFrontierCouncilResult(BaseModel):
 
 
 Clock = Callable[[], datetime]
+Preflight = tuple[PaidTokenExecutionContext, RegisteredEngine, PaidTokenAuthorization | None]
 
 
 def _seal(value: object) -> str:
@@ -194,9 +192,7 @@ class GovernedFrontierCouncilSession:
         return bool(key and isinstance(environ, dict) and environ.get(key, ""))
 
     @staticmethod
-    def _block_plan(
-        plan: IntelligenceRoutingPlan, *blockers: str
-    ) -> IntelligenceRoutingPlan:
+    def _block_plan(plan: IntelligenceRoutingPlan, *blockers: str) -> IntelligenceRoutingPlan:
         return plan.model_copy(
             update={
                 "primary_engine_id": None,
@@ -307,11 +303,7 @@ class GovernedFrontierCouncilSession:
         if amount.is_zero():
             return
         self._reservation_ref = f"frontier-council-reservation:{self._budget.session_ref}"
-        self._transact(
-            kind=BudgetMutationKind.RESERVE,
-            amount=amount,
-            operation="reserve",
-        )
+        self._transact(kind=BudgetMutationKind.RESERVE, amount=amount, operation="reserve")
         self._reserved = amount
 
     def _current_registration(self, engine_id: str) -> RegisteredEngine:
@@ -323,6 +315,8 @@ class GovernedFrontierCouncilSession:
         return registration
 
     def _revalidate_binding(self, task: IntelligenceTask) -> PaidTokenExecutionContext:
+        if self._uncertain_effect:
+            raise EngineGatewayError("frontier_council_unresolved_external_effect")
         if self._plan is None or self._task_fingerprint is None:
             raise EngineGatewayError("frontier_council_plan_not_bound")
         if _task_fingerprint(task) != self._task_fingerprint:
@@ -340,11 +334,39 @@ class GovernedFrontierCouncilSession:
                 raise EngineGatewayError(
                     "frontier_council_certification_receipt_changed_after_binding"
                 )
-        for engine_id in self._selected:
-            registration = self._current_registration(engine_id)
-            if not self._credential_ready(registration):
-                raise EngineGatewayError("frontier_council_credential_missing_after_binding")
         return live
+
+    def _preflight_engine(
+        self,
+        *,
+        task: IntelligenceTask,
+        prompt: str,
+        engine_id: str,
+    ) -> Preflight:
+        live = self._revalidate_binding(task)
+        registration = self._current_registration(engine_id)
+        if not self._credential_ready(registration):
+            raise EngineGatewayError("frontier_council_credential_missing_after_binding")
+        if registration.endpoint.provider is EngineProvider.OLLAMA:
+            return live, registration, None
+        authorization = self._gateway._authorize_frontier_candidate(
+            registration=registration,
+            prompt=prompt,
+            context=live,
+        )
+        original = self._preflight_authorizations.get(engine_id)
+        if (
+            authorization.decision is not PaidTokenDecision.ALLOW
+            or original is None
+            or authorization.grant_id != original.grant_id
+            or authorization.rate_card_ref != original.rate_card_ref
+        ):
+            raise EngineGatewayError("frontier_council_paid_authority_changed_after_binding")
+        grant = self._gateway._matching_grant(authorization.grant_id or "")
+        rate_card = self._gateway._matching_rate_card(authorization.rate_card_ref or "")
+        if not grant.active_at(live.requested_at) or not rate_card.active_at(live.requested_at):
+            raise EngineGatewayError("frontier_council_paid_authority_expired_after_binding")
+        return live, registration, authorization
 
     def plan(self, task: IntelligenceTask) -> IntelligenceRoutingPlan:
         fingerprint = _task_fingerprint(task)
@@ -452,11 +474,7 @@ class GovernedFrontierCouncilSession:
             cost_units=max(usage.provider_cost_microunits, usage.billable_microunits),
             tool_calls=1,
         )
-        self._transact(
-            kind=BudgetMutationKind.CONSUME,
-            amount=amount,
-            operation=operation,
-        )
+        self._transact(kind=BudgetMutationKind.CONSUME, amount=amount, operation=operation)
         self._consumed = self._consumed.plus(amount)
 
     async def _invoke_engine(
@@ -466,40 +484,38 @@ class GovernedFrontierCouncilSession:
         task: IntelligenceTask,
         prompt: str,
         operation: str,
+        preflight: Preflight | None = None,
     ) -> EngineInvocationReceipt:
-        live = self._revalidate_binding(task)
-        registration = self._current_registration(engine_id)
-        endpoint = registration.endpoint
+        live, registration, authorization = preflight or self._preflight_engine(
+            task=task, prompt=prompt, engine_id=engine_id
+        )
+        current = self._current_registration(engine_id)
+        if current != registration or not self._credential_ready(current):
+            raise EngineGatewayError("frontier_council_engine_changed_after_preflight")
+        endpoint = current.endpoint
         if endpoint.provider is EngineProvider.OLLAMA:
             receipt = await self._gateway._engine_gateway._invoke_registered(
                 task=task,
                 prompt=prompt,
                 plan=self._plan,
-                registration=registration,
+                registration=current,
             )
             if receipt.external_processing or receipt.engine_id != engine_id:
                 raise EngineGatewayError("frontier_council_local_engine_identity_changed")
             return receipt
 
-        authorization = self._gateway._authorize_frontier_candidate(
-            registration=registration,
-            prompt=prompt,
-            context=live,
-        )
-        original = self._preflight_authorizations.get(engine_id)
-        if (
-            authorization.decision is not PaidTokenDecision.ALLOW
-            or original is None
-            or authorization.grant_id != original.grant_id
-            or authorization.rate_card_ref != original.rate_card_ref
-        ):
-            raise EngineGatewayError("frontier_council_paid_authority_changed_after_binding")
+        if authorization is None:
+            raise EngineGatewayError("frontier_council_external_preflight_missing")
+        grant = self._gateway._matching_grant(authorization.grant_id or "")
+        rate_card = self._gateway._matching_rate_card(authorization.rate_card_ref or "")
+        if not grant.active_at(live.requested_at) or not rate_card.active_at(live.requested_at):
+            raise EngineGatewayError("frontier_council_paid_authority_expired_after_preflight")
         try:
             receipt = await self._gateway._engine_gateway._invoke_registered(
                 task=task,
                 prompt=prompt,
                 plan=self._plan,
-                registration=registration,
+                registration=current,
             )
         except Exception:
             self._uncertain_effect = True
@@ -514,13 +530,11 @@ class GovernedFrontierCouncilSession:
         if receipt.input_tokens is None or receipt.output_tokens is None:
             self._uncertain_effect = True
             raise EngineGatewayError("frontier_council_provider_usage_missing")
-        grant = self._gateway._matching_grant(authorization.grant_id or "")
         if receipt.input_tokens + receipt.output_tokens > grant.max_total_tokens_per_request:
             self._uncertain_effect = True
             raise EngineGatewayError(
                 "frontier_council_actual_total_tokens_exceeded_authorized_limit"
             )
-        rate_card = self._gateway._matching_rate_card(authorization.rate_card_ref or "")
         usage = settle_paid_token_usage(
             authorization=authorization,
             grant=grant,
@@ -549,12 +563,19 @@ class GovernedFrontierCouncilSession:
             raise EngineGatewayError("frontier_council_plan_not_executable")
         if self._direct_primary_calls >= _MAX_DIRECT_PRIMARY_CALLS:
             raise EngineGatewayError("frontier_council_primary_call_envelope_exceeded")
-        self._direct_primary_calls += 1
+        next_call = self._direct_primary_calls + 1
+        preflight = self._preflight_engine(
+            task=task,
+            prompt=prompt,
+            engine_id=self._selected[0],
+        )
+        self._direct_primary_calls = next_call
         return await self._invoke_engine(
             engine_id=self._selected[0],
             task=task,
             prompt=prompt,
-            operation=f"primary-{self._direct_primary_calls}",
+            operation=f"primary-{next_call}",
+            preflight=preflight,
         )
 
     async def invoke_routed_engines(
@@ -568,15 +589,26 @@ class GovernedFrontierCouncilSession:
             raise EngineGatewayError("frontier_council_plan_not_executable")
         if self._routed_waves >= _MAX_ROUTED_WAVES:
             raise EngineGatewayError("frontier_council_routed_wave_envelope_exceeded")
-        self._routed_waves += 1
+        # All members must still be admissible before the first provider in a
+        # routed wave is contacted. A revoked third critic can never produce a
+        # partially-governed two-provider wave.
+        preflights = tuple(
+            self._preflight_engine(task=task, prompt=prompt, engine_id=engine_id)
+            for engine_id in self._selected
+        )
+        next_wave = self._routed_waves + 1
+        self._routed_waves = next_wave
         receipts: list[EngineInvocationReceipt] = []
-        for position, engine_id in enumerate(self._selected, start=1):
+        for position, (engine_id, preflight) in enumerate(
+            zip(self._selected, preflights, strict=True), start=1
+        ):
             receipts.append(
                 await self._invoke_engine(
                     engine_id=engine_id,
                     task=task,
                     prompt=prompt,
-                    operation=f"wave-{self._routed_waves}-engine-{position}",
+                    operation=f"wave-{next_wave}-engine-{position}",
+                    preflight=preflight,
                 )
             )
         return tuple(receipts)

@@ -25,6 +25,7 @@ class ProviderAccessMode(str, Enum):
 class ProviderReadiness(str, Enum):
     REFERENCE_ONLY = "reference_only"
     ADAPTER_READY_TO_BUILD = "adapter_ready_to_build"
+    FIELD_VERIFIED_ONE_SHOT = "field_verified_one_shot"
     AUTHORIZATION_BLOCKED = "authorization_blocked"
     PRODUCTION_READY = "production_ready"
 
@@ -38,6 +39,7 @@ class ContextProviderSpec(BaseModel):
     access_mode: ProviderAccessMode
     context_kinds: tuple[ContextKind, ...] = Field(min_length=1)
     requires_secret: bool = False
+    one_shot_observation_authorized: bool = False
     continuous_ingestion_authorized: bool = False
     exact_adapter_verified: bool = False
     production_enabled: bool = False
@@ -52,9 +54,17 @@ class ContextProviderSpec(BaseModel):
             raise ValueError("context_provider_host_must_be_hostname_only")
         if len(set(normalized_hosts)) != len(normalized_hosts):
             raise ValueError("context_provider_duplicate_host")
+        if self.one_shot_observation_authorized and not self.exact_adapter_verified:
+            raise ValueError("one_shot_provider_requires_verified_adapter")
+        if self.readiness is ProviderReadiness.FIELD_VERIFIED_ONE_SHOT and (
+            not self.one_shot_observation_authorized or not self.exact_adapter_verified
+        ):
+            raise ValueError("field_verified_provider_requires_one_shot_adapter")
         if self.production_enabled:
             if not self.exact_adapter_verified:
                 raise ValueError("production_provider_requires_verified_adapter")
+            if not self.one_shot_observation_authorized:
+                raise ValueError("production_provider_requires_one_shot_authority")
             if not self.continuous_ingestion_authorized:
                 raise ValueError("production_provider_requires_continuous_access_review")
             if self.access_mode is ProviderAccessMode.AUTHORIZATION_REQUIRED and not self.requires_secret:
@@ -83,6 +93,30 @@ PROVIDERS: dict[str, ContextProviderSpec] = {
             "official_hourly_forecast_verified",
             "public_api_contract_not_verified",
             "do_not_scrape_continuously_without_approved_access_contract",
+        ),
+    ),
+    "tr-tuik-theme-catalog": ContextProviderSpec(
+        provider_id="tr-tuik-theme-catalog",
+        display_name="Türkiye İstatistik Kurumu Veri Portalı Tema Kataloğu",
+        allowed_hosts=("veriportali.tuik.gov.tr",),
+        source_class=ContextSourceClass.OFFICIAL,
+        access_mode=ProviderAccessMode.OFFICIAL_WEB,
+        context_kinds=(ContextKind.MACRO_ECONOMIC,),
+        one_shot_observation_authorized=True,
+        continuous_ingestion_authorized=False,
+        exact_adapter_verified=True,
+        production_enabled=False,
+        readiness=ProviderReadiness.FIELD_VERIFIED_ONE_SHOT,
+        evidence_refs=(
+            "field://tuik/theme-catalog/session-aware-2026-08-21",
+            "field://tuik/theme-catalog/schema-2026-08-22",
+        ),
+        notes=(
+            "official_portal_theme_catalog_field_verified",
+            "session_bootstrap_required_before_theme_json_read",
+            "one_shot_read_only_observation_authorized",
+            "continuous_scheduler_not_authorized",
+            "theme_catalog_is_external_context_not_company_truth",
         ),
     ),
     "tr-tuik-sdmx": ContextProviderSpec(

@@ -180,16 +180,26 @@ async def ingest_operational_signal(
                     subject, severity, source_ref, source_version,
                     source_fingerprint, occurred_at, request_id
                 )
-                SELECT membership.tenant_id, CAST(:source_subject AS varchar(255)),
+                SELECT DISTINCT membership.tenant_id, CAST(:source_subject AS varchar(255)),
                        CAST(:source_domain AS varchar(40)), CAST(:signal_type AS varchar(160)),
                        membership.external_subject, :severity,
                        CAST(:source_ref AS varchar(255)), CAST(:source_version AS varchar(120)),
                        CAST(:source_fingerprint AS char(64)), :occurred_at,
                        CAST(:request_id AS varchar(128))
                 FROM memberships AS membership
+                JOIN academy_operational_signal_mappings AS mapping
+                  ON mapping.tenant_id=membership.tenant_id
+                 AND mapping.source_subject=CAST(:source_subject AS varchar(255))
+                 AND mapping.source_domain=CAST(:source_domain AS varchar(40))
+                 AND mapping.signal_type=CAST(:signal_type AS varchar(160))
+                 AND :severity >= mapping.minimum_severity
+                LEFT JOIN academy_operational_signal_mapping_retirements AS retirement
+                  ON retirement.tenant_id=mapping.tenant_id
+                 AND retirement.mapping_id=mapping.id
                 WHERE membership.tenant_id=:tenant_id
                   AND membership.external_subject=CAST(:subject AS varchar(255))
                   AND membership.status='active'
+                  AND retirement.id IS NULL
                 RETURNING id, source_subject, source_domain, signal_type, subject,
                           severity, source_ref, source_version, source_fingerprint,
                           occurred_at, request_id, created_at

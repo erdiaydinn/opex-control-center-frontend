@@ -6,7 +6,8 @@ Revises: 0053_jarvis_robot_registry
 A lease pins one mission to one immutable robot version and one registry
 generation. It is not approval or business execution authority. Any registry
 generation/version drift makes the lease stale and therefore unusable at the
-final commit fence.
+final commit fence. Registry activation/rollback atomically revokes old active
+leases at the PostgreSQL boundary.
 """
 
 from collections.abc import Sequence
@@ -157,6 +158,49 @@ def upgrade() -> None:
         )
         """
     )
+    op.execute(
+        """
+        CREATE FUNCTION revoke_stale_jarvis_robot_execution_leases()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF NEW.generation IS DISTINCT FROM OLD.generation
+               OR NEW.active_version IS DISTINCT FROM OLD.active_version
+               OR NEW.active_version_fingerprint IS DISTINCT FROM OLD.active_version_fingerprint
+               OR NEW.state IS DISTINCT FROM OLD.state THEN
+                UPDATE jarvis_robot_execution_leases
+                SET state = 'revoked',
+                    lease_generation = lease_generation + 1,
+                    revoked_at = NEW.updated_at,
+                    revocation_reason = 'registry_generation_advanced',
+                    updated_at = NEW.updated_at
+                WHERE tenant_id = NEW.tenant_id
+                  AND company_id = NEW.company_id
+                  AND objective_id = NEW.objective_id
+                  AND robot_id = NEW.robot_id
+                  AND state = 'active'
+                  AND (
+                    registry_generation IS DISTINCT FROM NEW.generation
+                    OR robot_version IS DISTINCT FROM NEW.active_version
+                    OR version_fingerprint IS DISTINCT FROM NEW.active_version_fingerprint
+                  );
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_revoke_stale_jarvis_robot_execution_leases
+        AFTER UPDATE OF generation, active_version, active_version_fingerprint, state
+        ON jarvis_robot_registries
+        FOR EACH ROW
+        EXECUTE FUNCTION revoke_stale_jarvis_robot_execution_leases()
+        """
+    )
+
     for table in TABLES:
         _rls(table)
         op.execute(f'REVOKE ALL ON TABLE "{table}" FROM PUBLIC')

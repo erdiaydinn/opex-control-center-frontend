@@ -26,6 +26,7 @@ const EN = Object.freeze({
   applied: "Canonical StoreScene revision applied to candidate",
   addHint: "Choose an architectural tool, then click the floor to place it. Select and drag elements to move them on the metric grid.",
   selectHint: "Select an element to edit exact dimensions, rotation, lock state and provenance.",
+  multiSelectHint: "Shift/Ctrl/Cmd-click adds or removes elements from the selection. Drag any selected element to move the unlocked group atomically.",
   noArchitecture: "Load a candidate with Store DNA architecture to start authoring.",
   scanDraft: "SCAN-DERIVED DRAFT",
   canonicalTruth: "CANONICAL STORE SCENE",
@@ -55,7 +56,13 @@ const EN = Object.freeze({
   reviewFingerprint: "Review fingerprint",
   sourceReference: "Source reference",
   commandRejected: "The CAD command was rejected by the canonical StoreScene authority.",
-  keyboardHint: "Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo · Delete removes the selected unlocked element.",
+  keyboardHint: "Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo · arrows nudge selection · Delete removes the primary unlocked element.",
+  selection: "Selection",
+  selectedCount: "Selected",
+  alignX: "Align X",
+  alignY: "Align Y",
+  groupLocked: "Group transform blocked because at least one selected element is locked.",
+  clearSelection: "Clear selection",
 });
 
 const TR = Object.freeze({
@@ -87,6 +94,7 @@ const TR = Object.freeze({
   applied: "Kanonik StoreScene revizyonu aday modele uygulandı",
   addHint: "Bir mimari araç seçin, sonra yerleştirmek için zemine tıklayın. Elemanları seçip sürükleyerek metrik grid üzerinde taşıyın.",
   selectHint: "Kesin ölçü, dönüş, kilit durumu ve provenance için bir eleman seçin.",
+  multiSelectHint: "Shift/Ctrl/Cmd+tıklama ile seçime eleman ekleyip çıkarın. Seçili bir elemanı sürükleyerek kilitsiz grubu tek atomik işlemle taşıyın.",
   noArchitecture: "Authoring için Store DNA mimarisi içeren bir aday model yükleyin.",
   scanDraft: "SCAN KAYNAKLI TASLAK",
   canonicalTruth: "KANONİK STORE SCENE",
@@ -116,21 +124,16 @@ const TR = Object.freeze({
   reviewFingerprint: "Review fingerprint",
   sourceReference: "Kaynak referansı",
   commandRejected: "CAD komutu kanonik StoreScene authority tarafından reddedildi.",
-  keyboardHint: "Ctrl/Cmd+Z geri al · Ctrl/Cmd+Shift+Z veya Ctrl/Cmd+Y yinele · Delete kilitsiz seçili elemanı siler.",
+  keyboardHint: "Ctrl/Cmd+Z geri al · Ctrl/Cmd+Shift+Z veya Ctrl/Cmd+Y yinele · ok tuşları seçimi taşır · Delete ana kilitsiz elemanı siler.",
+  selection: "Seçim",
+  selectedCount: "Seçili",
+  alignX: "X hizala",
+  alignY: "Y hizala",
+  groupLocked: "Seçili elemanlardan en az biri kilitli olduğu için grup dönüşümü engellendi.",
+  clearSelection: "Seçimi temizle",
 });
 
-export const PLANOGRAM_AUTHORING_MESSAGES = Object.freeze({
-  tr: TR,
-  en: EN,
-  de: EN,
-  ar: EN,
-  fr: EN,
-  es: EN,
-  it: EN,
-  nl: EN,
-  pl: EN,
-  "pt-BR": EN,
-});
+export const PLANOGRAM_AUTHORING_MESSAGES = Object.freeze({ tr: TR, en: EN, de: EN, ar: EN, fr: EN, es: EN, it: EN, nl: EN, pl: EN, "pt-BR": EN });
 
 export function translatePlanogramAuthoring(locale, key) {
   const table = PLANOGRAM_AUTHORING_MESSAGES[locale] || PLANOGRAM_AUTHORING_MESSAGES.en;

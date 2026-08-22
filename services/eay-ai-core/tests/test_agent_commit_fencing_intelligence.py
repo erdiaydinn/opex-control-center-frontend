@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+
 from app.agent_commit_fencing import (
     AgentCommitReceipt,
     AtomicCommitPermit,

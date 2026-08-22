@@ -1,8 +1,10 @@
 """Fresh Frontier-3 engine admission for production routing.
 
 Portfolio certification and benchmark integrity remain the source authorities.
-This module only derives a short-lived, exact engine/model/provider/domain
-admission lease. The lease can REMOVE routing candidates; it cannot grant spend,
+This module only derives a short-lived, exact engine/model/provider/release/domain
+admission lease. Raw provider-engine evidence is explicitly separated from full
+Jarvis-system evidence so a system-level benchmark can never silently authorize a
+raw model route. The lease can REMOVE routing candidates; it cannot grant spend,
 Company Truth, provider authority, training, policy/model mutation or side effects.
 """
 from __future__ import annotations
@@ -30,7 +32,7 @@ from .frontier_benchmark_integrity_intelligence import (
 )
 from .intelligence_router import IntelligenceTask
 
-CERTIFIED_CAPABILITY_ROUTING_CONTRACT = "eay-certified-capability-routing-v1"
+CERTIFIED_CAPABILITY_ROUTING_CONTRACT = "eay-certified-capability-routing-v2"
 _SCOPE = r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$"
 _DIGEST = r"^[0-9a-f]{64}$"
 
@@ -59,15 +61,7 @@ _SealedT = TypeVar("_SealedT", bound=BaseModel)
 
 
 def _fingerprint_for(model_type: type[_SealedT], values: dict[str, object]) -> str:
-    """Seal the exact payload Pydantic will later validate.
-
-    Constructors may omit fields that have model defaults and may pass Enum,
-    datetime or nested-model instances. Sealing the raw constructor dictionary
-    therefore produces a different digest from ``model_dump(mode='json')`` and
-    makes a freshly created artifact fail its own integrity validator. Building a
-    validation-free probe first applies model defaults and canonical JSON
-    serialization without weakening final validation.
-    """
+    """Seal the exact payload Pydantic will later validate."""
 
     probe = model_type.model_construct(**values, fingerprint="0" * 64)
     return _seal(_payload(probe))
@@ -86,6 +80,11 @@ class AdmissionDisposition(str, Enum):
     REVOKED = "revoked"
 
 
+class CapabilityRouteTrack(str, Enum):
+    RAW_ENGINE = "raw_engine"
+    FULL_JARVIS_SYSTEM = "full_jarvis_system"
+
+
 class EngineCapabilityEvidence(SealedModel):
     evidence_id: str = Field(pattern=_SCOPE)
     tenant_id: str = Field(pattern=_SCOPE)
@@ -94,6 +93,8 @@ class EngineCapabilityEvidence(SealedModel):
     engine_id: str = Field(pattern=_SCOPE)
     model_id: str = Field(pattern=_SCOPE)
     provider_family: str = Field(pattern=_SCOPE)
+    provider_release_ref: str = Field(pattern=_SCOPE)
+    route_track: CapabilityRouteTrack
     normalized_score: float = Field(ge=0, le=1)
     confidence_level: float = Field(default=.95, ge=.90, le=.999)
     sample_count: int = Field(ge=1)
@@ -144,6 +145,8 @@ class EngineAdmission(SealedModel):
     engine_id: str = Field(pattern=_SCOPE)
     model_id: str = Field(pattern=_SCOPE)
     provider_family: str = Field(pattern=_SCOPE)
+    provider_release_ref: str = Field(pattern=_SCOPE)
+    route_track: CapabilityRouteTrack
     domain: FrontierCertificationDomain
     status: AdmissionStatus
     normalized_score: float = Field(ge=0, le=1)
@@ -329,6 +332,10 @@ def build_certified_capability_snapshot(
                 "evaluator_quorum_missing",
             ),
             (not item.exact_adapter_verified, "exact_adapter_not_verified"),
+            (
+                item.route_track is not CapabilityRouteTrack.RAW_ENGINE,
+                "full_system_track_cannot_admit_raw_engine",
+            ),
         )
         for failed, reason in checks:
             if failed:
@@ -369,6 +376,7 @@ def build_certified_capability_snapshot(
             dict.fromkeys(
                 (
                     *item.evidence_refs,
+                    item.provider_release_ref,
                     f"frontier3-cert://{source.fingerprint}",
                     f"frontier-integrity://{integrity.fingerprint}",
                 )
@@ -380,6 +388,8 @@ def build_certified_capability_snapshot(
                 engine_id=item.engine_id,
                 model_id=item.model_id,
                 provider_family=item.provider_family,
+                provider_release_ref=item.provider_release_ref,
+                route_track=item.route_track,
                 domain=item.domain,
                 status=status,
                 normalized_score=item.normalized_score,
@@ -468,15 +478,20 @@ class CertifiedEngineCandidateAdmission:
             is None
         ):
             return False
+        runtime_release_ref = registration.profile.runtime_release_ref
+        if not runtime_release_ref:
+            return False
         matches = [
             x
             for x in self.snapshot.admissions
             if x.status is AdmissionStatus.ADMITTED
+            and x.route_track is CapabilityRouteTrack.RAW_ENGINE
             and x.domain is task.certification_domain
             and x.engine_id == registration.profile.engine_id
             and x.model_id == registration.endpoint.model_id
             and x.provider_family
             == registration.profile.independent_provider_key
+            and x.provider_release_ref == runtime_release_ref
             and requested_at <= x.valid_until
         ]
         return len(matches) == 1

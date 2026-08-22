@@ -90,6 +90,7 @@ class IntelligenceEngine(BaseModel):
     benchmark_score: float | None = Field(default=None, ge=0.0, le=1.0)
     benchmark_evidence_ref: str | None = None
     independent_provider_key: str = Field(min_length=1)
+    runtime_release_ref: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def benchmark_claim_requires_evidence(self) -> "IntelligenceEngine":

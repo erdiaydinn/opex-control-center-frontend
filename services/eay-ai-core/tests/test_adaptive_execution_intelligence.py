@@ -91,10 +91,23 @@ def test_http_downgrade_holds(scope, oidc):
     assert proposal.disposition is RepairDisposition.HOLD
 
 
+def test_malformed_endpoint_holds_instead_of_raising(scope, oidc):
+    current = replace(oidc, token_endpoint="https://acme.okta.com:bad/token")
+    proposal = AdaptiveExecutionRepairPlanner(scope).assess_oidc_drift(oidc, current)
+    assert proposal.disposition is RepairDisposition.HOLD
+
+
 def test_scope_expansion_holds(scope, oidc):
     current = replace(oidc, scopes=oidc.scopes | {"reports.write"})
     proposal = AdaptiveExecutionRepairPlanner(scope).assess_oidc_drift(oidc, current)
     assert proposal.disposition is RepairDisposition.HOLD
+    assert proposal.drift_kind is DriftKind.AUTHORIZATION_CHANGE
+
+
+def test_scope_contraction_requires_review(scope, oidc):
+    current = replace(oidc, scopes=frozenset({"openid", "reports.read"}))
+    proposal = AdaptiveExecutionRepairPlanner(scope).assess_oidc_drift(oidc, current)
+    assert proposal.disposition is RepairDisposition.REVIEW_REQUIRED
     assert proposal.drift_kind is DriftKind.AUTHORIZATION_CHANGE
 
 

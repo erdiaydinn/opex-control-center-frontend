@@ -1,16 +1,16 @@
 """Production-governed Frontier council execution for Jarvis.
 
-This module is an adapter over the existing ``AdminGovernedEngineGateway`` and
-canonical ``AgentBudgetLedgerPort``.  It deliberately does not implement a new
-router, provider gateway, scheduler, or billing truth.
+This is a bounded adapter over the existing ``AdminGovernedEngineGateway`` and
+canonical ``AgentBudgetLedgerPort``. It does not create a second router,
+provider gateway, scheduler or billing truth.
 
-A Frontier deliberation binds one immutable routing plan.  Before the first
-external provider call, the maximum bounded deliberation envelope is reserved
-atomically in the canonical agent budget ledger.  Every invocation is then
-revalidated against current certification, provider registration, credential,
-admin-grant and rate-card state.  Actual provider usage is settled through the
-existing paid-token ledger and consumed from the reservation.  Unused budget is
-released; uncertain provider effects keep the remainder conservatively held.
+One immutable routing plan is bound for the deliberation. Before the first
+external provider call, the maximum supported deliberation envelope is reserved
+atomically in the canonical budget ledger. Every invocation is revalidated
+against current certification, registration, credential, admin-grant and
+rate-card state. Actual provider usage is settled through the existing paid
+ledger and consumed from the reservation. Unused budget is released; uncertain
+external effects keep the remainder conservatively held.
 """
 
 from __future__ import annotations
@@ -44,10 +44,7 @@ from .frontier_supremacy_intelligence import (
     execute_frontier_supremacy,
 )
 from .intelligence_router import IntelligenceRoutingPlan, IntelligenceTask
-from .paid_token_engine_gateway import (
-    AdminGovernedEngineGateway,
-    PaidTokenExecutionContext,
-)
+from .paid_token_engine_gateway import AdminGovernedEngineGateway, PaidTokenExecutionContext
 from .paid_token_governance import (
     PaidTokenAuthorization,
     PaidTokenDecision,
@@ -58,10 +55,9 @@ from .paid_token_governance import (
 GOVERNED_FRONTIER_COUNCIL_CONTRACT = "eay-governed-frontier-council-runtime-v1"
 _SCOPE = r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,239}$"
 
-# frontier_supremacy_intelligence has at most solver+synthesis+repair direct
-# primary calls and attack+verify+second-verify routed waves.  The session also
-# enforces these limits at runtime, so a future protocol expansion fails closed
-# until this reservation envelope is intentionally upgraded.
+# Current frontier_supremacy_intelligence maximum: solver+synthesis+repair and
+# attack+verify+second-verify. Runtime counters fail closed if that protocol
+# expands without deliberately expanding this reservation envelope.
 _MAX_DIRECT_PRIMARY_CALLS = 3
 _MAX_ROUTED_WAVES = 3
 
@@ -71,6 +67,7 @@ class FrontierCouncilBudgetBinding(BaseModel):
 
     session_ref: str = Field(pattern=_SCOPE)
     tenant_id: str = Field(pattern=_SCOPE)
+    company_id: str = Field(pattern=_SCOPE)
     root_account_id: str = Field(min_length=1)
     account_id: str = Field(min_length=1)
 
@@ -124,10 +121,6 @@ def _seal(value: object) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _plus(left: BudgetVector, right: BudgetVector) -> BudgetVector:
-    return left.plus(right)
-
-
 def _micro_cost(*, tokens: int, rate_per_million: int) -> int:
     if tokens <= 0 or rate_per_million <= 0:
         return 0
@@ -149,12 +142,7 @@ def _registration_fingerprint(registration: RegisteredEngine) -> str:
 
 
 class GovernedFrontierCouncilSession:
-    """Bound gateway protocol consumed by ``execute_frontier_supremacy``.
-
-    The class only composes already-authoritative layers.  The canonical router
-    still chooses the engines and the canonical paid-token gateway still owns
-    provider authorization/accounting.
-    """
+    """Frozen-plan gateway protocol consumed by the existing deliberation."""
 
     def __init__(
         self,
@@ -167,6 +155,8 @@ class GovernedFrontierCouncilSession:
     ) -> None:
         if budget.tenant_id != context.tenant_ref:
             raise ValueError("frontier_council_budget_tenant_mismatch")
+        if context.company_ref is None or budget.company_id != context.company_ref:
+            raise ValueError("frontier_council_budget_company_mismatch")
         self._gateway = gateway
         self._context = context
         self._budget_ledger = budget_ledger
@@ -192,12 +182,6 @@ class GovernedFrontierCouncilSession:
             raise ValueError("frontier_council_clock_requires_timezone")
         return self._context.model_copy(update={"requested_at": now})
 
-    def _scope_guard(self, task: IntelligenceTask) -> None:
-        if task.tenant_id != self._context.tenant_ref:
-            raise EngineGatewayError("frontier_council_task_tenant_mismatch")
-        if self._context.company_ref is None or task.company_id != self._context.company_ref:
-            raise EngineGatewayError("frontier_council_task_company_mismatch")
-
     def _credential_ready(self, registration: RegisteredEngine) -> bool:
         endpoint = registration.endpoint
         if endpoint.provider is EngineProvider.OLLAMA:
@@ -209,63 +193,18 @@ class GovernedFrontierCouncilSession:
         environ = getattr(self._gateway._engine_gateway, "_environ", {})
         return bool(key and isinstance(environ, dict) and environ.get(key, ""))
 
+    @staticmethod
     def _block_plan(
-        self, plan: IntelligenceRoutingPlan, *blockers: str
+        plan: IntelligenceRoutingPlan, *blockers: str
     ) -> IntelligenceRoutingPlan:
-        combined = tuple(dict.fromkeys((*plan.blockers, *blockers)))
         return plan.model_copy(
             update={
                 "primary_engine_id": None,
                 "critic_engine_ids": (),
                 "execution_permitted": False,
-                "human_review_required": True,
-                "blockers": combined,
+                "blockers": tuple(dict.fromkeys((*plan.blockers, *blockers))),
             }
         )
-
-    def _reservation_budget(
-        self,
-        *,
-        selected: tuple[str, ...],
-        authorizations: dict[str, PaidTokenAuthorization],
-    ) -> BudgetVector:
-        total = BudgetVector()
-        primary = selected[0] if selected else ""
-        for engine_id in selected:
-            registration = self._gateway._registrations[engine_id]
-            if registration.endpoint.provider is EngineProvider.OLLAMA:
-                continue
-            authorization = authorizations[engine_id]
-            grant = self._gateway._matching_grant(authorization.grant_id or "")
-            rate_card = self._gateway._matching_rate_card(
-                authorization.rate_card_ref or ""
-            )
-            calls = _MAX_ROUTED_WAVES + (
-                _MAX_DIRECT_PRIMARY_CALLS if engine_id == primary else 0
-            )
-            max_tokens = grant.max_total_tokens_per_request
-            provider_cost = _micro_cost(
-                tokens=max_tokens,
-                rate_per_million=max(
-                    rate_card.input_cost_microunits_per_million_tokens,
-                    rate_card.output_cost_microunits_per_million_tokens,
-                ),
-            )
-            billable = _billable(
-                provider_cost=provider_cost,
-                multiplier_basis_points=grant.chargeback_multiplier_basis_points,
-            )
-            total = _plus(
-                total,
-                BudgetVector(
-                    tokens=max_tokens * calls,
-                    cost_units=max(provider_cost, billable) * calls,
-                    wall_time_seconds=math.ceil(registration.endpoint.timeout_seconds)
-                    * calls,
-                    tool_calls=calls,
-                ),
-            )
-        return total
 
     def _account(self) -> BudgetAccount:
         account = self._budget_ledger.get_account(
@@ -287,13 +226,11 @@ class GovernedFrontierCouncilSession:
     ) -> None:
         if amount.is_zero():
             return
-        # CAS conflicts are expected under concurrent sessions.  Re-read the
-        # account and retry the same idempotent logical operation a bounded
-        # number of times; all other failures remain fail-closed.
-        last_error: Exception | None = None
         fingerprint = _seal(
             {
                 "session": self._budget.session_ref,
+                "tenant": self._budget.tenant_id,
+                "company": self._budget.company_id,
                 "operation": operation,
                 "kind": kind.value,
                 "amount": amount.model_dump(mode="json"),
@@ -319,23 +256,57 @@ class GovernedFrontierCouncilSession:
                 ),
             )
             try:
-                execute_budget_transaction(
-                    port=self._budget_ledger, transaction=transaction
-                )
+                execute_budget_transaction(port=self._budget_ledger, transaction=transaction)
                 return
             except ValueError as exc:
-                last_error = exc
                 if "agent_budget_version_conflict" not in str(exc) or attempt == 7:
                     raise
-        if last_error is not None:
-            raise last_error
+        raise EngineGatewayError("frontier_council_budget_cas_retry_exhausted")
+
+    def _reservation_budget(
+        self,
+        *,
+        selected: tuple[str, ...],
+        authorizations: dict[str, PaidTokenAuthorization],
+    ) -> BudgetVector:
+        total = BudgetVector()
+        primary = selected[0] if selected else ""
+        for engine_id in selected:
+            registration = self._gateway._registrations[engine_id]
+            if registration.endpoint.provider is EngineProvider.OLLAMA:
+                continue
+            authorization = authorizations[engine_id]
+            grant = self._gateway._matching_grant(authorization.grant_id or "")
+            rate_card = self._gateway._matching_rate_card(authorization.rate_card_ref or "")
+            calls = _MAX_ROUTED_WAVES + (
+                _MAX_DIRECT_PRIMARY_CALLS if engine_id == primary else 0
+            )
+            max_tokens = grant.max_total_tokens_per_request
+            provider_cost = _micro_cost(
+                tokens=max_tokens,
+                rate_per_million=max(
+                    rate_card.input_cost_microunits_per_million_tokens,
+                    rate_card.output_cost_microunits_per_million_tokens,
+                ),
+            )
+            billable = _billable(
+                provider_cost=provider_cost,
+                multiplier_basis_points=grant.chargeback_multiplier_basis_points,
+            )
+            total = total.plus(
+                BudgetVector(
+                    tokens=max_tokens * calls,
+                    cost_units=max(provider_cost, billable) * calls,
+                    wall_time_seconds=math.ceil(registration.endpoint.timeout_seconds) * calls,
+                    tool_calls=calls,
+                )
+            )
+        return total
 
     def _reserve(self, amount: BudgetVector) -> None:
         if amount.is_zero():
             return
-        self._reservation_ref = (
-            f"frontier-council-reservation:{self._budget.session_ref}"
-        )
+        self._reservation_ref = f"frontier-council-reservation:{self._budget.session_ref}"
         self._transact(
             kind=BudgetMutationKind.RESERVE,
             amount=amount,
@@ -347,16 +318,13 @@ class GovernedFrontierCouncilSession:
         registration = self._gateway._registrations.get(engine_id)
         if registration is None:
             raise EngineGatewayError("frontier_council_engine_removed_after_binding")
-        if _registration_fingerprint(registration) != self._registration_fingerprints.get(
-            engine_id
-        ):
+        if _registration_fingerprint(registration) != self._registration_fingerprints.get(engine_id):
             raise EngineGatewayError("frontier_council_engine_registration_drift")
         return registration
 
     def _revalidate_binding(self, task: IntelligenceTask) -> PaidTokenExecutionContext:
         if self._plan is None or self._task_fingerprint is None:
             raise EngineGatewayError("frontier_council_plan_not_bound")
-        self._scope_guard(task)
         if _task_fingerprint(task) != self._task_fingerprint:
             raise EngineGatewayError("frontier_council_task_changed_after_binding")
         live = self._live_context()
@@ -366,12 +334,8 @@ class GovernedFrontierCouncilSession:
                 engine_ids=self._selected,
                 context=live,
             )
-            if admitted is None or any(
-                engine_id not in admitted for engine_id in self._selected
-            ):
-                raise EngineGatewayError(
-                    "frontier_council_certification_revoked_after_binding"
-                )
+            if admitted is None or any(engine_id not in admitted for engine_id in self._selected):
+                raise EngineGatewayError("frontier_council_certification_revoked_after_binding")
             if receipt_ref != self._certification_ref:
                 raise EngineGatewayError(
                     "frontier_council_certification_receipt_changed_after_binding"
@@ -379,13 +343,10 @@ class GovernedFrontierCouncilSession:
         for engine_id in self._selected:
             registration = self._current_registration(engine_id)
             if not self._credential_ready(registration):
-                raise EngineGatewayError(
-                    "frontier_council_credential_missing_after_binding"
-                )
+                raise EngineGatewayError("frontier_council_credential_missing_after_binding")
         return live
 
     def plan(self, task: IntelligenceTask) -> IntelligenceRoutingPlan:
-        self._scope_guard(task)
         fingerprint = _task_fingerprint(task)
         if self._plan is not None:
             if fingerprint != self._task_fingerprint:
@@ -411,9 +372,7 @@ class GovernedFrontierCouncilSession:
             ):
                 continue
             if not self._credential_ready(registration):
-                preflight_blockers.append(
-                    f"frontier_council_credential_missing:{engine_id}"
-                )
+                preflight_blockers.append(f"frontier_council_credential_missing:{engine_id}")
                 continue
             if registration.endpoint.provider is EngineProvider.OLLAMA:
                 candidate_ids.append(engine_id)
@@ -441,9 +400,7 @@ class GovernedFrontierCouncilSession:
             self._task_fingerprint = fingerprint
             return self._plan
 
-        selected = tuple(
-            dict.fromkeys((plan.primary_engine_id, *plan.critic_engine_ids))
-        )
+        selected = tuple(dict.fromkeys((plan.primary_engine_id, *plan.critic_engine_ids)))
         for engine_id in selected:
             registration = self._gateway._registrations[engine_id]
             if (
@@ -457,9 +414,7 @@ class GovernedFrontierCouncilSession:
                 self._task_fingerprint = fingerprint
                 return self._plan
 
-        reservation = self._reservation_budget(
-            selected=selected, authorizations=authorizations
-        )
+        reservation = self._reservation_budget(selected=selected, authorizations=authorizations)
         self._reservation_ref = (
             f"frontier-council-reservation:{self._budget.session_ref}"
             if not reservation.is_zero()
@@ -470,7 +425,8 @@ class GovernedFrontierCouncilSession:
         except (ValueError, EngineGatewayError) as exc:
             self._reservation_ref = None
             self._plan = self._block_plan(
-                plan, f"frontier_council_budget_reservation_failed:{type(exc).__name__}"
+                plan,
+                f"frontier_council_budget_reservation_failed:{type(exc).__name__}",
             )
             self._task_fingerprint = fingerprint
             return self._plan
@@ -485,9 +441,7 @@ class GovernedFrontierCouncilSession:
             if engine_id in selected
         }
         self._registration_fingerprints = {
-            engine_id: _registration_fingerprint(
-                self._gateway._registrations[engine_id]
-            )
+            engine_id: _registration_fingerprint(self._gateway._registrations[engine_id])
             for engine_id in selected
         }
         return plan
@@ -495,9 +449,7 @@ class GovernedFrontierCouncilSession:
     def _consume_budget(self, usage: PaidTokenUsageReceipt, *, operation: str) -> None:
         amount = BudgetVector(
             tokens=usage.input_tokens + usage.output_tokens,
-            cost_units=max(
-                usage.provider_cost_microunits, usage.billable_microunits
-            ),
+            cost_units=max(usage.provider_cost_microunits, usage.billable_microunits),
             tool_calls=1,
         )
         self._transact(
@@ -541,9 +493,7 @@ class GovernedFrontierCouncilSession:
             or authorization.grant_id != original.grant_id
             or authorization.rate_card_ref != original.rate_card_ref
         ):
-            raise EngineGatewayError(
-                "frontier_council_paid_authority_changed_after_binding"
-            )
+            raise EngineGatewayError("frontier_council_paid_authority_changed_after_binding")
         try:
             receipt = await self._gateway._engine_gateway._invoke_registered(
                 task=task,
@@ -570,9 +520,7 @@ class GovernedFrontierCouncilSession:
             raise EngineGatewayError(
                 "frontier_council_actual_total_tokens_exceeded_authorized_limit"
             )
-        rate_card = self._gateway._matching_rate_card(
-            authorization.rate_card_ref or ""
-        )
+        rate_card = self._gateway._matching_rate_card(authorization.rate_card_ref or "")
         usage = settle_paid_token_usage(
             authorization=authorization,
             grant=grant,
@@ -586,8 +534,6 @@ class GovernedFrontierCouncilSession:
             self._gateway._usage_writer(usage)
             self._consume_budget(usage, operation=operation)
         except Exception:
-            # External processing already happened; never free the remaining
-            # reservation on an uncertain accounting boundary.
             self._uncertain_effect = True
             raise
         return receipt

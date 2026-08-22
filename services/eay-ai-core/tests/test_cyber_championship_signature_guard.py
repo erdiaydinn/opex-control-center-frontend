@@ -192,12 +192,13 @@ def test_authorized_workflow_orders_signature_scope_and_external_gates() -> None
     workflow = (
         root / ".github/workflows/jarvis-cyber-championship-run.yml"
     ).read_text(encoding="utf-8")
-    signature = "python -m app.cyber_championship_signature_guard"
-    scope = "python -m app.cyber_championship_tenant_scope_guard"
-    external = "python scripts/run_cyber_championship_external_preflight.py"
+    signature = '"$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_signature_guard'
+    scope = '"$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_tenant_scope_guard'
+    external = '"$EAY_CHAMPIONSHIP_PYTHON_BIN" scripts/run_cyber_championship_external_preflight.py'
     assert signature in workflow
     assert scope in workflow
     assert external in workflow
     assert workflow.index(signature) < workflow.index(scope) < workflow.index(external)
     assert "EAY_CHAMPIONSHIP_TRUST_DIR" in workflow
+    assert "EAY_CHAMPIONSHIP_PYTHON_BIN" in workflow
     assert "secrets." not in workflow

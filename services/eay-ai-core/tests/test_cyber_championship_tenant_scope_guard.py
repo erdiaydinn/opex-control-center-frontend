@@ -136,12 +136,13 @@ def test_authorized_workflow_runs_scope_guard_before_external_preflight() -> Non
     workflow = (
         root / ".github/workflows/jarvis-cyber-championship-run.yml"
     ).read_text(encoding="utf-8")
-    guard = "python -m app.cyber_championship_tenant_scope_guard"
-    preflight = "python scripts/run_cyber_championship_external_preflight.py"
+    guard = '"$EAY_CHAMPIONSHIP_PYTHON_BIN" -m app.cyber_championship_tenant_scope_guard'
+    preflight = '"$EAY_CHAMPIONSHIP_PYTHON_BIN" scripts/run_cyber_championship_external_preflight.py'
     assert guard in workflow
     assert preflight in workflow
     assert workflow.index(guard) < workflow.index(preflight)
     assert "--strict" in workflow
+    assert "EAY_CHAMPIONSHIP_PYTHON_BIN" in workflow
     assert "secrets." not in workflow
 
 

@@ -130,7 +130,7 @@ class CommitFenceRequest(BaseModel):
     business_execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def request_is_bound_and_non_authoritative(self) -> "CommitFenceRequest":
+    def request_is_bound_and_non_authoritative(self) -> CommitFenceRequest:
         _aware(self.requested_at, "agent_commit_request_requires_timezone")
         if self.identity.tenant_id != self.tenant_id:
             raise ValueError("agent_commit_identity_tenant_mismatch")
@@ -160,7 +160,7 @@ class AtomicCommitPermit(BaseModel):
     business_execution_authority_granted: bool = False
 
     @model_validator(mode="after")
-    def permit_is_single_use_and_non_authoritative(self) -> "AtomicCommitPermit":
+    def permit_is_single_use_and_non_authoritative(self) -> AtomicCommitPermit:
         _aware(self.issued_at, "agent_commit_permit_requires_timezone")
         if self.robot_execution is not None and self.robot_execution.tenant_id != self.tenant_id:
             raise ValueError("agent_commit_robot_execution_tenant_mismatch")
@@ -186,7 +186,7 @@ class BackendCommitOutcome(BaseModel):
     error_code: str | None = None
 
     @model_validator(mode="after")
-    def outcome_is_consistent(self) -> "BackendCommitOutcome":
+    def outcome_is_consistent(self) -> BackendCommitOutcome:
         if len(self.evidence_refs) != len(set(self.evidence_refs)):
             raise ValueError("agent_commit_evidence_refs_must_be_unique")
         if self.effect_verified and (self.committed is not True or not self.transaction_ref):
@@ -219,7 +219,7 @@ class AgentCommitReceipt(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
-    def receipt_is_integral(self) -> "AgentCommitReceipt":
+    def receipt_is_integral(self) -> AgentCommitReceipt:
         _aware(self.recorded_at, "agent_commit_receipt_requires_timezone")
         if self.robot_execution is not None and self.robot_execution.tenant_id != self.tenant_id:
             raise ValueError("agent_commit_robot_execution_tenant_mismatch")

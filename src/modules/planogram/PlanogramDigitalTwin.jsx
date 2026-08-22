@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { Box, Cuboid, Grid2X2, Rotate3D, Route, ScanLine } from "lucide-react";
+import { Box, Cuboid, Footprints, Grid2X2, Rotate3D, Route, ScanLine } from "lucide-react";
 
 import { translatePlanogramDigitalTwin } from "../../platform/i18n/planogramDigitalTwinMessages.js";
+import { translatePlanogramWalkthrough } from "../../platform/i18n/planogramWalkthroughMessages.js";
+import PlanogramFirstPersonWalkthrough from "./PlanogramFirstPersonWalkthrough.jsx";
 import PlanogramTwinSceneRenderer from "./PlanogramTwinSceneRenderer.jsx";
 import {
   buildPlanogramDigitalTwinModel,
@@ -207,6 +209,7 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
   const [view, setView] = useState("2d");
   const [cameraPreset, setCameraPreset] = useState("overview");
   const t = useMemo(() => (key) => translatePlanogramDigitalTwin(locale, key), [locale]);
+  const walkT = useMemo(() => (key) => translatePlanogramWalkthrough(locale, key), [locale]);
   const numberFormat = useMemo(() => {
     if (typeof formatNumber === "function") return formatNumber;
     const formatter = new Intl.NumberFormat(locale || "en");
@@ -233,6 +236,7 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
 
   const measured = model.geometryAuthority === "measured";
   const routeText = model.route?.available ? `${numberFormat(model.route.value)} m` : t("routeUnavailable");
+  const walking = cameraPreset === "walk";
 
   return (
     <section
@@ -242,6 +246,7 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
       data-visual-quality-contract={visualPlan?.contract || "metric-fallback-only"}
       data-visual-delivery-contract={deliveryPlan?.contract || "packshot-only"}
       data-product-instance-cap={PLANOGRAM_DIGITAL_TWIN_LIMITS.maxProductInstances3d}
+      data-walkthrough-active={walking ? "true" : "false"}
     >
       <header className="eay-twin-head">
         <div className="eay-twin-title"><Cuboid size={24} aria-hidden="true" /><div><h3>{t("title")}</h3><p>{t("subtitle")}</p></div></div>
@@ -269,23 +274,35 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
       {view === "2d" ? <Twin2D model={model} t={t} formatNumber={numberFormat} /> : null}
       {view === "3d" ? <>
         <div className="eay-twin-camera-bar" aria-label={t("view3d")}>
-          <button type="button" onClick={() => setCameraPreset("overview")}><Rotate3D size={16} aria-hidden="true" />{t("perspective")}</button>
-          <button type="button" onClick={() => setCameraPreset("top")}>{t("top")}</button>
-          <button type="button" onClick={() => setCameraPreset("front")}>{t("front")}</button>
+          <button type="button" aria-pressed={cameraPreset === "overview"} onClick={() => setCameraPreset("overview")}><Rotate3D size={16} aria-hidden="true" />{t("perspective")}</button>
+          <button type="button" aria-pressed={cameraPreset === "top"} onClick={() => setCameraPreset("top")}>{t("top")}</button>
+          <button type="button" aria-pressed={cameraPreset === "front"} onClick={() => setCameraPreset("front")}>{t("front")}</button>
+          <button type="button" aria-pressed={walking} onClick={() => setCameraPreset("walk")}><Footprints size={16} aria-hidden="true" />{walkT("walk")}</button>
           <button type="button" onClick={() => setCameraPreset("overview")}>{t("reset")}</button>
         </div>
         <div className="eay-twin-3d-shell">
-          <PlanogramTwinSceneRenderer
-            sceneModel={sceneModel}
-            visualPlan={visualPlan}
-            deliveryPlan={deliveryPlan}
-            preset={cameraPreset}
-            ariaLabel={t("canvasLabel")}
-            loadingLabel={t("threeLoading")}
-            errorLabel={t("threeError")}
-          />
+          {walking ? (
+            <PlanogramFirstPersonWalkthrough
+              sceneModel={sceneModel}
+              visualPlan={visualPlan}
+              deliveryPlan={deliveryPlan}
+              ariaLabel={walkT("canvasLabel")}
+              loadingLabel={t("threeLoading")}
+              errorLabel={t("threeError")}
+            />
+          ) : (
+            <PlanogramTwinSceneRenderer
+              sceneModel={sceneModel}
+              visualPlan={visualPlan}
+              deliveryPlan={deliveryPlan}
+              preset={cameraPreset}
+              ariaLabel={t("canvasLabel")}
+              loadingLabel={t("threeLoading")}
+              errorLabel={t("threeError")}
+            />
+          )}
         </div>
-        <p className="eay-twin-interaction-hint">{t("interactionHint")}</p>
+        <p className="eay-twin-interaction-hint">{walking ? walkT("hint") : t("interactionHint")}</p>
       </> : null}
     </section>
   );

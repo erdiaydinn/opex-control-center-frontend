@@ -13,6 +13,7 @@ on:
     paths:
       - "src/modules/planogram/**"
       - "src/platform/i18n/planogramDigitalTwinMessages.js"
+      - "src/platform/i18n/planogramWalkthroughMessages.js"
       - "src/platform/i18n/planogramEconomicsMessages.js"
       - "src/platform/i18n/planogramScenarioMessages.js"
       - "src/platform/i18n/planogramStoreScanMessages.js"
@@ -30,6 +31,7 @@ on:
       - "scripts/test-planogram-visual-quality-model.mjs"
       - "scripts/test-planogram-sprint1-visual-runtime.mjs"
       - "scripts/test-planogram-sprint2-visual-delivery.mjs"
+      - "scripts/test-planogram-sprint3-cad-walkthrough.mjs"
       - "scripts/test-planogram-economics-ui.mjs"
       - "scripts/test-planogram-scenario-portfolio.mjs"
       - "scripts/test-planogram-store-scan-ui.mjs"
@@ -102,6 +104,8 @@ jobs:
         run: node scripts/test-planogram-picker-eye-assets.mjs
       - name: Architectural authoring and immersive walk-through contract
         run: node scripts/test-planogram-authoring.mjs
+      - name: Sprint 3 canonical CAD session and collision-aware first-person walk-through
+        run: node scripts/test-planogram-sprint3-cad-walkthrough.mjs
       - name: CFO economics UI authority and provenance boundary
         run: node scripts/test-planogram-economics-ui.mjs
       - name: V5 Pareto decision portfolio boundary
@@ -150,6 +154,8 @@ jobs:
           echo 'MASTER_27_STORE_SCAN_ANNOTATION_KEYBOARD_ACCESSIBLE=TRUE'
           echo 'MASTER_27_STORE_SCAN_REVIEWED_DRAFT_AUTHORITY=FALSE'
           echo 'MASTER_27_SCAN_TO_EDITABLE_MODEL=IMPLEMENTED'
+          echo 'MASTER_27_CANONICAL_SCAN_TO_STORE_SCENE=IMPLEMENTED'
+          echo 'MASTER_27_CAD_SESSION_REVISION_UNDO_COLLISION=IMPLEMENTED'
           echo 'MASTER_27_ARCHITECTURAL_AUTHORING=IMPLEMENTED'
           echo 'MASTER_27_AUTHORING_STORE_DNA_AUTHORITY=FALSE'
           echo 'MASTER_27_SCANNED_DIGITAL_TWIN=IMPLEMENTED'
@@ -170,10 +176,13 @@ jobs:
           echo 'MASTER_27_PBR_ROOM_ENVIRONMENT=IMPLEMENTED'
           echo 'MASTER_27_METRIC_PRIMITIVE_FALLBACK=IMPLEMENTED'
           echo 'MASTER_27_ASSET_MANIFEST_V2=IMPLEMENTED'
-          echo 'MASTER_27_KTX2_DELIVERY_CONTRACT=IMPLEMENTED_NOT_RUNTIME_BOUND'
-          echo 'MASTER_27_TEXTURE_ATLAS_CONTRACT=IMPLEMENTED_NOT_RUNTIME_BOUND'
-          echo 'MASTER_27_FIXTURE_LOD_CONTRACT=IMPLEMENTED_NOT_RUNTIME_BOUND'
+          echo 'MASTER_27_KTX2_DELIVERY_CONTRACT=IMPLEMENTED_RUNTIME_BOUND'
+          echo 'MASTER_27_TEXTURE_ATLAS_CONTRACT=IMPLEMENTED_RUNTIME_BOUND'
+          echo 'MASTER_27_FIXTURE_LOD_CONTRACT=IMPLEMENTED_RUNTIME_BOUND'
           echo 'MASTER_27_PBR_WALKTHROUGH=IMPLEMENTED'
+          echo 'MASTER_27_COLLISION_AWARE_FIRST_PERSON_WALKTHROUGH=IMPLEMENTED'
+          echo 'MASTER_27_POINTER_LOCK_MOUSE_LOOK=IMPLEMENTED'
+          echo 'MASTER_27_KEYBOARD_WALKTHROUGH=IMPLEMENTED'
           echo 'MASTER_27_REMOTE_PREVIEW_ASSET_URLS=BLOCKED'
           echo 'MASTER_27_ANONYMOUS_BASKET_UI_BOUNDARY=IMPLEMENTED'
           echo 'MASTER_27_CFO_ECONOMICS_UI=IMPLEMENTED'

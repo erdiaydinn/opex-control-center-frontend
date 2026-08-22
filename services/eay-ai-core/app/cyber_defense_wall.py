@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -118,7 +119,11 @@ class DefenseWallReceipt(BaseModel):
             not self.missing_control_ids
             and not self.stale_control_ids
             and not self.non_fail_closed_control_ids
-            and all(control.enabled for control in self.controls if control.control_id in self.required_control_ids)
+            and all(
+                control.enabled
+                for control in self.controls
+                if control.control_id in self.required_control_ids
+            )
         )
         if self.readiness is WallReadiness.READY and not expected_ready:
             raise ValueError("cyber_wall_ready_without_complete_controls")
@@ -280,7 +285,9 @@ def assess_wall(
     required = required_control_ids or DEFAULT_REQUIRED_CONTROLS[wall]
     by_id = {control.control_id: control for control in controls if control.wall is wall}
     missing = tuple(sorted(set(required) - set(by_id)))
-    stale = tuple(sorted(cid for cid in required if cid in by_id and by_id[cid].expires_at <= as_of))
+    stale = tuple(
+        sorted(cid for cid in required if cid in by_id and by_id[cid].expires_at <= as_of)
+    )
     non_fail_closed = tuple(
         sorted(cid for cid in required if cid in by_id and not by_id[cid].fail_closed)
     )
@@ -334,7 +341,7 @@ def assess_combined_attack_chain(
                     coverage[stage].add(receipt.wall)
     uncovered = tuple(stage for stage, walls in coverage.items() if not walls)
     single = tuple(stage for stage, walls in coverage.items() if len(walls) == 1)
-    depth_complete = not uncovered and not single and len(set(r.wall for r in wall_receipts)) >= 2
+    depth_complete = not uncovered and not single and len({r.wall for r in wall_receipts}) >= 2
     production_claim = bool(
         depth_complete
         and wall_receipts

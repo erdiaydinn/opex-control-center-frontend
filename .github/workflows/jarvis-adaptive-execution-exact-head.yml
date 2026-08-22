@@ -1,0 +1,246 @@
+name: EAY Jarvis Adaptive Execution Exact Head
+
+on:
+  pull_request:
+    paths:
+      - "services/eay-ai-core/app/adaptive_execution_intelligence.py"
+      - "services/eay-ai-core/app/robot_authoring_intelligence.py"
+      - "services/eay-ai-core/app/robot_registry_intelligence.py"
+      - "services/eay-ai-core/app/robot_execution_pinning.py"
+      - "services/eay-ai-core/app/mission_execution.py"
+      - "services/eay-ai-core/app/agent_commit_fencing.py"
+      - "services/eay-ai-core/tests/test_adaptive_execution_intelligence.py"
+      - "services/eay-ai-core/tests/test_robot_authoring_intelligence.py"
+      - "services/eay-ai-core/tests/test_robot_authoring_security_intelligence.py"
+      - "services/eay-ai-core/tests/test_robot_registry_intelligence.py"
+      - "services/eay-ai-core/tests/test_robot_execution_pinning.py"
+      - "services/eay-ai-core/tests/test_agent_commit_fencing_intelligence.py"
+      - "services/core-api/app/robot_registry_repository.py"
+      - "services/core-api/app/robot_execution_lease_repository.py"
+      - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/tests/test_robot_registry_security_postgres.py"
+      - "services/core-api/tests/test_robot_execution_lease_postgres.py"
+      - "services/core-api/tests/test_sql_access_boundary.py"
+      - "services/core-api/alembic/versions/0053_jarvis_robot_registry.py"
+      - "services/core-api/alembic/versions/0054_jarvis_robot_execution_leases.py"
+      - ".github/workflows/jarvis-adaptive-execution-exact-head.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  adaptive-execution-exact-head:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout literal PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Assert literal PR head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          echo "expected=$EXPECTED_HEAD"
+          echo "actual=$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Install canonical AI Core runtime and dev dependencies
+        working-directory: services/eay-ai-core
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile adaptive execution and robot mission fencing
+        working-directory: services/eay-ai-core
+        run: |
+          python -m py_compile \
+            app/adaptive_execution_intelligence.py \
+            app/robot_authoring_intelligence.py \
+            app/robot_registry_intelligence.py \
+            app/robot_execution_pinning.py \
+            app/mission_execution.py \
+            app/agent_commit_fencing.py \
+            tests/test_adaptive_execution_intelligence.py \
+            tests/test_robot_authoring_intelligence.py \
+            tests/test_robot_authoring_security_intelligence.py \
+            tests/test_robot_registry_intelligence.py \
+            tests/test_robot_execution_pinning.py \
+            tests/test_agent_commit_fencing_intelligence.py
+
+      - name: Lint adaptive execution and robot mission fencing
+        working-directory: services/eay-ai-core
+        run: |
+          python -m ruff check \
+            app/adaptive_execution_intelligence.py \
+            app/robot_authoring_intelligence.py \
+            app/robot_registry_intelligence.py \
+            app/robot_execution_pinning.py \
+            app/mission_execution.py \
+            app/agent_commit_fencing.py \
+            tests/test_adaptive_execution_intelligence.py \
+            tests/test_robot_authoring_intelligence.py \
+            tests/test_robot_authoring_security_intelligence.py \
+            tests/test_robot_registry_intelligence.py \
+            tests/test_robot_execution_pinning.py \
+            tests/test_agent_commit_fencing_intelligence.py
+
+      - name: Run focused adaptive execution and robot fencing adversarial tests
+        working-directory: services/eay-ai-core
+        run: |
+          python -m pytest -q \
+            tests/test_adaptive_execution_intelligence.py \
+            tests/test_robot_authoring_intelligence.py \
+            tests/test_robot_authoring_security_intelligence.py \
+            tests/test_robot_registry_intelligence.py \
+            tests/test_robot_execution_pinning.py \
+            tests/test_agent_commit_fencing_intelligence.py
+
+      - name: Run cumulative Jarvis intelligence and execution regression cohort
+        working-directory: services/eay-ai-core
+        run: |
+          python -m pytest -q \
+            tests/test_*intelligence.py \
+            tests/test_browser_api_observer.py \
+            tests/test_playwright_computer_runtime.py \
+            tests/test_playwright_mission_adapter.py \
+            tests/test_engine_gateway.py \
+            tests/test_benchmark_promotion.py \
+            tests/test_intelligence_router.py \
+            tests/test_mission_runtime.py \
+            tests/test_mission_execution.py \
+            tests/test_robot_execution_pinning.py \
+            tests/test_world_model.py \
+            tests/test_jarvis_benchmark.py \
+            tests/test_procedural_memory.py \
+            tests/test_effect_attribution.py \
+            tests/test_research_engine.py \
+            tests/test_digital_twin.py \
+            tests/test_multimodal_context.py \
+            tests/test_outcome_learning.py \
+            tests/test_council_runtime.py \
+            tests/test_episodic_memory.py \
+            tests/test_voice_session.py \
+            tests/test_context_taxonomy.py \
+            tests/test_context_provider_registry.py \
+            tests/test_context_provider_gateway.py \
+            tests/test_source_governance.py \
+            tests/test_enterprise_domain_registry.py \
+            tests/test_enterprise_economics_domain.py \
+            tests/test_repository_intelligence_legal_sources.py \
+            tests/test_repository_intelligence_api_discovery_sources.py
+
+  robot-registry-postgres-exact-head:
+    name: Robot Registry + Execution Lease PostgreSQL exact-head authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPEX_ENVIRONMENT: test
+      OPEX_AUTH_MODE: development
+      OPEX_DATABASE_URL: postgresql+asyncpg://opex_runtime:opex_runtime@localhost:5432/opex_test
+      OPEX_MIGRATION_DATABASE_URL: postgresql+asyncpg://opex_migrator:opex_migrator@localhost:5432/opex_test
+      OPEX_REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opex_test
+          POSTGRES_USER: opex_migrator
+          POSTGRES_PASSWORD: opex_migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opex_migrator -d opex_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout literal PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Assert literal PR head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          echo "expected=$EXPECTED_HEAD"
+          echo "actual=$actual"
+          test "$actual" = "$EXPECTED_HEAD"
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+
+      - name: Install Core API
+        run: python -m pip install -e './services/core-api[dev,bigquery]'
+
+      - name: Create least-privilege runtime role
+        run: |
+          python - <<'PY'
+          import asyncio
+          import asyncpg
+
+          async def main() -> None:
+              connection = await asyncpg.connect(
+                  "postgresql://opex_migrator:opex_migrator@localhost:5432/opex_test"
+              )
+              try:
+                  if not await connection.fetchval(
+                      "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'opex_runtime')"
+                  ):
+                      await connection.execute(
+                          "CREATE ROLE opex_runtime LOGIN PASSWORD 'opex_runtime' "
+                          "NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+                      )
+              finally:
+                  await connection.close()
+
+          asyncio.run(main())
+          PY
+
+      - name: Enforce one migration head and replay PostgreSQL schema
+        working-directory: services/core-api
+        run: |
+          test "$(alembic heads | grep -c '(head)')" -eq 1
+          alembic upgrade head
+
+      - name: Compile and lint Robot Registry execution persistence surface
+        run: |
+          python -m py_compile \
+            services/core-api/app/robot_registry_repository.py \
+            services/core-api/app/robot_execution_lease_repository.py \
+            services/core-api/tests/test_robot_registry_postgres.py \
+            services/core-api/tests/test_robot_registry_security_postgres.py \
+            services/core-api/tests/test_robot_execution_lease_postgres.py \
+            services/core-api/tests/test_sql_access_boundary.py \
+            services/core-api/alembic/versions/0053_jarvis_robot_registry.py \
+            services/core-api/alembic/versions/0054_jarvis_robot_execution_leases.py
+          ruff check \
+            services/core-api/app/robot_registry_repository.py \
+            services/core-api/app/robot_execution_lease_repository.py \
+            services/core-api/tests/test_robot_registry_postgres.py \
+            services/core-api/tests/test_robot_registry_security_postgres.py \
+            services/core-api/tests/test_robot_execution_lease_postgres.py \
+            services/core-api/tests/test_sql_access_boundary.py
+
+      - name: Run Robot Registry execution PostgreSQL and secure SQL boundary acceptance
+        run: >-
+          pytest -q
+          services/core-api/tests/test_robot_registry_postgres.py
+          services/core-api/tests/test_robot_registry_security_postgres.py
+          services/core-api/tests/test_robot_execution_lease_postgres.py
+          services/core-api/tests/test_sql_access_boundary.py

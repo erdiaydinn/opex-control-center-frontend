@@ -1,11 +1,16 @@
 """Fail-closed commit fencing for mutating Jarvis agent tools.
 
 Planning, worker assignment and a global lane lease are necessary but are not commit
-authority.  This module defines the final, atomic authority check that a mutating
-adapter must perform immediately before its backend write.  Resource and idempotency
+authority. This module defines the final, atomic authority check that a mutating
+adapter must perform immediately before its backend write. Resource and idempotency
 identities are derived from canonical tool arguments rather than accepted from a
-model.  Cancellation, stale lease generations, stale fencing tokens and replay are
-therefore rejected at the commit boundary.
+model. Cancellation, stale lease generations, stale fencing tokens, robot-registry
+generation drift and replay are therefore rejected at the commit boundary.
+
+When a capability was produced by the Robot Registry, the exact immutable robot
+version, registry generation and robot execution lease are carried into both the
+request and the atomically consumed permit. A returned permit that drops or changes
+that binding is rejected before backend dispatch.
 
 The authority port is expected to be backed by one durable transaction/CAS operation.
 Neither a permit nor a verified receipt grants business authority; the ordinary tool
@@ -22,7 +27,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 AGENT_COMMIT_FENCING_CONTRACT = "eay-agent-commit-fencing-v1"
 
@@ -92,6 +97,23 @@ def derive_commit_identity(
     )
 
 
+class RobotExecutionCommitBinding(BaseModel):
+    """Exact Robot Registry execution identity carried through the final write fence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    tenant_id: str = Field(min_length=1)
+    company_id: str = Field(min_length=1)
+    objective_id: str = Field(min_length=1)
+    robot_id: str = Field(min_length=1)
+    robot_version: int = Field(ge=1)
+    registry_generation: int = Field(ge=1)
+    version_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_lease_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_lease_generation: int = Field(ge=1)
+    pin_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class CommitFenceRequest(BaseModel):
     contract: str = AGENT_COMMIT_FENCING_CONTRACT
     job_id: str = Field(min_length=1)
@@ -103,6 +125,7 @@ class CommitFenceRequest(BaseModel):
     cancellation_epoch: int = Field(ge=0)
     authorization_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     identity: CanonicalCommitIdentity
+    robot_execution: RobotExecutionCommitBinding | None = None
     requested_at: datetime
     business_execution_authority_granted: bool = False
 
@@ -111,6 +134,8 @@ class CommitFenceRequest(BaseModel):
         _aware(self.requested_at, "agent_commit_request_requires_timezone")
         if self.identity.tenant_id != self.tenant_id:
             raise ValueError("agent_commit_identity_tenant_mismatch")
+        if self.robot_execution is not None and self.robot_execution.tenant_id != self.tenant_id:
+            raise ValueError("agent_commit_robot_execution_tenant_mismatch")
         if self.business_execution_authority_granted:
             raise ValueError("agent_commit_fence_never_grants_business_authority")
         return self
@@ -129,6 +154,7 @@ class AtomicCommitPermit(BaseModel):
     resource_ref: str = Field(min_length=1)
     idempotency_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     authorization_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    robot_execution: RobotExecutionCommitBinding | None = None
     issued_at: datetime
     consumed: bool = True
     business_execution_authority_granted: bool = False
@@ -136,6 +162,8 @@ class AtomicCommitPermit(BaseModel):
     @model_validator(mode="after")
     def permit_is_single_use_and_non_authoritative(self) -> AtomicCommitPermit:
         _aware(self.issued_at, "agent_commit_permit_requires_timezone")
+        if self.robot_execution is not None and self.robot_execution.tenant_id != self.tenant_id:
+            raise ValueError("agent_commit_robot_execution_tenant_mismatch")
         if not self.consumed:
             raise ValueError("agent_commit_permit_must_be_atomically_consumed")
         if self.business_execution_authority_granted:
@@ -147,7 +175,7 @@ class AtomicCommitAuthority(Protocol):
     async def authorize_and_consume(
         self, request: CommitFenceRequest
     ) -> AtomicCommitPermit:
-        """Atomically validate epoch/generation/token and burn idempotency key."""
+        """Atomically validate epochs/generations/robot pin and burn idempotency key."""
 
 
 class BackendCommitOutcome(BaseModel):
@@ -180,6 +208,7 @@ class AgentCommitReceipt(BaseModel):
     resource_ref: str
     idempotency_key: str
     authorization_fingerprint: str
+    robot_execution: RobotExecutionCommitBinding | None = None
     transaction_ref: str | None = None
     evidence_refs: tuple[str, ...] = ()
     error_code: str | None = None
@@ -192,6 +221,8 @@ class AgentCommitReceipt(BaseModel):
     @model_validator(mode="after")
     def receipt_is_integral(self) -> AgentCommitReceipt:
         _aware(self.recorded_at, "agent_commit_receipt_requires_timezone")
+        if self.robot_execution is not None and self.robot_execution.tenant_id != self.tenant_id:
+            raise ValueError("agent_commit_robot_execution_tenant_mismatch")
         if self.business_execution_authority_granted:
             raise ValueError("agent_commit_receipt_never_grants_business_authority")
         if self.disposition is CommitFenceDisposition.VERIFIED_COMMIT:
@@ -206,6 +237,19 @@ class AgentCommitReceipt(BaseModel):
         if self.fingerprint != expected:
             raise ValueError("agent_commit_receipt_fingerprint_mismatch")
         return self
+
+    @property
+    def evidence_ref(self) -> str:
+        return (
+            "agent-commit://"
+            + self.tenant_id
+            + "/"
+            + self.job_id
+            + "/"
+            + self.permit_id
+            + "/"
+            + self.fingerprint
+        )
 
 
 def _validate_permit(request: CommitFenceRequest, permit: AtomicCommitPermit) -> None:
@@ -223,6 +267,8 @@ def _validate_permit(request: CommitFenceRequest, permit: AtomicCommitPermit) ->
     )
     if any(actual != expected for actual, expected in pairs):
         raise CommitFenceError("agent_commit_atomic_permit_binding_mismatch")
+    if permit.robot_execution != request.robot_execution:
+        raise CommitFenceError("agent_commit_robot_execution_binding_mismatch")
 
 
 def _receipt(
@@ -246,6 +292,7 @@ def _receipt(
         "resource_ref": request.identity.resource_ref,
         "idempotency_key": request.identity.idempotency_key,
         "authorization_fingerprint": request.authorization_fingerprint,
+        "robot_execution": request.robot_execution,
         "transaction_ref": outcome.transaction_ref,
         "evidence_refs": outcome.evidence_refs,
         "error_code": outcome.error_code,

@@ -12,9 +12,14 @@ on:
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/core-api/app/agent_job_*.py"
       - "services/core-api/app/epistemic_rollout_repository.py"
+      - "services/core-api/app/robot_registry_repository.py"
+      - "services/core-api/app/robot_execution_lease_repository.py"
       - "services/core-api/app/main.py"
       - "services/core-api/tests/test_agent_job_control_plane.py"
       - "services/core-api/tests/test_epistemic_rollout_postgres.py"
+      - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/tests/test_robot_registry_security_postgres.py"
+      - "services/core-api/tests/test_robot_execution_lease_postgres.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "services/core-api/alembic/versions/*jarvis*.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
@@ -26,9 +31,14 @@ on:
       - "services/eay-ai-core/config/repository_intelligence_registry.json"
       - "services/core-api/app/agent_job_*.py"
       - "services/core-api/app/epistemic_rollout_repository.py"
+      - "services/core-api/app/robot_registry_repository.py"
+      - "services/core-api/app/robot_execution_lease_repository.py"
       - "services/core-api/app/main.py"
       - "services/core-api/tests/test_agent_job_control_plane.py"
       - "services/core-api/tests/test_epistemic_rollout_postgres.py"
+      - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/tests/test_robot_registry_security_postgres.py"
+      - "services/core-api/tests/test_robot_execution_lease_postgres.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "services/core-api/alembic/versions/*jarvis*.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
@@ -105,16 +115,19 @@ jobs:
         run: |
           test "$(alembic heads | grep -c '(head)')" -eq 1
           alembic upgrade head
-      - name: Verify authenticated API, durable canary authority, tenant isolation and SQL boundary
+      - name: Verify authenticated API, durable rollout/robot execution authority, tenant isolation and SQL boundary
         run: >-
           pytest -q
           services/core-api/tests/test_agent_job_control_plane.py
           services/core-api/tests/test_epistemic_rollout_postgres.py
+          services/core-api/tests/test_robot_registry_postgres.py
+          services/core-api/tests/test_robot_registry_security_postgres.py
+          services/core-api/tests/test_robot_execution_lease_postgres.py
           services/core-api/tests/test_sql_access_boundary.py
       - name: Lint and compile control plane
         run: |
-          ruff check services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/tests/test_agent_job_control_plane.py services/core-api/tests/test_epistemic_rollout_postgres.py
-          python -m compileall -q services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py
+          ruff check services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/app/robot_registry_repository.py services/core-api/app/robot_execution_lease_repository.py services/core-api/tests/test_agent_job_control_plane.py services/core-api/tests/test_epistemic_rollout_postgres.py services/core-api/tests/test_robot_registry_postgres.py services/core-api/tests/test_robot_registry_security_postgres.py services/core-api/tests/test_robot_execution_lease_postgres.py
+          python -m compileall -q services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/app/robot_registry_repository.py services/core-api/app/robot_execution_lease_repository.py
 
   contract:
     name: Jarvis intelligence, autonomy, memory, API learning and decision contracts
@@ -146,6 +159,7 @@ jobs:
             tests/test_intelligence_router.py \
             tests/test_mission_runtime.py \
             tests/test_mission_execution.py \
+            tests/test_robot_execution_pinning.py \
             tests/test_world_model.py \
             tests/test_jarvis_benchmark.py \
             tests/test_procedural_memory.py \

@@ -231,9 +231,10 @@ PLANOGRAM_SQL_EXECUTION_POINTS = {
 }
 
 # Jarvis control-plane security review: exact repository methods only.
-# Statements are static text() with bound parameters, every query has explicit
-# tenant/company/problem/rollout identity predicates where applicable, tenant context
-# is transaction-local, and migrations 0051-0052 enforce FORCE RLS plus append-only journals.
+# Statements are static text() literals with bound parameters. Every robot
+# registry/lease query is exact-scope and transaction-bound; migrations 0051-0054
+# enforce FORCE RLS, immutable evidence, generation fences and atomic stale-lease
+# revocation when registry selection changes.
 JARVIS_AGENT_SQL_EXECUTION_POINTS = {
     ("agent_job_repository.py", "create"),
     ("agent_job_repository.py", "get"),
@@ -246,6 +247,26 @@ JARVIS_AGENT_SQL_EXECUTION_POINTS = {
     ("epistemic_rollout_repository.py", "_insert_receipt"),
     ("epistemic_rollout_repository.py", "append_receipt"),
     ("epistemic_rollout_repository.py", "apply_rollback"),
+    ("robot_registry_repository.py", "register_version"),
+    ("robot_registry_repository.py", "activate_version"),
+    ("robot_registry_repository.py", "rollback_version"),
+    ("robot_registry_repository.py", "get"),
+    ("robot_registry_repository.py", "get_version"),
+    ("robot_registry_repository.py", "list_versions"),
+    ("robot_registry_repository.py", "list_receipts"),
+    ("robot_registry_repository.py", "_latest_version"),
+    ("robot_registry_repository.py", "_lock"),
+    ("robot_registry_repository.py", "_registration_receipt_for_version"),
+    ("robot_registry_repository.py", "_latest_selection_receipt"),
+    ("robot_registry_repository.py", "_append_receipt_locked"),
+    ("robot_execution_lease_repository.py", "issue"),
+    ("robot_execution_lease_repository.py", "complete"),
+    ("robot_execution_lease_repository.py", "get"),
+    ("robot_execution_lease_repository.py", "list_receipts"),
+    ("robot_execution_lease_repository.py", "_active_registry_for_share"),
+    ("robot_execution_lease_repository.py", "_revoke_locked"),
+    ("robot_execution_lease_repository.py", "_append_receipt"),
+    ("robot_execution_lease_repository.py", "_first_receipt"),
 }
 
 ALLOWED_SQL_EXECUTION_POINTS = (

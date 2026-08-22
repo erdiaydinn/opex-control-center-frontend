@@ -49,9 +49,11 @@ class TUIKThemeNode(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     theme_id: str = Field(min_length=1, max_length=200)
-    name: str = Field(min_length=1, max_length=500)
-    # Field evidence shows structural/group nodes legitimately omit or carry
-    # null/blank URLs. URL is optional metadata; core identity remains mandatory.
+    # Field evidence contains one upstream node (18.99.i.104) with no name key.
+    # Preserve absence as None; explicit null/blank names remain invalid in _parse_node.
+    name: str | None = Field(default=None, max_length=500)
+    # Structural/group nodes legitimately carry blank URLs. URL is optional metadata;
+    # core identity and tree structure remain mandatory.
     url: str | None = Field(max_length=2_000)
     icon: str | None = Field(default=None, max_length=2_000)
     metadata_url: str | None = Field(default=None, max_length=2_000)
@@ -200,7 +202,7 @@ def _parse_node(
         raise ValueError("tuik_theme_catalog_depth_exceeded")
     if not isinstance(raw, dict):
         raise ValueError("tuik_theme_catalog_node_must_be_object")
-    required = {"id", "name", "children"}
+    required = {"id", "children"}
     if not required.issubset(raw):
         raise ValueError("tuik_theme_catalog_node_required_field_missing")
 
@@ -209,12 +211,15 @@ def _parse_node(
         raise ValueError("tuik_theme_catalog_duplicate_theme_id")
     seen_ids.add(theme_id)
 
-    name = raw["name"]
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("tuik_theme_catalog_theme_name_required")
-    normalized_name = name.strip()
-    if len(normalized_name) > 500:
-        raise ValueError("tuik_theme_catalog_theme_name_too_long")
+    if "name" not in raw:
+        normalized_name = None
+    else:
+        name = raw["name"]
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("tuik_theme_catalog_theme_name_required")
+        normalized_name = name.strip()
+        if len(normalized_name) > 500:
+            raise ValueError("tuik_theme_catalog_theme_name_too_long")
 
     children_raw = raw["children"]
     if not isinstance(children_raw, list):

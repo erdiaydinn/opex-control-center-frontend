@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+import pytest
 
 from app.tuik_theme_catalog_adapter import read_tuik_theme_catalog_observation
 
@@ -16,7 +17,7 @@ def _document(*, omit_root_url: bool = False) -> dict[str, Any]:
     root: dict[str, Any] = {
         "id": 1,
         "name": "Adalet ve Seçim",
-        "url": None,
+        "url": "",
         "icon": "justice",
         "metadataUrl": None,
         "children": [
@@ -63,7 +64,7 @@ def _transport(document: dict[str, Any]) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-def test_field_verified_structural_nodes_may_have_null_or_blank_urls() -> None:
+def test_field_verified_structural_nodes_may_have_blank_urls() -> None:
     result = read_tuik_theme_catalog_observation(
         tenant_id=TENANT,
         transport=_transport(_document()),
@@ -84,7 +85,7 @@ def test_field_verified_structural_nodes_may_have_null_or_blank_urls() -> None:
     assert result.observation.execution_authority_granted is False
 
 
-def test_field_verified_structural_nodes_may_omit_url_key() -> None:
+def test_structural_url_key_absence_is_normalized_without_authority_gain() -> None:
     result = read_tuik_theme_catalog_observation(
         tenant_id=TENANT,
         transport=_transport(_document(omit_root_url=True)),
@@ -98,3 +99,35 @@ def test_field_verified_structural_nodes_may_omit_url_key() -> None:
     assert result.catalog_receipt.context_only is True
     assert result.observation.company_truth_granted is False
     assert result.observation.execution_authority_granted is False
+
+
+def test_field_verified_missing_name_is_preserved_as_none_without_invention() -> None:
+    document = _document()
+    target = document["data"][0]["children"][0]["children"][0]
+    target.pop("name")
+
+    result = read_tuik_theme_catalog_observation(
+        tenant_id=TENANT,
+        transport=_transport(document),
+        now=NOW,
+    )
+
+    leaf = result.catalog_receipt.themes[0].children[0].children[0]
+    assert leaf.theme_id == "1.21.141"
+    assert leaf.name is None
+    assert result.catalog_receipt.context_only is True
+    assert result.observation.company_truth_granted is False
+    assert result.observation.causal_claim_proven is False
+    assert result.observation.execution_authority_granted is False
+
+
+def test_explicit_null_or_blank_name_remains_fail_closed() -> None:
+    for invalid_name in (None, ""):
+        document = _document()
+        document["data"][0]["children"][0]["children"][0]["name"] = invalid_name
+        with pytest.raises(ValueError, match="tuik_theme_catalog_theme_name_required"):
+            read_tuik_theme_catalog_observation(
+                tenant_id=TENANT,
+                transport=_transport(document),
+                now=NOW,
+            )

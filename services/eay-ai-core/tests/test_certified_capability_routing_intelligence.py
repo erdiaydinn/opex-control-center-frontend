@@ -66,8 +66,8 @@ def source_and_integrity():
         measurement_id=m.measurement_id, auditor_ref=f"auditor-{m.measurement_id}-{n}",
         independent_auditor=True, audited_at=CHECKED,
         exposure_mode=BenchmarkExposureMode.SECRET_HOLDOUT, unseen_item_fraction=.8,
-        known_public_overlap_fraction=.01,
-        evidence_refs=(f"integrity://{m.measurement_id}/{n}/scan",
+        known_public_overlap_fraction=.01, prompt_answer_leakage_detected=False,
+        contamination_detected=False, evidence_refs=(f"integrity://{m.measurement_id}/{n}/scan",
                        f"integrity://{m.measurement_id}/{n}/review"))
         for m in all_measurements for n in (1, 2))
     releases = tuple(CurrentFrontierRelease(provider_family=p.provider_family,

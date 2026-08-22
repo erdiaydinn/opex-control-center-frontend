@@ -30,7 +30,7 @@ def profile(engine_id: str, provider: str, *, score: float, local: bool = False)
 
 def strict_task(*, critical=False):
     return IntelligenceTask(task_id="strict", complexity=TaskComplexity.EXTREME if critical else TaskComplexity.HARD,
-        risk=TaskRisk.CRITICAL if critical else TaskRisk.HIGH, privacy=PrivacyLevel.PUBLIC,
+        risk=TaskRisk.CRITICAL if critical else TaskRisk.MEDIUM, privacy=PrivacyLevel.PUBLIC,
         requires_independent_critique=critical, certification_domain=DOMAIN,
         requires_fresh_certification=True)
 

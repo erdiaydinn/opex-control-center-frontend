@@ -1,9 +1,12 @@
-from uuid import UUID
+import os
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
+from redis.asyncio import Redis
 
 from app.core.mobile_fleet_health import (
+    FLEET_SNAPSHOT_TTL_SECONDS,
     BatteryBucket,
     ConnectivityState,
     FleetCredentialRequest,
@@ -12,7 +15,9 @@ from app.core.mobile_fleet_health import (
     FleetHealthRejected,
     FleetOperationalHealth,
     FleetProofInvalid,
+    FleetSnapshotConflict,
     MobileRuntimeProfile,
+    RedisFleetHealthStore,
     RolloutRing,
     ScannerHealth,
     build_snapshot,
@@ -234,3 +239,73 @@ def test_stale_or_future_observation_is_rejected() -> None:
             observation(observed_at_epoch_ms=NOW_MS + 120 * 1000 + 1),
             now_epoch_ms=NOW_MS,
         )
+
+
+@pytest.mark.asyncio
+async def test_redis_latest_snapshot_replay_ordering_and_retention() -> None:
+    redis_url = os.getenv("EAY_FLEET_REDIS_TEST_URL")
+    if not redis_url:
+        pytest.skip("EAY_FLEET_REDIS_TEST_URL is not configured")
+
+    client = Redis.from_url(redis_url, decode_responses=True)
+    tenant = uuid4()
+    store = RedisFleetHealthStore(client)
+    first = observation(
+        fleet_device_token="fleet-device-token-redis-0001",
+        fleet_site_token="fleet-site-token-redis-0001",
+    )
+    snapshot_key = store._snapshot_key(tenant, first.fleet_device_token)
+    index_key = store._index_key(tenant)
+
+    try:
+        await client.delete(snapshot_key, index_key)
+
+        stored, replay = await store.store_latest(tenant, first, now_epoch_ms=NOW_MS + 1)
+        assert replay is False
+        assert stored.observation == first
+        assert stored.health == FleetOperationalHealth.HEALTHY
+
+        snapshot_ttl = await client.ttl(snapshot_key)
+        index_ttl = await client.ttl(index_key)
+        assert FLEET_SNAPSHOT_TTL_SECONDS - 30 <= snapshot_ttl <= FLEET_SNAPSHOT_TTL_SECONDS
+        assert FLEET_SNAPSHOT_TTL_SECONDS - 30 <= index_ttl <= FLEET_SNAPSHOT_TTL_SECONDS
+
+        replayed, replay = await store.store_latest(tenant, first, now_epoch_ms=NOW_MS + 2)
+        assert replay is True
+        assert replayed.observation_hash == stored.observation_hash
+
+        with pytest.raises(FleetSnapshotConflict, match="timestamp was reused"):
+            await store.store_latest(
+                tenant,
+                first.model_copy(update={"pending_sync_count": 1}),
+                now_epoch_ms=NOW_MS + 3,
+            )
+
+        with pytest.raises(FleetSnapshotConflict, match="Older fleet observation"):
+            await store.store_latest(
+                tenant,
+                first.model_copy(update={"observed_at_epoch_ms": NOW_MS - 1}),
+                now_epoch_ms=NOW_MS + 4,
+            )
+
+        newer = first.model_copy(
+            update={
+                "observed_at_epoch_ms": NOW_MS + 1,
+                "quarantined_sync_count": 1,
+            }
+        )
+        stored_newer, replay = await store.store_latest(
+            tenant,
+            newer,
+            now_epoch_ms=NOW_MS + 5,
+        )
+        assert replay is False
+        assert stored_newer.health == FleetOperationalHealth.DEGRADED
+
+        listed = await store.list_latest(tenant, now_epoch_ms=NOW_MS + 6, limit=10)
+        assert len(listed) == 1
+        assert listed[0].observation == newer
+        assert listed[0].health == FleetOperationalHealth.DEGRADED
+    finally:
+        await client.delete(snapshot_key, index_key)
+        await client.aclose()

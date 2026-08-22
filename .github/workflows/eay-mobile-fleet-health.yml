@@ -29,6 +29,19 @@ jobs:
   fleet-server-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7.4.5-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      EAY_FLEET_REDIS_TEST_URL: redis://127.0.0.1:6379/15
+      OPEX_REDIS_URL: redis://127.0.0.1:6379/15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -46,7 +59,7 @@ jobs:
           app/mobile_fleet_routes.py
           app/main.py
           tests/test_mobile_fleet_health.py
-      - name: Prove privacy, proof, replay and classification contracts
+      - name: Prove privacy, proof, replay, retention and classification contracts
         working-directory: services/core-api
         run: python -m pytest -q tests/test_mobile_fleet_health.py
       - name: Prove fleet routes are mounted in Core API

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -112,9 +112,10 @@ def _safe_catalog_url(value: Any, *, field_name: str) -> str:
     if normalized.startswith("/") and not normalized.startswith("//"):
         return normalized
     parsed = urlparse(normalized)
+    host = (parsed.hostname or "").casefold().rstrip(".")
     if (
         parsed.scheme == "https"
-        and (parsed.hostname or "").casefold().rstrip(".") == TUIK_THEME_HOST
+        and (host == "tuik.gov.tr" or host.endswith(".tuik.gov.tr"))
         and not parsed.username
         and not parsed.password
         and parsed.port in (None, 443)
@@ -207,29 +208,58 @@ def _count_nodes(nodes: tuple[TUIKThemeNode, ...]) -> int:
     return sum(1 + _count_nodes(node.children) for node in nodes)
 
 
-def _seal_catalog(payload: dict[str, Any]) -> TUIKThemeCatalogReceipt:
+def _canonical_fingerprint_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    fetched_at = payload["fetched_at"]
+    if isinstance(fetched_at, str):
+        fetched_at = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+    if not isinstance(fetched_at, datetime) or fetched_at.tzinfo is None:
+        raise ValueError("tuik_theme_catalog_fetched_at_timezone_required")
+    themes = [
+        (theme if isinstance(theme, TUIKThemeNode) else TUIKThemeNode.model_validate(theme)).model_dump(
+            mode="json"
+        )
+        for theme in payload["themes"]
+    ]
+    return {
+        "contract": payload["contract"],
+        "provider_id": payload["provider_id"],
+        "source_url": payload["source_url"],
+        "fetched_at": fetched_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+        "provider_evidence_fingerprint": payload["provider_evidence_fingerprint"],
+        "provider_body_sha256": payload["provider_body_sha256"],
+        "bootstrap_body_sha256": payload["bootstrap_body_sha256"],
+        "root_theme_count": payload["root_theme_count"],
+        "total_node_count": payload["total_node_count"],
+        "themes": themes,
+        "evidence_refs": list(payload["evidence_refs"]),
+        "context_only": payload["context_only"],
+        "company_truth_granted": payload["company_truth_granted"],
+        "causal_claim_proven": payload["causal_claim_proven"],
+        "execution_authority_granted": payload["execution_authority_granted"],
+    }
+
+
+def _catalog_fingerprint(payload: dict[str, Any]) -> str:
+    canonical = _canonical_fingerprint_payload(payload)
     material = json.dumps(
-        payload,
+        canonical,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
-        default=str,
     ).encode()
+    return hashlib.sha256(material).hexdigest()
+
+
+def _seal_catalog(payload: dict[str, Any]) -> TUIKThemeCatalogReceipt:
+    canonical = _canonical_fingerprint_payload(payload)
     return TUIKThemeCatalogReceipt.model_validate(
-        {**payload, "fingerprint": hashlib.sha256(material).hexdigest()}
+        {**canonical, "fingerprint": _catalog_fingerprint(canonical)}
     )
 
 
 def _verify_sealed(receipt: TUIKThemeCatalogReceipt) -> None:
-    payload = receipt.model_dump(mode="json", exclude={"fingerprint"})
-    material = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode()
-    expected = hashlib.sha256(material).hexdigest()
+    payload = receipt.model_dump(mode="python", exclude={"fingerprint"})
+    expected = _catalog_fingerprint(payload)
     if receipt.fingerprint != expected:
         raise ValueError("tuik_theme_catalog_fingerprint_mismatch")
 
@@ -296,7 +326,7 @@ def parse_tuik_theme_catalog(
             "bootstrap_body_sha256": validated.bootstrap_body_sha256,
             "root_theme_count": len(themes),
             "total_node_count": node_counter[0],
-            "themes": tuple(theme.model_dump(mode="json") for theme in themes),
+            "themes": themes,
             "evidence_refs": evidence_refs,
             "context_only": True,
             "company_truth_granted": False,
@@ -311,7 +341,7 @@ def build_tuik_theme_catalog_observation(
     *,
     tenant_id: str,
 ) -> ExternalContextObservation:
-    validated = TUIKThemeCatalogReceipt.model_validate(catalog.model_dump(mode="json"))
+    validated = TUIKThemeCatalogReceipt.model_validate(catalog.model_dump(mode="python"))
     event = build_timeline_event(
         event_id=f"tuik:theme-catalog:{validated.fingerprint[:24]}",
         event_type="eay.external.tuik.theme_catalog.observed",

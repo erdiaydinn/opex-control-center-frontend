@@ -43,6 +43,7 @@ FEATURES = MappingProxyType(
                 "audiences",
                 "analytics",
                 "liveLearning",
+                "operationalReadiness",
             }
         ),
         "audit": frozenset(
@@ -159,6 +160,9 @@ ACTIONS = MappingProxyType(
                 "revokeCompletion",
                 "manageLiveLearning",
                 "viewAnalytics",
+                "manageOperationalReadiness",
+                "ingestOperationalSignals",
+                "recordOperationalOutcomes",
             }
         ),
         "ai_assistant": frozenset({"executeOpsRead", "executeCatalogRead", "executeLegalRead"}),
@@ -310,6 +314,7 @@ ACADEMY_LEARNER_PERMISSIONS = frozenset(
         feature_permission("academy", "assignments"),
         feature_permission("academy", "certificates"),
         feature_permission("academy", "jarvisTutor"),
+        feature_permission("academy", "operationalReadiness"),
     }
 )
 ACADEMY_INSTRUCTOR_PERMISSIONS = frozenset(
@@ -334,6 +339,7 @@ ACADEMY_ADMIN_PERMISSIONS = frozenset(
         action_permission("academy", "assignEnrollment"),
         action_permission("academy", "revokeCompletion"),
         action_permission("academy", "viewAnalytics"),
+        action_permission("academy", "manageOperationalReadiness"),
     }
 )
 

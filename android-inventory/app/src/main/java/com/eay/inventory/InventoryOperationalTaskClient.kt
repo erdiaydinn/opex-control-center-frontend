@@ -16,9 +16,13 @@ import org.json.JSONObject
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.util.Locale
 import java.util.UUID
+
+enum class InventoryMissionPriority { LOW, NORMAL, HIGH, URGENT }
 
 data class InventoryOperationalTask(
     val missionId: String,
@@ -33,13 +37,28 @@ data class InventoryOperationalTask(
     val totalSteps: Int,
     val nextStep: OperationalStepKind,
     val claimStatus: String,
+    val priority: InventoryMissionPriority = InventoryMissionPriority.NORMAL,
+    val dueAt: String? = null,
+    val estimatedSeconds: Int? = null,
     val skuId: String,
     val plannedQuantity: String,
     val sourceLocationId: String?,
     val destinationLocationId: String?,
     val containerId: String?,
     val allowedConditions: List<String>,
-)
+) {
+    fun deadlineMinutes(now: Instant = Instant.now()): Int? {
+        val deadline = dueAt?.let { OffsetDateTime.parse(it).toInstant() } ?: return null
+        val seconds = Duration.between(now, deadline).seconds
+        return when {
+            seconds > 0L -> ((seconds + 59L) / 60L).toInt()
+            seconds < 0L -> -(((-seconds) + 59L) / 60L).toInt()
+            else -> 0
+        }
+    }
+
+    fun estimatedMinutes(): Int? = estimatedSeconds?.let { (it + 59) / 60 }
+}
 
 data class InventoryOperationalTaskFetchResult(
     val code: InventoryTaskFetchCode,
@@ -90,6 +109,8 @@ object InventoryOperationalTaskContract {
         require(task.claimStatus in setOf("AVAILABLE", "RESUMABLE"))
         require(task.skuId.isNotBlank())
         require(task.externalReference.isNotBlank())
+        task.dueAt?.let { OffsetDateTime.parse(it) }
+        task.estimatedSeconds?.let { require(it in 1..86_400) }
         OperationalValueCanonicalizer.normalize(OperationalStepKind.QUANTITY, task.plannedQuantity)
 
         if (OperationalStepKind.SOURCE_LOCATION in task.steps) {
@@ -204,6 +225,9 @@ class InventoryOperationalTaskClient(context: Context) {
                             totalSteps = row.getInt("total_steps"),
                             nextStep = OperationalStepKind.valueOf(row.getString("next_step")),
                             claimStatus = row.getString("claim_status"),
+                            priority = InventoryMissionPriority.valueOf(row.optString("priority", "NORMAL")),
+                            dueAt = nullableString(row, "due_at"),
+                            estimatedSeconds = nullableInt(row, "estimated_seconds"),
                             skuId = row.getString("sku_id"),
                             plannedQuantity = row.getString("planned_quantity"),
                             sourceLocationId = nullableString(row, "source_location_id"),
@@ -227,6 +251,9 @@ class InventoryOperationalTaskClient(context: Context) {
 
     private fun nullableString(row: JSONObject, key: String): String? =
         if (!row.has(key) || row.isNull(key)) null else row.getString(key).takeIf { it.isNotBlank() }
+
+    private fun nullableInt(row: JSONObject, key: String): Int? =
+        if (!row.has(key) || row.isNull(key)) null else row.getInt(key)
 }
 
 class InventoryOperationalClaimClient(context: Context) {

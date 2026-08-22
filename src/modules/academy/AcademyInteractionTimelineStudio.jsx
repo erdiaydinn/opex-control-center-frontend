@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Clock3, LoaderCircle, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 
 import { apiPost } from "../../api/client.js";
@@ -17,6 +17,17 @@ const NODE_TYPES = [
   "branch",
   "cta",
 ];
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function formatTime(value) {
+  const totalSeconds = Math.max(0, Math.round(Number(value || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
 
 async function sha256(value) {
   const bytes = new TextEncoder().encode(value);
@@ -48,9 +59,24 @@ export default function AcademyInteractionTimelineStudio({ workspace, locale, t,
   const [versionNumber, setVersionNumber] = useState(1);
   const [status, setStatus] = useState("draft");
   const [nodes, setNodes] = useState([makeNode(1)]);
+  const [selectedNodeKey, setSelectedNodeKey] = useState("interaction-1");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const timelineRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const selectedVersion = useMemo(
+    () => versions.find((item) => item.content_version_id === contentVersionId) || versions[0] || null,
+    [contentVersionId, versions],
+  );
+
+  const timelineDurationMs = useMemo(() => {
+    const governedDuration = Number(selectedVersion?.duration_ms);
+    if (Number.isFinite(governedDuration) && governedDuration > 0) return governedDuration;
+    const latestNodeMs = nodes.reduce((maximum, node) => Math.max(maximum, Number(node.at_ms) || 0), 0);
+    return Math.max(60000, latestNodeMs + 30000);
+  }, [nodes, selectedVersion]);
 
   const orderedNodes = useMemo(
     () => [...nodes].sort((left, right) => Number(left.at_ms) - Number(right.at_ms) || left.node_key.localeCompare(right.node_key)),
@@ -61,12 +87,68 @@ export default function AcademyInteractionTimelineStudio({ workspace, locale, t,
     setNodes((items) => items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
   }
 
+  function updateNodeByKey(nodeKey, patch) {
+    setNodes((items) => items.map((item) => (item.node_key === nodeKey ? { ...item, ...patch } : item)));
+  }
+
+  function renameNode(index, value) {
+    const oldKey = nodes[index]?.node_key || "";
+    const nextKey = value.trim().toLowerCase().replace(/\s+/g, "-");
+    updateNode(index, { node_key: nextKey });
+    if (selectedNodeKey === oldKey) setSelectedNodeKey(nextKey);
+  }
+
   function addNode() {
-    setNodes((items) => [...items, makeNode(items.length + 1)]);
+    let next = nodes.length + 1;
+    while (nodes.some((node) => node.node_key === `interaction-${next}`)) next += 1;
+    const node = makeNode(next);
+    setNodes((items) => [...items, node]);
+    setSelectedNodeKey(node.node_key);
   }
 
   function removeNode(index) {
+    const node = nodes[index];
     setNodes((items) => items.filter((_, itemIndex) => itemIndex !== index));
+    if (node && selectedNodeKey === node.node_key) {
+      setSelectedNodeKey(nodes[index - 1]?.node_key || nodes[index + 1]?.node_key || "");
+    }
+  }
+
+  function timeFromClientX(clientX) {
+    const rect = timelineRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return 0;
+    const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+    return Math.round(ratio * timelineDurationMs);
+  }
+
+  function markerPointerDown(event, nodeKey) {
+    if (event.button !== 0) return;
+    dragRef.current = { nodeKey, pointerId: event.pointerId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectedNodeKey(nodeKey);
+    updateNodeByKey(nodeKey, { at_ms: timeFromClientX(event.clientX) });
+  }
+
+  function markerPointerMove(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    updateNodeByKey(drag.nodeKey, { at_ms: timeFromClientX(event.clientX) });
+  }
+
+  function markerPointerUp(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+  }
+
+  function markerKeyDown(event, nodeKey) {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const current = Number(nodes.find((node) => node.node_key === nodeKey)?.at_ms) || 0;
+    const step = event.shiftKey ? 5000 : 1000;
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    setSelectedNodeKey(nodeKey);
+    updateNodeByKey(nodeKey, { at_ms: clamp(current + direction * step, 0, timelineDurationMs) });
   }
 
   async function saveTimeline(event) {
@@ -140,17 +222,41 @@ export default function AcademyInteractionTimelineStudio({ workspace, locale, t,
         <label><span>{ix("status")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="draft">{t("draft")}</option><option value="published">{t("published")}</option></select></label>
 
         <div className="wide eay-academy-expansion-set" aria-label={ix("timeline")}>
-          <div className="eay-academy-timeline-preview">
-            {orderedNodes.map((node) => <div key={node.node_key} className="eay-academy-timeline-point"><span>{Math.round(Number(node.at_ms) / 1000)}s</span><strong>{node.node_key}</strong><small>{node.node_type}</small></div>)}
+          <div className="eay-academy-timeline-ruler" aria-hidden="true">
+            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => <span key={ratio}>{formatTime(timelineDurationMs * ratio)}</span>)}
+          </div>
+          <div className="eay-academy-timeline-track" ref={timelineRef}>
+            {orderedNodes.map((node) => {
+              const percent = clamp((Number(node.at_ms) || 0) / timelineDurationMs, 0, 1) * 100;
+              return (
+                <button
+                  type="button"
+                  key={node.node_key}
+                  className={`eay-academy-timeline-marker ${selectedNodeKey === node.node_key ? "is-selected" : ""}`}
+                  style={{ left: `${percent}%` }}
+                  onFocus={() => setSelectedNodeKey(node.node_key)}
+                  onPointerDown={(event) => markerPointerDown(event, node.node_key)}
+                  onPointerMove={markerPointerMove}
+                  onPointerUp={markerPointerUp}
+                  onPointerCancel={markerPointerUp}
+                  onKeyDown={(event) => markerKeyDown(event, node.node_key)}
+                  aria-label={`${node.node_key}. ${ix("timeMs")}: ${Math.round(Number(node.at_ms) || 0)}`}
+                >
+                  <strong>{formatTime(node.at_ms)}</strong>
+                  <span>{node.node_key}</span>
+                  <small>{node.node_type.replaceAll("_", " ")}</small>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         <fieldset className="wide eay-academy-expansion-set"><legend>{tx("nodes")}</legend>
           {nodes.map((node, index) => (
-            <div className="eay-academy-expansion-row" key={`${index}-${node.node_key}`}>
-              <label><span>{tx("nodeKey")}</span><input required value={node.node_key} onChange={(event) => updateNode(index, { node_key: event.target.value })} /></label>
-              <label><span>{tx("nodeType")}</span><select value={node.node_type} onChange={(event) => updateNode(index, { node_type: event.target.value })}>{NODE_TYPES.map((kind) => <option key={kind} value={kind}>{kind.replaceAll("_", " ")}</option>)}</select></label>
-              <label><span>{ix("timeMs")}</span><input type="number" min="0" value={node.at_ms} onChange={(event) => updateNode(index, { at_ms: event.target.value })} /></label>
+            <div className={`eay-academy-expansion-row ${selectedNodeKey === node.node_key ? "is-selected" : ""}`} key={`${index}-${node.node_key}`}>
+              <label><span>{tx("nodeKey")}</span><input required value={node.node_key} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => renameNode(index, event.target.value)} /></label>
+              <label><span>{tx("nodeType")}</span><select value={node.node_type} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNode(index, { node_type: event.target.value })}>{NODE_TYPES.map((kind) => <option key={kind} value={kind}>{kind.replaceAll("_", " ")}</option>)}</select></label>
+              <label><span>{ix("timeMs")}</span><input type="number" min="0" value={node.at_ms} onFocus={() => setSelectedNodeKey(node.node_key)} onChange={(event) => updateNode(index, { at_ms: event.target.value })} /></label>
               <label><span>{ix("scoreWeight")}</span><input type="number" min="0" max="1000" value={node.score_weight} onChange={(event) => updateNode(index, { score_weight: event.target.value })} /></label>
               <label className="grow"><span>{ix("prompt")}</span><input value={node.prompt} onChange={(event) => updateNode(index, { prompt: event.target.value })} /></label>
               <label className="grow"><span>{ix("payload")}</span><input value={node.payloadText} onChange={(event) => updateNode(index, { payloadText: event.target.value })} spellCheck="false" /></label>

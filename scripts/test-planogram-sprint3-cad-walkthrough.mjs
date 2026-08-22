@@ -118,10 +118,10 @@ const measurementReload = createPlanogramCadSession({ candidate: session.candida
 if (!measurementReload.scene.nodes.some((row) => row.nodeId === "MEASURE-DIST-A-C" && row.metadata?.measuredDistanceM === 7)) fail("CAD measurement did not survive overlay round-trip.");
 session = measurementReload;
 
-session = executePlanogramCadSessionCommand(session, { commandId: "GUIDE-WALL", type: "CREATE_NODE", expectedRevision: session.scene.revision, node: createStoreSceneNode({ nodeId: "GUIDE-WALL", nodeType: "wall", geometry: { centerXM: 8, centerYM: 2, widthM: 2, depthM: 0.12, heightM: 2.5, rotationDeg: 0 }, provenance: { source: "human", sourceRef: "cad-session" } }) });
+session = executePlanogramCadSessionCommand(session, { commandId: "GUIDE-WALL", type: "CREATE_NODE", expectedRevision: session.scene.revision, node: createStoreSceneNode({ nodeId: "GUIDE-WALL", nodeType: "wall", geometry: { centerXM: 7.8, centerYM: 2, widthM: 2, depthM: 0.12, heightM: 2.5, rotationDeg: 0 }, provenance: { source: "human", sourceRef: "cad-session" } }) });
 session = executePlanogramCadSessionCommand(session, { commandId: "SNAP-FIX", type: "CREATE_NODE", expectedRevision: session.scene.revision, node: createPlanogramCadFixtureNode({ nodeId: "SNAP-FIX", centerXM: 5, centerYM: 2, widthM: 1, depthM: 0.5 }) });
-const snapped = snapPlanogramCadSelectionDelta(session.scene, ["SNAP-FIX"], 2.97, 0, { gridM: 0.01, thresholdM: 0.05 });
-if (!snapped.snappedX || snapped.deltaX !== 3 || !snapped.guides.some((guide) => guide.axis === "x" && guide.value === 8 && guide.sourceNodeId === "GUIDE-WALL")) fail(`CAD smart snap guide drifted: ${JSON.stringify(snapped)}`);
+const snapped = snapPlanogramCadSelectionDelta(session.scene, ["SNAP-FIX"], 2.77, 0, { gridM: 0.01, thresholdM: 0.05 });
+if (!snapped.snappedX || snapped.deltaX !== 2.8 || !snapped.guides.some((guide) => guide.axis === "x" && guide.value === 7.8 && guide.sourceNodeId === "GUIDE-WALL")) fail(`CAD smart snap guide drifted: ${JSON.stringify(snapped)}`);
 const metrics = buildPlanogramCadSelectionMetrics(session.scene, ["DIST-A", "DIST-C"]);
 if (metrics.count !== 2 || metrics.widthM <= 7 || metrics.center.x !== 5.5) fail(`CAD selection metric kernel drifted: ${JSON.stringify(metrics)}`);
 

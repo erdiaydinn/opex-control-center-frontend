@@ -44,6 +44,21 @@ jobs:
         run: |
           test -n "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
           test -d "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
+      - name: Enforce exact vendor tenant resource identity and operation scope
+        run: |
+          python -m app.cyber_championship_tenant_scope_guard \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --strict > /tmp/eay-championship-scope.json
+          cat /tmp/eay-championship-scope.json
+          python - <<'PY'
+          import json
+          with open('/tmp/eay-championship-scope.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'ready'
+          assert report['raw_credentials_observed'] is False
+          assert report['production_mutation_authority'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
       - name: Verify external admission without printing secrets or ground truth
         run: |
           python scripts/run_cyber_championship_external_preflight.py \

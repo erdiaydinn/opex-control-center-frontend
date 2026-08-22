@@ -12,7 +12,7 @@ def test_mgm_one_shot_plan_is_safe_but_not_executable_before_adapter_verificatio
 
     assert plan.execution_permitted is False
     assert "provider_exact_adapter_not_verified" in plan.blockers
-    assert "provider_production_not_enabled" in plan.blockers
+    assert "provider_one_shot_observation_not_authorized" in plan.blockers
 
 
 def test_ibb_continuous_plan_requires_secret_authorization_and_continuous_access_review():

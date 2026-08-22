@@ -50,9 +50,8 @@ class TUIKThemeNode(BaseModel):
 
     theme_id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=500)
-    # Field evidence shows structural/group nodes legitimately carry null/blank URLs.
-    # The source key remains mandatory in _parse_node. Safe official HTTPS references
-    # are retained; verified legacy HTTP references are deliberately not promoted.
+    # Field evidence shows structural/group nodes legitimately omit or carry
+    # null/blank URLs. URL is optional metadata; core identity remains mandatory.
     url: str | None = Field(max_length=2_000)
     icon: str | None = Field(default=None, max_length=2_000)
     metadata_url: str | None = Field(default=None, max_length=2_000)
@@ -142,9 +141,6 @@ def _safe_catalog_url(value: Any, *, field_name: str) -> str:
         and not parsed.password
         and port in (None, 443)
     ):
-        # Fragment-bearing SPA links are catalog metadata only; they are never used
-        # as provider fetch targets. Field evidence shows databrowser2.tuik.gov.tr
-        # intentionally encodes dataset navigation in the fragment.
         return normalized
     raise ValueError(f"tuik_theme_catalog_{field_name}_unsafe")
 
@@ -189,9 +185,6 @@ def _optional_catalog_url(value: Any, *, field_name: str) -> str | None:
         and not parsed.password
         and port in (None, 80)
     ):
-        # The official catalog still carries legacy Biruni HTTP links. Preserve the
-        # raw value only in the sealed provider receipt; never promote it as a safe
-        # clickable/executable URL in the normalized Company World catalog.
         return None
     return _safe_catalog_url(normalized, field_name=field_name)
 
@@ -207,7 +200,7 @@ def _parse_node(
         raise ValueError("tuik_theme_catalog_depth_exceeded")
     if not isinstance(raw, dict):
         raise ValueError("tuik_theme_catalog_node_must_be_object")
-    required = {"id", "name", "url", "children"}
+    required = {"id", "name", "children"}
     if not required.issubset(raw):
         raise ValueError("tuik_theme_catalog_node_required_field_missing")
 
@@ -250,7 +243,7 @@ def _parse_node(
     return TUIKThemeNode(
         theme_id=theme_id,
         name=normalized_name,
-        url=_optional_catalog_url(raw["url"], field_name="url"),
+        url=_optional_catalog_url(raw.get("url"), field_name="url"),
         icon=icon,
         metadata_url=metadata_url,
         children=children,

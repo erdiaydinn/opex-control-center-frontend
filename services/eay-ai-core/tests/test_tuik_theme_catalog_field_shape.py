@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-import pytest
 
 from app.tuik_theme_catalog_adapter import read_tuik_theme_catalog_observation
 
@@ -85,10 +84,17 @@ def test_field_verified_structural_nodes_may_have_null_or_blank_urls() -> None:
     assert result.observation.execution_authority_granted is False
 
 
-def test_url_key_remains_required_even_when_null_is_allowed() -> None:
-    with pytest.raises(ValueError, match="node_required_field_missing"):
-        read_tuik_theme_catalog_observation(
-            tenant_id=TENANT,
-            transport=_transport(_document(omit_root_url=True)),
-            now=NOW,
-        )
+def test_field_verified_structural_nodes_may_omit_url_key() -> None:
+    result = read_tuik_theme_catalog_observation(
+        tenant_id=TENANT,
+        transport=_transport(_document(omit_root_url=True)),
+        now=NOW,
+    )
+
+    root = result.catalog_receipt.themes[0]
+    assert root.url is None
+    assert root.theme_id == "1"
+    assert root.children
+    assert result.catalog_receipt.context_only is True
+    assert result.observation.company_truth_granted is False
+    assert result.observation.execution_authority_granted is False

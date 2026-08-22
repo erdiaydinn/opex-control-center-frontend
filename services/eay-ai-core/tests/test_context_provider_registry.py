@@ -79,6 +79,7 @@ def test_provider_cannot_activate_continuously_before_access_review():
             access_mode=ProviderAccessMode.AUTHORIZATION_REQUIRED,
             context_kinds=(ContextKind.ROAD_CLOSURE,),
             requires_secret=True,
+            one_shot_observation_authorized=True,
             continuous_ingestion_authorized=False,
             exact_adapter_verified=True,
             production_enabled=True,

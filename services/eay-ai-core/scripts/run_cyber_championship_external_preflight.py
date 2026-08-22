@@ -122,8 +122,8 @@ def main() -> int:
             evaluator_verification=evaluator,
             vendor_preflights=tuple(preflights),
         )
-    except (KeyError, TypeError, ValueError) as exc:
-        print(json.dumps(_blocked([f"external_receipt_validation_failed:{exc}"]), sort_keys=True))
+    except (KeyError, TypeError, ValueError):
+        print(json.dumps(_blocked(["external_receipt_validation_failed"]), sort_keys=True))
         return 2 if args.strict else 0
 
     report = {

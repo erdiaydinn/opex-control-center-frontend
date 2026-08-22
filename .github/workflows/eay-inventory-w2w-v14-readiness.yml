@@ -168,14 +168,17 @@ jobs:
           );
           SQL
 
-          test "$(psql "$DB" -Atc "SELECT readiness_snapshot->>'status' FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND document_id='14141414-1414-1414-1414-141414141402'")" = "READY"
-          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND document_id='14141414-1414-1414-141414141402'")" = "1"
+          # Start-evidence is already tenant + warehouse bound. Selecting it by
+          # those native columns avoids a shell/SQL UUID-literal dependency while
+          # still proving the exact physical W2W admission row and its immutability.
+          test "$(psql "$DB" -Atc "SELECT readiness_snapshot->>'status' FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND warehouse_id='WH-W14'")" = "READY"
+          test "$(psql "$DB" -Atc "SELECT count(*) FROM inventory_w2w_start_evidence WHERE tenant_id='wall-v14' AND warehouse_id='WH-W14'")" = "1"
 
           if psql "$DB" -v ON_ERROR_STOP=1 -c "
             UPDATE inventory_w2w_start_evidence
                SET warehouse_id='WH-TAMPER'
              WHERE tenant_id='wall-v14'
-               AND document_id='14141414-1414-1414-1414-141414141402'"; then
+               AND warehouse_id='WH-W14'"; then
             echo "ERROR: immutable W2W start evidence was mutated"
             exit 1
           fi

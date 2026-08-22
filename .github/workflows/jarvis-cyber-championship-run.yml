@@ -1,0 +1,67 @@
+name: EAY Jarvis Cyber Championship Authorized Run Admission
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jarvis-cyber-championship-authorized-run
+  cancel-in-progress: false
+
+jobs:
+  external-authority-admission:
+    name: Verify independent bank, sandbox and vendor authorities
+    runs-on: [self-hosted, eay-championship]
+    environment: cyber-championship
+    timeout-minutes: 15
+    env:
+      EAY_CHAMPIONSHIP_EVIDENCE_DIR: ${{ vars.EAY_CHAMPIONSHIP_EVIDENCE_DIR }}
+    defaults:
+      run:
+        working-directory: services/eay-ai-core
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prove literal manually dispatched head
+        run: |
+          expected='${{ github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          echo "CYBER_AUTHORIZED_EXPECTED_SHA=$expected"
+          echo "CYBER_AUTHORIZED_ACTUAL_SHA=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Install championship verifier only
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Require externally mounted evidence authority
+        run: |
+          test -n "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
+          test -d "$EAY_CHAMPIONSHIP_EVIDENCE_DIR"
+      - name: Verify external admission without printing secrets or ground truth
+        run: |
+          python scripts/run_cyber_championship_external_preflight.py \
+            --evidence-dir "$EAY_CHAMPIONSHIP_EVIDENCE_DIR" \
+            --strict > /tmp/eay-championship-admission.json
+          cat /tmp/eay-championship-admission.json
+          python - <<'PY'
+          import json
+          with open('/tmp/eay-championship-admission.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'ready_for_real_runs'
+          assert report['real_race_executed'] is False
+          assert report['verified_leader_claim_allowed'] is False
+          assert report['production_security_superiority_claim_allowed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Preserve execution truth boundary
+        run: |
+          echo "CHAMPIONSHIP_EXTERNAL_ADMISSION=READY_FOR_REAL_RUNS"
+          echo "CHAMPIONSHIP_REAL_RACE_EXECUTED=false"
+          echo "Repository admission does not execute or score vendor systems."

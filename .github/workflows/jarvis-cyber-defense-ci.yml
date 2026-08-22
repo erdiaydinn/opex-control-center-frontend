@@ -15,8 +15,11 @@ on:
       - "services/eay-ai-core/scripts/run_live_cyber_defense_smoke.py"
       - "services/eay-ai-core/scripts/run_cyber_world_championship_readiness.py"
       - "services/eay-ai-core/scripts/run_cyber_championship_execution_readiness.py"
+      - "services/eay-ai-core/scripts/run_cyber_championship_external_preflight.py"
       - "services/eay-ai-core/pyproject.toml"
+      - "docs/security/EAY_JARVIS_CYBER_*.md"
       - ".github/workflows/jarvis-cyber-defense-ci.yml"
+      - ".github/workflows/jarvis-cyber-championship-run.yml"
   pull_request:
     paths:
       - "services/eay-ai-core/app/cyber_*.py"
@@ -28,8 +31,11 @@ on:
       - "services/eay-ai-core/scripts/run_live_cyber_defense_smoke.py"
       - "services/eay-ai-core/scripts/run_cyber_world_championship_readiness.py"
       - "services/eay-ai-core/scripts/run_cyber_championship_execution_readiness.py"
+      - "services/eay-ai-core/scripts/run_cyber_championship_external_preflight.py"
       - "services/eay-ai-core/pyproject.toml"
+      - "docs/security/EAY_JARVIS_CYBER_*.md"
       - ".github/workflows/jarvis-cyber-defense-ci.yml"
+      - ".github/workflows/jarvis-cyber-championship-run.yml"
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
@@ -78,6 +84,7 @@ jobs:
             scripts/run_live_cyber_defense_smoke.py \
             scripts/run_cyber_world_championship_readiness.py \
             scripts/run_cyber_championship_execution_readiness.py \
+            scripts/run_cyber_championship_external_preflight.py \
             --output-format=json > /tmp/cyber-ruff.json
           ruff_status=$?
           python - <<'PY'
@@ -116,7 +123,8 @@ jobs:
             tests/test_company_detection_coverage_intelligence.py \
             scripts/run_live_cyber_defense_smoke.py \
             scripts/run_cyber_world_championship_readiness.py \
-            scripts/run_cyber_championship_execution_readiness.py
+            scripts/run_cyber_championship_execution_readiness.py \
+            scripts/run_cyber_championship_external_preflight.py
       - name: Run cyber defense adversarial and end-to-end acceptance
         run: |
           python -m pytest -q \
@@ -188,7 +196,7 @@ jobs:
         run: python scripts/run_cyber_world_championship_readiness.py
 
   championship-execution-protocol:
-    name: Sealed bank, sandbox, scoring, learning and rerace protocol
+    name: Sealed bank, sandbox, scoring, learning, external authority and rerace protocol
     needs: cyber-defense-contracts
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -213,12 +221,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-      - name: Prove sealed execution and anti-overfit learning contracts
+      - name: Prove sealed execution, external authority and anti-overfit learning contracts
         run: |
           python -m pytest -q \
             tests/test_cyber_championship_execution.py \
+            tests/test_cyber_championship_external_authority.py \
             tests/test_cyber_championship_learning.py
-      - name: Prove missing external authority stays fail-closed
+      - name: Prove missing execution authority stays fail-closed
         run: |
           python scripts/run_cyber_championship_execution_readiness.py > /tmp/championship-exec.json
           cat /tmp/championship-exec.json
@@ -227,6 +236,20 @@ jobs:
           with open('/tmp/championship-exec.json', encoding='utf-8') as handle:
               report = json.load(handle)
           assert report['status'] == 'bank_authority_required'
+          assert report['verified_leader_claim_allowed'] is False
+          assert report['production_security_superiority_claim_allowed'] is False
+          assert report['secrets_or_ground_truth_printed'] is False
+          PY
+      - name: Prove missing external evaluator and vendor authority stays fail-closed
+        run: |
+          python scripts/run_cyber_championship_external_preflight.py > /tmp/championship-external.json
+          cat /tmp/championship-external.json
+          python - <<'PY'
+          import json
+          with open('/tmp/championship-external.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          assert report['status'] == 'external_authority_required'
+          assert report['real_race_executed'] is False
           assert report['verified_leader_claim_allowed'] is False
           assert report['production_security_superiority_claim_allowed'] is False
           assert report['secrets_or_ground_truth_printed'] is False

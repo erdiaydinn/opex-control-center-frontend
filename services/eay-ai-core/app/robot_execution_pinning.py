@@ -15,11 +15,12 @@ import hashlib
 import json
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .robot_registry_intelligence import CompiledRobotPlan
+if TYPE_CHECKING:
+    from .robot_registry_intelligence import CompiledRobotPlan
 
 ROBOT_EXECUTION_PINNING_CONTRACT = "eay-jarvis-robot-execution-pinning-v1"
 

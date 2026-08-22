@@ -10,7 +10,12 @@ from app.mission_execution import (
     MissionExecutionSpec,
     execute_mission_until_blocked,
 )
-from app.mission_runtime import MissionDefinition, MissionStatus, MissionStep, new_checkpoint
+from app.mission_runtime import (
+    MissionDefinition,
+    MissionStatus,
+    MissionStep,
+    new_checkpoint,
+)
 from app.robot_execution_pinning import (
     RobotCanaryDisposition,
     RobotCanaryHealthSample,
@@ -123,7 +128,11 @@ def test_exact_runtime_view_validates_pin_and_generation_drift_rejects_it():
 
     stale = validate_execution_pin(
         pin=pin(),
-        runtime=runtime(generation=8, active_version=8, active_version_fingerprint=BASELINE_FINGERPRINT),
+        runtime=runtime(
+            generation=8,
+            active_version=8,
+            active_version_fingerprint=BASELINE_FINGERPRINT,
+        ),
         phase="pre_dispatch",
         checked_at=NOW + timedelta(minutes=2),
     )
@@ -242,7 +251,10 @@ def test_generation_change_between_authorization_and_dispatch_prevents_handler_c
     assert phases == ["pre_authorization", "pre_dispatch"]
     assert result.transitions_executed == 0
     assert result.checkpoint.status is MissionStatus.READY
-    assert "robot_execution_registry_generation_or_version_changed:reports.export" in result.blockers
+    assert (
+        "robot_execution_registry_generation_or_version_changed:reports.export"
+        in result.blockers
+    )
 
 
 def test_robot_side_effect_without_commit_fence_receipt_halts_as_unknown_authority():

@@ -67,9 +67,36 @@ def scan() -> dict[str, object]:
 
 def operational_elements() -> list[dict[str, object]]:
     return [
-        {"element_id": "picker-entry-1", "element_type": "picker_entry", "center_x_m": 1, "center_y_m": 1, "width_m": 0.4, "depth_m": 0.4, "rotation_deg": 0, "clearance_m": 0},
-        {"element_id": "inbound-1", "element_type": "inbound", "center_x_m": 2, "center_y_m": 8, "width_m": 2, "depth_m": 1.5, "rotation_deg": 0, "clearance_m": 0},
-        {"element_id": "dispatch-1", "element_type": "dispatch", "center_x_m": 12, "center_y_m": 2, "width_m": 1.5, "depth_m": 1.5, "rotation_deg": 0, "clearance_m": 0},
+        {
+            "element_id": "picker-entry-1",
+            "element_type": "picker_entry",
+            "center_x_m": 1,
+            "center_y_m": 1,
+            "width_m": 0.4,
+            "depth_m": 0.4,
+            "rotation_deg": 0,
+            "clearance_m": 0,
+        },
+        {
+            "element_id": "inbound-1",
+            "element_type": "inbound",
+            "center_x_m": 2,
+            "center_y_m": 8,
+            "width_m": 2,
+            "depth_m": 1.5,
+            "rotation_deg": 0,
+            "clearance_m": 0,
+        },
+        {
+            "element_id": "dispatch-1",
+            "element_type": "dispatch",
+            "center_x_m": 12,
+            "center_y_m": 2,
+            "width_m": 1.5,
+            "depth_m": 1.5,
+            "rotation_deg": 0,
+            "clearance_m": 0,
+        },
     ]
 
 
@@ -110,13 +137,21 @@ def request(**binding_overrides) -> PlanogramStoreScanFixtureLayoutPreviewReques
     )
 
 
-def build(request: PlanogramStoreScanFixtureLayoutPreviewRequest) -> dict[str, object]:
+def build(
+    request: PlanogramStoreScanFixtureLayoutPreviewRequest,
+) -> dict[str, object]:
     return build_scanned_fixture_layout_preview(
         scan_payload=request.scan.model_dump(mode="python"),
         expected_scan_fingerprint=request.expected_scan_fingerprint,
-        classifications=[row.model_dump(mode="python") for row in request.classifications],
-        operational_elements=[row.model_dump(mode="python") for row in request.operational_elements],
-        fixture_bindings=[row.model_dump(mode="python") for row in request.fixture_bindings],
+        classifications=[
+            row.model_dump(mode="python") for row in request.classifications
+        ],
+        operational_elements=[
+            row.model_dump(mode="python") for row in request.operational_elements
+        ],
+        fixture_bindings=[
+            row.model_dump(mode="python") for row in request.fixture_bindings
+        ],
         review_note=request.review_note,
         uncertainty_resolutions=[
             row.model_dump(mode="python") for row in request.uncertainty_resolutions
@@ -196,7 +231,9 @@ def test_missing_or_unattested_fixture_binding_fails_closed() -> None:
         scan_payload=base.scan.model_dump(mode="python"),
         expected_scan_fingerprint=base.expected_scan_fingerprint,
         classifications=[],
-        operational_elements=[row.model_dump(mode="python") for row in base.operational_elements],
+        operational_elements=[
+            row.model_dump(mode="python") for row in base.operational_elements
+        ],
         fixture_bindings=[],
     )
     assert missing["layout_draft_ready"] is False
@@ -216,7 +253,13 @@ def test_scan_vs_catalog_dimension_drift_is_a_hard_binding_blocker() -> None:
 
 def test_binding_schema_rejects_duplicate_slots_and_client_authority() -> None:
     raw = request().model_dump(mode="python")
-    duplicate = {**raw, "fixture_bindings": [binding(), binding(fixture_id="GONDOLA-002")]}
+    duplicate = {
+        **raw,
+        "fixture_bindings": [
+            binding(),
+            binding(fixture_id="GONDOLA-002"),
+        ],
+    }
     with pytest.raises(ValidationError):
         PlanogramStoreScanFixtureLayoutPreviewRequest(**duplicate)
     for field in (
@@ -230,12 +273,15 @@ def test_binding_schema_rejects_duplicate_slots_and_client_authority() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fixture_layout_route_is_mounted_and_never_grants_release_authority() -> None:
+async def test_fixture_layout_route_is_mounted_and_never_grants_release_authority(
+) -> None:
     assert "/v1/planogram/store-scan/fixture-layout-preview" in app.openapi()["paths"]
     response = await post_store_scan_fixture_layout_preview(request(), principal())
     assert response["tenant_id"] == str(TENANT)
     assert response["preview_only"] is True
-    assert response["input_authority"] == "fingerprint_bound_human_fixture_binding_unattested"
+    assert response["input_authority"] == (
+        "fingerprint_bound_human_fixture_binding_unattested"
+    )
     assert response["store_dna_approval_allowed"] is False
     assert response["physical_layout_release_allowed"] is False
     assert response["production_release_allowed"] is False

@@ -76,15 +76,18 @@ class InventoryWallToWallReadinessContractTest(unittest.TestCase):
         task_slice = self.production.split("def list_terminal_tasks", 1)[1].split(
             "def reconciliation", 1
         )[0]
-        self.assertIn("d.count_mode", task_slice)
-        self.assertIn("inventory_wall_to_wall_readiness_v14", task_slice)
-        self.assertIn("->>'status'='READY'", task_slice)
-        self.assertIn("l.location_id='LOST_FOUND'", task_slice)
-        self.assertIn("standard_l.location_kind='STANDARD'", task_slice)
-        self.assertIn("standard_l.completed_event_id IS NULL", task_slice)
-        self.assertNotIn("expected_quantity", task_slice)
-        self.assertNotIn("unit_cost", task_slice)
-        self.assertNotIn("variance", task_slice)
+        executable_task_slice = "\n".join(
+            line for line in task_slice.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertIn("d.count_mode", executable_task_slice)
+        self.assertIn("inventory_wall_to_wall_readiness_v14", executable_task_slice)
+        self.assertIn("->>'status'='READY'", executable_task_slice)
+        self.assertIn("l.location_id='LOST_FOUND'", executable_task_slice)
+        self.assertIn("standard_l.location_kind='STANDARD'", executable_task_slice)
+        self.assertIn("standard_l.completed_event_id IS NULL", executable_task_slice)
+        self.assertNotIn("expected_quantity", executable_task_slice)
+        self.assertNotIn("unit_cost", executable_task_slice)
+        self.assertNotIn("variance", executable_task_slice)
 
     def test_v14_registers_schema_version(self) -> None:
         self.assertIn(

@@ -270,7 +270,7 @@ def test_vendor_run_port_accepts_only_bound_real_receipt():
 def test_evaluator_cannot_disclose_ground_truth():
     bank = _bank()
     run = _run(CompetitorKind.JARVIS, bank=bank)
-    values = _evaluator(run, bank).model_dump(mode="python", exclude={"fingerprint"})
-    values["ground_truth_disclosed_to_runner"] = True
+    evaluator = _evaluator(run, bank)
+    tampered = evaluator.model_copy(update={"ground_truth_disclosed_to_runner": True})
     with pytest.raises(ValueError, match="ground_truth_leak"):
-        execution._seal_model(BlindEvaluatorReceipt, values)
+        BlindEvaluatorReceipt.model_validate(tampered.model_dump(mode="json"))

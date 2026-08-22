@@ -226,8 +226,8 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
     [assetManifest, model]
   );
   const sceneModel = useMemo(
-    () => buildPlanogramUnifiedTwinScene({ authoredModel: model }),
-    [model]
+    () => buildPlanogramUnifiedTwinScene({ authoredModel: model, authoringCandidate: candidate }),
+    [candidate, model]
   );
 
   if (!model || !sceneModel) {
@@ -243,6 +243,8 @@ export default function PlanogramDigitalTwin({ engineResult, candidate, locale, 
       className="eay-twin"
       data-geometry-authority={model.geometryAuthority}
       data-scene-contract={sceneModel.contract}
+      data-wall-passage-contract={sceneModel.wallPassages?.contract || "none"}
+      data-passable-opening-count={sceneModel.wallPassages?.passageCount || 0}
       data-visual-quality-contract={visualPlan?.contract || "metric-fallback-only"}
       data-visual-delivery-contract={deliveryPlan?.contract || "packshot-only"}
       data-product-instance-cap={PLANOGRAM_DIGITAL_TWIN_LIMITS.maxProductInstances3d}

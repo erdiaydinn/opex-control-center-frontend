@@ -7,10 +7,9 @@ its public API. Every user invocation carries an exact user/tenant/billing
 context and therefore reaches external frontier providers only through
 ``AdminGovernedEngineGateway``. Local Ollama remains free/default.
 
-This is an application-architecture boundary, not a claim that Python private
-attributes are a cryptographic sandbox. Deployment code should construct one
-runtime at the composition root and inject only ``ProductionEngineRuntime``
-into request handlers, agents and background workers.
+For certification-required tasks, a candidate-admission policy may be injected
+at the composition root. That policy can only remove engines; it never grants
+spend or execution authority.
 """
 
 from __future__ import annotations
@@ -20,7 +19,8 @@ from typing import Callable
 
 import httpx
 
-from .engine_gateway import EngineEndpoint, EngineGateway, EngineInvocationReceipt, RegisteredEngine
+from .engine_candidate_admission import EngineCandidateAdmission
+from .engine_gateway import EngineEndpoint, EngineGateway, RegisteredEngine
 from .intelligence_router import IntelligenceTask
 from .paid_token_engine_gateway import (
     AdminGovernedEngineGateway,
@@ -33,16 +33,14 @@ from .paid_token_governance import PaidTokenGrant, ProviderRateCard
 
 PRODUCTION_ENGINE_RUNTIME_CONTRACT = "eay-production-engine-runtime-v1"
 
-TransportFactory = Callable[[EngineEndpoint], httpx.AsyncBaseTransport | None]
+TransportFactory = Callable[
+    [EngineEndpoint], httpx.AsyncBaseTransport | None
+]
 
 
 @dataclass(frozen=True)
 class ProductionEngineRuntime:
-    """Application-facing Jarvis inference runtime.
-
-    Only the governed gateway is retained. There is deliberately no public
-    ``engine_gateway`` property or ungoverned invoke method.
-    """
+    """Application-facing Jarvis inference runtime."""
 
     _governed_gateway: AdminGovernedEngineGateway
     contract: str = PRODUCTION_ENGINE_RUNTIME_CONTRACT
@@ -74,13 +72,15 @@ def build_production_engine_runtime(
     usage_writer: UsageWriter,
     transport_factory: TransportFactory | None = None,
     environ: dict[str, str] | None = None,
+    candidate_admission: EngineCandidateAdmission | None = None,
 ) -> ProductionEngineRuntime:
     """Build the only supported production user-execution composition.
 
     External provider registrations may exist without an active user grant;
     that is safe because ``AdminGovernedEngineGateway`` authorizes the exact
     selected provider/model/user/tenant/billing context before the low-level
-    gateway is invoked. Local engines never create paid usage receipts.
+    gateway is invoked. For certification-required tasks, unadmitted engines are
+    removed before paid authorization and provider traffic.
     """
 
     low_level_gateway = EngineGateway(
@@ -95,5 +95,6 @@ def build_production_engine_runtime(
         rate_cards=rate_cards,
         ledger_reader=ledger_reader,
         usage_writer=usage_writer,
+        candidate_admission=candidate_admission,
     )
     return ProductionEngineRuntime(_governed_gateway=governed_gateway)

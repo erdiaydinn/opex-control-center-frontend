@@ -1,0 +1,85 @@
+name: EAY Jarvis TUIK Schema Probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/jarvis-tuik-schema-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: TUIK nested schema probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read official TUIK theme catalog schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          landing='https://veriportali.tuik.gov.tr/tr/statistical-themes'
+          api='https://veriportali.tuik.gov.tr/api/tr/data/statistical-themes'
+          cookie_jar="${RUNNER_TEMP}/tuik.cookies"
+          body="${RUNNER_TEMP}/tuik-api.json"
+
+          landing_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --cookie-jar "$cookie_jar" --connect-timeout 10 --max-time 20 \
+            --header 'Accept: text/html,application/xhtml+xml' \
+            --header 'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8' \
+            --header 'User-Agent: Mozilla/5.0 EAY-Jarvis-Schema-Probe/1.0' \
+            "$landing")"
+          test "$landing_status" = "200"
+
+          api_status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+            --cookie "$cookie_jar" --cookie-jar "$cookie_jar" \
+            --connect-timeout 10 --max-time 20 \
+            --header 'Accept: application/json, text/plain, */*' \
+            --header 'Accept-Language: tr-TR,tr;q=0.9,en;q=0.8' \
+            --header 'User-Agent: Mozilla/5.0 EAY-Jarvis-Schema-Probe/1.0' \
+            --header "Referer: $landing" \
+            --header 'Origin: https://veriportali.tuik.gov.tr' \
+            --header 'X-Requested-With: XMLHttpRequest' \
+            "$api")"
+          test "$api_status" = "200"
+
+          python - "$body" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          doc = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
+          print("TUIK_TOP_TYPE=" + type(doc).__name__)
+          if not isinstance(doc, dict):
+              raise SystemExit("TUIK_TOP_NOT_DICT")
+          print("TUIK_TOP_KEYS=" + ",".join(sorted(map(str, doc.keys()))))
+          payload = doc.get("data")
+          print("TUIK_DATA_TYPE=" + type(payload).__name__)
+          if isinstance(payload, list):
+              print("TUIK_DATA_LEN=" + str(len(payload)))
+              if payload:
+                  first = payload[0]
+                  print("TUIK_DATA_FIRST_TYPE=" + type(first).__name__)
+                  if isinstance(first, dict):
+                      print("TUIK_DATA_FIRST_KEYS=" + ",".join(sorted(map(str, first.keys()))))
+                      for key, value in first.items():
+                          if isinstance(value, (dict, list)):
+                              print(f"TUIK_FIRST_{key}_TYPE={type(value).__name__}")
+                              if isinstance(value, list):
+                                  print(f"TUIK_FIRST_{key}_LEN={len(value)}")
+                                  if value and isinstance(value[0], dict):
+                                      print(f"TUIK_FIRST_{key}_FIRST_KEYS=" + ",".join(sorted(map(str, value[0].keys()))))
+                              elif isinstance(value, dict):
+                                  print(f"TUIK_FIRST_{key}_KEYS=" + ",".join(sorted(map(str, value.keys()))))
+          elif isinstance(payload, dict):
+              print("TUIK_DATA_KEYS=" + ",".join(sorted(map(str, payload.keys()))))
+              for key, value in payload.items():
+                  print(f"TUIK_DATA_{key}_TYPE={type(value).__name__}")
+                  if isinstance(value, list):
+                      print(f"TUIK_DATA_{key}_LEN={len(value)}")
+                      if value and isinstance(value[0], dict):
+                          print(f"TUIK_DATA_{key}_FIRST_KEYS=" + ",".join(sorted(map(str, value[0].keys()))))
+                  elif isinstance(value, dict):
+                      print(f"TUIK_DATA_{key}_KEYS=" + ",".join(sorted(map(str, value.keys()))))
+          PY

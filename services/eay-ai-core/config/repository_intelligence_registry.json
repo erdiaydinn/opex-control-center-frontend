@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "updated_at": "2026-08-14",
+  "version": 3,
+  "updated_at": "2026-08-18",
   "canonical_source": {
     "repository": "erdiaydinn/Adaronya",
     "path": "governance/repository-intelligence-registry.yaml",
@@ -130,6 +130,87 @@
       "decision": "localization-reference",
       "capabilities": ["analytics", "localization", "turkish"],
       "review": {"ref": null, "commit": null, "license": "pending-review", "commercial_use": "blocked-until-license-reviewed"}
+    },
+    {
+      "id": "yargi-mcp",
+      "classification": "DISCOVERED",
+      "identity": "saidsurucu/yargi-mcp",
+      "canonical_upstream": "saidsurucu/yargi-mcp",
+      "decision": "adopt",
+      "capabilities": ["turkish-law", "case-law-retrieval", "mcp", "legal-source-gateway", "employment-law-research"],
+      "review": {"ref": "main", "commit": "2ead0b455c83c79275f704af7f92ff3392876e71", "license": "MIT", "commercial_use": "permissive-with-notice"}
+    },
+    {
+      "id": "claude-legal-turkish",
+      "classification": "DISCOVERED",
+      "identity": "ZekaiSuni/claude-for-legal-turkish",
+      "canonical_upstream": "ZekaiSuni/claude-for-legal-turkish",
+      "decision": "reference",
+      "capabilities": ["turkish-law", "employment-law", "commercial-law", "corporate-law", "privacy-kvkk", "regulatory-workflows", "legal-skills"],
+      "review": {"ref": "main", "commit": "6ede1c82f3aa6bb36216a961f4ec32c6b9b14362", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
+      "id": "microsoft-playwright",
+      "classification": "DISCOVERED",
+      "identity": "microsoft/playwright",
+      "canonical_upstream": "microsoft/playwright",
+      "decision": "adopt",
+      "capabilities": ["browser-automation", "network-observation", "xhr-fetch-observation", "har-recording", "deterministic-web-execution"],
+      "review": {"ref": "main", "commit": "04fb72b4f0f77e50c88689d436980f68f4c40a98", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
+      "id": "microsoft-playwright-python",
+      "classification": "DISCOVERED",
+      "identity": "microsoft/playwright-python",
+      "canonical_upstream": "microsoft/playwright-python",
+      "decision": "adopt",
+      "capabilities": ["python-browser-runtime", "cdp-attachment", "accessibility-locators", "network-observation", "managed-browser-execution"],
+      "review": {"ref": "main", "commit": "154f67ced51ada646b0fcf8574897d96c9712aa3", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
+      "id": "chrome-devtools-mcp",
+      "classification": "DISCOVERED",
+      "identity": "ChromeDevTools/chrome-devtools-mcp",
+      "canonical_upstream": "ChromeDevTools/chrome-devtools-mcp",
+      "decision": "adopt",
+      "capabilities": ["browser-inspection", "network-request-observation", "request-response-body-inspection", "accessibility-snapshot", "browser-automation"],
+      "review": {"ref": "main", "commit": "fadbf41d96db84cea12e379592bc13b005c053b4", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
+      "id": "mitmproxy",
+      "classification": "DISCOVERED",
+      "identity": "mitmproxy/mitmproxy",
+      "canonical_upstream": "mitmproxy/mitmproxy",
+      "decision": "reference",
+      "capabilities": ["managed-proxy-capture", "http-flow-observation", "websocket-observation", "desktop-mobile-traffic-reference"],
+      "review": {"ref": "main", "commit": "bae1a7e179da7f9e516ba1b9fe0743f4fd758894", "license": "MIT", "commercial_use": "permissive-with-notice"}
+    },
+    {
+      "id": "mitmproxy2swagger",
+      "classification": "DISCOVERED",
+      "identity": "alufers/mitmproxy2swagger",
+      "canonical_upstream": "alufers/mitmproxy2swagger",
+      "decision": "reference",
+      "capabilities": ["traffic-to-openapi", "har-to-openapi", "rest-api-schema-inference", "offline-api-discovery"],
+      "review": {"ref": "master", "commit": "f432acafa5907258f0f529ff582c75fefdca00d7", "license": "MIT", "commercial_use": "permissive-with-notice"}
+    },
+    {
+      "id": "keploy",
+      "classification": "DISCOVERED",
+      "identity": "keploy/keploy",
+      "canonical_upstream": "keploy/keploy",
+      "decision": "reference",
+      "capabilities": ["traffic-record-replay", "api-test-generation", "integration-flow-capture", "deterministic-mocks", "schema-validation-reference"],
+      "review": {"ref": "main", "commit": "f5f402bbb1171dd67ac7db265e9a5f60dca3e41e", "license": "Apache-2.0", "commercial_use": "allowed-with-license-obligations"}
+    },
+    {
+      "id": "akto-api-security",
+      "classification": "DISCOVERED",
+      "identity": "akto-api-security/akto",
+      "canonical_upstream": "akto-api-security/akto",
+      "decision": "reference",
+      "capabilities": ["api-inventory", "traffic-pattern-learning", "sensitive-data-classification", "runtime-api-discovery-reference"],
+      "review": {"ref": "master", "commit": "0d6c2d084e354bd61ca93511f8de6ab3445c7416", "license": "MIT", "commercial_use": "permissive-with-notice"}
     }
   ],
   "required_discovery_domains": [
@@ -143,6 +224,9 @@
     "workflow-automation",
     "security-and-guardrails",
     "analytics-and-semantic-layer",
-    "fine-tuning-and-lora"
+    "fine-tuning-and-lora",
+    "turkish-legal-retrieval",
+    "external-context-intelligence",
+    "api-auto-discovery-and-computer-use"
   ]
 }

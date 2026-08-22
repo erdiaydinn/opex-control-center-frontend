@@ -1,0 +1,21 @@
+{
+  "default": "deny",
+  "allow": [
+    "snapshot",
+    "read",
+    "get",
+    "wait",
+    "scroll"
+  ],
+  "deny": [
+    "navigate",
+    "click",
+    "fill",
+    "interact",
+    "eval",
+    "download",
+    "upload",
+    "network",
+    "state"
+  ]
+}

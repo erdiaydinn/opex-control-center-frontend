@@ -1,0 +1,135 @@
+{
+  "version": 3,
+  "policy": {
+    "default_execution": "LOCAL_FIRST",
+    "paid_frontier_fallback": "PLATFORM_ADMIN_GRANT_ONLY",
+    "unverified_model_production_enabled": false,
+    "commercial_license_gate_required": true
+  },
+  "models": [
+    {
+      "model_family": "eay-ops",
+      "recommended_runtime": "OLLAMA",
+      "default_model_id": "eay-ops:0.1",
+      "license": "EAY_INTERNAL",
+      "commercial_use_status": "INTERNAL_APPROVED",
+      "capabilities": ["TEXT", "CODE", "RETRIEVAL_SYNTHESIS", "OPS_REASONING"],
+      "preferred_tasks": ["GENERAL", "OPS", "PRIVATE_COMPANY_CONTEXT"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "qwen3.6",
+      "recommended_runtime": "OLLAMA_OR_VLLM",
+      "default_model_id": null,
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["TEXT", "CODE", "REASONING", "TOOL_PLANNING", "AGENTIC"],
+      "preferred_tasks": ["GENERAL", "CODE", "AGENT_REASONING", "MULTILINGUAL", "TEACHING", "TEACHING_TRANSFER"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "qwen3-coder",
+      "recommended_runtime": "OLLAMA_OR_VLLM",
+      "default_model_id": "qwen3-coder",
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["TEXT", "CODE", "REASONING", "TOOL_PLANNING", "AGENTIC"],
+      "preferred_tasks": ["CODE", "REPOSITORY_INTELLIGENCE", "AGENT_REASONING"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "gpt-oss-20b",
+      "recommended_runtime": "OLLAMA_OR_VLLM",
+      "default_model_id": "gpt-oss:20b",
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED_WITH_USAGE_POLICY",
+      "capabilities": ["TEXT", "REASONING", "TOOL_PLANNING", "STRUCTURED_OUTPUT"],
+      "preferred_tasks": ["GENERAL", "REASONING", "AGENT_REASONING", "TEACHING", "TEACHING_FEEDBACK"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "gpt-oss-120b",
+      "recommended_runtime": "VLLM_OR_OLLAMA",
+      "default_model_id": "gpt-oss:120b",
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED_WITH_USAGE_POLICY",
+      "capabilities": ["TEXT", "REASONING", "TOOL_PLANNING", "STRUCTURED_OUTPUT"],
+      "preferred_tasks": ["HARD_REASONING", "AGENT_REASONING", "EXECUTIVE_ANALYSIS", "TEACHING_TRANSFER"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "mistral-small-4",
+      "recommended_runtime": "VLLM_OR_COMPATIBLE_LOCAL_RUNTIME",
+      "default_model_id": null,
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["TEXT", "IMAGE", "CODE", "REASONING", "AGENTIC"],
+      "preferred_tasks": ["GENERAL", "MULTIMODAL", "CODE", "AGENT_REASONING", "TEACHING", "TEACHING_TRANSFER"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "qwen3-asr",
+      "recommended_runtime": "VLLM_OR_QWEN_LOCAL_RUNTIME",
+      "default_model_id": "Qwen3-ASR-0.6B",
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["AUDIO", "ASR", "MULTILINGUAL"],
+      "preferred_tasks": ["VOICE_TRANSCRIPTION", "VOICE_SESSION", "STREAMING_ASR"],
+      "supported_languages": ["zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru", "th", "vi", "ja", "tr", "hi", "ms", "nl", "sv", "da", "fi", "pl", "cs", "fil", "fa", "el", "hu", "mk", "ro"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "chatterbox-multilingual-v3",
+      "recommended_runtime": "LOCAL_PYTORCH",
+      "default_model_id": "ResembleAI/Chatterbox-Multilingual-v3",
+      "license": "MIT",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["AUDIO", "TTS", "MULTILINGUAL"],
+      "preferred_tasks": ["VOICE_SYNTHESIS", "VOICE_SESSION", "TURKISH_TTS"],
+      "supported_languages": ["ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it", "ja", "ko", "ms", "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "qwen3-tts",
+      "recommended_runtime": "LOCAL_PYTORCH_OR_VLLM",
+      "default_model_id": null,
+      "license": "APACHE-2.0",
+      "commercial_use_status": "PERMISSIVE_LICENSE_REVIEWED",
+      "capabilities": ["AUDIO", "TTS", "MULTILINGUAL"],
+      "preferred_tasks": ["VOICE_SYNTHESIS", "VOICE_SESSION"],
+      "supported_languages": ["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
+      "production_candidate": true,
+      "external_network_required": false
+    },
+    {
+      "model_family": "gemma",
+      "recommended_runtime": "OLLAMA_OR_COMPATIBLE_LOCAL_RUNTIME",
+      "default_model_id": null,
+      "license": "GOOGLE_GEMMA_TERMS",
+      "commercial_use_status": "CONDITIONAL_LEGAL_REVIEW_REQUIRED",
+      "capabilities": ["TEXT", "IMAGE", "MULTILINGUAL", "REASONING"],
+      "preferred_tasks": ["GENERAL", "MULTIMODAL", "EDGE", "TEACHING"],
+      "production_candidate": false,
+      "external_network_required": false
+    },
+    {
+      "model_family": "deepseek",
+      "recommended_runtime": "VLLM_OR_COMPATIBLE_LOCAL_RUNTIME",
+      "default_model_id": null,
+      "license": "MODEL_VERSION_SPECIFIC",
+      "commercial_use_status": "VERSION_SPECIFIC_LICENSE_REVIEW_REQUIRED",
+      "capabilities": ["TEXT", "CODE", "REASONING"],
+      "preferred_tasks": ["REASONING", "CODE", "RESEARCH"],
+      "production_candidate": false,
+      "external_network_required": false
+    }
+  ]
+}

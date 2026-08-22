@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "updated_at": "2026-08-18",
+  "applications": [
+    {
+      "application_id": "yemeksepeti-carsi-portal",
+      "display_name": "Yemeksepeti CarsiPortal",
+      "environment": "production",
+      "canonical_entry_url": "https://carsi-portal.yemeksepeti.com/tr/",
+      "allowed_primary_hosts": [
+        "carsi-portal.yemeksepeti.com"
+      ],
+      "identity_source": "user_supplied",
+      "authentication_provider": "okta_user_reported",
+      "reported_authentication_factors": [
+        "password",
+        "email_otp"
+      ],
+      "managed_existing_browser_preferred": true,
+      "read_onboarding_enabled": true,
+      "write_execution_enabled": false,
+      "direct_api_execution_enabled": false,
+      "live_session_verified": false,
+      "authoritative_readback_verified": false,
+      "field_production_verified": false,
+      "secrets_retained": false,
+      "notes": [
+        "Application URL and intermittent Okta email-OTP behavior are user-supplied observations, not live EAY verification.",
+        "Reuse an authorized managed corporate browser session when available; never bypass Okta MFA.",
+        "Production writes remain disabled until exact session, target, idempotency and authoritative read-back evidence pass."
+      ]
+    }
+  ]
+}

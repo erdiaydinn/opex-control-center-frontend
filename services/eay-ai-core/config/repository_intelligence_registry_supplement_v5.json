@@ -1,0 +1,162 @@
+{
+  "version": 6,
+  "updated_at": "2026-08-18",
+  "repositories": [
+    {
+      "id": "qwen3-asr",
+      "classification": "DISCOVERED",
+      "identity": "QwenLM/Qwen3-ASR",
+      "canonical_upstream": "QwenLM/Qwen3-ASR",
+      "decision": "adopt",
+      "capabilities": [
+        "local-asr",
+        "streaming-asr",
+        "offline-asr",
+        "multilingual-asr",
+        "turkish-asr",
+        "voice-session-input"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "7c6daf77a2421100f5fb066495372c00129d39ff",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "resemble-chatterbox",
+      "classification": "DISCOVERED",
+      "identity": "resemble-ai/chatterbox",
+      "canonical_upstream": "resemble-ai/chatterbox",
+      "decision": "adopt",
+      "capabilities": [
+        "local-tts",
+        "multilingual-tts",
+        "turkish-tts",
+        "voice-session-output",
+        "bounded-model-recycle-required-until-device-soak-proven"
+      ],
+      "review": {
+        "ref": "master",
+        "commit": "5de7a54aa4e5e2baadb0182dde554908b48b85c2",
+        "license": "MIT",
+        "commercial_use": "permissive-with-notice"
+      }
+    },
+    {
+      "id": "qwen3-tts",
+      "classification": "DISCOVERED",
+      "identity": "QwenLM/Qwen3-TTS",
+      "canonical_upstream": "QwenLM/Qwen3-TTS",
+      "decision": "reference",
+      "capabilities": [
+        "local-tts",
+        "streaming-tts",
+        "multilingual-tts",
+        "voice-session-output",
+        "turkish-language-support-not-verified"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations-but-turkish-routing-blocked-until-language-evidence"
+      }
+    },
+    {
+      "id": "sherpa-onnx",
+      "classification": "DISCOVERED",
+      "identity": "k2-fsa/sherpa-onnx",
+      "canonical_upstream": "k2-fsa/sherpa-onnx",
+      "decision": "reference",
+      "capabilities": [
+        "offline-speech-runtime",
+        "speaker-diarization",
+        "speaker-identification-reference",
+        "speech-enhancement",
+        "source-separation",
+        "keyword-spotting",
+        "cross-platform-edge-speech"
+      ],
+      "review": {
+        "ref": "master",
+        "commit": "1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "samuel-screen-voice-agent",
+      "classification": "DISCOVERED",
+      "identity": "sambuild04/screen-voice-agent",
+      "canonical_upstream": "sambuild04/screen-voice-agent",
+      "decision": "reference",
+      "capabilities": [
+        "ambient-system-audio",
+        "screen-context",
+        "wake-word-desktop-assistant",
+        "ambient-monitoring",
+        "live-meeting-assistance",
+        "runtime-tool-repair-reference",
+        "privacy-toggle-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "9de6855b4cf7edc02f2fe4d7c1ff0be7aa7435ce",
+        "license": "MIT",
+        "commercial_use": "reference-permissive-with-notice"
+      }
+    },
+    {
+      "id": "agentoperations-agent-registry",
+      "classification": "DISCOVERED",
+      "identity": "agentoperations/agent-registry",
+      "canonical_upstream": "agentoperations/agent-registry",
+      "decision": "reference",
+      "capabilities": [
+        "a2a-agent-card-registry",
+        "mcp-server-registry",
+        "skill-registry",
+        "evaluation-signals",
+        "promotion-lifecycle",
+        "supply-chain-visibility",
+        "oci-metadata-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "d3f3de46e0b64f47d9af544aacd8d14d7fd6c306",
+        "license": "pending-review",
+        "commercial_use": "blocked-pending-license-review"
+      }
+    },
+    {
+      "id": "robotmcp-ros-mcp-server",
+      "classification": "DISCOVERED",
+      "identity": "robotmcp/ros-mcp-server",
+      "canonical_upstream": "robotmcp/ros-mcp-server",
+      "decision": "reference",
+      "capabilities": [
+        "ros-and-ros2-mcp-bridge",
+        "robot-topic-discovery",
+        "robot-service-discovery",
+        "robot-action-discovery",
+        "sensor-observation",
+        "physical-ai-integration-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "f1c023bb5570794ee4d935aa2c7c06e025810952",
+        "license": "Apache-2.0",
+        "commercial_use": "reference-only-until-physical-safety-acceptance"
+      }
+    }
+  ],
+  "required_discovery_domains": [
+    "local-asr-and-streaming-speech-recognition",
+    "local-tts-and-multilingual-speech-synthesis",
+    "turkish-local-voice-runtime",
+    "ambient-desktop-and-system-audio-intelligence",
+    "agent-mcp-skill-resource-discovery-and-governance",
+    "robotics-and-ros-capability-bridges"
+  ]
+}

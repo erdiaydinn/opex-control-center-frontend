@@ -26,6 +26,15 @@ dev = [
 bigquery = [
   "google-cloud-bigquery>=3.42,<4",
 ]
+computer-use = [
+  "playwright>=1.60,<2",
+  "keyring>=25.7,<26",
+]
+spatial = [
+  "numpy>=1.26,<3",
+  "opencv-python>=4.10,<5",
+  "mediapipe>=0.10,<1",
+]
 training = [
   "torch>=2.6,<3",
   "transformers>=4.57,<6",

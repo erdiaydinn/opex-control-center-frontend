@@ -1,0 +1,128 @@
+{
+  "version": 5,
+  "updated_at": "2026-08-18",
+  "repositories": [
+    {
+      "id": "vercel-agent-browser",
+      "classification": "DISCOVERED",
+      "identity": "vercel-labs/agent-browser",
+      "canonical_upstream": "vercel-labs/agent-browser",
+      "decision": "adopt",
+      "capabilities": [
+        "semantic-browser-snapshot",
+        "accessibility-tree",
+        "named-browser-sessions",
+        "strict-tab-pinning",
+        "content-boundaries",
+        "read-only-browser-harness"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "548b159b30eef119ccf6846c8bc807d0eaa3f6f8",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "e2b-awesome-ai-agents",
+      "classification": "DISCOVERED",
+      "identity": "e2b-dev/awesome-ai-agents",
+      "canonical_upstream": "e2b-dev/awesome-ai-agents",
+      "decision": "reference",
+      "capabilities": [
+        "agent-landscape-discovery",
+        "agent-framework-catalog",
+        "research-source-discovery"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "999f3c390b8a373ed243ee297ff32a433cd0d68b",
+        "license": "CC-BY-NC-SA-4.0",
+        "commercial_use": "reference-only-noncommercial-license"
+      }
+    },
+    {
+      "id": "agentops",
+      "classification": "DISCOVERED",
+      "identity": "AgentOps-AI/agentops",
+      "canonical_upstream": "AgentOps-AI/agentops",
+      "decision": "reference",
+      "capabilities": [
+        "agent-observability",
+        "developer-session-replay",
+        "execution-graphs",
+        "agent-evaluation-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "f8e907b92dabe47232978023fdcb01e2a7d4b752",
+        "license": "MIT",
+        "commercial_use": "permissive-with-notice"
+      }
+    },
+    {
+      "id": "openinterpreter",
+      "classification": "DISCOVERED",
+      "identity": "openinterpreter/openinterpreter",
+      "canonical_upstream": "openinterpreter/openinterpreter",
+      "decision": "reference",
+      "capabilities": [
+        "multi-harness-agent-runtime",
+        "computer-use-reference",
+        "agent-client-protocol",
+        "mcp-skills-permissions",
+        "portable-agent-harness"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "5a8f33ee6c82aee2ffbbf2e998b5f3e4995459a2",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "e2b-sandbox",
+      "classification": "DISCOVERED",
+      "identity": "e2b-dev/E2B",
+      "canonical_upstream": "e2b-dev/E2B",
+      "decision": "reference",
+      "capabilities": [
+        "isolated-code-execution",
+        "agent-sandbox",
+        "code-interpreter-infrastructure",
+        "self-hosted-sandbox-reference"
+      ],
+      "review": {
+        "ref": "main",
+        "commit": "f5d702a520de52ac0e5d4dda3ca0d5fca01d7993",
+        "license": "Apache-2.0",
+        "commercial_use": "allowed-with-license-obligations"
+      }
+    },
+    {
+      "id": "aiwaves-agents",
+      "classification": "DISCOVERED",
+      "identity": "aiwaves-cn/agents",
+      "canonical_upstream": "aiwaves-cn/agents",
+      "decision": "reference",
+      "capabilities": [
+        "offline-agent-trajectory-learning",
+        "symbolic-learning-reference",
+        "multi-agent-optimization-reference"
+      ],
+      "review": {
+        "ref": "master",
+        "commit": "e8c4e3c2d19739d3dff59e577d1c97090cc15f59",
+        "license": "Apache-2.0",
+        "commercial_use": "reference-only-stale-upstream-revalidate-before-adoption"
+      }
+    }
+  ],
+  "required_discovery_domains": [
+    "agent-browser-harnesses",
+    "agent-runtime-landscape",
+    "agent-observability-and-replay",
+    "isolated-agent-sandboxes",
+    "offline-agent-learning"
+  ]
+}

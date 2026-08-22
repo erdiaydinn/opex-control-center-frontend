@@ -130,6 +130,19 @@ class RepositoryRegistry(BaseModel):
             "apache-superset",
             "patika-superset-tr",
         }
+        if self.version >= 2:
+            required.update({"yargi-mcp", "claude-legal-turkish"})
+        if self.version >= 3:
+            required.update(
+                {
+                    "microsoft-playwright",
+                    "chrome-devtools-mcp",
+                    "mitmproxy",
+                    "mitmproxy2swagger",
+                    "keploy",
+                    "akto-api-security",
+                }
+            )
         missing = sorted(required - set(self.by_id()))
         if missing:
             raise ValueError("repository_registry_seed_entries_missing:" + ",".join(missing))

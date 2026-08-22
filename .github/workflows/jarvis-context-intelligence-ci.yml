@@ -17,6 +17,7 @@ on:
       - "services/core-api/tests/test_agent_job_control_plane.py"
       - "services/core-api/tests/test_epistemic_rollout_postgres.py"
       - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/tests/test_robot_registry_security_postgres.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "services/core-api/alembic/versions/*jarvis*.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
@@ -33,6 +34,7 @@ on:
       - "services/core-api/tests/test_agent_job_control_plane.py"
       - "services/core-api/tests/test_epistemic_rollout_postgres.py"
       - "services/core-api/tests/test_robot_registry_postgres.py"
+      - "services/core-api/tests/test_robot_registry_security_postgres.py"
       - "services/core-api/tests/test_sql_access_boundary.py"
       - "services/core-api/alembic/versions/*jarvis*.py"
       - ".github/workflows/jarvis-context-intelligence-ci.yml"
@@ -115,10 +117,11 @@ jobs:
           services/core-api/tests/test_agent_job_control_plane.py
           services/core-api/tests/test_epistemic_rollout_postgres.py
           services/core-api/tests/test_robot_registry_postgres.py
+          services/core-api/tests/test_robot_registry_security_postgres.py
           services/core-api/tests/test_sql_access_boundary.py
       - name: Lint and compile control plane
         run: |
-          ruff check services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/app/robot_registry_repository.py services/core-api/tests/test_agent_job_control_plane.py services/core-api/tests/test_epistemic_rollout_postgres.py services/core-api/tests/test_robot_registry_postgres.py
+          ruff check services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/app/robot_registry_repository.py services/core-api/tests/test_agent_job_control_plane.py services/core-api/tests/test_epistemic_rollout_postgres.py services/core-api/tests/test_robot_registry_postgres.py services/core-api/tests/test_robot_registry_security_postgres.py
           python -m compileall -q services/core-api/app/agent_job_repository.py services/core-api/app/agent_job_routes.py services/core-api/app/epistemic_rollout_repository.py services/core-api/app/robot_registry_repository.py
 
   contract:
